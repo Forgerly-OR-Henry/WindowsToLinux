@@ -63,13 +63,46 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     private final LinkedHashMap<String, Map<String, Object>> hostPrerequisites = new LinkedHashMap<>();
 
     private record ToolchainPlan(String identity, String server,
+                                 gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
                                  List<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement> requirements,
                                  Map<String, Object> evidence) {
     }
 
     private volatile ToolchainPlan toolchainPlan;
 
-    private synchronized void toolchainPreparationPlanned(
+    public void bindPreparation(
+        gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
+        TaskContext supplied) throws ApiException {
+        sameTask(supplied);
+        var rendered = new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.DeploymentStandardPlanner()
+            .render(plan, supplied, gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied));
+        if (rendered.outcome() != gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED)
+            throw new IllegalArgumentException("Runtime dependency plan cannot be rendered");
+        toolchainPreparationPlanned(plan, rendered.value().orElseThrow().reviewedPlanSha256(), supplied);
+    }
+
+    public gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentPreparationObserver preparationObserver() {
+        return new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentPreparationObserver() {
+            @Override
+            public void toolsPrepared(ServerId server,
+                                      gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
+                                      TaskContext supplied) throws ApiException {
+                toolchainsPrepared(server, tools, supplied);
+            }
+
+            @Override
+            public void hostObserved(String identity,
+                                     gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts host,
+                                     gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
+                                     TaskContext supplied) throws ApiException {
+                var current = toolchainPlan;
+                if (current == null) throw new IllegalArgumentException("No original reviewed preparation plan");
+                hostPrerequisitesObserved(current.plan(), identity, host, tools, supplied);
+            }
+        };
+    }
+
+    public synchronized void toolchainPreparationPlanned(
         gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
         String expected, TaskContext supplied) throws ApiException {
         sameTask(supplied);
@@ -124,11 +157,11 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         evidence.put("meaning", "Intended tool requirements derived by the same fixed product planner used for this source-bound reviewed runtime. Source declarations are separate and need not include product runtime dependencies. This is a planned dependency, not an installation observation or approval. Review original workflow authority and the exact current effects independently.");
         if (request.runtime() instanceof gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition.StaticSite)
             evidence.put("runtimeDependencyReason", "This reviewed StaticSite uses the product managed Python 3.12 http.server to serve built assets; Node, when selected, builds those assets. Python is a fixed runtime requirement and need not be declared by package.json. The pinned helper static launch branch uses the prepared Python executable; this does not prove it is installed or authorize an effect.");
-        toolchainPlan = new ToolchainPlan(expected, request.server().id(), requirements, Map.copyOf(evidence));
+        toolchainPlan = new ToolchainPlan(expected, request.server().id(), plan, requirements, Map.copyOf(evidence));
         reviewedApplicationSources.put(request.facts().applicationId(), association);
     }
 
-    private synchronized void hostPrerequisitesObserved(
+    public synchronized void hostPrerequisitesObserved(
         gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
         String expected,
         gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts host,
@@ -211,7 +244,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         sourceArchives.put(key, Map.copyOf(observation));
     }
 
-    private synchronized void toolchainsPrepared(ServerId server,
+    public synchronized void toolchainsPrepared(ServerId server,
                                                  gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
                                                  TaskContext supplied) throws ApiException {
         sameTask(supplied);
@@ -733,30 +766,6 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     @Override
     public InteractionService interaction() {
         return new gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview() {
-            @Override
-            public void toolchainPreparationPlanned(
-                gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
-                String identity, TaskContext supplied) throws ApiException {
-                DeploymentAssistedScope.this.toolchainPreparationPlanned(plan, identity, supplied);
-            }
-
-            @Override
-            public void hostPrerequisitesObserved(
-                gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
-                String identity,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts host,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
-                TaskContext supplied) throws ApiException {
-                DeploymentAssistedScope.this.hostPrerequisitesObserved(plan, identity, host, tools, supplied);
-            }
-
-            @Override
-            public void toolchainsPrepared(ServerId server,
-                                           gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
-                                           TaskContext supplied) throws ApiException {
-                DeploymentAssistedScope.this.toolchainsPrepared(server, tools, supplied);
-            }
-
             /** Reviews complete fixed command bytes before the exact host grant. / 精确宿主许可前审核完整固定命令字节。
              * @param intent original exact intent / 原精确意图
              * @param request complete actual request / 完整实际请求

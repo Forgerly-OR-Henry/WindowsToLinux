@@ -19,7 +19,7 @@ import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException;
+import gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentAlternativeRequiredException;
 import gold.debug.windowstolinux.mod.deployment.file.*;
 import gold.debug.windowstolinux.mod.deployment.service.agent.protocol.*;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
@@ -239,7 +239,7 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
                                     return result;
                                 }
                                 if (scenario == Scenario.DENY)
-                                    throw new DeploymentAlternativeRequiredException(task, "Controlled valid DENY; zero transport");
+                                    throw new DeploymentAgentAlternativeRequiredException(task, "Controlled valid DENY; zero transport");
                                 if (scenario == Scenario.UNKNOWN)
                                     return new CommandFeedback(false, false, -1, "Unknown actual result");
                                 CommandFeedback result;

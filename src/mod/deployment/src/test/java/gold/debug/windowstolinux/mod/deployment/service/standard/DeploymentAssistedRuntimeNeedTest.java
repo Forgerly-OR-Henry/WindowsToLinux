@@ -77,7 +77,7 @@ class DeploymentAssistedRuntimeNeedTest {
             var plan = mutation.startsWith("HOST_") ? companionPlan(initialPlan) : initialPlan;
             scope.archiveCaptured(material, archive, plan.request().facts().toolchainRequirements(), fixture.task);
             String identity = ReviewedPlanIdentity.from(plan.request());
-            var observer = (DeploymentCommandReview) scope.interaction();
+            var observer = scope;
             if (mutation.equals("SOURCE")) sourceId.set(UUID.randomUUID());
             if (mutation.equals("ARCHIVE_HANDLE")) archiveId.set(UUID.randomUUID());
             if (mutation.equals("WORKFLOW")) permission.close();
@@ -145,7 +145,7 @@ class DeploymentAssistedRuntimeNeedTest {
                                 for (int attempt = 0; attempt < 2; attempt++) {
                                     fixture.nativeReply(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("deny-" + attempt, "submit_result",
                                         "{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Independent refusal\"}"));
-                                    assertThrows(ApiException.class, () -> observer.approveCommand(intent, complete, fixture.task));
+                                    assertThrows(ApiException.class, () -> ((DeploymentCommandReview) scope.interaction()).approveCommand(intent, complete, fixture.task));
                                 }
                                 assertEquals(2, fixture.requests.size());
                             }

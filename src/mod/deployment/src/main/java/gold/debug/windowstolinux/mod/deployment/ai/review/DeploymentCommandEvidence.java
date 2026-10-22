@@ -16,15 +16,11 @@ import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHe
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 
 /** Adds complete executable input while keeping protected data payloads opaque. / 增补完整可执行输入，受保护数据载荷继续保持不透明。 */
-final class DeploymentCommandEvidence {
+public final class DeploymentCommandEvidence {
     /** Fixed operations whose stdin is executable Bash rather than protected data. / stdin是可执行Bash而非受保护数据的固定动作。 */
     private static final Set<String> SCRIPT_INPUT = Set.of("deployment.helper.install.v1",
-        "deployment.helper.install.tracked.v1", "deployment.helper.install.files.v1", "deployment.helper.install.files.custom.v1", "deployment.agent.helper.readiness.v1",
-        "deployment.helper.install.status.v1", "deployment.build.run.v1", "deployment.model.command.v1", "deployment.agent.preparation.absence.v1", "deployment.agent.preparation.partial-observation.v1",
-        "deployment.agent.toolchain.dependencies.v1", "deployment.agent.toolchain.resolve.v1", "deployment.agent.toolchain.prepare.v1", "deployment.agent.toolchain.bind.v1",
-        "deployment.agent.toolchain.controller.install.v1", "deployment.agent.publication-recovery.readiness.v1",
-        "deployment.agent.publication-recovery.install.v1", "deployment.agent.publication-recovery.guarded-first-rollback.v1",
-        "deployment.agent.publication-recovery-diagnostic.v1", "deployment.agent.publication-recovery-preflight.v2", "deployment.agent.publication-continuation.v1", "deployment.agent.publication-contract-diagnostic.v1", "deployment.agent.publication-contract-diagnostic.followup.v1", "deployment.agent.publication-correction.v1", "deployment.agent.isolation.preflight.v1");
+        "deployment.helper.install.tracked.v1", "deployment.helper.install.files.v1",
+        "deployment.helper.install.status.v1", "deployment.build.run.v1", "deployment.model.command.v1");
 
     /** Prevents construction. / 禁止构造。 */
     private DeploymentCommandEvidence() {
@@ -35,44 +31,19 @@ final class DeploymentCommandEvidence {
      * @param request complete immutable request / 完整不可变请求
      * @return bounded complete command facts with opaque protected input binding / 有界完整命令事实及不透明受保护输入绑定
      * @throws java.io.IOException if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
-    static Map<String, Object> facts(ActionIntent intent, CommandRequest request) throws java.io.IOException {
+    public static Map<String, Object> facts(ActionIntent intent, CommandRequest request) throws java.io.IOException {
         return facts(intent, request, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original());
     }
 
-    static Map<String, Object> facts(ActionIntent intent, CommandRequest request,
+    public static Map<String, Object> facts(ActionIntent intent, CommandRequest request,
                                      gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws java.io.IOException {
-        var facts = new LinkedHashMap<String, Object>();
         String operation = intent.semantics().orElseThrow().operation();
-        boolean installedHelper = !operation.equals("deployment.helper.install.v1") && !operation.equals("deployment.helper.install.tracked.v1")
-            && !operation.equals("deployment.helper.install.files.v1")
-            && !operation.equals("deployment.agent.publication-recovery-diagnostic.v1")
-            && !operation.equals("deployment.agent.publication-recovery-preflight.v2")
-            && !operation.equals("deployment.agent.publication-contract-diagnostic.v1")
-            && !operation.equals("deployment.agent.publication-contract-diagnostic.followup.v1")
-            && !operation.equals("deployment.agent.publication-correction.v1")
-            && !operation.equals("deployment.agent.isolation.preflight.v1")
-            && request.script().contains(layout.helperPath());
+        if (!DeploymentFixedCommandProtocol.registeredOperation(operation))
+            throw new IllegalArgumentException("Unsupported common command operation");
+        boolean installedHelper = !Set.of("deployment.helper.install.v1", "deployment.helper.install.tracked.v1",
+            "deployment.helper.install.files.v1").contains(operation) && request.script().contains(layout.helperPath());
+        var facts = new LinkedHashMap<String, Object>(baseFacts(intent, request, layout, installedHelper));
         String invocation = installedHelper ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout) : request.script();
-        if (installedHelper) {
-            facts.put("installedHelperPath", layout.helperPath());
-            facts.put("installedHelperSha256", DeploymentManagedHelperBundle.helperSha256(layout));
-            facts.put("platformContractRevision", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.REVISION);
-        }
-        facts.put("operation", operation);
-        if (operation.equals("deployment.model.command.v1")) {
-            facts.put("commandOrigin", "AI_GENERATED_BODY_WITH_PRODUCT_RECEIPT_WRAPPER");
-            facts.put("executionScope", "Selected SSH host identity; not a project-build sandbox. Deployment and authorized host prerequisites only. modelCommand supplies the exact model body and its untrusted rationale, separated from the byte-validated product envelope. The product envelope records only its own task/operation/body-bound receipt. The model body must not alter receipt or approval files. Review both bodies and all host effects; this description does not grant permission.");
-        }
-        facts.put("serverTargets", intent.serverIds());
-        facts.put("resourceTargets", intent.semantics().orElseThrow().targets().stream().sorted(java.util.Comparator
-            .comparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::serverId)
-            .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::kind)
-            .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::id)).toList());
-        facts.put("businessRevision", intent.revision());
-        if (installedHelper)
-            facts.put("ownershipIdentityMeaning", "ownershipManifestSha256 is an opaque ownership marker identity, not a protocol requirement to hash a supplied content manifest. StandardUnitResolver mints a new unit with 32 random bytes or reuses its saved identity; helpers compare the exact marker token. It is not a built-file checksum or signature. Compare the original unit binding and helper ownership checks, not an invented manifest document.");
-        facts.put("businessRevisionMeaning", "Author-owned identity of the reviewed business state or workflow plan, captured independently of per-resource ownership manifests, releases, executable bodies and toolchain bindings. These identities describe different objects and are not required to be equal. Compare each digest to the same object's bound expected value and enforced code checks; this description does not verify a resource or waive any target/integrity check.");
-        facts.put("exactAction", intent.exactAction());
         platformProbe(operation, request).ifPresent(probe -> facts.put("platformProbe", probe));
         if (operation.equals("deployment.candidate.capacity.v1")) {
             byte[] input = request.stdin();
@@ -90,85 +61,6 @@ final class DeploymentCommandEvidence {
                 Arrays.fill(input, (byte) 0);
             }
         }
-        if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.OPERATION)) {
-            if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Isolation server identity missing");
-            var probe = gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe
-                .reviewFacts(request, layout);
-            var required = gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe
-                .reviewedResourceTargets(request, layout, new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst()));
-            if (!intent.semantics().orElseThrow().targets().equals(required))
-                throw new IllegalArgumentException("Isolation resource identity changed");
-            facts.put("agentIsolation", probe);
-        }
-        if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrectionProgram.OPERATION)) {
-            if (intent.serverIds().size() != 1)
-                throw new IllegalArgumentException("Publication correction server identity missing");
-            var program = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrectionProgram.reviewFacts(request, layout);
-            var required = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrectionProgram
-                .reviewedResourceTargets(request, layout, new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst()));
-            if (!intent.semantics().orElseThrow().targets().equals(required))
-                throw new IllegalArgumentException("Publication correction resource identity changed");
-            facts.put("publicationCorrection", program);
-        }
-        if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticFollowupProgram.OPERATION)) {
-            if (intent.serverIds().size() != 1)
-                throw new IllegalArgumentException("Contract diagnostic followup server identity missing");
-            var program = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticFollowupProgram.reviewFacts(request, layout);
-            var required = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticFollowupProgram
-                .reviewedResourceTargets(request, layout, new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst()));
-            if (!intent.semantics().orElseThrow().targets().equals(required))
-                throw new IllegalArgumentException("Contract diagnostic followup resource identity changed");
-            facts.put("publicationContractDiagnosticFollowup", program);
-        }
-        if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticProgram.OPERATION)) {
-            if (intent.serverIds().size() != 1)
-                throw new IllegalArgumentException("Contract diagnostic server identity missing");
-            var program = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticProgram.reviewFacts(request, layout);
-            var required = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticProgram
-                .reviewedResourceTargets(request, layout, new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst()));
-            if (!intent.semantics().orElseThrow().targets().equals(required))
-                throw new IllegalArgumentException("Contract diagnostic resource identity changed");
-            facts.put("publicationContractDiagnostic", program);
-        }
-        if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram.OPERATION)) {
-            if (intent.serverIds().size() != 1)
-                throw new IllegalArgumentException("Continuation server identity missing");
-            var program = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram.reviewFacts(request, layout);
-            var required = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram
-                .reviewedResourceTargets(request, layout, new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst()));
-            if (!intent.semantics().orElseThrow().targets().equals(required))
-                throw new IllegalArgumentException("Continuation resource identity changed");
-            facts.put("publicationRecoveryContinuation", program);
-        }
-        if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflightProgram.OPERATION)) {
-            if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Preflight server identity missing");
-            var program = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflightProgram.reviewFacts(request, layout);
-            var required = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflightProgram
-                .reviewedResourceTargets(request, layout, new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst()));
-            if (!intent.semantics().orElseThrow().targets().equals(required))
-                throw new IllegalArgumentException("Preflight resource identity changed");
-            facts.put("publicationRecoveryPreflight", program);
-        }
-        if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryDiagnosticProgram.OPERATION)) {
-            if (intent.serverIds().size() != 1)
-                throw new IllegalArgumentException("Diagnostic server identity missing");
-            var program = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryDiagnosticProgram.reviewFacts(request, layout);
-            var required = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryDiagnosticProgram
-                .reviewedResourceTargets(request, layout, new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst()));
-            if (!intent.semantics().orElseThrow().targets().equals(required))
-                throw new IllegalArgumentException("Diagnostic resource identity changed");
-            facts.put("publicationRecoveryDiagnostic", program);
-        }
-        if (operation.startsWith(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.PREFIX)) {
-            var program = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram
-                .reviewFacts(operation, request, layout);
-            if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Recovery server identity missing");
-            var required = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram
-                .reviewedResourceTargets(operation, request, layout, new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst()));
-            if (!intent.semantics().orElseThrow().targets().equals(required))
-                throw new IllegalArgumentException("Recovery resource identity changed");
-            facts.put("publicationRecoveryProgram", program);
-        }
         if (operation.equals("deployment.toolchain.bind.v1")) {
             facts.put("decodedToolchainBinding", binding(invocation, layout));
             facts.put("toolchainSubcommand", "bind");
@@ -178,15 +70,11 @@ final class DeploymentCommandEvidence {
         if (operation.equals("deployment.build.run.v1"))
             buildBinding(invocation, layout).ifPresent(binding -> facts.put("decodedToolchainBinding", binding));
         if (operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
-            || operation.equals("deployment.helper.install.files.v1") || operation.equals("deployment.helper.install.files.custom.v1")) {
+            || operation.equals("deployment.helper.install.files.v1")) {
             facts.put("expectedHelperPath", layout.helperPath());
             facts.put("expectedHelperSha256", DeploymentManagedHelperBundle.helperSha256(layout));
         }
-        boolean agentRun = operation.equals("deployment.agent.helper.v1")
-            && invocation.startsWith("'" + layout.helperPath() + "' 'agent-run' ");
-        boolean patch = operation.equals("deployment.agent.helper.v1")
-            && invocation.startsWith("'" + layout.helperPath() + "' 'agent-patch' ");
-        boolean installedBuildEntry = operation.equals("deployment.build.run.v1") || agentRun;
+        boolean installedBuildEntry = operation.equals("deployment.build.run.v1");
         if (installedBuildEntry) {
             facts.put("installedBuildEntryPath", layout.buildEntry());
             facts.put("installedBuildEntrySha256", DeploymentManagedHelperBundle.buildEntrySha256(layout));
@@ -212,27 +100,17 @@ final class DeploymentCommandEvidence {
                 publicationMaintenance(invocation, input, intent, layout).ifPresent(value -> facts.put("publicationMaintenance", value));
             if (operation.equals("deployment.publication.config.v1"))
                 stagedConfiguration(invocation, input, intent, layout).ifPresent(value -> facts.put("stagedConfiguration", value));
-            if (SCRIPT_INPUT.contains(operation) || agentRun || patch) {
+            if (SCRIPT_INPUT.contains(operation)) {
                 String executable = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                     .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(input)).toString();
-                if (!patch && !executable.isBlank()) {
-                    if (agentRun) DeploymentCommandStaticGate.requireAllowed(executable);
-                    else DeploymentCommandStaticGate.requireFixedAllowed(executable);
-                }
+                if (!executable.isBlank()) DeploymentCommandStaticGate.requireFixedAllowed(executable);
                 if (operation.equals("deployment.build.run.v1"))
                     gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem.java.MavenBuildWriter.bootstrapEvidence(executable)
                         .ifPresent(value -> facts.put("candidateMavenBootstrap", value));
-                if (agentRun)
-                    facts.put("agentExecutableInputBinding", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentAgentCommandInputBinding.facts(invocation, input, executable, layout));
-                facts.put("inputKind", patch ? "SOURCE_PATCH" : "EXECUTABLE_SCRIPT");
-                facts.put("completeExecutableInput", operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.INSTALL)
-                    ? new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram(layout).installationEvidence()
-                    : operation.equals("deployment.helper.install.files.custom.v1")
-                    ? gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.describe(executable, layout)
-                    : operation.equals("deployment.helper.install.files.v1")
+                facts.put("inputKind", "EXECUTABLE_SCRIPT");
+                facts.put("completeExecutableInput", operation.equals("deployment.helper.install.files.v1")
                     ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describeFiles(executable, layout)
-                    : operation.equals("deployment.helper.install.v1")
-                    || operation.equals("deployment.helper.install.tracked.v1")
+                    : operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
                     ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describe(executable, layout) : executable);
                 if (operation.equals("deployment.model.command.v1")) {
                     if (!request.script().equals(gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.LAUNCHER))
@@ -252,8 +130,38 @@ final class DeploymentCommandEvidence {
         return java.util.Collections.unmodifiableMap(facts);
     }
 
+    /** Common request identity and pinned source; mode-owned protocols interpret their own inputs. */
+    public static Map<String, Object> baseFacts(ActionIntent intent, CommandRequest request,
+                                               gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout,
+                                               boolean installedHelper) {
+        var facts = new LinkedHashMap<String, Object>();
+        String operation = intent.semantics().orElseThrow().operation();
+        if (installedHelper) gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout);
+        if (installedHelper) {
+            facts.put("installedHelperPath", layout.helperPath());
+            facts.put("installedHelperSha256", DeploymentManagedHelperBundle.helperSha256(layout));
+            facts.put("platformContractRevision", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.REVISION);
+        }
+        facts.put("operation", operation);
+        if (operation.equals("deployment.model.command.v1")) {
+            facts.put("commandOrigin", "AI_GENERATED_BODY_WITH_PRODUCT_RECEIPT_WRAPPER");
+            facts.put("executionScope", "Selected SSH host identity; not a project-build sandbox. Deployment and authorized host prerequisites only. modelCommand supplies the exact model body and its untrusted rationale, separated from the byte-validated product envelope. The product envelope records only its own task/operation/body-bound receipt. The model body must not alter receipt or approval files. Review both bodies and all host effects; this description does not grant permission.");
+        }
+        facts.put("serverTargets", intent.serverIds());
+        facts.put("resourceTargets", intent.semantics().orElseThrow().targets().stream().sorted(java.util.Comparator
+            .comparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::serverId)
+            .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::kind)
+            .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::id)).toList());
+        facts.put("businessRevision", intent.revision());
+        if (installedHelper)
+            facts.put("ownershipIdentityMeaning", "ownershipManifestSha256 is an opaque ownership marker identity, not a protocol requirement to hash a supplied content manifest. StandardUnitResolver mints a new unit with 32 random bytes or reuses its saved identity; helpers compare the exact marker token. It is not a built-file checksum or signature. Compare the original unit binding and helper ownership checks, not an invented manifest document.");
+        facts.put("businessRevisionMeaning", "Author-owned identity of the reviewed business state or workflow plan, captured independently of per-resource ownership manifests, releases, executable bodies and toolchain bindings. These identities describe different objects and are not required to be equal. Compare each digest to the same object's bound expected value and enforced code checks; this description does not verify a resource or waive any target/integrity check.");
+        facts.put("exactAction", intent.exactAction());
+        return java.util.Collections.unmodifiableMap(facts);
+    }
+
     /** Adds only status facts cross-checked against the original task journal. / 仅增加与原任务账本交叉核对的状态事实。 */
-    static Map<String, Object> facts(ActionIntent intent, CommandRequest request,
+    public static Map<String, Object> facts(ActionIntent intent, CommandRequest request,
                                      gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout,
                                      gold.debug.windowstolinux.appapi.mod.ModContext context,
                                      gold.debug.windowstolinux.appapi.task.run.TaskContext task)

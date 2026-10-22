@@ -6,7 +6,6 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
@@ -25,21 +24,6 @@ import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 
 /** Reviews the actual fixed command before obtaining its exact original host grant. / 获取精确原宿主许可前审核实际固定命令。 */
 public final class DeploymentFixedCommandApproval {
-    /** Exact registered deployment operation meanings. / 精确已登记部署动作含义。 */
-    private static final Set<String> OPERATIONS = Set.of("deployment.helper.install.v1", "deployment.helper.install.tracked.v1", "deployment.helper.install.files.v1", "deployment.helper.install.files.custom.v1", "deployment.agent.helper.readiness.v1", "deployment.helper.install.status.v1", "deployment.helper.probe.v1",
-        "deployment.candidate.host-probe.v1", "deployment.candidate.container-probe.v1", "deployment.candidate.capacity.v1", "deployment.candidate.create.v1", "deployment.candidate.query.v1", "deployment.candidate.upload.v1", "deployment.candidate.verify.v1",
-        "deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1", "deployment.build.preflight.v1", "deployment.build.run.v1",
-        "deployment.publication.snapshot.v1", "deployment.publication.original-status.v1", "deployment.publication.snapshot-discard.v1", "deployment.publication.config.v1", "deployment.publication.secret.v1",
-        "deployment.publication.publish.v1", "deployment.publication.health.v1", "deployment.publication.stop-old.v1", "deployment.publication.inspect.v1", "deployment.publication.observe.v1",
-        "deployment.publication.observe-restored.v1", "deployment.publication.rollback.v1", "deployment.publication.retain.v1", "deployment.publication.maintenance-end.v1", "deployment.publication.candidate-cleanup.v1",
-        "deployment.application.lifecycle.v1", "deployment.handoff.managed-current-status.v1", "deployment.native-db.inspect.v1", "deployment.native-db.target.v1", "deployment.native-db.start.v1", "deployment.native-db.install.v1",
-        "deployment.native-db.prepare.v1", "deployment.native-db.initialize.v1", "deployment.native-db.resume.v1", "deployment.native-db.status.v1", "deployment.agent.helper.v1",
-        "deployment.model.command.v1", "deployment.model.command.status.v1", "deployment.agent.preparation.absence.v1", "deployment.agent.preparation.partial-observation.v1",
-        "deployment.agent.toolchain.dependencies.v1", "deployment.agent.toolchain.resolve.v1", "deployment.agent.toolchain.prepare.v1", "deployment.agent.toolchain.bind.v1",
-        "deployment.agent.publication-recovery.readiness.v1", "deployment.agent.publication-recovery.install.v1", "deployment.agent.publication-recovery.guarded-first-rollback.v1",
-        "deployment.agent.publication-recovery-diagnostic.v1", "deployment.agent.publication-recovery-preflight.v2", "deployment.agent.publication-continuation.v1", "deployment.agent.publication-contract-diagnostic.v1", "deployment.agent.publication-contract-diagnostic.followup.v1", "deployment.agent.publication-correction.v1", "deployment.agent.isolation.preflight.v1",
-        "deployment.agent.toolchain.controller.readiness.v1", "deployment.agent.toolchain.controller.install.v1", "deployment.agent.toolchain.controller.prepare.v1", "deployment.agent.toolchain.controller.bind.v1");
-
     /** Prevents construction. / 禁止构造。 */
     private DeploymentFixedCommandApproval() {
     }
@@ -48,7 +32,7 @@ public final class DeploymentFixedCommandApproval {
      * @param intent actual original action / 实际原动作
      * @return whether its fixed operation is registered / 固定动作是否已登记 */
     public static boolean registered(ActionIntent intent) {
-        return intent.semantics().filter(value -> OPERATIONS.contains(value.operation())).isPresent();
+        return intent.semantics().filter(value -> DeploymentFixedCommandProtocol.registeredOperation(value.operation())).isPresent();
     }
 
     /** Validates the exact request before exposing complete executable evidence to independent AI. / 向独立AI提供完整可执行依据前校验精确请求。
@@ -93,8 +77,17 @@ public final class DeploymentFixedCommandApproval {
                                                   CommandRequest request, TaskContext task, String revision, String policy,
                                                   boolean rememberAuthorization, DeploymentCommandReviewModel model,
                                                   DeploymentCurrentCommandEvidence currentEvidence, boolean trustedInstructions) throws ApiException {
+        return approve(context, host, intent, request, task, revision, policy, rememberAuthorization, model, currentEvidence,
+            trustedInstructions, new DeploymentFixedCommandProtocol(context));
+    }
+
+    static OperationResult<ApprovalGrant> approve(ModContext context, InteractionService host, ActionIntent intent,
+                                                  CommandRequest request, TaskContext task, String revision, String policy,
+                                                  boolean rememberAuthorization, DeploymentCommandReviewModel model,
+                                                  DeploymentCurrentCommandEvidence currentEvidence, boolean trustedInstructions,
+                                                  DeploymentCommandProtocol protocol) throws ApiException {
         DeploymentAuthorizationPolicy.requireAllowed(policy, rememberAuthorization);
-        if (!registered(intent) || !intent.type().equals("platform.ssh.execute") || intent.serverIds().size() != 1)
+        if (!protocol.registered(intent) || !intent.type().equals("platform.ssh.execute") || intent.serverIds().size() != 1)
             throw denied(task, "DEPLOYMENT_COMMAND_UNREGISTERED");
         var actual = RemoteActions.command(new ServerId(intent.serverIds().getFirst()), intent.revision(), request);
         if (!actual.type().equals(intent.type()) || !actual.serverIds().equals(intent.serverIds())
@@ -105,12 +98,9 @@ public final class DeploymentFixedCommandApproval {
         diagnostic.put("task", task.id().toString());
         diagnostic.put("validationStage", "evidence");
         try {
-            if (intent.semantics().orElseThrow().operation().equals("deployment.agent.isolation.preflight.v1"))
-                DeploymentCommandStaticGate.requireIsolationAllowed(request,
-                    gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task));
-            else DeploymentCommandStaticGate.requireFixedAllowed(request.script());
-            var facts = new LinkedHashMap<String, Object>(DeploymentCommandEvidence.facts(intent, request,
-                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task), context, task));
+            var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
+            String protocolSnapshot = DeploymentAiJson.facts(protocol.inspect(intent, request, layout, task), 1048576);
+            var facts = new LinkedHashMap<String, Object>(protocolFacts(protocolSnapshot));
             facts.put("authorizationPolicy", policy);
             facts.put("effectSummary", intent.effectSummary());
             facts.put("presentationLocale", context.ui().environment().locale().toLanguageTag());
@@ -151,12 +141,12 @@ public final class DeploymentFixedCommandApproval {
             currentEvidence.reviewed(intent, request, task, review);
             requireRoute(context, task, revision);
             currentEvidence.verify(intent, request, task);
-            verifyReceiptStatus(context, task, intent, request, facts);
+            verifyProtocol(context, protocol, intent, request, layout, task, protocolSnapshot);
             diagnostic.put("validationStage", "rememberAuthorization");
             var grant = DeploymentAuthorizationPolicy.authorize(host, intent, Optional.of(request), task, policy, rememberAuthorization, review);
             requireRoute(context, task, revision);
             currentEvidence.verify(intent, request, task);
-            verifyReceiptStatus(context, task, intent, request, facts);
+            verifyProtocol(context, protocol, intent, request, layout, task, protocolSnapshot);
             return grant;
         } catch (DeploymentAiJson.CapabilityOutcomeException outcome) {
             return new OperationResult<>(outcome.outcome(), Optional.empty(), outcome.problem());
@@ -171,13 +161,32 @@ public final class DeploymentFixedCommandApproval {
         }
     }
 
-    private static void verifyReceiptStatus(ModContext context, TaskContext task, ActionIntent intent,
-                                            CommandRequest request, Map<String, Object> facts) throws ApiException, IOException {
-        if (intent.semantics().orElseThrow().operation().equals("deployment.model.command.status.v1")
-            && !java.util.Objects.equals(facts.get("modelCommandReceiptStatus"),
-            gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.receiptStatusEvidence(context, task,
-                intent, request, gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task))))
-            throw new IOException("Original model command receipt evidence changed");
+    private static void verifyProtocol(ModContext context, DeploymentCommandProtocol protocol, ActionIntent intent, CommandRequest request,
+                                       gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout,
+                                       TaskContext task, String reviewedSnapshot) throws ApiException, IOException {
+        var currentLayout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
+        if (!layout.equals(currentLayout)) throw new IOException("Original command remote layout changed");
+        String current = DeploymentAiJson.facts(protocol.inspect(intent, request, currentLayout, task), 1048576);
+        if (!reviewedSnapshot.equals(current)) throw new IOException("Original command protocol evidence changed");
+    }
+
+    /** Detaches review input from the protocol's mutable object graph; the canonical string remains the comparison identity. */
+    private static Map<String, Object> protocolFacts(String snapshot) throws IOException {
+        var decoded = new com.fasterxml.jackson.databind.ObjectMapper().readValue(snapshot,
+            new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        var result = new LinkedHashMap<String, Object>();
+        decoded.forEach((key, value) -> result.put(key, immutableValue(value)));
+        return java.util.Collections.unmodifiableMap(result);
+    }
+
+    private static Object immutableValue(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            var result = new LinkedHashMap<String, Object>();
+            map.forEach((key, item) -> result.put((String) key, immutableValue(item)));
+            return java.util.Collections.unmodifiableMap(result);
+        }
+        if (value instanceof java.util.List<?> list) return list.stream().map(DeploymentFixedCommandApproval::immutableValue).toList();
+        return value;
     }
 
     /** Requires both original model roles without silently adopting a new route. / 要求两个原模型角色，不默默采用新路由。

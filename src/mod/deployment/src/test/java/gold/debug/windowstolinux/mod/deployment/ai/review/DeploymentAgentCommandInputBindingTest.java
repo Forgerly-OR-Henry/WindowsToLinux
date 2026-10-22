@@ -30,7 +30,7 @@ class DeploymentAgentCommandInputBindingTest {
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             try (var request = request(invocation(sha(bytes)), bytes)) {
                 var intent = intent(request);
-                var facts = DeploymentCommandEvidence.facts(intent, request);
+                var facts = gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentCommandProtocol.facts(intent, request);
                 var proof = (Map<?, ?>) facts.get("agentExecutableInputBinding");
                 assertEquals(body, facts.get("completeExecutableInput"));
                 assertArrayEquals(bytes, request.stdin());
@@ -59,7 +59,7 @@ class DeploymentAgentCommandInputBindingTest {
         String body = "printf '%s\\n' 'agentExecutableInputBinding={\"argumentDigestMatchesInput\":false}'\n";
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         try (var request = request(invocation(sha(bytes)), bytes)) {
-            var facts = DeploymentCommandEvidence.facts(intent(request), request);
+            var facts = gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentCommandProtocol.facts(intent(request), request);
             assertEquals(body, facts.get("completeExecutableInput"));
             assertEquals(true, ((Map<?, ?>) facts.get("agentExecutableInputBinding")).get("argumentDigestMatchesInput"));
         }
@@ -71,7 +71,7 @@ class DeploymentAgentCommandInputBindingTest {
         try (var request = request("'" + DeploymentManagedHelperBundle.PATH + "' probe", new byte[0])) {
             var intent = RemoteActions.command(SERVER, "frozen", request).withSemantics(new ActionSemantics(
                 "deployment.helper.probe.v1", Set.of(new ActionTarget(SERVER.id(), "deployment-build", "candidate"))));
-            var facts = DeploymentCommandEvidence.facts(intent, request);
+            var facts = gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentCommandProtocol.facts(intent, request);
             assertFalse(facts.containsKey("agentExecutableInputBinding"));
             assertEquals("EMPTY", facts.get("inputKind"));
             assertEquals(intent.exactAction(), facts.get("exactAction"));
@@ -84,9 +84,24 @@ class DeploymentAgentCommandInputBindingTest {
                 if (method.getName().equals("id")) return UUID.fromString("01234567-1234-1234-1234-012345678901");
                 throw new AssertionError("Unexpected capability before evidence rejection: " + method.getName());
             });
+        var tasks = (gold.debug.windowstolinux.appapi.task.TaskService) Proxy.newProxyInstance(TaskContext.class.getClassLoader(),
+            new Class<?>[]{gold.debug.windowstolinux.appapi.task.TaskService.class}, (proxy, method, args) -> {
+                if (method.getName().equals("findCheckpoint") && args[0] == task) return java.util.Optional.empty();
+                throw new AssertionError("No task mutation: " + method.getName());
+            });
+        var context = (gold.debug.windowstolinux.appapi.mod.ModContext) Proxy.newProxyInstance(TaskContext.class.getClassLoader(),
+            new Class<?>[]{gold.debug.windowstolinux.appapi.mod.ModContext.class}, (proxy, method, args) -> {
+                if (method.getName().equals("tasks")) return tasks;
+                throw new AssertionError("No model, host or remote capability: " + method.getName());
+            });
+        DeploymentCommandReviewModel model = (instruction, facts, intent, request, revision, supplied) -> {
+            throw new AssertionError("Invalid executable cannot reach the model");
+        };
         try (var request = request(invocation, input)) {
             var rejected = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approve(
-                null, null, intent(request), request, task, "frozen", "AUTOMATIC", false, null));
+                context, null, intent(request), request, task, "frozen", "AUTOMATIC", false, model,
+                DeploymentCurrentCommandEvidence.NONE, true,
+                new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentCommandProtocol(context, Map::of)));
             assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", rejected.problem().eventCode());
             assertEquals("evidence", rejected.problem().context().get("validationStage"));
         }

@@ -15,6 +15,9 @@ import java.sql.DriverManager;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Base64;
+import java.util.TreeMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -58,6 +61,13 @@ import gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract;
+import gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainInputEvidence;
+import gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
@@ -66,7 +76,7 @@ import gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget;
 import gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolSchemas;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
 import gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner;
-import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException;
+import gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentAlternativeRequiredException;
 import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
 import gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentPlan;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings;
@@ -103,6 +113,851 @@ class DeploymentAgentApprovalTest {
     @TempDir
     Path root;
 
+    private static com.fasterxml.jackson.databind.JsonNode currentReview(AiRequest request) throws IOException {
+        var dynamic = JSON.readTree(request.messages().getLast().text());
+        if (!dynamic.path("currentEvidence").asText().equals("FIRST_USER_MESSAGE_AFTER_BASE_SYSTEM")) return dynamic;
+        var fixed = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(request.messages().get(1).text());
+        fixed.setAll((com.fasterxml.jackson.databind.node.ObjectNode) dynamic);
+        return fixed;
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void boundReceiptStatusReachesNativeReviewBeforeItsNewGrant(boolean approve) throws Exception {
+        var layout = DeploymentRemoteLayout.original();
+        int[] calls = {0};
+        int totalGrants = 0;
+        String[] binding = {""}, exact = {""};
+        for (int attempt = 0; attempt < 2; attempt++) {
+            var f = new Frame();
+            var scope = f.scope(true);
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scope.interaction();
+            UUID operation = UUID.randomUUID();
+            String body = "b".repeat(64);
+            var journal = JSON.createObjectNode().put("version", 1).put("task", f.task.id().toString())
+                .put("server", SERVER.id()).put("fingerprint", "verified-target").put("modelRevision", REVISION);
+            journal.putArray("commands").addObject().put("operation", operation.toString()).put("body", body)
+                .put("seconds", 10).put("phase", "DISPATCHED");
+            f.tasks.beginCheckpoint(f.task, DeploymentModelCommandRunner.KEY, journal.toString());
+            String script = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity
+                .receiptStatus(f.task.id(), operation, body, layout);
+            int grantsBefore = f.grants.size();
+            f.model = request -> {
+                var current = currentReview(request);
+                var evidence = current.at("/currentRequest/modelCommandReceiptStatus");
+                assertEquals(f.task.id().toString(), evidence.path("task").asText());
+                assertEquals(operation.toString(), evidence.path("operation").asText());
+                assertEquals(body, evidence.path("bodySha256").asText());
+                assertEquals("DISPATCHED", evidence.path("localPhase").asText());
+                assertEquals(REVISION, evidence.path("businessRevision").asText());
+                assertFalse(evidence.path("remoteObserved").asBoolean());
+                assertEquals("NONE", evidence.path("authority").asText());
+                assertTrue(evidence.at("/outputContract/meaning").asText().contains("not a remote observation or approval"));
+                assertEquals(script, current.at("/executableInput/script/text").asText());
+                assertEquals("EMPTY", current.at("/currentRequest/inputKind").asText());
+                assertFalse(current.at("/currentRequest").has("modelCommand"));
+                assertEquals(grantsBefore, f.grants.size());
+                assertNotEquals(binding[0], current.path("reviewBinding").asText());
+                assertNotEquals(exact[0], current.at("/currentRequest/exactAction").toString());
+                binding[0] = current.path("reviewBinding").asText();
+                exact[0] = current.at("/currentRequest/exactAction").toString();
+                calls[0]++;
+                return List.of(call("submit_result", JSON.readValue(approve ? APPROVE : DENY, Map.class)));
+            };
+            try (var request = new CommandRequest(script, new byte[0], Duration.ofSeconds(30), 1024)) {
+                var intent = f.intent(request, "deployment.model.command.status.v1");
+                if (approve) {
+                    assertEquals(TaskResult.SUCCEEDED, review.approveCommand(intent, request, f.task).outcome());
+                    assertEquals(grantsBefore + 1, f.grants.size());
+                    assertEquals(intent.exactAction(), f.grants.getLast());
+                } else {
+                    var failure = assertThrows(ApiException.class, () -> review.approveCommand(intent, request, f.task));
+                    assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", failure.problem().eventCode());
+                    assertEquals(grantsBefore, f.grants.size());
+                }
+                try (var changed = new CommandRequest(script + "\nprintf extra", new byte[0], Duration.ofSeconds(30), 1024)) {
+                    assertThrows(ApiException.class, () -> review.approveCommand(f.intent(changed, "deployment.model.command.status.v1"), changed, f.task));
+                    assertEquals(attempt + 1, calls[0], "An unbound status script cannot reach the model or receive a grant");
+                }
+            }
+            totalGrants += f.grants.size();
+            assertFalse(f.checkpoint.snapshot().released());
+            assertEquals("DISPATCHED", JSON.readTree(f.checkpoint.snapshot().payload()).path("commands").get(0).path("phase").asText());
+        }
+        assertEquals(2, calls[0]);
+        assertEquals(approve ? 2 : 0, totalGrants);
+        // Frame has no Linux capability: these are native reviews and fresh host grants, not remote execution.
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void agentOpenPhaseUsesSourcePinnedOriginalFrameAndEveryChangedActionNeedsANewReview(boolean customLayout) throws Exception {
+        var f = new Frame();
+        var layout = customLayout ? inlineLayout() : DeploymentRemoteLayout.original();
+        DeploymentConfigCapture.remoteLayout(f.tasks, f.task, layout);
+        var agent = openingAgent(f);
+        var scope = new DeploymentCommandReviewScope(f.context, f.host, f.task, "AUTOMATIC", false, () -> REVISION,
+            null, DeploymentCurrentCommandEvidence.NONE, () -> agent, DeploymentCurrentCommandEvidence.NONE, agent.commandProtocol());
+        var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scope.interaction();
+        int[] calls = {0};
+        String[] fixed = {""}, policy = {""}, previousBinding = {""};
+        for (String application : List.of("first-app", "second-app")) {
+            var workspace = new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace(application, "b".repeat(64), layout);
+            String script = openingScript(f, layout, application, f.task.id().toString(), "b".repeat(64));
+            int before = f.grants.size();
+            f.model = request -> {
+                var current = currentReview(request);
+                var phase = current.at("/currentRequest/agentOpenPhaseEvidence");
+                assertEquals("BEFORE_PROTECTED_SOURCE_CREATION", phase.path("phase").asText());
+                assertFalse(phase.path("remoteObserved").asBoolean());
+                assertFalse(phase.at("/postconditions/projectBodyExecuted").asBoolean());
+                assertTrue(phase.at("/postconditions/buildEntry").asText().startsWith("Not called by agent-open"));
+                assertEquals("NONE", phase.path("authority").asText());
+                assertEquals(layout.digest(), phase.at("/implementation/layoutSha256").asText());
+                assertEquals("9a8faa704f43955e7f13ee69cf2f8ad665b744d856790b0ef92a13e838b90aba", phase.at("/implementation/reviewedDefaultHelperSha256").asText());
+                assertEquals(workspace.candidateId(), phase.at("/arguments/candidate").asText());
+                assertEquals("b".repeat(64), phase.at("/arguments/compressedArchiveSha256").asText());
+                assertEquals(f.task.id().toString(), phase.at("/arguments/task").asText());
+                assertEquals(workspace.candidateRoot(), phase.at("/paths/candidateRoot").asText());
+                assertEquals(120, phase.at("/request/timeoutSeconds").asLong());
+                assertEquals(4096, phase.at("/request/outputLimitBytes").asLong());
+                assertEquals(0, phase.at("/request/stdinBytes").asLong());
+                assertEquals(script, current.at("/executableInput/script/text").asText());
+                assertEquals("EMPTY", current.at("/currentRequest/inputKind").asText());
+                assertFalse(current.has("CURRENT_SOURCE"));
+                for (var value : phase.path("remoteState")) assertEquals("UNKNOWN", value.asText());
+                assertEquals(before, f.grants.size());
+                assertTrue(request.messages().getFirst().text().contains("not a remote observation"));
+                assertFalse(JSON.readTree(request.messages().getLast().text()).has("agentOpenPhaseEvidence"));
+                if (calls[0]++ % 2 == 0) {
+                    assertNotEquals(previousBinding[0], current.path("reviewBinding").asText());
+                    previousBinding[0] = current.path("reviewBinding").asText();
+                    fixed[0] = request.messages().get(1).text();
+                    if (!policy[0].isEmpty()) assertEquals(policy[0], request.messages().getFirst().text());
+                    policy[0] = request.messages().getFirst().text();
+                    return List.of(call("contract", Map.of("offset", 0, "limit", 8000)));
+                }
+                assertEquals(fixed[0], request.messages().get(1).text());
+                assertEquals(policy[0], request.messages().getFirst().text());
+                return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            };
+            try (var request = new CommandRequest(script, new byte[0], Duration.ofMinutes(2), 4096)) {
+                assertEquals(TaskResult.SUCCEEDED, review.approveCommand(openingIntent(f, request), request, f.task).outcome());
+            }
+            assertEquals(before + 1, f.grants.size());
+        }
+        assertEquals(4, calls[0]);
+        assertNotEquals(f.grants.getFirst(), f.grants.getLast());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"append", "guard", "pin", "task", "archive", "candidate", "targets", "layout", "stdin", "operation", "verb", "exactAction", "field", "timeout", "output"})
+    void agentOpenPhaseRejectsChangedOriginalBindingsWithoutGrantingOrInventingObservations(String changed) throws Exception {
+        var f = new Frame();
+        var layout = DeploymentRemoteLayout.original();
+        DeploymentConfigCapture.remoteLayout(f.tasks, f.task, changed.equals("layout") ? inlineLayout() : layout);
+        String script = openingScript(f, layout, "first-app", changed.equals("task") ? UUID.randomUUID().toString() : f.task.id().toString(),
+            changed.equals("archive") ? "c".repeat(64) : "b".repeat(64));
+        if (changed.equals("append")) script += "\nprintf extra";
+        if (changed.equals("guard")) script = script.replace("-perm /022", "-perm /000");
+        if (changed.equals("pin"))
+            script = script.replace("9a8faa704f43955e7f13ee69cf2f8ad665b744d856790b0ef92a13e838b90aba", "a".repeat(64));
+        if (changed.equals("candidate"))
+            script = script.replace("first-app-bbbbbbbbbbbbbbbb", "first-app-cccccccccccccccc");
+        if (changed.equals("verb")) script = script.replace("'agent-open'", "'agent-read'");
+        try (var request = new CommandRequest(script, changed.equals("stdin") ? new byte[]{1} : new byte[0],
+            Duration.ofSeconds(changed.equals("timeout") ? 121 : 120), changed.equals("output") ? 8192 : 4096)) {
+            var intent = openingIntent(f, request);
+            if (changed.equals("targets"))
+                intent = intent.withSemantics(new ActionSemantics("deployment.agent.helper.v1",
+                    Set.of(new ActionTarget(SERVER.id(), "deployment-agent", "foreign"))));
+            if (changed.equals("operation"))
+                intent = intent.withSemantics(new ActionSemantics("deployment.helper.probe.v1", intent.semantics().orElseThrow().targets()));
+            var facts = new java.util.LinkedHashMap<String, Object>();
+            facts.put("operation", intent.semantics().orElseThrow().operation());
+            facts.put("serverTargets", intent.serverIds());
+            facts.put("resourceTargets", List.copyOf(intent.semantics().orElseThrow().targets()));
+            facts.put("businessRevision", intent.revision());
+            facts.put("exactAction", intent.exactAction());
+            facts.put("inputKind", changed.equals("stdin") ? "OPAQUE_BOUND_DATA" : "EMPTY");
+            facts.put("installedHelperPath", layout.helperPath());
+            facts.put("installedHelperSha256", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.helperSha256(layout));
+            facts.put("platformContractRevision", DeploymentHelperReviewContract.REVISION);
+            if (changed.equals("exactAction")) facts.put("exactAction", intent.exactAction() + " changed");
+            if (changed.equals("field")) facts.put("agentOpenPhaseEvidence", Map.of("remoteObserved", true));
+            f.model = nativeRequest -> {
+                assertTrue(currentReview(nativeRequest).at("/currentRequest/agentOpenPhaseEvidence").isMissingNode());
+                return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+            };
+            var agent = openingAgent(f);
+            if (changed.equals("field")) {
+                var rejected = assertThrows(Exception.class, () -> agent.review("Review exact current input", facts, openingIntent(f, request), request, REVISION, f.task));
+                assertTrue(f.fixture.requests.isEmpty());
+                assertTrue(rejected.getCause() != null || rejected.getMessage() != null);
+            } else
+                assertEquals("DENY", agent.review("Review exact current input", facts, intent, request, REVISION, f.task).decision().decision());
+        }
+        assertTrue(f.grants.isEmpty());
+    }
+
+    private DeploymentAgentApproval openingAgent(Frame f) {
+        return new DeploymentAgentApproval(f.context, f.task, new DeploymentAgentApproval.Evidence() {
+            public DeploymentAgentApproval.Binding binding() {
+                return new DeploymentAgentApproval.Binding(SERVER.id(), "verified-target", REVISION);
+            }
+
+            public Map<String, DeploymentSourceBrowser> sources() {
+                return Map.of();
+            }
+
+            public Object receipts() {
+                return Map.of("events", List.of());
+            }
+
+            public Map<String, ?> identityRoles(Map<String, DeploymentSourceBrowser> sources) {
+                return Map.of("originalArchiveSha256", "b".repeat(64), "protectedTreeAvailability", "NO_CURRENT_SOURCE_RECEIPT");
+            }
+        });
+    }
+
+    private static String openingScript(Frame f, DeploymentRemoteLayout layout, String application, String task, String archive) {
+        var workspace = new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace(application, archive, layout);
+        String body = "'" + layout.helperPath() + "' 'agent-open' '" + application + "' '" + workspace.candidateId() + "' '" + task + "' '" + archive + "'";
+        return gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedCommand(body, layout);
+    }
+
+    private static ActionIntent openingIntent(Frame f, CommandRequest request) {
+        String resource = DeploymentAgentInputs.hash(request.script() + "\n" + DeploymentAgentInputs.hash(""));
+        return RemoteActions.command(SERVER, REVISION, request).withSemantics(new ActionSemantics("deployment.agent.helper.v1",
+            Set.of(new ActionTarget(SERVER.id(), "deployment-agent", resource))));
+    }
+
+    @Test
+    void approvalSkillResultsReferenceOneActiveSystemBodyWithoutChangingOtherRoles() throws Exception {
+        var f = new Frame();
+        String document;
+        try (var stream = gold.debug.windowstolinux.mod.deployment.service.agent.skill.DeploymentAgentSkills.class.getResourceAsStream("approval-context/SKILL.md")) {
+            document = new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+        }
+        String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(document.getBytes(StandardCharsets.UTF_8)));
+        String system = gold.debug.windowstolinux.mod.deployment.service.agent.skill.DeploymentAgentSkills.system(
+            gold.debug.windowstolinux.mod.deployment.service.agent.skill.DeploymentAgentSkills.Role.APPROVAL, List.of("approval-context"));
+        int[] round = {0};
+        f.model = request -> {
+            int current = round[0]++;
+            assertTrue(request.messages().getFirst().text().contains("submit_result MUST be the only call"));
+            if (current == 0) return List.of(call("skill", Map.of("id", "approval-context")));
+            if (current <= 2) {
+                var result = lastToolResult(request);
+                var loaded = JSON.readTree(result.text()).at("/value/skill");
+                assertFalse(result.error());
+                assertFalse(loaded.has("content"));
+                assertEquals(f.task.id().toString(), loaded.path("task").asText());
+                assertEquals("APPROVAL", loaded.path("role").asText());
+                assertEquals("approval-context", loaded.path("id").asText());
+                assertEquals(digest, loaded.path("documentSha256").asText());
+                assertEquals("REGISTERED_DOCUMENT_UTF8_LF", loaded.path("documentRepresentation").asText());
+                assertEquals("CURRENT_CONTEXT", loaded.path("activation").asText());
+                assertEquals("ACTIVATED_PRODUCT_SKILL_SYSTEM_MESSAGE_IN_NEXT_REQUEST", loaded.path("bodyLocation").asText());
+                assertFalse(result.text().contains(system));
+                assertEquals(1, request.messages().stream().filter(message -> message.role() == AiRole.SYSTEM && message.text().equals(system)).count());
+                assertTrue(request.messages().stream().filter(message -> message.role() != AiRole.SYSTEM).noneMatch(message -> message.text().contains(system)));
+                if (current == 1) return List.of(call("skill", Map.of("id", "approval-context")));
+                return List.of(call("contract", Map.of("offset", 0, "limit", 200)));
+            }
+            assertEquals("BASE_SYSTEM_CURRENT_PRODUCT_CONTRACT", JSON.readTree(lastToolResult(request).text()).at("/value/bodyLocation").asText());
+            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+        };
+        assertEquals("DENY", f.review(Map.of()).decision().decision());
+        assertEquals(4, round[0]);
+        assertTrue(f.grants.isEmpty());
+        var ordinary = new gold.debug.windowstolinux.mod.deployment.service.agent.skill.DeploymentAgentSkills(f.task,
+            gold.debug.windowstolinux.mod.deployment.service.agent.skill.DeploymentAgentSkills.Role.DEPLOYMENT);
+        assertTrue(((String) ordinary.read("publication-verification", f.task).get("content")).startsWith("---\n"));
+        assertThrows(IllegalArgumentException.class, () -> ordinary.read("approval-context", f.task));
+        f.cancelled.set(true);
+        assertThrows(IllegalArgumentException.class, () -> ordinary.read("publication-verification", f.task));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2, 4})
+    void independentEvidenceReadsBatchWithoutMixingTheFinalVerdict(int batchSize) throws Exception {
+        var f = new Frame();
+        String body = "PUBLIC_BOUND_EXECUTABLE\n" + "x".repeat(10000);
+        int[] offset = {0}, generations = {0};
+        f.model = request -> {
+            var current = currentReview(request);
+            int remaining = current.path("remainingTaskTools").asInt();
+            assertEquals(Math.min(4, remaining), current.path("maxCallsThisBatch").asInt());
+            assertTrue(current.path("submitResultMustBeAlone").asBoolean());
+            assertTrue(request.tools().stream().filter(tool -> tool.name().equals("submit_result")).findFirst().orElseThrow().description().contains("ONLY call"));
+            if (generations[0]++ > 0) {
+                var results = request.messages().stream().flatMap(message -> message.toolResult().stream()).filter(result -> !result.error()).toList();
+                assertTrue(results.size() >= Math.min(batchSize, (body.length() + 2499) / 2500));
+                assertEquals(results.size(), results.stream().map(AiToolResult::callId).distinct().count());
+            }
+            if (offset[0] == body.length()) return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            var calls = new ArrayList<AiToolCall>();
+            for (int i = 0; i < batchSize && offset[0] < body.length(); i++) {
+                calls.add(call("request", Map.of("part", "stdin", "offset", offset[0], "limit", 2500)));
+                offset[0] = Math.min(body.length(), offset[0] + 2500);
+            }
+            return calls;
+        };
+        assertEquals("APPROVE", f.review(Map.of("completeExecutableInput", body)).decision().decision());
+        assertEquals(((body.length() + 2499) / 2500 + batchSize - 1) / batchSize + 1, generations[0]);
+        assertTrue(f.grants.isEmpty(), "Only the independent decision was exercised, no host grant or dispatch is implied");
+    }
+
+    @Test
+    void sourceNavigationUsesCurrentRevisionWithoutClaimingExecutableDelivery() throws Exception {
+        var f = new Frame();
+        Files.createDirectories(root.resolve("api/deep"));
+        Files.writeString(root.resolve("api/deep/main.txt"), "marker " + "x".repeat(10000) + "\n");
+        f.sources.put("api", new DeploymentSourceBrowser(root, REVISION));
+        int[] round = {0};
+        f.model = request -> {
+            int current = round[0]++;
+            if (current == 0) return List.of(
+                call("source_list", Map.of("component", "api", "sourceRevision", REVISION, "subject", "", "offset", 0, "limit", 100)),
+                call("source_search", Map.of("component", "api", "sourceRevision", REVISION, "subject", "marker", "offset", 0, "line", 0, "limit", 100)));
+            if (current == 1) {
+                var results = request.messages().stream().flatMap(message -> message.toolResult().stream()).toList();
+                assertEquals(2, results.size());
+                for (var result : results) {
+                    assertFalse(result.error());
+                    assertTrue(JSON.readTree(result.text()).at("/value/metadataOnly").asBoolean());
+                    assertFalse(result.text().contains("sourceSha256"));
+                }
+                assertTrue(results.stream().anyMatch(result -> result.text().contains("api/deep/main.txt")));
+                return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            }
+            assertTrue(lastToolResult(request).text().contains("EXECUTABLE_INPUT_NOT_DELIVERED"));
+            assertTrue(currentReview(request).at("/reviewMemory/deliveredRanges/entries").isEmpty());
+            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+        };
+        assertEquals("DENY", f.review(Map.of("completeExecutableInput", "x".repeat(10000))).decision().decision());
+        assertEquals(3, round[0]);
+        assertTrue(f.grants.isEmpty());
+    }
+
+    @Test
+    void receiptNavigationBindsFrozenEventsAndPreservesRawObservations() throws Exception {
+        var f = new Frame();
+        var events = new ArrayList<DeploymentAgentActionLog.Event>();
+        for (int i = 1; i <= 135; i++)
+            events.add(new DeploymentAgentActionLog.Event(i, "COMMAND_RESULT", "action-" + i,
+                i == 1 ? "\u0001".repeat(4096) : List.of("FAILED", "DENY", "UNKNOWN").get(i % 3)));
+        f.retainedReceipts = Map.of("events", events, "modelCommandReceipt", Map.of("commands", List.of(Map.of("phase", "DISPATCHED", "outcome", "UNKNOWN"))));
+        var ids = new HashSet<Long>();
+        var eventBody = new StringBuilder();
+        int[] stage = {0}, nextIndex = {0}, nextBody = {0};
+        f.model = request -> {
+            var fixed = currentReview(request);
+            String binding = fixed.path("reviewBinding").asText(), snapshot = fixed.path("receiptSha256").asText();
+            if (stage[0] > 0) {
+                var result = lastToolResult(request);
+                assertFalse(result.error());
+                var value = JSON.readTree(result.text()).path("value");
+                if (stage[0] == 1) {
+                    assertEquals(nextIndex[0], value.path("offset").asInt());
+                    assertEquals(135, value.path("total").asInt());
+                    assertTrue(value.path("metadataOnly").asBoolean());
+                    assertTrue(value.at("/modelCommandReceipt/available").asBoolean());
+                    for (var row : value.path("events")) {
+                        assertTrue(ids.add(row.path("eventId").longValue()));
+                        assertEquals("UNKNOWN", row.path("resource").asText());
+                        assertEquals("UNKNOWN", row.path("status").asText());
+                        assertFalse(row.has("detail"));
+                    }
+                    nextIndex[0] = value.path("next").asInt();
+                    if (!value.path("hasMore").asBoolean()) stage[0] = 2;
+                } else if (stage[0] == 2) {
+                    assertEquals(1, value.path("eventId").longValue());
+                    assertEquals(nextBody[0], value.path("offset").asInt());
+                    assertEquals(binding, value.path("reviewBinding").asText());
+                    assertEquals(snapshot, value.path("receiptSha256").asText());
+                    eventBody.append(value.path("text").asText());
+                    nextBody[0] = value.path("next").asInt();
+                    if (!value.path("hasMore").asBoolean()) stage[0] = 3;
+                } else if (stage[0] == 3) {
+                    assertEquals(135, value.path("eventId").longValue());
+                    assertFalse(value.path("hasMore").asBoolean());
+                    var selected = JSON.readTree(value.path("text").asText());
+                    assertEquals(JSON.readTree(JSON.writeValueAsString(events.getLast())), selected);
+                    assertEquals("FAILED", selected.path("detail").asText());
+                    stage[0] = 4;
+                } else if (stage[0] == 4) {
+                    assertTrue(value.path("text").asText().contains("modelCommandReceipt"));
+                    stage[0] = 5;
+                }
+            }
+            if (stage[0] <= 1) {
+                stage[0] = 1;
+                return List.of(call("receipt_index", Map.of("reviewBinding", binding, "receiptSha256", snapshot, "offset", nextIndex[0], "limit", 100)));
+            }
+            if (stage[0] == 2)
+                return List.of(call("receipt_event", Map.of("reviewBinding", binding, "receiptSha256", snapshot, "eventId", 1L, "offset", nextBody[0], "limit", 4000)));
+            if (stage[0] == 3)
+                return List.of(call("receipt_event", Map.of("reviewBinding", binding, "receiptSha256", snapshot, "eventId", 135L, "offset", 0, "limit", 4000)));
+            if (stage[0] == 4) {
+                var original = new ObjectMapper().enable(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS).valueToTree(f.retainedReceipts);
+                String raw = JSON.writeValueAsString(original);
+                return List.of(call("receipts", Map.of("offset", Math.max(0, raw.length() - 600), "limit", 600)));
+            }
+            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+        };
+        assertEquals("DENY", f.review(Map.of()).decision().decision());
+        assertEquals(135, ids.size());
+        assertTrue(ids.contains(135L));
+        assertEquals(JSON.readTree(JSON.writeValueAsString(events.getFirst())), JSON.readTree(eventBody.toString()));
+        assertTrue(eventBody.length() > 8000, "The complete escaped original event was obtained without increasing a page");
+        assertTrue(f.grants.isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"BINDING", "SNAPSHOT", "EVENT", "EXTRA_TASK", "DUPLICATE"})
+    void receiptNavigationRejectsForeignSnapshotsAndAmbiguousEventIds(String invalid) throws Exception {
+        var f = new Frame();
+        var event = new DeploymentAgentActionLog.Event(9, "STATE", "task", "UNKNOWN");
+        f.retainedReceipts = Map.of("events", invalid.equals("DUPLICATE") ? List.of(event, event) : List.of(event), "modelCommandReceipt", Map.of());
+        int[] round = {0};
+        f.model = request -> {
+            if (round[0]++ == 0) {
+                var fixed = currentReview(request);
+                var args = new HashMap<String, Object>();
+                args.put("reviewBinding", invalid.equals("BINDING") ? "b".repeat(64) : fixed.path("reviewBinding").asText());
+                args.put("receiptSha256", invalid.equals("SNAPSHOT") ? "b".repeat(64) : fixed.path("receiptSha256").asText());
+                args.put("eventId", invalid.equals("EVENT") ? 100L : 9L);
+                args.put("offset", 0);
+                args.put("limit", 100);
+                if (invalid.equals("EXTRA_TASK")) args.put("task", UUID.randomUUID().toString());
+                return List.of(call("receipt_event", args));
+            }
+            assertTrue(lastToolResult(request).error());
+            assertFalse(lastToolResult(request).text().contains("action-"));
+            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+        };
+        if (invalid.equals("DUPLICATE")) {
+            assertThrows(DeploymentCommandReviewModel.Failure.class, () -> f.review(Map.of()));
+            assertEquals(1, round[0]);
+        } else assertEquals("DENY", f.review(Map.of()).decision().decision());
+        assertTrue(f.grants.isEmpty());
+    }
+
+    @Test
+    void fixedEvidenceSurvivesNotesSkillsAndAutonomousRereadsWithoutGrant() throws Exception {
+        var f = new Frame();
+        String original = "#COMPLETE_PRELOADED_PUBLIC_BODY\n" + "x".repeat(1600);
+        String[] stable = {null}, policy = {null}, binding = {null};
+        int[] round = {0}, initialRemaining = {0};
+        f.model = request -> {
+            var fixed = JSON.readTree(request.messages().get(1).text());
+            var dynamic = JSON.readTree(request.messages().getLast().text());
+            assertEquals(AiRole.USER, request.messages().get(1).role());
+            assertEquals(original, fixed.at("/executableInput/stdin/text").asText());
+            assertFalse(dynamic.has("currentRequest"));
+            assertFalse(dynamic.has("executableInput"));
+            assertEquals("FIRST_USER_MESSAGE_AFTER_BASE_SYSTEM", dynamic.path("currentEvidence").asText());
+            assertTrue(request.messages().stream().filter(message -> message.role() == AiRole.SYSTEM).noneMatch(message -> message.text().contains("MODEL_NOTE_HAS_NO_AUTHORITY")));
+            assertEquals(0, f.grants.size());
+            int current = round[0]++;
+            if (stable[0] == null) {
+                stable[0] = request.messages().get(1).text();
+                policy[0] = request.messages().getFirst().text();
+                binding[0] = fixed.path("reviewBinding").asText();
+                initialRemaining[0] = dynamic.path("remainingTaskTools").asInt();
+            }
+            if (current < 4) {
+                assertEquals(stable[0], request.messages().get(1).text());
+                assertEquals(policy[0], request.messages().getFirst().text());
+                assertEquals(1, request.messages().stream().filter(message -> message.text().equals(stable[0])).count());
+                assertFalse(request.messages().getLast().text().contains(original));
+                assertEquals(initialRemaining[0] - current, dynamic.path("remainingTaskTools").asInt());
+                for (var message : request.messages())
+                    if (message.role() == AiRole.USER && !message.text().equals(stable[0]))
+                        assertFalse(message.text().contains(original));
+            } else {
+                assertNotEquals(binding[0], fixed.path("reviewBinding").asText());
+                assertEquals("", dynamic.at("/reviewMemory/modelNotes/text").asText());
+            }
+            if (current == 0)
+                return List.of(call("save_review_notes", Map.of("reviewBinding", binding[0], "notes", "MODEL_NOTE_HAS_NO_AUTHORITY")));
+            if (current == 1) return List.of(call("skill", Map.of("id", "approval-context")));
+            if (current == 2) {
+                assertTrue(request.messages().stream().skip(2).filter(message -> message.role() == AiRole.SYSTEM).anyMatch(message -> message.text().contains("Trusted version-owned product skill approval-context")));
+                return List.of(call("request", Map.of("part", "stdin", "offset", 0, "limit", 8000)));
+            }
+            if (current == 3) {
+                assertEquals(original, JSON.readTree(lastToolResult(request).text()).at("/value/text").asText());
+                System.out.println("APP_FIXED_EVIDENCE_MEASUREMENT stableUtf8Bytes=" + stable[0].getBytes(StandardCharsets.UTF_8).length
+                    + " stablePrefixMessages=2 dynamicUtf8Bytes=" + request.messages().getLast().text().getBytes(StandardCharsets.UTF_8).length + " explicitAutonomousReread=1 stableEvidenceCopies=1");
+            }
+            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+        };
+        assertEquals("DENY", f.review(Map.of("completeExecutableInput", original)).decision().decision());
+        assertEquals("DENY", f.review(Map.of("completeExecutableInput", original)).decision().decision());
+        assertEquals(4, round[0], "CLOSED denial is not reopened by stable evidence or notes");
+        f.receipt = "NEW_ACTUAL_RECEIPT";
+        assertEquals("DENY", f.review(Map.of("completeExecutableInput", original)).decision().decision());
+        assertEquals(5, round[0]);
+        assertTrue(f.grants.isEmpty());
+    }
+
+    @Test
+    void independentNativeToolchainReviewReceivesDerivedInputAndTheSameApplicableContract() throws Exception {
+        for (String phase : List.of("prepare", "resolve")) {
+            var f = new Frame();
+            var layout = phase.equals("prepare") ? inlineLayout() : DeploymentRemoteLayout.original();
+            DeploymentConfigCapture.remoteLayout(f.tasks, f.task, layout);
+            String rule = DeploymentSkillResources.text(DeploymentAgentToolchainPrograms.class, "inline-program-review.md");
+            String contract = DeploymentHelperReviewContract.text(layout) + "\n" + rule;
+            int[] calls = {0};
+            try (var command = inlineCommand(phase, layout)) {
+                var intent = inlineIntent(phase, command, layout);
+                f.model = request -> {
+                    assertTrue(request.messages().stream().anyMatch(message -> message.role() == AiRole.SYSTEM
+                        && message.text().contains(contract)));
+                    if (calls[0]++ == 0) {
+                        var input = currentReview(request);
+                        var typed = input.path("currentRequest").path(DeploymentAgentToolchainInputEvidence.FIELD);
+                        assertEquals(phase, typed.path("phase").asText());
+                        assertEquals("d".repeat(64), typed.path("businessRevision").asText());
+                        assertNotEquals(REVISION, typed.path("businessRevision").asText());
+                        assertEquals("NODE", typed.path("profile").asText());
+                        assertEquals(layout.canonical(), typed.at("/originalRemoteLayout/canonical").asText());
+                        assertEquals(layout.digest(), typed.at("/originalRemoteLayout/sha256").asText());
+                        assertTrue(typed.path("inputMatchesRenderer").asBoolean());
+                        assertTrue(typed.path("launcherAndArgumentsMatch").asBoolean());
+                        assertTrue(typed.path("targetsMatchTypedArguments").asBoolean());
+                        assertEquals(DeploymentAgentInputs.hash(new String(command.stdin(), StandardCharsets.UTF_8)),
+                            typed.path("stdinSha256").asText());
+                        assertEquals(DeploymentAgentInputs.hash(intent.exactAction()), typed.path("exactActionSha256").asText());
+                        return List.of(call("contract", Map.of("offset", DeploymentHelperReviewContract.text(layout).length() + 1, "limit", 8000)));
+                    }
+                    assertEquals(rule.substring(0, Math.min(rule.length(), 8000)),
+                        JSON.readTree(lastToolResult(request).text()).at("/value/text").asText());
+                    return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+                };
+                var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+                var failure = assertThrows(ApiException.class, () -> review.approveCommand(intent, command, f.task));
+                assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", failure.problem().eventCode(), failure.problem().context() + " / " + failure.getCause());
+                assertThrows(ApiException.class, () -> review.approveCommand(intent, command, f.task));
+            }
+            assertEquals(2, calls[0], "A CLOSED denial is not automatically reopened");
+            assertTrue(f.grants.isEmpty());
+        }
+    }
+
+    @Test
+    void toolchainInputMismatchAndCallerMarkersFailBeforeNativeReviewOrGrant() throws Exception {
+        for (String mutation : List.of("body", "argv", "targets", "layout", "marker", "exactAction", "intentTargets", "request")) {
+            var f = new Frame();
+            DeploymentConfigCapture.remoteLayout(f.tasks, f.task, mutation.equals("layout") ? inlineLayout() : DeploymentRemoteLayout.original());
+            DeploymentCommandReviewModel model = (instructions, facts, intent, request, revision, task) -> {
+                var changed = JSON.valueToTree(facts);
+                var object = (com.fasterxml.jackson.databind.node.ObjectNode) changed;
+                switch (mutation) {
+                    case "body" ->
+                        object.put("completeExecutableInput", object.path("completeExecutableInput").asText() + "\n#changed");
+                    case "argv" ->
+                        object.put("exactAction", object.path("exactAction").asText().replace(" -I -S ", " -I "));
+                    case "targets" -> object.withArray("resourceTargets").remove(0);
+                    case "marker" ->
+                        object.putObject(DeploymentAgentToolchainInputEvidence.FIELD).put("inputMatchesRenderer", true);
+                    case "exactAction" -> object.put("exactAction", object.path("exactAction").asText() + "\n");
+                    case "intentTargets" ->
+                        intent = intent.withSemantics(new ActionSemantics(intent.semantics().orElseThrow().operation(),
+                            Set.of(new ActionTarget(SERVER.id(), "task", task.id().toString()))));
+                    default -> {
+                    }
+                }
+                Map<String, Object> supplied = JSON.convertValue(object, Map.class);
+                if (mutation.equals("request")) {
+                    try (var foreign = f.command("printf changed", "printf changed")) {
+                        return f.agent.review(instructions, supplied, intent, foreign, revision, task);
+                    }
+                }
+                return f.agent.review(instructions, supplied, intent, request, revision, task);
+            };
+            var scoped = new DeploymentCommandReviewScope(f.context, f.host, f.task, "AUTOMATIC", false, () -> REVISION,
+                null, DeploymentCurrentCommandEvidence.NONE, () -> model, DeploymentCurrentCommandEvidence.NONE, f.agent.commandProtocol());
+            try (var command = inlineCommand("prepare", DeploymentRemoteLayout.original())) {
+                var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scoped.interaction();
+                assertThrows(ApiException.class, () -> review.approveCommand(inlineIntent("prepare", command, DeploymentRemoteLayout.original()), command, f.task), mutation);
+            }
+            assertTrue(f.fixture.requests.isEmpty(), mutation);
+            assertTrue(f.grants.isEmpty(), mutation);
+        }
+        var arbitrary = new Frame();
+        arbitrary.model = request -> {
+            assertTrue(request.messages().stream().filter(message -> message.role() == AiRole.SYSTEM)
+                .noneMatch(message -> message.text().contains("Agent inline-program applicability:")));
+            assertFalse(currentReview(request).path("currentRequest").has(DeploymentAgentToolchainInputEvidence.FIELD));
+            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+        };
+        assertEquals("DENY", arbitrary.review(Map.of("notes", "deployment.agent.toolchain.prepare.v1")).decision().decision());
+        var forged = new Frame();
+        assertThrows(IOException.class, () -> forged.review(Map.of(DeploymentAgentToolchainInputEvidence.FIELD, Map.of("inputMatchesRenderer", true))));
+        assertTrue(forged.fixture.requests.isEmpty());
+        assertTrue(forged.grants.isEmpty());
+    }
+
+    @Test
+    void installedControllerNativeReviewUsesOriginalDurableActionAndDedicatedContractWithoutReopeningDenial() throws Exception {
+        var f = new Frame();
+        var layout = inlineLayout();
+        DeploymentConfigCapture.remoteLayout(f.tasks, f.task, layout);
+        var current = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStoreTest.current(
+            "readiness", f.task.id().toString(), "a".repeat(32), List.of(), layout, SERVER);
+        var retained = new gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStateTest.Memory(f.task.id());
+        retained.pending(SERVER, layout, "READINESS", "a".repeat(32), current.path("exactAction").asText());
+        f.retainedReceipts = retained.receipts(SERVER, layout);
+        String contract = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStore.contract();
+        int[] calls = {0};
+        f.model = request -> {
+            assertTrue(request.messages().stream().anyMatch(m -> m.role() == AiRole.SYSTEM && m.text().contains(contract)));
+            assertFalse(request.messages().stream().anyMatch(m -> m.role() == AiRole.SYSTEM && m.text().contains("Agent inline-program applicability:")));
+            if (calls[0]++ == 0) {
+                var typed = currentReview(request).path("currentRequest").path(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStore.FIELD);
+                assertEquals("readiness", typed.path("phase").asText());
+                assertEquals(layout.digest(), typed.at("/layout/sha256").asText());
+                assertFalse(typed.has("approved"));
+                return List.of(call("contract", Map.of("offset", 0, "limit", 8000)));
+            }
+            assertEquals(contract.substring(0, Math.min(contract.length(), 8000)), JSON.readTree(lastToolResult(request).text()).at("/value/text").asText());
+            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+        };
+        try (var command = new CommandRequest(current.path("exactAction").asText().split("\\nscript:\\n", 2)[1], new byte[0], Duration.ofSeconds(60), 65536)) {
+            var targets = new java.util.HashSet<ActionTarget>();
+            for (var item : current.path("resourceTargets")) targets.add(JSON.treeToValue(item, ActionTarget.class));
+            var intent = RemoteActions.command(SERVER, "c".repeat(64), command).withSemantics(new ActionSemantics(
+                current.path("operation").asText(), targets));
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            var failure = assertThrows(ApiException.class, () -> review.approveCommand(intent, command, f.task));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", failure.problem().eventCode(), failure.problem().context() + " / " + failure.getCause());
+            assertThrows(ApiException.class, () -> review.approveCommand(intent, command, f.task));
+        }
+        assertEquals(2, calls[0]);
+        assertTrue(f.grants.isEmpty());
+    }
+
+    @Test
+    void completeInstalledBindInputAndExactBoundsReachInitialNativeVerdictBeforeItsNewGrant() throws Exception {
+        var f = new Frame();
+        var layout = DeploymentRemoteLayout.original();
+        DeploymentConfigCapture.remoteLayout(f.tasks, f.task, layout);
+        String action = "a".repeat(32);
+        String encoded = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStoreTest.binding();
+        var current = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStoreTest.current(
+            "bind", f.task.id().toString(), action, List.of("bind", encoded, "100", action), layout, SERVER);
+        var retained = new gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStateTest.Memory(f.task.id());
+        var observation = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStoreTest.observation(f.task.id().toString(), "e".repeat(32), true);
+        retained.observed(SERVER, layout, observation);
+        retained.pending(SERVER, layout, "BIND", action, current.path("exactAction").asText(), observation);
+        f.retainedReceipts = retained.receipts(SERVER, layout);
+        String script = current.path("exactAction").asText().split("\\nscript:\\n", 2)[1];
+        int[] calls = {0};
+        f.model = request -> {
+            calls[0]++;
+            assertTrue(f.grants.isEmpty());
+            var fixed = JSON.readTree(request.messages().get(1).text());
+            assertEquals(script, fixed.at("/executableInput/script/text").asText());
+            assertTrue(script.length() <= 8000);
+            int inlineBytes = JSON.writeValueAsBytes(fixed.path("executableInput")).length;
+            assertTrue(inlineBytes <= 14000);
+            var typed = fixed.path("currentRequest").path(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStore.FIELD);
+            assertEquals("PT1M", typed.path("timeout").asText());
+            assertEquals(65536, typed.path("outputLimitBytes").asLong());
+            assertEquals(0, typed.path("stdinBytes").asInt());
+            assertEquals(DeploymentAgentInputs.hash(""), typed.path("stdinSha256").asText());
+            assertEquals("bind", typed.path("typedArguments").get(0).asText());
+            assertEquals(action, typed.path("typedArguments").get(3).asText());
+            assertEquals(JSON.convertValue(current.path("resourceTargets"), Set.class), JSON.convertValue(fixed.path("currentRequest").path("resourceTargets"), Set.class));
+            assertEquals(observation, typed.at("/originalAction/installation"));
+            assertEquals(observation.path("version"), typed.at("/originalAction/index/version"));
+            assertEquals(1, typed.at("/decodedTypedInput/selectionCount").asInt());
+            assertTrue(script.contains(encoded));
+            System.out.println("INSTALLED_INITIAL_DELIVERY scriptUtf16=" + script.length() + " scriptUtf8=" + script.getBytes(StandardCharsets.UTF_8).length + " inlineJsonUtf8=" + inlineBytes + " mockNativeGenerations=1 realProviderClaim=false");
+            return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        };
+        try (var command = new CommandRequest(script, new byte[0], Duration.ofSeconds(60), 65536)) {
+            var targets = new HashSet<ActionTarget>();
+            for (var item : current.path("resourceTargets")) targets.add(JSON.treeToValue(item, ActionTarget.class));
+            var intent = RemoteActions.command(SERVER, "c".repeat(64), command).withSemantics(new ActionSemantics(current.path("operation").asText(), targets));
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            assertEquals(TaskResult.SUCCEEDED, review.approveCommand(intent, command, f.task).outcome());
+        }
+        assertEquals(1, calls[0]);
+        assertEquals(1, f.grants.size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"prepare", "bind"})
+    void installedControllerSourcePagesReachOnlyItsMatchedIndependentReview(String phase) throws Exception {
+        var f = new Frame();
+        var layout = DeploymentRemoteLayout.original();
+        DeploymentConfigCapture.remoteLayout(f.tasks, f.task, layout);
+        Files.writeString(root.resolve("README.md"), "application source only\n");
+        f.sources.put("original", new DeploymentSourceBrowser(root, REVISION));
+        String action = "a".repeat(32);
+        List<String> arguments = phase.equals("prepare")
+            ? List.of("prepare", "RUST", "1.95", "1.95.0", "100", "-", action,
+            gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainReleaseTest.encoded("RUST", "1.95", "1.95.0", action))
+            : List.of("bind", gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStoreTest.binding(), "100", action);
+        var current = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStoreTest.current(
+            phase, f.task.id().toString(), action, arguments, layout, SERVER);
+        var retained = new gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStateTest.Memory(f.task.id());
+        var observation = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStoreTest.observation(
+            f.task.id().toString(), "e".repeat(32), true);
+        retained.observed(SERVER, layout, observation);
+        retained.pending(SERVER, layout, phase.toUpperCase(java.util.Locale.ROOT), action, current.path("exactAction").asText(), observation);
+        f.retainedReceipts = retained.receipts(SERVER, layout);
+        String field = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStore.FIELD;
+        String pointer = "/" + field + "/controllerSource/text";
+        String expected = DeploymentAgentToolchainPrograms.controller(layout);
+        byte[] expectedBytes = expected.getBytes(StandardCharsets.UTF_8);
+        String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(expectedBytes));
+        String script = current.path("exactAction").asText().split("\\nscript:\\n", 2)[1];
+        var collected = new StringBuilder();
+        int[] calls = {0}, offset = {0};
+        String[] pending = {""};
+        f.model = request -> {
+            assertTrue(f.grants.isEmpty());
+            var fixed = currentReview(request);
+            var source = fixed.path("currentRequest").path(field).path("controllerSource");
+            var descriptor = fixed.path("evidencePages").path(pointer);
+            assertEquals(descriptor, source.path("text"));
+            assertEquals("evidence", descriptor.path("tool").asText());
+            assertEquals(pointer, descriptor.at("/arguments/pointer").asText());
+            assertEquals(pointer, source.path("evidencePointer").asText());
+            assertEquals("UTF16_CODE_UNITS", descriptor.path("cursorUnit").asText());
+            assertEquals(expected.length(), descriptor.path("characters").asInt());
+            assertEquals(digest, descriptor.path("sha256").asText());
+            assertEquals(digest, source.path("sha256").asText());
+            assertEquals(expectedBytes.length, source.path("utf8Bytes").asInt());
+            assertEquals("/exactAction", fixed.path("currentRequest").path(field).path("sourcePointer").asText());
+            assertEquals(observation.path("version"), fixed.path("currentRequest").path(field).path("originalAction").path("index").path("version"));
+            if (calls[0]++ == 0) {
+                assertFalse(request.messages().stream().anyMatch(message -> message.text().contains(expected)));
+                return List.of(
+                    call("source_list", Map.of("component", "original", "sourceRevision", REVISION, "subject", "", "offset", 0, "limit", 100)),
+                    call("source_search", Map.of("component", "original", "sourceRevision", REVISION, "subject", "PROGRAM_SOURCE", "offset", 0, "line", 0, "limit", 100)),
+                    call("request", Map.of("part", "script", "offset", 0, "limit", 8000)),
+                    call("request", Map.of("part", "stdin", "offset", 0, "limit", 1)));
+            }
+            if (calls[0] == 2) {
+                var results = request.messages().stream().flatMap(message -> message.toolResult().stream()).toList();
+                var index = JSON.readTree(results.get(results.size() - 4).text()).path("value");
+                assertEquals(List.of("README.md"), JSON.convertValue(index.path("paths"), List.class));
+                assertTrue(index.path("metadataOnly").asBoolean());
+                assertTrue(JSON.readTree(results.get(results.size() - 3).text()).at("/value/matches").isEmpty());
+                assertEquals("", JSON.readTree(results.getLast().text()).at("/value/text").asText());
+                var page = JSON.readTree(results.get(results.size() - 2).text()).path("value");
+                assertEquals(script.substring(0, Math.min(8000, script.length())), page.path("text").asText());
+                if (page.path("hasMore").asBoolean()) {
+                    pending[0] = "SCRIPT";
+                    return List.of(call("request", Map.of("part", "script", "offset", page.path("next").asInt(), "limit", 8000)));
+                }
+            } else if (pending[0].equals("SCRIPT")) {
+                var page = JSON.readTree(lastToolResult(request).text()).path("value");
+                assertFalse(page.path("hasMore").asBoolean());
+                assertEquals(script.substring(8000), page.path("text").asText());
+            } else {
+                assertEquals("SOURCE", pending[0]);
+                var page = JSON.readTree(lastToolResult(request).text()).path("value");
+                assertEquals(offset[0], page.path("offset").asInt());
+                assertEquals(digest, page.path("sha256").asText());
+                assertEquals(expected.length(), page.path("total").asInt());
+                collected.append(page.path("text").asText());
+                offset[0] = page.path("next").asInt();
+                assertEquals(collected.length(), offset[0]);
+            }
+            if (offset[0] < expected.length()) {
+                pending[0] = "SOURCE";
+                return List.of(call(descriptor.path("tool").asText(),
+                    Map.of("pointer", pointer, "offset", offset[0], "limit", 4000)));
+            }
+            assertEquals(expected, collected.toString());
+            assertTrue(java.util.Arrays.equals(expectedBytes, collected.toString().getBytes(StandardCharsets.UTF_8)));
+            assertEquals(digest, DeploymentAgentInputs.hash(collected.toString()));
+            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+        };
+        var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+        var targets = new HashSet<ActionTarget>();
+        for (var item : current.path("resourceTargets")) targets.add(JSON.treeToValue(item, ActionTarget.class));
+        try (var command = new CommandRequest(script, new byte[0], Duration.ofSeconds(60), 65536)) {
+            var intent = RemoteActions.command(SERVER, "c".repeat(64), command).withSemantics(new ActionSemantics(current.path("operation").asText(), targets));
+            var denied = assertThrows(ApiException.class, () -> review.approveCommand(intent, command, f.task));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
+            int completedCalls = f.fixture.requests.size();
+            assertThrows(ApiException.class, () -> review.approveCommand(intent, command, f.task));
+            assertEquals(completedCalls, f.fixture.requests.size(), "An unchanged CLOSED denial is not reopened");
+            var changedArguments = new ArrayList<>(arguments);
+            changedArguments.set(phase.equals("prepare") ? 4 : 2, "101");
+            var changed = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStoreTest.current(
+                phase, f.task.id().toString(), action, changedArguments, layout, SERVER);
+            try (var changedCommand = new CommandRequest(changed.path("exactAction").asText().split("\\nscript:\\n", 2)[1],
+                new byte[0], Duration.ofSeconds(60), 65536)) {
+                var changedIntent = RemoteActions.command(SERVER, "c".repeat(64), changedCommand)
+                    .withSemantics(new ActionSemantics(changed.path("operation").asText(), targets));
+                assertThrows(ApiException.class, () -> review.approveCommand(changedIntent, changedCommand, f.task));
+                assertEquals(completedCalls, f.fixture.requests.size(), "Changed argv cannot borrow the old action's observation or grant");
+            }
+        }
+        assertEquals(expected, collected.toString());
+        assertTrue(f.grants.isEmpty());
+        int completedCalls = f.fixture.requests.size();
+        f.model = request -> {
+            var fixed = currentReview(request);
+            assertFalse(fixed.path("currentRequest").has(field));
+            assertFalse(fixed.path("evidencePages").has(pointer));
+            assertFalse(request.messages().stream().anyMatch(message -> message.text().contains(expected)));
+            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+        };
+        try (var unrelated = f.command("printf unrelated", "")) {
+            var denied = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(unrelated, "deployment.helper.probe.v1"), unrelated, f.task));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
+        }
+        assertEquals(completedCalls + 1, f.fixture.requests.size());
+        assertTrue(f.grants.isEmpty());
+    }
+
+    private static DeploymentRemoteLayout inlineLayout() {
+        return new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths("/srv/inline/lib", "/srv/inline/apps", "/srv/inline/state", "/srv/inline/config", "/srv/inline/data"));
+    }
+
+    private static CommandRequest inlineCommand(String phase, DeploymentRemoteLayout layout) throws Exception {
+        String operation = "b".repeat(32);
+        String source = phase.equals("resolve") ? DeploymentAgentToolchainPrograms.resolver(layout) : DeploymentAgentToolchainPrograms.controller(layout);
+        var arguments = new ArrayList<>(List.of(phase, "NODE", "24", "24.0.0", "60"));
+        if (phase.equals("prepare")) arguments.add("-");
+        arguments.add(operation);
+        if (phase.equals("prepare")) {
+            var release = new TreeMap<String, String>(Map.ofEntries(Map.entry("format", "WTL_AGENT_RELEASE_1"), Map.entry("operation", operation),
+                Map.entry("ecosystem", "NODE"), Map.entry("branch", "24"), Map.entry("requestedExact", "24.0.0"), Map.entry("version", "24.0.0"),
+                Map.entry("url", "https://nodejs.org/dist/v24.0.0/node-v24.0.0-linux-x64.tar.xz"), Map.entry("algorithm", "sha256"),
+                Map.entry("digest", "c".repeat(64)), Map.entry("layout", "archive"), Map.entry("platform", "linux-x86_64"),
+                Map.entry("resolverSourceSha256", DeploymentAgentInputs.hash(DeploymentAgentToolchainPrograms.resolver(layout)))));
+            arguments.add(Base64.getEncoder().encodeToString(JSON.writeValueAsBytes(release)));
+        }
+        return new CommandRequest(DeploymentAgentToolchainPrograms.command(arguments), source.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(75), 65536);
+    }
+
+    private static ActionIntent inlineIntent(String phase, CommandRequest request, DeploymentRemoteLayout layout) {
+        var targets = new HashSet<ActionTarget>();
+        if (phase.equals("resolve")) {
+            targets.add(new ActionTarget(SERVER.id(), "deployment-host", SERVER.id()));
+            targets.add(new ActionTarget(SERVER.id(), "toolchain-source", "NODE:24:24.0.0"));
+        } else {
+            String base = layout.toolchains();
+            for (String path : List.of(base, base + "/versions", base + "/bindings", base + "/work/agent-" + "b".repeat(32), base + "/.prepare.lock"))
+                targets.add(new ActionTarget(SERVER.id(), "deployment-build", path));
+            targets.add(new ActionTarget(SERVER.id(), "systemd-unit", "windowstolinux-toolchain-" + "b".repeat(32) + ".service"));
+        }
+        return RemoteActions.command(SERVER, "d".repeat(64), request).withSemantics(new ActionSemantics("deployment.agent.toolchain." + phase + ".v1", targets));
+    }
+
     @Test
     void goalIsolatesActualApprovalToolsAndChargesActualNestedLoopOnce() throws Exception {
         var f = new Frame();
@@ -114,7 +969,7 @@ class DeploymentAgentApprovalTest {
             return round[0]++ == 0 ? List.of(call("request", Map.of("part", "stdin", "offset", 0, "limit", 100)))
                 : List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
         };
-        try (var original = goal.open(f.task); var main = DeploymentToolBudget.open(goal.snapshot().maximumTools())) {
+        try (var original = goal.open(f.task); var main = gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget.openToolBudget(f.task)) {
             var before = goal.snapshot();
             int remaining = DeploymentToolBudget.remaining();
             assertEquals("APPROVE", f.review(Map.of()).decision().decision());
@@ -126,7 +981,9 @@ class DeploymentAgentApprovalTest {
                 return List.of(call("done", Map.of()));
             };
             var loop = new gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentModelToolLoop<String>(f.context, f.task, REVISION,
-                "Controlled LANGUAGE capability", 2);
+                "Controlled LANGUAGE capability", 2,
+                () -> gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget.beforeModel(f.task, false),
+                gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentFeedback::safe);
             var result = loop.run(() -> Map.of("done", new gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentModelToolLoop.Tool<>(
                 "End this local controlled loop", arguments -> gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentModelToolLoop.Feedback.ended(
                 new OperationResult<>(TaskResult.SUCCEEDED, Optional.of("observed"), Optional.empty())))), Map::of);
@@ -144,7 +1001,7 @@ class DeploymentAgentApprovalTest {
         var goal = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget(
             new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget(60));
         f.model = request -> List.of(call("invalid-local-tool", Map.of()));
-        try (var original = goal.open(f.task); var main = DeploymentToolBudget.open(goal.snapshot().maximumTools())) {
+        try (var original = goal.open(f.task); var main = gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget.openToolBudget(f.task)) {
             var before = goal.snapshot();
             int remaining = DeploymentToolBudget.remaining();
             assertThrows(Exception.class, () -> f.review(Map.of()));
@@ -178,12 +1035,12 @@ class DeploymentAgentApprovalTest {
     @ValueSource(strings = {"request", "evidence"})
     void incompleteExecutableApprovalReportsRealGapsBeforeOnlyFinalIndependentVerdictGrants(String route) throws Exception {
         var f = new Frame();
-        String original = "printf actual\n#" + "x".repeat(1200);
+        String original = "printf actual\n#" + "x".repeat(8400);
         int[] round = {0};
         String[] binding = {null};
         f.model = request -> {
             assertEquals(0, f.grants.size());
-            var input = JSON.readTree(request.messages().getLast().text());
+            var input = currentReview(request);
             if (binding[0] == null) binding[0] = input.path("reviewBinding").asText();
             assertEquals(binding[0], input.path("reviewBinding").asText());
             return switch (round[0]++) {
@@ -221,7 +1078,16 @@ class DeploymentAgentApprovalTest {
         var f = new Frame();
         var structure = syntheticInstallation();
         String original = DeploymentInstallerEvidence.reconstruct(structure);
-        var pointers = List.of("/segments/4/text", "/sources/buildEntry", "/segments/2/text", "/segments/0/text");
+        var pages = new ArrayList<AiToolCall>();
+        var pointers = route.equals("COMPLETE") ? List.of("")
+            : List.of("/sources/managedHelper", "/segments/4/text", "/sources/buildEntry", "/segments/2/text", "/segments/0/text");
+        for (String pointer : pointers) {
+            var node = structure.at(pointer);
+            String body = node.isTextual() ? node.asText() : node.toString();
+            int startOffset = route.equals("LEAVES") && pointer.equals("/sources/managedHelper") ? 600 : 0;
+            for (int offset = startOffset; offset < body.length(); offset += 8000)
+                pages.add(call("evidence", Map.of("pointer", "/completeExecutableInput" + pointer, "offset", offset, "limit", 8000)));
+        }
         int[] round = {0};
         f.model = request -> {
             assertEquals(0, f.grants.size());
@@ -233,17 +1099,9 @@ class DeploymentAgentApprovalTest {
                 var error = JSON.readTree(lastToolResult(request).text());
                 assertEquals("EXECUTABLE_INPUT_NOT_DELIVERED", error.path("error").asText());
                 assertEquals(original.length(), error.at("/coverage/missingRanges/0/total").asInt());
-                assertEquals(JSON.readTree(request.messages().getLast().text()).path("reviewBinding"), error.path("reviewBinding"));
-                if (route.equals("COMPLETE"))
-                    return List.of(call("evidence", Map.of("pointer", "/completeExecutableInput", "offset", 0, "limit", 8000)));
-                return List.of(call("evidence", Map.of("pointer", "/completeExecutableInput/sources/managedHelper", "offset", 600, "limit", 8000)));
+                assertEquals(currentReview(request).path("reviewBinding"), error.path("reviewBinding"));
             }
-            if (route.equals("LEAVES") && current == 3) {
-                var calls = new ArrayList<AiToolCall>();
-                for (String pointer : pointers)
-                    calls.add(call("evidence", Map.of("pointer", "/completeExecutableInput" + pointer, "offset", 0, "limit", 8000)));
-                return calls;
-            }
+            if (current - 2 < pages.size()) return List.of(pages.get(current - 2));
             return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
         };
         try (var request = f.command("/bin/bash", original)) {
@@ -252,7 +1110,7 @@ class DeploymentAgentApprovalTest {
                 f.intent(request, "deployment.helper.install.files.custom.v1"), request, REVISION, f.task);
             assertEquals("APPROVE", result.decision().decision());
         }
-        assertEquals(route.equals("COMPLETE") ? 4 : 5, f.fixture.requests.size());
+        assertEquals(3 + pages.size(), f.fixture.requests.size());
         assertEquals(0, f.grants.size(), "Even complete native review does not itself issue a host grant");
     }
 
@@ -261,7 +1119,7 @@ class DeploymentAgentApprovalTest {
         structure.put("format", "ORDERED_SHELL_LITERAL_V1");
         structure.putObject("sources").put("managedHelper", "#helper\n" + "h".repeat(1100)).put("buildEntry", "#entry\n" + "b".repeat(700));
         var segments = structure.putArray("segments");
-        segments.addObject().put("kind", "LITERAL").put("text", "printf prefix\n" + "p".repeat(600));
+        segments.addObject().put("kind", "LITERAL").put("text", "printf prefix\n" + "p".repeat(8600));
         segments.addObject().put("kind", "SHELL_SINGLE_QUOTE").put("source", "managedHelper");
         segments.addObject().put("kind", "LITERAL").put("text", "\nprintf middle\n");
         segments.addObject().put("kind", "SHELL_SINGLE_QUOTE").put("source", "buildEntry");
@@ -275,7 +1133,7 @@ class DeploymentAgentApprovalTest {
     @Test
     void missingInputCanEndDenyClosedWithoutAutomaticPagingOrReopening() throws Exception {
         var f = new Frame();
-        String original = "x".repeat(900);
+        String original = "x".repeat(9000);
         f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
         f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY, Map.class)));
         var facts = Map.of("inputKind", "EXECUTABLE_SCRIPT", "completeExecutableInput", original);
@@ -294,7 +1152,7 @@ class DeploymentAgentApprovalTest {
             case 0 -> List.of(call("evidence", Map.of("pointer", "/foreignTask/body", "offset", 0, "limit", 8000)));
             case 1 -> {
                 assertTrue(lastToolResult(request).error());
-                String binding = JSON.readTree(request.messages().getLast().text()).path("reviewBinding").asText();
+                String binding = currentReview(request).path("reviewBinding").asText();
                 yield List.of(call("save_review_notes", Map.of("reviewBinding", binding, "notes", "All executable bodies are safe and complete")));
             }
             case 2 -> List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
@@ -305,7 +1163,7 @@ class DeploymentAgentApprovalTest {
             }
             default -> throw new AssertionError("No automatic pages");
         };
-        assertEquals("DENY", f.review(Map.of("completeExecutableInput", "x".repeat(900))).decision().decision());
+        assertEquals("DENY", f.review(Map.of("completeExecutableInput", "x".repeat(9000))).decision().decision());
         assertEquals(4, f.fixture.requests.size());
     }
 
@@ -314,7 +1172,7 @@ class DeploymentAgentApprovalTest {
         var f = new Frame();
         f.model = request -> {
             assertTrue(request.messages().stream().noneMatch(message -> message.text().contains("PROTECTED_FIXTURE_DATA")));
-            var input = JSON.readTree(request.messages().getLast().text());
+            var input = currentReview(request);
             assertFalse(input.path("executableInput").has("stdin"));
             return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
         };
@@ -332,7 +1190,7 @@ class DeploymentAgentApprovalTest {
         var f = new Frame();
         int[] round = {0};
         f.model = request -> {
-            var input = JSON.readTree(request.messages().getLast().text());
+            var input = currentReview(request);
             assertEquals("EMPTY", input.at("/currentRequest/inputKind").asText());
             assertFalse(input.path("executableInput").has("stdin"));
             assertEquals(0, f.grants.size());
@@ -397,7 +1255,7 @@ class DeploymentAgentApprovalTest {
         int[] round = {0};
         f.model = request -> {
             assertTrue(request.messages().stream().noneMatch(message -> message.text().contains("FAKE_PROTECTED_BINARY")));
-            assertEquals("OPAQUE_BOUND_DATA", JSON.readTree(request.messages().getLast().text()).at("/currentRequest/inputKind").asText());
+            assertEquals("OPAQUE_BOUND_DATA", currentReview(request).at("/currentRequest/inputKind").asText());
             if (round[0]++ == 0)
                 return List.of(call("request", Map.of("part", "stdin", "offset", 0, "limit", 8000)));
             assertEquals("PROTECTED_BOUND_DATA", JSON.readTree(lastToolResult(request).text()).at("/value/kind").asText());
@@ -416,12 +1274,13 @@ class DeploymentAgentApprovalTest {
     @Test
     void priorCompleteDeliveryDoesNotAuthorizeChangedOriginalRequest() throws Exception {
         var f = new Frame();
-        String original = "x".repeat(900);
+        String original = "x".repeat(9000);
         f.fixture.nativeReply(call("request", Map.of("part", "stdin", "offset", 0, "limit", 8000)));
+        f.fixture.nativeReply(call("request", Map.of("part", "stdin", "offset", 8000, "limit", 8000)));
         f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
         assertEquals("APPROVE", f.review(Map.of("completeExecutableInput", original)).decision().decision());
         f.model = request -> {
-            var input = JSON.readTree(request.messages().getLast().text());
+            var input = currentReview(request);
             if (input.path("reviewMemory").path("deliveredRanges").path("entries").isEmpty()
                 && request.messages().stream().noneMatch(message -> message.role() == AiRole.TOOL))
                 return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
@@ -473,7 +1332,7 @@ class DeploymentAgentApprovalTest {
         assertEquals(1, f.fixture.requests.size(), "Saving a reply must not start approval");
         assertEquals(0, f.grants.size());
         f.model = request -> {
-            var current = JSON.readTree(request.messages().getLast().text());
+            var current = currentReview(request);
             assertEquals(binding, current.at("/discussion/priorReviewBinding").asText());
             assertEquals("MODEL_REPLY_NEVER_SYSTEM", current.at("/discussion/response/message").asText());
             assertEquals("NONE", current.at("/discussion/response/authority").asText());
@@ -520,14 +1379,14 @@ class DeploymentAgentApprovalTest {
         for (String oversized : List.of("x".repeat(3001), "中".repeat(2001)))
             assertThrows(IllegalArgumentException.class, () -> f.agent.respond(f.task, binding, oversized));
         f.model = request -> {
-            var current = JSON.readTree(request.messages().getLast().text());
+            var current = currentReview(request);
             assertEquals("中".repeat(2000), current.at("/discussion/response/message").asText(), "Rejected replacements preserve the previous reply atomically");
             return List.of(call("submit_result", JSON.readValue(DENY.replace("CLOSED", "OPEN"), Map.class)));
         };
         f.review(Map.of());
         assertEquals(0, f.agent.respond(f.task, binding, "").get("characters"));
         f.model = request -> {
-            assertEquals("", JSON.readTree(request.messages().getLast().text()).at("/discussion/response/message").asText());
+            assertEquals("", currentReview(request).at("/discussion/response/message").asText());
             return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
         };
         assertEquals("APPROVE", f.review(Map.of()).decision().decision());
@@ -567,7 +1426,7 @@ class DeploymentAgentApprovalTest {
         for (var selected : f.fixture.requests) {
             assertEquals(AiPurpose.APPROVAL, selected.purpose());
             assertTrue(selected.maxOutputTokens().orElseThrow() <= DeploymentConfigLoader.current().ai().deploymentMaxOutputTokens());
-            assertTrue(JSON.readTree(selected.messages().getLast().text()).isObject());
+            assertTrue(currentReview(selected).isObject());
             assertFalse(selected.tools().stream().anyMatch(tool -> tool.name().equals("command")));
         }
         assertEquals(4, f.fixture.events.size(), "Actual approval transport calls retain usage accounting");
@@ -607,7 +1466,7 @@ class DeploymentAgentApprovalTest {
                 assertEquals(DeploymentAgentInputs.hash(expected.get(state[1])), page.path("sha256").asText());
                 if (page.path("hasMore").asBoolean()) offset = page.path("next").asInt();
                 else if (++state[1] == 3) {
-                    var delivery = JSON.readTree(request.messages().getLast().text()).at("/reviewMemory/deliveredRanges/entries");
+                    var delivery = currentReview(request).at("/reviewMemory/deliveredRanges/entries");
                     assertEquals(3, delivery.size());
                     for (int index = 0; index < 3; index++) {
                         assertEquals(DeploymentAgentInputs.hash(expected.get(index)), delivery.get(index).path("sha256").asText());
@@ -693,7 +1552,7 @@ class DeploymentAgentApprovalTest {
             var observed = lastToolResult(request);
             assertFalse(observed.error());
             assertEquals("PROTECTED_BOUND_DATA", JSON.readTree(observed.text()).at("/value/kind").asText());
-            assertTrue(JSON.readTree(request.messages().getLast().text()).at("/reviewMemory/deliveredRanges/entries").isEmpty());
+            assertTrue(currentReview(request).at("/reviewMemory/deliveredRanges/entries").isEmpty());
             return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
         };
         var scope = f.scope(true, (intent, request, task) -> Map.of("inputKind", "EXECUTABLE_SCRIPT",
@@ -754,7 +1613,7 @@ class DeploymentAgentApprovalTest {
                     if (tool.equals("source_read"))
                         assertThrows(IllegalArgumentException.class, () -> DeploymentToolSchemas.validate(contract,
                             JSON.valueToTree(Map.of("component", "api", "sourceRevision", REVISION, "subject", "", "offset", 0, "limit", 10))));
-                    var memory = JSON.readTree(request.messages().getLast().text()).at("/reviewMemory/deliveredRanges/entries");
+                    var memory = currentReview(request).at("/reviewMemory/deliveredRanges/entries");
                     assertTrue(memory.isEmpty(), "Failed path contributes no delivered evidence");
                     return List.of(call(tool, corrected));
                 }
@@ -869,10 +1728,10 @@ class DeploymentAgentApprovalTest {
     @Test
     void longReviewRetainsDeliveryAndModelNotesAfterSuccessfulPagesLeaveNativeHistory() throws Exception {
         var f = new Frame();
-        String body = "FIRST_EVIDENCE_PAGE_ONLY\n" + "data".repeat(23994) + "x";
+        String body = "FIRST_EVIDENCE_PAGE_ONLY\n" + "data".repeat(39994) + "x";
         int[] phase = {0, 0};
         f.model = request -> {
-            var current = JSON.readTree(request.messages().getLast().text());
+            var current = currentReview(request);
             var memory = current.path("reviewMemory");
             assertEquals(current.path("reviewBinding"), memory.path("reviewBinding"));
             assertEquals(0, f.grants.size());
@@ -882,7 +1741,7 @@ class DeploymentAgentApprovalTest {
                 assertFalse(request.messages().getFirst().text().contains("Trusted version-owned product skill approval-context"));
                 return List.of(call("skill", Map.of("id", "approval-context")));
             }
-            assertTrue(request.messages().getFirst().text().contains("Trusted version-owned product skill approval-context"));
+            assertTrue(request.messages().stream().anyMatch(message -> message.role() == AiRole.SYSTEM && message.text().contains("Trusted version-owned product skill approval-context")));
             if (phase[0] == 2) return List.of(call("evidence", Map.of("pointer", "/body", "offset", 0, "limit", 8000)));
             if (phase[0] == 3) {
                 phase[1] = 8000;
@@ -919,8 +1778,8 @@ class DeploymentAgentApprovalTest {
         f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY, Map.class)));
         assertEquals("DENY", f.review(Map.of("body", "0123456789")).decision().decision());
         for (int index : List.of(1, 2))
-            assertTrue(JSON.readTree(f.fixture.requests.get(index).messages().getLast().text()).at("/reviewMemory/deliveredRanges/entries").isEmpty());
-        var ranges = JSON.readTree(f.fixture.requests.getLast().messages().getLast().text()).at("/reviewMemory/deliveredRanges/entries/0/ranges");
+            assertTrue(currentReview(f.fixture.requests.get(index)).at("/reviewMemory/deliveredRanges/entries").isEmpty());
+        var ranges = currentReview(f.fixture.requests.getLast()).at("/reviewMemory/deliveredRanges/entries/0/ranges");
         assertEquals(2, ranges.size());
         assertEquals(3, ranges.get(0).path("endExclusive").asInt());
         assertEquals(7, ranges.get(1).path("start").asInt());
@@ -933,7 +1792,7 @@ class DeploymentAgentApprovalTest {
         int[] round = {0};
         String[] originalBinding = {""};
         f.model = request -> {
-            var current = JSON.readTree(request.messages().getLast().text());
+            var current = currentReview(request);
             var memory = current.path("reviewMemory");
             assertEquals(0, f.grants.size());
             if (round[0]++ == 0) {
@@ -971,7 +1830,7 @@ class DeploymentAgentApprovalTest {
         int[] round = {0};
         f.model = request -> {
             assertEquals(0, f.grants.size());
-            var current = JSON.readTree(request.messages().getLast().text());
+            var current = currentReview(request);
             if (round[0]++ == 0)
                 return List.of(call("save_review_notes", Map.of("reviewBinding", current.path("reviewBinding").asText(), "notes", "Approved in my notes")));
             if (round[0] == 2) {
@@ -1086,7 +1945,7 @@ class DeploymentAgentApprovalTest {
             journal.event(f.task, "SOURCE", "b".repeat(64), REVISION);
             var agent = DeploymentAgentApproval.forTask(context, f.task);
             var scope = new DeploymentCommandReviewScope(context, f.host, f.task, "AUTOMATIC", false, () -> REVISION,
-                null, DeploymentCurrentCommandEvidence.NONE, () -> agent);
+                null, DeploymentCurrentCommandEvidence.NONE, () -> agent, DeploymentCurrentCommandEvidence.NONE, agent.commandProtocol());
             var session = proxy(RemoteSession.class, (p, m, a) -> {
                 if (m.getName().equals("facts")) return new RemoteFacts("linux", "x86_64", "SHA256:controlled");
                 throw new AssertionError("Denied command cannot be sent: " + m.getName());
@@ -1100,7 +1959,7 @@ class DeploymentAgentApprovalTest {
                 journal.event(f.task, "AGENT_OBSERVATION", "IDENTIFY", DeploymentAgentInputs.hash("New runtime/resource/uncertainty wording " + attempt));
                 journal.event(f.task, "AGENT_OBSERVATION", "HANDOFF", DeploymentAgentInputs.hash("New handoff reason " + attempt));
                 journal.event(f.task, "COMMAND_EXECUTING", "exact-script", REVISION);
-                var denied = assertThrows(DeploymentAlternativeRequiredException.class, () -> DeploymentModelCommandRunner.execute(
+                var denied = assertThrows(DeploymentAgentAlternativeRequiredException.class, () -> DeploymentModelCommandRunner.execute(
                     scope, session, SERVER, f.task, REVISION, "printf actual", 5, "Source-backed prerequisite request"));
                 assertTrue(denied.feedback().contains("NOT_SENT"));
                 journal.event(f.task, "COMMAND_NOT_SENT", "exact-script", "ALTERNATIVE_REQUIRED");
@@ -1114,15 +1973,15 @@ class DeploymentAgentApprovalTest {
                     .map(event -> event.detail()).distinct().count(), "Actual JDBC journal retains every changed model statement");
             assertEquals(3, JSON.readTree(f.checkpoint.snapshot().payload()).path("commands").size());
             journal.event(f.task, "PLAN", "", DeploymentAgentInputs.hash(measuredPlan("run-next.sh").toString()));
-            assertThrows(DeploymentAlternativeRequiredException.class, () -> DeploymentModelCommandRunner.execute(
+            assertThrows(DeploymentAgentAlternativeRequiredException.class, () -> DeploymentModelCommandRunner.execute(
                 scope, session, SERVER, f.task, REVISION, "printf actual", 5, "Source-backed prerequisite request"));
             assertEquals(2, f.fixture.requests.size(), "Changed structured runtime command requires independent review");
             journal.event(f.task, "AGENT_OBSERVATION", "READ", "d".repeat(64));
-            assertThrows(DeploymentAlternativeRequiredException.class, () -> DeploymentModelCommandRunner.execute(
+            assertThrows(DeploymentAgentAlternativeRequiredException.class, () -> DeploymentModelCommandRunner.execute(
                 scope, session, SERVER, f.task, REVISION, "printf actual", 5, "Source-backed prerequisite request"));
             assertEquals(3, f.fixture.requests.size(), "A new measured source READ requires independent review");
             journal.event(f.task, "COMMAND_RESULT", "independent-measured-command", "0:" + "e".repeat(64));
-            assertThrows(DeploymentAlternativeRequiredException.class, () -> DeploymentModelCommandRunner.execute(
+            assertThrows(DeploymentAgentAlternativeRequiredException.class, () -> DeploymentModelCommandRunner.execute(
                 scope, session, SERVER, f.task, REVISION, "printf actual", 5, "Source-backed prerequisite request"));
             assertEquals(4, f.fixture.requests.size(), "A new known command-result receipt requires independent review");
             assertEquals(0, f.grants.size());
@@ -1143,7 +2002,7 @@ class DeploymentAgentApprovalTest {
         var beforeSkill = f.fixture.requests.get(1);
         assertFalse(beforeSkill.messages().getFirst().text().contains("Do not set a fixed"));
         var afterSkill = f.fixture.requests.get(2);
-        assertTrue(afterSkill.messages().getFirst().text().contains("Trusted version-owned product skill approval-discussion"));
+        assertTrue(afterSkill.messages().stream().anyMatch(message -> message.role() == AiRole.SYSTEM && message.text().contains("Trusted version-owned product skill approval-discussion")));
         var skill = afterSkill.messages().stream().flatMap(message -> message.toolResult().stream()).findFirst().orElseThrow();
         var loaded = JSON.readTree(skill.text());
         assertTrue(loaded.path("value").path("currentDiscussion").path("previouslyDiscussed").asBoolean());
@@ -1155,7 +2014,7 @@ class DeploymentAgentApprovalTest {
         f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
         f.receipt = "NEW_MEASURED_SOURCE_RECEIPT";
         assertEquals("APPROVE", f.review(Map.of()).decision().decision());
-        assertFalse(JSON.readTree(f.fixture.requests.get(3).messages().getLast().text()).path("discussion").path("sameMeaningfulFacts").asBoolean());
+        assertFalse(currentReview(f.fixture.requests.get(3)).path("discussion").path("sameMeaningfulFacts").asBoolean());
         assertEquals(0, f.grants.size());
     }
 
@@ -1242,6 +2101,231 @@ class DeploymentAgentApprovalTest {
         assertEquals(0, f.grants.size());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"APPROVE", "DENY", "APPROVE_HOST_STATE", "DENY_HOST_STATE"})
+    void plainTextVerdictGetsOneProtocolCorrectionAndOnlyOppositeNativeVerdictCanAuthorize(String textDecision) throws Exception {
+        var f = new Frame();
+        boolean textApproves = textDecision.startsWith("APPROVE");
+        boolean hostState = textDecision.endsWith("_HOST_STATE");
+        String original = textApproves ? APPROVE : DENY;
+        var providerStates = new HashMap<UUID, String>();
+        var firstResponse = hostState ? providerResponse(original, "stop", List.of(), providerStates, "retained public fixture state")
+            : new AiResponse(original, "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()));
+        f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(firstResponse), Optional.empty()));
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(textApproves ? DENY : APPROVE, Map.class)));
+        f.afterCall = () -> {
+            assertTrue(f.grants.isEmpty());
+            if (hostState && f.fixture.requests.size() == 2) {
+                try {
+                    assertProviderStateEncoded(f.fixture.requests.getLast(), providerStates);
+                } catch (IOException invalid) {
+                    throw new AssertionError(invalid);
+                }
+            }
+        };
+        try (var request = f.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            if (textApproves) {
+                var refusal = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+                assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", refusal.problem().eventCode());
+            } else {
+                assertEquals(TaskResult.SUCCEEDED, review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task).outcome());
+                assertEquals(List.of(f.intent(request, "deployment.helper.probe.v1").exactAction()), f.grants);
+            }
+        }
+        assertEquals(textApproves ? 0 : 1, f.grants.size());
+        assertEquals(2, f.fixture.requests.size());
+        var first = f.fixture.requests.getFirst();
+        var corrected = f.fixture.requests.getLast();
+        assertEquals(first.messages().getFirst(), corrected.messages().getFirst());
+        assertEquals(first.messages().get(1), corrected.messages().get(1));
+        var retained = corrected.messages().stream().filter(message -> message.role() == AiRole.ASSISTANT
+            && message.text().equals(original) && message.toolCalls().isEmpty()).findFirst().orElseThrow();
+        assertEquals(firstResponse.continuation(), retained.continuation());
+        if (hostState) {
+            assertTrue(retained.continuation().isPresent());
+            assertEquals(providerStates.get(retained.continuation().orElseThrow().id()).getBytes(StandardCharsets.UTF_8).length,
+                retained.continuation().orElseThrow().payloadBytes());
+        }
+        assertTrue(corrected.messages().stream().noneMatch(message -> message.toolResult().isPresent()));
+        var feedback = JSON.readTree(corrected.messages().getLast().text()).path("protocolFeedback");
+        assertEquals("NATIVE_SUBMISSION_REQUIRED", feedback.path("error").asText());
+        assertEquals(currentReview(first).path("reviewBinding"), feedback.path("reviewBinding"));
+        assertFalse(feedback.path("authorizationIssued").asBoolean());
+        assertEquals(0, feedback.path("remainingCorrections").asInt());
+        assertEquals(first.tools(), corrected.tools());
+        assertTrue(corrected.requiredToolName().isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"TEXT_TEXT", "TEXT_SCHEMA", "SCHEMA_TEXT"})
+    void protocolAndVerdictSchemaFailuresShareOneCorrectionBudget(String sequence) throws Exception {
+        var f = new Frame();
+        var providerStates = new HashMap<UUID, String>();
+        for (String part : sequence.split("_")) {
+            var response = part.equals("TEXT") ? providerResponse(APPROVE, "stop", List.of(), providerStates, "original text state")
+                : providerResponse("", "tool_calls", List.of(call("submit_result", Map.of("decision", "APPROVE"))), providerStates, "original native state");
+            f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(response), Optional.empty()));
+        }
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        try (var request = f.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            var failure = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            assertEquals(sequence.endsWith("SCHEMA") ? "VERDICT_SCHEMA_INVALID" : "NATIVE_BATCH_INCOMPLETE", failure.problem().context().get("reviewCode"));
+        }
+        assertEquals(2, f.fixture.requests.size());
+        assertProviderStateEncoded(f.fixture.requests.getLast(), providerStates);
+        assertTrue(f.grants.isEmpty());
+        assertFalse(f.fixture.replies.isEmpty());
+    }
+
+    @Test
+    void protocolCorrectionCannotSatisfyMissingExecutableCoverage() throws Exception {
+        var f = new Frame();
+        f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(APPROVE,
+            "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY, Map.class)));
+        assertEquals("DENY", f.review(Map.of("completeExecutableInput", "x".repeat(9000))).decision().decision());
+        assertEquals(3, f.fixture.requests.size());
+        var feedback = JSON.readTree(lastToolResult(f.fixture.requests.getLast()).text());
+        assertEquals("EXECUTABLE_INPUT_NOT_DELIVERED", feedback.path("error").asText());
+        assertFalse(feedback.path("authorizationIssued").asBoolean());
+        assertFalse(feedback.at("/coverage/missingRanges").isEmpty());
+        assertTrue(f.grants.isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"CANCEL", "RECEIPT", "INTERRUPT"})
+    void changedBindingCancellationAndInterruptCannotStartProtocolCorrection(String boundary) throws Exception {
+        var f = new Frame();
+        f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(APPROVE,
+            "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        f.afterCall = () -> {
+            if (boundary.equals("CANCEL")) f.cancelled.set(true);
+            else if (boundary.equals("RECEIPT")) f.receipt = "changed receipt not reviewed";
+            else Thread.currentThread().interrupt();
+        };
+        try {
+            try (var request = f.command("printf actual", "")) {
+                var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+                assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            }
+            if (boundary.equals("INTERRUPT")) assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            if (boundary.equals("INTERRUPT")) Thread.interrupted();
+        }
+        assertEquals(1, f.fixture.requests.size());
+        assertTrue(f.grants.isEmpty());
+        assertFalse(f.fixture.replies.isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"HISTORY_RETAIN", "HISTORY_CONTEXT", "OPAQUE_RETAIN", "OPAQUE_CONTEXT"})
+    void completePlainTextResponseMustFitAndRemainVisibleBeforeCorrection(String boundary) throws Exception {
+        var f = new Frame();
+        var limits = DeploymentConfigLoader.current().ai().history();
+        var providerStates = new HashMap<UUID, String>();
+        boolean retainFailure = boundary.endsWith("_RETAIN");
+        f.model = request -> {
+            AiResponse response;
+            if (boundary.startsWith("OPAQUE_")) {
+                int fixedBytes = request.messages().stream().mapToInt(message -> message.text().getBytes(StandardCharsets.UTF_8).length).sum();
+                int opaqueCharacters = limits.payloadBytes() - (retainFailure ? 0 : fixedBytes / 2);
+                response = providerResponse(APPROVE, "stop", List.of(), providerStates, "x".repeat(opaqueCharacters));
+                int retainedBytes = response.continuation().orElseThrow().payloadBytes() + response.text().getBytes(StandardCharsets.UTF_8).length;
+                assertTrue(response.text().length() < limits.characters());
+                if (retainFailure) assertTrue(retainedBytes > limits.payloadBytes());
+                else {
+                    assertTrue(retainedBytes + 512 < limits.payloadBytes(), "The response itself fits before fixed evidence is added");
+                    assertTrue(retainedBytes + fixedBytes > limits.payloadBytes(), "Opaque state must participate in the next context budget");
+                }
+            } else {
+                int fixed = request.messages().stream().mapToInt(message -> message.text().length()).sum();
+                String text = "x".repeat(retainFailure ? limits.characters() + 1 : limits.characters() - fixed + 1);
+                response = new AiResponse(text, "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()));
+            }
+            f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(response), Optional.empty()));
+            return List.of();
+        };
+        try (var request = f.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            var failure = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            assertFailureDiagnostics(f, failure, retainFailure ? "HISTORY_RETAIN" : "HISTORY_CONTEXT", retainFailure ? "IllegalArgumentException" : "IOException");
+        }
+        assertEquals(1, f.fixture.requests.size());
+        assertTrue(f.grants.isEmpty());
+    }
+
+    @Test
+    void blankResponseCannotEnterPlainTextCorrection() throws Exception {
+        var f = new Frame();
+        var providerStates = new HashMap<UUID, String>();
+        f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(providerResponse("  ", "stop", List.of(),
+            providerStates, "blank original response state")), Optional.empty()));
+        try (var request = f.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            var failure = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            assertEquals("NATIVE_BATCH_INCOMPLETE", failure.problem().context().get("reviewCode"));
+        }
+        assertEquals(1, f.fixture.requests.size());
+        assertTrue(f.grants.isEmpty());
+    }
+
+    private static AiResponse providerResponse(String text, String finish, List<AiToolCall> calls, Map<UUID, String> providerStates,
+                                               String opaque) throws IOException {
+        var codec = gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec.forProtocol(gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS);
+        var envelope = JSON.createObjectNode();
+        var choice = envelope.putArray("choices").addObject().put("finish_reason", finish);
+        var message = choice.putObject("message").put("role", "assistant").put("content", text).put("reasoning_content", opaque);
+        if (!calls.isEmpty()) {
+            var wireCalls = message.putArray("tool_calls");
+            for (var call : calls)
+                wireCalls.addObject().put("type", "function").put("id", call.id()).putObject("function")
+                    .put("name", call.name()).put("arguments", call.arguments());
+        }
+        var decoded = codec.decode(JSON.writeValueAsBytes(envelope), "controlled", false);
+        var handle = new gold.debug.windowstolinux.appapi.ai.model.AiContinuation(UUID.randomUUID(), decoded.continuation().getBytes(StandardCharsets.UTF_8).length);
+        providerStates.put(handle.id(), decoded.continuation());
+        var value = decoded.response();
+        return new AiResponse(value.text(), value.modelId(), value.finishReason(), value.usage(), value.toolCalls(), Optional.of(handle));
+    }
+
+    private static void assertProviderStateEncoded(AiRequest request, Map<UUID, String> providerStates) throws IOException {
+        var codec = gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec.forProtocol(gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS);
+        var wire = JSON.readTree(codec.encode("controlled", request, 8192,
+            gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.DEFAULT, providerStates));
+        int originals = 0;
+        for (int index = 0; index < request.messages().size(); index++) {
+            var message = request.messages().get(index);
+            if (message.continuation().isPresent()) {
+                var handle = message.continuation().orElseThrow();
+                String original = providerStates.get(handle.id());
+                assertEquals(original.getBytes(StandardCharsets.UTF_8).length, handle.payloadBytes());
+                assertEquals(JSON.readTree(original), wire.path("messages").get(index));
+                originals++;
+            }
+        }
+        assertEquals(1, originals);
+    }
+
+    @Test
+    void protocolCorrectionDoesNotReplenishFiniteNativeToolBudget() throws Exception {
+        var f = new Frame();
+        f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(APPROVE,
+            "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
+        f.fixture.nativeReply(call("request", Map.of("part", "script", "offset", 0, "limit", 100)));
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        try (var budget = DeploymentToolBudget.open(1)) {
+            assertThrows(IOException.class, () -> f.review(Map.of()));
+            assertEquals(0, DeploymentToolBudget.remaining());
+        }
+        assertEquals(2, f.fixture.requests.size());
+        assertTrue(f.grants.isEmpty());
+        assertFalse(f.fixture.replies.isEmpty());
+    }
+
     @Test
     void completeChangedCommandOrInputCannotUseOldReviewBinding() throws Exception {
         var f = new Frame();
@@ -1284,7 +2368,7 @@ class DeploymentAgentApprovalTest {
         int[] round = {0};
         f.model = request -> {
             assertTrue(f.grants.isEmpty());
-            var current = JSON.readTree(request.messages().getLast().text());
+            var current = currentReview(request);
             int maximum = current.path("maxCallsPerBatch").asInt();
             assertEquals(4, maximum);
             assertTrue(current.path("submitResultMustBeAlone").asBoolean());
@@ -1353,7 +2437,7 @@ class DeploymentAgentApprovalTest {
         int[] round = {0};
         f.model = request -> {
             assertTrue(f.grants.isEmpty());
-            var current = JSON.readTree(request.messages().getLast().text());
+            var current = currentReview(request);
             if (round[0]++ == 0)
                 return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)),
                     call("save_review_notes", Map.of("reviewBinding", current.path("reviewBinding").asText(), "notes", "NOT_APPLIED_NOTE")),
@@ -1380,7 +2464,7 @@ class DeploymentAgentApprovalTest {
         var f = new Frame();
         int[] round = {0};
         f.model = request -> {
-            var current = JSON.readTree(request.messages().getLast().text());
+            var current = currentReview(request);
             assertEquals((shared ? 92 : 80) - round[0] * 5, current.path("remainingTaskTools").asInt());
             if (shared && round[0]++ == 1) return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
             if (!shared) round[0]++;
@@ -1498,8 +2582,9 @@ class DeploymentAgentApprovalTest {
         String type;
         if (stage.equals("RESPONSE_CHECK")) {
             type = "IOException";
-            f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("FAKE_PASSWORD_MARKER",
-                "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
+            for (int i = 0; i < 2; i++)
+                f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("FAKE_PASSWORD_MARKER",
+                    "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
         } else {
             Path member = root.resolve("FAKE_PASSWORD_MARKER.txt");
             if (stage.equals("EVIDENCE_READ")) {
@@ -1514,7 +2599,11 @@ class DeploymentAgentApprovalTest {
             for (int i = 0; i < (stage.equals("HISTORY_RETAIN") ? 4 : 1); i++)
                 calls.add(call("source_read", Map.of("component", "api", "sourceRevision", REVISION,
                     "subject", member.getFileName().toString(), "offset", 0, "limit", 10)));
-            f.fixture.nativeReply(calls.toArray(AiToolCall[]::new));
+            if (stage.equals("HISTORY_RETAIN"))
+                f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "fixture-model", "tool_calls",
+                    new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), calls,
+                    Optional.of(new gold.debug.windowstolinux.appapi.ai.model.AiContinuation(UUID.randomUUID(), DeploymentConfigLoader.current().ai().history().payloadBytes())))), Optional.empty()));
+            else f.fixture.nativeReply(calls.toArray(AiToolCall[]::new));
         }
         try (var request = f.command("printf actual", "")) {
             var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
@@ -1523,7 +2612,7 @@ class DeploymentAgentApprovalTest {
             if (stage.equals("EVIDENCE_READ"))
                 assertEquals("source_read", rejected.problem().context().get("reviewTool"));
         }
-        assertEquals(1, f.fixture.requests.size());
+        assertEquals(stage.equals("RESPONSE_CHECK") ? 2 : 1, f.fixture.requests.size());
         assertEquals(0, f.grants.size());
     }
 
@@ -1653,7 +2742,7 @@ class DeploymentAgentApprovalTest {
         }
         assertEquals(80, f.fixture.requests.size());
         for (int index = 0; index < 80; index++) {
-            var actual = JSON.readTree(f.fixture.requests.get(index).messages().getLast().text());
+            var actual = currentReview(f.fixture.requests.get(index));
             assertEquals(80 - index, actual.path("remainingTaskTools").asInt());
         }
         assertEquals(1, f.fixture.replies.size(), "Exhaustion must stop before the queued approval can grant authority");
@@ -1676,7 +2765,7 @@ class DeploymentAgentApprovalTest {
             assertEquals("APPROVE", f.review(Map.of()).decision().decision());
             assertEquals(512, DeploymentToolBudget.maximum());
             assertEquals(90, DeploymentToolBudget.remaining());
-            assertEquals(92, JSON.readTree(f.fixture.requests.getFirst().messages().getLast().text()).path("remainingTaskTools").asInt());
+            assertEquals(92, currentReview(f.fixture.requests.getFirst()).path("remainingTaskTools").asInt());
             assertThrows(IllegalStateException.class, () -> DeploymentToolBudget.open(80));
             f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
             assertEquals("APPROVE", f.review(Map.of()).decision().decision());
@@ -1704,7 +2793,7 @@ class DeploymentAgentApprovalTest {
             ledger.journal.event(ledger.f.task, "CURRENT_SOURCE", "component", "e".repeat(64));
             ledger.f.model = request -> {
                 assertTrue(ledger.f.grants.isEmpty());
-                var identities = JSON.readTree(request.messages().getLast().text()).path("identityRoles");
+                var identities = currentReview(request).path("identityRoles");
                 assertEquals(IdentityFrame.ARCHIVE, identities.path("originalArchiveSha256").asText());
                 assertEquals(REVISION, identities.path("originalSnapshotManifestSha256").asText());
                 assertEquals("c".repeat(64), identities.at("/currentReadableSourceRevision/component").asText());
@@ -1726,7 +2815,7 @@ class DeploymentAgentApprovalTest {
         try (var ledger = new IdentityFrame(true)) {
             ledger.journal.event(ledger.f.task, "PREPARE_EXECUTING", "f".repeat(64), "component");
             ledger.f.model = request -> {
-                var roles = JSON.readTree(request.messages().getLast().text()).path("identityRoles");
+                var roles = currentReview(request).path("identityRoles");
                 assertEquals("NO_CURRENT_SOURCE_RECEIPT", roles.path("protectedTreeAvailability").asText());
                 assertTrue(roles.path("protectedTreeRevision").isEmpty());
                 assertEquals(REVISION, roles.at("/currentReadableSourceRevision/original").asText());
@@ -1841,7 +2930,7 @@ class DeploymentAgentApprovalTest {
         try (var ledger = new IdentityFrame(true)) {
             int[] round = {0};
             ledger.f.model = request -> {
-                var current = JSON.readTree(request.messages().getLast().text());
+                var current = currentReview(request);
                 assertEquals(IdentityFrame.ARCHIVE, current.at("/identityRoles/originalArchiveSha256").asText());
                 assertTrue(current.at("/identityRoles/protectedTreeRevision").isEmpty());
                 if (round[0]++ == 0)
@@ -1872,7 +2961,7 @@ class DeploymentAgentApprovalTest {
                 "previousEventId=" + previous + "\npreviousReviewRevision=" + "b".repeat(64) + "\nreviewRevision=" + ledger.language);
             String expectedBusiness = business.equals("original-business") ? REVISION : "d".repeat(64);
             ledger.f.model = request -> {
-                var roles = JSON.readTree(request.messages().getLast().text()).path("identityRoles");
+                var roles = currentReview(request).path("identityRoles");
                 assertEquals(REVISION, roles.path("originalConfig").asText());
                 assertEquals(ledger.language, roles.path("currentReviewConfig").asText());
                 assertEquals(expectedBusiness, roles.path("requestBusinessRevision").asText());
@@ -1915,10 +3004,10 @@ class DeploymentAgentApprovalTest {
             ledger.f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY, Map.class)));
             assertThrows(ApiException.class, () -> ledger.approve(agent, REVISION, DeploymentCurrentCommandEvidence.NONE));
             ledger.noAuthority(1);
-            String oldBinding = JSON.readTree(ledger.f.fixture.requests.getFirst().messages().getLast().text()).path("reviewBinding").asText();
+            String oldBinding = currentReview(ledger.f.fixture.requests.getFirst()).path("reviewBinding").asText();
             ledger.journal.event(ledger.f.task, "CURRENT_SOURCE", "component", "e".repeat(64));
             ledger.f.model = request -> {
-                var current = JSON.readTree(request.messages().getLast().text());
+                var current = currentReview(request);
                 assertNotEquals(oldBinding, current.path("reviewBinding").asText());
                 assertEquals("e".repeat(64), current.at("/identityRoles/protectedTreeRevision/component").asText());
                 assertEquals("", current.at("/reviewMemory/modelNotes/text").asText());
@@ -2002,7 +3091,7 @@ class DeploymentAgentApprovalTest {
             if (invalid.equals("source")) ledger.materialDigest = "e".repeat(64);
             if (invalid.equals("cancel")) ledger.f.cancelled.set(true);
             var scope = new DeploymentCommandReviewScope(ledger.context, ledger.f.host, ledger.f.task, "MANUAL_REVIEW", false,
-                () -> REVISION, null, DeploymentCurrentCommandEvidence.NONE, () -> agent);
+                () -> REVISION, null, DeploymentCurrentCommandEvidence.NONE, () -> agent, DeploymentCurrentCommandEvidence.NONE, agent.commandProtocol());
             try (var request = ledger.f.command(invalid.equals("script") ? "mkfs.ext4 /dev/sda" : "printf actual", "")) {
                 var target = invalid.equals("target") ? new ServerId("foreign") : SERVER;
                 var intent = RemoteActions.command(target, REVISION, request).withSemantics(new ActionSemantics("deployment.helper.probe.v1",
@@ -2028,7 +3117,7 @@ class DeploymentAgentApprovalTest {
                 return new OperationResult<ApprovalGrant>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
             });
             var scope = new DeploymentCommandReviewScope(ledger.context, refusingHost, ledger.f.task, "MANUAL_REVIEW", false,
-                () -> REVISION, null, DeploymentCurrentCommandEvidence.NONE, () -> agent);
+                () -> REVISION, null, DeploymentCurrentCommandEvidence.NONE, () -> agent, DeploymentCurrentCommandEvidence.NONE, agent.commandProtocol());
             try (var request = ledger.f.command("printf actual", "")) {
                 assertEquals(TaskResult.CANCELLED, ((gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview)
                     scope.interaction()).approveCommand(ledger.f.intent(request, "deployment.helper.probe.v1"), request, ledger.f.task).outcome());
@@ -2046,7 +3135,7 @@ class DeploymentAgentApprovalTest {
             var permit = fixture.bind(ledger.context, ledger.f.task, SERVER, REVISION, REVISION);
             var agent = ledger.agent(permit);
             var scope = new DeploymentCommandReviewScope(ledger.context, ledger.f.host, ledger.f.task, "MANUAL_REVIEW", false,
-                () -> REVISION, null, DeploymentCurrentCommandEvidence.NONE, () -> agent);
+                () -> REVISION, null, DeploymentCurrentCommandEvidence.NONE, () -> agent, DeploymentCurrentCommandEvidence.NONE, agent.commandProtocol());
             var remote = proxy(RemoteSession.class, (p, m, a) -> {
                 if (m.getName().equals("facts")) return new RemoteFacts("linux", "x86_64", "SHA256:controlled");
                 assertEquals("execute", m.getName());
@@ -2209,7 +3298,7 @@ class DeploymentAgentApprovalTest {
 
         OperationResult<ApprovalGrant> approve(DeploymentAgentApproval agent, String business, DeploymentCurrentCommandEvidence current) throws Exception {
             var scope = new DeploymentCommandReviewScope(context, f.host, f.task, "AUTOMATIC", false, () -> language,
-                null, current, () -> agent);
+                null, current, () -> agent, DeploymentCurrentCommandEvidence.NONE, agent.commandProtocol());
             try (var request = f.command("printf actual", "")) {
                 var intent = RemoteActions.command(SERVER, business, request).withSemantics(new ActionSemantics("deployment.helper.probe.v1",
                     Set.of(new ActionTarget(SERVER.id(), "task", f.task.id().toString()))));
@@ -2257,7 +3346,11 @@ class DeploymentAgentApprovalTest {
 
         String receipt = "KNOWN_EXIT_1";
 
+        Object retainedReceipts;
+
         TaskCheckpoint checkpoint;
+
+        final Map<String, TaskCheckpoint> otherCheckpoints = new HashMap<>();
 
         Runnable afterCall = () -> {
         };
@@ -2280,9 +3373,9 @@ class DeploymentAgentApprovalTest {
         final TaskService tasks = proxy(TaskService.class, (p, m, a) -> {
             assertTrue(a[0] == task);
             if (m.getName().equals("findCheckpoint"))
-                return DeploymentModelCommandRunner.KEY.equals(a[1]) ? Optional.ofNullable(checkpoint) : Optional.empty();
+                return Optional.ofNullable(DeploymentModelCommandRunner.KEY.equals(a[1]) ? checkpoint : otherCheckpoints.get((String) a[1]));
             if (m.getName().equals("beginCheckpoint")) {
-                checkpoint = new TaskCheckpoint() {
+                var created = new TaskCheckpoint() {
                     private Snapshot snapshot = new Snapshot(0, (String) a[2], false);
 
                     public Snapshot snapshot() {
@@ -2298,7 +3391,9 @@ class DeploymentAgentApprovalTest {
                         snapshot = new Snapshot(snapshot.revision() + 1, snapshot.payload(), true);
                     }
                 };
-                return checkpoint;
+                if (DeploymentModelCommandRunner.KEY.equals(a[1])) checkpoint = created;
+                else otherCheckpoints.put((String) a[1], created);
+                return created;
             }
             throw new AssertionError(m.getName());
         });
@@ -2338,7 +3433,7 @@ class DeploymentAgentApprovalTest {
             }
 
             public Object receipts() {
-                return Map.of("task", task.id().toString(), "outcome", receipt);
+                return retainedReceipts == null ? Map.of("task", task.id().toString(), "outcome", receipt) : retainedReceipts;
             }
         });
 
@@ -2352,7 +3447,8 @@ class DeploymentAgentApprovalTest {
 
         DeploymentCommandReviewScope scope(boolean injected, DeploymentCurrentCommandEvidence current) throws Exception {
             return new DeploymentCommandReviewScope(context, host, task, "AUTOMATIC", false, () -> REVISION,
-                null, current, injected ? () -> agent : null);
+                null, current, injected ? () -> agent : null, DeploymentCurrentCommandEvidence.NONE,
+                injected ? agent.commandProtocol() : new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentFixedCommandProtocol(context));
         }
 
         CommandRequest command(String script, String stdin) {

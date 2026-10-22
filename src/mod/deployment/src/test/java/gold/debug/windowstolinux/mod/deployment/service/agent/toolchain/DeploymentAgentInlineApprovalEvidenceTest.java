@@ -123,7 +123,7 @@ class DeploymentAgentInlineApprovalEvidenceTest {
     }
 
     private static DeploymentApprovalConversation conversation(NativeAiFixture fixture) {
-        return new DeploymentApprovalConversation(fixture.context, fixture.task, SERVER, "verified-fingerprint", "a".repeat(64), REVISION);
+        return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApprovalConversation(fixture.context, fixture.task, SERVER, "verified-fingerprint", "a".repeat(64), REVISION);
     }
 
     private static Map<String, Object> facts() throws Exception {
@@ -131,9 +131,6 @@ class DeploymentAgentInlineApprovalEvidenceTest {
     }
 
     private static Map<String, Object> facts(String profile) throws Exception {
-        var evidence = Class.forName("gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandEvidence")
-            .getDeclaredMethod("facts", ActionIntent.class, CommandRequest.class);
-        evidence.setAccessible(true);
         boolean nativeTransaction = !profile.equals("prepare");
         String source = nativeTransaction ? DeploymentAgentToolchainPrograms.dependencies() : DeploymentAgentToolchainPrograms.controller();
         var arguments = nativeTransaction ? List.of(profile, OPERATION)
@@ -145,7 +142,7 @@ class DeploymentAgentInlineApprovalEvidenceTest {
                 nativeTransaction ? DeploymentAgentToolchainCommands.dependencyTargets(SERVER, profile)
                     : DeploymentAgentToolchainCommands.controllerTargets(SERVER, OPERATION)));
             var facts = new LinkedHashMap<String, Object>();
-            ((Map<?, ?>) evidence.invoke(null, intent, request)).forEach((key, value) -> facts.put((String) key, value));
+            facts.putAll(gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentCommandProtocol.facts(intent, request));
             return facts;
         }
     }

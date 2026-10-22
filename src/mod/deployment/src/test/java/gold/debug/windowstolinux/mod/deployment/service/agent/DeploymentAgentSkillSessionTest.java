@@ -39,7 +39,7 @@ import gold.debug.windowstolinux.mod.deployment.service.agent.protocol.Deploymen
 import gold.debug.windowstolinux.mod.deployment.service.agent.skill.DeploymentAgentSkills;
 import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
 import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentDeliveryPort;
-import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException;
+import gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentAlternativeRequiredException;
 import org.junit.jupiter.api.Test;
 
 class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
@@ -207,12 +207,13 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
                         var port = (DeploymentAgentDeliveryPort) Proxy.newProxyInstance(DeploymentAgentDeliveryPort.class.getClassLoader(), new Class<?>[]{DeploymentAgentDeliveryPort.class}, (p, m, a) -> {
                             if (m.getName().equals("approvalConversation")) return Optional.empty();
                             if (m.getName().equals("reviewResponseAvailable")) return false;
+                            if (m.getName().equals("reconnectAvailable")) return false;
                             if (m.getName().equals("close")) return null;
                             if ((assessmentCase || discussionCase) && m.getName().equals("inspect"))
                                 return Map.of("currentMeasuredHost", "Controlled actual observation");
                             if (discussionCase && m.getName().equals("hostCommand")) {
                                 refused.incrementAndGet();
-                                throw DeploymentAlternativeRequiredException.fromReview(task, new ApiException(new Problem(ProblemCode.ACCESS_DENIED,
+                                throw DeploymentAgentAlternativeRequiredException.fromReview(task, new ApiException(new Problem(ProblemCode.ACCESS_DENIED,
                                     "DEPLOYMENT_COMMAND_REVIEW_DENIED", "Known unsent controlled review", Map.of("task", task.id().toString(),
                                     "reviewBinding", "c".repeat(64), "discussionStatus", "OPEN"), Optional.of(task.id()))));
                             }

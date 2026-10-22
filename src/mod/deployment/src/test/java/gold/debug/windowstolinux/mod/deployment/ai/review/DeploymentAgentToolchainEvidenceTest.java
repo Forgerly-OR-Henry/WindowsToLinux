@@ -24,8 +24,8 @@ class DeploymentAgentToolchainEvidenceTest {
         try (var request = new CommandRequest("/usr/bin/python3 -I -S -c 'fixed reviewed bootstrap'", source.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(30), 65536)) {
             var intent = RemoteActions.command(server, "a".repeat(64), request).withSemantics(new ActionSemantics("deployment.agent.toolchain." + phase + ".v1",
                 Set.of(new ActionTarget(server.id(), "deployment-build", "/usr/local/lib/windowstolinux/toolchains"))));
-            assertTrue(DeploymentFixedCommandApproval.registered(intent));
-            var evidence = DeploymentCommandEvidence.facts(intent, request);
+            assertFalse(DeploymentFixedCommandApproval.registered(intent));
+            var evidence = gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentCommandProtocol.facts(intent, request);
             assertEquals("EXECUTABLE_SCRIPT", evidence.get("inputKind"));
             assertEquals(source, evidence.get("completeExecutableInput"));
             assertEquals(intent.exactAction(), evidence.get("exactAction"));

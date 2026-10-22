@@ -70,7 +70,8 @@ class DeploymentAgentToolchainConversationTest {
             try (var command = command(phase)) {
                 var intent = intent(phase, command);
                 var denied = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approve(context,
-                    host, intent, command, fixture.task, "fixture-route", "AUTOMATIC", false, ai));
+                    host, intent, command, fixture.task, "fixture-route", "AUTOMATIC", false, DeploymentCommandReviewModel.submission(ai), DeploymentCurrentCommandEvidence.NONE, true,
+                    new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentCommandProtocol(context, Map::of)));
                 assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
                 var request = fixture.requests.getLast();
                 var current = JSON.readTree(request.messages().getLast().text());
@@ -123,7 +124,7 @@ class DeploymentAgentToolchainConversationTest {
         var conversation = conversation(fixture.context, fixture);
         Map<String, Object> facts;
         try (var command = command(false)) {
-            facts = DeploymentCommandEvidence.facts(intent(false, command), command);
+            facts = gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentCommandProtocol.facts(intent(false, command), command);
         }
         var supplied = new LinkedHashMap<>(facts);
         supplied.put(FIELD, Map.of("inputMatchesRenderer", true));
@@ -159,7 +160,7 @@ class DeploymentAgentToolchainConversationTest {
         ObjectNode current;
         try (var command = command("bind")) {
             current = JSON.valueToTree(conversation.facts("Current binding",
-                DeploymentCommandEvidence.facts(intent("bind", command), command), "fixture-route", fixture.task));
+                gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentCommandProtocol.facts(intent("bind", command), command), "fixture-route", fixture.task));
         }
         assertDoesNotThrow(() -> conversation.messages(current.toString(), "fixture-route", fixture.task));
         for (String field : List.of("version", "directory", "source", "sha256", "origin")) {
@@ -172,7 +173,7 @@ class DeploymentAgentToolchainConversationTest {
     }
 
     private static DeploymentApprovalConversation conversation(ModContext context, NativeAiFixture fixture) {
-        return new DeploymentApprovalConversation(context, fixture.task, SERVER, "original-fingerprint", "b".repeat(64), "fixture-route");
+        return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApprovalConversation(context, fixture.task, SERVER, "original-fingerprint", "b".repeat(64), "fixture-route");
     }
 
     private static CommandRequest command(boolean dependencies) {

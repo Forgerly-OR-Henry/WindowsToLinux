@@ -26,7 +26,7 @@ import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope;
-import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException;
+import gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentAlternativeRequiredException;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget;
 import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
 import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard;
@@ -151,7 +151,7 @@ class DeploymentAgentHostChannelTest {
                 throw failure.getCause();
             }
         });
-        var conversation = new DeploymentApprovalConversation(context, fixture.task, SERVER, "fixture-fingerprint", REVISION, REVISION);
+        var conversation = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApprovalConversation(context, fixture.task, SERVER, "fixture-fingerprint", REVISION, REVISION);
         var reviewed = new DeploymentCommandReviewScope(context, host, fixture.task, "FULL_CONTROL", true, () -> REVISION, () -> conversation);
         var sends = new AtomicInteger();
         var session = session(request -> {
@@ -159,7 +159,7 @@ class DeploymentAgentHostChannelTest {
             return reply(BASELINE);
         });
         var channel = new DeploymentAgentHostChannel(session, reviewed.interaction(), SERVER, fixture.task, REVISION, new DeploymentBuildBudget(120), DeploymentSendGuard.NONE);
-        var denied = assertThrows(DeploymentAlternativeRequiredException.class, channel::baseline);
+        var denied = assertThrows(DeploymentAgentAlternativeRequiredException.class, channel::baseline);
         assertEquals("DEPLOYMENT_ALTERNATIVE_REQUIRED", denied.problem().eventCode());
         assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", ((ApiException) denied.getCause()).problem().eventCode());
         assertEquals(1, fixture.requests.size());
@@ -203,7 +203,7 @@ class DeploymentAgentHostChannelTest {
             if (guards.incrementAndGet() == 2 && boundary.equals("GUARD_SAME_EVENT")) throw original;
         });
         if (boundary.equals("OPEN") || boundary.equals("CLOSED")) {
-            var denied = assertThrows(DeploymentAlternativeRequiredException.class, channel::baseline);
+            var denied = assertThrows(DeploymentAgentAlternativeRequiredException.class, channel::baseline);
             assertSame(original, denied.getCause());
             assertEquals(binding, denied.problem().context().get("reviewBinding"));
             assertEquals(boundary.equals("OPEN"), denied.discussionOpen());

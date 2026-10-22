@@ -47,13 +47,18 @@ import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildComma
 import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentPublishChannel;
+import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentPublishArguments;
+import gold.debug.windowstolinux.mod.deployment.linux.runtime.DeploymentContainerArguments;
+import gold.debug.windowstolinux.mod.deployment.linux.runtime.DeploymentRuntimeArguments;
 import gold.debug.windowstolinux.mod.deployment.linux.runtime.DeploymentWorkloadArguments;
 import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentRecovery;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationObservation;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.delivery.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.application.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishResult;
@@ -75,6 +80,125 @@ class DeploymentAgentHealthEvidenceTest {
     private static final String RELEASE = "e".repeat(64);
 
     private static final String DENIAL = "Controlled original health target denial";
+
+    @Test
+    void publicationIdentityBindsDistinctDigestsWithoutClaimingObservedOwner() throws Exception {
+        for (String kind : List.of("HTTP", "CONTAINER")) {
+            var layout = kind.equals("CONTAINER") ? new DeploymentRemoteLayout(new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(
+                "/srv/wtl/helper", "/srv/wtl/apps", "/srv/wtl/state", "/srv/wtl/config", "/srv/wtl/data")) : DeploymentRemoteLayout.original();
+            try (var frame = new Frame(kind, null, layout, true);
+                 var request = frame.publicationRequest("none")) {
+                var scope = frame.publicationScope();
+                var evidence = frame.publicationEvidence(scope);
+                var intent = frame.publicationIntent(request, "none");
+                var current = JSON.valueToTree(evidence.facts(intent, request, frame.task)).path("publicationIdentity");
+                var candidate = frame.candidates.get("backend");
+                var part = frame.part("backend");
+                var commit = frame.proposal.units().stream().filter(value -> value.unit().equals(part.unit())).findFirst().orElseThrow();
+                assertEquals(DeploymentAgentInputs.hash("agent-release:" + candidate.artifactSha256() + ":" + candidate.sourceRevision()
+                    + ":" + commit.configuration().sha256() + ":" + part.reviewedRuntime() + ":" + part.resources()), frame.release("backend"));
+                assertNotEquals(frame.release("backend"), candidate.artifactSha256());
+                assertNotEquals(frame.release("backend"), part.unit().ownershipManifestSha256());
+                assertEquals(candidate.artifactSha256(), intent.revision());
+                assertEquals(SOURCE, current.path("originalSnapshotManifestSha256").asText());
+                assertEquals("6".repeat(64), current.path("currentProtectedTreeRevision").asText());
+                assertNotEquals(current.path("originalSnapshotManifestSha256"), current.path("currentProtectedTreeRevision"));
+                assertEquals(frame.release("backend"), current.path("positionalArguments").get(2).path("value").asText());
+                assertEquals("expectedOwnershipManifestSha256", current.path("positionalArguments").get(3).path("role").asText());
+                assertTrue(current.path("ownerMeaning").asText().contains("not an observation"));
+                assertEquals("NONE", current.path("authority").asText());
+                assertEquals("NO_RESULT_FOR_THIS_PENDING_REQUEST", current.path("publicationResult").asText());
+                assertEquals("NOT_DECIDED_BY_THIS_PROJECTION", current.path("independentAppReview").asText());
+                assertEquals("NOT_GRANTED_BY_THIS_PROJECTION", current.path("hostSingleUseGrant").asText());
+                assertEquals(6, current.path("receiptEventIds").size());
+                frame.journal.event(frame.task, "DECISION", "review", "APPROVE");
+                frame.journal.event(frame.task, "AGENT_ASSESSMENT", "publish", "Controlled append only bookkeeping");
+                evidence.verify(intent, request, frame.task);
+                evidence.verifyPendingBinding();
+                try (var second = frame.publicationRequest("frontend", "none")) {
+                    var next = frame.publicationIntent(second, "frontend", "none");
+                    assertEquals("frontend", JSON.valueToTree(evidence.facts(next, second, frame.task)).at("/publicationIdentity/component").asText());
+                    evidence.verify(next, second, frame.task);
+                    evidence.verifyPendingBinding();
+                }
+                try (var other = frame.healthRequest("none")) {
+                    assertTrue(evidence.facts(frame.healthIntent(other, "none"), other, frame.task).isEmpty());
+                    assertEquals("", evidence.reviewInstructions());
+                }
+                assertEquals(0, frame.aiRequests.size());
+                assertEquals(0, frame.hostAuthorizations);
+                assertEquals(0, frame.remoteExecutions);
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing-seal", "CURRENT_SOURCE", "SEALED_ARTIFACT", "CANDIDATE", "SEALED_TOOLS", "profile", "route",
+        "release", "owner", "candidate", "configuration", "runtime", "resources", "script", "server", "target", "task", "business", "noncanonical-unit", "layout"})
+    void publicationIdentityRejectsMissingOrChangedOriginalBindings(String change) throws Exception {
+        var layout = change.equals("layout") ? new DeploymentRemoteLayout(new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(
+            "/srv/wtl/helper", "/srv/wtl/apps", "/srv/wtl/state", "/srv/wtl/config", "/srv/wtl/data")) : DeploymentRemoteLayout.original();
+        try (var frame = new Frame("HTTP", null, layout, true);
+             var request = frame.publicationRequest(change)) {
+            if (change.equals("noncanonical-unit")) {
+                var old = frame.part("backend");
+                var unit = old.unit();
+                var wrong = new DeploymentUnitIdentity(unit.id(), unit.server(), frame.part("frontend").unit().systemdUnit(), unit.releaseRoot(), unit.ownershipManifestSha256(), unit.layout());
+                var parts = frame.proposal.graph().components().stream().map(part -> part.componentId().equals("backend")
+                    ? new DeploymentApplicationGraph.Part(part.componentId(), wrong, part.runtime(), part.dependencies(), part.reviewedRuntime(), part.dataPaths(), part.resources()) : part).toList();
+                var commits = frame.proposal.units().stream().map(commit -> commit.unit().equals(unit)
+                    ? new DeploymentUnitCommit(wrong, commit.runtime(), commit.release(), commit.configuration(), commit.secrets()) : commit).toList();
+                var graph = frame.proposal.graph();
+                var changed = new DeploymentPublishResult(new DeploymentApplicationGraph(graph.applicationId(), graph.healthComponentId(), graph.healthCheck(), parts), commits);
+                assertThrows(IllegalArgumentException.class, () -> frame.publicationEvidence(frame.publicationScope(), changed));
+                assertTrue(frame.aiRequests.isEmpty());
+                assertEquals(0, frame.hostAuthorizations);
+                assertEquals(0, frame.remoteExecutions);
+                return;
+            }
+            var evidence = frame.publicationEvidence(frame.publicationScope());
+            if (change.equals("missing-seal")) {
+                try (var delete = frame.retained.prepareStatement("DELETE FROM deployment_agent_event WHERE task_id=? AND event_type='SEAL_RESULT'")) {
+                    delete.setString(1, frame.task.id().toString());
+                    delete.executeUpdate();
+                }
+            } else if (Set.of("CURRENT_SOURCE", "SEALED_ARTIFACT", "CANDIDATE", "SEALED_TOOLS", "profile", "route").contains(change))
+                frame.changeBinding(change);
+            else if (change.equals("layout")) frame.capturedLayout = DeploymentRemoteLayout.original();
+            var supplied = change.equals("task") ? proxy(TaskContext.class, (name, args) -> frame.task.id()) : frame.task;
+            assertThrows(ApiException.class, () -> evidence.facts(frame.publicationIntent(request, change), request, supplied));
+            assertEquals(0, frame.aiRequests.size());
+            assertEquals(0, frame.hostAuthorizations);
+            assertEquals(0, frame.remoteExecutions);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"APP", "HOST", "SEND"})
+    void publicationBindingsAreRecheckedAfterAppHostAndBeforeSend(String boundary) throws Exception {
+        try (var frame = new Frame("HTTP", null, DeploymentRemoteLayout.original(), true);
+             var request = frame.publicationRequest("none")) {
+            var scope = frame.publicationScope();
+            var evidence = frame.publicationEvidence(scope);
+            var review = (DeploymentCommandReview) scope.withCurrentEvidence(evidence).interaction();
+            var intent = frame.publicationIntent(request, "none");
+            if (boundary.equals("APP")) frame.onPublicationReview = ignored -> frame.changeBinding("CURRENT_SOURCE");
+            if (boundary.equals("HOST")) frame.onPublicationHost = () -> frame.changeBinding("profile");
+            if (boundary.equals("SEND")) {
+                var grant = review.approveCommand(intent, request, frame.task);
+                assertEquals(TaskResult.SUCCEEDED, grant.outcome());
+                frame.changeBinding("SEALED_ARTIFACT");
+                assertThrows(ApiException.class, evidence::verifyPendingBinding);
+            } else {
+                assertThrows(ApiException.class, () -> review.approveCommand(intent, request, frame.task));
+                if (boundary.equals("APP")) assertEquals(0, frame.hostAuthorizations);
+            }
+            assertEquals(1, frame.aiRequests.size());
+            assertEquals(0, frame.remoteExecutions);
+            assertEquals(0, frame.healthDispatches);
+            assertEquals(0, frame.events("AI_PUBLICATION_VERIFIED"));
+        }
+    }
 
     @Test
     void localCompletionIsProducedByFactsBeforeAnyVerificationOrIndependentReview() throws Exception {
@@ -195,8 +319,18 @@ class DeploymentAgentHealthEvidenceTest {
             assertEquals(TaskResult.UNKNOWN, recovered.outcome());
             assertEquals("DEPLOYMENT_AGENT_HELPER_CHANGED", recovered.problem().orElseThrow().eventCode());
             assertEquals(1, frame.aiRequests.size());
-            assertEquals("deployment.helper.probe.v1", frame.reviewFacts.getFirst().path("operation").asText());
-            assertFalse(frame.reviewFacts.getFirst().has("currentCommandEvidence"));
+            var firstEvidence = frame.aiRequests.getFirst().messages().get(1);
+            assertEquals(AiRole.USER, firstEvidence.role());
+            var reviewEnvelope = JSON.readTree(firstEvidence.text());
+            assertEquals("FIRST_USER_MESSAGE_AFTER_BASE_SYSTEM", frame.reviewFacts.getFirst().path("currentEvidence").asText());
+            assertEquals(reviewEnvelope.path("reviewBinding"), frame.reviewFacts.getFirst().path("reviewBinding"));
+            assertEquals(frame.task.id().toString(), reviewEnvelope.path("task").asText());
+            var currentRequest = reviewEnvelope.path("currentRequest");
+            assertEquals("deployment.helper.probe.v1", currentRequest.path("operation").asText());
+            assertEquals(JSON.valueToTree(List.of(frame.server.id())), currentRequest.path("serverTargets"));
+            assertEquals(saved.identity().configurationDigest(), currentRequest.path("businessRevision").asText());
+            assertEquals("EMPTY", currentRequest.path("inputKind").asText());
+            assertFalse(currentRequest.has("currentCommandEvidence"));
             assertEquals(0, frame.hostAuthorizations);
             assertEquals(0, frame.remoteExecutions);
             assertEquals(0, frame.statusQueries);
@@ -286,7 +420,7 @@ class DeploymentAgentHealthEvidenceTest {
     @Test
     void persistentApprovalConversationCannotDowngradeTrustedStatusInstructionsToUserFacts() throws Exception {
         try (var frame = new Frame(); var request = frame.queryRequest("none")) {
-            var conversation = new DeploymentApprovalConversation(frame.context, frame.task, frame.server,
+            var conversation = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApprovalConversation(frame.context, frame.task, frame.server,
                 "controlled-fingerprint", SOURCE, REVISION);
             var scope = new DeploymentCommandReviewScope(frame.context, frame.context.interaction(), frame.task,
                 "FULL_CONTROL", true, () -> REVISION, () -> conversation);
@@ -1041,6 +1175,25 @@ class DeploymentAgentHealthEvidenceTest {
         }
     }
 
+    @Test
+    void everyOriginalStatusResourceRejectsMissingExtraAndDriftedBindingsBeforeReviewOrDispatch() throws Exception {
+        for (String kind : List.of("deployment-release", "deployment-candidate", "deployment-snapshot", "deployment-application-locks")) {
+            for (String alteration : List.of("missing", "extra", "drift")) {
+                try (var frame = new Frame(); var request = frame.queryRequest("")) {
+                    var original = frame.queryIntent(request);
+                    var targets = new HashSet<>(original.semantics().orElseThrow().targets());
+                    var selected = targets.stream().filter(target -> target.kind().equals(kind)).findFirst().orElseThrow();
+                    if (!alteration.equals("extra")) targets.remove(selected);
+                    if (!alteration.equals("missing")) targets.add(new ActionTarget(selected.serverId(), selected.kind(), selected.id() + "-foreign"));
+                    var changed = original.withSemantics(new ActionSemantics("deployment.publication.original-status.v1", Set.copyOf(targets)));
+                    var evidence = frame.evidence();
+                    assertThrows(ApiException.class, () -> evidence.facts(changed, request, frame.task), kind + ":" + alteration);
+                    assertEquals(0, frame.reviewFacts.size()); assertEquals(0, frame.statusQueries); assertEquals(0, frame.hostAuthorizations);
+                }
+            }
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"task", "candidate", "release"})
     void foreignOriginalStatusIdentityCannotBecomeCurrentEvidence(String change) throws Exception {
@@ -1476,6 +1629,97 @@ class DeploymentAgentHealthEvidenceTest {
         }
     }
 
+    @Test
+    void unfinishedPublicationObservationKeepsCompleteFactsUnknownAndDefaultVerificationClosed() throws Exception {
+        try (var frame = new Frame("HTTP", null, DeploymentRemoteLayout.original(), true)) {
+            assertThrows(ApiException.class, frame::evidence);
+            var result = frame.observePartialPublication();
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
+            var recorded = DeploymentAgentPublicationObservation.readLatest(frame.journal.events(frame.task), frame.taskId);
+            assertTrue(recorded.observationComplete());
+            assertEquals(2, recorded.observedComponents());
+            assertEquals(2, frame.statusQueries);
+            assertEquals(2, frame.hostAuthorizations);
+            assertEquals(0, frame.healthDispatches + frame.runtimeInspections + frame.runtimeObservations);
+            assertTrue(frame.journal.events(frame.task).stream().noneMatch(event -> Set.of("AI_PUBLICATION_FINISHED",
+                "AI_RECOVERY_SETTLED", "GRAPH_ROLLBACK_RESULT", "AI_PUBLICATION_CLEANED").contains(event.type())));
+            assertFalse(new DeploymentExecutionStore(frame.context.db()).findForTask(frame.task).orElseThrow().businessCommitted());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"denied", "truncated", "foreign", "unknown"})
+    void partialPublicationObservationRetainsFirstReceiptAndStopsWithoutRetry(String failure) throws Exception {
+        try (var frame = new Frame("HTTP", null, DeploymentRemoteLayout.original(), true)) {
+            frame.onStatusReview = facts -> {
+                if (facts.at("/currentCommandEvidence/unitBinding/component").asText().equals("frontend")) {
+                    if (failure.equals("denied")) frame.deniedOperation = "deployment.publication.original-status.v1";
+                    else frame.statusFailure = failure;
+                }
+            };
+            assertEquals(TaskResult.UNKNOWN, frame.observePartialPublication().outcome());
+            var recorded = DeploymentAgentPublicationObservation.readLatest(frame.journal.events(frame.task), frame.taskId);
+            assertFalse(recorded.observationComplete());
+            assertEquals(1, recorded.observedComponents());
+            assertFalse(JSON.readTree(recorded.componentFrames().getFirst()).path("receipt").isNull());
+            var second = JSON.readTree(recorded.componentFrames().getLast());
+            assertTrue(second.path("receipt").isNull());
+            assertEquals(failure.equals("denied") ? "APP_DENIED"
+                : failure.equals("unknown") ? "REQUESTED_WITHOUT_VERIFIED_RESULT" : "INVALID_OR_INCOMPLETE_RESULT",
+                second.path("missingReason").asText());
+            assertEquals(failure.equals("denied") ? 1 : 2, frame.statusQueries);
+            assertEquals(2, frame.reviewFacts.size());
+            assertEquals(0, frame.healthDispatches + frame.runtimeInspections + frame.runtimeObservations);
+        }
+    }
+
+    @Test
+    void partialPublicationObservationPreservesDifferentOwnedCurrentAndRejectsEveryMutation() throws Exception {
+        try (var frame = new Frame("HTTP", null, DeploymentRemoteLayout.original(), true)) {
+            frame.statusFailure = "wrong-current";
+            assertEquals(TaskResult.UNKNOWN, frame.observePartialPublication().outcome());
+            var recorded = DeploymentAgentPublicationObservation.readLatest(frame.journal.events(frame.task), frame.taskId);
+            assertTrue(recorded.observationComplete());
+            for (var row : recorded.componentFrames())
+                assertEquals(SOURCE, JSON.readTree(row).at("/receipt/status/current").asText());
+            var evidence = frame.partialEvidence();
+            try (var request = frame.healthRequest("none")) {
+                assertThrows(ApiException.class, () -> evidence.facts(frame.healthIntent(request, "none"), request, frame.task));
+                assertThrows(ApiException.class, () -> evidence.execute(request, new ApprovalGrant(UUID.randomUUID())));
+            }
+            try (var request = frame.publicationRequest("none")) {
+                assertThrows(ApiException.class, () -> evidence.facts(frame.publicationIntent(request, "none"), request, frame.task));
+            }
+            assertEquals(2, frame.remoteExecutions);
+            assertEquals(0, frame.healthDispatches);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"prefix", "route", "candidate", "task", "profile"})
+    void partialPublicationObservationFailsClosedOnOriginalBindingDrift(String change) throws Exception {
+        try (var frame = new Frame("HTTP", null, DeploymentRemoteLayout.original(), true)) {
+            var evidence = frame.partialEvidence();
+            switch (change) {
+                case "prefix" -> {
+                    try (var update = frame.retained.prepareStatement("UPDATE deployment_agent_event SET event_detail=? WHERE event_type='SOURCE'")) {
+                        update.setString(1, "f".repeat(64)); update.executeUpdate();
+                    }
+                }
+                case "route" -> frame.route = "f".repeat(64);
+                case "candidate" -> frame.journal.event(frame.task, "CANDIDATE", "backend", "foreign-0123456789abcdef");
+                case "profile" -> frame.profile = new ServerInfo(frame.server, "changed", "foreign-host", 22, "root", Optional.empty(), Optional.empty());
+                default -> { }
+            }
+            try (var request = frame.queryRequest("none")) {
+                var supplied = change.equals("task") ? proxy(TaskContext.class, (name, args) -> UUID.randomUUID()) : frame.task;
+                assertThrows(ApiException.class, () -> evidence.facts(frame.queryIntent(request), request, supplied));
+            }
+            assertEquals(0, frame.remoteExecutions);
+            assertEquals(0, frame.hostAuthorizations);
+        }
+    }
+
     private static final class Frame implements AutoCloseable {
         private final DeploymentRemoteLayout layout;
 
@@ -1561,6 +1805,12 @@ class DeploymentAgentHealthEvidenceTest {
         private Runnable onStatusHost = () -> {
         };
 
+        private Consumer<JsonNode> onPublicationReview = ignored -> {
+        };
+
+        private Runnable onPublicationHost = () -> {
+        };
+
         private int statusQueries;
 
         private int healthDispatches;
@@ -1600,6 +1850,10 @@ class DeploymentAgentHealthEvidenceTest {
         }
 
         Frame(String healthKind, DeploymentHealthCheck selectedHealth, DeploymentRemoteLayout layout) throws Exception {
+            this(healthKind, selectedHealth, layout, false);
+        }
+
+        Frame(String healthKind, DeploymentHealthCheck selectedHealth, DeploymentRemoteLayout layout, boolean publication) throws Exception {
             this.layout = layout;
             this.capturedLayout = layout;
             try (var source = new InputStreamReader(Objects.requireNonNull(getClass().getResourceAsStream("/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql")), StandardCharsets.UTF_8)) {
@@ -1670,12 +1924,14 @@ class DeploymentAgentHealthEvidenceTest {
                 assertEquals("call", name);
                 var request = (AiRequest) args[0];
                 aiRequests.add(request);
-                assertEquals(Optional.of("submit_result"), request.requiredToolName());
+                assertTrue(request.requiredToolName().isEmpty());
+                assertTrue(request.tools().stream().anyMatch(tool -> tool.name().equals("submit_result")));
                 var facts = JSON.readTree(request.messages().getLast().text());
                 reviewFacts.add(facts);
                 String operation = facts.path("operation").asText();
                 if (operation.equals("deployment.publication.original-status.v1")) onStatusReview.accept(facts);
                 if (operation.equals("deployment.publication.health.v1")) onHealthReview.accept(facts);
+                if (operation.equals("deployment.publication.publish.v1")) onPublicationReview.accept(facts);
                 if (Set.of("deployment.publication.inspect.v1", "deployment.publication.observe.v1").contains(operation))
                     onRuntimeReview.accept(facts);
                 if (reviewCallFailure != null) return reviewCallFailure;
@@ -1700,6 +1956,8 @@ class DeploymentAgentHealthEvidenceTest {
                     onStatusHost.run();
                 if (reviewFacts.getLast().path("operation").asText().equals("deployment.publication.health.v1"))
                     onHealthHost.run();
+                if (reviewFacts.getLast().path("operation").asText().equals("deployment.publication.publish.v1"))
+                    onPublicationHost.run();
                 if (Set.of("deployment.publication.inspect.v1", "deployment.publication.observe.v1").contains(
                     reviewFacts.getLast().path("operation").asText())) onRuntimeHost.run();
                 if (hostOutcome != TaskResult.SUCCEEDED)
@@ -1774,30 +2032,41 @@ class DeploymentAgentHealthEvidenceTest {
                     ? new DeploymentRuntimeDefinition.Container(DeploymentRuntimeDefinition.ContainerEngineType.DOCKER, Map.of(18101, 18101), List.of(), health, policy, workload)
                     : new DeploymentRuntimeDefinition.ManagedProcess(health, policy, workload);
                 var config = new DeploymentUnitRuntimeConfig(health, Optional.empty(), policy, workload);
-                parts.add(new DeploymentApplicationGraph.Part(component, unit, config, List.of(), runtime, List.of(),
-                    new DeploymentResourceBindings(List.of(), Optional.of(List.of()))));
-                units.add(new DeploymentUnitCommit(unit, config, new DeploymentCurrentRelease(unit.id(), backend ? RELEASE : "7".repeat(64), Instant.EPOCH),
-                    DeploymentConfigSnapshot.create(unit.id(), 1, "v1", Instant.EPOCH, List.of()), List.of()));
-                candidates.put(component, new DeploymentGraphPublisher.Candidate(unit.id() + "-0123456789abcdef", backend ? ARTIFACT : "8".repeat(64), SOURCE, "0".repeat(64), false, Map.of()));
+                var resources = new DeploymentResourceBindings(List.of(), Optional.of(List.of()));
+                var configuration = DeploymentConfigSnapshot.create(unit.id(), 1, "v1", Instant.EPOCH, List.of());
+                String artifact = backend ? ARTIFACT : "8".repeat(64), currentSource = publication ? "6".repeat(64) : SOURCE;
+                String release = publication ? DeploymentAgentInputs.publicationReleaseIdentity(artifact, currentSource, configuration.sha256(), runtime, resources)
+                    : backend ? RELEASE : "7".repeat(64);
+                parts.add(new DeploymentApplicationGraph.Part(component, unit, config, List.of(), runtime, List.of(), resources));
+                units.add(new DeploymentUnitCommit(unit, config, new DeploymentCurrentRelease(unit.id(), release, Instant.EPOCH), configuration, List.of()));
+                candidates.put(component, new DeploymentGraphPublisher.Candidate(unit.id() + "-0123456789abcdef", artifact, currentSource, "0".repeat(64), false, Map.of()));
             }
             var whole = new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:18100/"), 200, 120);
             proposal = new DeploymentPublishResult(new DeploymentApplicationGraph("controlled", "frontend", whole, parts), units);
-            journal.create(task, new DeploymentAgentActionLog.Identity(server.id(), DeploymentAgentInputs.targetDigest(server, remote), REVISION, "FULL_CONTROL", true));
+            journal.create(task, new DeploymentAgentActionLog.Identity(server.id(), DeploymentAgentInputs.targetDigest(server, remote), REVISION,
+                publication ? "AUTOMATIC" : "FULL_CONTROL", !publication));
             if (!layout.equals(DeploymentRemoteLayout.original()))
                 gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.record(journal, task, server, layout);
             journal.event(task, "TARGET_PROFILE", "", DeploymentAgentInputs.targetProfile(profile));
             journal.event(task, "SOURCE", ARCHIVE, SOURCE);
             for (String component : candidates.keySet()) {
                 journal.event(task, "CANDIDATE", component, candidates.get(component).candidateId());
-                journal.event(task, "CURRENT_SOURCE", component, SOURCE);
+                journal.event(task, "CURRENT_SOURCE", component, candidates.get(component).sourceRevision());
+                if (publication) {
+                    String seal = DeploymentAgentInputs.hash(component + ":" + candidates.get(component).sourceRevision() + ":seal");
+                    journal.event(task, "SEAL_EXECUTING", seal, candidates.get(component).sourceRevision());
+                    journal.event(task, "SEAL_RESULT", seal, candidates.get(component).artifactSha256());
+                }
                 journal.event(task, "SEALED_ARTIFACT", component, candidates.get(component).artifactSha256());
                 journal.event(task, "SEALED_TOOLS", component, "0".repeat(64) + ":false");
             }
             journal.event(task, "DELIVERY_EXECUTING", "f".repeat(64), "1");
             journal.event(task, "AI_PUBLICATION", "controlled", "MODEL_GENERATED_COMMANDS");
-            journal.event(task, "AI_PUBLICATION_VERIFIED", "controlled", "HEALTHY");
-            journal.event(task, "AI_PUBLICATION_FINISHED", "controlled", "MODEL_ACCEPTED_VERIFIED_RESULT");
-            journal.event(task, "CANDIDATE_CLEANUP_EXECUTING", "backend", candidates.get("backend").candidateId());
+            if (!publication) {
+                journal.event(task, "AI_PUBLICATION_VERIFIED", "controlled", "HEALTHY");
+                journal.event(task, "AI_PUBLICATION_FINISHED", "controlled", "MODEL_ACCEPTED_VERIFIED_RESULT");
+                journal.event(task, "CANDIDATE_CLEANUP_EXECUTING", "backend", candidates.get("backend").candidateId());
+            }
             var executions = new DeploymentExecutionStore(db);
             var id = new DeploymentExecutionIdentity(UUID.randomUUID(), taskId, Optional.empty(), "controlled", server, DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, SOURCE);
             var references = DeploymentOriginalPublishCommit.references(server, proposal, Map.of());
@@ -1806,13 +2075,83 @@ class DeploymentAgentHealthEvidenceTest {
                 executions.recordReference(task, id.executionId(), reference, UUID.randomUUID(), Instant.EPOCH);
             executions.startEffects(task, id.executionId(), Instant.EPOCH.plusSeconds(1));
             executions.recordPublicationTemplate(task, id.executionId(), new DeploymentPublishProposal(proposal.graph(), proposal.units()), Instant.EPOCH.plusSeconds(2));
-            executions.recordUncommittedOutcome(task, id.executionId(), TaskResult.UNKNOWN,
-                new Problem(ProblemCode.UNKNOWN, "CLEANUP_UNCONFIRMED", "Retained original cleanup", Map.of(), Optional.empty()), Instant.EPOCH.plusSeconds(3));
-            journal.state(task, "UNKNOWN");
+            if (!publication) {
+                executions.recordUncommittedOutcome(task, id.executionId(), TaskResult.UNKNOWN,
+                    new Problem(ProblemCode.UNKNOWN, "CLEANUP_UNCONFIRMED", "Retained original cleanup", Map.of(), Optional.empty()), Instant.EPOCH.plusSeconds(3));
+                journal.state(task, "UNKNOWN");
+            }
+        }
+
+        DeploymentCommandReviewScope publicationScope() throws Exception {
+            return new DeploymentCommandReviewScope(context, context.interaction(), task, "AUTOMATIC", false, () -> REVISION);
+        }
+
+        DeploymentAgentPublicationEvidence publicationEvidence(DeploymentCommandReviewScope scope) throws Exception {
+            return publicationEvidence(scope, proposal);
+        }
+
+        DeploymentAgentPublicationEvidence publicationEvidence(DeploymentCommandReviewScope scope, DeploymentPublishResult selected) throws Exception {
+            var workspaces = new LinkedHashMap<String, DeploymentRemoteWorkspace>();
+            for (var part : selected.graph().components())
+                workspaces.put(part.componentId(), new DeploymentRemoteWorkspace(part.unit().id(), ARCHIVE, layout));
+            return new DeploymentAgentPublicationEvidence(scope, remote, server, task, REVISION, selected, candidates, workspaces, journal);
+        }
+
+        CommandRequest publicationRequest(String change) {
+            return publicationRequest("backend", change);
+        }
+
+        CommandRequest publicationRequest(String component, String change) {
+            var part = part(component);
+            var candidate = candidates.get(component);
+            var commit = proposal.units().stream().filter(value -> value.unit().equals(part.unit())).findFirst().orElseThrow();
+            var runtime = part.reviewedRuntime();
+            var values = new ArrayList<>(List.of(layout.helperPath(), runtime instanceof DeploymentRuntimeDefinition.Container ? "publish-container" : "publish-deployment",
+                part.unit().id(), candidate.candidateId(), commit.release().sha256(), part.unit().ownershipManifestSha256(),
+                "identity-v2", runtime.identityPolicy().name(), DeploymentWorkloadArguments.payload(runtime)));
+            values.addAll(DeploymentPublishArguments.inputs(commit.configuration().sha256(), Map.of()));
+            values.addAll(DeploymentPublishArguments.content(part.unit().id(), part.resources(), layout));
+            if (runtime instanceof DeploymentRuntimeDefinition.Container container) values.addAll(DeploymentContainerArguments.from(container));
+            else values.addAll(DeploymentRuntimeArguments.from(null, runtime));
+            switch (change) {
+                case "release" -> values.set(4, "f".repeat(64));
+                case "owner" -> values.set(5, "f".repeat(64));
+                case "candidate" -> values.set(3, part.unit().id() + "-fedcba9876543210");
+                case "configuration" -> values.set(9, "f".repeat(64));
+                case "runtime" -> values.set(7, "CONTAINER_NON_ROOT");
+                case "resources" -> values.set(11, "foreign-application");
+                default -> { }
+            }
+            String body = values.stream().map(DeploymentBuildCommandChannel::shellQuote).collect(java.util.stream.Collectors.joining(" "));
+            if (change.equals("script")) body += "; printf unexpected";
+            return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(body, layout), new byte[0], Duration.ofSeconds(120), 4096);
+        }
+
+        ActionIntent publicationIntent(CommandRequest request, String change) {
+            return publicationIntent(request, "backend", change);
+        }
+
+        ActionIntent publicationIntent(CommandRequest request, String component, String change) {
+            var actualServer = change.equals("server") ? new ServerId("foreign") : server;
+            return RemoteActions.command(actualServer, change.equals("business") ? "f".repeat(64) : candidates.get(component).artifactSha256(), request).withSemantics(new ActionSemantics(
+                "deployment.publication.publish.v1", Set.of(new ActionTarget(actualServer.id(), "deployment-release",
+                    change.equals("target") ? "/opt/foreign" : part(component).unit().releaseRoot()),
+                    new ActionTarget(actualServer.id(), "deployment-candidate", layout.candidateRoot(candidates.get(component).candidateId())))));
         }
 
         DeploymentAgentHealthEvidence evidence() throws Exception {
             return evidence(proposal);
+        }
+
+        DeploymentAgentHealthEvidence partialEvidence() throws Exception {
+            var scope = new DeploymentCommandReviewScope(context, context.interaction(), task, "FULL_CONTROL", true, () -> REVISION);
+            return DeploymentAgentHealthEvidence.forOriginalPublicationObservation(scope, remote, server, task, REVISION, proposal, candidates, journal);
+        }
+
+        OperationResult<Void> observePartialPublication() throws Exception {
+            var scope = new DeploymentCommandReviewScope(context, context.interaction(), task, "FULL_CONTROL", true, () -> REVISION);
+            var execution = new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow();
+            return DeploymentAgentPublicationObservation.observe(scope, remote, server, task, REVISION, execution, proposal, candidates, journal);
         }
 
         DeploymentAgentHealthEvidence evidence(DeploymentPublishResult original) throws Exception {
@@ -1914,7 +2253,10 @@ class DeploymentAgentHealthEvidenceTest {
 
         ActionIntent queryIntent(CommandRequest request) {
             return RemoteActions.command(server, ARTIFACT, request).withSemantics(new ActionSemantics("deployment.publication.original-status.v1",
-                Set.of(new ActionTarget(server.id(), "deployment-release", part("backend").unit().releaseRoot()))));
+                Set.of(new ActionTarget(server.id(), "deployment-release", part("backend").unit().releaseRoot()),
+                    new ActionTarget(server.id(), "deployment-candidate", layout.candidateRoot(candidates.get("backend").candidateId())),
+                    new ActionTarget(server.id(), "deployment-snapshot", layout.snapshotRoot(part("backend").unit().id(), task.id())),
+                    new ActionTarget(server.id(), "deployment-application-locks", layout.applicationLockRoot(part("backend").unit().id())))));
         }
 
         ActionIntent healthIntent(CommandRequest request, String change) {

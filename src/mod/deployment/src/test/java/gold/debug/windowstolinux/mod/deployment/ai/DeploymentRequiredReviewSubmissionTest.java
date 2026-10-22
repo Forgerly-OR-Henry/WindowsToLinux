@@ -50,7 +50,7 @@ class DeploymentRequiredReviewSubmissionTest {
         assertTrue(request.requiredToolName().isEmpty());
         assertEquals(AiPurpose.APPROVAL, request.purpose());
         assertFalse(request.jsonObjectResponse());
-        assertEquals(32768, request.maxOutputTokens().orElseThrow());
+        assertEquals(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().approvalMaxOutputTokens(), request.maxOutputTokens().orElseThrow());
         assertEquals(1048576, request.maxRequestBytes());
         assertEquals(Duration.ofSeconds(600), request.timeout());
         assertEquals(JSON.valueToTree(facts("first")), JSON.readTree(request.messages().getLast().text()));
@@ -59,12 +59,13 @@ class DeploymentRequiredReviewSubmissionTest {
         assertEquals(Set.of("decision", "requiresUserConfirmation", "reason"),
             Set.copyOf(JSON.convertValue(schema.path("required"), List.class)));
         assertEquals(List.of("APPROVE", "DENY"), JSON.convertValue(schema.at("/properties/decision/enum"), List.class));
+        int actualOutputLimit = 32768;
         var encoded = gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec.forProtocol(
             gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS).encode("deepseek-flash", request,
-            32768, gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.LOW, Map.of());
+            actualOutputLimit, gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.LOW, Map.of());
         var wire = JSON.readTree(encoded);
         assertEquals("auto", wire.path("tool_choice").asText());
-        assertEquals(32768, wire.path("max_tokens").asInt());
+        assertEquals(actualOutputLimit, wire.path("max_tokens").asInt(), "The encoded actual limit is separate from the caller's requested budget");
         assertEquals("low", wire.path("reasoning_effort").asText());
     }
 
@@ -160,7 +161,7 @@ class DeploymentRequiredReviewSubmissionTest {
     }
 
     private static DeploymentApprovalConversation conversation(NativeAiFixture fixture) {
-        return new DeploymentApprovalConversation(fixture.context, fixture.task, SERVER, "verified-controlled-target", "a".repeat(64), REVISION);
+        return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApprovalConversation(fixture.context, fixture.task, SERVER, "verified-controlled-target", "a".repeat(64), REVISION);
     }
 
     private static Map<String, ?> facts(String action) {

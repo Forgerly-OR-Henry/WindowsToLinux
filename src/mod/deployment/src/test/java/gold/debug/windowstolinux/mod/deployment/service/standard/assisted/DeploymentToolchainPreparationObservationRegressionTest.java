@@ -79,7 +79,7 @@ class DeploymentToolchainPreparationObservationRegressionTest {
     @Test
     void observationRejectsAnotherTaskServerClosedWorkflowAndModelRoute() throws Exception {
         try (var h = new Harness("VALID")) {
-            var observer = (DeploymentCommandReview) h.scope.interaction();
+            var observer = h.scope;
             var tools = tools(REQUIREMENT, DIRECTORY);
             assertThrows(IllegalArgumentException.class, () -> observer.toolchainsPrepared(new ServerId("other"), tools, h.fixture.task));
             var sameId = proxy(TaskContext.class, (p, m, a) -> h.fixture.task.id());
@@ -95,7 +95,7 @@ class DeploymentToolchainPreparationObservationRegressionTest {
     @Test
     void recentPreparationSetsAreBoundedAndSharedByCurrentTaskReviews() throws Exception {
         try (var h = new Harness("VALID")) {
-            var observer = (DeploymentCommandReview) h.scope.interaction();
+            var observer = h.scope;
             for (int index = 0; index < 33; index++) {
                 var requirement = ToolchainRequirement.declared(DeploymentToolchainType.GO, "1.27", "project" + index + "/go.mod", ToolchainRequirement.PurposeType.BUILD);
                 observer.toolchainsPrepared(h.server, tools(requirement, DIRECTORY), h.fixture.task);
@@ -138,11 +138,6 @@ class DeploymentToolchainPreparationObservationRegressionTest {
             scope.workflowOpened(permission);
             var grant = new ApprovalGrant(UUID.randomUUID());
             var review = proxy(DeploymentCommandReview.class, (p, m, a) -> {
-                if (m.getName().equals("toolchainsPrepared")) {
-                    ((DeploymentCommandReview) scope.interaction()).toolchainsPrepared((ServerId) a[0], (DeploymentResolvedToolchains) a[1], (TaskContext) a[2]);
-                    observations.incrementAndGet();
-                    return null;
-                }
                 assertEquals("approveCommand", m.getName());
                 if (((ActionIntent) a[0]).semantics().orElseThrow().operation().equals("deployment.toolchain.bind.v1"))
                     assertFalse(bindings().isEmpty(), "Prior actual receipts must be available before the new binding grant");
@@ -162,7 +157,15 @@ class DeploymentToolchainPreparationObservationRegressionTest {
                 }
                 return reply(mutation.equals("NONZERO") ? 1 : 0, mutation.equals("MALFORMED") ? "TOOLCHAIN=GO|broken\n" : RECEIPT, mutation.equals("TRUNCATED"));
             });
-            channel = new DeploymentBuildCommandChannel(session, review, server, fixture.task, "c".repeat(64), new DeploymentBuildBudget(3600));
+            channel = new DeploymentBuildCommandChannel(session, review, server, fixture.task, "c".repeat(64), new DeploymentBuildBudget(3600),
+                gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard.NONE, LAYOUT,
+                new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentPreparationObserver() {
+                    @Override
+                    public void toolsPrepared(ServerId observedServer, DeploymentResolvedToolchains tools, TaskContext observedTask) throws ApiException {
+                        scope.preparationObserver().toolsPrepared(observedServer, tools, observedTask);
+                        observations.incrementAndGet();
+                    }
+                });
         }
 
         ActionIntent intent(String operation) {

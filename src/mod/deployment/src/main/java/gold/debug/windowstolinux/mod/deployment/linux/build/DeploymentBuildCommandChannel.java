@@ -59,6 +59,8 @@ public final class DeploymentBuildCommandChannel {
 
     private final DeploymentRemoteLayout layout;
 
+    private final DeploymentPreparationObserver preparationObserver;
+
     private final java.util.ArrayDeque<String> preparationReceipts = new java.util.ArrayDeque<>();
 
     /** Binds the original task, server and borrowed session; the caller closes the session. / 绑定原任务、服务器和借用会话；由调用方关闭会话。
@@ -96,6 +98,13 @@ public final class DeploymentBuildCommandChannel {
     public DeploymentBuildCommandChannel(RemoteSession session, InteractionService interaction, ServerId server,
                                          TaskContext task, String planRevision, DeploymentBuildBudget budget,
                                          DeploymentSendGuard beforeSend, DeploymentRemoteLayout layout) {
+        this(session, interaction, server, task, planRevision, budget, beforeSend, layout, DeploymentPreparationObserver.NONE);
+    }
+
+    public DeploymentBuildCommandChannel(RemoteSession session, InteractionService interaction, ServerId server,
+                                         TaskContext task, String planRevision, DeploymentBuildBudget budget,
+                                         DeploymentSendGuard beforeSend, DeploymentRemoteLayout layout,
+                                         DeploymentPreparationObserver preparationObserver) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
         this.server = Objects.requireNonNull(server);
@@ -106,6 +115,7 @@ public final class DeploymentBuildCommandChannel {
         this.budget = Objects.requireNonNull(budget);
         this.beforeSend = Objects.requireNonNull(beforeSend);
         this.layout = Objects.requireNonNull(layout);
+        this.preparationObserver = Objects.requireNonNull(preparationObserver);
     }
 
     /** Rebinds reviewed request identity while preserving original execution budget and guard. / 重新绑定已审阅请求身份，保留原执行预算与守卫。
@@ -114,7 +124,7 @@ public final class DeploymentBuildCommandChannel {
     public DeploymentBuildCommandChannel rebound(String revision) {
         if (revision == null || !revision.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Invalid replacement identity");
-        return new DeploymentBuildCommandChannel(session, interaction, server, task, revision, budget, beforeSend, layout);
+        return new DeploymentBuildCommandChannel(session, interaction, server, task, revision, budget, beforeSend, layout, preparationObserver);
     }
 
     /** Observes the original cumulative execution deadline. / 观察原累计执行期限。 */
@@ -170,8 +180,7 @@ public final class DeploymentBuildCommandChannel {
                 throw new IllegalArgumentException("Validated tools differ from this channel's observed successful preparation");
         }
         preparationReceipts.clear();
-        if (interaction instanceof gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview observer)
-            observer.toolchainsPrepared(server, tools, task);
+        preparationObserver.toolsPrepared(server, tools, task);
     }
 
     /** Seals and re-probes the exact prepared binding. / 封存并回探精确已准备绑定。

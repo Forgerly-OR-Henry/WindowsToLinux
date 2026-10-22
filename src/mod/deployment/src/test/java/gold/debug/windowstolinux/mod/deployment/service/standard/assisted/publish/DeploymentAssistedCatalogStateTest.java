@@ -23,6 +23,45 @@ import org.junit.jupiter.params.provider.ValueSource;
 class DeploymentAssistedCatalogStateTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    @Test
+    void nestedAssistedLoopOwnsItsAllowanceAndFeedbackWhileAgentChargesRemainUnchanged() throws Exception {
+        var fixture = new NativeAiFixture();
+        var goal = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget(
+            new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget.Snapshot(4, 1, 1, 6, 2, 1, 0, 0,
+                new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget(60).snapshot()));
+        fixture.nativeReply(new AiToolCall("shared-call", "OBSERVATION", "{}"));
+        fixture.nativeReply(new AiToolCall("assisted-finish", "finish", "{}"));
+        try (var original = goal.open(fixture.task);
+             var agentTools = gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget.openToolBudget(fixture.task)) {
+            assertTrue(gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.consume(
+                List.of(new AiToolCall("shared-call", "read", "{}"))));
+            var before = goal.snapshot();
+            int remaining = gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.remaining();
+            var result = DeploymentAssistedDeployment.run(context(fixture), () -> {
+                throw new AssertionError("No SSH capability in mode isolation test");
+            }, new ServerId("fixture"), fixture.task, () -> {
+                throw new AssertionError("No host observation in mode isolation test");
+            }, () -> Map.of("OBSERVATION", new DeploymentModelToolLoop.Tool<String>("Read ASSISTED feedback", args -> {
+                assertEquals(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().standaloneToolAttempts() - 1,
+                    gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.remaining());
+                return DeploymentModelToolLoop.Feedback.observed("secret=private-assisted-value\npublic assisted result");
+            }), "finish", new DeploymentModelToolLoop.Tool<>("Finish local ASSISTED selection", args ->
+                DeploymentModelToolLoop.Feedback.ended(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of("observed"), Optional.empty())))), Map::of);
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
+            assertEquals(before, goal.snapshot());
+            assertEquals(remaining, gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.remaining());
+            assertFalse(gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.consume(
+                List.of(new AiToolCall("shared-call", "read", "{}"))));
+            assertEquals(before.sharedTools() + 1, goal.snapshot().sharedTools());
+            var feedback = fixture.requests.getLast().messages().stream().flatMap(message -> message.toolResult().stream())
+                .map(AiToolResult::text).toList();
+            assertEquals(List.of("[credential content excluded]\npublic assisted result"), feedback,
+                "ASSISTED must not inherit the Agent OBSERVATION metadata bypass");
+            assertEquals(2, fixture.requests.size());
+            assertTrue(fixture.requests.stream().allMatch(request -> request.purpose() == AiPurpose.LANGUAGE));
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(ints = {2, 3})
     void latestStateTracksPrepareBuildPublishWithoutRetainingAnObsoleteCatalog(int components) throws Exception {

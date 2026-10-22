@@ -21,7 +21,7 @@ import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildComma
 import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard;
 import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter;
 import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
-import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException;
+import gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentAlternativeRequiredException;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
 
 /** Sends only fixed Agent observations through fresh independent reviews and original dispatch guards. / 仅经独立新审核及原发送守卫发送固定 Agent 观测。 */
@@ -59,7 +59,7 @@ public final class DeploymentAgentHostChannel {
                 if (original instanceof DeploymentCommandReview && denied.problem().code() == ProblemCode.ACCESS_DENIED
                     && denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
                     && task.id().toString().equals(denied.problem().context().get("task")))
-                    throw DeploymentAlternativeRequiredException.fromReview(task, denied);
+                    throw DeploymentAgentAlternativeRequiredException.fromReview(task, denied);
                 throw denied;
             }
         }

@@ -30,14 +30,13 @@ class DeploymentAgentHostProbeEvidenceTest {
     private final ServerId server = new ServerId("baseline-fixture");
 
     private Map<String, Object> current(String operation, String script, byte[] input, long limit) throws Exception {
-        var method = Class.forName("gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandEvidence")
-            .getDeclaredMethod("facts", gold.debug.windowstolinux.appapi.task.action.ActionIntent.class, CommandRequest.class);
-        method.setAccessible(true);
         try (var request = new CommandRequest(script, input, Duration.ofSeconds(90), limit)) {
             var intent = RemoteActions.command(server, "fixture-route", request).withSemantics(new ActionSemantics(operation,
                 Set.of(new ActionTarget(server.id(), "deployment-host", server.id()))));
-            var facts = new LinkedHashMap<String, Object>();
-            ((Map<?, ?>) method.invoke(null, intent, request)).forEach((key, value) -> facts.put((String) key, value));
+            // Raw parser input intentionally includes unknown labels; it never passes the command admission port.
+            var facts = new LinkedHashMap<String, Object>(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandEvidence.baseFacts(
+                intent, request, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), false));
+            facts.put("inputKind", input.length == 0 ? "EMPTY" : "OPAQUE_BOUND_DATA");
             return facts;
         }
     }
@@ -87,7 +86,7 @@ class DeploymentAgentHostProbeEvidenceTest {
     @Test
     void conversationRegeneratesSourceAndOriginalBindingBeforeApiAndRejectsInjectedNavigation() throws Exception {
         var fixture = new NativeAiFixture();
-        var conversation = new DeploymentApprovalConversation(fixture.context, fixture.task, server, "fixture-fingerprint", "a".repeat(64), "fixture-route");
+        var conversation = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApprovalConversation(fixture.context, fixture.task, server, "fixture-fingerprint", "a".repeat(64), "fixture-route");
         var current = baseline();
         var bound = conversation.facts("Review current command", current, "fixture-route", fixture.task);
         var original = (ObjectNode) json.valueToTree(bound);

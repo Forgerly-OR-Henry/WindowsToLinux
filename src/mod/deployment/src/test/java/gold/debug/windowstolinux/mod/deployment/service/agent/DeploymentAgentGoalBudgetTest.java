@@ -9,6 +9,30 @@ import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudge
 
 final class DeploymentAgentGoalBudgetTest {
     @Test
+    void neutralToolScopeCannotReadOrChargeAnAmbientAgentGoal() {
+        var fixture = new gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture();
+        var goal = new DeploymentAgentGoalBudget(new DeploymentAgentGoalBudget.Snapshot(4, 1, 1, 6, 2, 1, 0, 0,
+            new DeploymentBuildBudget(60).snapshot()));
+        try (var original = goal.open(fixture.task)) {
+            var before = goal.snapshot();
+            try (var neutral = gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.open(6)) {
+                assertEquals(6, gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.remaining());
+                assertTrue(gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.consume(java.util.List.of(
+                    new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("neutral", "read", "{}"))));
+                assertEquals(before, goal.snapshot());
+            }
+            try (var owned = DeploymentAgentGoalBudget.openToolBudget(fixture.task)) {
+                assertEquals(4, gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.remaining());
+                assertTrue(gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.consume(java.util.List.of(
+                    new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("owned", "read", "{}"))));
+                assertEquals(3, goal.snapshot().sharedTools());
+            }
+            assertEquals(before.mainResponses(), goal.snapshot().mainResponses());
+            assertEquals(before.nestedResponses(), goal.snapshot().nestedResponses());
+        }
+    }
+
+    @Test
     void carryKeepsEveryOriginalChargeAndRejectsRefund() {
         var build = new DeploymentBuildBudget(60);
         build.charge(2_000_000_000L);
@@ -44,7 +68,7 @@ final class DeploymentAgentGoalBudgetTest {
             new DeploymentBuildBudget(60).snapshot());
         var original = new DeploymentAgentGoalBudget(initial);
         root.nativeReply(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("main-original", "source", "{}"));
-        try (var scope = original.open(root.task); var tools = gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.open(2)) {
+        try (var scope = original.open(root.task); var tools = DeploymentAgentGoalBudget.openToolBudget(root.task)) {
             var reply = new gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentProtocol(root.context, root.configurationRevision)
                 .decide(java.util.Map.of(), new gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentNativeHistory(), 1, root.task);
             assertTrue(gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.consume(reply.toolCalls()));
@@ -68,10 +92,11 @@ final class DeploymentAgentGoalBudgetTest {
             child.nativeReply(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("nested-one", "done", "{}"),
                 new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("nested-two", "done", "{}"));
         }
-        try (var scope = carried.open(child.task); var tools = gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.open(2)) {
+        try (var scope = carried.open(child.task); var tools = DeploymentAgentGoalBudget.openToolBudget(child.task)) {
             assertEquals(1, gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.remaining());
             var nested = new gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentModelToolLoop<String>(child.context, child.task, child.configurationRevision,
-                "Controlled nested deployment", 2);
+                "Controlled nested deployment", 2, () -> DeploymentAgentGoalBudget.beforeModel(child.task, false),
+                DeploymentAgentFeedback::safe);
             if (boundary.equals("responses"))
                 assertEquals(gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED, nested.run(() -> available, java.util.Map::of).outcome());
             else assertThrows(IllegalStateException.class, () -> nested.run(() -> available, java.util.Map::of));

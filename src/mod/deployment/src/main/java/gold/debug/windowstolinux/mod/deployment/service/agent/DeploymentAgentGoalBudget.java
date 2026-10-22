@@ -83,6 +83,21 @@ public final class DeploymentAgentGoalBudget {
         return new Scope(this, task);
     }
 
+    /** Restores the Agent coordinator's allowance and binds future charges to this actual goal and task. */
+    public static gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget openToolBudget(TaskContext task) {
+        var scope = CURRENT.get();
+        if (scope == null)
+            return gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.open(
+                DeploymentConfigLoader.current().ai().execution().sharedToolAttempts());
+        scope.require(task);
+        var original = scope.budget.snapshot();
+        return gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.open(
+            original.maximumTools(), original.sharedTools(), used -> {
+                scope.require(task);
+                sharedAttempts(used);
+            });
+    }
+
     public static void beforeModel(TaskContext task, boolean main) {
         var scope = CURRENT.get();
         if (scope == null) return;

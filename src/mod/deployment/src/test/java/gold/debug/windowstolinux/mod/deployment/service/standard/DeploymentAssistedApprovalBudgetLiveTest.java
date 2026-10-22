@@ -134,7 +134,7 @@ class DeploymentAssistedApprovalBudgetLiveTest extends DeploymentStaticLiveAccep
                     if (runtimePrerequisites) {
                         var plan = staticSitePlan(material, archive, application, layout, server);
                         String identity = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.plan.ReviewedPlanIdentity.from(plan.request());
-                        ((DeploymentCommandReview) scope.interaction()).toolchainPreparationPlanned(plan, identity, task);
+                        scope.toolchainPreparationPlanned(plan, identity, task);
                         for (String ecosystem : List.of("NODE", "PYTHON")) {
                             try (var request = preparation(layout, ecosystem, ecosystem.equals("NODE") ? "24" : "3.12")) {
                                 var intent = RemoteActions.command(server, identity, request).withSemantics(new ActionSemantics(

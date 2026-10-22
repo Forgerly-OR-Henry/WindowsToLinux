@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.toolchain;
 
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
@@ -39,29 +40,48 @@ import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.Deploym
 public final class DeploymentAgentToolchainCommands implements DeploymentToolchainSetup.Commands {
     private final DeploymentRemoteLayout layout;
 
+    private final boolean reuseExistingOnly;
+
     private final DeploymentBuildCommandChannel commands;
 
     private final ServerId server;
 
     private final Supplier<String> operations;
 
-    public DeploymentAgentToolchainCommands(DeploymentBuildCommandChannel commands, ServerId server) {
-        this(commands, server, DeploymentRemoteLayout.original());
+    private final DeploymentAgentToolchainProgramState programState;
+
+    private JsonNode readyProgram;
+
+    private OperationResult<CommandResult> readyObservation;
+
+    public DeploymentAgentToolchainCommands(DeploymentBuildCommandChannel commands, ServerId server,
+                                            gold.debug.windowstolinux.appapi.mod.ModContext context,
+                                            gold.debug.windowstolinux.appapi.task.run.TaskContext task, DeploymentRemoteLayout layout) {
+        this(commands, server, context, task, layout, false);
     }
 
-    public DeploymentAgentToolchainCommands(DeploymentBuildCommandChannel commands, ServerId server, DeploymentRemoteLayout layout) {
-        this(commands, server, () -> UUID.randomUUID().toString().replace("-", ""), layout);
+    /** Isolation keeps existing immutable installations and may create only this task's probe/binding work. */
+    public DeploymentAgentToolchainCommands(DeploymentBuildCommandChannel commands, ServerId server,
+                                            gold.debug.windowstolinux.appapi.mod.ModContext context,
+                                            gold.debug.windowstolinux.appapi.task.run.TaskContext task, DeploymentRemoteLayout layout,
+                                            boolean reuseExistingOnly) {
+        this(commands, server, () -> UUID.randomUUID().toString().replace("-", ""), layout,
+            new DeploymentAgentToolchainProgramState(context, task, server, layout), reuseExistingOnly);
     }
 
-    DeploymentAgentToolchainCommands(DeploymentBuildCommandChannel commands, ServerId server, Supplier<String> operations) {
-        this(commands, server, operations, DeploymentRemoteLayout.original());
+    DeploymentAgentToolchainCommands(DeploymentBuildCommandChannel commands, ServerId server, Supplier<String> operations,
+                                     DeploymentRemoteLayout layout, DeploymentAgentToolchainProgramState programState) {
+        this(commands, server, operations, layout, programState, false);
     }
 
-    DeploymentAgentToolchainCommands(DeploymentBuildCommandChannel commands, ServerId server, Supplier<String> operations, DeploymentRemoteLayout layout) {
+    private DeploymentAgentToolchainCommands(DeploymentBuildCommandChannel commands, ServerId server, Supplier<String> operations,
+                                     DeploymentRemoteLayout layout, DeploymentAgentToolchainProgramState programState, boolean reuseExistingOnly) {
+        this.reuseExistingOnly = reuseExistingOnly;
         this.layout = Objects.requireNonNull(layout);
         this.commands = Objects.requireNonNull(commands);
         this.server = Objects.requireNonNull(server);
         this.operations = Objects.requireNonNull(operations);
+        this.programState = Objects.requireNonNull(programState);
     }
 
     @Override
@@ -70,7 +90,7 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
         requirePreparation(ecosystem, branch, exact, seconds, javaHome, layout);
         if (commands.remainingSeconds() < 45)
             return budgetExhausted();
-        if (Set.of(DeploymentToolchainType.PYTHON, DeploymentToolchainType.PHP, DeploymentToolchainType.RUBY).contains(ecosystem)) {
+        if (!reuseExistingOnly && Set.of(DeploymentToolchainType.PYTHON, DeploymentToolchainType.PHP, DeploymentToolchainType.RUBY).contains(ecosystem)) {
             var dependencies = dependencies(ecosystem.name());
             if (!complete(dependencies))
                 return dependencies;
@@ -90,28 +110,109 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
             if (!receipt.startsWith("TOOLCHAIN_RELEASE=") || !receipt.endsWith("\n") || receipt.indexOf('\n') != receipt.length() - 1)
                 return unconfirmed("DEPLOYMENT_AGENT_TOOLCHAIN_RELEASE_UNCONFIRMED");
             encoded = receipt.substring("TOOLCHAIN_RELEASE=".length(), receipt.length() - 1);
-            DeploymentAgentToolchainRelease.decode(encoded, ecosystem, branch, exact, operation);
+            DeploymentAgentToolchainRelease.decode(encoded, ecosystem, branch, exact, operation, layout);
         } catch (IllegalArgumentException malformed) {
             return unconfirmed("DEPLOYMENT_AGENT_TOOLCHAIN_RELEASE_UNCONFIRMED");
         }
+        var readiness = readyController();
+        if (!complete(readiness)) return readiness;
         seconds = (int) Math.min(seconds, commands.remainingSeconds() - 15);
         if (seconds < 30)
             return budgetExhausted();
-        return send("deployment.agent.toolchain.prepare.v1", controllerTargets(server, operation, layout),
-            DeploymentAgentToolchainPrograms.controller(layout), List.of("prepare", ecosystem.name(), branch, exact,
-                Integer.toString(seconds), javaHome, operation, encoded), seconds + 15L);
+        var arguments = List.of("prepare", ecosystem.name(), branch, exact, Integer.toString(seconds), javaHome, operation, encoded);
+        return stored("prepare", operation, arguments, seconds + 15L, readyProgram).result();
     }
 
     @Override
     public OperationResult<CommandResult> bind(String encoded) throws ApiException {
         requireBinding(encoded, layout);
+        var readiness = readyController();
+        if (!complete(readiness)) return readiness;
         long seconds = Math.min(180, commands.remainingSeconds() - 15);
         if (seconds < 30)
             return budgetExhausted();
         String operation = operation();
-        return send("deployment.agent.toolchain.bind.v1", controllerTargets(server, operation, layout),
-            DeploymentAgentToolchainPrograms.controller(layout), List.of("bind", encoded, Long.toString(seconds), operation),
-            seconds + 15);
+        return stored("bind", operation, List.of("bind", encoded, Long.toString(seconds), operation), seconds + 15, readyProgram).result();
+    }
+
+    private record StoredResult(OperationResult<CommandResult> result, JsonNode receipt) {
+    }
+
+    private OperationResult<CommandResult> readyController() throws ApiException {
+        if (readyProgram != null) return readyObservation;
+        if (commands.remainingSeconds() < 1) return budgetExhausted();
+        String readiness = UUID.randomUUID().toString().replace("-", "");
+        var observed = stored("readiness", readiness, List.of(), Math.min(30, commands.remainingSeconds()), null);
+        if (!complete(observed.result())) return observed.result();
+        JsonNode receipt = observed.receipt();
+        var confirmedObservation = observed.result();
+        if (receipt.path("status").asText().equals("MISSING") && !reuseExistingOnly) {
+            String installation = UUID.randomUUID().toString().replace("-", "");
+            var installed = stored("install", installation, List.of(), Math.min(60, commands.remainingSeconds()), receipt);
+            if (!complete(installed.result())) return installed.result();
+            receipt = installed.receipt();
+            confirmedObservation = installed.result();
+        }
+        if (!receipt.path("status").asText().equals("READY")) return DeploymentAgentToolchainProgramStore.unconfirmed();
+        readyProgram = receipt.deepCopy();
+        readyObservation = confirmedObservation;
+        return confirmedObservation;
+    }
+
+    private StoredResult stored(String phase, String operation, List<String> arguments, long seconds, JsonNode installation) throws ApiException {
+        if (seconds < 1) return new StoredResult(budgetExhausted(), null);
+        boolean existingPreparation = reuseExistingOnly && phase.equals("prepare");
+        String script = existingPreparation ? DeploymentAgentToolchainPrograms.command(arguments)
+            : phase.equals("install") ? DeploymentAgentToolchainPrograms.command(List.of(programState.taskId(), operation))
+            : DeploymentAgentToolchainProgramStore.command(phase, programState.taskId(), operation, arguments, layout);
+        byte[] input = existingPreparation ? DeploymentAgentToolchainPrograms.existingController(layout).getBytes(StandardCharsets.UTF_8)
+            : phase.equals("install") ? DeploymentAgentToolchainProgramStore.installer(layout).getBytes(StandardCharsets.UTF_8) : new byte[0];
+        try (var request = new gold.debug.windowstolinux.appapi.linux.command.CommandRequest(script, input,
+            Duration.ofSeconds(Math.min(seconds, commands.remainingSeconds())), 65536)) {
+            String exact = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, "controller-action-state", request).exactAction();
+            var retained = programState.begin(phase.toUpperCase(java.util.Locale.ROOT), operation, exact, installation);
+            OperationResult<CommandResult> result;
+            boolean[] dispatchBoundary = {false};
+            try {
+                result = commands.send(existingPreparation ? "deployment.agent.toolchain.prepare.v1" : DeploymentAgentToolchainProgramStore.PREFIX + phase + ".v1",
+                    existingPreparation ? controllerTargets(server, operation, layout)
+                        : DeploymentAgentToolchainProgramStore.targets(server, phase, operation, operation, layout), script, input, request.timeout(), 65536,
+                    () -> dispatchBoundary[0] = true);
+            } catch (ApiException failure) {
+                try {
+                    programState.finish(retained, new OperationResult<>(failure.problem().code() == ProblemCode.CANCELLED ? TaskResult.CANCELLED : TaskResult.UNKNOWN,
+                        Optional.empty(), Optional.of(failure.problem())), false, null, !dispatchBoundary[0]);
+                } catch (ApiException persistence) {
+                    if (failure instanceof gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentAlternativeRequiredException) {
+                        var uncertain = new ApiException(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_CONTROLLER_STATE_UNCONFIRMED",
+                            "Original denied controller action could not retain its NOT_SENT boundary", Map.of("task", programState.taskId(), "operation", operation), Optional.empty()));
+                        uncertain.initCause(persistence);
+                        uncertain.addSuppressed(failure);
+                        throw uncertain;
+                    }
+                    failure.addSuppressed(persistence);
+                }
+                throw failure;
+            }
+            JsonNode receipt = null;
+            boolean confirmed = DeploymentAgentToolchainProgramStore.successful(result);
+            if (confirmed && Set.of("readiness", "install").contains(phase)) {
+                try {
+                    receipt = DeploymentAgentToolchainProgramStore.receipt(result, programState.taskId(), operation, layout, phase.equals("install"));
+                } catch (IllegalArgumentException invalid) {
+                    confirmed = false;
+                }
+            }
+            var refusal = dispatchBoundary[0] ? DeploymentAgentToolchainFailureEvidence.precreationRefusal(retained,
+                phase, operation, programState.taskId(), server, layout, request, result).orElse(null) : null;
+            programState.finish(retained, result, confirmed, receipt, !dispatchBoundary[0], refusal);
+            var reported = !confirmed && result.outcome() == TaskResult.SUCCEEDED ? DeploymentAgentToolchainProgramStore.unconfirmed() : result;
+            if (Set.of("prepare", "bind").contains(phase))
+                reported = DeploymentAgentToolchainFailureEvidence.retain(reported, phase, server, operation);
+            return new StoredResult(reported, receipt);
+        } finally {
+            Arrays.fill(input, (byte) 0);
+        }
     }
 
     /** Prepares fixed native prerequisites after real C/CPP requirements are admitted. / 真实 C/CPP 需求准入后准备固定原生依赖。 */
@@ -120,6 +221,7 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
     }
 
     private OperationResult<CommandResult> dependencies(String profile) throws ApiException {
+        if (reuseExistingOnly) return unconfirmed("DEPLOYMENT_AGENT_ISOLATION_SHARED_DEPENDENCIES_FORBIDDEN");
         if (commands.remainingSeconds() < 45)
             return budgetExhausted();
         String operation = operation();

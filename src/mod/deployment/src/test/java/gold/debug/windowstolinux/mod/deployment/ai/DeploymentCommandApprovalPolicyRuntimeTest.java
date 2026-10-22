@@ -2,8 +2,8 @@ package gold.debug.windowstolinux.mod.deployment.ai;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.net.InetSocketAddress;
 import java.io.*;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -44,11 +44,16 @@ import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentHelperInstallerScript;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
-import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentDeliveryPort;
-import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentProjectChannel;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
+import gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentPatch;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentFixedCommandApproval;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentDeliveryPort;
+import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentProjectChannel;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
 import org.apache.sshd.server.channel.ChannelSession;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -114,6 +119,12 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
         }
     }
 
+    static String executable(JsonNode evidence) {
+        if (evidence.isObject()) return DeploymentInstallerEvidence.reconstruct(evidence);
+        assertTrue(evidence.isTextual(), "Executable evidence is complete text or the exact ordered installer document");
+        return evidence.textValue();
+    }
+
     static <T> OperationResult<T> success(T value) {
         return new OperationResult<>(TaskResult.SUCCEEDED, Optional.ofNullable(value), Optional.empty());
     }
@@ -126,8 +137,9 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
             credentials.save("hd16-model", "fixture-model-key".toCharArray());
         }
         for (String role : List.of("language", "approval")) {
-            runtime.persistence().aiProfiles().saveVerified(new StoredAiModelProfile(role, peer.endpoint(),
-                "fixture/" + role, "hd16-model"), role, Instant.now(), AiCapabilityType.TEXT);
+            var profile = new StoredAiModelProfile(role, peer.endpoint(), "fixture/" + role, "hd16-model");
+            runtime.persistence().aiProfiles().saveVerified(profile, role, Instant.now(), AiCapabilityType.TEXT);
+            runtime.persistence().aiProfiles().saveVerified(profile, role, Instant.now(), AiCapabilityType.TOOL_CALLING);
             runtime.persistence().aiProfiles().saveOutputLimit(role, 1600);
         }
         runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT, List.of(new AiPurposeAssignment("language", true)));
@@ -138,57 +150,45 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
         while (!handle.completion().toCompletableFuture().isDone() && handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline)
             Thread.sleep(10);
-        if (callbackFailure.get() != null)
-            throw new AssertionError("Actual original root assertion failed: " + handle.snapshot(), callbackFailure.get());
+        if (callbackFailure.get() != null) {
+            var assertion = new AssertionError("Actual original root assertion failed: " + handle.snapshot(), callbackFailure.get());
+            if (peer.failure.get() != null) assertion.addSuppressed(peer.failure.get());
+            throw assertion;
+        }
         peer.healthy();
         assertEquals(TaskState.ENDED, handle.snapshot().state(), handle.snapshot().toString());
         assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
     }
 
     @ParameterizedTest
-    @CsvSource({"MANUAL_REVIEW,ONCE", "MANUAL_REVIEW,GENERAL", "AUTOMATIC,ONCE", "AUTOMATIC,GENERAL", "AUTOMATIC,FULL", "FULL_CONTROL,GENERAL", "FULL_CONTROL,FULL"})
-    void sevenBusinessCombinationsAlwaysReviewActualCommandsAndReuseOnlyHumanQuestions(String approval, String authorization) throws Exception {
+    @CsvSource({"ASSISTED,MANUAL_REVIEW,false", "ASSISTED,MANUAL_REVIEW,true", "ASSISTED,AUTOMATIC,false", "ASSISTED,AUTOMATIC,true", "ASSISTED,FULL_CONTROL,false", "ASSISTED,FULL_CONTROL,true", "AGENT,MANUAL_REVIEW,false", "AGENT,MANUAL_REVIEW,true", "AGENT,AUTOMATIC,false", "AGENT,AUTOMATIC,true", "AGENT,FULL_CONTROL,false", "AGENT,FULL_CONTROL,true"})
+    void allModesReviewEveryCommandAndRememberOnlyExactHumanApprovals(String mode, String approval, boolean rememberAuthorization) throws Exception {
         enable();
         try (var peer = new Peer(root.resolve("peer")); var runtime = open()) {
             configure(runtime, peer);
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var failure = new AtomicReference<Throwable>();
-            var handle = context.tasks().submit(new TaskRequest("hd16-contract", "Actual command authorization policies", List.of(SERVER.id()), false), task -> {
+            var handle = context.tasks().submit(new TaskRequest("hd16-contract", "Actual command rememberAuthorization policies", List.of(SERVER.id()), false), task -> {
                 try {
                     String revision = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
-                    try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision, approval, authorization, "source=original;target=owned-parent");
+                    try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision, approval, rememberAuthorization, "source=original;target=owned-parent");
                          var session = context.linux().connect(SERVER, task)) {
-                        for (int step = 0; step < 4; step++) {
-                            try (var request = command("step-" + step)) {
-                                var actual = intent(request, "business-" + step, OPERATION);
-                                peer.expect(actual, request, step < 2 ? "NORMAL" : "HIGH");
-                                if (step >= 2 && approval.equals("AUTOMATIC") && authorization.equals("FULL")) {
-                                    assertThrows(DeploymentLowRiskRequiredException.class,
-                                        () -> DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, request, task, revision, approval, authorization));
-                                } else {
-                                    var grant = DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, request, task, revision, approval, authorization).value().orElseThrow();
-                                    assertEquals(TaskResult.SUCCEEDED, session.execute(request, grant).outcome());
-                                }
+                        var reviewed = modeReview(context, task, workflow, revision, mode, approval, rememberAuthorization);
+                        for (int step = 0; step < 6; step++) {
+                            try (var request = command(step < 4 ? "same-action" : "changed-action")) {
+                                var actual = intent(request, "stable-business", OPERATION);
+                                peer.expect(actual, request, step >= 2);
+                                var grant = ((gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) reviewed).approveCommand(actual, request, task).value().orElseThrow();
+                                assertEquals(TaskResult.SUCCEEDED, session.execute(request, grant).outcome());
                             }
                         }
-                        int expectedQuestions = approval.equals("MANUAL_REVIEW") ? authorization.equals("ONCE") ? 4 : 1
-                            : approval.equals("AUTOMATIC") ? authorization.equals("ONCE") ? 2 : authorization.equals("GENERAL") ? 1 : 0 : 0;
-                        assertEquals(expectedQuestions, peer.commandQuestions());
-                        assertEquals(approval.equals("MANUAL_REVIEW") || authorization.equals("FULL") ? 0 : 1, peer.handoffs());
-                        assertEquals(4, peer.approvedActions.size(), "Every distinct actual command requires a fresh independent approval");
-                        assertEquals(4, new HashSet<>(peer.approvedActions).size());
-                        if (approval.equals("AUTOMATIC") && authorization.equals("FULL")) {
-                            assertEquals(2, peer.sends.size(), "HIGH proposals are known unsent refusals");
-                            try (var replacement = command("different-low-plan")) {
-                                var actual = intent(replacement, "replacement", OPERATION);
-                                peer.expect(actual, replacement, "NORMAL");
-                                var grant = DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, replacement, task, revision, approval, authorization).value().orElseThrow();
-                                assertEquals(TaskResult.SUCCEEDED, session.execute(replacement, grant).outcome());
-                            }
-                            assertEquals(5, peer.approvedActions.size());
-                            assertEquals(3, peer.sends.size());
-                        } else assertEquals(4, peer.sends.size());
+                        int expectedQuestions = approval.equals("MANUAL_REVIEW") ? rememberAuthorization ? 2 : 6
+                            : approval.equals("AUTOMATIC") ? rememberAuthorization ? 2 : 4 : 0;
+                        assertEquals(expectedQuestions, peer.commandQuestions(), "Automatic passes never mint remembered human authority");
+                        assertEquals(approval.equals("FULL_CONTROL") ? 1 : 0, peer.handoffs());
+                        assertEquals(6, peer.approvedActions.size(), "Every command including reuse still reaches independent review");
+                        assertEquals(6, peer.sends.size());
                     }
                     return success(null);
                 } catch (Throwable error) {
@@ -204,9 +204,63 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
         }
     }
 
+    private static gold.debug.windowstolinux.appapi.task.action.InteractionService modeReview(
+        ModContext context, TaskContext task, gold.debug.windowstolinux.appapi.task.action.WorkflowGrant workflow,
+        String revision, String mode, String policy, boolean remember) throws Exception {
+        if (mode.equals("ASSISTED")) {
+            var scope = new gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope(
+                context, task, revision, policy, remember);
+            scope.workflowOpened(workflow);
+            return scope.interaction();
+        }
+        return new DeploymentCommandReviewScope(context, context.interaction(), task, policy, remember, () -> revision,
+            null, gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE, null,
+            gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE,
+            new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentCommandProtocol(context, Map::of)).interaction();
+    }
+
     @ParameterizedTest
-    @ValueSource(strings = {"ONCE", "GENERAL", "FULL"})
-    void automaticHighRefusalNeverSendsOrCachesDenialAndDifferentLowProposalNeedsAnotherAiReview(String authorization) throws Exception {
+    @CsvSource({"ASSISTED,MANUAL_REVIEW,false", "ASSISTED,MANUAL_REVIEW,true", "ASSISTED,AUTOMATIC,false", "ASSISTED,AUTOMATIC,true", "ASSISTED,FULL_CONTROL,false", "ASSISTED,FULL_CONTROL,true", "AGENT,MANUAL_REVIEW,false", "AGENT,MANUAL_REVIEW,true", "AGENT,AUTOMATIC,false", "AGENT,AUTOMATIC,true", "AGENT,FULL_CONTROL,false", "AGENT,FULL_CONTROL,true"})
+    void everyModeAndPolicyRejectsIndependentDenyBeforeHumanOrDispatch(String mode, String policy, boolean remember) throws Exception {
+        enable();
+        try (var peer = new Peer(root.resolve("peer")); var runtime = open()) {
+            configure(runtime, peer);
+            start(runtime, true);
+            var context = runtime.modContexts().get(OWNER).context();
+            var failure = new AtomicReference<Throwable>();
+            var handle = context.tasks().submit(new TaskRequest("hd16-deny", "Every mode preserves independent denial", List.of(SERVER.id()), false), task -> {
+                try {
+                    String revision = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
+                    try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision, policy, remember, "original-denied-action");
+                         var request = command("denied-action")) {
+                        var reviewed = modeReview(context, task, workflow, revision, mode, policy, remember);
+                        var actual = intent(request, "denied-business", OPERATION);
+                        peer.modelReply = "DENY";
+                        peer.expect(actual, request, true);
+                        var denied = assertThrows(ApiException.class, () ->
+                            ((gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) reviewed)
+                                .approveCommand(actual, request, task));
+                        assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
+                        assertEquals(0, peer.commandQuestions());
+                        assertEquals(0, peer.sends.size());
+                        assertEquals(1, peer.facts.size());
+                    }
+                    return success(null);
+                } catch (Throwable error) {
+                    failure.set(error);
+                    throw error;
+                }
+            });
+            await(handle, peer, failure);
+            assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        } finally {
+            active = null;
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void automaticHighRefusalNeverSendsOrCachesDenialAndDifferentLowProposalNeedsAnotherAiReview(boolean rememberAuthorization) throws Exception {
         enable();
         try (var peer = new Peer(root.resolve("peer")); var runtime = open()) {
             configure(runtime, peer);
@@ -216,23 +270,24 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
             var handle = context.tasks().submit(new TaskRequest("hd16-refusal", "Actual high refusal", List.of(SERVER.id()), false), task -> {
                 try {
                     String revision = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
-                    try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision, "AUTOMATIC", authorization, "original-high-proposal");
+                    try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision, "AUTOMATIC", rememberAuthorization, "original-high-proposal");
                          var session = context.linux().connect(SERVER, task)) {
                         peer.rejectCommands = true;
                         for (int step = 0; step < 2; step++)
                             try (var request = command("denied-high-" + step)) {
                                 var actual = intent(request, "high-" + step, OPERATION);
-                                peer.expect(actual, request, "HIGH");
-                                var rejected = assertThrows(DeploymentLowRiskRequiredException.class, () -> DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, request, task, revision, "AUTOMATIC", authorization));
-                                assertEquals("DEPLOYMENT_LOWER_RISK_REQUIRED", rejected.problem().eventCode());
+                                peer.expect(actual, request, true);
+                                var rejected = DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, request, task, revision, "AUTOMATIC", rememberAuthorization);
+                                assertEquals(TaskResult.CANCELLED, rejected.outcome());
+                                assertTrue(rejected.value().isEmpty());
                             }
                         assertEquals(0, peer.sends.size());
-                        assertEquals(authorization.equals("FULL") ? 0 : 2, peer.commandQuestions(), "A refusal never establishes GENERAL reuse");
+                        assertEquals(2, peer.commandQuestions(), "A refusal never establishes remembered approval");
                         assertFalse(task.cancelToken().requested());
                         try (var request = command("new-low-alternative")) {
                             var actual = intent(request, "low-new-plan", OPERATION);
-                            peer.expect(actual, request, "NORMAL");
-                            var grant = DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, request, task, revision, "AUTOMATIC", authorization).value().orElseThrow();
+                            peer.expect(actual, request, false);
+                            var grant = DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, request, task, revision, "AUTOMATIC", rememberAuthorization).value().orElseThrow();
                             assertEquals(TaskResult.SUCCEEDED, session.execute(request, grant).outcome());
                         }
                         assertEquals(3, peer.approvedActions.size());
@@ -246,6 +301,55 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
             });
             await(handle, peer, failure);
             peer.assertSendOrdering();
+        } finally {
+            active = null;
+        }
+    }
+
+    @Test
+    void distinctServerAndReleaseTargetsRemainExactWithoutBypassingModelOrHighConfirmation() throws Exception {
+        enable();
+        try (var peer = new Peer(root.resolve("peer")); var runtime = open()) {
+            configure(runtime, peer);
+            start(runtime, true);
+            var context = runtime.modContexts().get(OWNER).context();
+            var failure = new AtomicReference<Throwable>();
+            var handle = context.tasks().submit(new TaskRequest("hd16-targets", "Exact server and release resources", List.of(SERVER.id()), false), task -> {
+                try {
+                    String revision = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
+                    try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision, "AUTOMATIC", true, "original-release-targets")) {
+                        peer.rejectCommands = true;
+                        for (String app : List.of("target-app-backend", "another-app-backend")) {
+                            String release = "/opt/windowstolinux/releases/" + app;
+                            try (var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand("'" + DeploymentManagedHelperBundle.PATH + "' 'stage-config' '" + app + "' '" + "a".repeat(64) + "' 'systemd'"),
+                                "opaque-config".getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(30), 8192)) {
+                                var actual = RemoteActions.command(SERVER, "b".repeat(64), request).withSemantics(new ActionSemantics(
+                                    "deployment.publication.config.v1", Set.of(new ActionTarget(SERVER.id(), "deployment-release", release))));
+                                peer.modelReply = app.equals("target-app-backend") ? "DENY" : "APPROVE";
+                                peer.expect(actual, request, true);
+                                if (peer.modelReply.equals("DENY")) {
+                                    var denied = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, request, task, revision, "AUTOMATIC", true));
+                                    assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
+                                    assertEquals(0, peer.commandQuestions());
+                                } else {
+                                    assertEquals(TaskResult.CANCELLED, DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, request, task, revision, "AUTOMATIC", true).outcome());
+                                    assertEquals(1, peer.commandQuestions());
+                                }
+                                assertEquals(JSON.valueToTree(actual.semantics().orElseThrow().targets()), peer.facts.getLast().path("resourceTargets"));
+                                assertEquals("OPAQUE_BOUND_DATA", peer.facts.getLast().path("inputKind").asText());
+                                assertFalse(peer.facts.getLast().has("completeExecutableInput"));
+                            }
+                        }
+                        assertEquals(2, peer.facts.size());
+                        assertEquals(0, peer.sends.size());
+                    }
+                    return success(null);
+                } catch (Throwable error) {
+                    failure.set(error);
+                    throw error;
+                }
+            });
+            await(handle, peer, failure);
         } finally {
             active = null;
         }
@@ -266,7 +370,7 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
                         "dd if=payload of=/dev/sda", "mkfs.ext4 -F /dev/nvme0n1", "wipefs -a /dev/mapper/system", "printf x > /dev/mmcblk0")) {
                         try (var request = new CommandRequest(script, new byte[0], Duration.ofSeconds(5), 8192)) {
                             var actual = intent(request, "root-denial", OPERATION);
-                            var denied = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, request, task, revision, "AUTOMATIC", "GENERAL"));
+                            var denied = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, request, task, revision, "AUTOMATIC", true));
                             assertEquals("DEPLOYMENT_COMMAND_STATIC_DENIED", denied.problem().eventCode());
                         }
                     }
@@ -296,7 +400,7 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
             var handle = context.tasks().submit(new TaskRequest("hd16-evidence", "Exact fixed executable evidence", List.of(SERVER.id()), false), task -> {
                 try {
                     String revision = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
-                    try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision, "FULL_CONTROL", "FULL", "installer-evidence-only")) {
+                    try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision, "FULL_CONTROL", true, "installer-evidence-only")) {
                         String installer = DeploymentHelperInstallerScript.render();
                         String quotedHelper = "'" + DeploymentManagedHelperBundle.renderScript().replace("'", "'\"'\"'") + "'";
                         String tracked = DeploymentHelperInstallerScript.renderTracked(task.id(), UUID.randomUUID(), "a".repeat(64), digest(installer));
@@ -304,15 +408,44 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
                             try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", body.getBytes(StandardCharsets.UTF_8), Duration.ofHours(2), 131072)) {
                                 String operation = body.equals(installer) ? "deployment.helper.install.v1" : "deployment.helper.install.tracked.v1";
                                 var actual = intent(request, "installer", operation);
-                                peer.expect(actual, request, "HIGH");
-                                assertEquals(TaskResult.SUCCEEDED, DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, request, task, revision, "FULL_CONTROL", "FULL").outcome());
+                                peer.expect(actual, request, true);
+                                assertEquals(TaskResult.SUCCEEDED, DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, request, task, revision, "FULL_CONTROL", true).outcome());
                                 var facts = peer.facts.getLast();
                                 assertEquals("EXECUTABLE_SCRIPT", facts.path("inputKind").asText());
-                                assertArrayEquals(body.getBytes(StandardCharsets.UTF_8), facts.path("completeExecutableInput").asText().getBytes(StandardCharsets.UTF_8));
+                                assertArrayEquals(body.getBytes(StandardCharsets.UTF_8), executable(facts.path("completeExecutableInput")).getBytes(StandardCharsets.UTF_8));
                                 assertFalse(facts.has("installedHelperScript"));
+                                assertFalse(facts.has("installedBuildEntryScript"));
+                                assertEquals(DeploymentManagedHelperBundle.EXPECTED_SHA256, facts.path("expectedHelperSha256").asText());
                                 assertTrue(body.contains(quotedHelper));
                             }
                         var hostCalls = new java.util.concurrent.atomic.AtomicInteger();
+                        try (var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand("'" + DeploymentManagedHelperBundle.PATH + "' probe\n"),
+                            new byte[0], Duration.ofSeconds(5), 8192)) {
+                            var actual = intent(request, "helper-probe", "deployment.helper.probe.v1");
+                            peer.expect(actual, request, false);
+                            assertEquals(TaskResult.SUCCEEDED, DeploymentFixedCommandApproval.approve(context, context.interaction(),
+                                actual, request, task, revision, "FULL_CONTROL", true).outcome());
+                            var evidence = peer.facts.getLast();
+                            assertFalse(evidence.has("installedHelperScript"));
+                            assertEquals(DeploymentManagedHelperBundle.EXPECTED_SHA256, evidence.path("installedHelperSha256").asText());
+                            assertFalse(evidence.has("completeExecutableInput"));
+                            assertFalse(evidence.has("installedBuildEntryScript"));
+                        }
+                        byte[] build = "set -euo pipefail\nbuiltin printf 'bounded-build'\n".getBytes(StandardCharsets.UTF_8);
+                        try (var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand("'" + DeploymentManagedHelperBundle.PATH
+                            + "' build-run 'evidence-app' 'evidence-candidate' 60 16 256 8192 'ordinary' '"
+                            + digest(new String(build, StandardCharsets.UTF_8)) + "' '-'"), build, Duration.ofMinutes(2), 8192)) {
+                            var actual = intent(request, "helper-build", "deployment.build.run.v1");
+                            peer.expect(actual, request, false);
+                            assertEquals(TaskResult.SUCCEEDED, DeploymentFixedCommandApproval.approve(context, context.interaction(),
+                                actual, request, task, revision, "FULL_CONTROL", true).outcome());
+                            var evidence = peer.facts.getLast();
+                            assertFalse(evidence.has("installedHelperScript"));
+                            assertArrayEquals(build, evidence.path("completeExecutableInput").asText().getBytes(StandardCharsets.UTF_8));
+                            assertFalse(evidence.has("installedBuildEntryScript"));
+                            assertEquals(DeploymentManagedHelperBundle.BUILD_ENTRY_PATH, evidence.required("installedBuildEntryPath").textValue());
+                            assertEquals(DeploymentManagedHelperBundle.buildEntrySha256(), evidence.required("installedBuildEntrySha256").textValue());
+                        }
                         var observedHost = (gold.debug.windowstolinux.appapi.task.action.InteractionService) java.lang.reflect.Proxy.newProxyInstance(
                             context.interaction().getClass().getClassLoader(), new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class},
                             (proxy, method, arguments) -> {
@@ -327,37 +460,46 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
                         String addition = "\nprintf '%s\\n' '目录 and quotes: '\"'\"'value'\nrm -rf /tmp/fixture-owned\n";
                         String changedNested = installer.replace(quotedHelper, "'" + (DeploymentManagedHelperBundle.renderScript() + addition).replace("'", "'\"'\"'") + "'");
                         assertNotEquals(installer, changedNested);
-                        for (String body : List.of(installer + addition, changedNested)) {
+                        for (String body : List.of(installer + addition)) {
                             peer.modelReply = "DENY";
                             try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", body.getBytes(StandardCharsets.UTF_8), Duration.ofHours(2), 131072)) {
                                 var actual = intent(request, "changed-installer", "deployment.helper.install.v1");
-                                peer.expect(actual, request, "HIGH");
-                                var denied = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approve(context, observedHost, actual, request, task, revision, "FULL_CONTROL", "FULL"));
+                                peer.expect(actual, request, true);
+                                var denied = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approve(context, observedHost, actual, request, task, revision, "FULL_CONTROL", true));
                                 assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
-                                assertArrayEquals(request.stdin(), peer.facts.getLast().path("completeExecutableInput").asText().getBytes(StandardCharsets.UTF_8));
+                                assertEquals("Controlled exact evidence response", denied.problem().context().get("reviewReason"));
+                                assertEquals("true", denied.problem().context().get("requiresUserConfirmation"));
+                                assertTrue(denied.problem().diagnosticId().isEmpty());
+                                assertArrayEquals(request.stdin(), executable(peer.facts.getLast().path("completeExecutableInput")).getBytes(StandardCharsets.UTF_8));
                             }
                         }
-                        for (String reply : List.of("INVALID", "UNAVAILABLE")) {
-                            peer.modelReply = reply;
-                            try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", installer.getBytes(StandardCharsets.UTF_8), Duration.ofHours(2), 131072)) {
-                                var actual = intent(request, "unavailable-review", "deployment.helper.install.v1");
-                                peer.expect(actual, request, "HIGH");
-                                if (reply.equals("INVALID"))
-                                    assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approve(context, observedHost, actual, request, task, revision, "FULL_CONTROL", "FULL"));
-                                else {
-                                    var failed = DeploymentFixedCommandApproval.approve(context, observedHost, actual, request, task, revision, "FULL_CONTROL", "FULL");
-                                    assertEquals(TaskResult.FAILED, failed.outcome());
-                                    assertTrue(failed.value().isEmpty());
-                                }
-                            }
+                        int beforeChangedSource = peer.facts.size();
+                        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", changedNested.getBytes(StandardCharsets.UTF_8), Duration.ofHours(2), 131072)) {
+                            var rejected = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approve(context, observedHost,
+                                intent(request, "changed-installer", "deployment.helper.install.v1"), request, task, revision, "FULL_CONTROL", true));
+                            assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", rejected.problem().eventCode());
+                            assertEquals("evidence", rejected.problem().context().get("validationStage"));
+                        }
+                        assertEquals(beforeChangedSource, peer.facts.size(), "Changed canonical installer sources are rejected before independent AI");
+                        peer.modelReply = "INVALID";
+                        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", installer.getBytes(StandardCharsets.UTF_8), Duration.ofHours(2), 131072)) {
+                            var actual = intent(request, "invalid-review", "deployment.helper.install.v1");
+                            peer.expect(actual, request, true);
+                            peer.expect(actual, request, true);
+                            int beforeCorrection = peer.facts.size();
+                            var invalid = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approve(context, observedHost, actual, request, task, revision, "FULL_CONTROL", true));
+                            assertEquals(beforeCorrection + 2, peer.facts.size(), "A repeated schema error stops after one exact-evidence correction");
+                            assertEquals(peer.facts.get(beforeCorrection), peer.facts.getLast(), "Correction must retain every original executable byte");
+                            assertEquals("response", invalid.problem().context().get("validationStage"));
+                            assertTrue(invalid.problem().diagnosticId().isEmpty());
                         }
                         assertEquals(0, hostCalls.get(), "Denied, malformed or unavailable independent review cannot obtain any host grant");
                         peer.modelReply = "APPROVE";
                         byte[] secret = new byte[]{0, (byte) 0xff, 0x41, 0x42, 0x43};
                         try (var request = new CommandRequest("builtin printf protected-data", secret, Duration.ofSeconds(5), 8192)) {
                             var actual = intent(request, "secret-frame", "deployment.publication.secret.v1");
-                            peer.expect(actual, request, "NORMAL");
-                            assertEquals(TaskResult.SUCCEEDED, DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, request, task, revision, "FULL_CONTROL", "FULL").outcome());
+                            peer.expect(actual, request, false);
+                            assertEquals(TaskResult.SUCCEEDED, DeploymentFixedCommandApproval.approve(context, context.interaction(), actual, request, task, revision, "FULL_CONTROL", true).outcome());
                             var facts = peer.facts.getLast();
                             assertEquals("OPAQUE_BOUND_DATA", facts.path("inputKind").asText());
                             assertFalse(facts.has("completeExecutableInput"));
@@ -365,13 +507,25 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
                             assertFalse(facts.toString().contains(Base64.getEncoder().encodeToString(secret)));
                         }
                         int before = peer.facts.size();
-                        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", ("#" + "x".repeat(1048576)).getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(5), 8192)) {
+                        String oversize = "#" + "x".repeat(1048576);
+                        try (var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand("'" + DeploymentManagedHelperBundle.PATH
+                            + "' build-run 'evidence-app' 'evidence-candidate' 60 16 256 8192 'ordinary' '"
+                            + digest(oversize) + "' '-'"), oversize.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(5), 8192)) {
                             var actual = intent(request, "oversize", "deployment.build.run.v1");
-                            assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approve(context, observedHost, actual, request, task, revision, "FULL_CONTROL", "FULL"));
+                            assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approve(context, observedHost, actual, request, task, revision, "FULL_CONTROL", true));
                         }
                         assertEquals(before, peer.facts.size(), "Over-budget executable evidence cannot call independent AI");
                         assertEquals(0, hostCalls.get(), "Over-budget executable evidence cannot obtain a host grant");
                         assertEquals(0, peer.sends.size(), "Evidence tests never install or send the helper");
+                        peer.modelReply = "UNAVAILABLE";
+                        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", installer.getBytes(StandardCharsets.UTF_8), Duration.ofHours(2), 131072)) {
+                            var actual = intent(request, "unavailable-review", "deployment.helper.install.v1");
+                            peer.expect(actual, request, true);
+                            var failed = DeploymentFixedCommandApproval.approve(context, observedHost, actual, request, task, revision, "FULL_CONTROL", true);
+                            assertEquals(TaskResult.FAILED, failed.outcome());
+                            assertTrue(failed.value().isEmpty());
+                        }
+                        assertEquals(0, hostCalls.get(), "Unavailable review cannot obtain a host grant");
                     }
                     return success(null);
                 } catch (Throwable error) {
@@ -387,7 +541,7 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
 
     @ParameterizedTest
     @ValueSource(strings = {"MANUAL_REVIEW", "AUTOMATIC"})
-    void generalSiblingDirectoryRemovalReusesHumanOnlyWithinActualCandidateAndParent(String approval) throws Exception {
+    void changedDirectoryParametersAlwaysRequireFreshHumanAuthority(String approval) throws Exception {
         agentQuestions(approval, (channel, first, second, peer, revision) -> {
             long questions = peer.commandQuestions();
             int calls = peer.facts.size(), sends = peer.sends.size();
@@ -395,10 +549,10 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
                 expectRun(peer, first, revision, script);
                 assertTrue(channel.command(first, revision, script, Duration.ofSeconds(5)).succeeded());
             }
-            assertEquals(questions + 2, peer.commandQuestions(), "Same parent siblings share only the human question; another parent does not");
+            assertEquals(questions + 3, peer.commandQuestions(), "Changed literal parameters require new human authority");
             expectRun(peer, second, revision, "rm -rf 'cache/a'");
             assertTrue(channel.command(second, revision, "rm -rf 'cache/a'", Duration.ofSeconds(5)).succeeded());
-            assertEquals(questions + 3, peer.commandQuestions(), "Another actual opened candidate needs its own question");
+            assertEquals(questions + 4, peer.commandQuestions(), "Another actual opened candidate needs its own question");
             assertEquals(calls + 4, peer.facts.size(), "Every literal deletion still reaches independent AI");
             assertEquals(sends + 4, peer.sends.size());
             var reviewed = peer.facts.subList(calls, peer.facts.size());
@@ -426,7 +580,7 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
 
     @ParameterizedTest
     @ValueSource(strings = {"MANUAL_REVIEW", "AUTOMATIC"})
-    void generalPatchReusesHumanForSameFileWhileEveryChangedPayloadGetsIndependentAi(String approval) throws Exception {
+    void changedPatchPayloadAlwaysRequiresFreshHumanAuthority(String approval) throws Exception {
         agentQuestions(approval, (channel, first, second, peer, revision) -> {
             long questions = peer.commandQuestions();
             int calls = peer.facts.size(), sends = peer.sends.size();
@@ -439,13 +593,13 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
                 byte[] payload = JSON.writeValueAsBytes(patch);
                 try (var request = new CommandRequest(agentScript("agent-patch", candidate.workspace(), peer.taskId, originalRevision,
                     HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(payload))), payload, Duration.ofSeconds(45), 4096)) {
-                    peer.expectAgent(request, peer.businessRevision, "HIGH");
+                    peer.expectAgent(request, peer.businessRevision, true);
                     String changed = channel.patch(candidate, patch);
                     assertNotEquals(originalRevision, changed, "Each patch uses its actual new source receipt");
                     if (index != 3)
                         current = changed;
                 }
-                assertEquals(questions + (index < 2 ? 1 : index), peer.commandQuestions(), "Human reuse is limited to the actual candidate and exact file");
+                assertEquals(questions + index + 1, peer.commandQuestions(), "Changed edits and before digests require new human authority");
             }
             assertEquals(calls + 4, peer.facts.size());
             assertEquals(sends + 4, peer.sends.size());
@@ -467,21 +621,21 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
                     peer.taskId = task.id();
                     peer.businessRevision = revision;
                     peer.sourceRevision = digest("controlled-original-source");
-                    try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision, approval, "GENERAL", "source=controlled-original-source");
+                    try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision, approval, true, "source=controlled-original-source");
                          var session = context.linux().connect(SERVER, task)) {
-                        var reviewed = new DeploymentCommandReviewScope(context, context.interaction(), task, approval, "GENERAL", () -> revision);
+                        var reviewed = new DeploymentCommandReviewScope(context, context.interaction(), task, approval, true, () -> revision);
                         var channel = new DeploymentAgentProjectChannel(session, reviewed.interaction(), SERVER, task, revision, () -> revision);
                         var prepared = new ArrayList<DeploymentAgentDeliveryPort.Prepared>();
                         for (String archive : List.of(digest("archive-one"), digest("archive-two"))) {
                             var workspace = new DeploymentRemoteWorkspace("question-app", archive);
                             try (var request = new CommandRequest(agentScript("agent-open", workspace, task.id(), archive), new byte[0], Duration.ofMinutes(2), 4096)) {
-                                peer.expectAgent(request, revision, "NORMAL");
+                                peer.expectAgent(request, revision, false);
                                 prepared.add(new DeploymentAgentDeliveryPort.Prepared(workspace, channel.open(workspace, "ordinary")));
                             }
                         }
                         assertNotEquals(prepared.get(0).workspace().candidateId(), prepared.get(1).workspace().candidateId());
                         work.run(channel, prepared.get(0), prepared.get(1), peer, peer.sourceRevision);
-                        assertEquals(approval.equals("MANUAL_REVIEW") ? 0 : 1, peer.handoffs());
+                        assertEquals(0, peer.handoffs());
                     }
                     return success(null);
                 } catch (Throwable error) {
@@ -498,16 +652,17 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
     }
 
     private static void expectRun(Peer peer, DeploymentAgentDeliveryPort.Prepared candidate, String revision, String script) {
-        try (var request = new CommandRequest(agentScript("agent-run", candidate.workspace(), peer.taskId, revision, "5", "1048576", "ordinary"),
+        try (var request = new CommandRequest(agentScript("agent-run", candidate.workspace(), peer.taskId, revision, "5", "1048576", "ordinary",
+            digest(script), "-"),
             script.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(25), 1048576)) {
-            peer.expectAgent(request, peer.businessRevision, "HIGH");
+            peer.expectAgent(request, peer.businessRevision, true);
         }
     }
 
     private static String agentScript(String verb, DeploymentRemoteWorkspace workspace, UUID task, String... arguments) {
         var values = new ArrayList<>(List.of(DeploymentManagedHelperBundle.PATH, verb, workspace.applicationId(), workspace.candidateId(), task.toString()));
         values.addAll(List.of(arguments));
-        return values.stream().map(value -> "'" + value + "'").collect(java.util.stream.Collectors.joining(" "));
+        return DeploymentManagedHelperBundle.verifiedCommand(values.stream().map(value -> "'" + value + "'").collect(java.util.stream.Collectors.joining(" ")));
     }
 
     private interface AgentQuestionWork {
@@ -563,11 +718,30 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
             http.setExecutor(executor);
             http.createContext("/chat", exchange -> {
                 try {
-                    var sent = JSON.readTree(exchange.getRequestBody());
+                    byte[] wire = exchange.getRequestBody().readAllBytes();
+                    assertTrue(wire.length <= 1048576, "The complete native request retains the actual encoded one MiB contract");
+                    var sent = JSON.readTree(wire);
                     assertEquals("Bearer fixture-model-key", exchange.getRequestHeaders().getFirst("Authorization"));
                     assertEquals("fixture/approval", sent.path("model").asText(), "Actual independent APPROVAL route must be used");
-                    var actual = JSON.readTree(sent.path("messages").get(1).path("content").asText());
-                    assertTrue(sent.path("messages").get(0).path("content").asText().contains("including executable bodies encoded in shell literals, printf or heredocs"));
+                    assertEquals(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().approvalMaxOutputTokens(), sent.path("max_tokens").asInt(), "Deployment approval budget is independent of the legacy model editor value");
+                    JsonNode actual = null;
+                    for (var part : sent.path("messages")) {
+                        if (!part.path("role").asText().equals("user")) continue;
+                        var candidate = JSON.readTree(part.path("content").asText());
+                        if (candidate.has("exactAction")) {
+                            assertNull(actual, "A finite review contains one original complete action document");
+                            actual = candidate;
+                        }
+                    }
+                    assertNotNull(actual, "Native messages retain the complete original action document");
+                    assertEquals("submit_result", sent.path("tools").get(0).path("function").path("name").asText());
+                    String policy = sent.path("messages").get(0).path("content").asText();
+                    assertTrue(policy.contains("including encoded shell/printf/heredoc bodies written then executed"));
+                    assertTrue(policy.contains("Complete one finite review: target binding, full executable evidence"));
+                    assertTrue(policy.contains("unresolved necessary checks require DENY with the gap"));
+                    assertTrue(policy.contains("No checks are waived"));
+                    assertTrue(policy.contains("Check interpreter startup flags and called functions"));
+                    assertTrue(policy.contains("count hooks only if reachable or permitted by invocation"));
                     long messageBytes = 0;
                     for (var message : sent.path("messages"))
                         messageBytes += message.path("content").asText().getBytes(StandardCharsets.UTF_8).length;
@@ -575,29 +749,55 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
                     var original = expected.remove();
                     assertEquals(original.intent.exactAction(), actual.path("exactAction").asText());
                     assertEquals(original.intent.revision(), actual.path("businessRevision").asText());
+                    String revisionMeaning = actual.path("businessRevisionMeaning").asText();
+                    assertTrue(revisionMeaning.contains("Author-owned identity"));
+                    assertTrue(revisionMeaning.contains("different objects"));
+                    assertTrue(revisionMeaning.contains("same object's bound expected value"));
+                    assertTrue(revisionMeaning.contains("does not verify a resource or waive"));
                     if (original.intent.semantics().isPresent())
                         assertEquals(original.intent.semantics().orElseThrow().operation(), actual.path("operation").asText());
                     else
                         assertEquals("deployment.agent.helper.v1", actual.path("operation").asText());
-                    assertEquals(SERVER.id(), actual.path("targets").get(0).asText());
+                    assertEquals(SERVER.id(), actual.path("serverTargets").get(0).asText());
+                    assertTrue(actual.path("resourceTargets").isArray());
+                    assertFalse(actual.path("resourceTargets").isEmpty());
+                    if (original.intent.semantics().isPresent())
+                        assertEquals(JSON.valueToTree(original.intent.semantics().orElseThrow().targets()), actual.path("resourceTargets"));
+                    for (var resource : actual.path("resourceTargets")) {
+                        assertEquals(SERVER.id(), resource.path("serverId").asText());
+                        assertFalse(resource.path("kind").asText().isBlank());
+                        assertFalse(resource.path("id").asText().isBlank());
+                    }
                     assertEquals(original.actionHash, digest(actual.path("exactAction").asText()));
                     assertEquals("WTL-SSH-COMMAND-1\ntimeout=" + original.timeout + "\noutputLimitBytes=" + original.outputLimit
                             + "\nstdinBytes=" + original.inputBytes + "\nstdinSha256=" + original.inputHash + "\nscript:\n" + original.script,
                         actual.path("exactAction").asText(), "AI evidence must bind actual script, complete data digest and exact execution budgets");
                     if (actual.has("completeExecutableInput"))
-                        assertEquals(original.input, actual.path("completeExecutableInput").asText());
+                        assertArrayEquals(original.input.getBytes(StandardCharsets.UTF_8), executable(actual.path("completeExecutableInput")).getBytes(StandardCharsets.UTF_8));
                     if (sourceRevision != null && (original.script.contains("'agent-run'") || original.script.contains("'agent-patch'"))) {
                         assertEquals(original.script.contains("'agent-patch'") ? "SOURCE_PATCH" : "EXECUTABLE_SCRIPT", actual.path("inputKind").asText());
                         assertEquals(original.input, actual.required("completeExecutableInput").textValue(), "Every actual Agent payload must be sent in full to independent AI");
+                        if (original.script.contains("'agent-run'")) {
+                            var measured = actual.required("agentExecutableInputBinding");
+                            assertEquals(original.inputHash, measured.required("stdinSha256").asText());
+                            assertEquals(original.inputHash, measured.required("argumentSha256").asText());
+                            assertEquals(original.inputBytes, measured.required("stdinBytes").asInt());
+                            assertTrue(measured.required("argumentDigestMatchesInput").asBoolean());
+                            assertTrue(measured.required("displayedUtf8MatchesInput").asBoolean());
+                            assertFalse(actual.has("installedBuildEntryScript"));
+                        } else assertFalse(actual.has("installedBuildEntryScript"));
                     }
                     facts.add(actual);
                     approvedActions.add(original.intent.exactAction());
                     reviewedWire.add(original);
                     events.add("AI:" + original.actionHash);
-                    var decision = JSON.createObjectNode().put("decision", modelReply.equals("DENY") ? "DENY" : "APPROVE").put("risk", original.risk).put("reason", "Controlled exact evidence response");
+                    var decision = JSON.createObjectNode().put("decision", modelReply.equals("DENY") ? "DENY" : "APPROVE").put("requiresUserConfirmation", original.requiresUserConfirmation).put("reason", "Controlled exact evidence response");
                     if (modelReply.equals("INVALID")) decision.put("unexpected", true);
                     var reply = JSON.createObjectNode();
-                    reply.putArray("choices").addObject().put("finish_reason", "stop").putObject("message").put("role", "assistant").put("content", decision.toString());
+                    var message = reply.putArray("choices").addObject().put("finish_reason", "tool_calls")
+                        .putObject("message").put("role", "assistant").putNull("content");
+                    message.putArray("tool_calls").addObject().put("id", "review-" + facts.size()).put("type", "function")
+                        .putObject("function").put("name", "submit_result").put("arguments", decision.toString());
                     reply.putObject("usage").put("prompt_tokens", 10).put("completion_tokens", 20);
                     byte[] bytes = reply.toString().getBytes(StandardCharsets.UTF_8);
                     exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -616,11 +816,11 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
             return "http://127.0.0.1:" + http.getAddress().getPort() + "/chat";
         }
 
-        void expect(ActionIntent intent, CommandRequest request, String risk) {
+        void expect(ActionIntent intent, CommandRequest request, boolean requiresUserConfirmation) {
             byte[] input = request.stdin();
             try {
                 String inputHash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(input));
-                expected.add(new Expected(intent, new String(input, StandardCharsets.UTF_8), risk, digest(intent.exactAction()), request.script(), request.timeout(), request.outputLimitBytes(), input.length, inputHash));
+                expected.add(new Expected(intent, new String(input, StandardCharsets.UTF_8), requiresUserConfirmation, digest(intent.exactAction()), request.script(), request.timeout(), request.outputLimitBytes(), input.length, inputHash));
             } catch (Exception impossible) {
                 throw new AssertionError(impossible);
             } finally {
@@ -628,8 +828,8 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
             }
         }
 
-        void expectAgent(CommandRequest request, String revision, String risk) {
-            expect(RemoteActions.command(SERVER, revision, request), request, risk);
+        void expectAgent(CommandRequest request, String revision, boolean requiresUserConfirmation) {
+            expect(RemoteActions.command(SERVER, revision, request), request, requiresUserConfirmation);
         }
 
         long commandQuestions() {
@@ -657,7 +857,8 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
             ssh.close();
         }
 
-        record Expected(ActionIntent intent, String input, String risk, String actionHash, String script,
+        record Expected(ActionIntent intent, String input, boolean requiresUserConfirmation, String actionHash,
+                        String script,
                         Duration timeout,
                         long outputLimit, int inputBytes, String inputHash) {
         }
