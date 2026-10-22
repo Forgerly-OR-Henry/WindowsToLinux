@@ -1,0 +1,330 @@
+{
+  "schema": 1,
+  "date": "2026-10-23",
+  "scope": "Original product management exports from passing invocations, with later cleanup recorded separately. Asset cleanup is not business acceptance.",
+  "atAcceptance": [
+    {
+      "project": "survey-scoring",
+      "mode": "ASSISTED",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-survey-scoring-2xaez8qzw",
+      "application": "wtl-assisted-survey-scoring-2xaf10om7",
+      "server": "static-live",
+      "revisionSha256": "b7d97d1df81557a42c174b5e390e700d8fb3a30dc606b834a86d381a2ca2cde5",
+      "ownershipSha256": "b63db1a6801fcb0418948ba4dd9d2d340c66f2af61efdea801c1dcddfd0cbd57",
+      "state": "RUNNING",
+      "autostart": "DISABLED",
+      "observedAt": "2026-10-22T18:19:58.654214700Z",
+      "components": [
+        {
+          "state": "RUNNING",
+          "workers": [],
+          "id": "backend",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-survey-scoring-2xaf10om7-backend start 711b4d7d7e49bfed793860e54df42c9ab6427befa348609240c25fd463b05d2b 01995e8b669c028e718ecd64ef6eca5e5e87b7a51ed6bc977572fe1a7faa740f",
+          "unitId": "wtl-assisted-survey-scoring-2xaf10om7-backend",
+          "endpoints": [
+            {
+              "browser": "http://45.192.105.213:46141",
+              "value": "http://45.192.105.213:46141",
+              "protocol": "http"
+            }
+          ],
+          "mode": "DAEMON"
+        },
+        {
+          "state": "RUNNING",
+          "workers": [],
+          "id": "frontend",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-survey-scoring-2xaf10om7-frontend start 7e3483b4ce03a3644efdd9b2319d0252f6f14aa334971a5847f938fc4fd477a5 c708dcc4ae796834d9e13b191cfe551b24d32ea0a0f970f5262e4842367eb480",
+          "unitId": "wtl-assisted-survey-scoring-2xaf10om7-frontend",
+          "endpoints": [
+            {
+              "browser": "http://45.192.105.213:46140",
+              "value": "http://45.192.105.213:46140",
+              "protocol": "http"
+            }
+          ],
+          "mode": "DAEMON"
+        },
+        {
+          "state": "RUNNING",
+          "workers": [],
+          "id": "scorer",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-survey-scoring-2xaf10om7-scorer start e0a992c3e27a378445135f1d39b0192dd63b89a4cc0b7c14f143319d9a68484f 3a6f5f03f0830b28dddf5be53ec23b809007b0a2a66034e97e07879572034ccd",
+          "unitId": "wtl-assisted-survey-scoring-2xaf10om7-scorer",
+          "endpoints": [],
+          "mode": "DAEMON"
+        }
+      ]
+    },
+    {
+      "project": "log-analyzer",
+      "mode": "ASSISTED",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-log-analyzer-429t9ms5c",
+      "application": "wtl-assisted-log-analyzer-429tbi07k",
+      "server": "static-live",
+      "revisionSha256": "ac1cc7a2cbde2d2aa320122f37280a4b7b9167ab5c4814955716149cb0a91052",
+      "ownershipSha256": "920deb7884234af071edcaf072dff450b492e6e948205d6404a940c91e9a52a8",
+      "state": "INSTALLED",
+      "autostart": "NOT_APPLICABLE",
+      "observedAt": "2026-10-22T18:45:16.898240300Z",
+      "components": [
+        {
+          "unitId": "wtl-assisted-log-analyzer-429tbi07k",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper app-run wtl-assisted-log-analyzer-429tbi07k c67dca0c2c433638383671901cfae1fd2773e40409c9a03cd3f17ff898dcac13 --",
+          "id": "wtl-assisted-log-analyzer-429tbi07k",
+          "workers": [],
+          "state": "INSTALLED",
+          "mode": "ON_DEMAND",
+          "endpoints": []
+        }
+      ]
+    },
+    {
+      "project": "directory-diff",
+      "mode": "ASSISTED",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-directory-diff-4bbbmxx64",
+      "application": "wtl-assisted-directory-diff-4bbbohimw",
+      "server": "static-live",
+      "revisionSha256": "157625c9d56f6836d1667eea1fa0d794571e8c22dc4821bf62cea1b9196c691b",
+      "ownershipSha256": "5baac552245038962cd5a19384ec47f30563434039bfd5ed59cbe72d73be7880",
+      "state": "INSTALLED",
+      "autostart": "NOT_APPLICABLE",
+      "observedAt": "2026-10-22T18:52:17.370331700Z",
+      "components": [
+        {
+          "mode": "ON_DEMAND",
+          "endpoints": [],
+          "unitId": "wtl-assisted-directory-diff-4bbbohimw",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper app-run wtl-assisted-directory-diff-4bbbohimw 6c6b11a0d4c9dcd93a536b548465a278176aa4a0fb0554be724121d007878c5f --",
+          "id": "wtl-assisted-directory-diff-4bbbohimw",
+          "workers": [],
+          "state": "INSTALLED"
+        }
+      ]
+    },
+    {
+      "project": "binary-inspector",
+      "mode": "ASSISTED",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-binary-inspector-4gkdi10gc",
+      "application": "wtl-assisted-binary-inspector-4gkdjtj7s",
+      "server": "static-live",
+      "revisionSha256": "fb9b155d5ebff850c6dd234d8b39e3fd20c108c5fca0df37662cec06cf8c1ee6",
+      "ownershipSha256": "d6b90ff159f115087adebe22adc0b4f85813da1b77d83ce6efadeb965a37039f",
+      "state": "INSTALLED",
+      "autostart": "NOT_APPLICABLE",
+      "observedAt": "2026-10-22T18:57:12.279114200Z",
+      "components": [
+        {
+          "state": "INSTALLED",
+          "workers": [],
+          "id": "wtl-assisted-binary-inspector-4gkdjtj7s",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper app-run wtl-assisted-binary-inspector-4gkdjtj7s 58f04c30a88379bf8fa16e4085df710383c3ff2d31cf05583c184e01dfb03553 --",
+          "unitId": "wtl-assisted-binary-inspector-4gkdjtj7s",
+          "endpoints": [],
+          "mode": "ON_DEMAND"
+        }
+      ]
+    }
+  ],
+  "laterCleanup": {
+    "survey-scoring": {
+      "state": "STOPPED",
+      "autostart": "DISABLED",
+      "sourceLog": "product-stop-survey-01.log"
+    },
+    "asset-lending": {
+      "state": "STOPPED",
+      "autostart": "DISABLED",
+      "rootTaskFinalState": "ENDED",
+      "rootTaskOutcome": "FAILED",
+      "originalBusinessOutcome": "UNKNOWN",
+      "sourceLog": "asset-product-cleanup-03.log",
+      "originalFactsPreserved": true,
+      "before": {
+        "task": "b6101628-6303-4364-bd67-d6c1aab45170",
+        "application": "wtl-assisted-asset-lending-2j16xmwvo",
+        "action": "LIFECYCLE_RESTART",
+        "originalPhase": "UNKNOWN",
+        "revisionSha256": "a2123e2e4f4ab3e1f59a01cb115ee3a0a81e8f00ad81956ed907be822cfe3d45",
+        "originalFactsSha256ExcludingCleanup": "6652173b0e5b6a621b67cc1e0d04688252d220d8b600e1940d6ca07bee8c572f",
+        "facts": {
+          "formatVersion": 1,
+          "before": "RUNNING",
+          "target": {
+            "server": "static-live",
+            "taskId": "b6101628-6303-4364-bd67-d6c1aab45170",
+            "host": "45.192.105.213",
+            "port": 22,
+            "username": "root",
+            "fingerprint": "SHA256:vXPqXzyMykqjCaD8J8k0cBUZKwyp9TCdJnh7+McB5wk"
+          },
+          "components": {
+            "backend": {
+              "before": "RUNNING",
+              "beforeAutostart": "DISABLED",
+              "attempted": false,
+              "verified": false
+            },
+            "web": {
+              "before": "RUNNING",
+              "beforeAutostart": "DISABLED",
+              "attempted": true,
+              "verified": false,
+              "verb": "stop"
+            }
+          },
+          "effectOutcome": "UNKNOWN"
+        }
+      },
+      "after": {
+        "task": "b6101628-6303-4364-bd67-d6c1aab45170",
+        "application": "wtl-assisted-asset-lending-2j16xmwvo",
+        "action": "LIFECYCLE_RESTART",
+        "originalPhase": "UNKNOWN",
+        "revisionSha256": "a2123e2e4f4ab3e1f59a01cb115ee3a0a81e8f00ad81956ed907be822cfe3d45",
+        "originalFactsSha256ExcludingCleanup": "6652173b0e5b6a621b67cc1e0d04688252d220d8b600e1940d6ca07bee8c572f",
+        "facts": {
+          "formatVersion": 1,
+          "before": "RUNNING",
+          "target": {
+            "server": "static-live",
+            "taskId": "b6101628-6303-4364-bd67-d6c1aab45170",
+            "host": "45.192.105.213",
+            "port": 22,
+            "username": "root",
+            "fingerprint": "SHA256:vXPqXzyMykqjCaD8J8k0cBUZKwyp9TCdJnh7+McB5wk"
+          },
+          "components": {
+            "backend": {
+              "before": "RUNNING",
+              "beforeAutostart": "DISABLED",
+              "attempted": false,
+              "verified": false
+            },
+            "web": {
+              "before": "RUNNING",
+              "beforeAutostart": "DISABLED",
+              "attempted": true,
+              "verified": false,
+              "verb": "stop"
+            }
+          },
+          "effectOutcome": "UNKNOWN",
+          "lifecycleCleanup": {
+            "formatVersion": 1,
+            "originalOperationId": "1d57b724-0e7b-3d7e-9848-b9236b7058ee",
+            "confirmedTaskId": "b6101628-6303-4364-bd67-d6c1aab45170",
+            "confirmedAt": 1792697360891,
+            "originalOutcome": "UNKNOWN",
+            "operations": {
+              "STOP": {
+                "phase": "FINISHED",
+                "facts": {
+                  "formatVersion": 2,
+                  "scope": "WHOLE_APPLICATION",
+                  "selectedComponentId": null,
+                  "review": {
+                    "approval": "AUTOMATIC",
+                    "rememberAuthorization": false,
+                    "configurationRevision": "0f45f8327163a9ee04a723d52eeb69b6e9e88aa73589e186fda0a0f9e7b49a16"
+                  },
+                  "applicationOwnershipSha256": "de6134673df7aa7876b803ad023396fbf03e2196065126255a9a5fff3641cb7d",
+                  "before": "RUNNING",
+                  "target": {
+                    "server": "static-live",
+                    "taskId": "b6101628-6303-4364-bd67-d6c1aab45170",
+                    "host": "45.192.105.213",
+                    "port": 22,
+                    "username": "root",
+                    "fingerprint": "SHA256:vXPqXzyMykqjCaD8J8k0cBUZKwyp9TCdJnh7+McB5wk"
+                  },
+                  "components": {
+                    "backend": {
+                      "before": "RUNNING",
+                      "beforeAutostart": "DISABLED",
+                      "attempted": true,
+                      "verified": true,
+                      "unitId": "wtl-assisted-asset-lending-2j16xmwvo-backend",
+                      "unitOwnershipSha256": "09196a498484a8332e2a600ed19bdd4849fb82627853ab1551969ac7982af7d0",
+                      "systemdUnit": "windowstolinux-wtl-assisted-asset-lending-2j16xmwvo-backend.service",
+                      "releaseRoot": "/opt/windowstolinux/apps/wtl-assisted-asset-lending-2j16xmwvo-backend",
+                      "releaseSha256": "1957e18574ba0d7b651a821d13d7246e7be3c62c14be021e4352d6daabbc619a",
+                      "beforeRaw": "RUNNING",
+                      "verb": "stop"
+                    },
+                    "web": {
+                      "before": "RUNNING",
+                      "beforeAutostart": "DISABLED",
+                      "attempted": true,
+                      "verified": true,
+                      "unitId": "wtl-assisted-asset-lending-2j16xmwvo-web",
+                      "unitOwnershipSha256": "74c7872fa7d747a6df95df6b1502fdf64c0f6c6d7b21de955448e63404748171",
+                      "systemdUnit": "windowstolinux-wtl-assisted-asset-lending-2j16xmwvo-web.service",
+                      "releaseRoot": "/opt/windowstolinux/apps/wtl-assisted-asset-lending-2j16xmwvo-web",
+                      "releaseSha256": "1a87af4e16473aff2e558e9c6b47e084d07dfff1305ed1464d572c0dcdebea15",
+                      "beforeRaw": "RUNNING",
+                      "verb": "stop"
+                    }
+                  },
+                  "final": "STOPPED"
+                }
+              },
+              "DISABLE_AUTOSTART": {
+                "phase": "FINISHED",
+                "facts": {
+                  "formatVersion": 2,
+                  "scope": "WHOLE_APPLICATION",
+                  "selectedComponentId": null,
+                  "review": {
+                    "approval": "AUTOMATIC",
+                    "rememberAuthorization": false,
+                    "configurationRevision": "0f45f8327163a9ee04a723d52eeb69b6e9e88aa73589e186fda0a0f9e7b49a16"
+                  },
+                  "applicationOwnershipSha256": "de6134673df7aa7876b803ad023396fbf03e2196065126255a9a5fff3641cb7d",
+                  "before": "STOPPED",
+                  "target": {
+                    "server": "static-live",
+                    "taskId": "b6101628-6303-4364-bd67-d6c1aab45170",
+                    "host": "45.192.105.213",
+                    "port": 22,
+                    "username": "root",
+                    "fingerprint": "SHA256:vXPqXzyMykqjCaD8J8k0cBUZKwyp9TCdJnh7+McB5wk"
+                  },
+                  "components": {
+                    "backend": {
+                      "before": "STOPPED",
+                      "beforeAutostart": "DISABLED",
+                      "attempted": true,
+                      "verified": true,
+                      "unitId": "wtl-assisted-asset-lending-2j16xmwvo-backend",
+                      "unitOwnershipSha256": "09196a498484a8332e2a600ed19bdd4849fb82627853ab1551969ac7982af7d0",
+                      "systemdUnit": "windowstolinux-wtl-assisted-asset-lending-2j16xmwvo-backend.service",
+                      "releaseRoot": "/opt/windowstolinux/apps/wtl-assisted-asset-lending-2j16xmwvo-backend",
+                      "releaseSha256": "1957e18574ba0d7b651a821d13d7246e7be3c62c14be021e4352d6daabbc619a",
+                      "beforeRaw": "STOPPED",
+                      "verb": "disable"
+                    },
+                    "web": {
+                      "before": "STOPPED",
+                      "beforeAutostart": "DISABLED",
+                      "attempted": true,
+                      "verified": true,
+                      "unitId": "wtl-assisted-asset-lending-2j16xmwvo-web",
+                      "unitOwnershipSha256": "74c7872fa7d747a6df95df6b1502fdf64c0f6c6d7b21de955448e63404748171",
+                      "systemdUnit": "windowstolinux-wtl-assisted-asset-lending-2j16xmwvo-web.service",
+                      "releaseRoot": "/opt/windowstolinux/apps/wtl-assisted-asset-lending-2j16xmwvo-web",
+                      "releaseSha256": "1a87af4e16473aff2e558e9c6b47e084d07dfff1305ed1464d572c0dcdebea15",
+                      "beforeRaw": "STOPPED",
+                      "verb": "disable"
+                    }
+                  },
+                  "final": "STOPPED"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "scope": "Task delta against pre-existing uncommitted application-management and directory-reorganization baseline; not a clean HEAD patch",
+  "files": [
+    {
+      "path": "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/application/DeploymentApplicationsService.java",
+      "beforeSha256": "7812b0f9153b72fa2e0c4a185cbfb13edee7a96491e8082c3c53497476285d52",
+      "afterSha256": "e2f864e8f81357116d67f5519cf38fea8ed9d3a91c46a56185175daa8ef116e8"
+    },
+    {
+      "path": "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/application/DeploymentApplicationRunner.java",
+      "beforeSha256": "6f5c03a5abf620c91441cec02e048cffcfa5b861c04a2c933684f90fea586679",
+      "afterSha256": "81e72554f13d85640d6ea79971a082f4ef662060717235441061c97a3ebf73bf"
+    },
+    {
+      "path": "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/application/DeploymentManagementActionLog.java",
+      "beforeSha256": "020df18571527e613485acea9162b3f34f4df2268760c3f9656089ba9af4b6f6",
+      "afterSha256": "f1026b8fc4179b8651abb8ecc3e38d06e1a8c9f21c839fc11f8da72d453e183e"
+    },
+    {
+      "path": "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/application/DeploymentLifecycleCleanupLog.java",
+      "beforeSha256": null,
+      "afterSha256": "84a7981742be8c7f75a5fb87a3567349e7a91af64a8facc6f7985c6ef22a827f"
+    },
+    {
+      "path": "src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/DeploymentApplicationLifecycleTest.java",
+      "beforeSha256": "2f052190010ba5d3e4c46570e8094b582287e459ec8dfc3cd8c3b30eda4d4281",
+      "afterSha256": "86a7858fce9762143f5de3f54469362ea7cc38aefcb114c9a8521a749dc04782"
+    },
+    {
+      "path": "src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java",
+      "beforeSha256": "2821691169ee1efc159dc30d457ddc5eef7bf0b90d32fc5e8c4a07ab66336bfa",
+      "afterSha256": "bcd2771291b92410f0ebaf8eae2ecee0269c216c54367557370795a30d4e44dd"
+    }
+  ],
+  "verification": {
+    "files": 6,
+    "strictWhitespaceCheck": true,
+    "appliedSourceMatches": true,
+    "sha256": "dce5eaf810519438371a1cbb193262d8db3f609bc2699b881cc4d214505532a5"
+  }
+}

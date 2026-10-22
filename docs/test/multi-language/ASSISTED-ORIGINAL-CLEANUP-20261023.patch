@@ -1,0 +1,664 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/application/DeploymentApplicationsService.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/application/DeploymentApplicationsService.java
+@@ -360,6 +360,8 @@
+             return failed("DEPLOYMENT_MANAGEMENT_NOT_STARTED");
+         }
+         var entry = stored.orElseThrow();
++        if (entry.facts().has(DeploymentLifecycleCleanupLog.FIELD))
++            return cleanupOriginalLifecycle(entry, task);
+         if (entry.phase().equals("REVIEWED")) {
+             if (!context.tasks().resourcesReleased(task))
+                 return unknown("DEPLOYMENT_MANAGEMENT_RESOURCES");
+@@ -375,6 +377,8 @@
+                     lifecycle.name(), review, true, task,
+                     (runner, captured) -> runner.lifecycle(application, entry.currentRevision(), lifecycle,
+                         DeploymentManagementActionLog.selected(entry), Optional.of(captured), task));
++            if (result.outcome() == TaskResult.UNKNOWN && lifecycle == DeploymentLifecycleAction.RESTART)
++                return cleanupOriginalLifecycle(new DeploymentManagementActionLog(context).find(task).orElseThrow(), task);
+         } else if (entry.action().equals("HISTORY_SWITCH")) {
+             var application = new DeploymentApplicationId(entry.applicationId(), entry.server());
+             result = releases.switchRelease(application, entry.currentRevision(),
+@@ -392,6 +396,62 @@
+         return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+     }
+ 
++    /** A real user choice starts a new cleanup, never a replay or successful reconstruction of the original RESTART. */
++    private OperationResult<Void> cleanupOriginalLifecycle(DeploymentManagementActionLog.Entry entry, TaskContext task) throws ApiException {
++        var application = new DeploymentApplicationId(entry.applicationId(), entry.server());
++        try {
++            var data = new DeploymentApplicationReader(context.db()).find(application, task);
++            var originalTarget = DeploymentManagementActionLog.target(entry, task);
++            var target = context.servers().get(entry.server(), task);
++            var componentIds = new HashSet<String>();
++            entry.facts().path("components").fieldNames().forEachRemaining(componentIds::add);
++            if (!data.snapshot().revisionSha256().equals(entry.currentRevision()) || !DeploymentApplicationRunner.originalBindings(data, entry)
++                || !componentIds.equals(data.graph().components().stream().map(part -> part.componentId()).collect(java.util.stream.Collectors.toSet()))
++                || !target.host().equals(originalTarget.host()) || target.port() != originalTarget.port()
++                || !target.username().equals(originalTarget.username())
++                || target.trustedFingerprint().isPresent() && !target.trustedFingerprint().equals(originalTarget.fingerprint()))
++                return unknown("DEPLOYMENT_ORIGINAL_CLEANUP_IDENTITY_UNCONFIRMED");
++            boolean confirmed = entry.facts().has(DeploymentLifecycleCleanupLog.FIELD);
++            if (!confirmed) {
++                String choice = "STOP " + task.id();
++                var answer = context.interaction().requestText("仅停止原应用并结清",
++                    "原 RESTART 仍为 UNKNOWN，不能证明原重启成功。\n原任务：" + task.id()
++                        + "\n应用：" + application.id() + "\n服务器：" + target.host() + ":" + target.port()
++                        + "\n指纹：" + originalTarget.fingerprint().orElseThrow() + "\n修订：" + entry.currentRevision()
++                        + "\n所有权：" + data.snapshot().ownershipSha256()
++                        + "\n输入 " + choice + "，授权新一轮独立审批及单次许可，仅 STOP 并禁自启原应用。"
++                        + "不重跑部署或业务；单独保存清理回执并保留原 UNKNOWN 历史。清理核实后原任务以失败结束。留空保持 UNKNOWN。",
++                    false, task);
++                if (answer.outcome() != TaskResult.SUCCEEDED || !answer.value().filter(choice::equals).isPresent())
++                    return unknown("DEPLOYMENT_ORIGINAL_CLEANUP_NOT_CONFIRMED");
++                confirmed = true;
++            }
++            for (var action : List.of(DeploymentLifecycleAction.STOP, DeploymentLifecycleAction.DISABLE_AUTOSTART)) {
++                var journal = new DeploymentLifecycleCleanupLog(context, entry, action.name(), confirmed);
++                var prior = journal.find(task);
++                var review = prior.flatMap(DeploymentManagementActionLog::review);
++                var result = reviewed(application, Optional.of(entry.currentRevision()), Optional.empty(), action.name(),
++                    review, true, task, journal,
++                    (runner, policy) -> runner.lifecycle(application, entry.currentRevision(), action, Optional.empty(), Optional.of(policy), task));
++                if (result.outcome() != TaskResult.SUCCEEDED)
++                    return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), result.problem());
++                if (result.value().orElseThrow().after() != gold.debug.windowstolinux.mod.deployment.api.ApplicationRunState.STOPPED)
++                    return unknown("DEPLOYMENT_ORIGINAL_CLEANUP_UNCONFIRMED");
++            }
++            if (!context.tasks().resourcesReleased(task)) return unknown("DEPLOYMENT_ORIGINAL_CLEANUP_RESOURCES");
++            return failed("DEPLOYMENT_ORIGINAL_UNCONFIRMED_CLEANUP_VERIFIED");
++        } catch (ApiException unconfirmed) {
++            return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(unconfirmed.problem()));
++        } catch (IllegalArgumentException unconfirmed) {
++            return unknown("DEPLOYMENT_ORIGINAL_CLEANUP_UNCONFIRMED");
++        } catch (RuntimeException | LinkageError unavailable) {
++            return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
++                "DEPLOYMENT_ORIGINAL_CLEANUP_RUNTIME_FAILURE", "Cleanup provider or development build is unavailable",
++                Map.of("failureType", unavailable.getClass().getName(), "location", unavailable.getStackTrace().length == 0
++                    ? "unavailable" : unavailable.getStackTrace()[0].toString()), Optional.empty())));
++        }
++    }
++
+     private void requireDefaultManagement() throws ApiException {
+         if (agentPolicy.isPresent()) throw new ApiException(new Problem(ProblemCode.INCOMPATIBLE,
+             "DEPLOYMENT_AGENT_MANAGEMENT_ACTION_UNSUPPORTED", "This Agent management policy does not cover the selected action",
+@@ -408,6 +468,15 @@
+                                              Optional<String> selected, String action,
+                                              Optional<DeploymentManagementActionLog.ReviewPolicy> original,
+                                              boolean recovery, TaskContext task, ReviewedWork<T> work) throws ApiException {
++        return reviewed(application, revision, selected, action, original, recovery, task,
++            new DeploymentManagementActionLog(context), work);
++    }
++
++    private <T> OperationResult<T> reviewed(DeploymentApplicationId application, Optional<String> revision,
++                                             Optional<String> selected, String action,
++                                             Optional<DeploymentManagementActionLog.ReviewPolicy> original,
++                                             boolean recovery, TaskContext task, DeploymentManagementActionLog journal,
++                                             ReviewedWork<T> work) throws ApiException {
+         try {
+             var data = new DeploymentApplicationReader(context.db()).find(application, task);
+             if (revision.filter(value -> !value.equals(data.snapshot().revisionSha256())).isPresent())
+@@ -419,7 +488,7 @@
+                 : new DeploymentManagementActionLog.ReviewPolicy(context.ai().configurationRevision(AiPurpose.LANGUAGE, task));
+             DeploymentFixedCommandApproval.requireRoute(context, task, policy.configurationRevision());
+             var target = context.servers().get(application.server(), task);
+-            var evidence = new ManagementEvidence(application, data, target, selected, action, policy, task);
++            var evidence = new ManagementEvidence(application, data, target, selected, action, policy, task, journal);
+             String frozen = "application=" + application.id() + "\nrelease=" + data.snapshot().revisionSha256()
+                 + "\nownership=" + data.snapshot().ownershipSha256() + "\nscope=" + (selected.isPresent() ? "SINGLE_COMPONENT" : "WHOLE_APPLICATION")
+                 + "\ncomponent=" + selected.orElse("ALL") + "\naction=" + action + "\nmodelRevision=" + policy.configurationRevision()
+@@ -429,7 +498,7 @@
+                 : DeploymentWorkflowAuthorization.open(context, task, application.server(), policy.configurationRevision(), "AUTOMATIC", false, frozen)) {
+                 var scoped = new DeploymentCommandReviewScope(context, context.interaction(), task, "AUTOMATIC", false,
+                     policy::configurationRevision).withCurrentEvidence(evidence);
+-                return work.run(new DeploymentApplicationRunner(scoped), policy);
++                return work.run(new DeploymentApplicationRunner(scoped, journal), policy);
+             }
+         } catch (DeploymentAiJson.CapabilityOutcomeException refusal) {
+             return recovery ? unknown("DEPLOYMENT_MANAGEMENT_REVIEW_UNCONFIRMED")
+@@ -449,13 +518,14 @@
+         private final String action;
+         private final DeploymentManagementActionLog.ReviewPolicy policy;
+         private final TaskContext task;
++        private final DeploymentManagementActionLog journal;
+         private com.fasterxml.jackson.databind.JsonNode journalIdentity;
+ 
+         ManagementEvidence(DeploymentApplicationId application, DeploymentApplicationReader.ApplicationFacts original,
+                            ServerInfo target, Optional<String> selected, String action,
+-                           DeploymentManagementActionLog.ReviewPolicy policy, TaskContext task) {
++                           DeploymentManagementActionLog.ReviewPolicy policy, TaskContext task, DeploymentManagementActionLog journal) {
+             this.application = application; this.original = original; this.target = target;
+-            this.selected = selected; this.action = action; this.policy = policy; this.task = task;
++            this.selected = selected; this.action = action; this.policy = policy; this.task = task; this.journal = journal;
+         }
+ 
+         public Map<String, ?> facts(ActionIntent intent, CommandRequest request, TaskContext supplied) throws ApiException {
+@@ -476,8 +546,10 @@
+                 "systemdUnit", part.unit().systemdUnit(), "releaseRoot", part.unit().releaseRoot(),
+                 "releaseSha256", original.release().bindings().stream().filter(binding -> binding.unitId().equals(part.unit().id()))
+                     .findFirst().orElseThrow().releaseSha256())).toList());
+-            var entry = new DeploymentManagementActionLog(context).find(task);
++            var entry = journal.find(task);
+             entry.ifPresent(stored -> value.put("originalActionFacts", stored.facts()));
++            if (journal instanceof DeploymentLifecycleCleanupLog cleanup)
++                value.put("originalLifecycleCleanup", cleanup.evidence(task));
+             return Map.of("managementIdentity", Collections.unmodifiableMap(value));
+         }
+ 
+@@ -494,7 +566,7 @@
+                 || !endpoint.host().equals(target.host()) || endpoint.port() != target.port() || !endpoint.username().equals(target.username())
+                 || target.trustedFingerprint().isPresent() && !endpoint.trustedFingerprint().equals(target.trustedFingerprint()))
+                 throw changed();
+-            var entry = new DeploymentManagementActionLog(context).find(task);
++            var entry = journal.find(task);
+             if (entry.isPresent()) {
+                 var stored = entry.orElseThrow();
+                 if (!stored.applicationId().equals(application.id()) || !stored.server().equals(application.server())
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/application/DeploymentApplicationRunner.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/application/DeploymentApplicationRunner.java
+@@ -50,9 +50,13 @@
+     /** Binds the active deployment generation. / 绑定活动部署代次。
+      * @param context original deployment Mod context / 原部署Mod上下文 */
+     public DeploymentApplicationRunner(ModContext context) {
++        this(context, new DeploymentManagementActionLog(context));
++    }
++
++    DeploymentApplicationRunner(ModContext context, DeploymentManagementActionLog journal) {
+         this.context = java.util.Objects.requireNonNull(context);
+         this.reader = new DeploymentApplicationReader(context.db());
+-        this.journal = new DeploymentManagementActionLog(context);
++        this.journal = java.util.Objects.requireNonNull(journal);
+     }
+ 
+     /** Lists saved facts without interpreting them as current remote truth. / 列出保存的事实，不将其解释为当前远端真相。
+@@ -114,6 +118,8 @@
+                 || !DeploymentManagementActionLog.selected(prior.orElseThrow()).equals(selected)))
+             return lifecycleRefusal(prior, "DEPLOYMENT_LIFECYCLE_ORIGINAL_SCOPE_CHANGED");
+         Optional<RemoteTarget> originalTarget = Optional.empty();
++        if (journal instanceof DeploymentLifecycleCleanupLog cleanup)
++            originalTarget = Optional.of(cleanup.originalTarget(task));
+         if (prior.isPresent()) {
+             try {
+                 originalTarget = Optional.of(DeploymentManagementActionLog.target(prior.orElseThrow(), task));
+@@ -333,7 +339,7 @@
+                 : "Original action target state verified by read-only current identity and component health"));
+     }
+ 
+-    private static boolean originalBindings(ApplicationFacts data, DeploymentManagementActionLog.Entry operation) {
++    static boolean originalBindings(ApplicationFacts data, DeploymentManagementActionLog.Entry operation) {
+         if (DeploymentManagementActionLog.review(operation).isEmpty()) return true;
+         if (!data.snapshot().ownershipSha256().equals(operation.facts().path("applicationOwnershipSha256").textValue())
+             || data.graph().components().size() != operation.facts().path("components").size()) return false;
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/application/DeploymentManagementActionLog.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/application/DeploymentManagementActionLog.java
+@@ -24,7 +24,7 @@
+ import gold.debug.windowstolinux.mod.deployment.db.schema.DeploymentSchemaIdentity;
+ 
+ /** Journals an original management task before any remote effect and keeps uncertain phases. / 在远端副作用前记录原管理任务，并保留未知阶段。 */
+-public final class DeploymentManagementActionLog {
++public class DeploymentManagementActionLog {
+     /** Strict original management evidence JSON without duplicate fields. / 无重复字段的严格原管理依据JSON。 */
+     private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+ 
+@@ -189,6 +189,12 @@
+         context.servers().get(entry.server(), task);
+         byte[] payload = bytes(facts);
+         validateIntent(entry.server(), entry.action(), entry.targetRevision(), facts, task);
++        if (entry.facts().has("lifecycleCleanup")) {
++            var before = copy(entry); before.remove("lifecycleCleanup");
++            var after = (ObjectNode) facts.deepCopy(); after.remove("lifecycleCleanup");
++            if (!before.equals(after)) throw incompatible();
++            DeploymentLifecycleCleanupLog.requireRetained(entry, facts);
++        }
+         if (version(entry.facts()) != version(facts)
+             || version(facts) == 2 && !immutable(entry.facts()).equals(immutable(facts)))
+             throw incompatible();
+@@ -200,18 +206,7 @@
+                 || !stored.phase().equals(entry.phase()) || !stored.facts().equals(entry.facts())
+                 || !Set.of("REVIEWED", "EFFECTING", "UNKNOWN", "FINISHED").contains(phase))
+                 throw incompatible();
+-            var names = entry.facts().path("components").fieldNames();
+-            while (names.hasNext()) {
+-                String name = names.next();
+-                var before = entry.facts().path("components").path(name);
+-                var after = facts.path("components").path(name);
+-                boolean nextRestartPhase = entry.action().equals("LIFECYCLE_RESTART")
+-                    && before.path("verb").asText().equals("stop") && after.path("verb").asText().equals("start");
+-                if (before.path("attempted").booleanValue() && !after.path("attempted").booleanValue()
+-                    || before.path("verified").booleanValue() && !after.path("verified").booleanValue() && !nextRestartPhase
+-                    || before.path("verb").isTextual() && !before.path("verb").equals(after.path("verb")) && !nextRestartPhase)
+-                    throw incompatible();
+-            }
++            requireProgress(entry, phase, facts);
+         }
+         DeploymentSchemaIdentity.requireIdentity(context.db().identity());
+         try (var connection = context.db().openConnection(task);
+@@ -219,7 +214,7 @@
+                  + "component_state=?,updated_at=? WHERE operation_id=? AND platform_task_id=? AND "
+                  + "owner_mod_id=? AND owner_mod_version=? AND phase=?"
+                  + (version(facts) == 2 ? " AND application_id=? AND server_profile_id=? AND action=?"
+-                     + " AND current_release_sha256=? AND target_release_sha256 IS NULL AND component_state=?" : ""))) {
++                     + " AND current_release_sha256=? AND target_release_sha256 IS NULL AND component_state=?" : " AND component_state=?"))) {
+             update.setString(1, phase);
+             update.setBytes(2, payload);
+             update.setLong(3, Instant.now().toEpochMilli());
+@@ -228,7 +223,7 @@
+             update.setString(6, owner.ownerId());
+             update.setString(7, owner.ownerVersion());
+             update.setString(8, entry.phase());
+-            if (version(facts) == 2) {
++            {
+                 byte[] originalPayload;
+                 try (var query = connection.prepareStatement("SELECT component_state FROM deployment_management_operation"
+                     + " WHERE operation_id=? AND platform_task_id=? AND owner_mod_id=? AND owner_mod_version=? AND phase=?")) {
+@@ -240,9 +235,11 @@
+                         if (!parse(originalPayload).equals(entry.facts()) || rows.next()) throw incompatible();
+                     }
+                 }
+-                update.setString(9, entry.applicationId()); update.setString(10, entry.server().id());
+-                update.setString(11, entry.action()); update.setString(12, entry.currentRevision());
+-                update.setBytes(13, originalPayload);
++                if (version(facts) == 2) {
++                    update.setString(9, entry.applicationId()); update.setString(10, entry.server().id());
++                    update.setString(11, entry.action()); update.setString(12, entry.currentRevision());
++                    update.setBytes(13, originalPayload);
++                } else update.setBytes(9, originalPayload);
+             }
+             if (update.executeUpdate() != 1)
+                 throw incompatible();
+@@ -362,7 +359,7 @@
+         if (version(value) == 1) return;
+         fields(value, Set.of("formatVersion", "scope", "selectedComponentId", "review", "applicationOwnershipSha256",
+             "target", "before", "components"), Set.of("originalTargetUnconfirmed", "finalObservationOutcome", "final",
+-            "reconciledReadOnly", "partialStopVerified", "interrupted", "currentReleaseUnconfirmed", "effectOutcome"));
++            "reconciledReadOnly", "partialStopVerified", "interrupted", "currentReleaseUnconfirmed", "effectOutcome", "lifecycleCleanup"));
+         String scope = text(value, "scope");
+         if (!Set.of("WHOLE_APPLICATION", "SINGLE_COMPONENT").contains(scope)
+             || scope.equals("WHOLE_APPLICATION") != value.path("selectedComponentId").isNull())
+@@ -420,6 +417,28 @@
+         if (value.has("final")) gold.debug.windowstolinux.mod.deployment.api.ApplicationRunState.valueOf(text(value, "final"));
+     }
+ 
++    static void validateLifecycleEntry(Entry entry, TaskContext task) {
++        validate(entry.facts());
++        validateIntent(entry.server(), entry.action(), entry.targetRevision(), entry.facts(), task);
++    }
++
++    static void requireProgress(Entry entry, String phase, JsonNode facts) throws ApiException {
++        if (!Set.of("REVIEWED", "EFFECTING", "UNKNOWN", "FINISHED").contains(phase)
++            || version(facts) != 2 || !immutable(entry.facts()).equals(immutable(facts))) throw incompatible();
++        var names = entry.facts().path("components").fieldNames();
++        while (names.hasNext()) {
++            String name = names.next();
++            var before = entry.facts().path("components").path(name);
++            var after = facts.path("components").path(name);
++            boolean nextRestartPhase = entry.action().equals("LIFECYCLE_RESTART")
++                && before.path("verb").asText().equals("stop") && after.path("verb").asText().equals("start");
++            if (before.path("attempted").booleanValue() && !after.path("attempted").booleanValue()
++                || before.path("verified").booleanValue() && !after.path("verified").booleanValue() && !nextRestartPhase
++                || before.path("verb").isTextual() && !before.path("verb").equals(after.path("verb")) && !nextRestartPhase)
++                throw incompatible();
++        }
++    }
++
+     private static void validateIntent(ServerId server, String action, Optional<String> targetRevision,
+                                        JsonNode facts, TaskContext task) {
+         if (version(facts) == 1) return;
+@@ -442,7 +461,7 @@
+         var original = value.deepCopy();
+         var result = (ObjectNode) original;
+         result.remove(java.util.List.of("originalTargetUnconfirmed", "finalObservationOutcome", "final", "reconciledReadOnly",
+-            "partialStopVerified", "interrupted", "currentReleaseUnconfirmed", "effectOutcome"));
++            "partialStopVerified", "interrupted", "currentReleaseUnconfirmed", "effectOutcome", "lifecycleCleanup"));
+         result.path("components").forEach(part -> ((ObjectNode) part).remove(java.util.List.of("attempted", "verified", "verb")));
+         return result;
+     }
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/application/DeploymentLifecycleCleanupLog.java
+@@ -0,0 +1,160 @@
++package gold.debug.windowstolinux.mod.deployment.service.core.application;
++
++import java.time.Instant;
++import java.util.Map;
++import java.util.Optional;
++import java.util.Set;
++import java.util.UUID;
++
++import com.fasterxml.jackson.databind.JsonNode;
++import com.fasterxml.jackson.databind.node.ObjectNode;
++import gold.debug.windowstolinux.appapi.mod.ModContext;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.result.ApiException;
++import gold.debug.windowstolinux.appapi.task.result.Problem;
++import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
++import gold.debug.windowstolinux.appapi.task.run.TaskContext;
++
++/** Separate STOP/disable receipts under an unchanged original UNKNOWN action. No schema or task identity is replaced. */
++final class DeploymentLifecycleCleanupLog extends DeploymentManagementActionLog {
++    static final String FIELD = "lifecycleCleanup";
++    private final DeploymentManagementActionLog original;
++    private final Entry anchor;
++    private final String action;
++    private final boolean confirmed;
++
++    DeploymentLifecycleCleanupLog(ModContext context, Entry anchor, String action, boolean confirmed) {
++        super(context);
++        if (!anchor.action().equals("LIFECYCLE_RESTART") || !Set.of("EFFECTING", "UNKNOWN").contains(anchor.phase())
++            || !Set.of("STOP", "DISABLE_AUTOSTART").contains(action))
++            throw new IllegalArgumentException("Original uncertain RESTART cleanup required");
++        this.original = new DeploymentManagementActionLog(context);
++        this.anchor = anchor;
++        this.action = action;
++        this.confirmed = confirmed;
++    }
++
++    private Entry parent(TaskContext task) throws ApiException {
++        var current = original.find(task).orElseThrow(DeploymentLifecycleCleanupLog::changed);
++        if (!current.id().equals(anchor.id()) || !current.phase().equals(anchor.phase())
++            || !current.taskId().equals(anchor.taskId()) || !current.ownerId().equals(anchor.ownerId())
++            || !current.ownerVersion().equals(anchor.ownerVersion()) || !current.applicationId().equals(anchor.applicationId())
++            || !current.server().equals(anchor.server()) || !current.action().equals(anchor.action())
++            || !current.currentRevision().equals(anchor.currentRevision()) || !current.targetRevision().equals(anchor.targetRevision())
++            || !withoutCleanup(current).equals(withoutCleanup(anchor))) throw changed();
++        return current;
++    }
++
++    private static JsonNode withoutCleanup(Entry entry) {
++        var facts = copy(entry); facts.remove(FIELD);
++        return facts;
++    }
++
++    Map<String, ?> evidence(TaskContext task) throws ApiException {
++        var parent = parent(task);
++        return Map.of("originalTaskId", parent.taskId().toString(), "originalOperationId", parent.id().toString(),
++            "originalAction", parent.action(), "originalOutcome", "UNKNOWN", "originalPhase", parent.phase(),
++            "originalFacts", withoutCleanup(parent), "cleanupAction", action,
++            "userConfirmedCleanup", confirmed, "meaning", "New independently reviewed cleanup only; no replay or proof of original RESTART success");
++    }
++
++    gold.debug.windowstolinux.appapi.linux.session.RemoteTarget originalTarget(TaskContext task) throws ApiException {
++        return target(parent(task), task);
++    }
++
++    @Override
++    public Optional<Entry> find(TaskContext task) throws ApiException {
++        var parent = parent(task);
++        var receipt = parent.facts().path(FIELD);
++        if (receipt.isMissingNode()) return Optional.empty();
++        if (receipt.path("formatVersion").asInt() != 1
++            || !receipt.path("originalOperationId").asText().equals(parent.id().toString())
++            || !receipt.path("confirmedTaskId").asText().equals(task.id().toString())
++            || !receipt.path("originalOutcome").asText().equals("UNKNOWN")
++            || !receipt.path("confirmedAt").isIntegralNumber() || !receipt.path("operations").isObject()) throw changed();
++        var operation = receipt.path("operations").path(action);
++        if (operation.isMissingNode()) return Optional.empty();
++        if (!Set.of("REVIEWED", "EFFECTING", "UNKNOWN", "FINISHED").contains(operation.path("phase").asText())
++            || operation.path("facts").has(FIELD)) throw changed();
++        var entry = view(parent, operation.path("phase").asText(), operation.path("facts"));
++        try { validateLifecycleEntry(entry, task); }
++        catch (IllegalArgumentException invalid) { throw changed(); }
++        return Optional.of(entry);
++    }
++
++    private Entry view(Entry parent, String phase, JsonNode facts) {
++        var id = UUID.nameUUIDFromBytes((parent.id() + ":cleanup:" + action).getBytes(java.nio.charset.StandardCharsets.UTF_8));
++        return new Entry(id, parent.taskId(), parent.ownerId(), parent.ownerVersion(), parent.applicationId(),
++            parent.server(), "LIFECYCLE_" + action, parent.currentRevision(), Optional.empty(), phase, facts.deepCopy());
++    }
++
++    @Override
++    public Entry begin(String application, ServerId server, String operation, String revision,
++                       Optional<String> target, JsonNode facts, TaskContext task) throws ApiException {
++        var parent = parent(task);
++        if (!application.equals(parent.applicationId()) || !server.equals(parent.server())
++            || !operation.equals("LIFECYCLE_" + action) || !revision.equals(parent.currentRevision()) || target.isPresent()
++            || review(view(parent, "REVIEWED", facts)).isEmpty() || selected(view(parent, "REVIEWED", facts)).isPresent()
++            || !facts.path("target").equals(parent.facts().path("target"))) throw changed();
++        var prior = find(task);
++        if (prior.isPresent()) {
++            if (!immutable(prior.orElseThrow().facts()).equals(immutable(facts))) throw changed();
++            return prior.orElseThrow();
++        }
++        if (!confirmed) throw changed();
++        var entry = view(parent, "REVIEWED", facts);
++        validateLifecycleEntry(entry, task);
++        save(parent, entry, task);
++        return entry;
++    }
++
++    @Override
++    public Entry advance(Entry entry, String phase, JsonNode facts, TaskContext task) throws ApiException {
++        var current = find(task).orElseThrow(DeploymentLifecycleCleanupLog::changed);
++        if (!current.equals(entry)) throw changed();
++        requireProgress(entry, phase, facts);
++        var next = view(parent(task), phase, facts);
++        validateLifecycleEntry(next, task);
++        save(parent(task), next, task);
++        return next;
++    }
++
++    private void save(Entry parent, Entry entry, TaskContext task) throws ApiException {
++        var facts = copy(parent);
++        ObjectNode receipt;
++        if (facts.has(FIELD)) receipt = facts.withObject(FIELD);
++        else {
++            receipt = facts.putObject(FIELD).put("formatVersion", 1).put("originalOperationId", parent.id().toString())
++                .put("confirmedTaskId", task.id().toString()).put("confirmedAt", Instant.now().toEpochMilli())
++                .put("originalOutcome", "UNKNOWN");
++            receipt.putObject("operations");
++        }
++        receipt.withObject("operations").putObject(action).put("phase", entry.phase()).set("facts", entry.facts());
++        original.advance(parent, parent.phase(), facts, task);
++    }
++
++    static void requireRetained(Entry parent, JsonNode next) throws ApiException {
++        var before = parent.facts().path(FIELD);
++        var after = next.path(FIELD);
++        if (!after.isObject()) throw changed();
++        var identity = (ObjectNode) before.deepCopy(); identity.remove("operations");
++        var nextIdentity = (ObjectNode) after.deepCopy(); nextIdentity.remove("operations");
++        if (!identity.equals(nextIdentity)) throw changed();
++        var names = before.path("operations").fieldNames();
++        while (names.hasNext()) {
++            String action = names.next();
++            var old = before.path("operations").path(action);
++            var current = after.path("operations").path(action);
++            if (!current.isObject()) throw changed();
++            var entry = new Entry(parent.id(), parent.taskId(), parent.ownerId(), parent.ownerVersion(), parent.applicationId(),
++                parent.server(), "LIFECYCLE_" + action, parent.currentRevision(), Optional.empty(), old.path("phase").asText(), old.path("facts"));
++            requireProgress(entry, current.path("phase").asText(), current.path("facts"));
++            if (entry.phase().equals("FINISHED") && !current.path("phase").asText().equals("FINISHED")) throw changed();
++        }
++    }
++
++    private static ApiException changed() {
++        return new ApiException(new Problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_ORIGINAL_CLEANUP_CHANGED",
++            "Original cleanup identity or receipt changed", Map.of(), Optional.empty()));
++    }
++}
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/DeploymentApplicationLifecycleTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/DeploymentApplicationLifecycleTest.java
+@@ -268,6 +268,93 @@
+         } finally {
+             if (process.isAlive()) { process.destroy(); if (!process.waitFor(2, TimeUnit.SECONDS)) { process.destroyForcibly(); assertTrue(process.waitFor(5, TimeUnit.SECONDS)); } }
+         }
++    }
++
++    @org.junit.jupiter.params.ParameterizedTest
++    @org.junit.jupiter.params.provider.ValueSource(strings = {"CONFIRM", "DECLINE", "DENY", "IDENTITY", "RECEIPT_CHANGED", "LEGACY"})
++    void originalRestartCleanupKeepsHistoryAndRequiresNewReview(String scenario) throws Exception {
++        isolatedManagedRecovery(root, "CLEANUP_" + scenario);
++    }
++
++    @org.junit.jupiter.api.Test
++    void originalCleanupLostStopAckUsesReadOnlyProof() throws Exception {
++        isolatedManagedRecovery(root, "CLEANUP_ACK_LOST");
++    }
++
++    @org.junit.jupiter.api.Test
++    void originalCleanupProviderFailureRetainsTypedUnknown() throws Exception {
++        isolatedManagedRecovery(root, "CLEANUP_RUNTIME");
++    }
++
++    private void managedCleanup(String scenario) throws Exception {
++        enable(); var runtime = open(); start(runtime, true); server(runtime);
++        run(runtime, task -> { publishManaged(runtime, task, reviewedGraph(), 1); return success(); });
++        var harness = new ManagedHarness(runtime.modContexts().get(OWNER).context());
++        harness.waitSeconds = 50;
++        var app = new DeploymentApplicationId("application", new ServerId("server"));
++        var snapshot = harness.finished(harness.service.inspect(app));
++        harness.peer.lossVerb = "start";
++        harness.after = (task, result) -> {
++            assertEquals(TaskResult.UNKNOWN, result.outcome());
++            var log = new DeploymentManagementActionLog(harness.context);
++            var original = log.find(task).orElseThrow();
++            if (scenario.equals("LEGACY")) {
++                // A retained v1 row is input to the new cleanup; no live record is rewritten by production code.
++                var legacy = DeploymentManagementActionLog.facts().put("before", original.facts().path("before").asText());
++                legacy.set("target", original.facts().path("target"));
++                legacy.set("components", original.facts().path("components"));
++                try (var connection = harness.context.db().openConnection(task);
++                     var update = connection.prepareStatement("UPDATE deployment_management_operation SET component_state=? WHERE platform_task_id=?")) {
++                    update.setBytes(1, new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsBytes(legacy));
++                    update.setObject(2, task.id()); assertEquals(1, update.executeUpdate());
++                }
++                original = log.find(task).orElseThrow();
++            }
++            int effects = harness.peer.effects.get();
++            harness.cleanupConfirmed = !scenario.equals("DECLINE");
++            harness.failWorkflow = scenario.equals("RUNTIME");
++            if (scenario.equals("DENY")) harness.decision = "DENY";
++            if (scenario.equals("IDENTITY")) harness.peer.current.put("web", "f".repeat(64));
++            if (scenario.equals("ACK_LOST")) { harness.peer.lossVerb = "stop"; harness.peer.lossUnit = "worker"; }
++            if (scenario.equals("RECEIPT_CHANGED")) {
++                var facts = DeploymentManagementActionLog.copy(original);
++                facts.putObject("lifecycleCleanup").put("formatVersion", 1).put("confirmedTaskId", UUID.randomUUID().toString());
++                log.advance(original, original.phase(), facts, task);
++            }
++            OperationResult<?> recovered;
++            if (scenario.equals("LEGACY") || scenario.equals("RUNTIME")) {
++                var method = DeploymentApplicationsService.class.getDeclaredMethod("cleanupOriginalLifecycle", DeploymentManagementActionLog.Entry.class, TaskContext.class);
++                method.setAccessible(true);
++                recovered = (OperationResult<?>) method.invoke(new DeploymentApplicationsService(harness.context), original, task);
++            } else recovered = new DeploymentApplicationsService(harness.context).reconcile(harness.actual.tasks().inspect(task), task);
++            boolean positive = scenario.equals("CONFIRM") || scenario.equals("ACK_LOST") || scenario.equals("LEGACY");
++            if (scenario.equals("ACK_LOST")) {
++                assertEquals(TaskResult.UNKNOWN, recovered.outcome());
++                assertEquals(effects + 2, harness.peer.effects.get());
++                recovered = new DeploymentApplicationsService(harness.context).reconcile(harness.actual.tasks().inspect(task), task);
++                assertEquals(effects + 4, harness.peer.effects.get(), "Lost STOP ACK is observed, only the new disable phase sends effects");
++            }
++            assertEquals(positive ? TaskResult.FAILED : TaskResult.UNKNOWN, recovered.outcome(), recovered::toString);
++            if (scenario.equals("RUNTIME")) assertEquals("DEPLOYMENT_ORIGINAL_CLEANUP_RUNTIME_FAILURE", recovered.problem().orElseThrow().eventCode());
++            if (positive) {
++                assertEquals("DEPLOYMENT_ORIGINAL_UNCONFIRMED_CLEANUP_VERIFIED", recovered.problem().orElseThrow().eventCode());
++                assertTrue(harness.peer.running.values().stream().noneMatch(Boolean::booleanValue));
++                assertTrue(harness.peer.enabled.values().stream().noneMatch(Boolean::booleanValue));
++                var retained = log.find(task).orElseThrow();
++                assertEquals(original.phase(), retained.phase());
++                var preserved = DeploymentManagementActionLog.copy(retained); preserved.remove("lifecycleCleanup");
++                assertEquals(original.facts(), preserved, "Original unknown attempts and missing ACKs are unchanged");
++                for (String action : List.of("STOP", "DISABLE_AUTOSTART"))
++                    assertEquals("FINISHED", retained.facts().path("lifecycleCleanup").path("operations").path(action).path("phase").asText());
++            } else assertEquals(effects, harness.peer.effects.get(), "Decline, review denial, identity drift or receipt mismatch cannot send cleanup");
++            assertEquals(0, harness.peer.sessions.get()); assertEquals(0, harness.openWorkflows.get());
++            return recovered;
++        };
++        var outcome = harness.result(harness.service.lifecycle(snapshot, DeploymentLifecycleAction.RESTART));
++        harness.assertNoFailure();
++        if (outcome.outcome() == TaskResult.UNKNOWN) assertThrows(ApiException.class, runtime::close);
++        else runtime.close();
++        System.out.println("MANAGEMENT_V2_READ_ONLY_VERIFIED CLEANUP_" + scenario);
+     }
+ 
+     /** Actual ACTION Task/journal with controlled host/AI/peer; this is not the Mod registry integration test. */
+@@ -334,6 +421,9 @@
+         final AtomicReference<Throwable> failure = new AtomicReference<>();
+         final Map<UUID, OperationResult<?>> workResults = new java.util.concurrent.ConcurrentHashMap<>();
+         String modelRevision = "b".repeat(64), decision = "APPROVE";
++        boolean cleanupConfirmed;
++        boolean failWorkflow;
++        int waitSeconds = 20;
+         ManagedAfter after;
+ 
+         ManagedHarness(ModContext actual) {
+@@ -359,7 +449,12 @@
+             });
+             var host = (InteractionService) Proxy.newProxyInstance(InteractionService.class.getClassLoader(), new Class<?>[]{InteractionService.class}, (proxy, method, args) -> {
+                 var task = (TaskContext) args[args.length - 1]; actual.tasks().inspect(task);
++                if (method.getName().equals("requestText")) {
++                    assertEquals("仅停止原应用并结清", args[0]); assertEquals(false, args[2]);
++                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(cleanupConfirmed ? "STOP " + task.id() : ""), Optional.empty());
++                }
+                 if (method.getName().equals("openReviewedWorkflow")) {
++                    if (failWorkflow) throw new IllegalStateException("Controlled cleanup provider failure");
+                     assertEquals(false, args[2]);
+                     var lease = task.retain("controlled_management_workflow", UUID.randomUUID().toString(), "Controlled task-bound workflow");
+                     openWorkflows.incrementAndGet();
+@@ -398,7 +493,7 @@
+ 
+         @SuppressWarnings("unchecked")
+         <T> OperationResult<T> result(TaskHandle<T> handle) throws Exception {
+-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
++            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(waitSeconds);
+             while (System.nanoTime() < deadline) {
+                 assertNoFailure();
+                 var snapshot = handle.snapshot();
+@@ -561,7 +656,8 @@
+         if (args.length == 3 && args[0].equals("--managed-v2")) {
+             try {
+                 var probe = new DeploymentApplicationLifecycleTest(); probe.root = java.nio.file.Path.of(args[1]);
+-                if (args[2].equals("APP_REVIEW")) probe.managedAppReview();
++                if (args[2].startsWith("CLEANUP_")) probe.managedCleanup(args[2].substring(8));
++                else if (args[2].equals("APP_REVIEW")) probe.managedAppReview();
+                 else probe.managedRecovery(args[2]);
+                 System.exit(0);
+             } catch (Throwable failure) { failure.printStackTrace(); System.exit(1); }
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -6061,6 +6061,14 @@
+ 
+             public char[] text(String title, String prompt, boolean secret, TaskSnapshot task,
+                                CancelToken cancel) {
++                if (!secret && title.equals("仅停止原应用并结清") && Boolean.getBoolean("managed.live.cleanupOriginalLifecycle")
++                    && task.id().toString().equals(System.getProperty("managed.live.originalTask"))
++                    && prompt.contains("应用：" + System.getProperty("managed.live.originalApplication"))
++                    && prompt.contains("指纹：" + System.getProperty("managed.ssh.fingerprint"))) {
++                    assertFalse(cancel.requested());
++                    System.out.println("AI_LIVE_ORIGINAL_CLEANUP_USER_AUTHORIZED task=" + task.id());
++                    return ("STOP " + task.id()).toCharArray();
++                }
+                 if (!secret && title.equals("AI 校准后仍无法确定项目识别")) {
+                     assertTrue(aiEnabled);
+                     assertFalse(cancel.requested());
+@@ -7940,6 +7948,8 @@
+             System.out.println("STATIC_LIVE_RECONCILED " + observed);
+             if (!originalTaskOnly) printOriginalDiagnostics(runtime, original);
+             assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, observed.state(), observed::toString);
++            if (Boolean.getBoolean("managed.live.cleanupOriginalLifecycle"))
++                assertEquals(Optional.of(TaskResult.FAILED), observed.outcome(), "Cleanup never turns the original unconfirmed RESTART into success");
+             if (originalTaskOnly) {
+                 System.out.println("AGENT_LIVE_EXACT_ORIGINAL_RECONCILED task=" + original + " outcome=" + observed.outcome());
+                 return;
+@@ -7953,6 +7963,22 @@
+                 assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, query.state(), query::toString);
+             }
+             runtime.modRecovery().release();
++        }
++        if (Boolean.getBoolean("managed.live.cleanupOriginalLifecycle")) {
++            try (var runtime = open()) {
++                start(runtime, true);
++                var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
++                var applications = new DeploymentApplicationsService(context);
++                var entries = completed(applications.list(), 2).stream()
++                    .filter(value -> value.application().id().equals(System.getProperty("managed.live.originalApplication"))).toList();
++                assertEquals(1, entries.size());
++                var selected = completed(applications.inspect(entries.getFirst().application()), 5);
++                assertEquals(ApplicationRunState.STOPPED, selected.state());
++                assertEquals(ApplicationAutostartState.DISABLED, selected.autostart());
++                System.out.println("AI_LIVE_ORIGINAL_CLEANUP_RESTART_VERIFIED application=" + selected.application().id()
++                    + " state=" + selected.state() + " autostart=" + selected.autostart());
++            }
++            return;
+         }
+         if (preparationOnly) {
+             try (var runtime = open()) {
