@@ -480,7 +480,7 @@ class ModVersionDeletionLedgerTest {
                 task, OWNER, db.bootId(), UUID.randomUUID().toString());
             assertThrows(SQLException.class, () -> ledger.review(OWNER, "1.0.0"));
             sql(db, "UPDATE platform_task SET owner_id='other.owner' WHERE task_id=?", task);
-            sql(db, "INSERT INTO platform_task_resource VALUES(?,?,'SCHEMA',?,'other.owner','SHARED',1,NULL,'{}')",
+            sql(db, "INSERT INTO platform_task_resource(lease_id,task_id,resource_kind,resource_id,owner_id,access_mode,acquired_at,released_at,recovery_json) VALUES(?,?,'SCHEMA',?,'other.owner','SHARED',1,NULL,'{}')",
                 UUID.randomUUID(), task, data.generation().toString());
             assertThrows(SQLException.class, () -> ledger.review(OWNER, "1.0.0"));
             sql(db, "DELETE FROM platform_task_resource");
@@ -510,16 +510,16 @@ class ModVersionDeletionLedgerTest {
             owner(db);
             release(db, "1.0.0", "1");
             var data = schema(db, "1");
-            sql(db, "INSERT INTO security_profile VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)",
+            sql(db, "INSERT INTO security_profile(security_profile_id,is_encryption_enabled,password_verifier,wrapped_data_key,key_wrap_algorithm,key_wrap_nonce,key_derivation_algorithm,key_derivation_salt,key_derivation_parameters,format_version) VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)",
                 new byte[48], new byte[12], new byte[16]);
             sql(db, "INSERT INTO credential(credential_id,storage_format,payload,nonce) VALUES('shared','AES256_GCM_V1',?,?)",
                 new byte[20], new byte[12]);
             sql(db, "INSERT INTO server_profile(server_profile_id,credential_id,host,ssh_port,username,display_name) VALUES('shared','shared','localhost',22,'fixture','fixture')");
-            sql(db, "INSERT INTO mod_server_reference VALUES(?,'shared',?,'1',?,'record','UNKNOWN',1)",
+            sql(db, "INSERT INTO mod_server_reference(reference_id,server_profile_id,mod_id,schema_version,schema_generation,business_key,state,updated_at) VALUES(?,'shared',?,'1',?,'record','UNKNOWN',1)",
                 UUID.randomUUID(), OWNER, data.generation());
-            sql(db, "INSERT INTO mod_credential_reference VALUES(?,'shared',?,'1',?,'record','fixture','UNKNOWN',1)",
+            sql(db, "INSERT INTO mod_credential_reference(reference_id,credential_id,mod_id,schema_version,schema_generation,business_key,purpose,state,updated_at) VALUES(?,'shared',?,'1',?,'record','fixture','UNKNOWN',1)",
                 UUID.randomUUID(), OWNER, data.generation());
-            sql(db, "INSERT INTO log_category VALUES(?,?,?, ?,?,'fixture','fixture_log','fixture',1)",
+            sql(db, "INSERT INTO log_category(target_key,owner_id,logical_schema,schema_generation,physical_schema,category,target_table,display_name,format_version) VALUES(?,?,?, ?,?,'fixture','fixture_log','fixture',1)",
                 UUID.randomUUID(), OWNER, "v1", data.generation(), new SchemaCoordinates(data).physicalName());
             var ledger = new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files());
             var id = ledger.begin(ledger.review(OWNER, "1.0.0"), "{}");

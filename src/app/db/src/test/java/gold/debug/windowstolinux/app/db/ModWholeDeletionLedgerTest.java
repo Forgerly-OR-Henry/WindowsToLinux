@@ -79,14 +79,14 @@ class ModWholeDeletionLedgerTest {
             log(db, "app");
             pins(db, new PagePin("other.owner", "first"), new PagePin(OWNER, "main"),
                 new PagePin("other.owner", "last"));
-            sql(db, "INSERT INTO security_profile VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)",
+            sql(db, "INSERT INTO security_profile(security_profile_id,is_encryption_enabled,password_verifier,wrapped_data_key,key_wrap_algorithm,key_wrap_nonce,key_derivation_algorithm,key_derivation_salt,key_derivation_parameters,format_version) VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)",
                 new byte[48], new byte[12], new byte[16]);
             sql(db, "INSERT INTO credential(credential_id,storage_format,payload,nonce) VALUES('shared','AES256_GCM_V1',?,?)",
                 new byte[20], new byte[12]);
             sql(db, "INSERT INTO server_profile(server_profile_id,credential_id,host,ssh_port,username,display_name) VALUES('shared','shared','localhost',22,'fixture','fixture')");
-            sql(db, "INSERT INTO mod_server_reference VALUES(?,'shared',?,'1',?,'record','UNKNOWN',1)",
+            sql(db, "INSERT INTO mod_server_reference(reference_id,server_profile_id,mod_id,schema_version,schema_generation,business_key,state,updated_at) VALUES(?,'shared',?,'1',?,'record','UNKNOWN',1)",
                 UUID.randomUUID(), OWNER, orphan.generation());
-            sql(db, "INSERT INTO mod_credential_reference VALUES(?,'shared',?,'2',?,'record','fixture','UNKNOWN',1)",
+            sql(db, "INSERT INTO mod_credential_reference(reference_id,credential_id,mod_id,schema_version,schema_generation,business_key,purpose,state,updated_at) VALUES(?,'shared',?,'2',?,'record','fixture','UNKNOWN',1)",
                 UUID.randomUUID(), OWNER, current.generation());
             sql(db, "CREATE TABLE app.unrelated_fixture(value_text VARCHAR)");
             sql(db, "INSERT INTO app.unrelated_fixture VALUES('keep')");
@@ -286,7 +286,7 @@ class ModWholeDeletionLedgerTest {
             sql(db, "UPDATE mod_version SET origin_kind='CLASS' WHERE version='2.0.0'");
             assertThrows(SQLException.class, () -> ledger.review(OWNER));
             sql(db, "UPDATE mod_version SET origin_kind='LOCAL'");
-            sql(db, "INSERT INTO desktop_preference VALUES('mod_navigation_pins','{\"formatVersion\":1,\"pages\":[],\"unexpected\":true}')");
+            sql(db, "INSERT INTO desktop_preference(preference_key,preference_value) VALUES('mod_navigation_pins','{\"formatVersion\":1,\"pages\":[],\"unexpected\":true}')");
             assertThrows(SQLException.class, () -> ledger.review(OWNER));
             assertEquals("0", value(db, "SELECT COUNT(*) FROM mod_operation"));
             sql(db, "DELETE FROM desktop_preference");
@@ -402,7 +402,7 @@ class ModWholeDeletionLedgerTest {
         try (var db = fixture.open()) {
             fixture.owner(db);
             fixture.release(db, "1.0.0", null);
-            sql(db, "INSERT INTO security_profile VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)",
+            sql(db, "INSERT INTO security_profile(security_profile_id,is_encryption_enabled,password_verifier,wrapped_data_key,key_wrap_algorithm,key_wrap_nonce,key_derivation_algorithm,key_derivation_salt,key_derivation_parameters,format_version) VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)",
                 new byte[48], new byte[12], new byte[16]);
             String owned = gold.debug.windowstolinux.app.db.security.SecretRefStore
                 .newSecret(OWNER, "fixture").id();

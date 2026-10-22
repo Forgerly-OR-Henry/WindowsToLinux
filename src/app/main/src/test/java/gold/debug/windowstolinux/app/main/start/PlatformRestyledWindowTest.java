@@ -37,7 +37,7 @@ class PlatformRestyledWindowTest {
                     runtime.started();
                     try {
                         onEdt(() -> {
-                            window.setSize(1120, 900);
+                            sizeContent(window, 1600, 900);
                             window.setVisible(true);
                             ((JTabbedPane) named(window, "platform.pages"))
                                 .setSelectedComponent(named(window, "platform.appearance"));
@@ -48,8 +48,8 @@ class PlatformRestyledWindowTest {
                         await(() -> !DesktopTaskRunner.hasActiveTasks() && named(window, "navigation.platform.list").isEnabled());
                         var originalPage = onEdt(() -> named(window, "platform.appearance"));
                         var originalDraft = onEdt(() -> named(window, "servers.search"));
-                        for (int scale : new int[]{150, 200, 100}) {
-                            String language = scale == 200 ? "en" : "zh-CN";
+                        for (int scale : new int[]{150, 100}) {
+                            String language = scale == 150 ? "en" : "zh-CN";
                             onEdt(() -> {
                                 ((JComboBox<?>) named(window, "appearance.language")).setSelectedItem(language);
                                 ((JComboBox<?>) named(window, "appearance.scale")).setSelectedItem(scale);
@@ -63,8 +63,11 @@ class PlatformRestyledWindowTest {
                                 window.validate();
                                 assertEquals(scale / 100f, com.formdev.flatlaf.util.UIScale.getZoomFactor());
                                 assertEquals(Math.round(13 * scale / 100f), named(window, "appearance.theme").getFont().getSize());
-                                assertEquals(com.formdev.flatlaf.util.UIScale.scale(168), named(window, "platform.sidebar").getWidth());
-                                assertEquals(com.formdev.flatlaf.util.UIScale.scale(48),
+                                assertEquals(160, named(window, "platform.sidebar").getWidth());
+                                assertEquals(60, named(window, "platform.header").getHeight());
+                                assertEquals(30, named(window, "platform.statusBar").getHeight());
+                                assertEquals(new java.awt.Dimension(1600, 900), window.getContentPane().getSize());
+                                assertEquals(com.formdev.flatlaf.util.UIScale.scale(56),
                                     ((JList<?>) named(window, "navigation.platform.list")).getFixedCellHeight());
                                 assertEquals(com.formdev.flatlaf.util.UIScale.scale(36),
                                     ((JButton) named(window, "navigation.logo")).getIcon().getIconWidth());
@@ -76,15 +79,18 @@ class PlatformRestyledWindowTest {
                                 ((JComboBox<?>) named(window, "appearance.scale")).showPopup();
                                 var popup = (javax.swing.plaf.basic.BasicComboPopup) ((JComboBox<?>) named(window, "appearance.scale"))
                                     .getUI().getAccessibleChild((JComponent) named(window, "appearance.scale"), 0);
-                                assertEquals(3, popup.getList().getModel().getSize());
+                                assertEquals(2, popup.getList().getModel().getSize());
                                 ((JComboBox<?>) named(window, "appearance.scale")).hidePopup();
                                 var brand = (JButton) named(window, "navigation.logo");
                                 assertEquals("WindowsToLinux", brand.getText());
                                 capture(window, "appearance-zoom-" + theme + "-" + scale + ".png");
-                                assertTrue(brand.getFontMetrics(brand.getFont()).stringWidth(brand.getText())
-                                        + brand.getIcon().getIconWidth() + brand.getIconTextGap() <= brand.getWidth(),
-                                    "Full brand must fit beside the logo: width=" + brand.getWidth() + ", required="
-                                        + (brand.getFontMetrics(brand.getFont()).stringWidth(brand.getText()) + brand.getIcon().getIconWidth() + brand.getIconTextGap()));
+                                var catalog = MessageCatalog.forLanguageTag(language);
+                                int captionWidth = Math.max(brand.getFontMetrics(brand.getFont()).stringWidth(catalog.text("shell.brand.top")),
+                                    brand.getFontMetrics(brand.getFont()).stringWidth(catalog.text("shell.brand.bottom")));
+                                assertTrue(captionWidth + brand.getIcon().getIconWidth()
+                                        + (com.formdev.flatlaf.util.UIScale.scale(48) - brand.getIcon().getIconWidth()) / 2
+                                        + com.formdev.flatlaf.util.UIScale.scale(8) <= brand.getWidth(),
+                                    "Both brand lines must fit beside the fixed logo");
                                 return null;
                             });
                             onEdt(() -> {
@@ -93,22 +99,22 @@ class PlatformRestyledWindowTest {
                             });
                             await(() -> named(window, "platform.sidebar").getWidth() == com.formdev.flatlaf.util.UIScale.scale(64));
                             onEdt(() -> {
-                                assertEquals("", ((JButton) named(window, "navigation.logo")).getText());
+                                assertEquals("WindowsToLinux", ((JButton) named(window, "navigation.logo")).getText());
                                 assertNotNull(((JButton) named(window, "navigation.logo")).getIcon());
                                 capture(window, "appearance-zoom-" + theme + "-" + scale + "-collapsed.png");
                                 ((JButton) named(window, "navigation.collapse")).doClick(0);
                                 return null;
                             });
-                            await(() -> named(window, "platform.sidebar").getWidth() == com.formdev.flatlaf.util.UIScale.scale(168));
-                            if (scale == 200)
-                                captureAt(window, 800, 560, "appearance-zoom-" + theme + "-200-minimum.png");
+                            await(() -> named(window, "platform.sidebar").getWidth() == 160);
+                            if (scale == 150)
+                                captureAt(window, 1280, 720, "appearance-zoom-" + theme + "-150-minimum.png");
                             onEdt(() -> {
-                                window.setSize(1120, 900);
+                                sizeContent(window, 1600, 900);
                                 return null;
                             });
                         }
                         onEdt(() -> {
-                            ((JComboBox<?>) named(window, "appearance.scale")).setSelectedItem(200);
+                            ((JComboBox<?>) named(window, "appearance.scale")).setSelectedItem(150);
                             ((JButton) named(window, "appearance.save")).doClick(0);
                             return null;
                         });
@@ -125,15 +131,15 @@ class PlatformRestyledWindowTest {
                     var saved = DesktopDisplayConfig.fromStoredValues(reopened.persistence().preferences().find("ui_locale").orElse(null),
                         reopened.persistence().preferences().find("ui_theme").orElse(null),
                         reopened.persistence().preferences().find("ui_scale").orElse(null), java.util.Locale.ENGLISH);
-                    assertEquals(200, saved.scalePercent());
+                    assertEquals(150, saved.scalePercent());
                     var models = reopened.models();
                     var restored = onEdt(() -> ApplicationLauncher.createWindow(reopened, MessageCatalog.forLanguageTag(saved.localeTag()),
                         saved, theme, FailureReportStore.disabled(), models));
                     try {
                         onEdt(() -> {
-                            assertEquals(200, ((JComboBox<?>) named(restored, "appearance.scale")).getSelectedItem());
-                            assertEquals(2f, com.formdev.flatlaf.util.UIScale.getZoomFactor());
-                            assertEquals(26, named(restored, "appearance.theme").getFont().getSize());
+                            assertEquals(150, ((JComboBox<?>) named(restored, "appearance.scale")).getSelectedItem());
+                            assertEquals(1.5f, com.formdev.flatlaf.util.UIScale.getZoomFactor());
+                            assertEquals(20, named(restored, "appearance.theme").getFont().getSize());
                             assertFalse(named(restored, "appearance.scale").isEnabled(), "Locked startup cannot edit scale");
                             return null;
                         });
@@ -189,8 +195,8 @@ class PlatformRestyledWindowTest {
                         });
                         await(() -> named(window, "navigation.platform.list").isEnabled()
                             && !DesktopTaskRunner.hasActiveTasks());
-                        captureAt(window, 1120, 900, "navigation-pilot-" + variant + ".png");
-                        captureAt(window, 800, 560, "navigation-pilot-" + variant + "-minimum.png");
+                        captureAt(window, 1600, 900, "navigation-pilot-" + variant + ".png");
+                        captureAt(window, 1280, 720, "navigation-pilot-" + variant + "-minimum.png");
                         onEdt(() -> {
                             var appearance = named(window, "platform.appearance");
                             descendants(appearance).filter(JScrollPane.class::isInstance).map(JScrollPane.class::cast)
@@ -232,8 +238,8 @@ class PlatformRestyledWindowTest {
                             window.setVisible(true);
                             return null;
                         });
-                        captureAt(window, 1120, 760, "restyled-" + variant + "-first-use.png");
-                        captureAt(window, 800, 560, "restyled-" + variant + "-first-use-minimum.png");
+                        captureAt(window, 1600, 900, "restyled-" + variant + "-first-use.png");
+                        captureAt(window, 1280, 720, "restyled-" + variant + "-first-use-minimum.png");
                         setupFailure(window, variant);
                         assertFalse(runtime.security().securityState().configured());
                         onEdt(() -> {
@@ -255,7 +261,7 @@ class PlatformRestyledWindowTest {
                             return null;
                         });
                         for (String page : new String[]{"platform.servers", "platform.models", "mods.management",
-                            "platform.tasks", "platform.appearance", "platform.security", "platform.authorization",
+                            "platform.tasks", "platform.appearance", "platform.security", "platform.fileSettings",
                             "platform.transfers", "platform.logs"}) {
                             onEdt(() -> {
                                 var content = (JTabbedPane) named(window, "platform.pages");
@@ -263,8 +269,8 @@ class PlatformRestyledWindowTest {
                                 assertTrue(named(window, page).isShowing(), page);
                                 return null;
                             });
-                            captureAt(window, 1120, 760, "restyled-" + variant + "-" + page + ".png");
-                            captureAt(window, 800, 560, "restyled-" + variant + "-" + page + "-minimum.png");
+                            captureAt(window, 1600, 900, "restyled-" + variant + "-" + page + ".png");
+                            captureAt(window, 1280, 720, "restyled-" + variant + "-" + page + "-minimum.png");
                         }
                         onEdt(() -> {
                             var search = (JTextField) named(window, "servers.search");
@@ -282,10 +288,10 @@ class PlatformRestyledWindowTest {
                             .scale(64));
                         onEdt(() -> {
                             var nav = (JButton) named(window, "navigation.platform.servers");
-                            assertEquals("", nav.getText());
+                            assertEquals(nav.getAccessibleContext().getAccessibleName(), nav.getText());
                             assertNotNull(nav.getIcon());
                             assertFalse(nav.getAccessibleContext().getAccessibleName().isBlank());
-                            window.setSize(800, 560);
+                            sizeContent(window, 1280, 720);
                             window.validate();
                             assertTrue(named(window, "servers.search").getWidth() > 120);
                             capture(window, "restyled-" + variant + "-minimum-collapsed.png");
@@ -333,8 +339,8 @@ class PlatformRestyledWindowTest {
                 ((JTable) named(window, "tasks.table")).setRowSelectionInterval(0, 0);
                 return null;
             });
-            captureAt(window, 1120, 760, "restyled-" + variant + "-task-running.png");
-            captureAt(window, 800, 560, "restyled-" + variant + "-task-running-minimum.png");
+            captureAt(window, 1600, 900, "restyled-" + variant + "-task-running.png");
+            captureAt(window, 1280, 720, "restyled-" + variant + "-task-running-minimum.png");
             assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.RUNNING, task.snapshot().state());
         } finally {
             release.countDown();
@@ -343,15 +349,20 @@ class PlatformRestyledWindowTest {
         }
     }
 
+    private static void sizeContent(PlatformFrame window, int width, int height) {
+        window.setSize(width + window.getWidth() - window.getContentPane().getWidth(),
+            height + window.getHeight() - window.getContentPane().getHeight());
+    }
+
     private static void captureAt(PlatformFrame window, int width, int height, String name) throws Exception {
         onEdt(() -> {
-            window.setSize(width, height);
+            sizeContent(window, width, height);
             window.validate();
             return null;
         });
         onEdt(() -> {
             capture(window, name);
-            if (width == 800) {
+            if (width == 1280) {
                 var page = ((JTabbedPane) named(window, "platform.pages")).getSelectedComponent();
                 var scroll = descendants(page).filter(JScrollPane.class::isInstance).map(JScrollPane.class::cast)
                     .filter(value -> value.isShowing() && value.getVerticalScrollBar().isVisible()).findFirst();

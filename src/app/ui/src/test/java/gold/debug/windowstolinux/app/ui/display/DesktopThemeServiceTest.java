@@ -180,12 +180,124 @@ class DesktopThemeServiceTest {
     }
 
     @Test
-    void installsFlatLightLookAndFeelAndSharedGeometry() {
+    void installsFlatLightLookAndFeel() {
         DesktopThemeService.install(ThemeMode.LIGHT);
 
         assertInstanceOf(FlatLightLaf.class, UIManager.getLookAndFeel());
-        assertEquals(8, UIManager.get("Component.arc"));
-        assertEquals(8, UIManager.get("Button.arc"));
+    }
+
+    @Test
+    void sharedControlsPaintRoundedEdgesAndDistinctButtonStatesAcrossThemesAndZoom() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            try {
+                for (ThemeMode theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK})
+                    for (int zoom : new int[]{100, 150}) {
+                        DesktopThemeService.install(theme, zoom);
+                        var palette = theme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light();
+                        var button = new javax.swing.JButton();
+                        for (javax.swing.JComponent control : new javax.swing.JComponent[]{button,
+                            new javax.swing.JTextField(), new javax.swing.JComboBox<>(new String[]{""})}) {
+                            var rendered = paintControl(control, palette.pageBackground());
+                            int surface = rendered.getRGB(rendered.getWidth() / 2, rendered.getHeight() / 2);
+                            assertNotEquals(palette.pageBackground().getRGB(), surface);
+                            assertTrue(surfaceInset(rendered, com.formdev.flatlaf.util.UIScale.scale(2), surface)
+                                    > surfaceInset(rendered, rendered.getHeight() / 2, surface),
+                                control.getClass().getSimpleName() + " must expose its rounded top corners");
+                        }
+                        int normal = centerColor(paintControl(button, palette.pageBackground()));
+                        button.getModel().setRollover(true);
+                        int hover = centerColor(paintControl(button, palette.pageBackground()));
+                        assertNotEquals(normal, hover, "Hover must visibly respond in both themes");
+                        button.getModel().setArmed(true);
+                        button.getModel().setPressed(true);
+                        int pressed = centerColor(paintControl(button, palette.pageBackground()));
+                        assertNotEquals(hover, pressed, "Pressing must be visibly distinct from hover");
+                        button.setEnabled(false);
+                        assertNotEquals(pressed, centerColor(paintControl(button, palette.pageBackground())),
+                            "Disabled controls must retain a distinct state");
+                    }
+            } finally {
+                DesktopThemeService.install(ThemeMode.LIGHT, 100);
+            }
+        });
+    }
+
+    private static java.awt.image.BufferedImage paintControl(javax.swing.JComponent control,
+                                                             java.awt.Color backdrop) {
+        var parent = new javax.swing.JPanel(null);
+        parent.setBackground(backdrop);
+        parent.add(control);
+        var size = com.formdev.flatlaf.util.UIScale.scale(new java.awt.Dimension(160, 40));
+        control.setBounds(0, 0, size.width, size.height);
+        control.doLayout();
+        var image = new java.awt.image.BufferedImage(size.width, size.height,
+            java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        var graphics = image.createGraphics();
+        graphics.setColor(backdrop);
+        graphics.fillRect(0, 0, size.width, size.height);
+        control.printAll(graphics);
+        graphics.dispose();
+        return image;
+    }
+
+    @Test
+    void multilineSurfacesKeepTextSelectionAndTransparentLabelsWhenRounded() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            try {
+                for (ThemeMode theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK}) {
+                    DesktopThemeService.install(theme, 100);
+                    var backdrop = (theme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light()).pageBackground();
+                    var area = new javax.swing.JTextArea("Server connected\nTask ready");
+                    var document = area.getDocument();
+                    var margin = new java.awt.Insets(8, 8, 8, 8);
+                    area.setMargin(margin);
+                    area.setBackground(new java.awt.Color(120, 132, 143));
+                    area.setForeground(java.awt.Color.WHITE);
+                    area.setSelectionColor(java.awt.Color.MAGENTA);
+                    area.select(0, 6);
+                    area.getCaret().setSelectionVisible(true);
+                    var rendered = paintControl(area, backdrop);
+                    assertEquals(backdrop.getRGB(), rendered.getRGB(0, 0),
+                        "Opaque multiline surfaces must clear their rounded corners to the parent surface");
+                    assertEquals(area.getBackground().getRGB(), rendered.getRGB(80, 37),
+                        "Explicit text area backgrounds must remain visible inside the rounded surface");
+                    assertTrue(containsColor(rendered, area.getForeground().getRGB()), "Native text must still render");
+                    assertTrue(containsColor(rendered, area.getSelectionColor().getRGB()), "Native selection must still render");
+                    assertSame(document, area.getDocument());
+                    assertEquals("Server connected\nTask ready", area.getText());
+                    assertEquals(0, area.getSelectionStart());
+                    assertEquals(6, area.getSelectionEnd());
+                    assertEquals(margin, area.getMargin());
+                    area.setOpaque(false);
+                    rendered = paintControl(area, backdrop);
+                    assertEquals(backdrop.getRGB(), rendered.getRGB(80, 37),
+                        "Transparent information labels must not acquire a filled surface");
+                    assertTrue(containsColor(rendered, area.getForeground().getRGB()));
+                    assertSame(document, area.getDocument());
+                }
+            } finally {
+                DesktopThemeService.install(ThemeMode.LIGHT, 100);
+            }
+        });
+    }
+
+    private static boolean containsColor(java.awt.image.BufferedImage image, int color) {
+        for (int y = 0; y < image.getHeight(); y++)
+            for (int x = 0; x < image.getWidth(); x++)
+                if (image.getRGB(x, y) == color)
+                    return true;
+        return false;
+    }
+
+    private static int centerColor(java.awt.image.BufferedImage image) {
+        return image.getRGB(image.getWidth() / 2, image.getHeight() / 2);
+    }
+
+    private static int surfaceInset(java.awt.image.BufferedImage image, int row, int surfaceColor) {
+        for (int x = 0; x < image.getWidth() / 2; x++)
+            if (image.getRGB(x, row) == surfaceColor)
+                return x;
+        throw new AssertionError("Missing control surface in painted row " + row);
     }
 
     @Test

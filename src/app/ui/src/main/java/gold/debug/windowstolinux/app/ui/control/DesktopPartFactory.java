@@ -1,7 +1,6 @@
 package gold.debug.windowstolinux.app.ui.control;
 
 import java.awt.BorderLayout;
-import java.awt.Color;
 import java.awt.Component;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
@@ -17,7 +16,6 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 
-import com.formdev.flatlaf.FlatClientProperties;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 
 /**
@@ -59,28 +57,12 @@ public final class DesktopPartFactory {
      * @param list original list / 原清单
      * @param ordered whether the list offers ordering / 清单是否支持排序 */
     public <T> void cardList(javax.swing.JList<T> list, boolean ordered) {
-        var renderer = list.getCellRenderer();
+        var renderer = gold.debug.windowstolinux.app.ui.display.DesktopListUi.originalRenderer(list);
         list.setCellRenderer((view, value, index, selected, focused) -> {
             Component content = renderer.getListCellRendererComponent(view, value, index, selected, focused);
-            if (content instanceof JComponent component) {
-                component.setOpaque(false);
-                component.setBorder(BorderFactory.createEmptyBorder());
-            }
-            var card = card(new BorderLayout(com.formdev.flatlaf.util.UIScale.scale(10), 0));
-            card.setBorder(new com.formdev.flatlaf.ui.FlatEmptyBorder(8, 12, 8, 12));
-            card.setBackground(selected ? view.getSelectionBackground() : javax.swing.UIManager.getColor("Panel.background"));
-            if (ordered) {
-                var grip = new JLabel();
-                grip.setForeground(javax.swing.UIManager.getColor("Label.disabledForeground"));
-                grip.setIcon(DesktopIcons.icon("action/grip-vertical", 16, grip::getForeground));
-                card.add(grip, BorderLayout.WEST);
-            }
-            card.add(content);
-            var row = transparent(new BorderLayout());
-            row.setBorder(new com.formdev.flatlaf.ui.FlatEmptyBorder(3, 0, 3, 0));
-            row.add(card);
-            if (content instanceof JComponent component) row.setToolTipText(component.getToolTipText());
-            return row;
+            return gold.debug.windowstolinux.app.ui.display.DesktopListCard.row(content, selected,
+                ordered ? DesktopIcons.icon("action/grip-vertical", 16,
+                    () -> javax.swing.UIManager.getColor("Label.disabledForeground")) : null);
         });
     }
 
@@ -159,8 +141,7 @@ public final class DesktopPartFactory {
      * @param selected current selection / 当前选择
      * @return presentation-only card / 仅展示的卡片 */
     public JComponent inventoryCard(String title, String detail, String status, boolean selected) {
-        JPanel card = card(new BorderLayout(10, 6));
-        card.setBackground(javax.swing.UIManager.getColor(selected ? "List.selectionBackground" : "Panel.background"));
+        JPanel card = transparent(new BorderLayout(10, 6));
         var name = new JLabel(title);
         name.putClientProperty("html.disable", true);
         DesktopThemeBindings.font(name, name.getFont().deriveFont(Font.BOLD, 14f));
@@ -176,10 +157,7 @@ public final class DesktopPartFactory {
             indicator.setForeground(javax.swing.UIManager.getColor("Component.focusColor"));
             card.add(indicator, BorderLayout.EAST);
         }
-        var row = transparent(new BorderLayout());
-        row.setBorder(BorderFactory.createEmptyBorder(3, 0, 5, 0));
-        row.add(card);
-        return row;
+        return gold.debug.windowstolinux.app.ui.display.DesktopListCard.row(card, selected, null);
     }
 
     /**
@@ -316,9 +294,6 @@ public final class DesktopPartFactory {
      */
     public JButton primaryButton(String text) {
         JButton button = new JButton(text);
-        button.setBackground(palette.accent());
-        button.setForeground(Color.WHITE);
-        decorate(button);
         DesktopThemeBindings.button(button, palette, true);
         return DesktopThemeBindings.role(button, "primary");
     }
@@ -332,11 +307,24 @@ public final class DesktopPartFactory {
      */
     public JButton secondaryButton(String text) {
         JButton button = new JButton(text);
-        button.setBackground(palette.secondaryButtonBackground());
-        button.setForeground(palette.secondaryButtonForeground());
-        decorate(button);
+        styleSecondary(button);
+        return button;
+    }
+
+    /** Creates a sidebar action whose icon stays fixed during collapse. / 创建折叠期间图标固定的侧栏动作。
+     * @param text complete navigation caption / 完整导航文案
+     * @return original navigation action / 原导航动作 */
+    public DesktopNavigationButton navigationButton(String text) {
+        var button = new DesktopNavigationButton(text);
+        styleSecondary(button);
+        return button;
+    }
+
+    /** Reuses secondary surfaces for regular and navigation actions. / 为普通及导航动作复用次级底色。
+     * @param button original action / 原动作 */
+    private void styleSecondary(JButton button) {
         DesktopThemeBindings.button(button, palette, false);
-        return DesktopThemeBindings.role(button, "secondary");
+        DesktopThemeBindings.role(button, "secondary");
     }
 
     /**
@@ -436,19 +424,6 @@ public final class DesktopPartFactory {
         area.setMargin(new Insets(12, 12, 12, 12));
         DesktopThemeBindings.font(area, new Font(Font.MONOSPACED, Font.PLAIN, 12));
         return area;
-    }
-
-    /**
-     * Applies shared borderless surfaces while retaining focus and hover feedback.
-     * <p>应用共享的无描边表面，同时保留焦点与悬停反馈。
-     *
-     * @param button button / 按钮
-     */
-    private void decorate(JButton button) {
-        button.setFocusPainted(true);
-        button.setOpaque(false);
-        button.putClientProperty(FlatClientProperties.STYLE,
-            java.util.Map.of("arc", 8, "borderWidth", 0, "focusWidth", 1));
     }
 
     /** Wraps owned nonsecret labels while retaining their plain accessible name and explicit locale binding. / 对所属非秘密标签换行，同时保留纯文本无障碍名称及明确语言绑定。 */
