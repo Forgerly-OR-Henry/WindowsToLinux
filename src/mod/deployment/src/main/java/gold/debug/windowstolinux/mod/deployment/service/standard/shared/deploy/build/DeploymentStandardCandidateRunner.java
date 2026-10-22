@@ -344,10 +344,17 @@ public final class DeploymentStandardCandidateRunner {
      * @throws ApiException if original authority refuses / 原权限拒绝时 */
     public OperationResult<Prepared> recoverSelection(Prepared previous, ReviewedDeploymentPlan plan, int branch,
                                                       RemoteSession session, InteractionService interaction, TaskContext task) throws ApiException {
+        return recoverSelection(previous, plan, branch, session, interaction, task, null);
+    }
+
+    /** Only the formal assisted correction path supplies the durable tracked session. */
+    public OperationResult<Prepared> recoverSelection(Prepared previous, ReviewedDeploymentPlan plan, int branch,
+                                                      RemoteSession session, InteractionService interaction, TaskContext task,
+                                                      gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.Session trackedSession) throws ApiException {
         if (!previous.consumed || previous.selection.session != session || previous.selection.task != task)
             throw new IllegalArgumentException("Recovery selection differs from original task or session");
         var selected = builds.prepareForUpload(plan, session, interaction, task, previous.selection.budget, branch,
-            false, previous.selection.workspace);
+            false, previous.selection.workspace, trackedSession);
         if (selected.outcome() != TaskResult.SUCCEEDED)
             return withoutPreparedValue(selected);
         var actual = selected.value().orElseThrow();

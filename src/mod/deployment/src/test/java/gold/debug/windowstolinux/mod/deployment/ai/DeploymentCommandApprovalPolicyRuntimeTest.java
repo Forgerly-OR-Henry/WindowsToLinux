@@ -623,7 +623,10 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
                     peer.sourceRevision = digest("controlled-original-source");
                     try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision, approval, true, "source=controlled-original-source");
                          var session = context.linux().connect(SERVER, task)) {
-                        var reviewed = new DeploymentCommandReviewScope(context, context.interaction(), task, approval, true, () -> revision);
+                        var reviewed = new DeploymentCommandReviewScope(context, context.interaction(), task, approval, true, () -> revision,
+                            null, gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE, null,
+                            gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE,
+                            new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentCommandProtocol(context, Map::of));
                         var channel = new DeploymentAgentProjectChannel(session, reviewed.interaction(), SERVER, task, revision, () -> revision);
                         var prepared = new ArrayList<DeploymentAgentDeliveryPort.Prepared>();
                         for (String archive : List.of(digest("archive-one"), digest("archive-two"))) {

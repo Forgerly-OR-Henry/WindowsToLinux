@@ -231,6 +231,13 @@ final class DeploymentStandardBuildRunner {
     OperationResult<Prepared> prepareForUpload(ReviewedDeploymentPlan plan, RemoteSession session,
                                                InteractionService interaction, TaskContext task, DeploymentBuildBudget budget, int branch, boolean fallback,
                                                DeploymentRemoteWorkspace workspace) throws ApiException {
+        return prepareForUpload(plan, session, interaction, task, budget, branch, fallback, workspace, null);
+    }
+
+    OperationResult<Prepared> prepareForUpload(ReviewedDeploymentPlan plan, RemoteSession session,
+                                               InteractionService interaction, TaskContext task, DeploymentBuildBudget budget, int branch, boolean fallback,
+                                               DeploymentRemoteWorkspace workspace,
+                                               gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.Session trackedSession) throws ApiException {
         Objects.requireNonNull(plan);
         Objects.requireNonNull(session);
         Objects.requireNonNull(interaction);
@@ -260,7 +267,7 @@ final class DeploymentStandardBuildRunner {
         Objects.requireNonNull(budget);
         var commands = new DeploymentBuildCommandChannel(session, interaction, request.server(), task, revision,
             budget, gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard.NONE,
-            request.layout(), preparationObserver);
+            request.layout(), preparationObserver, trackedSession);
         var preflight = commands.preflight(engine);
         if (preflight.outcome() == TaskResult.UNKNOWN || preflight.outcome() == TaskResult.CANCELLED)
             return withoutValuePrepared(preflight);
@@ -271,6 +278,8 @@ final class DeploymentStandardBuildRunner {
                 ? failedPrepared(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_BUILD_ISOLATION_UNAVAILABLE")
                 : unknownPrepared("DEPLOYMENT_BUILD_PREFLIGHT_UNCONFIRMED");
         List<ToolchainRequirement> requirements = DeploymentProjectToolchainRequirements.from(facts, runtime);
+        if (trackedSession != null)
+            commands.saveTrackedRecipe(recipe(rendered.value().orElseThrow().buildScript(), request, environment));
         var preparer = new DeploymentToolchainSetup(commands, catalog);
         int attempt = branch;
         OperationResult<DeploymentResolvedToolchains> prepared = preparer.prepare(requirements, attempt,
@@ -415,9 +424,16 @@ final class DeploymentStandardBuildRunner {
      * @return complete fixed build input / 完整固定构建输入 */
     static String script(String base, gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentRequest request,
                          DeploymentBuildEnvironment environment, DeploymentResolvedToolchains tools) {
-        return failureDiagnostics() + DeploymentBuildEnvironmentWriter.render(environment) + ToolchainBuildEnvironment.render(tools) + base
+        return recipe(base, request, environment).render(tools);
+    }
+
+    static gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.ScriptRecipe recipe(String base,
+            gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentRequest request,
+            DeploymentBuildEnvironment environment) {
+        return new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.ScriptRecipe(1, 1,
+            failureDiagnostics() + DeploymentBuildEnvironmentWriter.render(environment), base
             + CompanionBuildScript.render(request.runtime().workload(), request.facts()) + (request.runtime().workload().companions().isEmpty()
-            ? "" : "\ntest \"$(du -sb \"$mutable\" | cut -f1)\" -le " + request.limits().maxWorkspaceBytes() + "\n");
+            ? "" : "\ntest \"$(du -sb \"$mutable\" | cut -f1)\" -le " + request.limits().maxWorkspaceBytes() + "\n"));
     }
 
     /** Identifies silent fixed-script failures without printing commands or environment values. / 标识固定脚本的静默失败，不打印命令或环境值。

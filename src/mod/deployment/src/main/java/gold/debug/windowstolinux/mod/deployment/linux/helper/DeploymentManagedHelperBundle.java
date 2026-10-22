@@ -40,7 +40,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "9a8faa704f43955e7f13ee69cf2f8ad665b744d856790b0ef92a13e838b90aba";
+    public static final String EXPECTED_SHA256 = "bb1ecc2ae54d46263ef1eab31b40fd8967a7acf0a7a86c463b80eeaf7b217efd";
 
     /**
      * ROOT.
@@ -57,7 +57,8 @@ public final class DeploymentManagedHelperBundle {
         "workspace/apparmor-namespace.sh", "# @compat:systemd-isolation@\n",
         "runtime/systemd/systemd-manager-isolation.sh", "# @compat:selinux-entry@\n",
         "runtime/systemd/selinux-command-entry.sh", "# @compat:centos-repositories@\n",
-        "toolchain/centos-source-repositories.py", "# @compat:toolchain-archives@\n", "toolchain/archive-boundaries.py");
+        "toolchain/centos-source-repositories.py", "# @compat:toolchain-archives@\n", "toolchain/archive-boundaries.py",
+        "# @compat:toolchain-tracked@\n", "toolchain/tracked-operations.py");
 
     /**
      * Ordered packaged helper fragments.
@@ -369,7 +370,7 @@ public final class DeploymentManagedHelperBundle {
                 if (fragment.startsWith("toolchain/")) {
                     if (fragment.endsWith("10-release-metadata.py"))
                         output.write(
-                            ("prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" <<'WTL_OFFICIAL_TOOLCHAINS'\n"
+                            ("prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'\n"
                                 + catalogLiteral(catalog)).getBytes(StandardCharsets.UTF_8));
                     output.write((content + "\n").getBytes(StandardCharsets.UTF_8));
                     if (fragment.endsWith("40-binding-protocol.py"))

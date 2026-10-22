@@ -37,6 +37,64 @@ class DeploymentCommandProtocolTest {
     private final ModContext owner = (ModContext) Proxy.newProxyInstance(getClass().getClassLoader(),
         new Class<?>[]{ModContext.class}, (proxy, method, args) -> { throw new AssertionError("No capability access: " + method.getName()); });
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void trackedToolchainOperationsRequireTheSameExactOriginalInputInBothModes(boolean custom) throws Exception {
+        var layout = custom ? new DeploymentRemoteLayout(new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(
+            "/srv/tracked/helper", "/srv/tracked/apps", "/srv/tracked/state", "/srv/tracked/config", "/srv/tracked/data")) : this.layout;
+        UUID original = UUID.randomUUID();
+        var identity = new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.Identity(
+            UUID.randomUUID().toString(), "sample-api", 1, "a".repeat(64), "b".repeat(64));
+        var prepare = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.prepare(UUID.randomUUID(),
+            original.toString(), identity, server.id(), layout,
+            gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType.NODE, "22", "-", 120, "-");
+        var empty = new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains("fixture", List.of());
+        String encoded = java.util.Base64.getEncoder().encodeToString(
+            gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec.encode(empty).getBytes(StandardCharsets.UTF_8));
+        var binding = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.bind(UUID.randomUUID(),
+            original.toString(), identity, server.id(), layout, encoded);
+        var targets = Set.of(new ActionTarget(server.id(), "task", original.toString()),
+            new ActionTarget(server.id(), "deployment-build", layout.toolchains()));
+        var common = new DeploymentFixedCommandProtocol(owner);
+        var agent = new DeploymentAgentCommandProtocol(owner, Map::of);
+        for (String verb : List.of("prepare-tracked", "bind-tracked", "observe-tracked", "cleanup-tracked")) {
+            var originalRequest = verb.equals("bind-tracked") ? binding : prepare;
+            String operation = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.operation(verb);
+            String invocation = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.command(verb, originalRequest);
+            try (var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(invocation, layout),
+                    originalRequest.bytes(), Duration.ofSeconds(60), 32768)) {
+                var intent = intent(operation, request, targets);
+                assertEquals(common.inspect(intent, request, layout, task(original)), agent.inspect(intent, request, layout, task(original)));
+                assertEquals("TRACKED_TOOLCHAIN_REQUEST", common.inspect(intent, request, layout, task(original)).get("inputKind"));
+                assertThrows(IllegalArgumentException.class, () -> common.inspect(intent, request, layout, task(UUID.randomUUID())));
+                var changed = intent.withSemantics(new ActionSemantics(operation,
+                    Set.of(new ActionTarget(server.id(), "task", original.toString()))));
+                assertThrows(IllegalArgumentException.class, () -> common.inspect(changed, request, layout, task(original)));
+                assertThrows(IllegalArgumentException.class, () -> agent.inspect(changed, request, layout, task(original)));
+                String changedBytes = new String(originalRequest.bytes(), StandardCharsets.UTF_8).replace("sample-api", "other-api");
+                try (var wrong = new CommandRequest(request.script(), changedBytes.getBytes(StandardCharsets.UTF_8), request.timeout(), request.outputLimitBytes())) {
+                    var wrongIntent = intent(operation, wrong, targets);
+                    assertThrows(IllegalArgumentException.class, () -> common.inspect(wrongIntent, wrong, layout, task(original)));
+                    assertThrows(IllegalArgumentException.class, () -> agent.inspect(wrongIntent, wrong, layout, task(original)));
+                }
+            }
+        }
+    }
+
+    @Test
+    void actualHostProbeProducesIdenticalCompleteProtocolEvidenceInBothModes() throws Exception {
+        var original = task(UUID.randomUUID());
+        String script = gold.debug.windowstolinux.mod.deployment.linux.probe.DeploymentPlatformCapabilityProbe.render();
+        try (var request = new CommandRequest(script, new byte[0], Duration.ofMinutes(2), 65536)) {
+            var intent = intent("deployment.candidate.host-probe.v1", request, Set.of(new ActionTarget(server.id(), "deployment-host", server.id())));
+            var common = new DeploymentFixedCommandProtocol(owner).inspect(intent, request, layout, original);
+            var agent = new DeploymentAgentCommandProtocol(owner, Map::of).inspect(intent, request, layout, original);
+            assertEquals(common, agent);
+            assertEquals("HOST", ((Map<?, ?>) common.get("platformProbe")).get("variant"));
+            assertTrue(gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.facts(common, 1048576).contains(script.replace("\n", "\\n").substring(0, 30)));
+        }
+    }
+
     @Test
     void identicalCommonInputHasIdenticalEvidenceInBothModesAndChangedTargetsFail() throws Exception {
         var task = task(UUID.randomUUID());

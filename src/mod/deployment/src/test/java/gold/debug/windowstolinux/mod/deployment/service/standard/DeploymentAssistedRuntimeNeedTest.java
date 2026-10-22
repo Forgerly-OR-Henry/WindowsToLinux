@@ -30,6 +30,72 @@ class DeploymentAssistedRuntimeNeedTest {
     Path directory;
 
     @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void originalAssistedPreparationCarriesCapturedLayoutToItsFirstActualReview(boolean custom) throws Exception {
+        Files.createDirectories(directory.resolve("frontend"));
+        Files.writeString(directory.resolve("frontend/package.json"), "{\"scripts\":{\"build\":\"vite build\"}}");
+        var sourceId = new AtomicReference<>(UUID.randomUUID());
+        var archiveId = new AtomicReference<>(UUID.randomUUID());
+        var material = new DeploymentSourceMaterial("survey", snapshot(sourceId, "a".repeat(64)), List.of("frontend/package.json"), List.of());
+        var archive = new DeploymentSourceArchive(snapshot(archiveId, "c".repeat(64)), "b".repeat(64), 1, 1, sourceId.get(), "a".repeat(64), "frontend");
+        var fixture = new NativeAiFixture();
+        var layout = custom ? new DeploymentRemoteLayout(new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(
+            "/srv/custom/helper", "/srv/custom/apps", "/srv/custom/state", "/srv/custom/config", "/srv/custom/data")) : DeploymentRemoteLayout.original();
+        var json = new ObjectMapper();
+        var payload = json.createObjectNode().put("formatVersion", 1).put("task", fixture.task.id().toString()).put("layoutSha256", layout.digest());
+        payload.set("layout", json.readTree(layout.canonical()));
+        var checkpoint = (gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint) Proxy.newProxyInstance(getClass().getClassLoader(),
+            new Class<?>[]{gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.class}, (proxy, method, args) -> {
+                if (method.getName().equals("snapshot")) return new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(0, payload.toString(), true);
+                throw new AssertionError(method.getName());
+            });
+        var tasks = (gold.debug.windowstolinux.appapi.task.TaskService) Proxy.newProxyInstance(getClass().getClassLoader(),
+            new Class<?>[]{gold.debug.windowstolinux.appapi.task.TaskService.class}, (proxy, method, args) -> {
+                if (method.getName().equals("findCheckpoint") && args[0] == fixture.task && args[1].equals("deployment.config.remote-layout.v1"))
+                    return Optional.of(checkpoint);
+                throw new AssertionError(method.getName());
+            });
+        var host = (InteractionService) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{InteractionService.class},
+            (proxy, method, args) -> {
+                if (method.getName().equals("openReviewedWorkflow")) return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of((WorkflowGrant) () -> {}), Optional.empty());
+                throw new AssertionError("Independent DENY must precede host action admission: " + method.getName());
+            });
+        var db = (gold.debug.windowstolinux.appapi.db.ModDatabase) Proxy.newProxyInstance(getClass().getClassLoader(),
+            new Class<?>[]{gold.debug.windowstolinux.appapi.db.ModDatabase.class}, (proxy, method, args) -> { throw new AssertionError(method.getName()); });
+        var context = (ModContext) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+            return switch (method.getName()) {
+                case "tasks" -> tasks;
+                case "interaction" -> host;
+                case "db" -> db;
+                case "ui" -> Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{gold.debug.windowstolinux.appapi.ui.UiService.class},
+                    (unused, uiMethod, values) -> new gold.debug.windowstolinux.appapi.ui.page.UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
+                default -> method.invoke(fixture.context, args);
+            };
+        });
+        var server = new ServerId("fixture");
+        var scope = new DeploymentAssistedScope(context, fixture.task, fixture.configurationRevision, "AUTOMATIC", true);
+        try (var permission = DeploymentWorkflowAuthorization.open(context, fixture.task, server, fixture.configurationRevision, "AUTOMATIC", true, "Original source deployment")) {
+            scope.workflowOpened(permission);
+            scope.sourceCaptured(server, material, fixture.task);
+            var plan = DeploymentAssistedApprovalBudgetLiveTest.staticSitePlan(material, archive, "wtl-survey", layout, server);
+            scope.archiveCaptured(material, archive, plan.request().facts().toolchainRequirements(), fixture.task);
+            fixture.nativeReply(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("stop", "submit_result",
+                "{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Stop before dispatch\"}"));
+            var type = Class.forName("gold.debug.windowstolinux.mod.deployment.service.standard.assisted.publish.DeploymentAssistedPublishBuild");
+            var constructor = type.getDeclaredConstructors()[0]; constructor.setAccessible(true);
+            var build = constructor.newInstance(scope, new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.build.DeploymentStandardCandidateRunner());
+            var prepare = type.getDeclaredMethod("prepare", plan.getClass(), gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class,
+                gold.debug.windowstolinux.appapi.task.run.TaskContext.class); prepare.setAccessible(true);
+            var remote = (gold.debug.windowstolinux.appapi.linux.session.RemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class}, (proxy, method, args) -> { throw new AssertionError("No transport: " + method.getName()); });
+            var failure = assertThrows(InvocationTargetException.class, () -> prepare.invoke(build, plan, remote, fixture.task));
+            assertInstanceOf(ApiException.class, failure.getCause());
+            assertEquals(1, fixture.requests.size());
+            assertTrue(fixture.requests.getFirst().toString().contains(layout.helperPath()));
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"VALID", "REVISION", "SERVER", "SOURCE", "ARCHIVE_HANDLE", "TASK", "WORKFLOW", "BRANCH", "ECOSYSTEM", "EXACT", "DENY", "HOST_MISSING", "HOST_CLEARED", "HOST_REVISION", "HOST_TASK"})
     void runtimeNeedIsBoundToThePlanAndSourceWithoutRewritingSourceDeclarations(String mutation) throws Exception {
         Files.createDirectories(directory.resolve("frontend"));

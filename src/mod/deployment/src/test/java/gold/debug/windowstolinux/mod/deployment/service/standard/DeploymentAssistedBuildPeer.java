@@ -5,16 +5,19 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Pattern;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
@@ -23,7 +26,8 @@ import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 
 /** Reads actual fixed command bytes and retains candidate/source/tool identities across real workflow calls. / 读取实际固定命令字节，跨真实流程调用保留候选、来源及工具身份。 */
@@ -52,6 +56,16 @@ final class DeploymentAssistedBuildPeer {
     final Map<String, Integer> cleanups = new LinkedHashMap<>();
 
     final List<String> toolBranches = new ArrayList<>();
+
+    final Map<UUID, DeploymentTrackedToolchains.Request> trackedRequests = new LinkedHashMap<>();
+
+    final Map<UUID, ObjectNode> trackedObservations = new LinkedHashMap<>();
+
+    final Map<String, Integer> trackedSends = new LinkedHashMap<>();
+
+    volatile Throwable lastFailure;
+
+    boolean activeTrackedOperation;
 
     private final boolean failedAgain;
 
@@ -113,12 +127,15 @@ final class DeploymentAssistedBuildPeer {
                         transfer.remoteAbsolutePath()));
                 }
                 assertEquals("execute", method.getName());
-                return command((CommandRequest) args[0]);
+                try { return command((CommandRequest) args[0]); }
+                catch (Throwable failure) { lastFailure = failure; throw failure; }
             });
     }
 
     private OperationResult<CommandResult> command(CommandRequest request) throws Exception {
         String script = request.script();
+        if (script.contains(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.PATH))
+            script = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedBody(script);
         commands.add(script);
         if (script.contains("managed-helper' probe"))
             return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
@@ -130,6 +147,8 @@ final class DeploymentAssistedBuildPeer {
             return reply("1000000000 4096\n");
         if (script.contains("build-preflight"))
             return reply("");
+        if (script.contains("prepare-toolchains '") && script.contains("-tracked'"))
+            return tracked(request, script);
         if (script.contains("prepare-toolchains 'prepare'")) {
             String version = script.contains("'1.25'") ? "1.25.1" : "1.24.1";
             toolBranches.add(version.startsWith("1.25") ? "1.25" : "1.24");
@@ -276,6 +295,119 @@ final class DeploymentAssistedBuildPeer {
         if (script.contains("'retain'"))
             return reply("RETAINED=1\n");
         throw new AssertionError("Unrecognized actual fixed build command: " + script);
+    }
+
+    private OperationResult<CommandResult> tracked(CommandRequest command, String script) {
+        var request = DeploymentTrackedToolchains.decode(command.stdin());
+        var args = arguments(script);
+        assertEquals(4, args.size(), script);
+        String verb = args.get(1);
+        assertEquals(request.layout().helperPath(), args.getFirst());
+        assertEquals(request.operationId().toString(), args.get(2));
+        assertEquals(request.sha256(), args.get(3));
+        assertEquals(DeploymentTrackedToolchains.command(verb, request), script);
+        assertEquals(Set.of(UUID.fromString(request.taskId())), tasks);
+        assertEquals(DeploymentTrackedToolchains.sha256(fingerprint.getBytes(StandardCharsets.UTF_8)), request.identity().fingerprintSha256());
+        trackedSends.merge(verb, 1, Integer::sum);
+        if (verb.equals("prepare-tracked") || verb.equals("bind-tracked")) {
+            assertNull(trackedRequests.putIfAbsent(request.operationId(), request), "Original effect is never resent");
+            var receipt = new ObjectMapper().createObjectNode().put("formatVersion", 1).put("operationId", request.operationId().toString())
+                .put("taskId", request.taskId()).put("requestSha256", request.sha256()).put("originalIntentSha256", request.identity().originalIntentSha256())
+                .put("kind", request.kind().name()).put("executionStatus", "SUCCEEDED").put("phase", "COMPLETED")
+                .putNull("selection").putNull("bindingSha256").putNull("failureCategory").put("cleanupState", "NOT_NEEDED");
+            receipt.putArray("retainedEffects");
+            if (verb.equals("prepare-tracked")) {
+                assertEquals(DeploymentTrackedToolchains.Kind.PREPARE, request.kind());
+                assertEquals("GO", request.parameters().get("ecosystem"));
+                String branch = (String) request.parameters().get("branch");
+                String version = request.parameters().get("exact").equals("-") ? branch + ".1" : (String) request.parameters().get("exact");
+                assertTrue(Set.of("1.24", "1.25").contains(branch));
+                toolBranches.add(branch);
+                String sha = branch.equals("1.25") ? "d".repeat(64) : "b".repeat(64);
+                receipt.put("effectState", "PREPARED_VERIFIED");
+                receipt.putObject("selection").put("ecosystem", "GO").put("version", version)
+                    .put("directory", request.layout().toolchains() + "/versions/go-" + sha).put("origin", "MANAGED")
+                    .put("source", "https://official.example/go").put("sha256", sha);
+            } else {
+                assertEquals(DeploymentTrackedToolchains.Kind.BIND, request.kind());
+                receipt.put("effectState", "BINDING_VERIFIED").put("bindingSha256", DeploymentToolchainBindingCodec.identity(request.binding()));
+            }
+            trackedObservations.put(request.operationId(), receipt);
+        } else {
+            var original = trackedRequests.get(request.operationId());
+            assertNotNull(original, "Observe/cleanup cannot invent a missing original operation");
+            assertArrayEquals(original.bytes(), request.bytes(), "Only the exact original bytes are observed or cleaned");
+            assertEquals(original.sha256(), request.sha256());
+            assertTrue(Set.of("observe-tracked", "cleanup-tracked").contains(verb));
+            if (verb.equals("cleanup-tracked")) {
+                assertFalse(activeTrackedOperation, "An active original process group cannot be cleaned");
+                var receipt = trackedObservations.get(request.operationId());
+                assertEquals("REQUIRED", receipt.path("cleanupState").textValue());
+                receipt.put("cleanupState", "VERIFIED").put("phase", "CLEANED");
+                String retained = request.kind() == DeploymentTrackedToolchains.Kind.PREPARE ? "SHARED_INSTALLATION" : "IMMUTABLE_BINDING";
+                boolean present = false;
+                for (var effect : receipt.path("retainedEffects")) if (effect.asText().equals(retained)) present = true;
+                if (!present) receipt.withArray("retainedEffects").add(retained);
+            }
+        }
+        var receipt = trackedObservations.get(request.operationId());
+        if (verb.equals("observe-tracked") && activeTrackedOperation) {
+            receipt = receipt.deepCopy().put("effectState", "UNSETTLED").put("cleanupState", "REQUIRED")
+                .put("failureCategory", "interrupted").putNull("selection").putNull("bindingSha256");
+            receipt.putArray("retainedEffects");
+        }
+        String output = receipt.toString() + "\n";
+        DeploymentTrackedToolchains.observation(output.getBytes(StandardCharsets.UTF_8), request);
+        return reply(output);
+    }
+
+    void acknowledgementLost(DeploymentTrackedToolchains.Request request, boolean cleanupRequired) {
+        assertArrayEquals(trackedRequests.get(request.operationId()).bytes(), request.bytes());
+        var receipt = trackedObservations.get(request.operationId());
+        if (cleanupRequired) {
+            // The immutable installation marker is already verified, while stopped original work still needs cleanup.
+            receipt.put("executionStatus", "UNKNOWN").put("phase", "PREPARING").putNull("failureCategory").put("cleanupState", "REQUIRED");
+            receipt.withArray("retainedEffects").add("SHARED_INSTALLATION");
+        }
+        DeploymentTrackedToolchains.observation((receipt + "\n").getBytes(StandardCharsets.UTF_8), request);
+    }
+
+    /** Carries controlled remote effects across separate JVMs; business persistence stays in the real product H2. */
+    void save(Path path) throws Exception {
+        var json = new ObjectMapper();
+        var root = json.createObjectNode().put("formatVersion", 1).put("fingerprint", fingerprint);
+        for (var field : Map.<String, Object>ofEntries(Map.entry("archives", archives), Map.entry("sizes", sizes), Map.entry("creates", creates),
+            Map.entry("uploads", uploads), Map.entry("builds", builds), Map.entry("scripts", scripts), Map.entry("commands", commands),
+            Map.entry("present", present), Map.entry("publications", publications), Map.entry("cleanups", cleanups),
+            Map.entry("toolBranches", toolBranches), Map.entry("trackedSends", trackedSends)).entrySet()) root.set(field.getKey(), json.valueToTree(field.getValue()));
+        var taskValues = root.putArray("tasks"); tasks.forEach(id -> taskValues.add(id.toString()));
+        var operations = root.putArray("tracked");
+        trackedRequests.forEach((id, request) -> operations.addObject().put("requestBase64", Base64.getEncoder().encodeToString(request.bytes()))
+            .set("observation", trackedObservations.get(id)));
+        Files.writeString(path, root.toString(), StandardCharsets.UTF_8);
+    }
+
+    static DeploymentAssistedBuildPeer reopen(Path path) throws Exception {
+        var json = new ObjectMapper();
+        var root = json.readTree(Files.readString(path, StandardCharsets.UTF_8));
+        assertEquals(1, root.path("formatVersion").intValue());
+        var peer = new DeploymentAssistedBuildPeer(false);
+        peer.fingerprint = root.path("fingerprint").textValue();
+        root.path("archives").fields().forEachRemaining(value -> peer.archives.put(value.getKey(), value.getValue().textValue()));
+        root.path("sizes").fields().forEachRemaining(value -> peer.sizes.put(value.getKey(), value.getValue().longValue()));
+        Map.of("creates", peer.creates, "uploads", peer.uploads, "builds", peer.builds, "cleanups", peer.cleanups,
+            "trackedSends", peer.trackedSends).forEach((field, values) -> root.path(field).fields().forEachRemaining(value -> values.put(value.getKey(), value.getValue().intValue())));
+        Map.of("commands", peer.commands, "toolBranches", peer.toolBranches).forEach((field, values) -> root.path(field).forEach(value -> values.add(value.textValue())));
+        root.path("present").forEach(value -> peer.present.add(value.textValue()));
+        root.path("publications").forEach(value -> peer.publications.add(value.textValue()));
+        root.path("tasks").forEach(value -> peer.tasks.add(UUID.fromString(value.textValue())));
+        for (var operation : root.path("tracked")) {
+            var request = DeploymentTrackedToolchains.decode(Base64.getDecoder().decode(operation.path("requestBase64").textValue()));
+            DeploymentTrackedToolchains.observation((operation.path("observation") + "\n").getBytes(StandardCharsets.UTF_8), request);
+            assertNull(peer.trackedRequests.put(request.operationId(), request));
+            peer.trackedObservations.put(request.operationId(), (ObjectNode) operation.path("observation"));
+        }
+        return peer;
     }
 
     private static String candidate(String script) {

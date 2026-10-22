@@ -48,6 +48,8 @@ public final class DeploymentToolchainSetup {
 
     private final PreparedObserver preparedObserver;
 
+    private final DeploymentBuildCommandChannel trackedCommands;
+
     /** Binds a single original remote task and catalog. / 绑定单一原远端任务与目录。
      * @param commands original command channel / 原命令通道
      * @param catalog reviewed supported releases / 已审阅支持发布 */
@@ -63,20 +65,22 @@ public final class DeploymentToolchainSetup {
             public OperationResult<CommandResult> bind(String encoded) throws ApiException {
                 return commands.bind(encoded);
             }
-        }, catalog, commands::toolchainsPrepared);
+        }, catalog, commands::toolchainsPrepared, commands.trackedToolchains() ? commands : null);
         Objects.requireNonNull(commands);
     }
 
     /** Selects effects without changing catalog or receipt validation. / 选择副作用实现，不改变目录或回执校验。 */
     public DeploymentToolchainSetup(Commands commands, DeploymentToolchainCatalog catalog) {
         this(commands, catalog, tools -> {
-        });
+        }, null);
     }
 
-    private DeploymentToolchainSetup(Commands commands, DeploymentToolchainCatalog catalog, PreparedObserver preparedObserver) {
+    private DeploymentToolchainSetup(Commands commands, DeploymentToolchainCatalog catalog, PreparedObserver preparedObserver,
+                                     DeploymentBuildCommandChannel trackedCommands) {
         this.commands = Objects.requireNonNull(commands);
         this.catalog = Objects.requireNonNull(catalog);
         this.preparedObserver = Objects.requireNonNull(preparedObserver);
+        this.trackedCommands = trackedCommands;
     }
 
     /** Prepares one of at most two admitted branches and confirms its immutable binding. / 准备最多两个准入分支之一，并确认其不可变绑定。
@@ -104,6 +108,21 @@ public final class DeploymentToolchainSetup {
                 : "-";
             String javaHome = selections.stream().filter(s -> s.version().ecosystem() == DeploymentToolchainType.JAVA)
                 .map(DeploymentResolvedToolchains.Selection::directory).findFirst().orElse("-");
+            String[] fields;
+            if (trackedCommands != null) {
+                var observed = trackedCommands.prepareTracked(requirement.ecosystem(), branch.version(), exact,
+                    Math.max(30, Math.min(7200, seconds)), javaHome);
+                if (observed.outcome() != TaskResult.SUCCEEDED)
+                    return observed.outcome() == TaskResult.FAILED && observed.value().isPresent()
+                        && "unavailable".equals(observed.value().orElseThrow().failureCategory())
+                        ? failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_TOOLCHAIN_UNSUPPORTED") : withoutValue(observed);
+                if (observed.value().isEmpty() || !observed.value().orElseThrow().prepared()
+                    || observed.value().orElseThrow().cleanupState() == gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.CleanupState.REQUIRED)
+                    return unknown("DEPLOYMENT_TOOLCHAIN_RECEIPT_UNCONFIRMED");
+                var selection = observed.value().orElseThrow().selection();
+                fields = new String[]{selection.ecosystem().name(), selection.version(), selection.directory(),
+                    selection.origin().name(), selection.source(), selection.sha256()};
+            } else {
             var observed = commands.prepare(requirement.ecosystem(), branch.version(), exact,
                 Math.max(30, Math.min(7200, seconds)), javaHome);
             if (observed.outcome() == TaskResult.UNKNOWN || observed.outcome() == TaskResult.CANCELLED)
@@ -120,7 +139,8 @@ public final class DeploymentToolchainSetup {
             if (!stdout.startsWith("TOOLCHAIN=") || !stdout.endsWith("\n")
                 || stdout.indexOf('\n') != stdout.length() - 1)
                 return unknown("DEPLOYMENT_TOOLCHAIN_RECEIPT_UNCONFIRMED");
-            String[] fields = stdout.substring(10, stdout.length() - 1).split("\\|", -1);
+            fields = stdout.substring(10, stdout.length() - 1).split("\\|", -1);
+            }
             if (fields.length != 6 || !fields[0].equals(requirement.ecosystem().name()))
                 return unknown("DEPLOYMENT_TOOLCHAIN_RECEIPT_UNCONFIRMED");
             try {
@@ -144,6 +164,14 @@ public final class DeploymentToolchainSetup {
             preparedObserver.record(set);
             String encoded = Base64.getEncoder()
                 .encodeToString(DeploymentToolchainBindingCodec.encode(set).getBytes(StandardCharsets.UTF_8));
+            if (trackedCommands != null) {
+                var bound = trackedCommands.bindTracked(encoded);
+                if (bound.outcome() != TaskResult.SUCCEEDED) return withoutValue(bound);
+                if (bound.value().isEmpty() || !bound.value().orElseThrow().bound()
+                    || bound.value().orElseThrow().cleanupState() == gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.CleanupState.REQUIRED
+                    || !DeploymentToolchainBindingCodec.identity(set).equals(bound.value().orElseThrow().bindingSha256()))
+                    return unknown("DEPLOYMENT_TOOLCHAIN_BINDING_UNCONFIRMED");
+            } else {
             var bound = commands.bind(encoded);
             if (bound.outcome() == TaskResult.UNKNOWN || bound.outcome() == TaskResult.CANCELLED)
                 return withoutValue(bound);
@@ -156,6 +184,7 @@ public final class DeploymentToolchainSetup {
             if (!bound.value().orElseThrow().stdout()
                 .equals("TOOLCHAIN_BINDING=" + DeploymentToolchainBindingCodec.identity(set) + "\n"))
                 return unknown("DEPLOYMENT_TOOLCHAIN_BINDING_UNCONFIRMED");
+            }
         }
         return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(set), Optional.empty());
     }

@@ -17,7 +17,6 @@ import gold.debug.windowstolinux.appapi.ai.*;
 import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
 import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
 import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
-import gold.debug.windowstolinux.appapi.ai.model.AiUsage;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
@@ -37,13 +36,18 @@ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildEvidenceAssertions;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectPart;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentStandardPublishRecovery;
+import gold.debug.windowstolinux.mod.deployment.DeploymentStandardEntryFixture;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentAssistedBuildEvidenceAssertions;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentAssistedBuildReviewCodec;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentBuildLimits;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentFileBinding;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.path.DeploymentStorageLocation;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.path.DeploymentStoragePath;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.part.DiscoveredProjectPart;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentPreparedDatabase;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
@@ -54,13 +58,22 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
 
     private final Set<String> reviewedOperations = ConcurrentHashMap.newKeySet();
 
+    private record IndependentReview(String operation, boolean command) {
+    }
+
+    private final List<IndependentReview> independentReviews = new CopyOnWriteArrayList<>();
+
     private final DeploymentAssistedWorkflowTest.FixedReviewFixture fixedReviews = new DeploymentAssistedWorkflowTest.FixedReviewFixture();
 
     private final List<ActionIntent> hostApprovals = new CopyOnWriteArrayList<>();
 
     private final AtomicReference<String> modelRoute = new AtomicReference<>("a".repeat(64));
 
+    private volatile Throwable lastModelFailure;
+
     private boolean returnToOriginal;
+
+    private boolean sameContent;
 
     private java.util.function.Consumer<ActionIntent> reviewFault = ignored -> {
     };
@@ -106,6 +119,12 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
     void physicalCompilerFailureUsesOneOriginalCandidateAndCompleteReviewedTemplate(int count, String policy)
         throws Exception {
         run(count, policy, true, false);
+    }
+
+    @org.junit.jupiter.api.Test
+    void sameContentComponentArchivesKeepTheirOriginalRootsThroughCorrectionAndPublication() throws Exception {
+        sameContent = true;
+        run(2, "MANUAL_REVIEW", true, false);
     }
 
     @ParameterizedTest
@@ -185,7 +204,7 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                         }
                     }
                 };
-            var ai = models(false);
+            var ai = models(false, count);
             LinuxService linux = new LinuxService() {
                 public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected, TaskContext task) throws ApiException {
                     return fixedReviews.connect(expected, task, actual, this);
@@ -215,8 +234,8 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 });
             var flow = new DeploymentRefFlow(bound, new DeploymentStandardPublishRecovery(bound));
             try (var recovery = tasks.registerRecovery(DeploymentRefFlow.TASK_TYPE, flow)) {
-                var handle = new DeploymentStaticWorkflow(bound, flow).submit(new ServerId("server"),
-                    new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(),
+                var handle = new DeploymentStandardEntryFixture(bound, flow).submit(new ServerId("server"),
+                    new DeploymentStandardInputs.Draft("", 65536, 100, 65536), Optional.empty(),
                     reviewer(new AtomicReference<>(), new AtomicReference<>(), count, true), true, "MANUAL_REVIEW");
                 long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
                 while (handle.snapshot().state() != TaskState.UNKNOWN && handle.snapshot().state() != TaskState.ENDED
@@ -228,9 +247,9 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 assertEquals(1, peer.creates.size());
                 assertEquals(1, peer.uploads.size());
                 if (changePreferences) {
-                    var selection = new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection("ASSISTED", "FULL_CONTROL", "FULL");
+                    var selection = new gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore.Selection("ASSISTED", "FULL_CONTROL", true);
                     var changed = tasks.submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest("deployment-test-preference", "Change later deployment preferences", List.of(), true), task -> {
-                        var preferences = new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences(actual.db());
+                        var preferences = new gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore(actual.db());
                         preferences.save(task, selection);
                         assertEquals(selection, preferences.read(task));
                         return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
@@ -277,7 +296,7 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                     var unknown = DeploymentPublishAcceptanceFixture.reconcileReady(runtime, handle);
                     assertEquals(TaskState.UNKNOWN, unknown.state());
                     assertTrue(peer.commands.size() > originalCommands, "The active original build needs a fresh real query");
-                    assertRecoveryReviews(peer, originalCommands, approvalCalls, handle.id());
+                    assertRecoveryReviews(peer, originalCommands, approvalCalls, handle.id(), 0);
                 } else {
                     assertTrue(faultInstalled.get());
                     assertReviewBoundary(runtime, boundary);
@@ -306,7 +325,7 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 assertEquals(uploaded, peer.uploads);
                 assertTrue(peer.present.isEmpty());
                 assertTrue(peer.publications.isEmpty());
-                assertRecoveryReviews(peer, originalCommands, approvalCalls, handle.id());
+                assertRecoveryReviews(peer, originalCommands, approvalCalls, handle.id(), boundary.equals("FORMAL") ? 1 : 0);
                 assertTrue(reviewedOperations.containsAll(Set.of("deployment.publication.original-status.v1",
                     "deployment.publication.candidate-cleanup.v1")));
                 assertEquals(Set.of(handle.id()), peer.tasks);
@@ -348,7 +367,7 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
     }
 
     private static PolicyRow retainedPolicy(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime, UUID task) throws Exception {
-        String key = OWNER + "/checkpoint/" + gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentPublishPolicyFacts.KEY;
+        String key = OWNER + "/checkpoint/" + gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.policy.DeploymentPublishPolicyFacts.KEY;
         try (var connection = runtime.persistence().database().openConnection();
              var query = connection.prepareStatement("SELECT recovery_json FROM platform_task_resource WHERE task_id=? AND resource_id=? AND released_at IS NULL")) {
             query.setObject(1, task);
@@ -417,9 +436,16 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
     }
 
     private void assertRecoveryReviews(DeploymentAssistedBuildPeer peer, int commandsBefore, int approvalsBefore,
-                                       UUID originalTask) {
-        assertEquals(peer.commands.size() - commandsBefore, independent.get() - approvalsBefore,
-            "Every recovery query and cleanup requires one fresh independent APPROVAL and no planning");
+                                       UUID originalTask, int formalReviews) {
+        assertEquals(independent.get(), independentReviews.size());
+        var reviews = independentReviews.subList(approvalsBefore, independentReviews.size());
+        assertEquals(peer.commands.size() - commandsBefore, reviews.stream().filter(IndependentReview::command).count(),
+            "Every recovery query and cleanup requires one fresh independent command APPROVAL");
+        assertEquals(Collections.nCopies(formalReviews, "deployment.assisted.build-review"),
+            reviews.stream().filter(review -> !review.command()).map(IndependentReview::operation).toList(),
+            "Only a physically verified original BIND may require a separate formal plan review");
+        assertEquals(peer.commands.size() - commandsBefore + formalReviews, independent.get() - approvalsBefore,
+            "Recovery command reviews and formal plan reviews must account for every independent call");
         assertEquals(peer.commands.size(), fixedReviews.sends.get());
         for (String command : peer.commands.subList(commandsBefore, peer.commands.size()))
             if (command.contains("publication-original-status") || command.contains("candidate-cleanup-task"))
@@ -508,7 +534,7 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 "fixture-password".toCharArray());
             var original = runtime.modContexts().get(OWNER).context();
             var peer = new DeploymentAssistedBuildPeer(repeated);
-            var ai = models(stop);
+            var ai = models(stop, count);
             LinuxService linux = new LinuxService() {
                 public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected, TaskContext task) throws ApiException {
                     return fixedReviews.connect(expected, task, original, this);
@@ -536,12 +562,20 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 });
             var id = new AtomicReference<UUID>();
             var archives = new AtomicReference<Map<String, String>>();
-            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentRefFlow(bound));
+            var workflow = new DeploymentStandardEntryFixture(bound, new DeploymentRefFlow(bound));
             var handle = workflow.submit(new ServerId("server"),
-                new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(),
+                new DeploymentStandardInputs.Draft("", 65536, 100, 65536), Optional.empty(),
                 reviewer(id, archives, count, changed), true, policy);
             OperationResult<Void> result;
             try {
+                long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(45);
+                while (!handle.completion().toCompletableFuture().isDone() && handle.snapshot().state() != TaskState.UNKNOWN
+                    && System.nanoTime() < until) Thread.sleep(20);
+                if (handle.snapshot().state() == TaskState.UNKNOWN)
+                    throw new AssertionError("Original workflow became UNKNOWN before its expected physical failure/correction: "
+                        + DeploymentAssistedGoModelFixture.diagnostics(runtime, handle.id()) + "; actual commands=" + peer.commands
+                        + "; review failure=" + fixedReviews.lastFailure + "; peer failure=" + peer.lastFailure,
+                        lastModelFailure != null ? lastModelFailure : fixedReviews.lastFailure != null ? fixedReviews.lastFailure : peer.lastFailure);
                 result = handle.completion().toCompletableFuture().get(45, TimeUnit.SECONDS);
             } catch (TimeoutException unavailable) {
                 throw new AssertionError("Original build task did not settle: " + handle.snapshot()
@@ -550,9 +584,17 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
             boolean success = changed && !stop && !preCandidate && !repeated;
             assertEquals(success ? TaskResult.SUCCEEDED : TaskResult.FAILED, result.outcome(), result.toString());
             assertEquals(TaskState.ENDED, handle.snapshot().state());
-            assertEquals(Set.of(handle.id()), peer.tasks);
+            assertEquals(Set.of(handle.id()), peer.tasks, result.toString());
             assertEquals(handle.id(), id.get());
             assertEquals(count, archives.get().size());
+            if (sameContent) {
+                assertEquals(Set.of("component0", "component1"), archives.get().keySet());
+                assertEquals(1, new HashSet<>(archives.get().values()).size(),
+                    "The real per-component archive captures must have identical bytes");
+                assertEquals(2, peer.archives.size());
+                assertEquals(new HashSet<>(archives.get().values()), new HashSet<>(peer.archives.values()),
+                    "Both original candidates must receive the actual captured archive SHA");
+            }
             assertEquals(preCandidate ? 0 : count, peer.creates.size());
             assertEquals(preCandidate ? 0 : count, peer.uploads.size());
             peer.creates.values().forEach(value -> assertEquals(1, value));
@@ -589,7 +631,7 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
             if (success)
                 assertTrue(reviewedOperations.containsAll(Set.of("deployment.publication.publish.v1",
                     "deployment.assisted.environment-recovery", "deployment.assisted.build-review")));
-            assertEquals(repeated ? 2 : success ? count : 0, hostApprovals.stream()
+            assertEquals(policy.equals("MANUAL_REVIEW") ? repeated ? 2 : success ? count : 0 : 0, hostApprovals.stream()
                 .filter(intent -> intent.type().equals("deployment.assisted.environment-recovery")).count());
             try (var access = scope(runtime, true);
                  var connection = access.openConnection();
@@ -605,6 +647,8 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 assertEquals(rows.getString(5), request.path("reviewedRevision").asText());
                 assertEquals(repeated ? 2 : success ? count : 0, request.path("buildReviews").size());
                 int reviewIndex = 0;
+                var reviewedRoots = new HashSet<String>();
+                var reviewedUnits = new HashSet<String>();
                 for (var review : request.path("buildReviews")) {
                     var before = DeploymentAssistedBuildReviewCodec
                         .decodeDescription(review.path("previousPlan").asText());
@@ -615,7 +659,23 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                     assertEquals(repeated && reviewIndex == 1 ? "1.24" : "1.25", after.inputs().get("version"));
                     reviewIndex++;
                     assertTrue(archives.get().containsValue(after.source().get("archive")));
+                    if (sameContent) {
+                        assertEquals(archives.get().get(after.source().get("relativeRoot")), after.source().get("archive"),
+                            "Equal archive content must still bind to its exact original component root");
+                        assertTrue(reviewedRoots.add(after.source().get("relativeRoot")));
+                        assertTrue(reviewedUnits.add(review.path("unitId").textValue()));
+                    }
                     assertNotEquals(before.runtime(), after.runtime());
+                }
+                if (sameContent) {
+                    assertEquals(Set.of("component0", "component1"), reviewedRoots);
+                    assertEquals(2, reviewedUnits.size());
+                    var components = request.path("publicationTemplate").path("runtime").path("components");
+                    assertEquals(2, components.size());
+                    var publishedUnits = new HashSet<String>();
+                    components.forEach(component -> assertTrue(publishedUnits.add(component.path("unitId").textValue())));
+                    assertEquals(reviewedUnits, publishedUnits,
+                        "The final application retains two distinct original component resources");
                 }
                 assertFalse(rows.next(), "Formal begin belongs to one original UUID and cannot be replayed");
             }
@@ -646,26 +706,26 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
             }
     }
 
-    private DeploymentStaticWorkflow.Reviewer reviewer(AtomicReference<UUID> taskId,
+    private DeploymentStandardInputs.Reviewer reviewer(AtomicReference<UUID> taskId,
                                                        AtomicReference<Map<String, String>> archives, int count, boolean changed) {
         var corrections = new HashMap<String, Integer>();
-        return new DeploymentStaticWorkflow.Reviewer() {
-            public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerId server, String sha,
+        return new DeploymentStandardInputs.Reviewer() {
+            public OperationResult<DeploymentStandardInputs.Selection> select(ServerId server, String sha,
                                                                               List<DiscoveredProjectPart> components, TaskContext task) {
                 assertEquals(count, components.size());
                 taskId.set(task.id());
-                var choices = new LinkedHashMap<String, DeploymentStaticWorkflow.Choice>();
+                var choices = new LinkedHashMap<String, DeploymentStandardInputs.Choice>();
                 components.forEach(component -> choices.put(component.id(),
-                    new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE, Set.of())));
-                return success(new DeploymentStaticWorkflow.Selection(
+                    new DeploymentStandardInputs.Choice(DeploymentProjectKind.GO_SERVICE, Set.of())));
+                return success(new DeploymentStandardInputs.Selection(
                     count == 1 ? components.getFirst().id() : "reviewed-application", choices,
                     count == 1 ? Optional.empty() : Optional.of(components.getFirst().id())));
             }
 
-            public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerId server, String sha,
-                                                                                         List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
+            public OperationResult<Map<String, DeploymentStandardInputs.Answers>> review(ServerId server, String sha,
+                                                                                         List<DeploymentStandardInputs.Prompt> prompts, TaskContext task) {
                 assertEquals(taskId.get(), task.id());
-                var values = new LinkedHashMap<String, DeploymentStaticWorkflow.Answers>();
+                var values = new LinkedHashMap<String, DeploymentStandardInputs.Answers>();
                 int port = 8080;
                 for (var prompt : prompts) {
                     var answer = new LinkedHashMap<>(prompt.defaults());
@@ -680,14 +740,14 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                         new DeploymentStoragePath(prompt.componentId() + "-uploads",
                             DeploymentStoragePath.AccessMode.READ_WRITE, "uploads-v1", true),
                         DeploymentStorageLocation.defaults(), DeploymentStorageLocation.StorageResourceType.FILE);
-                    values.put(prompt.componentId(), new DeploymentStaticWorkflow.Answers(answer, List.of(file),
+                    values.put(prompt.componentId(), new DeploymentStandardInputs.Answers(answer, List.of(file),
                         new DeploymentBuildLimits(600, 32, 512, 65536, 128L * 1024 * 1024, false), false, true));
                 }
                 return success(Map.copyOf(values));
             }
 
-            public OperationResult<DeploymentStaticWorkflow.Answers> reviewBuildCorrection(ServerId server, String sha,
-                                                                                           DeploymentStaticWorkflow.Prompt prompt, DeploymentStaticWorkflow.Answers original,
+            public OperationResult<DeploymentStandardInputs.Answers> reviewBuildCorrection(ServerId server, String sha,
+                                                                                           DeploymentStandardInputs.Prompt prompt, DeploymentStandardInputs.Answers original,
                                                                                            TaskContext task) {
                 assertEquals(taskId.get(), task.id());
                 assertEquals(Set.of("primary", "secondary", "version", "jvmTarget"),
@@ -700,13 +760,13 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 var answer = new LinkedHashMap<>(original.values());
                 int attempt = corrections.merge(prompt.componentId(), 1, Integer::sum);
                 answer.put("version", changed && (!returnToOriginal || attempt == 1) ? "1.25" : "1.24");
-                return success(new DeploymentStaticWorkflow.Answers(answer, original.files(), original.limits(),
+                return success(new DeploymentStandardInputs.Answers(answer, original.files(), original.limits(),
                     original.containerRisk(), original.adapterRisk()));
             }
 
             public OperationResult<Boolean> confirm(ServerId server, String sha, Map<String, String> tar,
-                                                    Map<String, DeploymentStaticWorkflow.Answers> answers,
-                                                    Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStaticWorkflow.GitReview> git,
+                                                    Map<String, DeploymentStandardInputs.Answers> answers,
+                                                    Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStandardInputs.GitReview> git,
                                                     TaskContext task) {
                 assertEquals(taskId.get(), task.id());
                 assertEquals(count, tar.size());
@@ -716,7 +776,7 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
         };
     }
 
-    private AiService models(boolean stop) {
+    private AiService models(boolean stop, int count) {
         return new AiService() {
             @Override
             public gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse> call(
@@ -750,6 +810,7 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
 
             public OperationResult<AiResponse> call(AiRequest request, String expected, TaskContext task)
                 throws ApiException {
+                try {
                 assertEquals(modelRoute.get(), expected);
                 JsonNode facts;
                 try {
@@ -760,14 +821,24 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 String response;
                 if (request.purpose() == AiPurpose.APPROVAL) {
                     fixedReviews.review(request, facts, task);
+                    independentReviews.add(new IndependentReview(facts.path("operation").asText(),
+                        facts.path("exactAction").asText().startsWith("WTL-SSH-COMMAND-1\n")));
                     independent.incrementAndGet();
                     reviewedOperations.add(facts.path("operation").asText());
-                    response = "{\"decision\":\"APPROVE\",\"risk\":\"NORMAL\",\"reason\":\"Exact registered fixed action\"}";
+                    response = "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Exact registered fixed action\"}";
                 } else {
                     assertEquals(AiPurpose.LANGUAGE, request.purpose());
                     fixedReviews.sameTask(task);
                     language.incrementAndGet();
-                    if (facts.path("phase").asText().equals("BUILD")) {
+                    if (facts.has("projectTypes") || facts.path("state").path("availableTools").isArray()) {
+                        try {
+                            response = facts.has("projectTypes")
+                                ? DeploymentAssistedGoModelFixture.sourceScan(facts, count)
+                                : DeploymentAssistedGoModelFixture.publicationTool(request, facts);
+                        } catch (Exception invalid) {
+                            throw new AssertionError(invalid);
+                        }
+                    } else if (facts.path("phase").asText().equals("BUILD")) {
                         recoveries.incrementAndGet();
                         assertTrue(facts.path("fields").isEmpty(),
                             "Source and human answers cannot be overwritten by AI");
@@ -778,8 +849,18 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                             + facts.path("sourceRevision").asText()
                             + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Keep explicit human review\",\"unresolved\":[]}}";
                 }
-                return success(new AiResponse(response, "controlled-purpose", "stop",
-                    new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())));
+                try {
+                    return success(DeploymentAssistedGoModelFixture.nativeResponse(request, "controlled-purpose", response));
+                } catch (Exception invalid) {
+                    throw new AssertionError(invalid);
+                }
+                } catch (Throwable failure) {
+                    lastModelFailure = failure;
+                    if (failure instanceof ApiException api) throw api;
+                    if (failure instanceof RuntimeException runtime) throw runtime;
+                    if (failure instanceof Error error) throw error;
+                    throw new AssertionError(failure);
+                }
             }
         };
     }
@@ -788,7 +869,7 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
         for (int i = 0; i < count; i++) {
             var directory = count == 1 ? selectedSourceDirectory() : selectedSourceDirectory().resolve("component" + i);
             Files.createDirectories(directory);
-            Files.writeString(directory.resolve("go.mod"), "module example.test/component" + i + "\n\ngo 1.24\n");
+            Files.writeString(directory.resolve("go.mod"), "module example.test/component" + (sameContent ? 0 : i) + "\n\ngo 1.24\n");
             Files.writeString(directory.resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
             Files.writeString(directory.resolve("main.go"), "package main\nfunc main() {}\n");
             Files.writeString(directory.resolve("windowstolinux-application.properties"),

@@ -81,6 +81,13 @@ public final class DeploymentCommandEvidence {
         }
         byte[] input = request.stdin();
         try {
+            boolean trackedToolchain = Set.of("deployment.toolchain.prepare.tracked.v1", "deployment.toolchain.bind.tracked.v1",
+                "deployment.toolchain.observe.tracked.v1", "deployment.toolchain.cleanup.tracked.v1").contains(operation);
+            if (trackedToolchain) {
+                if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Tracked toolchain original server required");
+                facts.put("trackedToolchain", gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.reviewFacts(
+                    operation, invocation, input, intent.serverIds().getFirst(), intent.semantics().orElseThrow().targets(), layout));
+            }
             if (operation.equals("deployment.build.run.v1") && invocation.startsWith("exec /usr/bin/python3 -I -c ")) {
                 var collector = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildOutputProtocol.reviewFacts(invocation, input, layout);
                 if (intent.serverIds().size() != 1 || !intent.semantics().orElseThrow().targets().contains(
@@ -122,7 +129,7 @@ public final class DeploymentCommandEvidence {
                     facts.put("modelCommand", modelCommand);
                 }
             } else {
-                facts.put("inputKind", input.length == 0 ? "EMPTY" : "OPAQUE_BOUND_DATA");
+                facts.put("inputKind", trackedToolchain ? "TRACKED_TOOLCHAIN_REQUEST" : input.length == 0 ? "EMPTY" : "OPAQUE_BOUND_DATA");
             }
         } finally {
             Arrays.fill(input, (byte) 0);

@@ -94,7 +94,7 @@ final class DeploymentAssistedPublishBuild {
         var allowance = preparationAllowances.computeIfAbsent(request.facts().applicationId(), id ->
             new PreparationAllowance(identity,
                 new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget(request.limits().timeoutSeconds()),
-                new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace(id, request.archive().sha256())));
+                new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace(id, request.archive().sha256(), request.layout())));
         if (!allowance.identity().equals(identity))
             throw new IllegalStateException("Original preparation identity changed");
         scope.bindPreparation(plan, task);
@@ -212,7 +212,12 @@ final class DeploymentAssistedPublishBuild {
             if (!journal.recoveryStarting(intent))
                 return new Completed(current.plan(), uncertain("DEPLOYMENT_ASSISTED_ENVIRONMENT_BOUNDARY_UNCONFIRMED"));
             scope.bindPreparation(corrected.plan(), task);
-            var recovered = candidates.recoverSelection(current, corrected.plan(), corrected.catalogBranch(), session, context.interaction(), task);
+            var trackedIdentity = new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.Identity(
+                original.identity().executionId().toString(), intent.unitId(), intent.attempt(), sha(intent.encode()),
+                sha(session.facts().fingerprint()));
+            var tracked = new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.Session(trackedIdentity,
+                new DeploymentAssistedToolchainLog(executions, task, original.identity().executionId(), trackedIdentity));
+            var recovered = candidates.recoverSelection(current, corrected.plan(), corrected.catalogBranch(), session, context.interaction(), task, tracked);
             if (recovered.outcome() != TaskResult.SUCCEEDED)
                 return new Completed(current.plan(), uncertain("DEPLOYMENT_ASSISTED_ENVIRONMENT_UNCONFIRMED"));
             var next = recovered.value().orElseThrow();
@@ -279,26 +284,33 @@ final class DeploymentAssistedPublishBuild {
      * @return complete observed formal review / 完整已观察正式审阅
      * @throws Exception if tools did not change or exact consent fails / 工具未变化或精确同意失败时 */
     private DeploymentAssistedBuildReview reviewed(DeploymentAssistedBuildIntent intent, DeploymentStandardCandidateRunner.Prepared next, TaskContext task) throws Exception {
-        String tools = DeploymentToolchainBindingCodec.encode(next.tools());
+        return reviewed(context, intent, next.tools(), next.script(), task);
+    }
+
+    /** Reviews frozen original inputs after physical reconciliation; grants no new build permission. */
+    static DeploymentAssistedBuildReview reviewed(ModContext context, DeploymentAssistedBuildIntent intent,
+            gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains actualTools,
+            String script, TaskContext task) throws Exception {
+        String tools = DeploymentToolchainBindingCodec.encode(actualTools);
         var before = DeploymentAssistedBuildReviewCodec.decodeDescription(intent.previousPlan());
         var after = DeploymentAssistedBuildReviewCodec.decodeDescription(intent.nextPlan());
         var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
-        if (!before.layout().equals(layout) || !after.layout().equals(layout) || !next.plan().request().layout().equals(layout))
+        if (!before.layout().equals(layout) || !after.layout().equals(layout))
             throw new IllegalArgumentException("Assisted review changed original remote layout");
         var oldTools = DeploymentToolchainBindingCodec.decode(intent.previousTools());
         boolean corrected = !before.inputs().equals(after.inputs()) && !before.runtime().equals(after.runtime());
         boolean changed = !oldTools.selections().stream().map(value -> List.of(value.requirement().ecosystem().name(), value.requirement().purpose().name(), value.version().text(), value.directory(), value.origin().name(), value.source(), value.sha256())).toList()
-            .equals(next.tools().selections().stream().map(value -> List.of(value.requirement().ecosystem().name(), value.requirement().purpose().name(), value.version().text(), value.directory(), value.origin().name(), value.source(), value.sha256())).toList());
-        if ((!corrected && !changed) || intent.previousScript().equals(next.script()) && intent.previousTools().equals(tools))
+            .equals(actualTools.selections().stream().map(value -> List.of(value.requirement().ecosystem().name(), value.requirement().purpose().name(), value.version().text(), value.directory(), value.origin().name(), value.source(), value.sha256())).toList());
+        if ((!corrected && !changed) || intent.previousScript().equals(script) && intent.previousTools().equals(tools))
             return null;
-        String exact = "previous=" + intent.previousRoot() + "\nnext=" + intent.nextRoot() + "\nplan=" + sha(intent.nextPlan()) + "\nscript=" + sha(next.script()) + "\ntools=" + sha(tools);
-        approve(new ActionIntent("deployment.assisted.build-review", List.of(next.plan().request().server().id()), intent.unitId(), intent.nextRoot(), exact,
-            "Confirm the exact corrected plan, fixed script and physically observed tools before rebuilding the original candidate"), task);
+        String exact = "previous=" + intent.previousRoot() + "\nnext=" + intent.nextRoot() + "\nplan=" + sha(intent.nextPlan()) + "\nscript=" + sha(script) + "\ntools=" + sha(tools);
+        approve(context, new ActionIntent("deployment.assisted.build-review", List.of(after.serverId()), intent.unitId(), intent.nextRoot(), exact,
+            "Confirm the exact corrected plan, fixed script and physically observed tools; execution requires separate authorization"), task);
         if (!intent.modelRevision().equals(context.ai().configurationRevision(AiPurpose.LANGUAGE, task)))
             throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED,
                 "DEPLOYMENT_ASSISTED_CONFIGURATION_CHANGED", "Original review configuration changed", Map.of("task", task.id().toString()), Optional.of(task.id())));
         return new DeploymentAssistedBuildReview(intent.attempt(), intent.previousRoot(), intent.nextRoot(), intent.originalGraph(), intent.unitId(), intent.previousPlan(), intent.nextPlan(),
-            intent.previousScript(), next.script(), intent.previousTools(), tools, DeploymentAssistedBuildReview.failureBinding(intent.previousPlan(), intent.previousScript(), intent.previousTools(), intent.failureEvidence()),
+            intent.previousScript(), script, intent.previousTools(), tools, DeploymentAssistedBuildReview.failureBinding(intent.previousPlan(), intent.previousScript(), intent.previousTools(), intent.failureEvidence()),
             intent.failureEvidence(), sha(exact), intent.approvalAction(), intent.modelRevision(), Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS));
     }
 
@@ -307,6 +319,10 @@ final class DeploymentAssistedPublishBuild {
      * @param task authentic original task / 真实原任务
      * @throws ApiException if exact consent is denied, cancelled or unknown / 精确同意被拒、取消或未知时 */
     private void approve(ActionIntent intent, TaskContext task) throws ApiException {
+        approve(context, intent, task);
+    }
+
+    private static void approve(ModContext context, ActionIntent intent, TaskContext task) throws ApiException {
         var result = context.interaction().approve(intent, task);
         if (result.outcome() != TaskResult.SUCCEEDED)
             throw new ApiException(result.problem().orElseGet(() -> new Problem(ProblemCode.ACCESS_DENIED,

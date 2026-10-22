@@ -56,9 +56,9 @@ class DeploymentAssistedEnvironmentRecoveryRestartTest extends DeploymentRuntime
                 throw new AssertionError("Unknown environment recovery cannot send SSH: " + command);
             });
         })) {
-            runWorker("produce", boundary, ssh.server().getPort(), http.getAddress().getPort());
+            runWorker("produce", boundary, ssh.server().getPort(), http.getAddress().getPort(), "LEGACY");
             assertEquals(0, connections.get(), "The producer uses only its exact controlled receipt peer");
-            runWorker("recover", boundary, ssh.server().getPort(), http.getAddress().getPort());
+            runWorker("recover", boundary, ssh.server().getPort(), http.getAddress().getPort(), "LEGACY");
             assertEquals(0, connections.get(), "The real registered cross-boot recovery must reject before connecting");
             assertEquals(0, commands.get());
             assertEquals(0, requests.get(),
@@ -70,13 +70,64 @@ class DeploymentAssistedEnvironmentRecoveryRestartTest extends DeploymentRuntime
         }
     }
 
-    private void runWorker(String phase, BoundaryType boundary, int port, int httpPort) throws Exception {
+    @ParameterizedTest(name = "tracked original {0}")
+    @EnumSource(BoundaryType.class)
+    void trackedOriginalEffectsAreObservedAndFailedBusinessIsSettledAcrossBoot(BoundaryType boundary) throws Exception {
+        tracked(boundary, "TRACKED");
+    }
+
+    @ParameterizedTest(name = "changed wire {0}")
+    @EnumSource(BoundaryType.class)
+    void trackedDifferentAuthenticatedHostSendsNoCommandsOrModelCalls(BoundaryType boundary) throws Exception {
+        tracked(boundary, "HOST_CONFLICT");
+    }
+
+    @org.junit.jupiter.api.Test
+    void unacknowledgedOriginalCleanupIsOnlyObservedAfterAnotherBoot() throws Exception {
+        tracked(BoundaryType.PREPARE, "CLEANUP_LOST");
+    }
+
+    @org.junit.jupiter.api.Test
+    void activeOriginalProcessGroupRemainsUnknownWithoutCleanup() throws Exception {
+        tracked(BoundaryType.PREPARE, "ACTIVE_INTERRUPTED");
+    }
+
+    private void tracked(BoundaryType boundary, String scenario) throws Exception {
+        var connections = new AtomicInteger();
+        var requests = new AtomicInteger();
+        var http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        http.createContext("/chat", exchange -> {
+            requests.incrementAndGet();
+            exchange.getRequestBody().readAllBytes();
+            exchange.sendResponseHeaders(500, -1);
+            exchange.close();
+        });
+        http.start();
+        try (var ssh = new LoopbackSshServer(root, server -> {
+            server.addSessionListener(new SessionListener() {
+                @Override public void sessionCreated(Session session) { connections.incrementAndGet(); }
+            });
+            server.setPasswordAuthenticator((user, password, session) -> false);
+            server.setCommandFactory((channel, command) -> { throw new AssertionError("Controlled transport must carry the original reviewed request: " + command); });
+        })) {
+            runWorker("produce", boundary, ssh.server().getPort(), http.getAddress().getPort(), scenario);
+            runWorker("recover", boundary, ssh.server().getPort(), http.getAddress().getPort(), scenario);
+            if (scenario.equals("CLEANUP_LOST"))
+                runWorker("recover-again", boundary, ssh.server().getPort(), http.getAddress().getPort(), scenario);
+            assertEquals(0, connections.get(), "All sends use the approved controlled Linux capability");
+            assertEquals(0, requests.get(), "All independent APPROVAL calls use the controlled AI capability; LANGUAGE never calls");
+            assertTrue(Files.isRegularFile(root.resolve("environment-" + boundary + "-before.json")));
+            assertTrue(Files.isRegularFile(root.resolve("environment-" + boundary + "-after.json")));
+        } finally { http.stop(0); }
+    }
+
+    private void runWorker(String phase, BoundaryType boundary, int port, int httpPort, String scenario) throws Exception {
         Path output = root.resolve("environment-" + boundary + "-" + phase + ".log");
         String executable = System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java";
         var process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", executable).toString(),
             "-Djdk.net.unixdomain.tmpdir=" + root, "-cp", System.getProperty("java.class.path"),
             DeploymentAssistedEnvironmentRecoveryWorker.class.getName(), phase, root.toString(), boundary.name(),
-            Integer.toString(port), Integer.toString(httpPort)).redirectErrorStream(true)
+            Integer.toString(port), Integer.toString(httpPort), scenario).redirectErrorStream(true)
             .redirectOutput(output.toFile()).start();
         try {
             assertTrue(process.waitFor(75, TimeUnit.SECONDS), "Original environment worker timed out: " + phase);

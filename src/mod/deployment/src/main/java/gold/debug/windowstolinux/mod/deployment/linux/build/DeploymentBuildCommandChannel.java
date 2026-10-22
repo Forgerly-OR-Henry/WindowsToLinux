@@ -61,7 +61,11 @@ public final class DeploymentBuildCommandChannel {
 
     private final DeploymentPreparationObserver preparationObserver;
 
+    private final DeploymentTrackedToolchains.Session trackedSession;
+
     private final java.util.ArrayDeque<String> preparationReceipts = new java.util.ArrayDeque<>();
+
+    private final java.util.ArrayList<DeploymentTrackedToolchains.Selection> trackedPreparationReceipts = new java.util.ArrayList<>();
 
     /** Binds the original task, server and borrowed session; the caller closes the session. / 绑定原任务、服务器和借用会话；由调用方关闭会话。
      * @param session original authenticated session / 原已认证会话
@@ -105,6 +109,15 @@ public final class DeploymentBuildCommandChannel {
                                          TaskContext task, String planRevision, DeploymentBuildBudget budget,
                                          DeploymentSendGuard beforeSend, DeploymentRemoteLayout layout,
                                          DeploymentPreparationObserver preparationObserver) {
+        this(session, interaction, server, task, planRevision, budget, beforeSend, layout, preparationObserver, null);
+    }
+
+    /** Explicit tracked capability is supplied only by the formal assisted correction path. */
+    public DeploymentBuildCommandChannel(RemoteSession session, InteractionService interaction, ServerId server,
+                                         TaskContext task, String planRevision, DeploymentBuildBudget budget,
+                                         DeploymentSendGuard beforeSend, DeploymentRemoteLayout layout,
+                                         DeploymentPreparationObserver preparationObserver,
+                                         DeploymentTrackedToolchains.Session trackedSession) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
         this.server = Objects.requireNonNull(server);
@@ -116,6 +129,7 @@ public final class DeploymentBuildCommandChannel {
         this.beforeSend = Objects.requireNonNull(beforeSend);
         this.layout = Objects.requireNonNull(layout);
         this.preparationObserver = Objects.requireNonNull(preparationObserver);
+        this.trackedSession = trackedSession;
     }
 
     /** Rebinds reviewed request identity while preserving original execution budget and guard. / 重新绑定已审阅请求身份，保留原执行预算与守卫。
@@ -124,7 +138,98 @@ public final class DeploymentBuildCommandChannel {
     public DeploymentBuildCommandChannel rebound(String revision) {
         if (revision == null || !revision.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Invalid replacement identity");
-        return new DeploymentBuildCommandChannel(session, interaction, server, task, revision, budget, beforeSend, layout, preparationObserver);
+        return new DeploymentBuildCommandChannel(session, interaction, server, task, revision, budget, beforeSend, layout, preparationObserver, trackedSession);
+    }
+
+    public boolean trackedToolchains() { return trackedSession != null; }
+
+    public void saveTrackedRecipe(DeploymentTrackedToolchains.ScriptRecipe recipe) throws ApiException {
+        requireTrackedIdentity();
+        trackedSession.log().recipe(trackedSession.identity(), Objects.requireNonNull(recipe));
+    }
+
+    public OperationResult<DeploymentTrackedToolchains.Observation> prepareTracked(DeploymentToolchainType ecosystem,
+            String branch, String exact, int seconds, String javaHome) throws ApiException {
+        requireTrackedIdentity();
+        long available = budget.remainingSeconds();
+        if (available < 45) return trackedWithoutValue(timeout());
+        seconds = (int) Math.min(seconds, available - 15);
+        var request = DeploymentTrackedToolchains.prepare(java.util.UUID.randomUUID(), task.id().toString(),
+            trackedSession.identity(), server.id(), layout, ecosystem, branch, exact, seconds, javaHome);
+        var observed = tracked("prepare-tracked", request, Duration.ofSeconds(seconds + 15L));
+        if (observed.outcome() == TaskResult.SUCCEEDED && observed.value().isPresent() && observed.value().orElseThrow().prepared())
+            trackedPreparationReceipts.add(observed.value().orElseThrow().selection());
+        return observed;
+    }
+
+    public OperationResult<DeploymentTrackedToolchains.Observation> bindTracked(String encoded) throws ApiException {
+        requireTrackedIdentity();
+        if (budget.remainingSeconds() < 1) return trackedWithoutValue(timeout());
+        return tracked("bind-tracked", DeploymentTrackedToolchains.bind(java.util.UUID.randomUUID(), task.id().toString(),
+            trackedSession.identity(), server.id(), layout, encoded), Duration.ofSeconds(180));
+    }
+
+    /** Observes original bytes without replaying any environment effect. */
+    public OperationResult<DeploymentTrackedToolchains.Observation> observeTracked(DeploymentTrackedToolchains.Request request) throws ApiException {
+        return tracked("observe-tracked", request, Duration.ofSeconds(60));
+    }
+
+    /** Cleans only the original operation residue; complete shared assets are retained. */
+    public OperationResult<DeploymentTrackedToolchains.Observation> cleanupTracked(DeploymentTrackedToolchains.Request request) throws ApiException {
+        return tracked("cleanup-tracked", request, Duration.ofSeconds(180));
+    }
+
+    private void requireTrackedIdentity() {
+        if (trackedSession == null || !trackedSession.identity().fingerprintSha256().equals(
+            DeploymentTrackedToolchains.sha256(session.facts().fingerprint().getBytes(StandardCharsets.UTF_8))))
+            throw new IllegalArgumentException("Tracked original authenticated host identity differs");
+    }
+
+    private OperationResult<DeploymentTrackedToolchains.Observation> tracked(String verb,
+            DeploymentTrackedToolchains.Request original, Duration timeout) throws ApiException {
+        requireTrackedIdentity();
+        if (!original.taskId().equals(task.id().toString()) || !original.serverId().equals(server.id())
+            || !original.identity().equals(trackedSession.identity()) || !original.layout().equals(layout))
+            throw new IllegalArgumentException("Tracked request differs from its original task, host or formal intent");
+        if (budget.remainingSeconds() < 1) return trackedWithoutValue(timeout());
+        byte[] bytes = original.bytes();
+        boolean[] dispatched = {false};
+        try {
+            trackedSession.log().intent(original, verb);
+            var result = sendWithBoundary(DeploymentTrackedToolchains.operation(verb),
+                Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains()),
+                    new ActionTarget(server.id(), "task", task.id().toString())),
+                DeploymentTrackedToolchains.command(verb, original), bytes, timeout, DeploymentTrackedToolchains.MAX_RECEIPT_BYTES,
+                () -> { requireTrackedIdentity(); trackedSession.log().dispatched(original, verb); dispatched[0] = true; });
+            OperationResult<DeploymentTrackedToolchains.Observation> observation;
+            if (result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()
+                || !result.value().orElseThrow().exitCode().equals(Optional.of(0)) || result.value().orElseThrow().truncated()) {
+                observation = !dispatched[0] ? trackedWithoutValue(result)
+                    : trackedUnknown("DEPLOYMENT_TRACKED_TOOLCHAIN_UNCONFIRMED");
+            } else {
+                try {
+                    var value = DeploymentTrackedToolchains.observation(result.value().orElseThrow().stdout().getBytes(StandardCharsets.UTF_8), original);
+                    // An observation succeeds as an observation even when the original execution remains UNKNOWN.
+                    TaskResult outcome = verb.equals("observe-tracked") || verb.equals("cleanup-tracked") ? TaskResult.SUCCEEDED
+                        : switch (value.executionStatus()) { case SUCCEEDED -> TaskResult.SUCCEEDED; case FAILED -> TaskResult.FAILED; case UNKNOWN -> TaskResult.UNKNOWN; };
+                    observation = new OperationResult<>(outcome, Optional.of(value), outcome == TaskResult.SUCCEEDED ? Optional.empty()
+                        : Optional.of(new Problem(outcome == TaskResult.UNKNOWN ? ProblemCode.UNKNOWN : ProblemCode.IO_FAILURE,
+                            "DEPLOYMENT_TRACKED_TOOLCHAIN_" + value.executionStatus(), "Original tracked toolchain execution is not successful", Map.of(), Optional.empty())));
+                } catch (IllegalArgumentException invalid) {
+                    observation = trackedUnknown("DEPLOYMENT_TRACKED_TOOLCHAIN_RECEIPT_UNCONFIRMED");
+                }
+            }
+            trackedSession.log().observed(original, verb, observation);
+            return observation;
+        } finally { Arrays.fill(bytes, (byte) 0); }
+    }
+
+    private static OperationResult<DeploymentTrackedToolchains.Observation> trackedWithoutValue(OperationResult<?> result) {
+        return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+    }
+    private static OperationResult<DeploymentTrackedToolchains.Observation> trackedUnknown(String event) {
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
+            event, "Original tracked toolchain effect is unconfirmed", Map.of(), Optional.empty())));
     }
 
     /** Observes the original cumulative execution deadline. / 观察原累计执行期限。 */
@@ -174,12 +279,20 @@ public final class DeploymentBuildCommandChannel {
     public void toolchainsPrepared(gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools) throws ApiException {
         if (tools.selections().isEmpty()) return;
         for (var selection : tools.selections()) {
+            if (trackedSession != null) {
+                if (trackedPreparationReceipts.stream().noneMatch(receipt -> receipt.ecosystem() == selection.requirement().ecosystem()
+                    && receipt.version().equals(selection.version().text()) && receipt.directory().equals(selection.directory())
+                    && receipt.origin() == selection.origin() && receipt.source().equals(selection.source()) && receipt.sha256().equals(selection.sha256())))
+                    throw new IllegalArgumentException("Validated tools differ from this channel's typed successful preparation");
+                continue;
+            }
             String expected = "TOOLCHAIN=" + selection.requirement().ecosystem() + "|" + selection.version().text() + "|"
                 + selection.directory() + "|" + selection.origin() + "|" + selection.source() + "|" + selection.sha256() + "\n";
             if (!preparationReceipts.contains(expected))
                 throw new IllegalArgumentException("Validated tools differ from this channel's observed successful preparation");
         }
         preparationReceipts.clear();
+        trackedPreparationReceipts.clear();
         preparationObserver.toolsPrepared(server, tools, task);
     }
 
@@ -312,6 +425,14 @@ public final class DeploymentBuildCommandChannel {
     /** Observes this live invocation immediately before execute, after its original approval and guard. */
     public OperationResult<CommandResult> send(String operation, Set<ActionTarget> targets, String script, byte[] input,
                                                Duration timeout, long output, Runnable dispatchBoundary) throws ApiException {
+        return sendWithBoundary(operation, targets, script, input, timeout, output, dispatchBoundary::run);
+    }
+
+    @FunctionalInterface
+    private interface DispatchBoundary { void run() throws ApiException; }
+
+    private OperationResult<CommandResult> sendWithBoundary(String operation, Set<ActionTarget> targets, String script, byte[] input,
+                                               Duration timeout, long output, DispatchBoundary dispatchBoundary) throws ApiException {
         Objects.requireNonNull(dispatchBoundary);
         targets = Set.copyOf(targets);
         if (targets.isEmpty() || targets.stream().anyMatch(target -> !target.serverId().equals(server.id())))
@@ -330,10 +451,10 @@ public final class DeploymentBuildCommandChannel {
         if (grant.outcome() != TaskResult.SUCCEEDED)
             return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
         beforeSend.verify();
+        dispatchBoundary.run();
         try {
             long started = System.nanoTime();
             try {
-                dispatchBoundary.run();
                 return session.execute(request, grant.value().orElseThrow());
             } finally {
                 budget.charge(System.nanoTime() - started);

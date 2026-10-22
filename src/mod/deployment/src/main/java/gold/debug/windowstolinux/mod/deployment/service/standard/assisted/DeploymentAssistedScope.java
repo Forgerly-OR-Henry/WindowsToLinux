@@ -129,12 +129,16 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             throw new IllegalArgumentException("Runtime dependency plan differs from captured source");
         validateWorkflow(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(
             workflow, supplied, request.server()));
-        var association = Map.<String, Object>of("application", request.facts().applicationId(),
+        var archiveAssociation = new LinkedHashMap<String, Object>(Map.<String, Object>of("application", request.facts().applicationId(),
             "server", request.server().id(), "task", supplied.id().toString(),
             "originSnapshotId", request.archive().originSnapshotId().toString(),
             "sourceManifestSha256", request.archive().sourceManifestSha256(),
             "archiveSha256", request.archive().sha256(), "relativeRoot", request.archive().relativeRoot(),
-            "remoteLayoutSha256", request.layout().digest());
+            "remoteLayoutSha256", request.layout().digest()));
+        archiveAssociation.put("archiveSnapshotId", request.archive().snapshot().id().toString());
+        archiveAssociation.put("localArchivePath", request.archive().path().toString());
+        archiveAssociation.put("archiveBytes", request.archive().byteCount());
+        var association = Map.copyOf(archiveAssociation);
         var prior = reviewedApplicationSources.get(request.facts().applicationId());
         if (prior != null && !prior.equals(association))
             throw new IllegalArgumentException("Reviewed application source association changed");
@@ -296,7 +300,8 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             String invocation = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout);
             if (invocation.startsWith("exec /usr/bin/python3 -I -c ")) {
                 try {
-                    facts.put("currentBuildArchive", buildArchiveFacts(List.copyOf(sourceArchives.values()), intent, request, layout));
+                    facts.put("currentBuildArchive", buildArchiveFacts(List.copyOf(sourceArchives.values()),
+                        Map.copyOf(reviewedApplicationSources), intent, request, layout));
                 } catch (java.io.IOException invalid) {
                     throw new IllegalArgumentException("Build archive evidence cannot be decoded", invalid);
                 }
@@ -366,7 +371,8 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     }
 
     /** Compares the literal build archive guard and complete collector to one captured source association. */
-    static Map<String, Object> buildArchiveFacts(List<Map<String, Object>> archives, ActionIntent intent,
+    static Map<String, Object> buildArchiveFacts(List<Map<String, Object>> archives,
+                                                 Map<String, Map<String, Object>> reviewedSources, ActionIntent intent,
                                                  gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                                                  gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws java.io.IOException {
         byte[] input = request.stdin();
@@ -384,11 +390,23 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             if (!guard.find()) throw new IllegalArgumentException("Build archive hash guard missing");
             String expected = guard.group(1);
             if (guard.find()) throw new IllegalArgumentException("Build archive hash guard is ambiguous");
-            var matched = archives.stream().filter(value -> expected.equals(value.get("archiveSha256"))).toList();
+            String application = collector.get("application").toString();
+            var association = reviewedSources.get(application);
+            if (association == null || !application.equals(association.get("application"))
+                || !intent.serverIds().getFirst().equals(association.get("server"))
+                || !layout.digest().equals(association.get("remoteLayoutSha256"))
+                || !expected.equals(association.get("archiveSha256")))
+                throw new IllegalArgumentException("Build differs from its reviewed application archive binding");
+            var archiveFields = List.of("archiveSha256", "relativeRoot", "originSnapshotId", "sourceManifestSha256",
+                "archiveSnapshotId", "localArchivePath", "archiveBytes");
+            if (archiveFields.stream().anyMatch(field -> !association.containsKey(field)))
+                throw new IllegalArgumentException("Reviewed archive binding is incomplete");
+            var matched = archives.stream().filter(value -> archiveFields.stream()
+                .allMatch(field -> Objects.equals(association.get(field), value.get(field)))).toList();
             if (matched.size() != 1) throw new IllegalArgumentException("One exact captured build archive required");
             return Map.of("expectedArchiveSha256", expected, "sha256Characters", expected.length(), "archive", matched.getFirst(),
                 "candidate", collector.get("candidate"), "candidateRoot", collector.get("candidateRoot"),
-                "comparison", "ALL_64_SHA256_CHARACTERS_EQUAL_ONE_CAPTURED_ARCHIVE_AND_COLLECTOR_INPUT_DIGEST_MATCHES",
+                "comparison", "REVIEWED_APPLICATION_ROOT_AND_ORIGINAL_ARCHIVE_MATCH_COLLECTOR_WITH_ALL_64_SHA256_CHARACTERS",
                 "meaning", "Full literal archive SHA256 in this exact executable stdin equals the captured compressed archive SHA256, without display abbreviation. The complete collector round-trip verifies this input digest and declared candidate. This is a literal source association, not proof that the shell guard or archive extraction has executed, that later code cannot override variables, that project code/hooks are safe, or that execution is authorized. Independently review the complete body, exact arguments and source-bound SYSTEM build isolation contract.");
         } finally {
             Arrays.fill(input, (byte) 0);

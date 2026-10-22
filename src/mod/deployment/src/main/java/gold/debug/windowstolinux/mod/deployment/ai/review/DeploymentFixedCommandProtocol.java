@@ -28,6 +28,10 @@ public final class DeploymentFixedCommandProtocol implements DeploymentCommandPr
         "deployment.candidate.verify.v1",
         "deployment.toolchain.prepare.v1",
         "deployment.toolchain.bind.v1",
+        "deployment.toolchain.prepare.tracked.v1",
+        "deployment.toolchain.bind.tracked.v1",
+        "deployment.toolchain.observe.tracked.v1",
+        "deployment.toolchain.cleanup.tracked.v1",
         "deployment.build.preflight.v1",
         "deployment.build.run.v1",
         "deployment.publication.snapshot.v1",
@@ -78,6 +82,8 @@ public final class DeploymentFixedCommandProtocol implements DeploymentCommandPr
             throw new IllegalArgumentException("Model command task differs from original context");
         if (facts.get("originalPublicationStatus") instanceof Map<?, ?> status && !task.id().toString().equals(status.get("task")))
             throw new IllegalArgumentException("Publication status task differs from original context");
+        if (facts.get("trackedToolchain") instanceof Map<?, ?> tracked && !task.id().toString().equals(tracked.get("taskId")))
+            throw new IllegalArgumentException("Tracked toolchain task differs from original context");
         return facts;
     }
     /** A declared task target can only refer to the authentic original task. */
