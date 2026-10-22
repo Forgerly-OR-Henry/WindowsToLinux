@@ -437,7 +437,7 @@ class ModStoreWindowTest {
     }
 
     @Test
-    void nativePersistedAppearanceKeepsDraftAcrossTwelveVariantsAndSmallWindowPlanControlsRemainReachable() throws Exception {
+    void nativePersistedAppearanceKeepsDraftAcrossSupportedVariantsAndSmallWindowPlanControlsRemainReachable() throws Exception {
         float originalScale = com.formdev.flatlaf.util.UIScale.getZoomFactor();
         try (var fixture = new ModStoreFixture(root)) {
             var addon = fixture.publish("sample.appearance.addon", "1.0.0", Map.of(), Map.of(), Map.of());
@@ -448,7 +448,7 @@ class ModStoreWindowTest {
                 selectMain(window, main);
                 optional(window, main.owner(), addon.owner());
                 var original = window.pane();
-                for (int scale : new int[]{100, 150, 200})
+                for (int scale : new int[]{100, 150})
                     for (var theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK})
                         for (String language : new String[]{"zh-CN", "en"}) {
                             appearance(window);

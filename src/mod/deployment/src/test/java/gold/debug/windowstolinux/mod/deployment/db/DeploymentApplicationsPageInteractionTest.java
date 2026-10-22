@@ -9,15 +9,14 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
-
 import javax.swing.*;
 
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
-import gold.debug.windowstolinux.mod.deployment.api.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
-import gold.debug.windowstolinux.mod.deployment.ui.DeploymentApplicationsPage;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentLifecycleAction;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentApplicationsService;
+import gold.debug.windowstolinux.mod.deployment.ui.application.DeploymentApplicationsPage;
 import gold.debug.windowstolinux.mod.deployment.ui.delivery.DeploymentDeliveryPanel;
 import org.junit.jupiter.api.Test;
 

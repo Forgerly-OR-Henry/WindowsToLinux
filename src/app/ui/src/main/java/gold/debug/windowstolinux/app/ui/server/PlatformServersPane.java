@@ -34,6 +34,12 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
 
         /** Current privacy, lifetime and active request. / 当前隐私、寿命及活动请求。 */
         private boolean locked = true, closed, busy;
+
+        /** Actual check records belonging to the current view lifetime. / 属于当前视图生命周期的实际检查记录。 */
+        private final Map<String, CheckRecord> records = new java.util.HashMap<>();
+
+        /** Original reconciliation output and caption, independent of server selection. / 独立于服务器选择的原核对输出与标题。 */
+        private String taskOutput, taskOutputTarget;
     }
 
     /** Immutable original target and completed-failure eligibility. / 不可变原目标及已完成失败准入。
@@ -111,6 +117,16 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** In-memory task polling, stopped on actual page disposal. / 内存任务轮询，在页面实际销毁时停止。 */
     private final Timer timer;
 
+    /** Visual regions independent of task and selection ownership. / 独立于任务与选择归属的展示区域。 */
+    private final ServerPagePresentation presentation;
+
+    /** Check output bound to its exact original configuration. / 检查输出绑定精确原配置。
+     * @param profile original configuration / 原配置
+     * @param task original task identity / 原任务身份
+     * @param text localized actual output / 本地化实际输出 */
+    private record CheckRecord(ServerProfile profile, UUID task, java.util.function.Supplier<String> text) {
+    }
+
     /**
      * Creates the permanent view on the event thread. / 在事件线程创建常驻视图。
      * @param owner actual parent window / 实际父窗口
@@ -131,101 +147,30 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         selection = new SelectionControls();
         setName("platform.servers");
         components.stylePage(this);
-        setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
-        var heading = components.card(new BorderLayout(8, 8));
-        heading.add(messages.bind(components.description(""), "server.platform.help"), BorderLayout.NORTH);
-        var actions = components.transparent(new FlowLayout(FlowLayout.LEFT, 8, 4));
-        add = button("auto.addServer", "servers.add", () -> editor(null));
-        edit = button("server.edit", "servers.edit", () -> editor(selected()));
+        setBorder(BorderFactory.createCompoundBorder(null, new com.formdev.flatlaf.ui.FlatEmptyBorder(12, 20, 12, 20)));
+        add = button("server.addShort", "servers.add", () -> editor(null));
+        edit = button("server.editShort", "servers.edit", () -> editor(selected()));
         delete = button("server.delete", "servers.delete", this::delete);
         refresh = button("server.refresh", "servers.refresh", this::refresh);
         check = button("server.check", "servers.check", this::check);
-        rescue = button("recovery.title", "servers.rescue", this::rescue);
-        for (var button : List.of(add, edit, delete, refresh, check, rescue))
-            actions.add(button);
-        heading.add(actions, BorderLayout.SOUTH);
-        var search = new JPanel(new BorderLayout(8, 8));
-        search.add(messages.bind(new JLabel(), "server.search"), BorderLayout.WEST);
-        search.add(selection.search, BorderLayout.CENTER);
-        heading.add(search, BorderLayout.CENTER);
-        add(heading, BorderLayout.NORTH);
-        installInventory();
-        var tasks = components.card(new BorderLayout(8, 8));
-        var taskActions = new JPanel(new BorderLayout(8, 8));
-        checks.setName("servers.checks");
-        checks.setRenderer(new DefaultListCellRenderer() {
-            /**
-             * Formats original task identity and state without secret data. / 格式化原任务身份及状态，不含秘密数据。
-             * @param list owning list / 所属列表
-             * @param value task snapshot / 任务快照
-             * @param index row index / 行索引
-             * @param selected whether selected / 是否选中
-             * @param focus whether focused / 是否聚焦
-             * @return rendered row / 已呈现行
-             */
-            @Override
-            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean selected,
-                                                          boolean focus) {
-                String label = value instanceof TaskSnapshot task
-                    ? task.progressText() + " · " + messages.text("platform.task." + task.state()) + " · "
-                    + task.id()
-                    : messages.text("server.noChecks");
-                return super.getListCellRendererComponent(list, label, index, selected, focus);
-            }
-        });
-        checks.addActionListener(event -> controls());
-        taskActions.add(checks, BorderLayout.CENTER);
-        var recoveryActions = components.transparent(new FlowLayout(FlowLayout.RIGHT, 8, 4));
+        rescue = button("server.rescueShort", "servers.rescue", this::rescue);
         cancel = button("server.cancelCheck", "servers.cancel", this::cancel);
         reconcile = button("server.reconcile", "servers.reconcile", this::reconcile);
-        recoveryActions.add(cancel);
-        recoveryActions.add(reconcile);
-        taskActions.add(recoveryActions, BorderLayout.EAST);
-        tasks.add(taskActions, BorderLayout.NORTH);
-        output.setName("servers.output");
-        output.setRows(5);
-        output.setLineWrap(true);
-        output.setWrapStyleWord(true);
-        tasks.add(new JScrollPane(output), BorderLayout.CENTER);
+        var more = button("server.more", "servers.more", () -> {
+        });
         failedRescue = button("server.rescueFailedCheck", "servers.rescueFailedCheck", () -> rescue(checkBinding == null ? null : checkBinding.profile()));
-        failedRescue.setVisible(false);
-        var failureActions = components.transparent(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        failureActions.add(failedRescue);
-        tasks.add(failureActions, BorderLayout.SOUTH);
-        add(tasks, BorderLayout.SOUTH);
+        presentation = new ServerPagePresentation(components, messages, table, selection.search, () -> rows.values,
+            checks, output, new ServerPagePresentation.Controls(add, edit, delete, refresh, check, rescue, more, cancel, reconcile, failedRescue));
+        table.getSelectionModel().addListSelectionListener(event -> {
+            if (!event.getValueIsAdjusting()) selection.remember();
+            controls();
+        });
+        add(presentation, BorderLayout.CENTER);
+        checks.addActionListener(event -> controls());
         timer = new Timer(250, event -> poll());
         timer.start();
         controls();
         components.scrollPage(this);
-    }
-
-    /** Configures card presentation while retaining the original selection model. / 保留原选择模型并设置卡片展示。 */
-    private void installInventory() {
-        table.setName("servers.table");
-        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        table.setFillsViewportHeight(true);
-        table.setTableHeader(null);
-        table.setShowGrid(false);
-        table.setIntercellSpacing(new Dimension(0, 0));
-        table.setRowHeight(com.formdev.flatlaf.util.UIScale.scale(88));
-        while (table.getColumnModel().getColumnCount() > 1)
-            table.removeColumn(table.getColumnModel().getColumn(1));
-        table.getColumnModel().getColumn(0).setCellRenderer((view, value, selected, focused, row, column) -> {
-            int model = table.convertRowIndexToModel(row);
-            return components.inventoryCard(String.valueOf(rows.getValueAt(model, 0)),
-                rows.getValueAt(model, 2) + " @ " + rows.getValueAt(model, 1),
-                rows.getValueAt(model, 3) + " · " + rows.getValueAt(model, 4), selected);
-        });
-        table.getSelectionModel().addListSelectionListener(event -> {
-            if (!event.getValueIsAdjusting())
-                selection.remember();
-            controls();
-        });
-        var inventoryScroll = new JScrollPane(table);
-        inventoryScroll.setPreferredSize(new Dimension(400, com.formdev.flatlaf.util.UIScale.scale(140)));
-        inventoryScroll.setBorder(BorderFactory.createEmptyBorder());
-        components.stylePage(table);
-        add(inventoryScroll, BorderLayout.CENTER);
     }
 
     /** Binds the real rescue entry once without adding a business extension dependency. / 绑定一次真实救援入口，不添加业务扩展依赖。
@@ -269,6 +214,8 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             view.busy = false;
             checkBinding = null;
             failedRescue.setVisible(false);
+            view.records.clear();
+            view.taskOutput = null;
         }
         view.locked = value;
         if (!value && !view.busy) {
@@ -285,8 +232,14 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
      * @return configured button / 已配置按钮
      */
     private JButton button(String key, String name, Runnable action) {
-        var button = messages.bind(components.secondaryButton(""), key);
+        var button = messages.bind(name.equals("servers.add") || name.equals("servers.check")
+            ? components.primaryButton("") : components.secondaryButton(""), key);
         button.setName(name);
+        button.setMargin(new Insets(8, 14, 8, 14));
+        if (name.equals("servers.add")) button.setIcon(gold.debug.windowstolinux.app.ui.control.DesktopIcons.icon(
+            "action/plus", 16, button::getForeground));
+        if (name.equals("servers.refresh")) button.setIcon(gold.debug.windowstolinux.app.ui.control.DesktopIcons.icon(
+            "action/refresh-cw", 16, button::getForeground));
         button.addActionListener(event -> action.run());
         return button;
     }
@@ -339,16 +292,18 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             long generation = view.epoch;
             checkBinding = new CheckBinding(handle.id(), profile, handle, false);
             failedRescue.setVisible(false);
-            output.setText(messages.text("server.checking"));
+            view.taskOutput = null;
+            view.records.put(profile.id(), new CheckRecord(profile, handle.id(), () -> messages.text("server.checking")));
+            showSelection();
             handle.completion().whenComplete((result, failure) -> SwingUtilities.invokeLater(() -> {
                 if (view.closed || view.locked || generation != view.epoch || checkBinding == null || !handle.id().equals(checkBinding.id()))
                     return;
-                output.setText(failure != null
+                view.records.put(profile.id(), new CheckRecord(profile, handle.id(), () -> failure != null
                     ? messages.safe(new java.util.concurrent.CompletionException(failure))
                     : messages.text("platform.outcome." + result.outcome())
                     + result.value().map(facts -> "\n" + facts.fingerprint()).orElse("")
                     + result.problem().map(problem -> "\n" + messages.safe(
-                    new gold.debug.windowstolinux.appapi.task.result.ApiException(problem))).orElse(""));
+                    new gold.debug.windowstolinux.appapi.task.result.ApiException(problem))).orElse("")));
                 if (failure == null && result.outcome() == gold.debug.windowstolinux.appapi.task.result.TaskResult.FAILED
                     && handle.snapshot().state() == TaskState.ENDED) {
                     checkBinding = new CheckBinding(handle.id(), profile, handle, true);
@@ -388,10 +343,11 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             return;
         work(() -> (rescueTask ? recovery.reconcile(task.id(), true) : service.reconcile(task.id()))
             .toCompletableFuture().get(), result -> {
-            output.setText(messages.text("platform.task." + result.state()) + "\n"
+            view.taskOutputTarget = task.progressText() + " · " + messages.text("server.taskRecord", Map.of("id", task.id()));
+            view.taskOutput = messages.text("platform.task." + result.state()) + "\n"
                 + (result.state() == TaskState.ENDED
                 ? messages.text(rescueTask ? "recovery.taskInterrupted" : "server.interrupted")
-                : String.join("\n", result.blockers())));
+                : String.join("\n", result.blockers()));
             poll();
         });
     }
@@ -430,6 +386,10 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         delete.setEnabled(enabled && selected() != null);
         check.setEnabled(enabled && selected() != null);
         rescue.setEnabled(enabled && recovery != null && selected() != null);
+        presentation.targetEnabled(enabled && selected() != null);
+        presentation.extensionContext(java.util.Optional.ofNullable(selected())
+                .map(profile -> new gold.debug.windowstolinux.appapi.server.model.ServerId(profile.id())),
+            enabled && selected() != null);
         failedRescue.setEnabled(enabled && recovery != null && checkBinding != null && checkBinding.failed()
             && checkBinding.handle().snapshot().state() == TaskState.ENDED);
         var task = (TaskSnapshot) checks.getSelectedItem();
@@ -437,6 +397,45 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             enabled && task != null && (task.state() == TaskState.RUNNING || task.state() == TaskState.QUEUED));
         reconcile.setEnabled(
             enabled && task != null && (task.state() == TaskState.UNKNOWN || task.state() == TaskState.FINISHING));
+        showSelection();
+    }
+
+    /** Displays only records belonging to the selected configuration. / 仅展示归属所选配置的记录。 */
+    private void showSelection() {
+        int index = table.getSelectedRow();
+        var summary = index < 0 ? null : rows.values.get(table.convertRowIndexToModel(index));
+        String text, target, identity = null;
+        if (view.taskOutput != null) {
+            target = view.taskOutputTarget;
+            identity = target;
+            text = view.taskOutput;
+        } else if (summary == null) {
+            target = "";
+            text = messages.text("server.choose");
+        } else {
+            var record = view.records.get(summary.profile().id());
+            if (record != null && record.profile().equals(summary.profile())) {
+                target = summary.profile().displayName() + " · " + record.task();
+                identity = summary.profile().id() + " · " + ServerDetailsPane.endpoint(summary) + " · " + record.task();
+                text = record.text().get();
+            } else {
+                target = summary.profile().displayName();
+                identity = summary.profile().id() + " · " + ServerDetailsPane.endpoint(summary);
+                text = summary.checkedAt().isEmpty() ? messages.text("server.recordsEmpty")
+                    : messages.text("server.lastCheck") + ": " + ServerDetailsPane.status(summary, messages)
+                    + "\n" + messages.text("server.checkedAt") + ": " + ServerDetailsPane.checkedAt(summary);
+            }
+        }
+        presentation.show(summary, rows.values.size(), text, target, identity);
+        if (checkBinding != null && checkBinding.failed())
+            failedRescue.setToolTipText(checkBinding.profile().displayName() + " · " + checkBinding.id());
+    }
+
+    /** Updates dynamic labels and geometry without rebuilding selection or tasks. / 更新动态文案与尺寸，不重建选择或任务。 */
+    public void localize() {
+        selection.search.putClientProperty("JTextField.placeholderText", messages.text("server.search"));
+        presentation.localize();
+        controls();
     }
 
     /**
@@ -449,6 +448,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         if (view.closed || view.locked || view.busy)
             return;
         view.busy = true;
+        presentation.feedback("");
         long generation = view.epoch, identity = ++view.request;
         controls();
         DesktopTaskRunner.run(operation, value -> {
@@ -461,7 +461,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             if (view.closed || view.locked || view.epoch != generation || view.request != identity) return;
             view.busy = false;
             if (!view.closed && !view.locked)
-                output.setText(messages.safe(failure));
+                presentation.feedback(messages.safe(failure));
             controls();
         });
     }
@@ -469,6 +469,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** Stops view polling while accepted central tasks keep their original ownership. / 停止视图轮询，已接纳中央任务继续保持原归属。 */
     @Override
     public void close() {
+        presentation.closeExtensions();
         view.closed = true;
         view.epoch++;
         view.request++;
@@ -477,6 +478,19 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         rows.replace(List.of());
         checks.removeAllItems();
         output.setText("");
+        view.records.clear();
+        view.taskOutput = null;
+    }
+
+    /** Installs the host menu extension capability. / 安装宿主菜单扩展能力。
+     * @param extensions APP-owned extension service / APP 所属扩展服务 */
+    public void installExtensions(gold.debug.windowstolinux.appapi.ui.extension.UiExtensionService extensions) {
+        try {
+            presentation.installExtensions(extensions);
+            controls();
+        } catch (gold.debug.windowstolinux.appapi.task.result.ApiException failure) {
+            throw new IllegalStateException("Server extension point could not be installed", failure);
+        }
     }
 
     /** Owns explicit name/host search and preserves real user selection across refreshes. / 持有明确名称主机搜索，并跨刷新保留真实用户选择。 */
@@ -527,6 +541,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             if (!updating) {
                 var profile = selected();
                 selectedId = profile == null ? null : profile.id();
+                view.taskOutput = null;
             }
         }
 
@@ -536,6 +551,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             updating = true;
             try {
                 rows.replace(values);
+                view.records.keySet().retainAll(values.stream().map(value -> value.profile().id()).toList());
                 if (!view.locked && !initialized && !values.isEmpty()) {
                     selectedId = values.getFirst().profile().id();
                     initialized = true;

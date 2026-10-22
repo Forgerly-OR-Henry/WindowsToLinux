@@ -205,7 +205,7 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
             list.setName(key + ".list");
             list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
             list.setOpaque(false);
-            list.setFixedCellHeight(UIScale.scale(48));
+            list.setFixedCellHeight(UIScale.scale(56));
             list.setVisibleRowCount(1);
             list.setCellRenderer((view, value, index, selected, focused) -> {
                 var text = new JLabel(value == null ? "" : label.apply(value));
@@ -219,7 +219,7 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
             scroll.setBorder(BorderFactory.createEmptyBorder());
             scroll.setOpaque(false);
             scroll.getViewport().setOpaque(false);
-            scroll.getVerticalScrollBar().setUnitIncrement(UIScale.scale(48));
+            scroll.getVerticalScrollBar().setUnitIncrement(UIScale.scale(56));
             empty = messages.bind(new JLabel(), "navigation.empty");
             empty.setName(key + ".empty");
             empty.setForeground(UIManager.getColor("Label.disabledForeground"));

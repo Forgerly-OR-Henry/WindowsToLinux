@@ -404,10 +404,12 @@ class PlatformModOriginalsTest {
         var confirm = dialog();
         runtime.security().lock();
         await(() -> !confirm.isShowing());
-        assertEquals(0, rows());
+        assertEquals(1, rows());
+        assertFalse(onEdt(() -> named(frame, "originals.install").isEnabled()));
         assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
         runtime.security().unlock(PASSWORD.toCharArray());
-        await(() -> ((JList<?>) named(frame, "originals.inventory")).getModel().getSize() == 1);
+        await(() -> ((JList<?>) named(frame, "originals.inventory")).getModel().getSize() == 1
+            && named(frame, "originals.install").isEnabled());
         idle();
         assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_version"));
         click("originals.install");

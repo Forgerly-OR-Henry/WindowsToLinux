@@ -1,0 +1,187 @@
+package gold.debug.windowstolinux.app.main.start;
+
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.nio.file.*;
+import java.util.concurrent.atomic.AtomicReference;
+import javax.imageio.ImageIO;
+import javax.swing.*;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.display.*;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
+import gold.debug.windowstolinux.app.ui.server.PlatformServersPane;
+
+import static gold.debug.windowstolinux.app.main.start.PlatformWindowTest.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+class PlatformServersPresentationTest {
+    @TempDir
+    Path root;
+
+    @Test
+    void actualPaneShowsSelectedMetadataAndRendersThemesSizesAndEmptyStatesWithoutNetwork() throws Exception {
+        try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            var service = PlatformServerServiceTest.setup(runtime);
+            runtime.started();
+            String[] names = {"生产服务器", "测试服务器", "备用服务器", "演示服务器：用于验证很长的服务器显示名称不会覆盖操作按钮"};
+            for (int i = 0; i < names.length; i++) {
+                var profile = new ServerProfile("preview-" + i,
+                    i == 3 ? "long-hostname-for-layout-check.example.invalid" : "192.0.2." + (10 + i * 10),
+                    i == 2 ? 2222 : 22, "deploy", "preview/" + i, names[i]);
+                service.saveServerProfile(profile, "isolated-test-credential".toCharArray());
+                if (i < 3) runtime.persistence().servers().recordObservation(profile.stored(), i != 2, "");
+            }
+            for (var theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK}) {
+                for (int scale : new int[]{100, 150}) {
+                    var window = new AtomicReference<JFrame>();
+                    var view = new AtomicReference<PlatformServersPane>();
+                    onEdt(() -> {
+                        DesktopThemeService.install(theme, scale);
+                        var frame = new JFrame();
+                        var pane = new PlatformServersPane(frame, service,
+                            new DesktopPartFactory(theme == ThemeMode.LIGHT ? ThemePalette.light() : ThemePalette.dark()),
+                            new PageMessagePresenter(MessageCatalog.forLanguageTag("zh-CN")));
+                        window.set(frame);
+                        view.set(pane);
+                        frame.setContentPane(pane);
+                        frame.setSize(1440, 790);
+                        frame.setVisible(true);
+                        pane.setLocked(false);
+                        return null;
+                    });
+                    try {
+                        await(() -> ((JTable) named(view.get(), "servers.table")).getRowCount() == 4
+                            && named(view.get(), "servers.refresh").isEnabled());
+                        for (boolean minimum : new boolean[]{false, true}) {
+                            onEdt(() -> {
+                                var pane = view.get();
+                                pane.setSize(minimum ? 1120 : 1440, minimum ? 630 : 810);
+                                layout(pane);
+                                layout(pane);
+                                var table = (JTable) named(pane, "servers.table");
+                                assertEquals("4 台", ((JLabel) named(pane, "servers.count")).getText());
+                                assertTrue(named(pane, "servers.count").getWidth() > 0);
+                                assertTrue(table.getWidth() > 0 && table.getHeight() > 0, () -> "Inventory bounds: " + table.getBounds());
+                                assertEquals("生产服务器", ((JLabel) named(pane, "servers.details.title")).getText());
+                                assertTrue(((JLabel) named(pane, "servers.details.endpoint")).getText().contains("192.0.2.10:22"));
+                                assertTrue(named(pane, "servers.check").isEnabled());
+                                for (int i = 0; i < 4; i++)
+                                    assertTrue(named(pane, "servers.details.field." + i).getWidth() > 0);
+                                for (String action : new String[]{"servers.add", "servers.edit", "servers.check", "servers.more"}) {
+                                    var button = named(pane, action);
+                                    assertTrue(button.getWidth() > 0 && button.getHeight() > 0, action);
+                                    assertTrue(button.getX() + button.getWidth() <= button.getParent().getWidth(), action);
+                                    assertTrue(button.getY() + button.getHeight() <= button.getParent().getHeight(), action);
+                                }
+                                capture(pane, "servers-" + theme + "-" + scale + (minimum ? "-minimum" : "-normal"));
+                                table.setRowSelectionInterval(3, 3);
+                                assertTrue(((JLabel) named(pane, "servers.details.title")).getText().startsWith("演示服务器"));
+                                capture(pane, "servers-" + theme + "-" + scale + (minimum ? "-minimum-long" : "-normal-long"));
+                                table.setRowSelectionInterval(0, 0);
+                                var scroll = (JScrollPane) pane.getComponent(0);
+                                scroll.getVerticalScrollBar().setValue(scroll.getVerticalScrollBar().getMaximum());
+                                capture(pane, "servers-" + theme + "-" + scale + (minimum ? "-minimum-bottom" : "-normal-bottom"));
+                                scroll.getVerticalScrollBar().setValue(0);
+                                return null;
+                            });
+                        }
+                        onEdt(() -> {
+                            var pane = view.get();
+                            var table = (JTable) named(pane, "servers.table");
+                            var search = (JTextField) named(pane, "servers.search");
+                            table.setRowSelectionInterval(3, 3);
+                            search.setText("long-hostname");
+                            var model = table.getModel();
+                            var document = (javax.swing.text.AbstractDocument) search.getDocument();
+                            int listeners = document.getDocumentListeners().length;
+                            for (int zoom : new int[]{150, 100, 150, scale}) {
+                                var mode = zoom == 100 ? ThemeMode.LIGHT : theme;
+                                DesktopThemeService.install(mode, zoom);
+                                SwingUtilities.updateComponentTreeUI(pane);
+                                new DesktopPartFactory(mode == ThemeMode.LIGHT ? ThemePalette.light() : ThemePalette.dark()).refreshTheme(pane);
+                                pane.localize();
+                                assertSame(model, table.getModel());
+                                assertEquals(0, table.getSelectedRow());
+                                assertEquals(1, table.getRowCount());
+                                assertEquals("long-hostname", search.getText());
+                                assertEquals(listeners, document.getDocumentListeners().length);
+                                var scroll = (JScrollPane) pane.getComponent(0);
+                                assertEquals(com.formdev.flatlaf.util.UIScale.scale(20), ((JComponent) scroll.getViewport().getView()).getInsets().left);
+                                assertTrue(((JLabel) named(pane, "servers.details.title")).getText().startsWith("演示服务器"));
+                            }
+                            DesktopThemeService.install(theme, scale);
+                            SwingUtilities.updateComponentTreeUI(pane);
+                            new DesktopPartFactory(theme == ThemeMode.LIGHT ? ThemePalette.light() : ThemePalette.dark()).refreshTheme(pane);
+                            pane.localize();
+                            search.setText("");
+                            layout(pane);
+                            layout(pane);
+                            table.clearSelection();
+                            assertFalse(named(pane, "servers.check").isEnabled());
+                            assertTrue(named(pane, "servers.add").isEnabled());
+                            capture(pane, "servers-" + theme + "-" + scale + "-unselected");
+                            ((JTextField) named(pane, "servers.search")).setText("no matching host");
+                            assertEquals(0, table.getRowCount());
+                            assertTrue(named(pane, "servers.empty").isVisible());
+                            capture(pane, "servers-" + theme + "-" + scale + "-no-matches");
+                            return null;
+                        });
+                    } finally {
+                        onEdt(() -> {
+                            view.get().close();
+                            window.get().dispose();
+                            return null;
+                        });
+                    }
+                }
+            }
+            for (var summary : service.list()) service.delete(summary.profile().id());
+            var emptyView = new AtomicReference<PlatformServersPane>();
+            onEdt(() -> {
+                DesktopThemeService.install(ThemeMode.LIGHT, 100);
+                var pane = new PlatformServersPane(null, service, new DesktopPartFactory(ThemePalette.light()),
+                    new PageMessagePresenter(MessageCatalog.forLanguageTag("zh-CN")));
+                emptyView.set(pane);
+                pane.setLocked(false);
+                return null;
+            });
+            await(() -> named(emptyView.get(), "servers.refresh").isEnabled());
+            onEdt(() -> {
+                var pane = emptyView.get();
+                pane.setSize(1440, 790);
+                layout(pane);
+                capture(pane, "servers-LIGHT-empty");
+                assertTrue(named(pane, "servers.empty").isVisible());
+                assertTrue(named(pane, "servers.add").isEnabled());
+                pane.close();
+                return null;
+            });
+        }
+    }
+
+    private static void layout(Component component) {
+        if (component instanceof Container container) {
+            container.doLayout();
+            for (var child : container.getComponents()) layout(child);
+        }
+    }
+
+    private static void capture(JComponent pane, String name) {
+        try {
+            var image = new BufferedImage(pane.getWidth(), pane.getHeight(), BufferedImage.TYPE_INT_RGB);
+            var g = image.createGraphics();
+            pane.paint(g);
+            g.dispose();
+            var folder = Path.of(System.getProperty("server.ui.capture", "target/server-ui-preview"));
+            Files.createDirectories(folder);
+            ImageIO.write(image, "png", folder.resolve(name + ".png").toFile());
+        } catch (Exception failure) {
+            throw new AssertionError(failure);
+        }
+    }
+}

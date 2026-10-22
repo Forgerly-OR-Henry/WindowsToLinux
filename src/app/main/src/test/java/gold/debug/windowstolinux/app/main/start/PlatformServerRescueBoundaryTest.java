@@ -105,6 +105,12 @@ class PlatformServerRescueBoundaryTest {
                 int originalChecks = failed.authentications.get();
                 assertTrue(originalChecks > 0);
                 select(frame, second);
+                onEdt(() -> {
+                    assertEquals(second.displayName(), ((JLabel) named(frame, "servers.recordTarget")).getText());
+                    assertFalse(((JTextArea) named(frame, "servers.output")).getText().contains(first.id()));
+                    assertTrue(((JComponent) named(frame, "servers.rescueFailedCheck")).getToolTipText().contains(first.displayName()));
+                    return null;
+                });
                 click(frame, "servers.rescueFailedCheck");
                 await(() -> PlatformServersWindowTest.dialog("recovery.dialog") != null);
                 onEdt(() -> {

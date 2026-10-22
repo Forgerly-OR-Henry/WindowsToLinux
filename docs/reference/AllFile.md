@@ -1,6 +1,6 @@
 # WindowsToLinux 全文件架构索引
 
-> 状态：按当前根 Maven 活动模块、独立 ModDev 区及实际文件生成，包含 1.3 已落地的生产文件；整体实施与本机验收状态见开发文档，源码索引不代表真实远端验收。
+> 状态：按当前根 Maven 活动模块、独立 ModDev 区及实际文件生成，按当前活动源码维护生产文件；对应实现与验收范围见开发记录，源码索引不代表真实远端验收。
 > 范围：根与活动模块、独立 ModDev 区的 Maven 描述、Mod 描述、非测试 Java 源及运行资源；测试、编译产物、退出活动图的旧 shared/web 与冻结 history-src 不纳入。
 > 排序：Maven 描述置顶，其余同级按名称排序；模块的 resources 目录置后。
 > 粒度：Java 文件说明与文件同名的顶级主类型；路径省略重复的 Maven 源码、资源与项目域名前缀。实际模块、包结构与维护规则见 [File.md](File.md)。
@@ -25,9 +25,19 @@ WindowsToLinux/
    │  │  │  ├─ AiCapabilityType.java  # 分别验证的模型输入能力
    │  │  │  ├─ AiPurposeAssignment.java  # 一个有序用途成员，位置由所属列表确定
    │  │  │  ├─ AiPurposeType.java  # 与清单展示顺序无关的独立调用用途
+   │  │  │  ├─ AnthropicMessagesCodec.java  # Anthropic Messages 请求、工具结果、响应及续接编码
+   │  │  │  ├─ ChatCompletionsCodec.java  # Chat Completions 请求、工具调用、响应与用量编码
    │  │  │  ├─ ModelCapabilityProbe.java  # 不含部署业务事实的共用能力挑战及答案核验
-   │  │  │  ├─ ModelHttpCall.java  # 持有一个不重放的 HTTP 模型请求及其实际客户端关闭
-   │  │  │  └─ ModelMessageCodec.java  # 编码通用模型消息并校验提供者信封，不包含业务策略
+   │  │  │  ├─ ModelDecodedResponse.java  # 内部已解码模型响应及续接资料
+   │  │  │  ├─ ModelHttpCall.java  # 持有不重放的 HTTP 模型请求、实际客户端关闭及安全异常类型/超时阶段
+   │  │  │  ├─ ModelRequestBudgetException.java  # 编码请求发送前体积拒绝，仅携带数值大小
+   │  │  │  ├─ ModelMessageCodec.java  # 编码通用模型消息并校验提供者信封，不包含业务策略
+   │  │  │  ├─ ModelProtocol.java  # 用户显式选择的模型接口协议
+   │  │  │  ├─ ModelProtocolCodec.java  # 按已选协议分派请求与响应编解码
+   │  │  │  ├─ ModelProtocolDiagnostics.java  # 有界协议失败诊断及实际用量
+   │  │  │  ├─ ModelReasoningLevel.java  # 可选文字协议推理强度，默认不发送，须验证所选模型支持
+   │  │  │  ├─ NativeModelCodec.java  # 原生工具定义、调用和结果的通用严格编码
+   │  │  │  └─ ResponsesCodec.java  # Responses 请求、工具结果、输出与推理续接编码
    │  │  ├─ vision/  # 图像校验、消息编码与图像能力验证样本
    │  │  │  ├─ VisionCapabilityProbe.java  # 生成带平台持有预期答案的全新视觉挑战
    │  │  │  └─ VisionMessageCodec.java  # 在共用模型消息协议内校验和编码图像附件
@@ -41,7 +51,12 @@ WindowsToLinux/
    │  │  ├─ AppConfig.java  # 不可变启动配置及分组纯值
    │  │  ├─ ConfigLoader.java  # classpath 资源读取、严格四区 YAML 合并及字段校验
    │  │  └─ resources/  # 随 Config JAR 发布的资源
-   │  │     └─ config.yaml  # 通用与三模式启动配置，填写见 docs/reference/Config.md
+   │  │     └─ gold/  # 所属运行资源分组
+   │  │        └─ debug/  # 所属运行资源分组
+   │  │           └─ windowstolinux/  # 所属运行资源分组
+   │  │              └─ app/  # 所属运行资源分组
+   │  │                 └─ config/  # 所属运行资源分组
+   │  │                    └─ config.yaml  # 所属模块运行资源
    │  ├─ db/  # 平台 H2 数据存取与存储能力装配
    │  │  ├─ pom.xml  # Maven 模块与依赖声明
    │  │  ├─ PlatformStorage.java  # 在受保护 H2 引擎上装配平台所属配置仓库
@@ -110,13 +125,19 @@ WindowsToLinux/
    │  │  │  ├─ TaskLedger.java  # 独立于业务 SQL 持久化原子准入及实际资源释放
    │  │  │  ├─ TaskRecoveryGraph.java  # 任务准入前捕获的精确代码及数据身份
    │  │  │  ├─ TaskResource.java  # 由平台适配器确定归属的内部资源申请
+   │  │  │  ├─ TaskResourceAdmission.java  # 原事务内的资源申请排序及占用行写入
    │  │  │  ├─ TaskResourceObservation.java  # 对任务收尾所用相同显式资源判据进行只读观察
    │  │  │  ├─ WorkflowRecoveryStore.java  # 仅释放前次启动宿主流程占用，不授予权限
    │  │  │  └─ metadata/  # 原任务元数据的严格取消意图编解码
    │  │  │     └─ TaskCancellationDocument.java  # 既有宿主任务元数据内严格的正交取消意图
    │  │  └─ resources/  # 随附运行资源
-   │  │     └─ schema/  # Schema 准备与管理
-   │  │        └─ platform-v1.sql  # 当前模块的数据库结构与权限脚本
+   │  │     └─ gold/  # 所属运行资源分组
+   │  │        └─ debug/  # 所属运行资源分组
+   │  │           └─ windowstolinux/  # 所属运行资源分组
+   │  │              └─ app/  # 所属运行资源分组
+   │  │                 └─ db/  # 所属运行资源分组
+   │  │                    └─ schema/  # 所属运行资源分组
+   │  │                       └─ platform-v1.sql  # 当前模块的数据库结构与权限脚本
    │  ├─ file/  # 平台文件引擎、传输计划与本机后端
    │  │  ├─ pom.xml  # Maven 模块与依赖声明
    │  │  ├─ FileContentPublish.java  # 负责已描述的精确文件职责
@@ -191,6 +212,7 @@ WindowsToLinux/
    │  │  ├─ mod/  # Mod 宿主上下文、生命周期与 Schema 检查装配
    │  │  │  ├─ ModSchemaChecker.java  # 持有一次明确只读检查，仅重试其原清理
    │  │  │  ├─ ModSchemaSetup.java  # 持有隔离初始化或迁移，只重试清理而不重放作者代码
+   │  │  │  ├─ ModUiAccess.java  # 注入实际依赖、版本、共享公开类型和界面上下文复制策略
    │  │  │  ├─ PlatformModContext.java  # 持有一次实际 Mod 启用的完整能力及暂存扩展
    │  │  │  ├─ PlatformModFlow.java  # 装配一次启动的已选 Mod 图并持有其逆序关闭
    │  │  │  ├─ PlatformModHost.java  # 向 Mod 装配提供已有平台能力，不依赖启动实现
@@ -204,7 +226,12 @@ WindowsToLinux/
    │  │  │  ├─ PlatformRecoveryHost.java  # 将平台授权及数据库凭据接入 Linux 所属 SSH 救援
    │  │  │  └─ PlatformRuntime.java  # 为一次桌面启动持有平台存储、任务执行及安全会话
    │  │  └─ resources/  # 随附运行资源
-   │  │     └─ build.properties  # 当前模块的固定配置或语言资源
+   │  │     └─ gold/  # 所属运行资源分组
+   │  │        └─ debug/  # 所属运行资源分组
+   │  │           └─ windowstolinux/  # 所属运行资源分组
+   │  │              └─ app/  # 所属运行资源分组
+   │  │                 └─ main/  # 所属运行资源分组
+   │  │                    └─ build.properties  # 所属模块运行资源
    │  ├─ mod/  # Mod 配置、发现、安装、加载与运行基础
    │  │  ├─ pom.xml  # Maven 模块与依赖声明
    │  │  ├─ config/  # Mod 描述读取、版本约束与配置值
@@ -251,7 +278,8 @@ WindowsToLinux/
    │  │  │  ├─ AiModelInfo.java  # 同一模型绑定修订的分协议能力
    │  │  │  ├─ AiModelListAccess.java  # 平台非秘密模型清单及明确用途选择
    │  │  │  ├─ AiModelProfile.java  # 同一模型及明确配置的分协议端点
-   │  │  │  ├─ PlatformAiService.java  # 经冻结用途选择及原任务凭据路由通用模型调用
+   │  │  │  ├─ NativeModelContinuations.java  # 绑定任务、模型、协议和配置修订的不透明续接
+   │  │  │  ├─ PlatformAiService.java  # 冻结用途路由模型调用，记录安全失败来源并核对原进程占用
    │  │  │  └─ PlatformModelService.java  # 持有已验证模型配置及明确用途选择
    │  │  ├─ db/  # 任务所属 Mod 的受限数据库访问
    │  │  │  └─ TaskModDatabase.java  # 将所属业务 JDBC 直接连接到原始任务的资源账本
@@ -341,7 +369,7 @@ WindowsToLinux/
    │  │     ├─ PlatformTaskManagement.java  # 将明确桌面操作路由到原任务及宿主救援确认边界
    │  │     ├─ PlatformTaskRuntime.java  # 在持久化准入后运行绑定调用方的作者工作，并保留未完成归属
    │  │     ├─ PlatformWorkflowAdmission.java  # 读取宿主委托所需的完整原根服务器准入
-   │  │     ├─ TaskCapabilityScope.java  # 跟踪同步平台能力操作，直至物理和持久释放完成
+   │  │     ├─ TaskCapabilityScope.java  # 跟踪同步能力操作及可选进程归属，直至物理和持久释放完成
    │  │     └─ TaskManagement.java  # 宿主任务清单及明确原任务操作
    │  ├─ ui/  # 平台 Swing 界面与公共控件
    │  │  ├─ pom.xml  # Maven 模块与依赖声明
@@ -351,8 +379,10 @@ WindowsToLinux/
    │  │  │  ├─ PlatformModelDialog.java  # 保存明确模型配置并单独观察能力验证
    │  │  │  └─ PlatformModelsPane.java  # 常驻模型清单及明确的中断探测恢复
    │  │  ├─ control/  # 主题、布局、卡片与通用 Swing 控件
+   │  │  │  ├─ DesktopButtonStyle.java  # 共用无外框的按钮圆角表面及悬停、按下反馈
    │  │  │  ├─ DesktopCardList.java  # 卡片跟随鼠标及相邻行平滑让位，保留原排序回调
    │  │  │  ├─ DesktopIcons.java  # 跟随主题的内置 SVG 图标
+   │  │  │  ├─ DesktopNavigationButton.java  # 固定侧栏图标，完整文案随折叠进度渐隐
    │  │  │  ├─ DesktopPartFactory.java  # 按所选桌面主题及共享视觉约定创建 Swing 控件
    │  │  │  ├─ DesktopThemeBindings.java  # 更新已有主题控件时保留明确的配色角色
    │  │  │  ├─ RoundedCard.java  # 共用的可缩放圆角表面
@@ -362,9 +392,14 @@ WindowsToLinux/
    │  │  │  └─ UiDebugPreviewHost.java  # 在宿主持有的对话框中挂载隔离作者预览
    │  │  ├─ display/  # 语言、主题和显示设置
    │  │  │  ├─ DesktopComboBoxUi.java  # 固定各下拉框显示后的宽度，保留 FlatLaf 输入及展开列表绘制
+   │  │  │  ├─ DesktopControlDefaults.java  # 统一全局控件形状、主题表面及交互状态
    │  │  │  ├─ DesktopDisplayConfig.java  # 在桌面设置页面选择的可持久化显示偏好
+   │  │  │  ├─ DesktopListCard.java  # 共用独立圆角列表卡片与选中竖条
+   │  │  │  ├─ DesktopListUi.java  # 保留原模型与渲染器的对象列表绘制及行高缩放
    │  │  │  ├─ DesktopMotion.java  # 共用实际时间运动时钟及系统动画偏好
    │  │  │  ├─ DesktopSwitchIcon.java  # 普通复选组件的圆形滑块及鼠标键盘状态反馈
+   │  │  │  ├─ DesktopTableUi.java  # 保留列与操作的表格多选标记绘制
+   │  │  │  ├─ DesktopTextAreaUi.java  # 保留原生正文与选择，仅绘制多行文本的圆角背景
    │  │  │  ├─ DesktopThemeService.java  # 受管部署 Swing 桌面客户端共用的 FlatLaf 设置
    │  │  │  ├─ SystemThemeResolver.java  # 读取 Windows 应用外观偏好，但不写入系统注册表
    │  │  │  ├─ ThemeMode.java  # 用户可选择的桌面外观偏好
@@ -388,9 +423,16 @@ WindowsToLinux/
    │  │  │  ├─ ModStorePane.java  # 商店搜索、详情、安装、进度和手动重试
    │  │  │  ├─ ModStorePlanModel.java  # 展示精确已解析及未解析所有者，不执行依赖解析
    │  │  │  ├─ ModStoreSelectionPane.java  # 编辑用户固定版本及可选边，同时展示原服务计划
-   │  │  │  └─ PlatformModsPane.java  # 经原宿主管理 Mod 已存选择及明确数据维护
+   │  │  │  ├─ PlatformModsPane.java  # 经原宿主管理 Mod 已存选择及明确数据维护
+   │  │  │  ├─ UiExtensionAccess.java  # 启动装配注入的所属依赖与公开类型策略
+   │  │  │  ├─ UiExtensionDispatch.java  # 不丢弃已接纳回调的 EDT 调度和安全诊断
+   │  │  │  ├─ UiExtensionRegistry.java  # 界面扩展发布、延后挂载、门禁及可重试清理
+   │  │  │  └─ UiExtensionValues.java  # 复用公开值复制的界面上下文与临时导航校验
    │  │  ├─ server/  # 服务器配置、选择、编辑与 SSH 救援界面
    │  │  │  ├─ PlatformServersPane.java  # 带显式任务恢复的常驻配置及仅认证 SSH 页面
+   │  │  │  ├─ ServerDetailsPane.java  # 所选服务器连接字段、检查摘要及响应式详情布局
+   │  │  │  ├─ ServerExtensionMenu.java  # 将所属扩展动作及原删除入口排列在更多菜单
+   │  │  │  ├─ ServerPagePresentation.java  # 服务器页面卡片、操作、记录和任务的展示组合
    │  │  │  ├─ ServerProfileDialog.java  # 独立服务器配置编辑窗口，连接检查是单独动作
    │  │  │  └─ SshRecoveryDialog.java  # 非模态人工登录交接及精确命令批准
    │  │  ├─ setting/  # 平台文件等设置界面
@@ -413,49 +455,55 @@ WindowsToLinux/
    │  │  │  ├─ DesktopLockGate.java  # 透明内容输入门禁
    │  │  │  ├─ DesktopLockStatus.java  # 左下角状态与反向操作
    │  │  │  ├─ DesktopUnlockDialog.java  # 紧凑主密码解锁弹窗
+   │  │  │  ├─ DesktopWindowGeometry.java  # 内容区默认及最小尺寸、普通窗口 16:9 调整
    │  │  │  ├─ PlatformFrame.java  # 承载安全控件及独立所属 Mod 视图的平台桌面
    │  │  │  └─ PlatformNavigationShell.java  # 围绕已有页面实例的常驻桌面导航
    │  │  └─ resources/  # 随附运行资源
-   │  │     ├─ control/  # 通用界面控件
-   │  │     │  ├─ brand/  # 独立的项目图标及封面资源副本
-   │  │     │  │  ├─ windowstolinux-cover-4k.png  # 首页 16:9 项目封面
-   │  │     │  │  └─ windowstolinux-icon-2k.png  # 左上角项目标识
-   │  │     │  └─ icons/  # 按功能分类的界面图标
-   │  │     │     ├─ LICENSE.txt  # 原图标许可
-   │  │     │     ├─ action/  # 通用操作
-   │  │     │     │  ├─ arrow-right.svg  # 当前模块的随附运行资源
-   │  │     │     │  ├─ grip-vertical.svg  # 当前模块的随附运行资源
-   │  │     │     │  ├─ plus.svg  # 当前模块的随附运行资源
-   │  │     │     │  ├─ refresh-cw.svg  # 当前模块的随附运行资源
-   │  │     │     │  ├─ rocket.svg  # 当前模块的随附运行资源
-   │  │     │     │  └─ search.svg  # 当前模块的随附运行资源
-   │  │     │     ├─ ai/  # AI 配置
-   │  │     │     │  └─ bot.svg  # 当前模块的随附运行资源
-   │  │     │     ├─ file/  # 文件与来源
-   │  │     │     │  ├─ folder-open.svg  # 当前模块的随附运行资源
-   │  │     │     │  └─ git-branch.svg  # 当前模块的随附运行资源
-   │  │     │     ├─ lock/  # 锁定与解锁
-   │  │     │     │  ├─ locked.svg  # 当前模块的随附运行资源
-   │  │     │     │  └─ unlocked.svg  # 当前模块的随附运行资源
-   │  │     │     ├─ mod/  # Mod 管理
-   │  │     │     │  └─ archive.svg  # 当前模块的随附运行资源
-   │  │     │     ├─ navigation/  # 导航与展开折叠
-   │  │     │     │  ├─ chevron-down.svg  # 当前模块的随附运行资源
-   │  │     │     │  ├─ chevron-right.svg  # 当前模块的随附运行资源
-   │  │     │     │  ├─ panel-left-close.svg  # 当前模块的随附运行资源
-   │  │     │     │  ├─ panel-left-open.svg  # 当前模块的随附运行资源
-   │  │     │     │  ├─ panels-top-left.svg  # 当前模块的随附运行资源
-   │  │     │     │  └─ settings.svg  # 当前模块的随附运行资源
-   │  │     │     ├─ security/  # 授权策略
-   │  │     │     │  ├─ hand.svg  # 当前模块的随附运行资源
-   │  │     │     │  ├─ shield-alert.svg  # 当前模块的随附运行资源
-   │  │     │     │  └─ shield.svg  # 当前模块的随附运行资源
-   │  │     │     └─ server/  # 服务器
-   │  │     │        └─ server.svg  # 当前模块的随附运行资源
-   │  │     └─ language/  # 语言资源与切换
-   │  │        └─ messages/  # 双语消息
-   │  │           ├─ Messages.properties  # 提供桌面界面的英文基准消息目录
-   │  │           └─ Messages_zh_CN.properties  # 提供与英文消息键一致的简体中文界面映射
+   │  │     └─ gold/  # 所属运行资源分组
+   │  │        └─ debug/  # 所属运行资源分组
+   │  │           └─ windowstolinux/  # 所属运行资源分组
+   │  │              └─ app/  # 所属运行资源分组
+   │  │                 └─ ui/  # 所属运行资源分组
+   │  │                    ├─ control/  # 所属运行资源分组
+   │  │                    │  ├─ brand/  # 所属运行资源分组
+   │  │                    │  │  ├─ windowstolinux-cover-4k.png  # 首页 16:9 项目封面
+   │  │                    │  │  └─ windowstolinux-icon-2k.png  # 左上角项目标识
+   │  │                    │  └─ icons/  # 所属运行资源分组
+   │  │                    │     ├─ LICENSE.txt  # 原图标许可
+   │  │                    │     ├─ action/  # 所属运行资源分组
+   │  │                    │     │  ├─ arrow-right.svg  # 当前模块的随附运行资源
+   │  │                    │     │  ├─ grip-vertical.svg  # 当前模块的随附运行资源
+   │  │                    │     │  ├─ plus.svg  # 当前模块的随附运行资源
+   │  │                    │     │  ├─ refresh-cw.svg  # 当前模块的随附运行资源
+   │  │                    │     │  ├─ rocket.svg  # 当前模块的随附运行资源
+   │  │                    │     │  └─ search.svg  # 当前模块的随附运行资源
+   │  │                    │     ├─ ai/  # 所属运行资源分组
+   │  │                    │     │  └─ bot.svg  # 当前模块的随附运行资源
+   │  │                    │     ├─ file/  # 所属运行资源分组
+   │  │                    │     │  ├─ folder-open.svg  # 当前模块的随附运行资源
+   │  │                    │     │  └─ git-branch.svg  # 当前模块的随附运行资源
+   │  │                    │     ├─ lock/  # 所属运行资源分组
+   │  │                    │     │  ├─ locked.svg  # 当前模块的随附运行资源
+   │  │                    │     │  └─ unlocked.svg  # 当前模块的随附运行资源
+   │  │                    │     ├─ mod/  # 所属运行资源分组
+   │  │                    │     │  └─ archive.svg  # 当前模块的随附运行资源
+   │  │                    │     ├─ navigation/  # 所属运行资源分组
+   │  │                    │     │  ├─ chevron-down.svg  # 当前模块的随附运行资源
+   │  │                    │     │  ├─ chevron-right.svg  # 当前模块的随附运行资源
+   │  │                    │     │  ├─ panel-left-close.svg  # 当前模块的随附运行资源
+   │  │                    │     │  ├─ panel-left-open.svg  # 当前模块的随附运行资源
+   │  │                    │     │  ├─ panels-top-left.svg  # 当前模块的随附运行资源
+   │  │                    │     │  └─ settings.svg  # 当前模块的随附运行资源
+   │  │                    │     ├─ security/  # 所属运行资源分组
+   │  │                    │     │  ├─ hand.svg  # 当前模块的随附运行资源
+   │  │                    │     │  ├─ shield-alert.svg  # 当前模块的随附运行资源
+   │  │                    │     │  └─ shield.svg  # 当前模块的随附运行资源
+   │  │                    │     └─ server/  # 所属运行资源分组
+   │  │                    │        └─ server.svg  # 当前模块的随附运行资源
+   │  │                    └─ language/  # 所属运行资源分组
+   │  │                       └─ messages/  # 所属运行资源分组
+   │  │                          ├─ Messages.properties  # 提供桌面界面的英文基准消息目录
+   │  │                          └─ Messages_zh_CN.properties  # 提供与英文消息键一致的简体中文界面映射
    │  └─ windows/  # Windows 原生文件、安全、窗口与安装维护
    │     ├─ pom.xml  # Maven 模块与依赖声明
    │     ├─ file/  # Windows 文件身份、链接、回收和发布
@@ -513,19 +561,28 @@ WindowsToLinux/
    │     ├─ window/  # Windows 窗口状态与进程显示集成
    │     │  └─ WindowPrivacy.java  # 仅隐藏当前应用所属子进程的原生窗口
    │     └─ resources/  # 随附运行资源
-   │        └─ window/  # 窗口装配与生命周期
-   │           └─ window-privacy.ps1  # 当前模块的随附运行资源
+   │        └─ gold/  # 所属运行资源分组
+   │           └─ debug/  # 所属运行资源分组
+   │              └─ windowstolinux/  # 所属运行资源分组
+   │                 └─ app/  # 所属运行资源分组
+   │                    └─ windows/  # 所属运行资源分组
+   │                       └─ window/  # 所属运行资源分组
+   │                          └─ window-privacy.ps1  # 当前模块的随附运行资源
    ├─ appapi/  # 供 Mod 使用的平台公开 Java 合同
    │  ├─ pom.xml  # Maven 模块与依赖声明
    │  ├─ ai/  # 共享模型调用与配置修订查询入口
    │  │  ├─ AiService.java  # 绑定调用方并校验任务授权及预算的模型能力
    │  │  ├─ model/  # 通用模型用途、消息、请求、响应与用量
+   │  │  │  ├─ AiContinuation.java  # 绑定原模型会话的不透明续接标识
    │  │  │  ├─ AiMessage.java  # 包含独立图像附件列表的有序模型消息
    │  │  │  ├─ AiPurpose.java  # 平台调用选用的配置模型组
    │  │  │  ├─ AiRequest.java  # 具有明确时间及输出预算的模型调用
    │  │  │  ├─ AiResponse.java  # 不暴露提供方实现类型的模型响应及用量
    │  │  │  ├─ AiRole.java  # 有序模型对话中的消息角色
-   │  │  │  └─ AiUsage.java  # 提供方可选报告的非负令牌用量
+   │  │  │  ├─ AiToolCall.java  # 提供方实际返回的原生工具调用身份与参数
+   │  │  │  ├─ AiToolDefinition.java  # 原生工具名称、说明及参数 Schema
+   │  │  │  ├─ AiToolResult.java  # 绑定原调用 ID 的工具执行结果
+   │  │  │  └─ AiUsage.java  # 提供方可选的输入/输出、缓存命中/未命中和推理令牌用量
    │  │  ├─ vision/  # 视觉请求使用的不可变图像输入
    │  │  │  └─ AiImage.java  # 视觉请求使用的不可变图像字节
    │  │  └─ voice/  # 音频输入、转写结果与实时会话合同
@@ -636,6 +693,7 @@ WindowsToLinux/
    │  │  │  ├─ ActionTarget.java  # 准入服务器上已解析的业务目标，不是本地化标签或按钮名称
    │  │  │  ├─ ApprovalGrant.java  # 授权效力由宿主核实的不透明审批标识
    │  │  │  ├─ AuthorizationMode.java  # 为一个用户启动流程捕获的平台权限策略，独立于 AI 审批
+   │  │  │  ├─ CommandReviewMode.java  # 命令审核交互的三档模式
    │  │  │  ├─ InteractionService.java  # 绑定已接纳任务的宿主审核及输入交互
    │  │  │  └─ WorkflowGrant.java  # 仅覆盖原任务回调的宿主签发委托
    │  │  ├─ log/  # 所属日志登记、事件及实际写入结果
@@ -679,34 +737,63 @@ WindowsToLinux/
    │  │     └─ TaskWork.java  # 观察取消并保留未完成资源的作者任务逻辑
    │  ├─ ui/  # 页面登记、打开与环境查询入口
    │  │  ├─ UiService.java  # 不暴露宿主实现类型的所属页面挂载服务
+   │  │  ├─ extension/  # 所属界面扩展点、动作、组件与可关闭挂载合同
+   │  │  │  ├─ PlatformUiExtensions.java  # APP 正式扩展位置与共享上下文常量
+   │  │  │  ├─ UiAction.java  # 当前上下文与环境驱动的轻量动作回调
+   │  │  │  ├─ UiActionPresentation.java  # 动作文案、可见及可用状态
+   │  │  │  ├─ UiComponent.java  # 独立组件创建、更新与资源清理合同
+   │  │  │  ├─ UiComponentFactory.java  # 每次实际挂载创建新生命周期实例
+   │  │  │  ├─ UiExtensionHost.java  # 提供方所属锚点、控件形式与布局适配器
+   │  │  │  ├─ UiExtensionKind.java  # 动作或组件接受类型
+   │  │  │  ├─ UiExtensionMount.java  # 页面挂载的上下文、可用性更新和撤销句柄
+   │  │  │  ├─ UiExtensionPoint.java  # 提供方、本地位置及精确共享类型身份
+   │  │  │  ├─ UiExtensionPointRegistration.java  # 由宿主绑定提供方的可关闭位置登记
+   │  │  │  ├─ UiExtensionRegistration.java  # 扩展状态、诊断及可重试撤销
+   │  │  │  ├─ UiExtensionService.java  # 登记所属位置、动作及组件的统一合同
+   │  │  │  ├─ UiExtensionSpec.java  # 贡献者内唯一标识与稳定排序值
+   │  │  │  └─ UiExtensionState.java  # 等待、挂载、失败及关闭的可观测状态
    │  │  └─ page/  # 页面创建、登记句柄、描述、环境更新与关闭合同
    │  │     ├─ ModPage.java  # 在事件分发线程创建和释放的作者 Swing 视图
    │  │     ├─ PageFactory.java  # 页面重新打开时创建新视图的惰性工厂
    │  │     ├─ PageRegistration.java  # 关闭时释放已打开视图的所属页面注册
    │  │     ├─ PageSpec.java  # 唯一根工作区身份或主导航之外的设置/预览扩展
    │  │     ├─ PlatformPageKind.java  # 不含私有控件或配置权限的固定平台目的地
-   │  │     └─ UiEnvironment.java  # 当前宿主语言、主题及锁定状态
+   │  │     ├─ UiEnvironment.java  # 当前宿主语言、主题及锁定状态
+   │  │     └─ UiNavigationRequest.java  # 不写启动偏好的明确功能标识及临时公开上下文
    │  └─ resources/  # 随公开 API 发布的版本资源
-   │     └─ build.properties  # 由当前构建生成 API 版本
+   │     └─ gold/  # 所属运行资源分组
+   │        └─ debug/  # 所属运行资源分组
+   │           └─ windowstolinux/  # 所属运行资源分组
+   │              └─ appapi/  # 所属运行资源分组
+   │                 └─ build.properties  # 所属模块运行资源
    ├─ mod/  # 官方 Mod 的 Maven 模块分组
    │  ├─ pom.xml  # Maven 模块与依赖声明
    │  ├─ deployment/  # 官方部署 Mod：分析、部署与应用管理
    │  │  ├─ pom.xml  # Maven 模块与依赖声明
    │  │  ├─ Mod.java  # 持有官方部署初始化及绑定平台的生命周期
-   │  │  ├─ ai/  # 部署 AI 提示、提案解析与可执行动作约束
-   │  │  │  ├─ DeploymentAgentPatch.java  # 仅用于任务所属源码、与修订绑定的结构化补丁
-   │  │  │  ├─ DeploymentAgentPlan.java  # 自主模型提出、由证据支持的中立应用图
-   │  │  │  ├─ DeploymentAgentPlanProtocol.java  # 将严格自主图转换为既有类型化部署值
-   │  │  │  ├─ DeploymentAgentProposal.java  # 一项严格串行的自主工具请求
-   │  │  │  ├─ DeploymentAgentProtocol.java  # 不具执行权限的严格自主动作模式
-   │  │  │  ├─ DeploymentAiJson.java  # 通过真实平台 AI 能力发送有界的部署专用 JSON 请求
-   │  │  │  ├─ DeploymentAuthorizationPolicy.java  # 将独立审核风险与已抓取人工授权重复策略分开
-   │  │  │  ├─ DeploymentCommandEvidence.java  # 增补完整可执行输入，受保护数据载荷继续保持不透明
-   │  │  │  ├─ DeploymentCommandReviewScope.java  # 增补原任务命令审核，原样借用所有真实所有者能力
-   │  │  │  ├─ DeploymentCommandStaticGate.java  # 在模型审核或候选准备前拒绝明确的灾难性目标
-   │  │  │  ├─ DeploymentFixedCommandApproval.java  # 获取精确原宿主许可前审核实际固定命令
-   │  │  │  ├─ DeploymentLowRiskRequiredException.java  # 要求不同且独立审核的低风险动作的已知未发送拒绝
-   │  │  │  └─ DeploymentWorkflowAuthorization.java  # 仅按已抓取部署策略开启真实宿主所属原流程作用域
+   │  │  ├─ ai/  # 共用有界模型调用、工具交互、审批和说明资源加载
+   │  │  │  ├─ DeploymentAiCallMetrics.java  # 只记录数值的逐调用/格式纠正用量与前缀摘要
+   │  │  │  ├─ DeploymentAiJson.java  # 有界部署 JSON 请求、通用预算、发送前上限校验及一次已知格式纠正
+   │  │  │  ├─ agent/  # AI辅助与自主Agent共用的模型工具交互机制
+   │  │  │  │  ├─ DeploymentModelToolLoop.java  # 模型逐轮选择可用工具，保留真实反馈和决策预算
+   │  │  │  │  ├─ DeploymentNativeHistory.java  # 成组保留原生助手调用及完整工具结果历史
+   │  │  │  │  ├─ DeploymentNativeSelection.java  # 首个成功后固定原生模型及续接
+   │  │  │  │  ├─ DeploymentToolBudget.java  # 主与嵌套流程共享的原生工具尝试预算
+   │  │  │  │  ├─ DeploymentToolScheduler.java  # 本地只读并发、独占屏障和有序结果登记
+   │  │  │  │  └─ DeploymentToolSchemas.java  # 工具注册参数 Schema 与调用参数严格检查
+   │  │  │  ├─ json/  # 不依赖模式和执行策略的纯 JSON 字段校验
+   │  │  │  │  └─ DeploymentJsonFields.java  # 协议共用的纯JSON字段校验
+   │  │  │  ├─ review/  # 公共命令审核、证据与已捕获授权衔接
+   │  │  │  │  ├─ DeploymentAlternativeRequiredException.java  # 要求不同且独立审核的低风险动作的已知未发送拒绝
+   │  │  │  │  ├─ DeploymentAuthorizationPolicy.java  # 将独立审核风险与已抓取人工授权重复策略分开
+   │  │  │  │  ├─ DeploymentCommandEvidence.java  # 原服务器与业务资源目标、完整动态可执行输入及平台契约身份，受保护数据保持不透明
+   │  │  │  │  ├─ DeploymentCommandReviewScope.java  # 增补原任务命令审核，原样借用所有真实所有者能力
+   │  │  │  │  ├─ DeploymentCommandStaticGate.java  # 在模型审核或候选准备前拒绝明确的灾难性目标
+   │  │  │  │  ├─ DeploymentFixedCommandApproval.java  # 精确命令独立审批、风险分类与OS工具信任边界；保留拒绝理由
+   │  │  │  │  ├─ DeploymentReviewDecision.java  # 共享独立审核合同；策略仅决定人工问题
+   │  │  │  │  └─ DeploymentWorkflowAuthorization.java  # 仅按已抓取部署策略开启真实宿主所属原流程作用域
+   │  │  │  └─ skill/  # 仅依赖JDK的模型说明资源校验与缓存
+   │  │  │     └─ DeploymentSkillResources.java  # 校验并缓存所属类加载器中的UTF-8模型说明与具名工具目录
    │  │  ├─ api/  # 向其他 Mod 公开的应用与部署管理合同
    │  │  │  ├─ ApplicationAutostartState.java  # 实际自动启动观察，包括混合组件事实
    │  │  │  ├─ ApplicationRunState.java  # 已验证的应用运行状态或明确未知
@@ -726,51 +813,68 @@ WindowsToLinux/
    │  │  │  ├─ DeploymentRestoreRequest.java  # 经验证备份归档生成的已审阅目标候选
    │  │  │  ├─ RestoreFile.java  # 备份已验证并用于目标准备的本地文件
    │  │  │  └─ VersionedRuntime.java  # 可供归档转交的不透明版本化运行字节
-   │  │  ├─ db/  # 部署私有 Schema、业务记录与发布恢复依据
-   │  │  │  ├─ DeploymentAssistedBuildIntent.java  # 任一固定环境恢复效果前的持久类型化恢复同意
-   │  │  │  ├─ DeploymentAssistedBuildReview.java  # 一次实际已知失败审阅，绝非重放发布权限
-   │  │  │  ├─ DeploymentAssistedBuildReviewCodec.java  # 持久化完整非秘密构建审阅，检查点仅持有有界指针
-   │  │  │  ├─ DeploymentAttemptTemplateCodec.java  # 使用原完整固定配置留存后续不可变提案
-   │  │  │  ├─ DeploymentConfigStore.java  # 保存不可变的普通配置快照、条目及精确发布绑定
-   │  │  │  ├─ DeploymentExecutionCodec.java  # 执行身份、预留证据及正式结果的严格有界JSON
-   │  │  │  ├─ DeploymentExecutionIdentity.java  # 原审阅操作的不可变身份
-   │  │  │  ├─ DeploymentExecutionRecord.java  # 只读持久执行证据，包括不解释的未来JSON版本
-   │  │  │  ├─ DeploymentExecutionStore.java  # 副作用前保存原执行证据，并将发布与正式结果同事务提交
-   │  │  │  ├─ DeploymentGraphStore.java  # 在既有所属单元上保存完整拓扑，不查询平台私有表
-   │  │  │  ├─ DeploymentHealthCodec.java  # 两端及备份共用的完整严格健康载荷
-   │  │  │  ├─ DeploymentJsonDocument.java  # 版本化业务证据共用的严格JSON原语
-   │  │  │  ├─ DeploymentPayloadChecker.java  # 通过持久化所用版本化编解码器读取原有界业务载荷
-   │  │  │  ├─ DeploymentPayloadReader.java  # 读取有界持久文档，不将无界BLOB加载入内存
-   │  │  │  ├─ DeploymentPreferences.java  # 在此Mod所属偏好表保存实际部署页面选择
-   │  │  │  ├─ DeploymentProjectRecord.java  # 已保存项目身份及完整已观察来源修订
-   │  │  │  ├─ DeploymentProjectStore.java  # 经原任务及受管H2代次保存完整项目来源修订
-   │  │  │  ├─ DeploymentPublishAttemptCodec.java  # 一个原执行至多三个不可变操作的明确有界请求格式
-   │  │  │  ├─ DeploymentPublishAttemptIntent.java  # 独立发布操作的任一固定环境效果前完整人工同意
-   │  │  │  ├─ DeploymentPublishAttemptProof.java  # 留存一次完整恢复的发布操作，不结束原正式任务
-   │  │  │  ├─ DeploymentPublishAttemptReview.java  # 核实恢复后的新操作完整类型化同意，绝非任务重放
-   │  │  │  ├─ DeploymentPublishAttemptStore.java  # 经同一原行锁及已预留正式执行推进有界操作同意
-   │  │  │  ├─ DeploymentPublishProposal.java  # 与服务结果封套独立的已持久非秘密业务输入
-   │  │  │  ├─ DeploymentPublishStore.java  # 原子记录已验证组件发布及其完整应用图
-   │  │  │  ├─ DeploymentPublishTemplateCodec.java  # 任一远端发布前编码完整非秘密原业务模板
-   │  │  │  ├─ DeploymentRefAssociations.java  # 读取一个原平台关联的权威保留业务行
-   │  │  │  ├─ DeploymentRefIntent.java  # 平台引用预留前保存的非秘密事实
-   │  │  │  ├─ DeploymentRefKey.java  # 绑定精确保留部署业务行的版本化键
-   │  │  │  ├─ DeploymentReleaseChecker.java  # 不可变发布历史与正式业务结果间的仅SELECT核验
-   │  │  │  ├─ DeploymentReleaseCodec.java  # 使用既有二进制运行格式的版本化完整发布清单
-   │  │  │  ├─ DeploymentReleaseIdentity.java  # 单个完整应用发布的不可变存储身份
-   │  │  │  ├─ DeploymentReleaseRecord.java  # 不可变历史文档与当前记录的发布状态
-   │  │  │  ├─ DeploymentReleaseSnapshot.java  # 完整不可变运行图及保留配置和秘密绑定身份
-   │  │  │  ├─ DeploymentReleaseStore.java  # 在成功发布的同一事务中保留原发布历史
-   │  │  │  ├─ DeploymentResourceCodec.java  # 经审阅无秘密受管资源绑定的严格版本化存储编解码器
-   │  │  │  ├─ DeploymentReviewedPlanDigest.java  # 稳定的执行前审阅身份，区别于最终发布清单身份
-   │  │  │  ├─ DeploymentRuntimeCodec.java  # 单个已审阅非秘密运行时定义的严格版本化存储编解码器
+   │  │  ├─ config/  # 本 Mod 固定 YAML、不可变参数与原环境任务时序捕获
+   │  │  │  ├─ DeploymentConfig.java  # 来源、构建、环境和视图四组不可变固定参数
+   │  │  │  ├─ DeploymentConfigCapture.java  # 在同一原环境任务保留时序并立即释放元数据占用
+   │  │  │  └─ DeploymentConfigLoader.java  # 严格读取本 Mod 随包 YAML，每个类加载器共享一次快照
+   │  │  ├─ db/  # 部署 Schema 生命周期与职责账本分组
    │  │  │  ├─ DeploymentSchema.java  # 通过公开受管 JDBC 初始化并读取固定官方部署结构
-   │  │  │  ├─ DeploymentSecretStore.java  # 持久化不可变秘密元数据和精确发布关联，不读取明文
-   │  │  │  ├─ DeploymentStoragePathCodec.java  # 经审阅非秘密组件数据路径的严格版本化存储编解码器
-   │  │  │  ├─ DeploymentStorageTransaction.java  # 提交所属业务事务，不将不确定的确认误记为已失败
-   │  │  │  ├─ DeploymentUnitCommit.java  # 一个已验证组件发布的精确存储输入，绝不是远端命令
-   │  │  │  ├─ DeploymentUnitRuntimeCodec.java  # 不推测服务对外范围的精确激活与清单状态
-   │  │  │  └─ DeploymentWorkloadCodec.java  # 持久化与发布身份共用的有界执行载荷
+   │  │  │  ├─ check/  # 跨账本一致性与载荷检查
+   │  │  │  │  ├─ DeploymentPayloadChecker.java  # 通过持久化所用版本化编解码器读取原有界业务载荷
+   │  │  │  │  ├─ DeploymentRefAssociationReader.java  # 读取一个原平台关联的权威保留业务行
+   │  │  │  │  └─ DeploymentReleaseChecker.java  # 不可变发布历史与正式业务结果间的仅SELECT核验
+   │  │  │  ├─ document/  # 有界 JSON 文档与身份值读写
+   │  │  │  │  ├─ DeploymentJsonDocument.java  # 版本化业务证据共用的严格JSON原语
+   │  │  │  │  ├─ DeploymentPayloadReader.java  # 读取有界持久文档，不将无界BLOB加载入内存
+   │  │  │  │  └─ DeploymentStorageIdentity.java  # 不访问仓库的纯存储身份语法
+   │  │  │  ├─ execution/  # 原执行与发布尝试共用账本、恢复证据及编解码
+   │  │  │  │  ├─ DeploymentAssistedBuildIntent.java  # 任一固定环境恢复效果前的持久类型化恢复同意
+   │  │  │  │  ├─ DeploymentAssistedBuildReview.java  # 一次实际已知失败审阅，绝非重放发布权限
+   │  │  │  │  ├─ DeploymentAssistedBuildReviewCodec.java  # 持久化完整非秘密构建审阅，检查点仅持有有界指针
+   │  │  │  │  ├─ DeploymentAttemptTemplateCodec.java  # 使用原完整固定配置留存后续不可变提案
+   │  │  │  │  ├─ DeploymentExecutionCodec.java  # 执行身份、预留证据及正式结果的严格有界JSON
+   │  │  │  │  ├─ DeploymentExecutionIdentity.java  # 原审阅操作的不可变身份
+   │  │  │  │  ├─ DeploymentExecutionRecord.java  # 只读持久执行证据，包括不解释的未来JSON版本
+   │  │  │  │  ├─ DeploymentExecutionStore.java  # 副作用前保存原执行证据，并将发布与正式结果同事务提交
+   │  │  │  │  ├─ DeploymentPublishAttemptCodec.java  # 一个原执行至多三个不可变操作的明确有界请求格式
+   │  │  │  │  ├─ DeploymentPublishAttemptIntent.java  # 独立发布操作的任一固定环境效果前完整人工同意
+   │  │  │  │  ├─ DeploymentPublishAttemptProof.java  # 留存一次完整恢复的发布操作，不结束原正式任务
+   │  │  │  │  ├─ DeploymentPublishAttemptReview.java  # 核实恢复后的新操作完整类型化同意，绝非任务重放
+   │  │  │  │  ├─ DeploymentPublishAttemptStore.java  # 经同一原行锁及已预留正式执行推进有界操作同意
+   │  │  │  │  └─ DeploymentReviewedPlanDigest.java  # 稳定的执行前审阅身份，区别于最终发布清单身份
+   │  │  │  ├─ project/  # 项目记录与所属编解码
+   │  │  │  │  ├─ DeploymentProjectRecord.java  # 已保存项目身份及完整已观察来源修订
+   │  │  │  │  └─ DeploymentProjectStore.java  # 经原任务及受管H2代次保存完整项目来源修订
+   │  │  │  ├─ publish/  # 发布记录、留存切换与同连接事务编排
+   │  │  │  │  ├─ DeploymentGraphStore.java  # 在既有所属单元上保存完整拓扑，不查询平台私有表
+   │  │  │  │  ├─ DeploymentPublishProposal.java  # 与服务结果封套独立的已持久非秘密业务输入
+   │  │  │  │  ├─ DeploymentPublishStore.java  # 原子记录已验证组件发布及其完整应用图
+   │  │  │  │  └─ DeploymentPublishTemplateCodec.java  # 任一远端发布前编码完整非秘密原业务模板
+   │  │  │  ├─ reference/  # 引用关联与原身份核对
+   │  │  │  │  ├─ DeploymentRefIntent.java  # 平台引用预留前保存的非秘密事实
+   │  │  │  │  └─ DeploymentRefKey.java  # 绑定精确保留部署业务行的版本化键
+   │  │  │  ├─ release/  # 不可变发布快照与所属编解码
+   │  │  │  │  ├─ DeploymentReleaseCodec.java  # 使用既有二进制运行格式的版本化完整发布清单
+   │  │  │  │  ├─ DeploymentReleaseIdentity.java  # 单个完整应用发布的不可变存储身份
+   │  │  │  │  ├─ DeploymentReleaseRecord.java  # 不可变历史文档与当前记录的发布状态
+   │  │  │  │  ├─ DeploymentReleaseSnapshot.java  # 完整不可变运行图及保留配置和秘密绑定身份
+   │  │  │  │  └─ DeploymentReleaseStore.java  # 在成功发布的同一事务中保留原发布历史
+   │  │  │  ├─ resource/  # 资源记录、发布绑定及所属编解码
+   │  │  │  │  ├─ DeploymentConfigStore.java  # 保存不可变的普通配置快照、条目及精确发布绑定
+   │  │  │  │  ├─ DeploymentHealthCodec.java  # 两端及备份共用的完整严格健康载荷
+   │  │  │  │  ├─ DeploymentReleaseBindings.java  # 在调用方连接中核对不可变发布资源绑定
+   │  │  │  │  ├─ DeploymentResourceCodec.java  # 经审阅无秘密受管资源绑定的严格版本化存储编解码器
+   │  │  │  │  ├─ DeploymentRuntimeCodec.java  # 单个已审阅非秘密运行时定义的严格版本化存储编解码器
+   │  │  │  │  ├─ DeploymentSecretStore.java  # 持久化不可变秘密元数据和精确发布关联，不读取明文
+   │  │  │  │  ├─ DeploymentStoragePathCodec.java  # 经审阅非秘密组件数据路径的严格版本化存储编解码器
+   │  │  │  │  ├─ DeploymentUnitRuntimeCodec.java  # 不推测服务对外范围的精确激活与清单状态
+   │  │  │  │  └─ DeploymentWorkloadCodec.java  # 持久化与发布身份共用的有界执行载荷
+   │  │  │  ├─ schema/  # 独立 Schema 身份合同
+   │  │  │  │  └─ DeploymentSchemaIdentity.java  # 独立于仓库的固定部署数据身份
+   │  │  │  ├─ setting/  # 部署偏好与设置保存
+   │  │  │  │  └─ DeploymentPreferenceStore.java  # 在此Mod所属偏好表保存实际部署页面选择
+   │  │  │  └─ transaction/  # 共用原连接提交、回滚与未知状态处理
+   │  │  │     └─ DeploymentStorageTransaction.java  # 提交所属业务事务，不将不确定的确认误记为已失败
    │  │  ├─ file/  # 部署素材筛选、封存、归档与来源核对
    │  │  │  ├─ DeploymentSourceArchive.java  # 带实际压缩字节摘要的冻结部署归档
    │  │  │  ├─ DeploymentSourceArchiver.java  # 仅使用平台所属暂存及快照构建确定性归档
@@ -779,7 +883,7 @@ WindowsToLinux/
    │  │  │  ├─ DeploymentSourcePolicy.java  # 从原源码归档规则迁入的部署专用排除策略
    │  │  │  ├─ DeploymentSourceSetup.java  # 通过公开能力筛选部署文件，并在分析前冻结
    │  │  │  ├─ DeploymentSourceTar.java  # 从冻结素材写入原确定性纯源码 ustar/gzip 格式
-   │  │  │  └─ git/  # 通过平台能力准备和冻结 Git 来源
+   │  │  │  └─ git/  # Git 公开服务适配、原素材消费及部署筛选归档
    │  │  │     ├─ DeploymentGitAccess.java  # 仅在 Git 来源操作内构造的可选类型适配器
    │  │  │     ├─ DeploymentGitMaterial.java  # 不可变解析 Git 身份及分别所属的分析素材和归档
    │  │  │     ├─ DeploymentGitMessages.java  # 一次 Git 准备请求的精确业务消息及退出凭据
@@ -787,90 +891,228 @@ WindowsToLinux/
    │  │  │     ├─ DeploymentGitRemote.java  # 解析后的 Git 远端；其位置绝不嵌入凭据
    │  │  │     ├─ DeploymentGitRequest.java  # 只读 Git 分析快照的有界输入；凭据始终位于此值之外
    │  │  │     └─ DeploymentGitSetup.java  # 经原平台进程及来源归属准备固定 Git 素材
-   │  │  ├─ linux/  # 通过平台远程会话执行固定部署协议
-   │  │  │  ├─ DeploymentBuildBudget.java  # 仅将实际远端命令执行计入同一已审阅构建预算；人工审核期间暂停
-   │  │  │  ├─ DeploymentBuildCommandChannel.java  # 仅通过借用且经宿主审核的会话发送固定 helper 构建动作
-   │  │  │  ├─ DeploymentBuildOutputProtocol.java  # 将不超过已审阅构建输出限制的流转换成固定短回执
-   │  │  │  ├─ DeploymentCandidateChannel.java  # 发送固定上传前探测、任务所属候选创建及一次精确归档传输
-   │  │  │  ├─ DeploymentCommandReview.java  # 模式所属审核在真实宿主许可前接收完整不可变请求
-   │  │  │  ├─ DeploymentCommandReviews.java  # 按所属模式路由固定命令，不替换宿主权限
-   │  │  │  ├─ DeploymentContainerArguments.java  # 将受约束的容器运行模型转换为确定性的辅助程序参数
-   │  │  │  ├─ DeploymentEcosystemCapabilityProbe.java  # 渲染只读语言与构建工具能力探测
-   │  │  │  ├─ DeploymentHelperInstallerScript.java  # 共用 helper 及隔离安装，不选择项目语言
-   │  │  │  ├─ DeploymentManagedHelper.java  # 通过借用的宿主授权远端会话执行固定 helper 安装与探测
-   │  │  │  ├─ DeploymentManagedHelperBundle.java  # 从固定职责片段拼装 root 持有的受管 helper 并拒绝协议漂移
-   │  │  │  ├─ DeploymentNativeDatabaseResults.java  # 严格解码固定原生数据库 helper 返回的非秘密事实
-   │  │  │  ├─ DeploymentNativeDatabaseWire.java  # 有界原生数据库 helper 帧及精确审核远端传输
-   │  │  │  ├─ DeploymentOriginalPublishStatus.java  # 一项原发布任务的精确只读 helper 观察
-   │  │  │  ├─ DeploymentPlatformCapabilityParser.java  # 解析原固定主机探测，不虚构缺失能力
-   │  │  │  ├─ DeploymentPlatformCapabilityProbe.java  # 用于采集部署发行版、容器和 CPU 事实的固定只读 Shell 程序
-   │  │  │  ├─ DeploymentPublishArguments.java  # 从已审阅非秘密发布事实投影的固定helper标量
-   │  │  │  ├─ DeploymentPublishChannel.java  # 经原已审阅会话发送固定受管发布动作
-   │  │  │  ├─ DeploymentPublishEvidenceChannel.java  # 读取并清理真实根任务及独立有界尝试的证据
-   │  │  │  ├─ DeploymentPublishReceipt.java  # 分类完整有界发布回执，不改变原结果
-   │  │  │  ├─ DeploymentRemoteReleaseSnapshot.java  # 原 helper 所属回滚快照，区别于本机业务发布行
-   │  │  │  ├─ DeploymentRemoteRuntimeObservation.java  # 远端发布或回滚后的精确所属运行时观测
-   │  │  │  ├─ DeploymentRuntimeArguments.java  # 将一个已验证的非容器运行定义转换为辅助程序验证的标量参数
-   │  │  │  ├─ DeploymentSendGuard.java  # 在远端发送紧前核对调用方持有的绑定
-   │  │  │  └─ DeploymentWorkloadArguments.java  # 以 Base64 封装的有界 UTF-8 字段
-   │  │  ├─ mod.json  # CLASS 模式的实际 Mod 描述
+   │  │  ├─ linux/  # 固定远端协议与职责适配分组
+   │  │  │  ├─ build/  # 构建输入、输出与受控命令通道
+   │  │  │  │  ├─ DeploymentBuildBudget.java  # 仅将实际远端命令执行计入同一已审阅构建预算；人工审核期间暂停
+   │  │  │  │  ├─ DeploymentBuildCommandChannel.java  # 仅通过借用且经宿主审核的会话发送固定 helper 构建动作
+   │  │  │  │  └─ DeploymentBuildOutputProtocol.java  # 将不超过已审阅构建输出限制的流转换成固定短回执
+   │  │  │  ├─ command/  # 受审命令执行与模式无关审核衔接
+   │  │  │  │  ├─ DeploymentModelCommandRunner.java  # AI主机命令完整审批、发送前留痕及原回执核对，未知不重发
+   │  │  │  │  ├─ contract/  # 不依赖执行适配的命令审核和模型执行身份合同
+   │  │  │  │  │  ├─ DeploymentCommandReview.java  # 模式所属审核在真实宿主许可前接收完整不可变请求
+   │  │  │  │  │  ├─ DeploymentModelCommandIdentity.java  # 纯模型命令身份及可执行依据封套
+   │  │  │  │  │  └─ DeploymentModelExecutionContract.java  # 固定模型命令执行边界
+   │  │  │  │  └─ dispatch/  # 公共命令审核路由及发送前门禁
+   │  │  │  │     ├─ DeploymentCommandReviewRouter.java  # 按所属模式路由固定命令，不替换宿主权限
+   │  │  │  │     └─ DeploymentSendGuard.java  # 在远端发送紧前核对调用方持有的绑定
+   │  │  │  ├─ database/  # 数据库准备、实例与备份协议
+   │  │  │  │  ├─ DeploymentNativeDatabaseResults.java  # 严格解码固定原生数据库 helper 返回的非秘密事实
+   │  │  │  │  └─ DeploymentNativeDatabaseWire.java  # 有界原生数据库 helper 帧及精确审核远端传输
+   │  │  │  ├─ helper/  # helper 身份、安装与固定协议封装
+   │  │  │  │  ├─ DeploymentHelperInstallerScript.java  # 共用 helper 及隔离安装，不选择项目语言
+   │  │  │  │  ├─ DeploymentHelperReviewContract.java  # 独立绑定 helper/build-entry 源码身份的固定行为契约
+   │  │  │  │  ├─ DeploymentInstallerEvidence.java  # 完整安装原文与有序包装的逐字节重建证据
+   │  │  │  │  ├─ DeploymentManagedHelper.java  # 通过借用的宿主授权远端会话执行固定 helper 安装与探测
+   │  │  │  │  └─ DeploymentManagedHelperBundle.java  # 从固定职责片段拼装 root 持有的受管 helper 并拒绝协议漂移
+   │  │  │  ├─ probe/  # 目标主机能力和数据库事实探测
+   │  │  │  │  ├─ DeploymentEcosystemCapabilityProbe.java  # 渲染只读语言与构建工具能力探测
+   │  │  │  │  ├─ DeploymentPlatformCapabilityParser.java  # 解析原固定主机探测，不虚构缺失能力
+   │  │  │  │  └─ DeploymentPlatformCapabilityProbe.java  # 普通只读主机探测及独立容器运行查询；OS数据解析、受控PATH和程序归属检查
+   │  │  │  ├─ publish/  # 候选发布、检查、回执与留存协议
+   │  │  │  │  ├─ DeploymentCandidateChannel.java  # 发送固定上传前探测、任务所属候选创建及一次精确归档传输
+   │  │  │  │  ├─ DeploymentOriginalPublishStatus.java  # 一项原发布任务的精确只读 helper 观察
+   │  │  │  │  ├─ DeploymentPublishArguments.java  # 从已审阅非秘密发布事实投影的固定helper标量
+   │  │  │  │  ├─ DeploymentPublishChannel.java  # 经原已审阅会话发送固定受管发布动作
+   │  │  │  │  ├─ DeploymentPublishEvidenceChannel.java  # 读取并清理真实根任务及独立有界尝试的证据
+   │  │  │  │  ├─ DeploymentPublishReceipt.java  # 分类完整有界发布回执，不改变原结果
+   │  │  │  │  └─ DeploymentRemoteReleaseSnapshot.java  # 原 helper 所属回滚快照，区别于本机业务发布行
+   │  │  │  └─ runtime/  # 应用运行状态、生命周期与进程协议
+   │  │  │     ├─ DeploymentContainerArguments.java  # 将受约束的容器运行模型转换为确定性的辅助程序参数
+   │  │  │     ├─ DeploymentRemoteRuntimeObservation.java  # 远端发布或回滚后的精确所属运行时观测
+   │  │  │     ├─ DeploymentRuntimeArguments.java  # 将一个已验证的非容器运行定义转换为辅助程序验证的标量参数
+   │  │  │     └─ DeploymentWorkloadArguments.java  # 以 Base64 封装的有界 UTF-8 字段
+   │  │  ├─ mod.json  # 作者身份、依赖与公开入口描述
    │  │  ├─ secret/  # 部署秘密修订、引用与发布绑定
    │  │  │  ├─ DeploymentSecretProvisionActionLog.java  # 一项新建凭据与不可变业务修订的有界原任务依据
    │  │  │  ├─ DeploymentSecretProvisionFlow.java  # 在原任务下创建一次凭据及不可变修订，此后仅核对持久依据
    │  │  │  └─ SecretValueSource.java  # 仅在已接纳原任务内提供明文；具体提交契约决定数组所有权
    │  │  ├─ service/  # 部署分析、审阅、执行与管理流程
-   │  │  │  ├─ agent/  # 自主模式的提案、工具调用与执行门禁
-   │  │  │  │  ├─ DeploymentAgentActionLog.java  # 独立于标准部署的持久自主任务状态与动作依据
-   │  │  │  │  ├─ DeploymentAgentControl.java  # 仅在动作已结清边界与一项所属工作线程协作
-   │  │  │  │  ├─ DeploymentAgentDeliveryPort.java  # 供独立自主引擎使用的窄真实远端工具与共用受管发布能力
-   │  │  │  │  ├─ DeploymentAgentEvidenceLimit.java  # 保留每项既有正式恢复证明，同时限制新增观察
-   │  │  │  │  ├─ DeploymentAgentHistory.java  # 读取既有正式自主依据并明确仅检查其原候选
-   │  │  │  │  ├─ DeploymentAgentModels.java  # 将部署、审批及发送绑定到一份明确采用的模型修订
+   │  │  │  ├─ agent/  # 自主任务、会话推进与页面服务
+   │  │  │  │  ├─ DeploymentAgentFeedback.java  # 类型化秘密元数据与原始工具输出的安全反馈投影
    │  │  │  │  ├─ DeploymentAgentPageService.java  # 提供自主专用页面查询与原任务接纳
-   │  │  │  │  ├─ DeploymentAgentProjectChannel.java  # 仅经任务所属已审核 SSH 会话发送旧受保护 agent helper 动作
-   │  │  │  │  ├─ DeploymentAgentQuestionScope.java  # 仅解析明确的任务所属问题范围，复合Shell动作保留精确绑定
-   │  │  │  │  ├─ DeploymentAgentRecovery.java  # 仅核对自主任务留存的原提案与远端影响
-   │  │  │  │  ├─ DeploymentAgentRemoteTools.java  # 将原认证任务适配至受保护自主工具与共用发布
-   │  │  │  │  ├─ DeploymentAgentReview.java  # 具精确策略及人工升级的独立动作审核者
    │  │  │  │  ├─ DeploymentAgentSession.java  # 独立于标准分析的串行证据驱动部署循环
-   │  │  │  │  └─ DeploymentAgentWorkflow.java  # 持有一项独立自主任务并仅核对其原持久效果
-   │  │  │  ├─ core/  # 各部署模式共用的流程和纯值
-   │  │  │  │  ├─ DeploymentGitSourceActionLog.java  # 在宿主所属作者检查点上原子推进的有界原任务 Git 依据
-   │  │  │  │  ├─ DeploymentGitSourceFlow.java  # 执行一次已审阅 Git 项目任务，并仅核对其原持久依据
-   │  │  │  │  ├─ DeploymentProjectSaveActionLog.java  # 写入前记录一次完整本地项目 CAS，不保留来源授权
-   │  │  │  │  ├─ DeploymentProjectSourceRecorder.java  # 准备本机授权来源，并保存实际位置与冻结摘要；Git使用原记账Flow
-   │  │  │  │  ├─ DeploymentPublish.java  # 可供一次本机原子发布的作者已核实结果
-   │  │  │  │  ├─ DeploymentPublishPlan.java  # 平台预留前已具备的不可变审阅发布事实
-   │  │  │  │  ├─ DeploymentRefFlow.java  # 提交真实发布任务，并在不重放副作用的条件下核对原引用
-   │  │  │  │  ├─ DeploymentRemoteRecovery.java  # 由Mod装配的窄原任务发布恢复边界
-   │  │  │  │  ├─ DeploymentSourceSelectionService.java  # 仅在原选择器授权关闭后返回本地位置元数据
-   │  │  │  │  ├─ config/  # 部署配置值、作用范围与不可变配置快照
-   │  │  │  │  │  ├─ DeploymentConfigEntry.java  # 不可变配置快照中的一个经过类型检查的非秘密值
-   │  │  │  │  │  ├─ DeploymentConfigInput.java  # 解析桌面端有界构建/运行配置记法
-   │  │  │  │  │  ├─ DeploymentConfigScopeType.java  # 非秘密配置值被使用的受限时点
-   │  │  │  │  │  ├─ DeploymentConfigSnapshot.java  # 一个已发布应用版本的不可变、以摘要寻址的普通配置
-   │  │  │  │  │  └─ DeploymentConfigValue.java  # 类型化的非秘密配置值，不能携带 Shell 片段
-   │  │  │  │  ├─ delivery/  # 各模式共用的部署交付与固定内容
-   │  │  │  │  │  ├─ DeploymentGraphPublisher.java  # 以真实健康和已知失败回滚执行一项中立受管图发布
-   │  │  │  │  │  ├─ DeploymentManagedUnitResolver.java  # 为两种部署模式解析规范归属，不使用来源或计划散列
-   │  │  │  │  │  └─ DeploymentOriginalPublishCommit.java  # 在已接纳原任务内以精确引用保护提交经核实图
-   │  │  │  │  ├─ execution/  # 原任务来源采集、管理操作与恢复流程
-   │  │  │  │  │  ├─ DeploymentApiProvider.java  # 部署所属同步API，每次调用均留在已认证根任务下
+   │  │  │  │  ├─ DeploymentAgentWorkflow.java  # 持有一项独立自主任务并仅核对其原持久效果
+   │  │  │  │  ├─ contract/  # 自主任务请求与纯目标身份值
+   │  │  │  │  │  └─ DeploymentAgentInputs.java  # 不可变Agent输入及原目标身份工具
+   │  │  │  │  ├─ control/  # 自主流程取消、暂停及进度控制合同
+   │  │  │  │  │  └─ DeploymentAgentControl.java  # 仅在动作已结清边界与一项所属工作线程协作
+   │  │  │  │  ├─ protocol/  # 自主动作、计划、识别、补丁与证据协议
+   │  │  │  │  │  ├─ DeploymentAgentAssessment.java  # 关键动作与下一选择共用响应的公开决策摘要
+   │  │  │  │  │  ├─ DeploymentAgentEvidence.java  # 滚动反馈之外的有界判断及观察证据
+   │  │  │  │  │  ├─ DeploymentAgentIdentification.java  # 引用真实源码读取的独立组件识别
+   │  │  │  │  │  ├─ DeploymentAgentPatch.java  # 仅用于任务所属源码、与修订绑定的结构化补丁
+   │  │  │  │  │  ├─ DeploymentAgentPlan.java  # 自主模型提出、由证据支持的中立应用图
+   │  │  │  │  │  ├─ DeploymentAgentPlanProtocol.java  # 将严格自主图转换为既有类型化部署值
+   │  │  │  │  │  ├─ DeploymentAgentProposal.java  # 一项严格串行的自主工具请求
+   │  │  │  │  │  └─ DeploymentAgentProtocol.java  # 不具执行权限的严格自主动作模式
+   │  │  │  │  ├─ recovery/  # 原自主任务恢复与历史读取
+   │  │  │  │  │  ├─ DeploymentAgentHistoryReader.java  # 读取既有正式自主依据并明确仅检查其原候选
+   │  │  │  │  │  ├─ DeploymentAgentRecovery.java  # 仅核对自主任务留存的原提案与远端影响
+   │  │  │  │  │  └─ evidence/  # 恢复所需有界操作日志与证据
+   │  │  │  │  │     ├─ DeploymentAgentActionLog.java  # 独立于标准部署的持久自主任务状态与动作依据
+   │  │  │  │  │     ├─ DeploymentAgentEvidenceLimit.java  # 保留每项既有正式恢复证明，同时限制新增观察
+   │  │  │  │  │     └─ DeploymentAgentResourceRecovery.java  # 只核对原索引数据库及秘密效果，不重放操作
+   │  │  │  │  ├─ review/  # 自主模式专属审核和模型绑定
+   │  │  │  │  │  ├─ DeploymentAgentModelBinding.java  # 将部署、审批及发送绑定到一份明确采用的模型修订
+   │  │  │  │  │  └─ DeploymentAgentReview.java  # 具精确策略及人工升级的独立动作审核者
+   │  │  │  │  └─ tools/  # 自主模式工具实现与受控源码修订
+   │  │  │  │     ├─ DeploymentAgentBuildTools.java  # 原候选上的可选公共识别、实际工具链与构建配方
+   │  │  │  │     ├─ DeploymentAgentDatabaseReview.java  # 独立数据库业务确认与安全密码交互
+   │  │  │  │     ├─ DeploymentAgentDeliveryPort.java  # 供独立自主引擎使用的窄真实远端工具与共用受管发布能力
+   │  │  │  │     ├─ DeploymentAgentProjectChannel.java  # 仅经任务所属已审核通道发送当前受保护Agent动作
+   │  │  │  │     ├─ DeploymentAgentPublicationJudgement.java  # 发布反馈与独立核验之间的判断约束
+   │  │  │  │     ├─ DeploymentAgentPublishRunner.java  # 可选整图发布或自主命令，独立核验和确认后交付
+   │  │  │  │     ├─ DeploymentAgentQuestionScope.java  # 仅解析明确的任务所属问题范围，复合Shell动作保留精确绑定
+   │  │  │  │     ├─ DeploymentAgentRecipeRuntime.java  # 将明确配方输入绑定当前运行合同
+   │  │  │  │     ├─ DeploymentAgentRemoteTools.java  # 将原认证任务接入自主命令执行、AI发布决策与结果核验
+   │  │  │  │     ├─ DeploymentAgentResourceTools.java  # 来源绑定数据库与精确秘密引用能力
+   │  │  │  │     ├─ DeploymentAgentSourceRevision.java  # 与helper一致的补丁字节及树摘要语义
+   │  │  │  │     └─ DeploymentAgentSources.java  # 原任务衍生快照的冻结、匹配启用与寿命
+   │  │  │  ├─ core/  # 公开 API 提供方及共用能力装配
+   │  │  │  │  ├─ DeploymentApiProvider.java  # 部署所属同步API，每次调用均留在已认证根任务下
+   │  │  │  │  ├─ application/  # 应用读取、管理、历史发布与外部扫描
    │  │  │  │  │  ├─ DeploymentApplicationHosts.java  # 仅为本地用法投影读取绑定调用方的非秘密已配置主机
    │  │  │  │  │  ├─ DeploymentApplicationList.java  # 合并已存正式发布与接管运行记录，不观察远端服务器
    │  │  │  │  │  ├─ DeploymentApplicationPresentation.java  # 仅编辑本地展示信息，保留已审阅运行与发布身份
    │  │  │  │  │  ├─ DeploymentApplicationReader.java  # 在一份所属快照中读取完整已发布应用，排除草稿及未确认发布
    │  │  │  │  │  ├─ DeploymentApplicationRunner.java  # 仅通过已验证helper观测管理部署所属的已发布应用
    │  │  │  │  │  ├─ DeploymentApplicationsService.java  # 按精确原服务器范围接纳应用页面操作
-   │  │  │  │  │  ├─ DeploymentArchivedRuntimeCodec.java  # 归档完整规范发布及非秘密凭据元数据
+   │  │  │  │  │  ├─ DeploymentExternalApplications.java  # 扫描并接管精确外部服务，不冒充部署归属或重写其文件
+   │  │  │  │  │  ├─ DeploymentManagementActionLog.java  # 在远端副作用前记录原管理任务，并保留未知阶段
+   │  │  │  │  │  └─ DeploymentRetainedReleases.java  # 以原任务依据切换完整保留应用发布
+   │  │  │  │  ├─ collect/  # 原任务采集与产物核对
    │  │  │  │  │  ├─ DeploymentCollectionEvidence.java  # 原采集身份、当前状态及封印回执校验
    │  │  │  │  │  ├─ DeploymentCollectionFlow.java  # 以留存维护依据编排完整原任务来源采集
    │  │  │  │  │  ├─ DeploymentCollectionPlan.java  # 从同一保留发布构造完整固定helper输入，绝不从归档猜测
-   │  │  │  │  │  ├─ DeploymentCollectionWork.java  # 同一借用采集会话及原持久交接下的阶段
-   │  │  │  │  │  ├─ DeploymentExternalApplications.java  # 扫描并接管精确外部服务，不冒充部署归属或重写其文件
+   │  │  │  │  │  └─ DeploymentCollectionWork.java  # 同一借用采集会话及原持久交接下的阶段
+   │  │  │  │  ├─ config/  # 部署配置值、作用范围与不可变配置快照
+   │  │  │  │  │  ├─ DeploymentConfigEntry.java  # 不可变配置快照中的一个经过类型检查的非秘密值
+   │  │  │  │  │  ├─ DeploymentConfigInput.java  # 解析桌面端有界构建/运行配置记法
+   │  │  │  │  │  ├─ DeploymentConfigScopeType.java  # 非秘密配置值被使用的受限时点
+   │  │  │  │  │  ├─ DeploymentConfigSnapshot.java  # 一个已发布应用版本的不可变、以摘要寻址的普通配置
+   │  │  │  │  │  ├─ DeploymentConfigValue.java  # 类型化的非秘密配置值，不能携带 Shell 片段
+   │  │  │  │  │  └─ error/  # 不依赖配置组合的字段异常合同
+   │  │  │  │  │     └─ DeploymentConfigException.java  # 以公开且不含秘密的失败说明拒绝确定性部署输入
+   │  │  │  │  ├─ delivery/  # 各模式共用的部署交付与固定内容
+   │  │  │  │  │  ├─ DeploymentGraphPublisher.java  # 以真实健康和已知失败回滚执行一项中立受管图发布
+   │  │  │  │  │  ├─ DeploymentManagedUnitResolver.java  # 为两种部署模式解析规范归属，不使用来源或计划散列
+   │  │  │  │  │  └─ DeploymentOriginalPublishCommit.java  # 在已接纳原任务内以精确引用保护提交经核实图
+   │  │  │  │  ├─ handoff/  # 采集恢复交接和原任务恢复分派
+   │  │  │  │  │  ├─ DeploymentArchivedRuntimeCodec.java  # 归档完整规范发布及非秘密凭据元数据
    │  │  │  │  │  ├─ DeploymentHandoffChannel.java  # 仅在借用会话上发送固定的部署所属采集与恢复helper动作
-   │  │  │  │  │  ├─ DeploymentHandoffLedger.java  # 在部署自身Schema中保存原调用归属、审阅与恢复事实
-   │  │  │  │  │  ├─ DeploymentManagementActionLog.java  # 在远端副作用前记录原管理任务，并保留未知阶段
+   │  │  │  │  │  └─ DeploymentHandoffLedger.java  # 在部署自身Schema中保存原调用归属、审阅与恢复事实
+   │  │  │  │  ├─ model/  # 跨部署模式共用的纯数据类型
+   │  │  │  │  │  ├─ analysis/  # 静态分析事实与来源信息
+   │  │  │  │  │  │  ├─ AnalysisEvidence.java  # 单个确定性项目事实的紧凑、非秘密来源
+   │  │  │  │  │  │  ├─ DeploymentAdmissionStatus.java  # 项目进入部署计划前的确定性部署准入结果
+   │  │  │  │  │  │  ├─ EvidenceConfidenceLevel.java  # 单个确定性事实的置信度，与任何 AI 建议相互独立
+   │  │  │  │  │  │  └─ RejectionReason.java  # 项目无法进入受管部署流程的确定性原因
+   │  │  │  │  │  ├─ application/  # 应用身份、操作、用法与发布绑定纯值
+   │  │  │  │  │  │  ├─ DeploymentApplicationGraph.java  # 完整审阅的应用拓扑，不含秘密或平台实现类型
+   │  │  │  │  │  │  ├─ DeploymentApplicationIdentity.java  # 规范纯应用身份及绑定
+   │  │  │  │  │  │  ├─ DeploymentCurrentRelease.java  # 一个部署单元最后确认的发布身份
+   │  │  │  │  │  │  ├─ DeploymentReleaseBinding.java  # 不可变组件发布与资源绑定
+   │  │  │  │  │  │  ├─ DeploymentUnitCommit.java  # 一个已验证组件发布的精确存储输入，绝不是远端命令
+   │  │  │  │  │  │  ├─ DeploymentUnitIdentity.java  # 由 WindowsToLinux 拥有的应用不可变身份
+   │  │  │  │  │  │  └─ DeploymentUnitRuntimeConfig.java  # 某个受管应用最后一次成功部署的运行时契约
+   │  │  │  │  │  ├─ build/  # 构建描述、输入输出和组件构建纯值
+   │  │  │  │  │  │  ├─ DeploymentBuildEnvironment.java  # 一次固定远端构建的已审阅非秘密值
+   │  │  │  │  │  │  ├─ DeploymentBuildLimits.java  # 全部固定受管部署构建入口经过审阅的明确限制
+   │  │  │  │  │  │  └─ DeploymentRemoteWorkspace.java  # 仅根据已验证应用 ID 和压缩归档字节摘要推导的固定服务端路径
+   │  │  │  │  │  ├─ capability/  # 主机能力、支持等级与匹配结果
+   │  │  │  │  │  │  ├─ DeploymentEcosystemToolType.java  # 可用观测版本约束部署的固定语言或构建工具能力
+   │  │  │  │  │  │  ├─ DeploymentHostCapabilityStatus.java  # 将实时主机证据与部署矩阵匹配后的保守结果
+   │  │  │  │  │  │  └─ DeploymentLinuxCapabilityFacts.java  # 仅用于决定能否提供部署计划的实时、非秘密主机事实
+   │  │  │  │  │  ├─ database/  # 数据库声明、审阅、连接、绑定与主机事实纯值
+   │  │  │  │  │  │  ├─ DatabaseRequirement.java  # 从组件提取或由用户补齐的非秘密数据库声明
+   │  │  │  │  │  │  ├─ DatabaseSchemaReview.java  # 与源码绑定的验证结果，来自已验证初始化或单独获批的现有模式操作
+   │  │  │  │  │  │  ├─ DatabaseVersionRequirement.java  # 显式数据库版本约束，较新版本兼容最低版本要求
+   │  │  │  │  │  │  ├─ DeploymentDatabaseBinding.java  # 绑定到一个经审阅组件的不可变数据库身份
+   │  │  │  │  │  │  ├─ DeploymentDatabaseConnection.java  # 经审阅的非秘密数据库连接；密码保持为精确秘密引用
+   │  │  │  │  │  │  ├─ DeploymentDatabaseEngineType.java  # 不包含备份专属证据的受管数据库族
+   │  │  │  │  │  │  ├─ DeploymentNativeDatabaseFacts.java  # 从固定 helper 观察到的不含秘密的原生数据库库存与目标事实
+   │  │  │  │  │  │  └─ DeploymentSqliteRequirement.java  # 嵌入式 SQLite 的文件位置与应用接入声明
+   │  │  │  │  │  ├─ language/  # 源码语言类别与观察事实
+   │  │  │  │  │  │  ├─ LanguageEcosystemType.java  # 不含主要语言排序的确定性语言生态观测
+   │  │  │  │  │  │  ├─ LanguageFactKind.java  # 可用于预填审阅表单的稳定确定性语言相关值
+   │  │  │  │  │  │  ├─ ProjectLanguageFacts.java  # 在不执行源码且不选择主要语言的情况下收集的确定性语言事实
+   │  │  │  │  │  │  └─ SourceLanguageType.java  # 由有界文件路径或元数据条目证实的源码语言
+   │  │  │  │  │  ├─ message/  # 部署文案与结构化消息
+   │  │  │  │  │  │  └─ DeploymentLocalizedMessage.java  # 不将领域代码与显示语言耦合的用户可见消息
+   │  │  │  │  │  ├─ project/  # 项目分类、声明与部署单元信息
+   │  │  │  │  │  │  ├─ DeploymentArchitectureType.java  # 一个精确且可部署的项目类型与构建工具架构组合
+   │  │  │  │  │  │  ├─ DeploymentBuildToolType.java  # 固定的目标机构建工具入口，绝不是任意命令行
+   │  │  │  │  │  │  ├─ DeploymentProjectFacts.java  # 一个用户选定的部署项目类型的不可变确定性事实；未执行任何项目代码
+   │  │  │  │  │  │  ├─ DeploymentProjectSource.java  # 完整已观察来源事实；已存位置绝不授予读取权
+   │  │  │  │  │  │  ├─ DeploymentRuntimeReport.java  # 在不运行项目内容的情况下推导出的、可审阅的源码依据运行时值
+   │  │  │  │  │  │  ├─ DeploymentSupportCatalog.java  # 为精确项目类型与架构组合提供证据支撑的支持声明
+   │  │  │  │  │  │  ├─ DeploymentSupportLevel.java  # 由证据支撑并由分析、计划和结果公开的支持等级
+   │  │  │  │  │  │  ├─ DeploymentSupportProfile.java  # 一个已分析路径的精确语言、架构、框架、支持等级、验证矩阵、证据与限制
+   │  │  │  │  │  │  ├─ ValidatedDeploymentTarget.java  # 由真实产品入口验收证据支撑的一个精确目标组合
+   │  │  │  │  │  │  ├─ kind/  # 独立项目类型枚举
+   │  │  │  │  │  │  │  └─ DeploymentProjectKind.java  # 部署计划器考虑的单组件项目类型
+   │  │  │  │  │  │  └─ part/  # 多组件的声明、依赖、资源和隔离要求
+   │  │  │  │  │  │     ├─ DeploymentPart.java  # 混合项目中一个组件的完整静态记录
+   │  │  │  │  │  │     └─ PartIsolationSpec.java  # 一个组件显式请求的不安全执行能力
+   │  │  │  │  │  ├─ report/  # 项目报告、问题与分析结论
+   │  │  │  │  │  │  ├─ DeploymentProjectReport.java  # 将缺失用户决定与硬性安全拒绝分开的部署静态分析结果
+   │  │  │  │  │  │  ├─ MultiPartProjectReport.java  # 具有组件范围原因的确定性混合项目分析
+   │  │  │  │  │  │  └─ PartIssue.java  # 一个组件范围的输入要求或硬安全拒绝
+   │  │  │  │  │  ├─ resource/  # 受管资源、存储和挂载纯值
+   │  │  │  │  │  │  ├─ DeploymentFileBinding.java  # 一个经审阅逻辑持久化文件树的稳定受管身份
+   │  │  │  │  │  │  ├─ DeploymentInputField.java  # 外部输入只读且不进入应用内容备份
+   │  │  │  │  │  │  ├─ DeploymentResourceBindings.java  # 精确审阅的文件绑定及可选数据库绑定审阅状态
+   │  │  │  │  │  │  └─ path/  # 独立存储位置和路径纯值
+   │  │  │  │  │  │     ├─ DeploymentStorageLocation.java  # 已审阅存储选择，未确定位置绝不变成默认位置
+   │  │  │  │  │  │     └─ DeploymentStoragePath.java  # 一个具有显式模式和访问契约的逻辑持久化数据路径
+   │  │  │  │  │  ├─ runtime/  # 运行需求、定义和端点纯值
+   │  │  │  │  │  │  ├─ DeploymentAccessUrl.java  # 用户声明的已部署应用 HTTP(S) 访问 URL
+   │  │  │  │  │  │  ├─ DeploymentCommand.java  # 经审阅程序入口与参数，不是 Shell 文本
+   │  │  │  │  │  │  ├─ DeploymentCompanion.java  # 随所属应用原子交付的仅构建单元
+   │  │  │  │  │  │  ├─ DeploymentEndpoint.java  # 传输、发布和应用对外范围是独立事实
+   │  │  │  │  │  │  ├─ DeploymentHealthCheck.java  # 经审阅的网络、进程与隔离安装验证策略
+   │  │  │  │  │  │  ├─ DeploymentIdentityMode.java  # 不包含临时 UID 的持久执行策略
+   │  │  │  │  │  │  ├─ DeploymentRuntimeDefinition.java  # 恰好一个部署单组件项目类型的类型化运行定义
+   │  │  │  │  │  │  ├─ DeploymentWorker.java  # 共享主服务运行时、身份与存储的前台工作进程
+   │  │  │  │  │  │  └─ DeploymentWorkload.java  # 共享的经审阅执行、对外服务与交付契约
+   │  │  │  │  │  ├─ secret/  # 秘密引用、字段与安装纯值
+   │  │  │  │  │  │  ├─ DeploymentSecretRef.java  # 一个指向不可变应用秘密修订的透明引用；它绝不包含秘密值
+   │  │  │  │  │  │  ├─ DeploymentSecretRevision.java  # 不可变秘密元数据，不透明凭据身份绝不包含其值
+   │  │  │  │  │  │  └─ DeploymentSecretSelection.java  # 不含明文的可选修订及其已记录用途
+   │  │  │  │  │  ├─ server/  # 目标服务器与主机能力数据
+   │  │  │  │  │  │  ├─ DeploymentCpuMicroarchitectureLevel.java  # 目标运行时链接器确认的最高累积 x86-64 微架构级别
+   │  │  │  │  │  │  ├─ DeploymentServerIdentity.java  # 目标服务器及其可信 SSH 主机密钥的非秘密身份
+   │  │  │  │  │  │  ├─ LinuxDistroType.java  # 部署为其保留独立证据和兼容性决策的发行版系列
+   │  │  │  │  │  │  └─ security/  # 服务器安全机制与受限能力信息
+   │  │  │  │  │  │     ├─ DeploymentLinuxFirewallKind.java  # 只读探测观测到的主机防火墙管理器
+   │  │  │  │  │  │     ├─ DeploymentLinuxFirewallState.java  # 观测到的主机防火墙服务状态
+   │  │  │  │  │  │     ├─ DeploymentLinuxSecurityModuleType.java  # 在不修改状态的情况下观测到的主机强制访问控制实现
+   │  │  │  │  │  │     ├─ DeploymentLinuxSecurityPosture.java  # 作为一个连贯主机观测保留的只读安全与防火墙事实
+   │  │  │  │  │  │     └─ DeploymentLinuxSecurityState.java  # 观测到的强制访问控制状态
+   │  │  │  │  │  └─ toolchain/  # 工具链版本、绑定与准备数据
+   │  │  │  │  │     ├─ DeploymentResolvedToolchains.java  # 发布级不可变工具身份，不随目录修订重新选择
+   │  │  │  │  │     ├─ DeploymentToolchainBindingCodec.java  # 无配置解析依赖的确定性版本化发布绑定
+   │  │  │  │  │     ├─ DeploymentToolchainCatalog.java  # 唯一可注入构建分支目录，补丁由官方发布发现提供
+   │  │  │  │  │     ├─ DeploymentToolchainSelectionPolicy.java  # 准备与有界构建重试共用的纯选择规则
+   │  │  │  │  │     ├─ DeploymentToolchainType.java  # 与支持清单无关的生态版本身份和分支精度
+   │  │  │  │  │     ├─ DeploymentToolchainVersion.java  # 数字发布身份，解析不查询构建支持目录
+   │  │  │  │  │     └─ ToolchainRequirement.java  # 即使没有构建候选也保留源码声明
+   │  │  │  │  ├─ publish/  # 发布结果、引用流转与提交协作
+   │  │  │  │  │  ├─ DeploymentPublishPlan.java  # 平台预留前已具备的不可变审阅发布事实
+   │  │  │  │  │  ├─ DeploymentPublishResult.java  # 可供一次本机原子发布的作者已核实结果
+   │  │  │  │  │  ├─ DeploymentRefFlow.java  # 提交真实发布任务，并在不重放副作用的条件下核对原引用
+   │  │  │  │  │  └─ DeploymentRemoteRecovery.java  # 由Mod装配的窄原任务发布恢复边界
+   │  │  │  │  ├─ restore/  # 原任务恢复候选与激活流程
    │  │  │  │  │  ├─ DeploymentRestoreCleanup.java  # 已核实的原数据库及组件材料清理
    │  │  │  │  │  ├─ DeploymentRestoreEvidence.java  # 精确审阅目标、运行健康及恢复结果依据
    │  │  │  │  │  ├─ DeploymentRestoreFlow.java  # 原任务完整恢复，使用不可变步骤回执且不重放未知效果
@@ -879,97 +1121,222 @@ WindowsToLinux/
    │  │  │  │  │  ├─ DeploymentRestoreSetup.java  # 完整配置与秘密权限及原候选准备
    │  │  │  │  │  ├─ DeploymentRestoreState.java  # 单项已认证任务的原恢复账本游标
    │  │  │  │  │  ├─ DeploymentRestoreSteps.java  # 原恢复命令身份及持久步骤回执
-   │  │  │  │  │  ├─ DeploymentRestoreTransfers.java  # 在提供方自身权限下明确清理原上传暂存
-   │  │  │  │  │  └─ DeploymentRetainedReleases.java  # 以原任务依据切换完整保留应用发布
-   │  │  │  │  └─ model/  # 跨部署模式共用的纯数据类型
-   │  │  │  │     ├─ DeploymentAccessUrl.java  # 用户声明的已部署应用 HTTP(S) 访问 URL
-   │  │  │  │     ├─ DeploymentApplicationGraph.java  # 完整审阅的应用拓扑，不含秘密或平台实现类型
-   │  │  │  │     ├─ DeploymentBuildEnvironment.java  # 一次固定远端构建的已审阅非秘密值
-   │  │  │  │     ├─ DeploymentBuildLimits.java  # 全部固定受管部署构建入口经过审阅的明确限制
-   │  │  │  │     ├─ DeploymentCommand.java  # 经审阅程序入口与参数，不是 Shell 文本
-   │  │  │  │     ├─ DeploymentCompanion.java  # 随所属应用原子交付的仅构建单元
-   │  │  │  │     ├─ DeploymentConfigException.java  # 以公开且不含秘密的失败说明拒绝确定性部署输入
-   │  │  │  │     ├─ DeploymentCurrentRelease.java  # 一个部署单元最后确认的发布身份
-   │  │  │  │     ├─ DeploymentDatabaseBinding.java  # 绑定到一个经审阅组件的不可变数据库身份
-   │  │  │  │     ├─ DeploymentDatabaseConnection.java  # 经审阅的非秘密数据库连接；密码保持为精确秘密引用
-   │  │  │  │     ├─ DeploymentDatabaseEngineType.java  # 不包含备份专属证据的受管数据库族
-   │  │  │  │     ├─ DeploymentEndpoint.java  # 传输、发布和应用对外范围是独立事实
-   │  │  │  │     ├─ DeploymentFileBinding.java  # 一个经审阅逻辑持久化文件树的稳定受管身份
-   │  │  │  │     ├─ DeploymentHealthCheck.java  # 经审阅的网络、进程与隔离安装验证策略
-   │  │  │  │     ├─ DeploymentIdentityMode.java  # 不包含临时 UID 的持久执行策略
-   │  │  │  │     ├─ DeploymentInputField.java  # 外部输入只读且不进入应用内容备份
-   │  │  │  │     ├─ DeploymentProjectKind.java  # 部署计划器考虑的单组件项目类型
-   │  │  │  │     ├─ DeploymentProjectSource.java  # 完整已观察来源事实；已存位置绝不授予读取权
-   │  │  │  │     ├─ DeploymentRemoteWorkspace.java  # 仅根据已验证应用 ID 和压缩归档字节摘要推导的固定服务端路径
-   │  │  │  │     ├─ DeploymentResourceBindings.java  # 精确审阅的文件绑定及可选数据库绑定审阅状态
-   │  │  │  │     ├─ DeploymentRuntimeDefinition.java  # 恰好一个部署单组件项目类型的类型化运行定义
-   │  │  │  │     ├─ DeploymentSecretRef.java  # 一个指向不可变应用秘密修订的透明引用；它绝不包含秘密值
-   │  │  │  │     ├─ DeploymentSecretRevision.java  # 不可变秘密元数据，不透明凭据身份绝不包含其值
-   │  │  │  │     ├─ DeploymentSecretSelection.java  # 不含明文的可选修订及其已记录用途
-   │  │  │  │     ├─ DeploymentServerIdentity.java  # 目标服务器及其可信 SSH 主机密钥的非秘密身份
-   │  │  │  │     ├─ DeploymentSqliteRequirement.java  # 嵌入式 SQLite 的文件位置与应用接入声明
-   │  │  │  │     ├─ DeploymentStorageLocation.java  # 已审阅存储选择，未确定位置绝不变成默认位置
-   │  │  │  │     ├─ DeploymentStoragePath.java  # 一个具有显式模式和访问契约的逻辑持久化数据路径
-   │  │  │  │     ├─ DeploymentToolchainType.java  # 与支持清单无关的生态版本身份和分支精度
-   │  │  │  │     ├─ DeploymentToolchainVersion.java  # 数字发布身份，解析不查询构建支持目录
-   │  │  │  │     ├─ DeploymentUnitIdentity.java  # 由 WindowsToLinux 拥有的应用不可变身份
-   │  │  │  │     ├─ DeploymentUnitRuntimeConfig.java  # 某个受管应用最后一次成功部署的运行时契约
-   │  │  │  │     ├─ DeploymentWorker.java  # 共享主服务运行时、身份与存储的前台工作进程
-   │  │  │  │     ├─ DeploymentWorkload.java  # 共享的经审阅执行、对外服务与交付契约
-   │  │  │  │     ├─ analysis/  # 静态分析事实与来源信息
-   │  │  │  │     │  ├─ AnalysisEvidence.java  # 单个确定性项目事实的紧凑、非秘密来源
-   │  │  │  │     │  ├─ DeploymentAdmissionStatus.java  # 项目进入部署计划前的确定性部署准入结果
-   │  │  │  │     │  ├─ EvidenceConfidenceLevel.java  # 单个确定性事实的置信度，与任何 AI 建议相互独立
-   │  │  │  │     │  └─ RejectionReason.java  # 项目无法进入受管部署流程的确定性原因
-   │  │  │  │     ├─ assessment/  # 项目报告、问题与分析结论
-   │  │  │  │     │  ├─ DeploymentProjectReport.java  # 将缺失用户决定与硬性安全拒绝分开的部署静态分析结果
-   │  │  │  │     │  ├─ MultiPartProjectReport.java  # 具有组件范围原因的确定性混合项目分析
-   │  │  │  │     │  └─ PartIssue.java  # 一个组件范围的输入要求或硬安全拒绝
-   │  │  │  │     ├─ capability/  # 主机能力、支持等级与匹配结果
-   │  │  │  │     │  ├─ DeploymentEcosystemToolType.java  # 可用观测版本约束部署的固定语言或构建工具能力
-   │  │  │  │     │  ├─ DeploymentHostCapabilityStatus.java  # 将实时主机证据与部署矩阵匹配后的保守结果
-   │  │  │  │     │  └─ DeploymentLinuxCapabilityFacts.java  # 仅用于决定能否提供部署计划的实时、非秘密主机事实
-   │  │  │  │     ├─ ecosystem/  # 语言、构建和运行生态的类型信息
-   │  │  │  │     │  └─ db/  # 原生数据库实例、软件包与状态事实
-   │  │  │  │     │     ├─ DatabaseRequirement.java  # 从组件提取或由用户补齐的非秘密数据库声明
-   │  │  │  │     │     ├─ DatabaseSchemaReview.java  # 与源码绑定的验证结果，来自已验证初始化或单独获批的现有模式操作
-   │  │  │  │     │     ├─ DatabaseVersionRequirement.java  # 显式数据库版本约束，较新版本兼容最低版本要求
-   │  │  │  │     │     └─ DeploymentNativeDatabaseFacts.java  # 从固定 helper 观察到的不含秘密的原生数据库库存与目标事实
-   │  │  │  │     ├─ language/  # 源码语言类别与观察事实
-   │  │  │  │     │  ├─ LanguageEcosystemType.java  # 不含主要语言排序的确定性语言生态观测
-   │  │  │  │     │  ├─ LanguageFactKind.java  # 可用于预填审阅表单的稳定确定性语言相关值
-   │  │  │  │     │  ├─ ProjectLanguageFacts.java  # 在不执行源码且不选择主要语言的情况下收集的确定性语言事实
-   │  │  │  │     │  └─ SourceLanguageType.java  # 由有界文件路径或元数据条目证实的源码语言
-   │  │  │  │     ├─ message/  # 部署文案与结构化消息
-   │  │  │  │     │  └─ DeploymentLocalizedMessage.java  # 不将领域代码与显示语言耦合的用户可见消息
-   │  │  │  │     ├─ project/  # 项目分类、声明与部署单元信息
-   │  │  │  │     │  ├─ DeploymentArchitectureType.java  # 一个精确且可部署的项目类型与构建工具架构组合
-   │  │  │  │     │  ├─ DeploymentBuildToolType.java  # 固定的目标机构建工具入口，绝不是任意命令行
-   │  │  │  │     │  ├─ DeploymentProjectFacts.java  # 一个用户选定的部署项目类型的不可变确定性事实；未执行任何项目代码
-   │  │  │  │     │  ├─ DeploymentRuntimeReport.java  # 在不运行项目内容的情况下推导出的、可审阅的源码依据运行时值
-   │  │  │  │     │  ├─ DeploymentSupportCatalog.java  # 为精确项目类型与架构组合提供证据支撑的支持声明
-   │  │  │  │     │  ├─ DeploymentSupportLevel.java  # 由证据支撑并由分析、计划和结果公开的支持等级
-   │  │  │  │     │  ├─ DeploymentSupportProfile.java  # 一个已分析路径的精确语言、架构、框架、支持等级、验证矩阵、证据与限制
-   │  │  │  │     │  ├─ ValidatedDeploymentTarget.java  # 由真实产品入口验收证据支撑的一个精确目标组合
-   │  │  │  │     │  └─ component/  # 多组件的声明、依赖、资源和隔离要求
-   │  │  │  │     │     ├─ DeploymentPart.java  # 混合项目中一个组件的完整静态记录
-   │  │  │  │     │     └─ PartIsolationSpec.java  # 一个组件显式请求的不安全执行能力
-   │  │  │  │     ├─ server/  # 目标服务器与主机能力数据
-   │  │  │  │     │  ├─ DeploymentCpuMicroarchitectureLevel.java  # 目标运行时链接器确认的最高累积 x86-64 微架构级别
-   │  │  │  │     │  ├─ LinuxDistroType.java  # 部署为其保留独立证据和兼容性决策的发行版系列
-   │  │  │  │     │  └─ security/  # 服务器安全机制与受限能力信息
-   │  │  │  │     │     ├─ DeploymentLinuxFirewallKind.java  # 只读探测观测到的主机防火墙管理器
-   │  │  │  │     │     ├─ DeploymentLinuxFirewallState.java  # 观测到的主机防火墙服务状态
-   │  │  │  │     │     ├─ DeploymentLinuxSecurityModuleType.java  # 在不修改状态的情况下观测到的主机强制访问控制实现
-   │  │  │  │     │     ├─ DeploymentLinuxSecurityPosture.java  # 作为一个连贯主机观测保留的只读安全与防火墙事实
-   │  │  │  │     │     └─ DeploymentLinuxSecurityState.java  # 观测到的强制访问控制状态
-   │  │  │  │     └─ toolchain/  # 工具链版本、绑定与准备数据
-   │  │  │  │        ├─ DeploymentResolvedToolchains.java  # 发布级不可变工具身份，不随目录修订重新选择
-   │  │  │  │        ├─ DeploymentToolchainBindingCodec.java  # 无配置解析依赖的确定性版本化发布绑定
-   │  │  │  │        ├─ DeploymentToolchainCatalog.java  # 唯一可注入构建分支目录，补丁由官方发布发现提供
-   │  │  │  │        ├─ DeploymentToolchainSelectionPolicy.java  # 准备与有界构建重试共用的纯选择规则
-   │  │  │  │        └─ ToolchainRequirement.java  # 即使没有构建候选也保留源码声明
-   │  │  │  ├─ environment/  # 原端点环境准备、独立审阅及中断核对
+   │  │  │  │  │  └─ DeploymentRestoreTransfers.java  # 在提供方自身权限下明确清理原上传暂存
+   │  │  │  │  ├─ setup/  # 共用 helper 初始化与准备
+   │  │  │  │  │  ├─ DeploymentProtocolBootstrap.java  # 原任务留痕helper安装及恢复修复，未知安装仅核对回执
+   │  │  │  │  │  └─ DeploymentProtocolBootstrapActionLog.java  # 共用helper安装身份、阶段及严格恢复修复编解码
+   │  │  │  │  └─ source/  # 来源浏览、比较、采集及 Git 操作恢复
+   │  │  │  │     ├─ DeploymentGitSourceActionLog.java  # 在宿主所属作者检查点上原子推进的有界原任务 Git 依据
+   │  │  │  │     ├─ DeploymentGitSourceFlow.java  # 执行一次已审阅 Git 项目任务，并仅核对其原持久依据
+   │  │  │  │     ├─ DeploymentProjectSaveActionLog.java  # 写入前记录一次完整本地项目 CAS，不保留来源授权
+   │  │  │  │     ├─ DeploymentProjectSourceRecorder.java  # 准备本机授权来源，并保存实际位置与冻结摘要；Git使用原记账Flow
+   │  │  │  │     └─ DeploymentSourceSelectionService.java  # 仅在原选择器授权关闭后返回本地位置元数据
+   │  │  │  ├─ deploy/  # 可独立复用的项目分析、构建生成与部署能力
+   │  │  │  │  ├─ analyze/  # 不执行构建的源码和项目分析
+   │  │  │  │  │  ├─ DeploymentStandardAnalyzer.java  # 借用一份仍受管的不可变素材进行确定性项目分析
+   │  │  │  │  │  ├─ contract/  # 按项目类型扩展静态检查器的接口与结果合同
+   │  │  │  │  │  │  ├─ DeploymentTypeChecker.java  # 面向一个用户选定部署类型的单一有界检查器
+   │  │  │  │  │  │  └─ DeploymentTypeReport.java  # 由一个类型检查器返回的局部事实与运行时建议
+   │  │  │  │  │  ├─ core/  # 跨语言分析顺序、检查器装配、规则应用与结果汇总
+   │  │  │  │  │  │  ├─ DeploymentAnalysisFlow.java  # 仅协调有界遍历、安全策略、类型分派与结果汇总
+   │  │  │  │  │  │  ├─ DeploymentTypeCheckerRegistry.java  # 持有完整且已验证的源码类型检查器装配
+   │  │  │  │  │  │  └─ ProjectLanguageChecker.java  # 合并独立语言检查器，不进行排序或选择项目类型
+   │  │  │  │  │  ├─ ecosystem/  # 源码语言识别及其构建架构分析
+   │  │  │  │  │  │  ├─ c/  # C/C++ 语言识别与构建架构分派
+   │  │  │  │  │  │  │  ├─ CLanguageChecker.java  # 独立于 CMake 识别 C 与 C++ 语言标记
+   │  │  │  │  │  │  │  └─ cmake/  # 静态检查 CMake preset 与目标，不执行构建
+   │  │  │  │  │  │  │     ├─ CmakeDeploymentChecker.java  # 在不执行 CMake 的情况下检查固定 preset 的单可执行服务
+   │  │  │  │  │  │  │     └─ CmakeFacts.java  # 固定的 CMake preset、目标、源码语言与拒绝事实
+   │  │  │  │  │  │  ├─ db/  # 读取数据库声明与服务端点，不保留凭据
+   │  │  │  │  │  │  │  └─ DatabaseProjectChecker.java  # 读取显式数据库声明和常规 Spring 端点，不保留凭据
+   │  │  │  │  │  │  ├─ dotnet/  # .NET/C# 语言识别与构建架构分派
+   │  │  │  │  │  │  │  ├─ DotNetLanguageChecker.java  # 独立于构建架构识别 .NET/C# 语言标记
+   │  │  │  │  │  │  │  └─ dotnetsdk/  # 静态检查 .NET Web SDK，不执行构建
+   │  │  │  │  │  │  │     ├─ DotNetSdkDeploymentChecker.java  # 在不执行 dotnet 的情况下检查一个锁定的 .NET Web SDK 服务
+   │  │  │  │  │  │  │     └─ DotNetSdkFacts.java  # 服务分析使用的固定 .NET SDK 项目元数据
+   │  │  │  │  │  │  ├─ go/  # Go 语言识别与构建架构分派
+   │  │  │  │  │  │  │  ├─ GoLanguageChecker.java  # 独立于构建架构识别 Go 语言标记
+   │  │  │  │  │  │  │  └─ gomodule/  # 静态检查 Go Module，不执行构建
+   │  │  │  │  │  │  │     ├─ GoModuleDeploymentChecker.java  # 在不执行 Go 的情况下检查一个锁定的 Go Module 服务
+   │  │  │  │  │  │  │     └─ GoModuleFacts.java  # 服务分析使用的固定 Go Module 元数据
+   │  │  │  │  │  │  ├─ java/  # Java 语言识别与构建架构分派
+   │  │  │  │  │  │  │  ├─ JavaLanguageChecker.java  # 识别 Java 源码与 JAR 生态标记，不打开归档
+   │  │  │  │  │  │  │  ├─ SpringBootDeploymentChecker.java  # 在不调用构建的前提下检查一个 Maven 或 Gradle Spring Boot 可执行 JAR 项目
+   │  │  │  │  │  │  │  ├─ gradle/  # 静态检查 Gradle 构建脚本与 Wrapper，不执行构建
+   │  │  │  │  │  │  │  │  ├─ GradleBuildChecker.java  # 读取一个固定 Gradle 构建脚本与 Wrapper 布局，但不调用 Gradle
+   │  │  │  │  │  │  │  │  └─ GradleBuildFacts.java  # 固定的 Gradle 构建脚本与 Wrapper 事实
+   │  │  │  │  │  │  │  ├─ jar/  # 静态检查 既有 JAR 与清单，不执行构建
+   │  │  │  │  │  │  │  │  ├─ JavaJarDeploymentChecker.java  # 在不加载归档的情况下生成 Java JAR 事实与清单依据运行时建议
+   │  │  │  │  │  │  │  │  └─ JavaJarManifestChecker.java  # 读取有界 JAR 运行元数据，不加载类
+   │  │  │  │  │  │  │  ├─ jdk/  # 静态检查 JDK 源码入口，不执行构建
+   │  │  │  │  │  │  │  │  ├─ JavaJdkDeploymentChecker.java  # 使用显式 JDK 构建元数据检查无依赖 Java 源码
+   │  │  │  │  │  │  │  │  └─ JavaJdkFacts.java  # 固定的无依赖 Java 源码架构事实
+   │  │  │  │  │  │  │  └─ maven/  # 静态检查 Maven POM 与构建入口，不执行构建
+   │  │  │  │  │  │  │     ├─ MavenBuildChecker.java  # 读取根 POM 和 Maven 入口，但不调用 Maven 或其 Wrapper
+   │  │  │  │  │  │  │     └─ MavenBuildFacts.java  # 框架及部署支持检查所需的根 Maven 事实
+   │  │  │  │  │  │  ├─ kotlin/  # Kotlin 语言识别与构建架构分派
+   │  │  │  │  │  │  │  ├─ KotlinLanguageChecker.java  # 独立于构建架构识别 Kotlin 语言标记
+   │  │  │  │  │  │  │  ├─ KotlinServiceDeploymentChecker.java  # 恰好选择一个经审阅的 Kotlin 构建架构
+   │  │  │  │  │  │  │  ├─ gradle/  # 静态检查 Gradle 构建脚本与 Wrapper，不执行构建
+   │  │  │  │  │  │  │  │  ├─ KotlinGradleDeploymentChecker.java  # 在不执行 Gradle 的情况下检查一个锁定的 Kotlin Gradle 应用
+   │  │  │  │  │  │  │  │  └─ KotlinGradleFacts.java  # 服务分析使用的固定 Kotlin Gradle 应用元数据
+   │  │  │  │  │  │  │  └─ kotlinc/  # 静态检查 Kotlin 编译器声明，不执行构建
+   │  │  │  │  │  │  │     ├─ KotlinCompilerDeploymentChecker.java  # 使用显式编译器元数据检查无依赖 Kotlin/JVM 源码
+   │  │  │  │  │  │  │     └─ KotlinCompilerFacts.java  # 固定的无依赖 Kotlin 编译器架构事实
+   │  │  │  │  │  │  ├─ node/  # Node.js/JavaScript/TypeScript 语言识别与构建架构分派
+   │  │  │  │  │  │  │  ├─ NodeBuildArchitectureFacts.java  # 选中的 Node 包管理器架构及其锁文件
+   │  │  │  │  │  │  │  ├─ NodeBuildChecker.java  # 读取 package.json、受支持锁文件和固定脚本名称，但不调用包管理器
+   │  │  │  │  │  │  │  ├─ NodeBuildFacts.java  # 来自 package.json 的固定包管理器、锁文件和脚本事实
+   │  │  │  │  │  │  │  ├─ NodeLanguageChecker.java  # 从路径与包元数据检测 Node.js、JavaScript 和 TypeScript 事实
+   │  │  │  │  │  │  │  ├─ NodeServiceDeploymentChecker.java  # 生成 Node 服务构建事实与精确版本运行时建议
+   │  │  │  │  │  │  │  ├─ npm/  # 静态检查 npm 锁文件，不执行构建
+   │  │  │  │  │  │  │  │  └─ NpmBuildChecker.java  # 检查 npm package-lock 架构
+   │  │  │  │  │  │  │  ├─ pnpm/  # 静态检查 pnpm 锁文件，不执行构建
+   │  │  │  │  │  │  │  │  └─ PnpmBuildChecker.java  # 检查 pnpm 锁文件架构
+   │  │  │  │  │  │  │  └─ yarn/  # 静态检查 Yarn 锁文件，不执行构建
+   │  │  │  │  │  │  │     └─ YarnBuildChecker.java  # 检查 Yarn 锁文件架构
+   │  │  │  │  │  │  ├─ php/  # PHP 语言识别与构建架构分派
+   │  │  │  │  │  │  │  ├─ PhpLanguageChecker.java  # 独立于构建架构识别 PHP 语言标记
+   │  │  │  │  │  │  │  ├─ PhpServiceDeploymentChecker.java  # 恰好选择一个经审阅的 PHP 架构
+   │  │  │  │  │  │  │  ├─ composer/  # 静态检查 Composer 锁文件，不执行构建
+   │  │  │  │  │  │  │  │  ├─ PhpComposerDeploymentChecker.java  # 在不执行 PHP 的情况下检查一个 Composer 锁定的 PHP 服务
+   │  │  │  │  │  │  │  │  └─ PhpComposerFacts.java  # 服务分析使用的固定 Composer 元数据
+   │  │  │  │  │  │  │  └─ phpcli/  # 静态检查 PHP CLI 入口，不执行构建
+   │  │  │  │  │  │  │     ├─ PhpCliDeploymentChecker.java  # 在不执行 PHP 的情况下检查一个无依赖 PHP CLI 服务
+   │  │  │  │  │  │  │     └─ PhpCliFacts.java  # 固定的无依赖 PHP CLI 架构事实
+   │  │  │  │  │  │  ├─ python/  # Python 语言识别与构建架构分派
+   │  │  │  │  │  │  │  ├─ PythonBuildArchitectureFacts.java  # 选中的 Python 依赖架构及其锁文件
+   │  │  │  │  │  │  │  ├─ PythonBuildChecker.java  # 读取 pyproject.toml 与固定锁文件名称，但不调用 Python
+   │  │  │  │  │  │  │  ├─ PythonBuildFacts.java  # 固定的 Python 项目与锁文件事实
+   │  │  │  │  │  │  │  ├─ PythonLanguageChecker.java  # 检测 Python 源码、精确版本元数据和唯一模块入口
+   │  │  │  │  │  │  │  ├─ PythonServiceDeploymentChecker.java  # 生成 Python 构建事实与精确版本/模块运行时建议
+   │  │  │  │  │  │  │  ├─ pip/  # 静态检查 pip 依赖锁定，不执行构建
+   │  │  │  │  │  │  │  │  └─ PipBuildChecker.java  # 检查使用哈希锁定的 pip 架构
+   │  │  │  │  │  │  │  ├─ pipenv/  # 静态检查 Pipenv 锁文件，不执行构建
+   │  │  │  │  │  │  │  │  └─ PipenvBuildChecker.java  # 检查 Pipenv 锁文件架构
+   │  │  │  │  │  │  │  ├─ poetry/  # 静态检查 Poetry 锁文件，不执行构建
+   │  │  │  │  │  │  │  │  └─ PoetryBuildChecker.java  # 检查 Poetry 锁文件架构
+   │  │  │  │  │  │  │  └─ uv/  # 静态检查 uv 锁文件，不执行构建
+   │  │  │  │  │  │  │     └─ UvBuildChecker.java  # 检查 uv 锁文件架构
+   │  │  │  │  │  │  ├─ ruby/  # Ruby 语言识别与构建架构分派
+   │  │  │  │  │  │  │  ├─ RubyLanguageChecker.java  # 独立于构建架构识别 Ruby 语言标记
+   │  │  │  │  │  │  │  ├─ RubyServiceDeploymentChecker.java  # 恰好选择一个经审阅的 Ruby 架构
+   │  │  │  │  │  │  │  ├─ bundler/  # 静态检查 Bundler 锁文件，不执行构建
+   │  │  │  │  │  │  │  │  ├─ RubyBundlerDeploymentChecker.java  # 在不执行 Ruby 的情况下检查一个 Bundler 锁定的 Rack 服务
+   │  │  │  │  │  │  │  │  └─ RubyBundlerFacts.java  # 服务分析使用的固定 Bundler 元数据
+   │  │  │  │  │  │  │  └─ rubycli/  # 静态检查 Ruby CLI 入口，不执行构建
+   │  │  │  │  │  │  │     ├─ RubyCliDeploymentChecker.java  # 在不执行 Ruby 的情况下检查一个无依赖 Ruby CLI 服务
+   │  │  │  │  │  │  │     └─ RubyCliFacts.java  # 固定的无依赖 Ruby CLI 架构事实
+   │  │  │  │  │  │  └─ rust/  # Rust 语言识别与构建架构分派
+   │  │  │  │  │  │     ├─ RustLanguageChecker.java  # 独立于构建架构识别 Rust 语言标记
+   │  │  │  │  │  │     └─ cargo/  # 静态检查 Cargo 锁文件与构建声明，不执行构建
+   │  │  │  │  │  │        ├─ RustCargoDeploymentChecker.java  # 在不执行 Rust 工具的情况下检查一个锁定的 Cargo 服务
+   │  │  │  │  │  │        └─ RustCargoFacts.java  # 服务分析使用的固定 Cargo 元数据
+   │  │  │  │  │  ├─ part/  # 多组件发现、归属与依赖检查
+   │  │  │  │  │  │  ├─ DiscoveredProjectPart.java  # 声明可部署根目录及可能类型，保留歧义供输入解析处理
+   │  │  │  │  │  │  ├─ MixedProjectChecker.java  # 分析显式组件根，并在修改目标机前拒绝跨组件矛盾
+   │  │  │  │  │  │  ├─ PartAnalysisRequest.java  # 提供给确定性混合项目分析的用户审阅组件边界
+   │  │  │  │  │  │  ├─ PartGraphChecker.java  # 验证跨组件所有权、依赖、端口、制品及数据路径约束
+   │  │  │  │  │  │  └─ ProjectPartFinder.java  # 有界静态发现，目录和声明仅作为证据，不作为可执行指令
+   │  │  │  │  │  ├─ policy/  # 来源与组件的分析准入规则
+   │  │  │  │  │  │  └─ SourceMutationPolicy.java  # 拒绝可能自动修改受管数据库的源码声明
+   │  │  │  │  │  ├─ preview/  # 不能直接进入部署的只读识别预览
+   │  │  │  │  │  │  ├─ PreviewChecker.java  # 生成无法进入归档准备或部署的静态识别结果
+   │  │  │  │  │  │  └─ PreviewLanguageMarkerCatalog.java  # 仅收集尚无独立生态检查器的语言标记，不求值文件内容
+   │  │  │  │  │  ├─ service/  # 语言无关的服务元数据与报告组装
+   │  │  │  │  │  │  ├─ ServiceMetadataChecker.java  # 不包含语言特定规则的公共有界元数据操作
+   │  │  │  │  │  │  ├─ ServiceProjectFacts.java  # 单个语言检查器返回的公共有界服务元数据
+   │  │  │  │  │  │  └─ ServiceReportBuilder.java  # 组装语言无关的服务事实与运行时建议
+   │  │  │  │  │  ├─ source/  # 源码树安全遍历与有界元数据读取
+   │  │  │  │  │  │  ├─ ApplicationBundleChecker.java  # 在组件发现前读取构建归属，不执行声明
+   │  │  │  │  │  │  ├─ BoundedMetadataChecker.java  # 只在静态检查边界内读取固定项目元数据
+   │  │  │  │  │  │  ├─ BoundedSourceChecker.java  # 对源码树执行有界只读安全遍历
+   │  │  │  │  │  │  ├─ ProjectIdentityResolver.java  # 从经审阅元数据或选定根目录推导有界受管项目标识
+   │  │  │  │  │  │  ├─ SourceCheckFacts.java  # 在不执行任何项目可控内容的前提下采集的有界事实
+   │  │  │  │  │  │  └─ SourceLanguageEvidence.java  # 按调用方提供的语言规则收集首个路径证据
+   │  │  │  │  │  ├─ toolchain/  # 读取显式工具链声明，不执行构建
+   │  │  │  │  │  │  └─ ToolchainSpecChecker.java  # 不执行构建文件，在发布准入前收集有界版本声明
+   │  │  │  │  │  └─ workload/  # 容器和静态站点的确定性工作负载识别
+   │  │  │  │  │     ├─ ContainerDeploymentChecker.java  # 检测单一 Dockerfile 工作负载、声明端口与受管卷候选项
+   │  │  │  │  │     └─ StaticWebDeploymentChecker.java  # 区分纯静态内容与由锁文件支持的 Node 静态构建
+   │  │  │  │  ├─ build/  # 类型化构建描述与构建脚本生成
+   │  │  │  │  │  ├─ contract/  # 按构建架构扩展文本生成实现的合同
+   │  │  │  │  │  │  └─ DeploymentBuildWriter.java  # 通过固定且有界的目标机构建入口渲染一种经审阅项目类型
+   │  │  │  │  │  ├─ ecosystem/  # 按语言和工具生成构建脚本
+   │  │  │  │  │  │  ├─ CargoBuildWriter.java  # 渲染固定 Cargo 构建架构
+   │  │  │  │  │  │  ├─ CmakeBuildWriter.java  # 渲染固定单目标 CMake 试验架构
+   │  │  │  │  │  │  ├─ DotNetSdkBuildWriter.java  # 渲染固定 .NET SDK 构建架构
+   │  │  │  │  │  │  ├─ GoBuildWriter.java  # 渲染固定 Go Module 构建架构
+   │  │  │  │  │  │  ├─ java/  # 生成 Java 的受控构建脚本
+   │  │  │  │  │  │  │  ├─ GradleBuildWriter.java  # 渲染经审阅的 Spring Boot Gradle 架构
+   │  │  │  │  │  │  │  ├─ JavaJarBuildWriter.java  # 渲染经审阅的预构建 Java JAR 边界
+   │  │  │  │  │  │  │  ├─ JdkBuildWriter.java  # 渲染无依赖 JDK 源码架构
+   │  │  │  │  │  │  │  ├─ MavenBuildWriter.java  # 经审阅的Maven入口、不可访问时的候选内固定分发准备及下载重试
+   │  │  │  │  │  │  │  └─ SpringBootArtifactBuildScript.java  # 仅共享不变的 Spring Boot 可执行 JAR 验证
+   │  │  │  │  │  │  ├─ kotlin/  # 生成 Kotlin 的受控构建脚本
+   │  │  │  │  │  │  │  ├─ KotlinCompilerBuildWriter.java  # 使用原生编译器渲染无依赖 Kotlin/JVM 源码
+   │  │  │  │  │  │  │  └─ KotlinGradleBuildWriter.java  # 渲染固定 Kotlin Gradle 扩展架构
+   │  │  │  │  │  │  ├─ node/  # 生成 Node.js/JavaScript/TypeScript 的受控构建脚本
+   │  │  │  │  │  │  │  ├─ NodeArchitectureBuildWriter.java  # 仅在具名架构 Renderer 间共享不变的 Node 服务外壳
+   │  │  │  │  │  │  │  ├─ NpmBuildWriter.java  # 渲染原生 npm Node 架构
+   │  │  │  │  │  │  │  ├─ PnpmBuildWriter.java  # 渲染 pnpm Node 架构
+   │  │  │  │  │  │  │  └─ YarnBuildWriter.java  # 渲染 Yarn Node 架构
+   │  │  │  │  │  │  ├─ php/  # 生成 PHP 的受控构建脚本
+   │  │  │  │  │  │  │  ├─ ComposerBuildWriter.java  # 渲染固定 Composer 扩展架构
+   │  │  │  │  │  │  │  └─ PhpCliBuildWriter.java  # 通过 PHP CLI 语法验证渲染无依赖 PHP 源码
+   │  │  │  │  │  │  ├─ python/  # 生成 Python 的受控构建脚本
+   │  │  │  │  │  │  │  ├─ PipBuildWriter.java  # 渲染原生完整哈希 pip 架构
+   │  │  │  │  │  │  │  ├─ PipenvBuildWriter.java  # 渲染 Pipenv 锁定架构
+   │  │  │  │  │  │  │  ├─ PoetryBuildWriter.java  # 渲染 Poetry 锁定架构
+   │  │  │  │  │  │  │  ├─ PythonArchitectureBuildWriter.java  # 在具名 Python 架构 Renderer 间共享不变的隔离 venv 外壳
+   │  │  │  │  │  │  │  └─ UvBuildWriter.java  # 渲染 uv 锁定架构
+   │  │  │  │  │  │  └─ ruby/  # 生成 Ruby 的受控构建脚本
+   │  │  │  │  │  │     ├─ BundlerBuildWriter.java  # 渲染固定 Bundler 扩展架构
+   │  │  │  │  │  │     └─ RubyCliBuildWriter.java  # 通过 Ruby CLI 语法验证渲染无依赖 Ruby 源码
+   │  │  │  │  │  ├─ registry/  # 注册并选择构建脚本生成实现
+   │  │  │  │  │  │  └─ DeploymentBuildWriterRegistry.java  # 为每种可部署项目架构恰好注册一个具名 Renderer
+   │  │  │  │  │  ├─ script/  # 共用构建脚本片段、固定内容与受控外壳
+   │  │  │  │  │  │  ├─ CompanionBuildScript.java  # 将配套制品保留在与所属组件相同的有界候选及封存发布中
+   │  │  │  │  │  │  ├─ DeploymentBuildEnvironmentWriter.java  # 将已审阅非秘密构建值渲染为固定 Shell 导出
+   │  │  │  │  │  │  ├─ NodeDependencyToolSetup.java  # 准备项目固定包管理器，不改声明或锁文件
+   │  │  │  │  │  │  ├─ NodePackageBuildScript.java  # 渲染 Node 服务与构建型静态站点共享的包管理器部分
+   │  │  │  │  │  │  └─ SafeBuildScriptEnvelope.java  # 持有全部渲染器共享的归档校验、解压、限制、日志与构建工具证明
+   │  │  │  │  │  └─ workload/  # 容器和静态站点的构建内容生成
+   │  │  │  │  │     ├─ ContainerBuildWriter.java  # 渲染固定 Dockerfile 容器镜像构建
+   │  │  │  │  │     └─ StaticSiteBuildWriter.java  # 在不假设 Node 版本的情况下渲染纯静态或 Node 构建型站点产物
+   │  │  │  │  ├─ database/  # 原生数据库命令、原操作记录与摘要绑定 SQL 素材
+   │  │  │  │  │  ├─ DeploymentDatabaseDeclarations.java  # 公共数据库声明补齐、校验与SQLite输入
+   │  │  │  │  │  ├─ DeploymentDatabasePlanActionLog.java  # 每项计划数据库子操作的有界原任务索引
+   │  │  │  │  │  ├─ DeploymentNativeDatabaseActionLog.java  # 一项串行原生数据库操作的原任务非秘密身份
+   │  │  │  │  │  ├─ DeploymentNativeDatabaseChannel.java  # 发送一次原生数据库原操作，随后仅读取其精确 helper 回执
+   │  │  │  │  │  ├─ DeploymentNativeDatabaseReview.java  # 数据库目标与结构变更的公共业务审阅接口
+   │  │  │  │  │  ├─ DeploymentNativeDatabaseSetup.java  # 原任务及精确回执下准备原生数据库
+   │  │  │  │  │  ├─ DeploymentNativeSqlSource.java  # 首个远端数据库效果前校验每份冻结的原生 SQL 来源
+   │  │  │  │  │  ├─ DeploymentPreparedDatabase.java  # 源码绑定的公共数据库准备结果
+   │  │  │  │  │  └─ DeploymentSqliteSetup.java  # 公共SQLite声明准备与来源验证
+   │  │  │  │  ├─ publish/  # 按原配置与精确秘密修订封存发布输入
+   │  │  │  │  │  └─ DeploymentPublishStaging.java  # 封存单组件已审阅非秘密配置及瞬时秘密值
+   │  │  │  │  ├─ support/  # 根据主机事实判断部署支持程度
+   │  │  │  │  │  ├─ DeploymentHostMatchDecision.java  # 带有有序审阅证据的保守主机支持状态
+   │  │  │  │  │  ├─ DeploymentHostMatcher.java  # 协调对已采集主机事实的公共、发行版与运行时支持检查
+   │  │  │  │  │  ├─ distro/  # 按 Linux 发行版应用支持规则
+   │  │  │  │  │  │  ├─ DeploymentAlmaLinuxMatchPolicy.java  # 包含明确 x86-64-v2 变体边界的 AlmaLinux 兼容性策略
+   │  │  │  │  │  │  ├─ DeploymentCentosStreamMatchPolicy.java  # 兼容性策略
+   │  │  │  │  │  │  ├─ DeploymentDebianMatchPolicy.java  # 稳定版兼容性策略
+   │  │  │  │  │  │  ├─ DeploymentDistributionMatchPolicy.java  # 单个发行版可独立审阅的兼容性边界
+   │  │  │  │  │  │  ├─ DeploymentDistributionMatchRules.java  # 独立发行版策略机械共享的固定检查
+   │  │  │  │  │  │  ├─ DeploymentDistributionMatcher.java  # 将已分类发行版路由到恰好一个独立策略
+   │  │  │  │  │  │  ├─ DeploymentOracleLinuxMatchPolicy.java  # 滚动主版本兼容性策略
+   │  │  │  │  │  │  ├─ DeploymentRockyLinuxMatchPolicy.java  # 固定到受维护小版本的 Rocky Linux 兼容性策略
+   │  │  │  │  │  │  └─ DeploymentUbuntuMatchPolicy.java  # 兼容性策略
+   │  │  │  │  │  └─ runtime/  # 匹配运行时需求与已采集主机能力
+   │  │  │  │  │     ├─ DeploymentRuntimeCapabilityDecision.java  # 表示一个已审阅运行时是否匹配采集到的主机能力
+   │  │  │  │  │     └─ DeploymentRuntimeCapabilityMatcher.java  # 将一个类型化运行时与已采集的主机工具能力进行匹配
+   │  │  │  │  └─ toolchain/  # 已审阅工具链的准备与精确绑定
+   │  │  │  │     ├─ DeploymentProjectToolchainRequirements.java  # 审阅输入与原始声明的公共工具链需求投影
+   │  │  │  │     ├─ DeploymentToolchainSetup.java  # 每次至多准备一个已审阅目录分支，并封存精确安装绑定
+   │  │  │  │     └─ ToolchainBuildEnvironment.java  # 明确可执行路径与选择版本，保留项目语言目标
+   │  │  │  ├─ environment/  # 原端点工具链准备、分离审阅及中断核对
    │  │  │  │  ├─ DeploymentEnvironmentCommandReview.java  # 模块运行资源
    │  │  │  │  ├─ DeploymentEnvironmentHelper.java  # 使用原环境操作保存 helper 回执，包括不创建另一检查点的恢复
    │  │  │  │  ├─ DeploymentEnvironmentJournal.java  # 严格原任务 CAS 依据，恢复不能重新创建已发送副作用
@@ -980,452 +1347,304 @@ WindowsToLinux/
    │  │  │  │  ├─ DeploymentEnvironmentScripts.java  # 固定完整审核资源，不含调用方提供的 Shell 或软件包
    │  │  │  │  ├─ DeploymentEnvironmentState.java  # 由宿主检查点保留的小型非秘密原操作依据
    │  │  │  │  └─ DeploymentEnvironmentWorkflow.java  # 原服务器独占环境业务任务及明确恢复
-   │  │  │  ├─ feedback/  # 原任务阶段与有界脱敏日志读取
+   │  │  │  ├─ feedback/  # 原任务阶段与有界脱敏事件读取
    │  │  │  │  └─ DeploymentDiagnostics.java  # 使用既有所属诊断类别记录实际任务阶段及结果
-   │  │  │  └─ standard/  # 确定性分析、辅助建议与标准部署流程
-   │  │  │     ├─ DeploymentComponentSelection.java  # 校验审阅图，并从明确输入派生根，不要求属于发现全集
-   │  │  │     ├─ DeploymentDatabasePlanActionLog.java  # 每项计划数据库子操作的有界原任务索引
-   │  │  │     ├─ DeploymentDatabaseStages.java  # 将整份源码数据库校验与原任务原生效果分开
-   │  │  │     ├─ DeploymentNativeDatabaseActionLog.java  # 一项串行原生数据库操作的原任务非秘密身份
-   │  │  │     ├─ DeploymentNativeDatabaseChannel.java  # 发送一次原生数据库原操作，随后仅读取其精确 helper 回执
-   │  │  │     ├─ DeploymentNativeDatabaseSetup.java  # 在原发布任务及精确 helper 回执下准备真实原生数据库目标
-   │  │  │     ├─ DeploymentProtocolBootstrap.java  # 在可恢复的原发布任务下只安装一次缺失的受管 helper
-   │  │  │     ├─ DeploymentProtocolBootstrapActionLog.java  # 共用 helper 首次安装的原任务身份与效果阶段
-   │  │  │     ├─ DeploymentStaticAssistance.java  # 在确定性流程内组织来源建议、人工审阅及辅助发布身份
-   │  │  │     ├─ DeploymentStaticPageService.java  # 绑定页面只读服务器查询及原发布任务，但不持有 Swing 视图
-   │  │  │     ├─ DeploymentStaticProjectSave.java  # 在原任务中仅保存一次已审阅发布来源
-   │  │  │     ├─ DeploymentStaticRuntimeDraft.java  # 在来源建议之后应用明确非秘密运行预填，保留组件资源范围
-   │  │  │     ├─ DeploymentStaticSetupActionLog.java  # 有界原静态准备身份；原生数据库效果另须原操作回执核对
-   │  │  │     ├─ DeploymentStaticSourceService.java  # 执行来源预选及完整项目保存，不跨任务分享活动授权
-   │  │  │     ├─ DeploymentStaticSourceSetup.java  # 冻结图来源归档，仅释放原已确认准备资源
-   │  │  │     ├─ DeploymentStaticTaskRecovery.java  # 本机清理前核对原发布前素材及原生数据库回执；正式执行仍由原恢复处理
-   │  │  │     ├─ DeploymentStaticUnitResolver.java  # 解析原受管所有者，首次发布则生成尚未持久化的随机所有者
-   │  │  │     ├─ DeploymentStaticWorkflow.java  # 协调一项本地或 Git 静态审阅与发布原任务，不另造来源授权
-   │  │  │     ├─ analyze/  # 不执行构建的源码和项目分析
-   │  │  │     │  ├─ DeploymentStandardAnalyzer.java  # 借用一份仍受管的不可变素材进行确定性标准分析
-   │  │  │     │  ├─ component/  # 多组件发现、归属与依赖检查
-   │  │  │     │  │  ├─ DiscoveredProjectPart.java  # 声明可部署根目录及可能类型，保留歧义供输入解析处理
-   │  │  │     │  │  ├─ MixedProjectChecker.java  # 分析显式组件根，并在修改目标机前拒绝跨组件矛盾
-   │  │  │     │  │  ├─ PartAnalysisRequest.java  # 提供给确定性混合项目分析的用户审阅组件边界
-   │  │  │     │  │  ├─ PartGraphChecker.java  # 验证跨组件所有权、依赖、端口、制品及数据路径约束
-   │  │  │     │  │  └─ ProjectPartFinder.java  # 有界静态发现，目录和声明仅作为证据，不作为可执行指令
-   │  │  │     │  ├─ contract/  # 静态分析的输入与规则合同
-   │  │  │     │  │  ├─ policy/  # 来源与组件的分析准入规则
-   │  │  │     │  │  │  └─ SourceMutationPolicy.java  # 拒绝可能自动修改受管数据库的源码声明
-   │  │  │     │  │  └─ spi/  # 按项目类型扩展静态检查器的合同
-   │  │  │     │  │     ├─ DeploymentTypeChecker.java  # 面向一个用户选定部署类型的单一有界检查器
-   │  │  │     │  │     └─ DeploymentTypeReport.java  # 由一个类型检查器返回的局部事实与运行时建议
-   │  │  │     │  ├─ core/  # 跨语言分析顺序、规则应用与结果汇总
-   │  │  │     │  │  ├─ DeploymentAnalysisFlow.java  # 仅协调有界遍历、安全策略、类型分派与结果汇总
-   │  │  │     │  │  └─ ProjectLanguageChecker.java  # 合并独立语言检查器，不进行排序或选择项目类型
-   │  │  │     │  ├─ ecosystem/  # 源码语言识别及其构建架构分析
-   │  │  │     │  │  ├─ c/  # C/C++ 语言识别与构建架构分派
-   │  │  │     │  │  │  ├─ CLanguageChecker.java  # 独立于 CMake 识别 C 与 C++ 语言标记
-   │  │  │     │  │  │  └─ cmake/  # 静态检查 CMake preset 与目标，不执行构建
-   │  │  │     │  │  │     ├─ CmakeDeploymentChecker.java  # 在不执行 CMake 的情况下检查固定 preset 的单可执行服务
-   │  │  │     │  │  │     └─ CmakeFacts.java  # 固定的 CMake preset、目标、源码语言与拒绝事实
-   │  │  │     │  │  ├─ db/  # 读取数据库声明与服务端点，不保留凭据
-   │  │  │     │  │  │  └─ DatabaseProjectChecker.java  # 读取显式数据库声明和常规 Spring 端点，不保留凭据
-   │  │  │     │  │  ├─ dotnet/  # .NET/C# 语言识别与构建架构分派
-   │  │  │     │  │  │  ├─ DotNetLanguageChecker.java  # 独立于构建架构识别 .NET/C# 语言标记
-   │  │  │     │  │  │  └─ dotnetsdk/  # 静态检查 .NET Web SDK，不执行构建
-   │  │  │     │  │  │     ├─ DotNetSdkDeploymentChecker.java  # 在不执行 dotnet 的情况下检查一个锁定的 .NET Web SDK 服务
-   │  │  │     │  │  │     └─ DotNetSdkFacts.java  # 服务分析使用的固定 .NET SDK 项目元数据
-   │  │  │     │  │  ├─ go/  # Go 语言识别与构建架构分派
-   │  │  │     │  │  │  ├─ GoLanguageChecker.java  # 独立于构建架构识别 Go 语言标记
-   │  │  │     │  │  │  └─ gomodule/  # 静态检查 Go Module，不执行构建
-   │  │  │     │  │  │     ├─ GoModuleDeploymentChecker.java  # 在不执行 Go 的情况下检查一个锁定的 Go Module 服务
-   │  │  │     │  │  │     └─ GoModuleFacts.java  # 服务分析使用的固定 Go Module 元数据
-   │  │  │     │  │  ├─ java/  # Java 语言识别与构建架构分派
-   │  │  │     │  │  │  ├─ JavaLanguageChecker.java  # 识别 Java 源码与 JAR 生态标记，不打开归档
-   │  │  │     │  │  │  ├─ SpringBootDeploymentChecker.java  # 在不调用构建的前提下检查一个 Maven 或 Gradle Spring Boot 可执行 JAR 项目
-   │  │  │     │  │  │  ├─ gradle/  # 静态检查 Gradle 构建脚本与 Wrapper，不执行构建
-   │  │  │     │  │  │  │  ├─ GradleBuildChecker.java  # 读取一个固定 Gradle 构建脚本与 Wrapper 布局，但不调用 Gradle
-   │  │  │     │  │  │  │  └─ GradleBuildFacts.java  # 固定的 Gradle 构建脚本与 Wrapper 事实
-   │  │  │     │  │  │  ├─ jar/  # 静态检查 既有 JAR 与清单，不执行构建
-   │  │  │     │  │  │  │  ├─ JavaJarDeploymentChecker.java  # 在不加载归档的情况下生成 Java JAR 事实与清单依据运行时建议
-   │  │  │     │  │  │  │  └─ JavaJarManifestChecker.java  # 读取有界 JAR 运行元数据，不加载类
-   │  │  │     │  │  │  ├─ jdk/  # 静态检查 JDK 源码入口，不执行构建
-   │  │  │     │  │  │  │  ├─ JavaJdkDeploymentChecker.java  # 使用显式 JDK 构建元数据检查无依赖 Java 源码
-   │  │  │     │  │  │  │  └─ JavaJdkFacts.java  # 固定的无依赖 Java 源码架构事实
-   │  │  │     │  │  │  └─ maven/  # 静态检查 Maven POM 与构建入口，不执行构建
-   │  │  │     │  │  │     ├─ MavenBuildChecker.java  # 读取根 POM 和 Maven 入口，但不调用 Maven 或其 Wrapper
-   │  │  │     │  │  │     └─ MavenBuildFacts.java  # 框架及部署支持检查所需的根 Maven 事实
-   │  │  │     │  │  ├─ kotlin/  # Kotlin 语言识别与构建架构分派
-   │  │  │     │  │  │  ├─ KotlinLanguageChecker.java  # 独立于构建架构识别 Kotlin 语言标记
-   │  │  │     │  │  │  ├─ KotlinServiceDeploymentChecker.java  # 恰好选择一个经审阅的 Kotlin 构建架构
-   │  │  │     │  │  │  ├─ gradle/  # 静态检查 Gradle 构建脚本与 Wrapper，不执行构建
-   │  │  │     │  │  │  │  ├─ KotlinGradleDeploymentChecker.java  # 在不执行 Gradle 的情况下检查一个锁定的 Kotlin Gradle 应用
-   │  │  │     │  │  │  │  └─ KotlinGradleFacts.java  # 服务分析使用的固定 Kotlin Gradle 应用元数据
-   │  │  │     │  │  │  └─ kotlinc/  # 静态检查 Kotlin 编译器声明，不执行构建
-   │  │  │     │  │  │     ├─ KotlinCompilerDeploymentChecker.java  # 使用显式编译器元数据检查无依赖 Kotlin/JVM 源码
-   │  │  │     │  │  │     └─ KotlinCompilerFacts.java  # 固定的无依赖 Kotlin 编译器架构事实
-   │  │  │     │  │  ├─ node/  # Node.js/JavaScript/TypeScript 语言识别与构建架构分派
-   │  │  │     │  │  │  ├─ NodeBuildArchitectureFacts.java  # 选中的 Node 包管理器架构及其锁文件
-   │  │  │     │  │  │  ├─ NodeBuildChecker.java  # 读取 package.json、受支持锁文件和固定脚本名称，但不调用包管理器
-   │  │  │     │  │  │  ├─ NodeBuildFacts.java  # 来自 package.json 的固定包管理器、锁文件和脚本事实
-   │  │  │     │  │  │  ├─ NodeLanguageChecker.java  # 从路径与包元数据检测 Node.js、JavaScript 和 TypeScript 事实
-   │  │  │     │  │  │  ├─ NodeServiceDeploymentChecker.java  # 生成 Node 服务构建事实与精确版本运行时建议
-   │  │  │     │  │  │  ├─ npm/  # 静态检查 npm 锁文件，不执行构建
-   │  │  │     │  │  │  │  └─ NpmBuildChecker.java  # 检查 npm package-lock 架构
-   │  │  │     │  │  │  ├─ pnpm/  # 静态检查 pnpm 锁文件，不执行构建
-   │  │  │     │  │  │  │  └─ PnpmBuildChecker.java  # 检查 pnpm 锁文件架构
-   │  │  │     │  │  │  └─ yarn/  # 静态检查 Yarn 锁文件，不执行构建
-   │  │  │     │  │  │     └─ YarnBuildChecker.java  # 检查 Yarn 锁文件架构
-   │  │  │     │  │  ├─ php/  # PHP 语言识别与构建架构分派
-   │  │  │     │  │  │  ├─ PhpLanguageChecker.java  # 独立于构建架构识别 PHP 语言标记
-   │  │  │     │  │  │  ├─ PhpServiceDeploymentChecker.java  # 恰好选择一个经审阅的 PHP 架构
-   │  │  │     │  │  │  ├─ composer/  # 静态检查 Composer 锁文件，不执行构建
-   │  │  │     │  │  │  │  ├─ PhpComposerDeploymentChecker.java  # 在不执行 PHP 的情况下检查一个 Composer 锁定的 PHP 服务
-   │  │  │     │  │  │  │  └─ PhpComposerFacts.java  # 服务分析使用的固定 Composer 元数据
-   │  │  │     │  │  │  └─ phpcli/  # 静态检查 PHP CLI 入口，不执行构建
-   │  │  │     │  │  │     ├─ PhpCliDeploymentChecker.java  # 在不执行 PHP 的情况下检查一个无依赖 PHP CLI 服务
-   │  │  │     │  │  │     └─ PhpCliFacts.java  # 固定的无依赖 PHP CLI 架构事实
-   │  │  │     │  │  ├─ python/  # Python 语言识别与构建架构分派
-   │  │  │     │  │  │  ├─ PythonBuildArchitectureFacts.java  # 选中的 Python 依赖架构及其锁文件
-   │  │  │     │  │  │  ├─ PythonBuildChecker.java  # 读取 pyproject.toml 与固定锁文件名称，但不调用 Python
-   │  │  │     │  │  │  ├─ PythonBuildFacts.java  # 固定的 Python 项目与锁文件事实
-   │  │  │     │  │  │  ├─ PythonLanguageChecker.java  # 检测 Python 源码、精确版本元数据和唯一模块入口
-   │  │  │     │  │  │  ├─ PythonServiceDeploymentChecker.java  # 生成 Python 构建事实与精确版本/模块运行时建议
-   │  │  │     │  │  │  ├─ pip/  # 静态检查 pip 依赖锁定，不执行构建
-   │  │  │     │  │  │  │  └─ PipBuildChecker.java  # 检查使用哈希锁定的 pip 架构
-   │  │  │     │  │  │  ├─ pipenv/  # 静态检查 Pipenv 锁文件，不执行构建
-   │  │  │     │  │  │  │  └─ PipenvBuildChecker.java  # 检查 Pipenv 锁文件架构
-   │  │  │     │  │  │  ├─ poetry/  # 静态检查 Poetry 锁文件，不执行构建
-   │  │  │     │  │  │  │  └─ PoetryBuildChecker.java  # 检查 Poetry 锁文件架构
-   │  │  │     │  │  │  └─ uv/  # 静态检查 uv 锁文件，不执行构建
-   │  │  │     │  │  │     └─ UvBuildChecker.java  # 检查 uv 锁文件架构
-   │  │  │     │  │  ├─ ruby/  # Ruby 语言识别与构建架构分派
-   │  │  │     │  │  │  ├─ RubyLanguageChecker.java  # 独立于构建架构识别 Ruby 语言标记
-   │  │  │     │  │  │  ├─ RubyServiceDeploymentChecker.java  # 恰好选择一个经审阅的 Ruby 架构
-   │  │  │     │  │  │  ├─ bundler/  # 静态检查 Bundler 锁文件，不执行构建
-   │  │  │     │  │  │  │  ├─ RubyBundlerDeploymentChecker.java  # 在不执行 Ruby 的情况下检查一个 Bundler 锁定的 Rack 服务
-   │  │  │     │  │  │  │  └─ RubyBundlerFacts.java  # 服务分析使用的固定 Bundler 元数据
-   │  │  │     │  │  │  └─ rubycli/  # 静态检查 Ruby CLI 入口，不执行构建
-   │  │  │     │  │  │     ├─ RubyCliDeploymentChecker.java  # 在不执行 Ruby 的情况下检查一个无依赖 Ruby CLI 服务
-   │  │  │     │  │  │     └─ RubyCliFacts.java  # 固定的无依赖 Ruby CLI 架构事实
-   │  │  │     │  │  └─ rust/  # Rust 语言识别与构建架构分派
-   │  │  │     │  │     ├─ RustLanguageChecker.java  # 独立于构建架构识别 Rust 语言标记
-   │  │  │     │  │     └─ cargo/  # 静态检查 Cargo 锁文件与构建声明，不执行构建
-   │  │  │     │  │        ├─ RustCargoDeploymentChecker.java  # 在不执行 Rust 工具的情况下检查一个锁定的 Cargo 服务
-   │  │  │     │  │        └─ RustCargoFacts.java  # 服务分析使用的固定 Cargo 元数据
-   │  │  │     │  ├─ extension/  # 静态分析实现的装配与选择
-   │  │  │     │  │  └─ registry/  # 按项目类型注册和选择检查实现
-   │  │  │     │  │     └─ DeploymentTypeCheckerRegistry.java  # 持有完整且已验证的源码类型检查器装配
-   │  │  │     │  ├─ preview/  # 不能直接进入部署的只读识别预览
-   │  │  │     │  │  ├─ PreviewChecker.java  # 生成无法进入归档准备或部署的静态识别结果
-   │  │  │     │  │  └─ PreviewLanguageMarkerCatalog.java  # 仅收集尚无独立生态检查器的语言标记，不求值文件内容
-   │  │  │     │  ├─ service/  # 语言无关的服务元数据与报告组装
-   │  │  │     │  │  ├─ ServiceMetadataChecker.java  # 不包含语言特定规则的公共有界元数据操作
-   │  │  │     │  │  ├─ ServiceProjectFacts.java  # 单个语言检查器返回的公共有界服务元数据
-   │  │  │     │  │  └─ ServiceReportBuilder.java  # 组装语言无关的服务事实与运行时建议
-   │  │  │     │  ├─ source/  # 源码树安全遍历与有界元数据读取
-   │  │  │     │  │  ├─ ApplicationBundleChecker.java  # 在组件发现前读取构建归属，不执行声明
-   │  │  │     │  │  ├─ BoundedMetadataChecker.java  # 只在静态检查边界内读取固定项目元数据
-   │  │  │     │  │  ├─ BoundedSourceChecker.java  # 对源码树执行有界只读安全遍历
-   │  │  │     │  │  ├─ ProjectIdentityResolver.java  # 从经审阅元数据或选定根目录推导有界受管项目标识
-   │  │  │     │  │  ├─ SourceCheckFacts.java  # 在不执行任何项目可控内容的前提下采集的有界事实
-   │  │  │     │  │  └─ SourceLanguageEvidence.java  # 按调用方提供的语言规则收集首个路径证据
-   │  │  │     │  ├─ toolchain/  # 读取显式工具链声明，不执行构建
-   │  │  │     │  │  └─ ToolchainSpecChecker.java  # 不执行构建文件，在发布准入前收集有界版本声明
-   │  │  │     │  └─ workload/  # 容器和静态站点的确定性工作负载识别
-   │  │  │     │     ├─ ContainerDeploymentChecker.java  # 检测单一 Dockerfile 工作负载、声明端口与受管卷候选项
-   │  │  │     │     └─ StaticWebDeploymentChecker.java  # 区分纯静态内容与由锁文件支持的 Node 静态构建
-   │  │  │     └─ deploy/  # 标准部署的输入、计划、构建与发布
-   │  │  │        ├─ DeploymentStandardPlanner.java  # 对原仍受管源码规划全部确定性单组件及混合部署
-   │  │  │        ├─ DeploymentStaticReviewAnswers.java  # 一个已分析组件的冻结非秘密答案；确认记录由真实审阅者提供
-   │  │  │        ├─ DeploymentStaticReviewBuilder.java  # 按原任务、冻结来源与选定服务器补全确定性审阅输入
-   │  │  │        ├─ assistance/  # 辅助模式建议、审阅与有界执行
-   │  │  │        │  ├─ DeploymentAssistedAdvisor.java  # 仅在确定性步骤出现已证实失败后提供有界建议
-   │  │  │        │  ├─ DeploymentAssistedAnalysis.java  # 不持有执行端口、用于技术缺项的有界只读源码分析
-   │  │  │        │  ├─ DeploymentAssistedApproval.java  # 仅对已登记固定部署效果应用所选独立模型策略，保留精确宿主授权
-   │  │  │        │  ├─ DeploymentAssistedBuildCorrection.java  # 物理确认构建失败后仅重开四项类型化技术字段
-   │  │  │        │  ├─ DeploymentAssistedScope.java  # 冻结一项原辅助任务及语言调用预算，不替换平台权限
-   │  │  │        │  └─ DeploymentAssistedSession.java  # 每次真实 SSH 发送前立即复核辅助绑定
-   │  │  │        ├─ build/  # 类型化构建描述与构建脚本生成
-   │  │  │        │  ├─ BuildMatchPolicy.java  # 根据构建输出判定有界工具链重试
-   │  │  │        │  ├─ DeploymentStandardBuildRunner.java  # 经精确 helper 工具绑定与受限构建执行一个已审阅来源候选
-   │  │  │        │  ├─ DeploymentStandardCandidateRunner.java  # 串接一份原冻结归档、上传前工具选择、任务所属传输及受限构建
-   │  │  │        │  ├─ DeploymentToolchainSetup.java  # 每次至多准备一个已审阅目录分支，并封存精确安装绑定
-   │  │  │        │  ├─ DeploymentVerifiedBuildResult.java  # 已确认的有界构建身份，区别于最终发布
-   │  │  │        │  ├─ contract/  # 构建输入与生成内容的合同
-   │  │  │        │  │  └─ spi/  # 按构建架构扩展文本生成实现的合同
-   │  │  │        │  │     └─ DeploymentBuildWriter.java  # 通过固定且有界的目标机构建入口渲染一种经审阅项目类型
-   │  │  │        │  ├─ ecosystem/  # 按语言和工具生成构建脚本
-   │  │  │        │  │  ├─ CargoBuildWriter.java  # 渲染固定 Cargo 构建架构
-   │  │  │        │  │  ├─ CmakeBuildWriter.java  # 渲染固定单目标 CMake 试验架构
-   │  │  │        │  │  ├─ DotNetSdkBuildWriter.java  # 渲染固定 .NET SDK 构建架构
-   │  │  │        │  │  ├─ GoBuildWriter.java  # 渲染固定 Go Module 构建架构
-   │  │  │        │  │  ├─ java/  # 生成 Java 的受控构建脚本
-   │  │  │        │  │  │  ├─ GradleBuildWriter.java  # 渲染经审阅的 Spring Boot Gradle 架构
-   │  │  │        │  │  │  ├─ JavaJarBuildWriter.java  # 渲染经审阅的预构建 Java JAR 边界
-   │  │  │        │  │  │  ├─ JdkBuildWriter.java  # 渲染无依赖 JDK 源码架构
-   │  │  │        │  │  │  ├─ MavenBuildWriter.java  # 渲染经审阅的 Spring Boot Maven 与 Maven Wrapper 入口
-   │  │  │        │  │  │  └─ SpringBootArtifactBuildScript.java  # 仅共享不变的 Spring Boot 可执行 JAR 验证
-   │  │  │        │  │  ├─ kotlin/  # 生成 Kotlin 的受控构建脚本
-   │  │  │        │  │  │  ├─ KotlinCompilerBuildWriter.java  # 使用原生编译器渲染无依赖 Kotlin/JVM 源码
-   │  │  │        │  │  │  └─ KotlinGradleBuildWriter.java  # 渲染固定 Kotlin Gradle 扩展架构
-   │  │  │        │  │  ├─ node/  # 生成 Node.js/JavaScript/TypeScript 的受控构建脚本
-   │  │  │        │  │  │  ├─ NodeArchitectureBuildWriter.java  # 仅在具名架构 Renderer 间共享不变的 Node 服务外壳
-   │  │  │        │  │  │  ├─ NpmBuildWriter.java  # 渲染原生 npm Node 架构
-   │  │  │        │  │  │  ├─ PnpmBuildWriter.java  # 渲染 pnpm Node 架构
-   │  │  │        │  │  │  └─ YarnBuildWriter.java  # 渲染 Yarn Node 架构
-   │  │  │        │  │  ├─ php/  # 生成 PHP 的受控构建脚本
-   │  │  │        │  │  │  ├─ ComposerBuildWriter.java  # 渲染固定 Composer 扩展架构
-   │  │  │        │  │  │  └─ PhpCliBuildWriter.java  # 通过 PHP CLI 语法验证渲染无依赖 PHP 源码
-   │  │  │        │  │  ├─ python/  # 生成 Python 的受控构建脚本
-   │  │  │        │  │  │  ├─ PipBuildWriter.java  # 渲染原生完整哈希 pip 架构
-   │  │  │        │  │  │  ├─ PipenvBuildWriter.java  # 渲染 Pipenv 锁定架构
-   │  │  │        │  │  │  ├─ PoetryBuildWriter.java  # 渲染 Poetry 锁定架构
-   │  │  │        │  │  │  ├─ PythonArchitectureBuildWriter.java  # 在具名 Python 架构 Renderer 间共享不变的隔离 venv 外壳
-   │  │  │        │  │  │  └─ UvBuildWriter.java  # 渲染 uv 锁定架构
-   │  │  │        │  │  └─ ruby/  # 生成 Ruby 的受控构建脚本
-   │  │  │        │  │     ├─ BundlerBuildWriter.java  # 渲染固定 Bundler 扩展架构
-   │  │  │        │  │     └─ RubyCliBuildWriter.java  # 通过 Ruby CLI 语法验证渲染无依赖 Ruby 源码
-   │  │  │        │  ├─ extension/  # 构建文本生成实现的装配与选择
-   │  │  │        │  │  └─ registry/  # 注册并选择构建脚本生成实现
-   │  │  │        │  │     └─ DeploymentBuildWriterRegistry.java  # 为每种可部署项目架构恰好注册一个具名 Renderer
-   │  │  │        │  ├─ generation/  # 共用构建脚本与固定协议内容
-   │  │  │        │  │  └─ script/  # 构建脚本片段与受控外壳
-   │  │  │        │  │     ├─ CompanionBuildScript.java  # 将配套制品保留在与所属组件相同的有界候选及封存发布中
-   │  │  │        │  │     ├─ DeploymentBuildEnvironmentWriter.java  # 将已审阅非秘密构建值渲染为固定 Shell 导出
-   │  │  │        │  │     ├─ NodeDependencyToolSetup.java  # 准备项目固定包管理器，不改声明或锁文件
-   │  │  │        │  │     ├─ NodePackageBuildScript.java  # 渲染 Node 服务与构建型静态站点共享的包管理器部分
-   │  │  │        │  │     └─ SafeBuildScriptEnvelope.java  # 持有全部渲染器共享的归档校验、解压、限制、日志与构建工具证明
-   │  │  │        │  └─ workload/  # 容器和静态站点的构建内容生成
-   │  │  │        │     ├─ ContainerBuildWriter.java  # 渲染固定 Dockerfile 容器镜像构建
-   │  │  │        │     └─ StaticSiteBuildWriter.java  # 在不假设 Node 版本的情况下渲染纯静态或 Node 构建型站点产物
-   │  │  │        ├─ contract/  # 部署计划、输入与执行的扩展合同
-   │  │  │        │  ├─ DeploymentPlanAction.java  # 部署短停机部署事务的可审计固定阶段
-   │  │  │        │  ├─ DeploymentReviewConsent.java  # 用户对精确来源和目标的审阅记录；远端副作用仍需宿主授权
-   │  │  │        │  ├─ MultiPartDeploymentPlan.java  # 一个经审阅组件图的确定性构建与运行顺序
-   │  │  │        │  ├─ ReviewedDeploymentPlan.java  # 完全确定性的部署事务计划；不包含传输实现或原始命令
-   │  │  │        │  ├─ ReviewedDeploymentRequest.java  # 使用两种独立来源摘要及原平台句柄的完整已审阅标准候选
-   │  │  │        │  └─ spi/  # 受控部署实现的可替换合同
-   │  │  │        │     └─ DeploymentAdapter.java  # 为一个受支持的部署单组件项目类型生成一个确定性计划
-   │  │  │        ├─ database/  # 原生数据库选择、审阅与准备协议
-   │  │  │        │  ├─ DeploymentDatabaseSourceInputs.java  # 补全源码派生的数据库声明，不连接服务器也不授予结构批准
-   │  │  │        │  ├─ DeploymentNativeDatabaseReview.java  # 精确原生数据库效果与短期密码的原视图决定
-   │  │  │        │  ├─ DeploymentNativeSqlSource.java  # 首个远端数据库效果前校验每份冻结的原生 SQL 来源
-   │  │  │        │  ├─ DeploymentPreparedDatabase.java  # 交给审阅与发布的真实源码绑定数据库准备
-   │  │  │        │  └─ DeploymentSqliteSetup.java  # 准备源码绑定的 SQLite 声明；物理初始化留在正式发布阶段
-   │  │  │        ├─ extension/  # 部署能力的适配、注册与选择
-   │  │  │        │  ├─ adapter/  # 将部署类型接入既有受控能力
-   │  │  │        │  │  ├─ ContainerAdapter.java  # 在策略验证后计划一个 Dockerfile 镜像和一个受管 Docker 或 Podman 容器
-   │  │  │        │  │  ├─ DeploymentPlanFactory.java  # 类型化部署适配器的内部共用顺序
-   │  │  │        │  │  ├─ ServiceDeploymentAdapter.java  # 计划一个由 Profile 选定的普通 systemd 服务，不接受命令字符串
-   │  │  │        │  │  ├─ ServiceDeploymentProfile.java  # 一个普通 systemd 服务项目类型的不可变 Profile
-   │  │  │        │  │  └─ StaticSiteAdapter.java  # 只在验证声明的生成输出目录后计划静态站点发布
-   │  │  │        │  └─ registry/  # 按部署类型注册和选择适配实现
-   │  │  │        │     └─ DeploymentAdapterRegistry.java  # 持有完整且已验证的部署适配器装配
-   │  │  │        ├─ input/  # 部署声明、普通配置与秘密输入的解析和校验
-   │  │  │        │  ├─ ApplicationSpec.java  # 两端共用的有界应用声明与补填值
-   │  │  │        │  ├─ DeploymentDatabaseReviewModeType.java  # 区分尚未审阅、已审阅且为空及一种已审阅数据库族
-   │  │  │        │  ├─ DeploymentReviewField.java  # 向审阅人请求的一项不含秘密的运行输入
-   │  │  │        │  ├─ DeploymentReviewFieldException.java  # 标识实际无效输入，不在界面诊断暴露输入值
-   │  │  │        │  ├─ DeploymentStaticInputParser.java  # 解析桌面端有界运行时、数据库、秘密引用与 Git 引用记法
-   │  │  │        │  ├─ DeploymentStaticRuntimeResolver.java  # 解析有源码依据的运行时默认值，并校验与手动部署相同的领域对象
-   │  │  │        │  └─ DeploymentStoragePlan.java  # 解析已审阅存储并拒绝原有重叠和保留路径
-   │  │  │        ├─ plan/  # 已审阅计划、主机绑定与计划身份
-   │  │  │        │  ├─ DeploymentReviewedReleaseIdentity.java  # 从可改变构建或运行发布的每项输入推导不可变发布身份
-   │  │  │        │  ├─ MultiPartDeploymentPlanner.java  # 仅在混合项目通过安全准入后生成确定性图顺序
-   │  │  │        │  ├─ ReviewedDeploymentPlanner.java  # 将经审阅的请求路由到唯一能够计划其选定单组件项目类型的适配器
-   │  │  │        │  └─ ReviewedPlanIdentity.java  # 使用不变共用分界写入器的稳定执行前审阅身份
-   │  │  │        ├─ publication/  # 发布事务、原效果核对、收尾与恢复
-   │  │  │        │  ├─ DeploymentAssistedPublishAttempts.java  # 仅在各原效果及会话关闭后开启一次独立有界发布操作
-   │  │  │        │  ├─ DeploymentAssistedPublishBuild.java  # 仅在一个原候选、正式执行及有界重试预算内执行已确认构建纠正
-   │  │  │        │  ├─ DeploymentAssistedReviewRecovery.java  # 重启后仅确认留存正式账本到检查点的构建审阅指针，绝不安装或构建
-   │  │  │        │  ├─ DeploymentGraphPublishActionLog.java  # 各索引组件账本保留精确远端依据期间占用同一原图
-   │  │  │        │  ├─ DeploymentMultiPartPublishRecovery.java  # 显式核对一份原整图，不重构建、重发布或伪造来源权限
-   │  │  │        │  ├─ DeploymentMultiPartPublishRunner.java  # 在一个原可恢复引用任务和借用会话下运行完整已审阅组件图
-   │  │  │        │  ├─ DeploymentMultiPartPublishTransaction.java  # 将已构建的已审阅图作为单个原事务发布
-   │  │  │        │  ├─ DeploymentPublishAttemptPointers.java  # 指向完整持久发布同意的严格小指针，绝非复制配置或新任务状态
-   │  │  │        │  ├─ DeploymentPublishAttemptRecovery.java  # 仅确认正式已消费发布指针，不恢复中断作者
-   │  │  │        │  ├─ DeploymentPublishAuthorSession.java  # 跨明确审阅操作一次拥有一个物理作者会话
-   │  │  │        │  ├─ DeploymentPublishCleanupActionLog.java  # 保留原远端候选和清理依据，直至所有实际清理均已确认
-   │  │  │        │  ├─ DeploymentPublishCleanupAttempt.java  # 持久化一项原清理尝试，同时区分宿主拒绝与发送未确认
-   │  │  │        │  ├─ DeploymentPublishOperationBinding.java  # 要求实际后续候选匹配真实正式已消费当前操作
-   │  │  │        │  ├─ DeploymentPublishPolicyContext.java  # 在准备、每次连接及明确恢复间共用一份原发布策略
-   │  │  │        │  ├─ DeploymentPublishPolicyFacts.java  # 保留原发布策略及认证 wire，不读取后续偏好
-   │  │  │        │  ├─ DeploymentPublishRecoveryFacts.java  # 已校验原非秘密事实，绝不由路径或当前远端状态推断
-   │  │  │        │  ├─ DeploymentPublishRestorationProof.java  # 另一独立操作可审阅前读取每个已恢复原单元
-   │  │  │        │  ├─ DeploymentPublishStaging.java  # 封存单组件已审阅非秘密配置及瞬时秘密值
-   │  │  │        │  ├─ DeploymentStandardPublishRecovery.java  # 仅使用留存事实及只读helper观测核对一项原远端发布
-   │  │  │        │  ├─ DeploymentStandardPublishRunner.java  # 在同一原可恢复引用任务内构建并发布一个已审阅候选
-   │  │  │        │  └─ DeploymentStandardPublishTransaction.java  # 执行一个已知单组件发布，且仅以原快照回滚已知失败
-   │  │  │        ├─ support/  # 根据主机事实判断部署支持程度
-   │  │  │        │  ├─ DeploymentHostMatchDecision.java  # 带有有序审阅证据的保守主机支持状态
-   │  │  │        │  ├─ DeploymentHostMatcher.java  # 协调对已采集主机事实的公共、发行版与运行时支持检查
-   │  │  │        │  ├─ distro/  # 按 Linux 发行版应用支持规则
-   │  │  │        │  │  ├─ DeploymentAlmaLinuxMatchPolicy.java  # 包含明确 x86-64-v2 变体边界的 AlmaLinux 兼容性策略
-   │  │  │        │  │  ├─ DeploymentCentosStreamMatchPolicy.java  # 兼容性策略
-   │  │  │        │  │  ├─ DeploymentDebianMatchPolicy.java  # 稳定版兼容性策略
-   │  │  │        │  │  ├─ DeploymentDistributionMatchPolicy.java  # 单个发行版可独立审阅的兼容性边界
-   │  │  │        │  │  ├─ DeploymentDistributionMatchRules.java  # 独立发行版策略机械共享的固定检查
-   │  │  │        │  │  ├─ DeploymentDistributionMatcher.java  # 将已分类发行版路由到恰好一个独立策略
-   │  │  │        │  │  ├─ DeploymentOracleLinuxMatchPolicy.java  # 滚动主版本兼容性策略
-   │  │  │        │  │  ├─ DeploymentRockyLinuxMatchPolicy.java  # 固定到受维护小版本的 Rocky Linux 兼容性策略
-   │  │  │        │  │  └─ DeploymentUbuntuMatchPolicy.java  # 兼容性策略
-   │  │  │        │  └─ runtime/  # 匹配运行时需求与已采集主机能力
-   │  │  │        │     ├─ DeploymentRuntimeCapabilityDecision.java  # 表示一个已审阅运行时是否匹配采集到的主机能力
-   │  │  │        │     └─ DeploymentRuntimeCapabilityMatcher.java  # 将一个类型化运行时与已采集的主机工具能力进行匹配
-   │  │  │        └─ toolchain/  # 已审阅工具链的准备与精确绑定
-   │  │  │           ├─ DeploymentProjectToolchainRequirements.java  # 审阅输入与原始声明的公共工具链需求投影
-   │  │  │           └─ ToolchainBuildEnvironment.java  # 明确可执行路径与选择版本，保留项目语言目标
-   │  │  ├─ ui/  # 部署审阅、自主模式、任务与应用管理界面
-   │  │  │  ├─ DeploymentAgentEvidencePanel.java  # 展示原依据及明确安全边界控件，不持有任务能力
-   │  │  │  ├─ DeploymentAgentGitForm.java  # 持有实际不含凭据的固定Git输入控件
-   │  │  │  ├─ DeploymentAgentPage.java  # 用于本地或固定 Git 任务的自主专属所属页面
-   │  │  │  ├─ DeploymentAgentSourceControls.java  # 在任务准入前抓取一个自主本地位置或不含凭据的Git远端
-   │  │  │  ├─ DeploymentApplicationsPage.java  # 展示已保存应用并接纳精确所属管理动作
-   │  │  │  ├─ DeploymentGitSourceForm.java  # 持有仅 Git 可见输入并构建一项不含凭据的经审阅请求
-   │  │  │  ├─ DeploymentLocalSourceControls.java  # 共用本地元数据选择，保留每个原短任务至宿主完成
-   │  │  │  ├─ DeploymentPreferenceSelection.java  # 持久化明确视图编辑，不写初始化或语言变化
-   │  │  │  ├─ DeploymentRuntimePreview.java  # 以固定值复用普通运行控件，不持有任务、数据库、SSH或模型能力
-   │  │  │  ├─ DeploymentSecretRefField.java  # 将既有精确业务修订添加到高级无秘密引用字段
-   │  │  │  ├─ DeploymentSourceControls.java  # 持有所选来源元数据及完整项目草稿，不持有活动文件授权
-   │  │  │  ├─ DeploymentStaticPage.java  # 绑定所属者的静态部署页面；确认后视图关闭，任务回调仍留在原任务
-   │  │  │  ├─ DeploymentStaticPageReviewer.java  # 将当前所属视图的一次决定转换为类型化静态审阅值
-   │  │  │  ├─ DeploymentStaticPasswordInput.java  # 不保留迟到 EDT 字符地获取一次性所属 UTF-8 密码
-   │  │  │  ├─ DeploymentStaticSecretControls.java  # 管理单页发布前秘密创建及不含明文的修订选项
-   │  │  │  ├─ DeploymentTargetControls.java  # 保持明确目标身份，仅导航到固定公开宿主目标
+   │  │  │  └─ standard/  # 标准模式入口装配、恢复路由与公开能力桥接
+   │  │  │     ├─ DeploymentStandardAssembly.java  # 标准模式与捕获恢复路由的上层装配
+   │  │  │     ├─ DeploymentStandardPublishRecovery.java  # 仅使用留存事实及只读helper观测核对一项原远端发布
+   │  │  │     ├─ assisted/  # AI 辅助模式独立入口、建议与审核适配
+   │  │  │     │  ├─ DeploymentAssistedAdvisor.java  # 仅在确定性步骤出现已证实失败后提供有界建议
+   │  │  │     │  ├─ DeploymentAssistedAnalysis.java  # 技术缺项只读分析；保留查询参数和有界重复/修订号反馈，建议仍按精确选项校验
+   │  │  │     │  ├─ DeploymentAssistedApproval.java  # 仅对已登记固定部署效果应用所选独立模型策略，保留精确宿主授权
+   │  │  │     │  ├─ DeploymentAssistedReviewCoordinator.java  # 在确定性流程内组织来源建议、人工审阅及辅助发布身份
+   │  │  │     │  ├─ DeploymentAssistedScope.java  # 冻结一项原辅助任务及语言调用预算，不替换平台权限
+   │  │  │     │  ├─ DeploymentAssistedSession.java  # 每次真实 SSH 发送前立即复核辅助绑定
+   │  │  │     │  ├─ DeploymentAssistedWorkflow.java  # 独立模式入口
+   │  │  │     │  ├─ DeploymentSourceComparison.java  # 有界独立 AI 来源扫描及与确定性结果的显式比较
+   │  │  │     │  └─ publish/  # 辅助工具循环、构建纠正与发布尝试适配
+   │  │  │     │     ├─ DeploymentAssistedDeployment.java  # AI选择标准部署工具，缺口命令独立审核后执行
+   │  │  │     │     ├─ DeploymentAssistedGraphPublishRunner.java  # 在共用已核实发布能力上的辅助工具循环
+   │  │  │     │     ├─ DeploymentAssistedPublishAttempts.java  # 仅在各原效果及会话关闭后开启一次独立有界发布操作
+   │  │  │     │     ├─ DeploymentAssistedPublishBuild.java  # 仅在一个原候选、正式执行及有界重试预算内执行已确认构建纠正
+   │  │  │     │     ├─ DeploymentAssistedReviewRecovery.java  # 重启后仅确认留存正式账本到检查点的构建审阅指针，绝不安装或构建
+   │  │  │     │     └─ DeploymentAssistedSinglePublishRunner.java  # 在共用已核实发布能力上的辅助工具循环
+   │  │  │     ├─ shared/  # 两种标准模式共用的确定性流程与页面服务
+   │  │  │     │  ├─ DeploymentComponentSelection.java  # 校验审阅图，并从明确输入派生根，不要求属于发现全集
+   │  │  │     │  ├─ DeploymentStandardPageService.java  # 绑定页面只读服务器查询及原发布任务，但不持有 Swing 视图
+   │  │  │     │  ├─ DeploymentStandardRuntimeDraft.java  # 在来源建议之后应用明确非秘密运行预填，保留组件资源范围
+   │  │  │     │  ├─ DeploymentStandardUnitResolver.java  # 解析原受管所有者，首次发布则生成尚未持久化的随机所有者
+   │  │  │     │  ├─ DeploymentStandardWorkflow.java  # 协调一项本地或 Git 静态审阅与发布原任务，不另造来源授权
+   │  │  │     │  ├─ contract/  # 共享输入、审阅值与模式扩展合同
+   │  │  │     │  │  ├─ DeploymentAssistedBuildCorrection.java  # 物理确认构建失败后仅重开四项类型化技术字段
+   │  │  │     │  │  ├─ DeploymentStandardInputs.java  # 两种标准模式的不可变输入及所属审阅
+   │  │  │     │  │  ├─ DeploymentStandardModeSupport.java  # 模式扩展合同，共用代码不构造模式实现
+   │  │  │     │  │  └─ DeploymentStandardRecoverySupport.java  # 装配入口提供的路由及原恢复准入
+   │  │  │     │  ├─ deploy/  # 标准部署的输入、计划、构建与发布
+   │  │  │     │  │  ├─ DeploymentStandardPlanner.java  # 对原仍受管源码规划全部确定性单组件及混合部署
+   │  │  │     │  │  ├─ DeploymentStandardReviewAnswers.java  # 一个已分析组件的冻结非秘密答案；确认记录由真实审阅者提供
+   │  │  │     │  │  ├─ DeploymentStandardReviewBuilder.java  # 按原任务、冻结来源与选定服务器补全确定性审阅输入
+   │  │  │     │  │  ├─ adapter/  # 部署适配器实现、装配与选择
+   │  │  │     │  │  │  ├─ ContainerAdapter.java  # 在策略验证后计划一个 Dockerfile 镜像和一个受管 Docker 或 Podman 容器
+   │  │  │     │  │  │  ├─ DeploymentAdapterRegistry.java  # 持有完整且已验证的部署适配器装配
+   │  │  │     │  │  │  ├─ DeploymentPlanFactory.java  # 类型化部署适配器的内部共用顺序
+   │  │  │     │  │  │  ├─ ServiceDeploymentAdapter.java  # 计划一个由 Profile 选定的普通 systemd 服务，不接受命令字符串
+   │  │  │     │  │  │  ├─ ServiceDeploymentProfile.java  # 一个普通 systemd 服务项目类型的不可变 Profile
+   │  │  │     │  │  │  └─ StaticSiteAdapter.java  # 只在验证声明的生成输出目录后计划静态站点发布
+   │  │  │     │  │  ├─ build/  # 已审阅计划的候选准备、构建执行与结果核验
+   │  │  │     │  │  │  ├─ BuildMatchPolicy.java  # 根据构建输出判定有界工具链重试
+   │  │  │     │  │  │  ├─ DeploymentStandardBuildRunner.java  # 经精确 helper 工具绑定与受限构建执行一个已审阅来源候选
+   │  │  │     │  │  │  ├─ DeploymentStandardCandidateRunner.java  # 串接一份原冻结归档、上传前工具选择、任务所属传输及受限构建
+   │  │  │     │  │  │  └─ DeploymentVerifiedBuildResult.java  # 已确认的有界构建身份，区别于最终发布
+   │  │  │     │  │  ├─ contract/  # 部署计划、输入与受控执行的扩展合同
+   │  │  │     │  │  │  ├─ DeploymentAdapter.java  # 为一个受支持的部署单组件项目类型生成一个确定性计划
+   │  │  │     │  │  │  ├─ DeploymentPlanAction.java  # 部署短停机部署事务的可审计固定阶段
+   │  │  │     │  │  │  ├─ DeploymentReviewConsent.java  # 用户对精确来源和目标的审阅记录；远端副作用仍需宿主授权
+   │  │  │     │  │  │  ├─ MultiPartDeploymentPlan.java  # 一个经审阅组件图的确定性构建与运行顺序
+   │  │  │     │  │  │  ├─ ReviewedDeploymentPlan.java  # 完全确定性的部署事务计划；不包含传输实现或原始命令
+   │  │  │     │  │  │  └─ ReviewedDeploymentRequest.java  # 使用两种独立来源摘要及原平台句柄的完整已审阅标准候选
+   │  │  │     │  │  ├─ database/  # 标准数据库输入、审阅、准备编排与恢复记录
+   │  │  │     │  │  │  ├─ DeploymentDatabaseSourceInputs.java  # 补全源码派生的数据库声明，不连接服务器也不授予结构批准
+   │  │  │     │  │  │  └─ DeploymentDatabaseStages.java  # 将整份源码数据库校验与原任务原生效果分开
+   │  │  │     │  │  ├─ input/  # 部署声明、普通配置与秘密输入的解析和校验
+   │  │  │     │  │  │  ├─ ApplicationSpec.java  # 两端共用的有界应用声明与补填值
+   │  │  │     │  │  │  ├─ DeploymentDatabaseReviewModeType.java  # 区分尚未审阅、已审阅且为空及一种已审阅数据库族
+   │  │  │     │  │  │  ├─ DeploymentReviewField.java  # 向审阅人请求的一项不含秘密的运行输入
+   │  │  │     │  │  │  ├─ DeploymentReviewFieldException.java  # 标识实际无效输入，不在界面诊断暴露输入值
+   │  │  │     │  │  │  ├─ DeploymentStandardInputParser.java  # 解析桌面端有界运行时、数据库、秘密引用与 Git 引用记法
+   │  │  │     │  │  │  ├─ DeploymentStandardRuntimeResolver.java  # 解析有源码依据的运行时默认值，并校验与手动部署相同的领域对象
+   │  │  │     │  │  │  └─ DeploymentStoragePlan.java  # 解析已审阅存储并拒绝原有重叠和保留路径
+   │  │  │     │  │  ├─ plan/  # 已审阅计划、主机绑定与计划身份
+   │  │  │     │  │  │  ├─ DeploymentReviewedReleaseIdentity.java  # 从可改变构建或运行发布的每项输入推导不可变发布身份
+   │  │  │     │  │  │  ├─ MultiPartDeploymentPlanner.java  # 仅在混合项目通过安全准入后生成确定性图顺序
+   │  │  │     │  │  │  ├─ ReviewedDeploymentPlanner.java  # 将经审阅的请求路由到唯一能够计划其选定单组件项目类型的适配器
+   │  │  │     │  │  │  └─ ReviewedPlanIdentity.java  # 使用不变共用分界写入器的稳定执行前审阅身份
+   │  │  │     │  │  └─ publish/  # 标准单组件和多组件发布编排与原操作恢复
+   │  │  │     │  │     ├─ DeploymentPublishRecoveryFacts.java  # 已校验原非秘密事实，绝不由路径或当前远端状态推断
+   │  │  │     │  │     ├─ attempt/  # 原发布尝试绑定、账本与恢复核对
+   │  │  │     │  │     │  ├─ DeploymentPublishAttemptRecovery.java  # 仅确认正式已消费发布指针，不恢复中断作者
+   │  │  │     │  │     │  ├─ DeploymentPublishOperationBinding.java  # 要求实际后续候选匹配真实正式已消费当前操作
+   │  │  │     │  │     │  ├─ DeploymentPublishRestorationProof.java  # 另一独立操作可审阅前读取每个已恢复原单元
+   │  │  │     │  │     │  └─ pointer/  # 独立原操作指针文档校验
+   │  │  │     │  │     │     └─ DeploymentPublishAttemptPointers.java  # 指向完整持久发布同意的严格小指针，绝非复制配置或新任务状态
+   │  │  │     │  │     ├─ cleanup/  # 候选和会话清理与原状态核对
+   │  │  │     │  │     │  ├─ DeploymentPublishAuthorSession.java  # 跨明确审阅操作一次拥有一个物理作者会话
+   │  │  │     │  │     │  ├─ DeploymentPublishCleanupActionLog.java  # 保留原远端候选和清理依据，直至所有实际清理均已确认
+   │  │  │     │  │     │  └─ DeploymentPublishCleanupAttempt.java  # 持久化一项原清理尝试，同时区分宿主拒绝与发送未确认
+   │  │  │     │  │     ├─ graph/  # 多组件发布事务与原操作恢复
+   │  │  │     │  │     │  ├─ DeploymentStandardGraphPublishActionLog.java  # 各索引组件账本保留精确远端依据期间占用同一原图
+   │  │  │     │  │     │  ├─ DeploymentStandardGraphPublishRecovery.java  # 显式核对一份原整图，不重构建、重发布或伪造来源权限
+   │  │  │     │  │     │  ├─ DeploymentStandardGraphPublishRunner.java  # 在一个原可恢复引用任务和借用会话下运行完整已审阅组件图
+   │  │  │     │  │     │  └─ DeploymentStandardGraphPublishTransaction.java  # 将已构建的已审阅图作为单个原事务发布
+   │  │  │     │  │     ├─ policy/  # 已捕获策略、目标、授权作用域与发布日志合同
+   │  │  │     │  │     │  ├─ DeploymentPublishGraphJournal.java  # 独立于图执行的共用整图占用合同
+   │  │  │     │  │     │  ├─ DeploymentPublishPolicyContext.java  # 共用原发布策略，明确恢复时审批并核验helper修复
+   │  │  │     │  │     │  └─ DeploymentPublishPolicyFacts.java  # 保留原发布策略及认证wire，独立追加helper修复依据
+   │  │  │     │  │     └─ single/  # 单组件发布事务与原操作恢复
+   │  │  │     │  │        ├─ DeploymentStandardSinglePublishRecovery.java  # 单组件原发布恢复
+   │  │  │     │  │        ├─ DeploymentStandardSinglePublishRunner.java  # 在同一原可恢复引用任务内构建并发布一个已审阅候选
+   │  │  │     │  │        └─ DeploymentStandardSinglePublishTransaction.java  # 执行一个已知单组件发布，且仅以原快照回滚已知失败
+   │  │  │     │  ├─ recovery/  # 共用准备阶段与原任务恢复
+   │  │  │     │  │  └─ DeploymentStandardTaskRecovery.java  # 本机清理前核对原发布前素材及原生数据库回执；正式执行仍由原恢复处理
+   │  │  │     │  └─ source/  # 来源选择、准备、草稿和项目保存
+   │  │  │     │     ├─ DeploymentStandardProjectSave.java  # 在原任务中仅保存一次已审阅发布来源
+   │  │  │     │     ├─ DeploymentStandardSetupActionLog.java  # 有界原静态准备身份；原生数据库效果另须原操作回执核对
+   │  │  │     │     ├─ DeploymentStandardSourceService.java  # 执行来源预选及完整项目保存，不跨任务分享活动授权
+   │  │  │     │     └─ DeploymentStandardSourceSetup.java  # 冻结图来源归档，仅释放原已确认准备资源
+   │  │  │     └─ staticmode/  # 静态模式独立入口和人工审阅适配
+   │  │  │        └─ DeploymentStaticWorkflow.java  # 独立模式入口
+   │  │  ├─ ui/  # 部署工作区及所属页面控件分组
    │  │  │  ├─ DeploymentWorkspace.java  # 在唯一已发布根内持有按需创建的部署视图
-   │  │  │  ├─ component/  # 手工多组件编辑及原输入保留
-   │  │  │  │  └─ DeploymentComponentEditor.java  # 源码分析前编辑实际图，保留全部明确组件边界
+   │  │  │  ├─ agent/  # 自主模式页面与专属控件
+   │  │  │  │  ├─ DeploymentAgentEvidencePanel.java  # 展示原依据及明确安全边界控件，不持有任务能力
+   │  │  │  │  ├─ DeploymentAgentGitForm.java  # 持有实际不含凭据的固定Git输入控件
+   │  │  │  │  ├─ DeploymentAgentPage.java  # 用于本地或固定 Git 任务的自主专属所属页面
+   │  │  │  │  └─ DeploymentAgentSourceControls.java  # 在任务准入前抓取一个自主本地位置或不含凭据的Git远端
+   │  │  │  ├─ application/  # 应用管理页面与专属控件
+   │  │  │  │  └─ DeploymentApplicationsPage.java  # 展示已保存应用并接纳精确所属管理动作
    │  │  │  ├─ delivery/  # 已核实公开端点与固定命令的桌面动作
    │  │  │  │  └─ DeploymentDeliveryPanel.java  # 复用已核实且带组件身份的交付，不解码不透明运行数据
-   │  │  │  ├─ environment/  # 显式目标环境准备及原任务反馈
+   │  │  │  ├─ environment/  # 环境目标显式选择、审阅与原任务反馈
    │  │  │  │  └─ DeploymentEnvironmentPage.java  # 经真实可恢复环境流程准备明确选定的原服务器
-   │  │  │  ├─ feedback/  # 原句柄持续观察与成功后精确交付查询
+   │  │  │  ├─ feedback/  # 原句柄持续观察及成功后精确交付查询
    │  │  │  │  ├─ DeploymentTaskDelivery.java  # 仅在原宿主完成后读取精确交付
    │  │  │  │  └─ DeploymentTaskFeedback.java  # 持续观察一个原句柄，不提交轮询任务
+   │  │  │  ├─ preference/  # 共用模式、审核和模型偏好控件
+   │  │  │  │  └─ DeploymentPreferenceSelection.java  # 持久化明确视图编辑，不写初始化或语言变化
    │  │  │  ├─ runtime/  # 运行预填、原字段校验与键盘帮助
    │  │  │  │  ├─ DeploymentReviewInputs.java  # 创建带可访问字段帮助及有界多行声明的真实编辑输入
    │  │  │  │  └─ DeploymentRuntimeDraftForm.java  # 保留明确非秘密启动前输入，来源建议仅补未编辑值
-   │  │  │  └─ style/  # 复用主题值的所属表单与高级窗口排版
-   │  │  │     └─ DeploymentPageStyle.java  # 仅使用 Swing 主题值的 Mod 本地展示，不访问宿主实现
-   │  │  └─ resources/  # 随附运行资源
-   │  │     ├─ db/  # 数据库实现
-   │  │     │  ├─ schema-v1.sql  # 当前模块的数据库结构与权限脚本
-   │  │     │  └─ validation-v1.sql  # 当前模块的数据库结构与权限脚本
-   │  │     ├─ linux/  # Linux 与受管远程能力
-   │  │     │  ├─ distro/  # 发行版识别
-   │  │     │  │  └─ dnf/  # DNF软件源
-   │  │     │  │     └─ centos-source-repositories.py  # CentOS 9/10 源码依赖事务 CRB 选择
-   │  │     │  ├─ execution/  # 执行协议
-   │  │     │  │  └─ protocol/  # 固定执行协议
-   │  │     │  │     └─ helper/  # 固定helper组装
-   │  │     │  │        └─ fragments/  # 固定helper分片
-   │  │     │  │           ├─ 00-protocol-foundation.sh  # 定义受管 helper 协议的安全基线、路径和输入校验函数
-   │  │     │  │           ├─ 70-command-dispatch.sh  # 将 helper 协议命令分派到固定的受管操作
-   │  │     │  │           ├─ backup/  # 备份协议
-   │  │     │  │           │  ├─ 67-managed-backup.sh  # 实现固定 PAX TAR/OCI 取材、制品读取和精确操作清理
-   │  │     │  │           │  └─ 69-handoff-backup-status.sh  # 固定备份与只读状态协议片段
-   │  │     │  │           ├─ database/  # 原生数据库协议
-   │  │     │  │           │  ├─ 10-native-instances.sh  # 检测已有实例并执行系统包安装、替换和恢复等待
-   │  │     │  │           │  ├─ 20-native-targets.sh  # 创建限定权限的应用库、受保护启动凭据和一次性 SQL 初始化
-   │  │     │  │           │  ├─ 21-native-operations.sh  # 固定数据库操作、身份核对或备份协议片段
-   │  │     │  │           │  ├─ 63-database-inspection.sh  # 固定数据库操作、身份核对或备份协议片段
-   │  │     │  │           │  ├─ 64-database-client.sh  # SQL 客户端、数据库参数与 SQLite 物理绑定核验
-   │  │     │  │           │  ├─ 65-database-backup.sh  # 实现数据库预检、导出、制品流转、清理和候选恢复
-   │  │     │  │           │  ├─ 66-database-activation.sh  # 激活数据库候选并保留可验证的回滚边界
-   │  │     │  │           │  └─ 68-handoff-database.sh  # 固定数据库操作、身份核对或备份协议片段
-   │  │     │  │           ├─ ecosystem/  # 语言工具生态
-   │  │     │  │           │  └─ 35-ecosystem-dispatch.sh  # 按受支持项目生态分派固定构建与运行准备流程
-   │  │     │  │           ├─ input/  # 输入校验
-   │  │     │  │           │  ├─ 15-deployment-input.sh  # 解析并校验类型化部署输入、配置和秘密引用
-   │  │     │  │           │  ├─ 16-application-input.sh  # 独立解析和验证 APP 运行协议
-   │  │     │  │           │  └─ 17-managed-content.sh  # 解析、准备并验证普通文件的固定远端受管目录绑定
-   │  │     │  │           ├─ release/  # 发布身份
-   │  │     │  │           │  ├─ 10-typed-release.sh  # 实现受约束的类型化候选发布与发布身份处理
-   │  │     │  │           │  ├─ 12-container-image-input.sh  # rootless 镜像交接与容器数据权限
-   │  │     │  │           │  ├─ 18-container-storage.sh  # 宿主绑定、镜像初始化、只读视图与挂载归属检查
-   │  │     │  │           │  ├─ 50-container-release.sh  # 实现容器应用的发布、镜像与命名卷归属流程
-   │  │     │  │           │  ├─ 52-container-recovery.sh  # 实现容器快照、回滚和生命周期恢复流程
-   │  │     │  │           │  ├─ 53-publication-observation.sh  # 固定发布、快照或留存协议片段
-   │  │     │  │           │  ├─ 55-publication-snapshot.sh  # 固定发布、快照或留存协议片段
-   │  │     │  │           │  └─ 58-retained-activation.sh  # 固定发布、快照或留存协议片段
-   │  │     │  │           ├─ restore/  # 已保存事实恢复
-   │  │     │  │           │  ├─ 54-restore-candidate.sh  # 准备受管恢复候选及隔离检查输入
-   │  │     │  │           │  ├─ 56-restore-commit.sh  # 提交恢复候选并执行失败回滚
-   │  │     │  │           │  ├─ 56-restore-recovery.sh  # 固定恢复与收尾协议片段
-   │  │     │  │           │  ├─ 57-application-restore.sh  # 候选 APP 验证与候选端口映射
-   │  │     │  │           │  ├─ 59-handoff-database-restore.sh  # 固定恢复与收尾协议片段
-   │  │     │  │           │  ├─ 59-handoff-restore-cleanup.sh  # 固定恢复与收尾协议片段
-   │  │     │  │           │  └─ 59-handoff-restore.sh  # 固定恢复与收尾协议片段
-   │  │     │  │           ├─ runtime/  # 运行时观察
-   │  │     │  │           │  ├─ 40-typed-runtime.sh  # 实现类型化运行时环境、构建参数和产物校验
-   │  │     │  │           │  ├─ 41-application-admission.sh  # 固定运行观察与应用准入协议片段
-   │  │     │  │           │  ├─ 41-application-runtime.sh  # 任务登记、维护准入和输入校验
-   │  │     │  │           │  ├─ 42-application-job.sh  # 原生非 root 前台任务及隔离验证
-   │  │     │  │           │  ├─ 43-application-container.sh  # 一次性任务容器和清理
-   │  │     │  │           │  ├─ 44-application-health.sh  # 稳定进程、受控自检与 TCP/HTTP/UDP 协议验证
-   │  │     │  │           │  └─ 45-application-container-contract.sh  # 镜像固定入口、挂载及端口实际映射核对
-   │  │     │  │           └─ workspace/  # 受管工作区
-   │  │     │  │              ├─ 20-candidate-workspace.sh  # 创建并校验受管候选工作区及其所有权边界
-   │  │     │  │              ├─ 21-workspace-volume.sh  # 固定 ext4 容量及挂载设备回收
-   │  │     │  │              ├─ 22-restricted-build.sh  # 临时构建、控制组限制与只读封存
-   │  │     │  │              ├─ 23-container-builder.sh  # 临时 rootless 账号和 UID/GID 映射
-   │  │     │  │              ├─ 24-build-entry.sh  # 独立安装的非特权构建与 rootless 后端入口
-   │  │     │  │              ├─ 25-workspace-recovery.sh  # 开机回收受管候选，隔离不明残留
-   │  │     │  │              ├─ 26-build-output.sh  # root 控制器累计输出预算和有界日志
-   │  │     │  │              ├─ 27-agent-workspace.sh  # 模块资源与配置
-   │  │     │  │              └─ apparmor-namespace.sh  # 工作区使用实际引擎 AppArmor profile 探测命名空间
-   │  │     │  ├─ runtime/  # 运行时观察
-   │  │     │  │  ├─ container/  # 容器工作负载
-   │  │     │  │  │  └─ helper/  # 固定helper组装
-   │  │     │  │  │     └─ 55-podman-quadlet.sh  # 生成并管理 Podman Quadlet 容器运行单元
-   │  │     │  │  └─ systemd/  # Systemd运行控制
-   │  │     │  │     └─ helper/  # 固定helper组装
-   │  │     │  │        ├─ 60-lifecycle.sh  # 核验当前原生/容器运行合同并执行受管发布保留
-   │  │     │  │        ├─ 61-service-identity.sh  # 固定服务账号、声明写入权限与停止确认
-   │  │     │  │        ├─ selinux-command-entry.sh  # SELinux 标准服务启动入口
-   │  │     │  │        └─ systemd-manager-isolation.sh  # systemd 管理接口隔离
-   │  │     │  ├─ toolchain/  # 工具链准备与绑定
-   │  │     │  │  ├─ 10-release-metadata.py  # 解析官方发布元数据、版本和可信摘要
-   │  │     │  │  ├─ 20-installation-boundaries.py  # 校验归档、系统依赖、归属和有界子进程
-   │  │     │  │  ├─ 30-managed-installation.py  # 隔离安装、系统复用及完成标记验证
-   │  │     │  │  └─ 40-binding-protocol.py  # 密封精确绑定、验证和跨机恢复定位
-   │  │     │  └─ workspace/  # 受管工作区
-   │  │     │     └─ source-operations.py  # 模块资源与配置
-   │  │     ├─ service/  # 平台业务服务
-   │  │     │  ├─ core/  # 公共业务事实
-   │  │     │  │  └─ execution/  # 执行协议
-   │  │     │  │     └─ external-applications.py  # 按已认证会话执行固定外部应用扫描与身份复核
-   │  │     │  └─ environment/  # 固定工具链与原操作安全准备协议
-   │  │     │     ├─ environment.sh  # 模块运行资源
-   │  │     │     └─ selinux.sh  # 模块运行资源
-   │  │     └─ ui/  # Swing 界面
-   │  │        ├─ delivery/  # 公开交付动作与状态的多语言文字
-   │  │        │  ├─ delivery.properties  # 模块运行资源
-   │  │        │  ├─ delivery_en.properties  # 模块运行资源
-   │  │        │  └─ delivery_zh.properties  # 模块运行资源
-   │  │        ├─ deployment-agent-page_en.properties  # 当前模块的固定配置或语言资源
-   │  │        ├─ deployment-agent-page_zh.properties  # 当前模块的固定配置或语言资源
-   │  │        ├─ deployment-applications-page.properties  # 当前模块的固定配置或语言资源
-   │  │        ├─ deployment-applications-page_en.properties  # 当前模块的固定配置或语言资源
-   │  │        ├─ deployment-applications-page_zh.properties  # 当前模块的固定配置或语言资源
-   │  │        ├─ deployment-page.properties  # 当前模块的固定配置或语言资源
-   │  │        ├─ deployment-page_zh.properties  # 当前模块的固定配置或语言资源
-   │  │        ├─ environment/  # 环境选择、审批与状态的多语言文字
-   │  │        │  ├─ environment-page.properties  # 模块运行资源
-   │  │        │  ├─ environment-page_en.properties  # 模块运行资源
-   │  │        │  └─ environment-page_zh.properties  # 模块运行资源
-   │  │        └─ feedback/  # 原任务动态反馈的多语言文字
-   │  │           ├─ task-feedback.properties  # 模块运行资源
-   │  │           ├─ task-feedback_en.properties  # 模块运行资源
-   │  │           └─ task-feedback_zh.properties  # 模块运行资源
-   │  ├─ files/  # 独立可选文件管理 Mod，无业务 Schema
+   │  │  │  ├─ source/  # 共用来源选择和输入控件
+   │  │  │  │  └─ DeploymentLocalSourceControls.java  # 共用本地元数据选择，保留每个原短任务至宿主完成
+   │  │  │  ├─ standard/  # 标准模式页面、审阅与手工组件等专属控件
+   │  │  │  │  ├─ DeploymentComponentEditor.java  # 源码分析前编辑实际图，保留全部明确组件边界
+   │  │  │  │  ├─ DeploymentSecretRefField.java  # 将既有精确业务修订添加到高级无秘密引用字段
+   │  │  │  │  ├─ DeploymentStandardGitSourceForm.java  # 持有仅 Git 可见输入并构建一项不含凭据的经审阅请求
+   │  │  │  │  ├─ DeploymentStandardPage.java  # 绑定所属者的静态部署页面；确认后视图关闭，任务回调仍留在原任务
+   │  │  │  │  ├─ DeploymentStandardPageReviewer.java  # 将当前所属视图的一次决定转换为类型化静态审阅值
+   │  │  │  │  ├─ DeploymentStandardPasswordInput.java  # 不保留迟到 EDT 字符地获取一次性所属 UTF-8 密码
+   │  │  │  │  ├─ DeploymentStandardRuntimePreview.java  # 以固定值复用普通运行控件，不持有任务、数据库、SSH或模型能力
+   │  │  │  │  ├─ DeploymentStandardSecretControls.java  # 管理单页发布前秘密创建及不含明文的修订选项
+   │  │  │  │  └─ DeploymentStandardSourceControls.java  # 持有所选来源元数据及完整项目草稿，不持有活动文件授权
+   │  │  │  ├─ style/  # 复用主题值的所属表单与高级窗口排版
+   │  │  │  │  ├─ DeploymentCard.java  # 保留原内容布局并裁剪子组件的所属圆角表面
+   │  │  │  │  └─ DeploymentPageStyle.java  # 仅使用 Swing 主题值的 Mod 本地展示，不访问宿主实现
+   │  │  │  └─ target/  # 共用目标主机选择和事实控件
+   │  │  │     └─ DeploymentTargetControls.java  # 保持明确目标身份，仅导航到固定公开宿主目标
+   │  │  └─ resources/  # 所属能力分组
+   │  │     └─ gold/  # 所属运行资源分组
+   │  │        └─ debug/  # 所属运行资源分组
+   │  │           └─ windowstolinux/  # 所属运行资源分组
+   │  │              └─ mod/  # 所属运行资源分组
+   │  │                 └─ deployment/  # 所属运行资源分组
+   │  │                    ├─ ai/  # 共用有界模型调用、工具交互、审批和说明资源加载
+   │  │                    │  ├─ finite-command-review.md  # 随包发布的固定模型说明，运行门禁仍由代码执行
+   │  │                    │  └─ review/  # 公共命令审核、证据与授权说明
+   │  │                    │     ├─ command-review.md  # 随包发布的固定模型说明，运行门禁仍由代码执行
+   │  │                    │     └─ review-response.md  # 随包发布的固定模型说明，运行门禁仍由代码执行
+   │  │                    ├─ config/  # 本 Mod 固定配置资源
+   │  │                    │  └─ config.yaml  # 来源、构建、环境和视图参数，填写见 docs/reference/Config.md
+   │  │                    ├─ db/  # 所属运行资源分组
+   │  │                    │  ├─ schema-v1.sql  # 当前模块的完整数据库结构基准
+   │  │                    │  └─ validation-v1.sql  # 当前模块的只读结构验证基准
+   │  │                    ├─ linux/  # 固定远端 helper 的协议资源
+   │  │                    │  ├─ command/  # 模型命令执行说明资源
+   │  │                    │  │  └─ contract/  # 公共主机命令的完整执行边界说明
+   │  │                    │  │     └─ host-command.md  # 环境、工具检查与独立审核要求；不代替执行许可
+   │  │                    │  └─ helper/  # 固定受管 helper 协议与按职责拼装的资源
+   │  │                    │     ├─ 00-protocol-foundation.sh  # 定义受管 helper 协议的安全基线、路径和输入校验函数
+   │  │                    │     ├─ 70-command-dispatch.sh  # 将 helper 协议命令分派到固定的受管操作
+   │  │                    │     ├─ backup/  # 备份制品与原操作状态协议
+   │  │                    │     │  ├─ 67-managed-backup.sh  # 实现固定 PAX TAR/OCI 取材、制品读取和精确操作清理
+   │  │                    │     │  └─ 69-handoff-backup-status.sh  # 固定备份与只读状态协议片段
+   │  │                    │     ├─ database/  # 数据库实例、初始化、客户端与备份协议
+   │  │                    │     │  ├─ 10-native-instances.sh  # 检测已有实例并执行系统包安装、替换和恢复等待
+   │  │                    │     │  ├─ 20-native-targets.sh  # 创建限定权限的应用库、受保护启动凭据和一次性 SQL 初始化
+   │  │                    │     │  ├─ 21-native-operations.sh  # 固定数据库操作、身份核对或备份协议片段
+   │  │                    │     │  ├─ 63-database-inspection.sh  # 固定数据库操作、身份核对或备份协议片段
+   │  │                    │     │  ├─ 64-database-client.sh  # SQL 客户端、数据库参数与 SQLite 物理绑定核验
+   │  │                    │     │  ├─ 65-database-backup.sh  # 实现数据库预检、导出、制品流转、清理和候选恢复
+   │  │                    │     │  ├─ 66-database-activation.sh  # 激活数据库候选并保留可验证的回滚边界
+   │  │                    │     │  └─ 68-handoff-database.sh  # 固定数据库操作、身份核对或备份协议片段
+   │  │                    │     ├─ ecosystem/  # 语言与构建生态分派
+   │  │                    │     │  └─ 35-ecosystem-dispatch.sh  # 按受支持项目生态分派固定构建与运行准备流程
+   │  │                    │     ├─ input/  # 已审阅部署输入与资源声明
+   │  │                    │     │  ├─ 15-deployment-input.sh  # 解析并校验类型化部署输入、配置和秘密引用
+   │  │                    │     │  ├─ 16-application-input.sh  # 独立解析和验证 APP 运行协议
+   │  │                    │     │  └─ 17-managed-content.sh  # 解析、准备并验证普通文件的固定远端受管目录绑定
+   │  │                    │     ├─ release/  # 候选发布、回执与历史发布切换
+   │  │                    │     │  ├─ 10-typed-release.sh  # 实现受约束的类型化候选发布与发布身份处理
+   │  │                    │     │  ├─ 12-container-image-input.sh  # rootless 镜像交接与容器数据权限
+   │  │                    │     │  ├─ 18-container-storage.sh  # 宿主绑定、镜像初始化、只读视图与挂载归属检查
+   │  │                    │     │  ├─ 50-container-release.sh  # 实现容器应用的发布、镜像与命名卷归属流程
+   │  │                    │     │  ├─ 52-container-recovery.sh  # 实现容器快照、回滚和生命周期恢复流程
+   │  │                    │     │  ├─ 53-publication-observation.sh  # 固定发布、快照或留存协议片段
+   │  │                    │     │  ├─ 55-publication-snapshot.sh  # 固定发布、快照或留存协议片段
+   │  │                    │     │  └─ 58-retained-activation.sh  # 固定发布、快照或留存协议片段
+   │  │                    │     ├─ restore/  # 原任务恢复与交接协议
+   │  │                    │     │  ├─ 54-restore-candidate.sh  # 准备受管恢复候选及隔离检查输入
+   │  │                    │     │  ├─ 56-restore-commit.sh  # 提交恢复候选并执行失败回滚
+   │  │                    │     │  ├─ 56-restore-recovery.sh  # 固定恢复与收尾协议片段
+   │  │                    │     │  ├─ 57-application-restore.sh  # 候选 APP 验证与候选端口映射
+   │  │                    │     │  ├─ 59-handoff-database-restore.sh  # 固定恢复与收尾协议片段
+   │  │                    │     │  ├─ 59-handoff-restore-cleanup.sh  # 固定恢复与收尾协议片段
+   │  │                    │     │  └─ 59-handoff-restore.sh  # 固定恢复与收尾协议片段
+   │  │                    │     ├─ runtime/  # 运行身份、服务生命周期与容器协议
+   │  │                    │     │  ├─ 40-typed-runtime.sh  # 实现类型化运行时环境、构建参数和产物校验
+   │  │                    │     │  ├─ 41-application-admission.sh  # 固定运行观察与应用准入协议片段
+   │  │                    │     │  ├─ 41-application-runtime.sh  # 任务登记、维护准入和输入校验
+   │  │                    │     │  ├─ 42-application-job.sh  # 原生非 root 前台任务及隔离验证
+   │  │                    │     │  ├─ 43-application-container.sh  # 一次性任务容器和清理
+   │  │                    │     │  ├─ 44-application-health.sh  # 稳定进程、受控自检与 TCP/HTTP/UDP 协议验证
+   │  │                    │     │  ├─ 45-application-container-contract.sh  # 镜像固定入口、挂载及端口实际映射核对
+   │  │                    │     │  ├─ container/  # Podman Quadlet 容器运行协议
+   │  │                    │     │  │  └─ 55-podman-quadlet.sh  # 生成并管理 Podman Quadlet 容器运行单元
+   │  │                    │     │  └─ systemd/  # systemd 生命周期、身份与安全隔离
+   │  │                    │     │     ├─ 60-lifecycle.sh  # 核验当前原生/容器运行合同并执行受管发布保留
+   │  │                    │     │     ├─ 61-service-identity.sh  # 固定服务账号、声明写入权限与停止确认
+   │  │                    │     │     ├─ selinux-command-entry.sh  # SELinux 标准服务启动入口
+   │  │                    │     │     └─ systemd-manager-isolation.sh  # systemd 管理接口隔离
+   │  │                    │     ├─ toolchain/  # 工具链版本、依赖、安装与精确绑定
+   │  │                    │     │  ├─ 10-release-metadata.py  # 解析官方发布元数据、版本和可信摘要
+   │  │                    │     │  ├─ 20-installation-boundaries.py  # 校验归档、系统依赖、归属和有界子进程
+   │  │                    │     │  ├─ 30-managed-installation.py  # 隔离安装、系统复用及完成标记验证
+   │  │                    │     │  ├─ 40-binding-protocol.py  # 密封精确绑定、只读共享锁验证和跨机恢复定位
+   │  │                    │     │  └─ centos-source-repositories.py  # CentOS 9/10 源码依赖事务 CRB 选择
+   │  │                    │     └─ workspace/  # 受限构建、源码修订与候选工作目录协议
+   │  │                    │        ├─ 20-candidate-workspace.sh  # 创建并校验受管候选工作区及其所有权边界
+   │  │                    │        ├─ 21-workspace-volume.sh  # 固定 ext4 容量及挂载设备回收
+   │  │                    │        ├─ 22-restricted-build.sh  # 临时构建、控制组限制与只读封存
+   │  │                    │        ├─ 23-container-builder.sh  # 临时 rootless 账号和 UID/GID 映射
+   │  │                    │        ├─ 24-build-entry.sh  # 独立安装的非特权构建与 rootless 后端入口
+   │  │                    │        ├─ 25-workspace-recovery.sh  # 开机回收受管候选，隔离不明残留
+   │  │                    │        ├─ 26-build-output.sh  # root 控制器累计输出预算和有界日志
+   │  │                    │        ├─ 27-agent-workspace.sh  # 模块资源与配置
+   │  │                    │        ├─ apparmor-namespace.sh  # 工作区使用实际引擎 AppArmor profile 探测命名空间
+   │  │                    │        └─ source-operations.py  # 模块资源与配置
+   │  │                    ├─ service/  # 各部署模式的固定说明与流程资源
+   │  │                    │  ├─ agent/  # 自主决策、审批与发布说明
+   │  │                    │  │  ├─ protocol/  # 自主动作与证据协议说明
+   │  │                    │  │  │  └─ autonomous-deployment.md  # 随包发布的固定模型说明，运行门禁仍由代码执行
+   │  │                    │  │  ├─ review/  # 自主模式专属审核和模型绑定
+   │  │                    │  │  │  └─ action-review.md  # 随包发布的固定模型说明，运行门禁仍由代码执行
+   │  │                    │  │  └─ tools/  # 自主模式工具实现与受控源码修订
+   │  │                    │  │     ├─ agent-publish-runner-tools.properties  # 固定工具参数和效果说明，动态身份由代码绑定
+   │  │                    │  │     └─ autonomous-publication.md  # 随包发布的固定模型说明，运行门禁仍由代码执行
+   │  │                    │  ├─ core/  # 所属运行资源分组
+   │  │                    │  │  └─ application/  # 应用管理页面专属文案
+   │  │                    │  │     └─ external-applications.py  # 按已认证会话执行固定外部应用扫描与身份复核
+   │  │                    │  ├─ environment/  # 所属运行资源分组
+   │  │                    │  │  ├─ environment.sh  # 模块运行资源
+   │  │                    │  │  └─ selinux.sh  # 模块运行资源
+   │  │                    │  ├─ feedback/  # 所属运行资源分组
+   │  │                    │  │  ├─ workflow-messages.properties  # 英文流程阶段、审核提示与人工选择说明
+   │  │                    │  │  └─ workflow-messages_zh.properties  # 中文流程文案，保留原协议选择值
+   │  │                    │  └─ standard/  # 标准模式页面、审阅与手工组件等专属控件
+   │  │                    │     └─ assisted/  # AI 辅助模式独立入口、建议与审核适配
+   │  │                    │        ├─ component-ownership.md  # 随包发布的固定模型说明，运行门禁仍由代码执行
+   │  │                    │        ├─ failure-advice.md  # 随包发布的固定模型说明，运行门禁仍由代码执行
+   │  │                    │        ├─ fixed-effect-review.md  # 随包发布的固定模型说明，运行门禁仍由代码执行
+   │  │                    │        ├─ publish/  # AI辅助工具选择、发布与失败反馈说明
+   │  │                    │        │  ├─ assisted-deployment-tools.properties  # 固定工具参数和效果说明，动态身份由代码绑定
+   │  │                    │        │  ├─ assisted-deployment.md  # 随包发布的固定模型说明，运行门禁仍由代码执行
+   │  │                    │        │  ├─ assisted-graph-publish-runner-tools.properties  # 固定工具参数和效果说明，动态身份由代码绑定
+   │  │                    │        │  ├─ assisted-single-publish-runner-tools.properties  # 固定工具参数和效果说明，动态身份由代码绑定
+   │  │                    │        │  └─ preparation-gap.md  # 已核实准备缺口的工具反馈与重新校验要求
+   │  │                    │        ├─ source-analysis.md  # 随包发布的固定模型说明，运行门禁仍由代码执行
+   │  │                    │        ├─ source-calibration.md  # 随包发布的固定模型说明，运行门禁仍由代码执行
+   │  │                    │        └─ source-identification.md  # 随包发布的固定模型说明，运行门禁仍由代码执行
+   │  │                    └─ ui/  # 文件操作与任务状态的多语言文字
+   │  │                       ├─ agent/  # 自主模式页面专属文案
+   │  │                       │  ├─ deployment-agent-page_en.properties  # 当前模块的固定配置或语言资源
+   │  │                       │  └─ deployment-agent-page_zh.properties  # 当前模块的固定配置或语言资源
+   │  │                       ├─ application/  # 应用管理页面专属文案
+   │  │                       │  ├─ deployment-applications-page.properties  # 当前模块的固定配置或语言资源
+   │  │                       │  ├─ deployment-applications-page_en.properties  # 当前模块的固定配置或语言资源
+   │  │                       │  └─ deployment-applications-page_zh.properties  # 当前模块的固定配置或语言资源
+   │  │                       ├─ delivery/  # 所属运行资源分组
+   │  │                       │  ├─ delivery.properties  # 模块运行资源
+   │  │                       │  ├─ delivery_en.properties  # 模块运行资源
+   │  │                       │  └─ delivery_zh.properties  # 模块运行资源
+   │  │                       ├─ deployment-page.properties  # 当前模块的固定配置或语言资源
+   │  │                       ├─ deployment-page_zh.properties  # 当前模块的固定配置或语言资源
+   │  │                       ├─ environment/  # 所属运行资源分组
+   │  │                       │  ├─ environment-page.properties  # 模块运行资源
+   │  │                       │  ├─ environment-page_en.properties  # 模块运行资源
+   │  │                       │  └─ environment-page_zh.properties  # 模块运行资源
+   │  │                       └─ feedback/  # 所属运行资源分组
+   │  │                          ├─ task-feedback.properties  # 模块运行资源
+   │  │                          ├─ task-feedback_en.properties  # 模块运行资源
+   │  │                          └─ task-feedback_zh.properties  # 模块运行资源
+   │  ├─ files/  # 独立可选文件管理 Mod，复用公开文件与连接能力
    │  │  ├─ pom.xml  # Maven 模块与依赖声明
    │  │  ├─ Mod.java  # 可选文件工作区及原文件操作核对生命周期
-   │  │  ├─ file/  # 文件观测与工作区意图值
-   │  │  │  └─ model/  # 目录、剪贴与实际结果的不可变值
+   │  │  ├─ file/  # 模块内部职责分组
+   │  │  │  └─ model/  # 模块内部职责分组
    │  │  │     ├─ FilesClipboard.java  # 工作区内部意图及观测；准备不修改文件
    │  │  │     ├─ FilesDirectory.java  # 一个目录的完整有界观测，不含可复用授权
    │  │  │     ├─ FilesObservation.java  # 独立于任务最终清理的已返回回调事实
    │  │  │     └─ FilesOutcome.java  # 实际报告及原任务日志，包含成功链接更新
-   │  │  ├─ mod.json  # 作者身份、依赖与公开入口描述
-   │  │  ├─ service/  # 原任务文件动作、部分结果与安全核对
+   │  │  ├─ mod.json  # Mod 身份、版本、入口和依赖清单
+   │  │  ├─ service/  # 原任务内的文件执行、计划、观测与恢复
    │  │  │  ├─ FilesExecution.java  # 在不确定任务可结束之前保留实际部分结果
    │  │  │  ├─ FilesMutation.java  # 仅在真实回调执行既有File及Link操作
    │  │  │  ├─ FilesObservations.java  # 有界启用所属事实；不淘汰未结束任务来暗示成功
@@ -1433,21 +1652,27 @@ WindowsToLinux/
    │  │  │  ├─ FilesProblems.java  # 受检诊断及明确汇总结果
    │  │  │  ├─ FilesRecovery.java  # 核对真实原任务，不重复文件操作
    │  │  │  └─ FilesService.java  # 原任务文件管理及启用所属实际观测
-   │  │  ├─ ui/  # 按需双栏、共用动作与实际任务反馈
+   │  │  ├─ ui/  # 文件工作区、列表、交互、反馈和原任务控制
    │  │  │  ├─ FilesActions.java  # 共享工具栏、菜单及实际键盘动作
    │  │  │  ├─ FilesCommands.java  # 将共享视图动作转换为原平台服务任务
    │  │  │  ├─ FilesDialogs.java  # 持有未提交的模态输入，以供锁定及关闭撤销
    │  │  │  ├─ FilesFeedback.java  # 显示原任务状态、逐项报告及持久链接步骤
    │  │  │  ├─ FilesMessages.java  # 不重建控件地解析原工作区语言
    │  │  │  ├─ FilesPane.java  # 持有一个独立定位及多选的栏
+   │  │  │  ├─ FilesServerAction.java  # 从服务器更多进入所属工作区并发送根目录请求
    │  │  │  ├─ FilesTableModel.java  # 显示两列并保留实际不跟随链接观测
    │  │  │  ├─ FilesTasks.java  # 观察实际任务，不永久等待 UNKNOWN 完成
    │  │  │  ├─ FilesTransferHandler.java  # 仅接受一个根内的跨栏移动载荷
    │  │  │  └─ FilesWorkspace.java  # 持有一个按需文件工作区及对称可选第二栏
-   │  │  └─ resources/  # 所属能力分组
-   │  │     └─ ui/  # 文件操作与任务状态的多语言文字
-   │  │        ├─ files.properties  # 模块运行资源
-   │  │        └─ files_zh_CN.properties  # 模块运行资源
+   │  │  └─ resources/  # 模块内部职责分组
+   │  │     └─ gold/  # 所属运行资源分组
+   │  │        └─ debug/  # 所属运行资源分组
+   │  │           └─ windowstolinux/  # 所属运行资源分组
+   │  │              └─ mod/  # 所属运行资源分组
+   │  │                 └─ files/  # 所属运行资源分组
+   │  │                    └─ ui/  # 所属运行资源分组
+   │  │                       ├─ files.properties  # 所属模块运行资源
+   │  │                       └─ files_zh_CN.properties  # 所属模块运行资源
    │  └─ git/  # 独立 Git Mod：受管仓库取材与固定提交素材服务
    │     ├─ pom.xml  # Maven 模块与依赖声明
    │     ├─ Mod.java  # 无页面或业务数据库的无状态 Git 来源服务生命周期

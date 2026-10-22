@@ -1,0 +1,153 @@
+package gold.debug.windowstolinux.app.ui.server;
+
+import java.awt.*;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import javax.swing.*;
+
+import com.formdev.flatlaf.ui.FlatEmptyBorder;
+import com.formdev.flatlaf.util.UIScale;
+import gold.debug.windowstolinux.app.service.server.ServerSummary;
+import gold.debug.windowstolinux.app.ui.control.DesktopIcons;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
+
+/** Selected connection metadata and dated evidence, without reading credentials. / 所选连接元数据与带时间证据，不读取凭据。 */
+final class ServerDetailsPane extends JPanel {
+    /** Current localized captions. / 当前本地化文案。 */
+    private final PageMessagePresenter messages;
+
+    /** Selected identity and dated check evidence. / 所选身份与带时间检查证据。 */
+    private final JLabel title = new JLabel(), endpoint = new JLabel(), state = new JLabel(), time = new JLabel();
+
+    /** Non-secret connection field values. / 非秘密连接字段值。 */
+    private final JLabel[] values = {new JLabel(), new JLabel(), new JLabel(), new JLabel()};
+
+    /** Arranges selected metadata above existing operation and evidence controls. / 将所选元数据排列在已有操作与证据控件上方。
+     * @param components themed factory / 主题工厂
+     * @param messages safe localized captions / 安全本地化文案
+     * @param actions original actions / 原操作
+     * @param records original check records / 原检查记录
+     * @param tasks original unfinished-task controls / 原未结束任务控件 */
+    ServerDetailsPane(DesktopPartFactory components, PageMessagePresenter messages,
+                      JComponent actions, JComponent records, JComponent tasks) {
+        super(new BorderLayout(0, UIScale.scale(20)));
+        this.messages = messages;
+        components.stylePage(this);
+        setBorder(BorderFactory.createCompoundBorder(null, new FlatEmptyBorder(16, 24, 16, 24)));
+        setName("servers.details");
+        var upper = components.transparent(new BorderLayout(0, UIScale.scale(22)));
+        var heading = components.transparent(new BorderLayout(UIScale.scale(16), 0));
+        var copy = components.transparent(new GridLayout(2, 1, 0, UIScale.scale(6)));
+        title.setFont(title.getFont().deriveFont(Font.BOLD, UIScale.scale(24f)));
+        title.setName("servers.details.title");
+        endpoint.setName("servers.details.endpoint");
+        endpoint.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UIScale.scale(13)));
+        for (var label : new JLabel[]{title, endpoint}) label.putClientProperty("html.disable", true);
+        copy.add(title);
+        copy.add(endpoint);
+        var icon = new JLabel(DesktopIcons.icon("server/server", 32, () -> UIManager.getColor("Component.focusColor")));
+        icon.setBorder(new FlatEmptyBorder(12, 10, 12, 10));
+        heading.add(icon, BorderLayout.WEST);
+        heading.add(copy, BorderLayout.CENTER);
+        var evidence = components.transparent(new GridLayout(2, 1, 0, UIScale.scale(6)));
+        state.setHorizontalAlignment(SwingConstants.RIGHT);
+        time.setHorizontalAlignment(SwingConstants.RIGHT);
+        state.setName("servers.details.state");
+        evidence.add(state);
+        evidence.add(time);
+        heading.add(evidence, BorderLayout.EAST);
+        upper.add(heading, BorderLayout.NORTH);
+        var fields = components.card(new GridLayout(1, 4, UIScale.scale(16), UIScale.scale(12)));
+        for (int i = 0; i < values.length; i++) {
+            var field = components.transparent(new BorderLayout(0, UIScale.scale(8)));
+            String key = new String[]{"field.host", "field.sshPort", "field.sshUser", "server.credentials"}[i];
+            field.add(messages.bind(components.description(""), key), BorderLayout.NORTH);
+            values[i].putClientProperty("html.disable", true);
+            values[i].setName("servers.details.field." + i);
+            field.add(values[i]);
+            fields.add(field);
+        }
+        var responsive = new JPanel(new BorderLayout()) {
+            /** Fits fields into two rows when the details region narrows. / 详情区域较窄时将字段排列为两行。 */
+            @Override
+            public void doLayout() {
+                var grid = (GridLayout) fields.getLayout();
+                grid.setRows(getWidth() < UIScale.scale(560) ? 2 : 1);
+                grid.setColumns(getWidth() < UIScale.scale(560) ? 2 : 4);
+                super.doLayout();
+            }
+
+            /** Reserves the height required by the current field arrangement. / 预留当前字段排列所需高度。
+             * @return scaled metadata region / 缩放后的元数据区域 */
+            @Override
+            public Dimension getPreferredSize() {
+                boolean narrow = getWidth() > 0 && getWidth() < UIScale.scale(560);
+                return new Dimension(0, UIScale.scale(narrow ? 144 : 84));
+            }
+        };
+        responsive.setOpaque(false);
+        responsive.add(fields);
+        upper.add(responsive, BorderLayout.CENTER);
+        upper.add(actions, BorderLayout.SOUTH);
+        add(upper, BorderLayout.NORTH);
+        add(records, BorderLayout.CENTER);
+        add(tasks, BorderLayout.SOUTH);
+    }
+
+    /** Displays only the current saved selection and observation. / 仅展示当前保存的选择与观测。
+     * @param summary selected saved summary or none / 所选保存摘要或无选择 */
+    void show(ServerSummary summary) {
+        title.setFont(title.getFont().deriveFont(Font.BOLD, UIScale.scale(24f)));
+        endpoint.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UIScale.scale(13)));
+        var profile = summary == null ? null : summary.profile();
+        title.setText(profile == null ? messages.text("server.choose") : profile.displayName());
+        title.setToolTipText(title.getText());
+        endpoint.setText(profile == null ? " " : endpoint(summary));
+        endpoint.setToolTipText(endpoint.getText());
+        state.setText(summary == null ? " " : messages.text("server.lastCheck") + ": " + status(summary, messages));
+        state.setForeground(statusColor(summary));
+        time.setText(summary == null ? " " : checkedAt(summary));
+        time.setForeground(UIManager.getColor("Label.disabledForeground"));
+        String[] content = profile == null ? new String[]{"—", "—", "—", "—"}
+            : new String[]{profile.host(), Integer.toString(profile.sshPort()), profile.username(), messages.text("server.credentialConfigured")};
+        for (int i = 0; i < values.length; i++) {
+            values[i].setText(content[i]);
+            values[i].setToolTipText(content[i]);
+        }
+    }
+
+    /** Formats the selected connection without exposing credentials. / 格式化所选连接而不暴露凭据。
+     * @param summary original saved summary / 原保存摘要
+     * @return non-secret connection address / 非秘密连接地址 */
+    static String endpoint(ServerSummary summary) {
+        var profile = summary.profile();
+        return profile.username() + "@" + profile.host() + ":" + profile.sshPort();
+    }
+
+    /** Formats the actual observation time in the local zone. / 按本地时区格式化实际观测时间。
+     * @param summary original saved summary / 原保存摘要
+     * @return dated evidence or empty marker / 带时间证据或空标记 */
+    static String checkedAt(ServerSummary summary) {
+        return summary.checkedAt().map(value -> DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            .withZone(ZoneId.systemDefault()).format(value)).orElse("—");
+    }
+
+    /** Describes historical authentication evidence without implying liveness. / 描述历史认证证据而不暗示实时状态。
+     * @param summary original observation / 原观测
+     * @param messages localized captions / 本地化文案
+     * @return dated-check status caption / 带时间检查状态文案 */
+    static String status(ServerSummary summary, PageMessagePresenter messages) {
+        return messages.text(summary.checkedAt().isEmpty() ? "server.card.unchecked"
+            : summary.connected() ? "server.card.passed" : "server.card.failed");
+    }
+
+    /** Selects readable check-evidence colors for the active theme. / 为当前主题选择可读检查证据颜色。
+     * @param summary original observation or none / 原观测或无观测
+     * @return current evidence color / 当前证据颜色 */
+    static Color statusColor(ServerSummary summary) {
+        if (summary == null || summary.checkedAt().isEmpty()) return UIManager.getColor("Label.disabledForeground");
+        boolean dark = com.formdev.flatlaf.FlatLaf.isLafDark();
+        return summary.connected() ? new Color(dark ? 0x68D391 : 0x14804A) : new Color(dark ? 0xFF9292 : 0xC23939);
+    }
+}

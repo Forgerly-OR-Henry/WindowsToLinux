@@ -80,8 +80,8 @@ public final class DesktopCardList<E> extends JList<E> {
      * @param rowHeight logical row height / 逻辑行高 */
     public DesktopCardList(ListModel<E> model, int rowHeight) {
         super(model);
-        this.rowHeight = rowHeight;
-        setFixedCellHeight(UIScale.scale(rowHeight));
+        this.rowHeight = Math.max(56, rowHeight);
+        setFixedCellHeight(UIScale.scale(this.rowHeight));
         getModel().addListDataListener(changes);
         add(painting);
         motion = new DesktopMotion(this::frame);
