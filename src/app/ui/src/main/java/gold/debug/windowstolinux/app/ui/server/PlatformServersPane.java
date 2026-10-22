@@ -124,7 +124,9 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
      * @param profile original configuration / 原配置
      * @param task original task identity / 原任务身份
      * @param text localized actual output / 本地化实际输出 */
-    private record CheckRecord(ServerProfile profile, UUID task, java.util.function.Supplier<String> text) {
+    private record CheckRecord(ServerProfile profile, UUID task, java.util.function.Supplier<String> text,
+                               gold.debug.windowstolinux.appapi.task.result.TaskResult outcome,
+                               java.time.Instant checkedAt) {
     }
 
     /**
@@ -170,7 +172,6 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         timer = new Timer(250, event -> poll());
         timer.start();
         controls();
-        components.scrollPage(this);
     }
 
     /** Binds the real rescue entry once without adding a business extension dependency. / 绑定一次真实救援入口，不添加业务扩展依赖。
@@ -216,6 +217,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             failedRescue.setVisible(false);
             view.records.clear();
             view.taskOutput = null;
+            view.taskOutputTarget = null;
         }
         view.locked = value;
         if (!value && !view.busy) {
@@ -293,7 +295,9 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             checkBinding = new CheckBinding(handle.id(), profile, handle, false);
             failedRescue.setVisible(false);
             view.taskOutput = null;
-            view.records.put(profile.id(), new CheckRecord(profile, handle.id(), () -> messages.text("server.checking")));
+            view.taskOutputTarget = null;
+            view.records.put(profile.id(), new CheckRecord(profile, handle.id(), () -> messages.text("server.checking"),
+                null, java.time.Instant.now()));
             showSelection();
             handle.completion().whenComplete((result, failure) -> SwingUtilities.invokeLater(() -> {
                 if (view.closed || view.locked || generation != view.epoch || checkBinding == null || !handle.id().equals(checkBinding.id()))
@@ -303,7 +307,9 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
                     : messages.text("platform.outcome." + result.outcome())
                     + result.value().map(facts -> "\n" + facts.fingerprint()).orElse("")
                     + result.problem().map(problem -> "\n" + messages.safe(
-                    new gold.debug.windowstolinux.appapi.task.result.ApiException(problem))).orElse("")));
+                    new gold.debug.windowstolinux.appapi.task.result.ApiException(problem))).orElse(""),
+                    failure == null ? result.outcome() : gold.debug.windowstolinux.appapi.task.result.TaskResult.UNKNOWN,
+                    java.time.Instant.now()));
                 if (failure == null && result.outcome() == gold.debug.windowstolinux.appapi.task.result.TaskResult.FAILED
                     && handle.snapshot().state() == TaskState.ENDED) {
                     checkBinding = new CheckBinding(handle.id(), profile, handle, true);
@@ -403,13 +409,13 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** Displays only records belonging to the selected configuration. / 仅展示归属所选配置的记录。 */
     private void showSelection() {
         int index = table.getSelectedRow();
-        var summary = index < 0 ? null : rows.values.get(table.convertRowIndexToModel(index));
+        var summary = index < 0 || index >= table.getRowCount()
+            ? null : rows.values.get(table.convertRowIndexToModel(index));
         String text, target, identity = null;
-        if (view.taskOutput != null) {
-            target = view.taskOutputTarget;
-            identity = target;
-            text = view.taskOutput;
-        } else if (summary == null) {
+        String state = summary == null ? "" : ServerDetailsPane.status(summary, messages);
+        Color color = ServerDetailsPane.statusColor(summary);
+        String checkedAt = summary == null ? "—" : ServerDetailsPane.checkedAt(summary);
+        if (summary == null) {
             target = "";
             text = messages.text("server.choose");
         } else {
@@ -418,15 +424,30 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
                 target = summary.profile().displayName() + " · " + record.task();
                 identity = summary.profile().id() + " · " + ServerDetailsPane.endpoint(summary) + " · " + record.task();
                 text = record.text().get();
+                state = messages.text(record.outcome() == null ? "server.checking"
+                    : record.outcome() == gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED ? "server.card.passed"
+                    : record.outcome() == gold.debug.windowstolinux.appapi.task.result.TaskResult.FAILED ? "server.card.failed"
+                    : "platform.outcome." + record.outcome());
+                if (record.outcome() == gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED
+                    || record.outcome() == gold.debug.windowstolinux.appapi.task.result.TaskResult.FAILED)
+                    color = ServerDetailsPane.statusColor(new ServerSummary(summary.profile(),
+                        java.util.Optional.of(record.checkedAt()),
+                        record.outcome() == gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED, ""));
+                else color = UIManager.getColor("Label.foreground");
+                checkedAt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                    .withZone(ZoneId.systemDefault()).format(record.checkedAt());
             } else {
                 target = summary.profile().displayName();
                 identity = summary.profile().id() + " · " + ServerDetailsPane.endpoint(summary);
                 text = summary.checkedAt().isEmpty() ? messages.text("server.recordsEmpty")
-                    : messages.text("server.lastCheck") + ": " + ServerDetailsPane.status(summary, messages)
-                    + "\n" + messages.text("server.checkedAt") + ": " + ServerDetailsPane.checkedAt(summary);
+                    : messages.text(summary.connected() ? "server.authPassed" : "server.authFailed");
             }
         }
-        presentation.show(summary, rows.values.size(), text, target, identity);
+        presentation.show(summary, rows.values.size(), text, target, identity, state, color, checkedAt);
+        String taskTarget = view.taskOutput != null ? view.taskOutputTarget
+            : checkBinding != null && checkBinding.failed()
+            ? checkBinding.profile().displayName() + " · " + checkBinding.id() : null;
+        presentation.taskFeedback(view.taskOutput, taskTarget, checks.getItemCount() > 0);
         if (checkBinding != null && checkBinding.failed())
             failedRescue.setToolTipText(checkBinding.profile().displayName() + " · " + checkBinding.id());
     }
@@ -505,9 +526,6 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         /** Last explicitly selected stable identity, possibly cleared by the user. / 最后明确选定的稳定身份，可由用户清空。 */
         private String selectedId;
 
-        /** Whether initial inventory has already been presented. / 是否已展示首次库存。 */
-        private boolean initialized;
-
         /** Whether model/filter events must not replace user intent. / 模型过滤事件是否不得替换用户意图。 */
         private boolean updating;
 
@@ -541,7 +559,6 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             if (!updating) {
                 var profile = selected();
                 selectedId = profile == null ? null : profile.id();
-                view.taskOutput = null;
             }
         }
 
@@ -552,10 +569,6 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             try {
                 rows.replace(values);
                 view.records.keySet().retainAll(values.stream().map(value -> value.profile().id()).toList());
-                if (!view.locked && !initialized && !values.isEmpty()) {
-                    selectedId = values.getFirst().profile().id();
-                    initialized = true;
-                }
                 restore();
             } finally {
                 updating = false;

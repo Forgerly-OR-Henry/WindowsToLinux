@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.app.ui.display;
 
 import java.awt.*;
 import javax.swing.*;
+import javax.swing.event.MouseInputListener;
 import javax.swing.plaf.ComponentUI;
 
 import com.formdev.flatlaf.ui.FlatTableUI;
@@ -9,11 +10,32 @@ import com.formdev.flatlaf.util.UIScale;
 
 /** Adds row selection markers without replacing table columns, editors or drag handling. / 添加行选择标记，不替换表格列、编辑器或拖放。 */
 public final class DesktopTableUi extends FlatTableUI {
+    private DesktopCardSelection selection;
+
     /** Creates the host table delegate. / 创建宿主表格绘制器。
      * @param component original table / 原表格
      * @return owned delegate / 所属绘制器 */
     public static ComponentUI createUI(JComponent component) {
         return new DesktopTableUi();
+    }
+
+    @Override
+    public void installUI(JComponent component) {
+        super.installUI(component);
+        selection.install();
+    }
+
+    @Override
+    protected MouseInputListener createMouseInputListener() {
+        selection = new DesktopCardSelection(table, super.createMouseInputListener());
+        return selection;
+    }
+
+    @Override
+    public void uninstallUI(JComponent component) {
+        if (selection != null) selection.close();
+        super.uninstallUI(component);
+        selection = null;
     }
 
     /** Paints all selected-row markers over the native table. / 在原生表格上绘制所有选中行标记。

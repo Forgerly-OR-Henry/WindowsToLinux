@@ -57,19 +57,40 @@ class PlatformServersPresentationTest {
                     try {
                         await(() -> ((JTable) named(view.get(), "servers.table")).getRowCount() == 4
                             && named(view.get(), "servers.refresh").isEnabled());
+                        onEdt(() -> {
+                            var pane = view.get();
+                            layout(pane);
+                            layout(pane);
+                            var table = (JTable) named(pane, "servers.table");
+                            assertEquals(-1, table.getSelectedRow());
+                            assertFalse(named(pane, "servers.details.scroll").isVisible());
+                            assertEquals(named(pane, "servers.workspace").getWidth(), named(pane, "servers.inventory").getWidth());
+                            assertInventoryAlignment(pane);
+                            capture(pane, "servers-" + theme + "-" + scale + "-initial");
+                            return null;
+                        });
                         for (boolean minimum : new boolean[]{false, true}) {
                             onEdt(() -> {
                                 var pane = view.get();
                                 pane.setSize(minimum ? 1120 : 1440, minimum ? 630 : 810);
-                                layout(pane);
-                                layout(pane);
                                 var table = (JTable) named(pane, "servers.table");
+                                table.setRowSelectionInterval(0, 0);
+                                layout(pane);
+                                layout(pane);
                                 assertEquals("4 台", ((JLabel) named(pane, "servers.count")).getText());
                                 assertTrue(named(pane, "servers.count").getWidth() > 0);
                                 assertTrue(table.getWidth() > 0 && table.getHeight() > 0, () -> "Inventory bounds: " + table.getBounds());
                                 assertEquals("生产服务器", ((JLabel) named(pane, "servers.details.title")).getText());
                                 assertTrue(((JLabel) named(pane, "servers.details.endpoint")).getText().contains("192.0.2.10:22"));
                                 assertTrue(named(pane, "servers.check").isEnabled());
+                                assertTrue(named(pane, "servers.details.scroll").isVisible());
+                                assertInventoryAlignment(pane);
+                                var collapse = named(pane, "servers.collapseDetails");
+                                var icon = named(pane, "servers.details.icon");
+                                assertEquals(centerY(icon, pane), centerY(collapse, pane), 1);
+                                var authState = (JLabel) named(pane, "servers.auth.state");
+                                assertEquals("检查通过", authState.getText());
+                                assertTrue(authState.getForeground().getGreen() > authState.getForeground().getRed());
                                 for (int i = 0; i < 4; i++)
                                     assertTrue(named(pane, "servers.details.field." + i).getWidth() > 0);
                                 for (String action : new String[]{"servers.add", "servers.edit", "servers.check", "servers.more"}) {
@@ -83,7 +104,13 @@ class PlatformServersPresentationTest {
                                 assertTrue(((JLabel) named(pane, "servers.details.title")).getText().startsWith("演示服务器"));
                                 capture(pane, "servers-" + theme + "-" + scale + (minimum ? "-minimum-long" : "-normal-long"));
                                 table.setRowSelectionInterval(0, 0);
-                                var scroll = (JScrollPane) pane.getComponent(0);
+                                var inventoryScroll = (JScrollPane) named(pane, "servers.inventory.scroll");
+                                int headerY = SwingUtilities.convertPoint(named(pane, "servers.add"), 0, 0, pane).y;
+                                inventoryScroll.getVerticalScrollBar().setValue(inventoryScroll.getVerticalScrollBar().getMaximum());
+                                assertEquals(headerY, SwingUtilities.convertPoint(named(pane, "servers.add"), 0, 0, pane).y,
+                                    "Inventory scrolling must leave its toolbar fixed");
+                                inventoryScroll.getVerticalScrollBar().setValue(0);
+                                var scroll = (JScrollPane) named(pane, "servers.details.scroll");
                                 scroll.getVerticalScrollBar().setValue(scroll.getVerticalScrollBar().getMaximum());
                                 capture(pane, "servers-" + theme + "-" + scale + (minimum ? "-minimum-bottom" : "-normal-bottom"));
                                 scroll.getVerticalScrollBar().setValue(0);
@@ -110,8 +137,7 @@ class PlatformServersPresentationTest {
                                 assertEquals(1, table.getRowCount());
                                 assertEquals("long-hostname", search.getText());
                                 assertEquals(listeners, document.getDocumentListeners().length);
-                                var scroll = (JScrollPane) pane.getComponent(0);
-                                assertEquals(com.formdev.flatlaf.util.UIScale.scale(20), ((JComponent) scroll.getViewport().getView()).getInsets().left);
+                                assertEquals(com.formdev.flatlaf.util.UIScale.scale(20), pane.getInsets().left);
                                 assertTrue(((JLabel) named(pane, "servers.details.title")).getText().startsWith("演示服务器"));
                             }
                             DesktopThemeService.install(theme, scale);
@@ -122,8 +148,13 @@ class PlatformServersPresentationTest {
                             layout(pane);
                             layout(pane);
                             table.clearSelection();
+                            layout(pane);
+                            layout(pane);
                             assertFalse(named(pane, "servers.check").isEnabled());
                             assertTrue(named(pane, "servers.add").isEnabled());
+                            assertFalse(named(pane, "servers.details.scroll").isVisible());
+                            assertEquals(named(pane, "servers.workspace").getWidth(), named(pane, "servers.inventory").getWidth());
+                            assertInventoryAlignment(pane);
                             capture(pane, "servers-" + theme + "-" + scale + "-unselected");
                             ((JTextField) named(pane, "servers.search")).setText("no matching host");
                             assertEquals(0, table.getRowCount());
@@ -158,10 +189,26 @@ class PlatformServersPresentationTest {
                 capture(pane, "servers-LIGHT-empty");
                 assertTrue(named(pane, "servers.empty").isVisible());
                 assertTrue(named(pane, "servers.add").isEnabled());
+                assertInventoryAlignment(pane);
                 pane.close();
                 return null;
             });
         }
+    }
+
+    private static void assertInventoryAlignment(JComponent pane) {
+        var scroll = (JScrollPane) named(pane, "servers.inventory.scroll");
+        var bar = scroll.getVerticalScrollBar();
+        assertTrue(bar.isVisible(), "Inventory scrollbar is always visible");
+        int right = SwingUtilities.convertPoint(bar, bar.getWidth(), 0, pane).x;
+        for (String action : new String[]{"servers.add", "servers.refresh"}) {
+            var button = named(pane, action);
+            assertEquals(right, SwingUtilities.convertPoint(button, button.getWidth(), 0, pane).x, action);
+        }
+    }
+
+    private static int centerY(Component component, Component root) {
+        return SwingUtilities.convertPoint(component, 0, component.getHeight() / 2, root).y;
     }
 
     private static void layout(Component component) {

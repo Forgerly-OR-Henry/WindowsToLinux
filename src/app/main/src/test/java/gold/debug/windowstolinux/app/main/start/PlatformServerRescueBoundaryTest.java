@@ -54,7 +54,8 @@ class PlatformServerRescueBoundaryTest {
     }
 
     static void select(PlatformFrame frame, ServerProfile profile) throws Exception {
-        await(() -> named(frame, "servers.check").isEnabled());
+        await(() -> named(frame, "servers.refresh").isEnabled()
+            && ((JTable) named(frame, "servers.table")).getRowCount() > 0);
         onEdt(() -> {
             var table = (JTable) named(frame, "servers.table");
             for (int row = 0; row < table.getRowCount(); row++) {

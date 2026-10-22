@@ -121,6 +121,7 @@ class AiModelListTest {
         Point start = edt(() -> cardCenter(source, from)), end = edt(() -> cardCenter(target, to));
         var before = edt(() -> java.util.stream.IntStream.range(0, source.getModel().getSize())
             .mapToObj(source.getModel()::getElementAt).toList());
+        var diagnostics = edt(() -> new gold.debug.windowstolinux.app.ui.display.DesktopCardDragDiagnostics(source));
         robot.mouseMove(start.x, start.y);
         robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
         try {
@@ -130,7 +131,7 @@ class AiModelListTest {
                 if (step == 10 && source == target) {
                     robot.delay(140);
                     edt(() -> {
-                        assertEquals(Boolean.TRUE, source.getClientProperty("desktop.cardDragActive"));
+                        assertEquals(Boolean.TRUE, source.getClientProperty("desktop.cardDragActive"), diagnostics::describe);
                         assertEquals(before, java.util.stream.IntStream.range(0, source.getModel().getSize())
                             .mapToObj(source.getModel()::getElementAt).toList());
                         render((JComponent) SwingUtilities.getRootPane(source).getContentPane(), "drag-" + name + ".png");
@@ -140,6 +141,10 @@ class AiModelListTest {
             }
         } finally {
             robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
+            edt(() -> {
+                diagnostics.close();
+                return null;
+            });
         }
         robot.waitForIdle();
     }
@@ -290,6 +295,56 @@ class AiModelListTest {
         });
         assertEquals(2, roles.get(AiPurposeType.APPROVAL).size());
         assertTrue(roles.get(AiPurposeType.DEPLOYMENT).isEmpty());
+    }
+
+    @Test
+    void clearingBothSelectionsPreservesPurposeDraftAcrossRefreshWithoutWriting() throws Exception {
+        var writes = new AtomicInteger();
+        AiModelListAccess service = (AiModelListAccess) Proxy.newProxyInstance(getClass().getClassLoader(),
+            new Class<?>[]{AiModelListAccess.class}, (p, m, a) -> switch (m.getName()) {
+                case "listAiConfigurations" -> List.of(model("first", 0), model("second", 1));
+                case "listAiPurpose" -> List.of(new AiPurposeAssignment("first", true));
+                default -> {
+                    writes.incrementAndGet();
+                    throw new AssertionError(m);
+                }
+            });
+        var pane = new AtomicReference<AiModelListPane>();
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                FlatLightLaf.setup();
+                pane.set(new AiModelListPane(service, c, messages, ignored -> {
+                }));
+                pane.get().refresh();
+            });
+            idle();
+            SwingUtilities.invokeAndWait(() -> {
+                var root = pane.get();
+                root.open(AiPurposeType.APPROVAL);
+                var inventory = field(root, "inventory", JList.class);
+                var purpose = field(root, "selected", JList.class);
+                inventory.setSelectedIndex(1);
+                field(root, "add", JButton.class).doClick();
+                purpose.setSelectedIndex(1);
+                inventory.clearSelection();
+                purpose.clearSelection();
+                assertFalse(field(root, "add", JButton.class).isEnabled());
+                assertFalse(field(root, "remove", JButton.class).isEnabled());
+                assertFalse(field(root, "enabled", JCheckBox.class).isEnabled());
+                root.refresh();
+            });
+            idle();
+            SwingUtilities.invokeAndWait(() -> {
+                var state = pane.get().capture();
+                assertEquals(Optional.of(AiPurposeType.APPROVAL), state.purpose());
+                assertEquals(List.of("first", "second"), state.draft().stream().map(AiPurposeAssignment::profileId).toList());
+                assertEquals("", state.selected());
+                assertEquals("", state.selectedPurpose());
+                assertEquals(0, writes.get());
+            });
+        } finally {
+            if (pane.get() != null) SwingUtilities.invokeAndWait(() -> pane.get().close());
+        }
     }
 
     @Test

@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.app.ui.display;
 import java.awt.Component;
 import java.beans.PropertyChangeListener;
 import javax.swing.*;
+import javax.swing.event.MouseInputListener;
 import javax.swing.plaf.ComponentUI;
 
 import com.formdev.flatlaf.ui.FlatListUI;
@@ -11,6 +12,8 @@ import com.formdev.flatlaf.ui.FlatListUI;
 public final class DesktopListUi extends FlatListUI {
     /** Scale under which the original fixed row height was set. / 原固定行高设定时的缩放比例。 */
     private float installedScale;
+
+    private DesktopCardSelection selection;
 
     /** Creates the host list delegate. / 创建宿主列表绘制器。
      * @param component original list / 原列表
@@ -24,10 +27,24 @@ public final class DesktopListUi extends FlatListUI {
     @Override
     public void installUI(JComponent component) {
         super.installUI(component);
+        selection.install();
         installedScale = com.formdev.flatlaf.util.UIScale.getUserScaleFactor();
         if (list.getClientProperty("desktop.inventory.logicalHeight") instanceof Number height)
             list.setFixedCellHeight(Math.round(height.floatValue() * installedScale));
         decorate();
+    }
+
+    @Override
+    protected MouseInputListener createMouseInputListener() {
+        selection = new DesktopCardSelection(list, super.createMouseInputListener());
+        return selection;
+    }
+
+    @Override
+    public void uninstallUI(JComponent component) {
+        if (selection != null) selection.close();
+        super.uninstallUI(component);
+        selection = null;
     }
 
     /** Releases only this delegate's renderer wrapper. / 仅释放当前绘制器的渲染包装。 */
@@ -80,8 +97,7 @@ public final class DesktopListUi extends FlatListUI {
         public Component getListCellRendererComponent(JList<?> list, Object value, int index,
                                                       boolean selected, boolean focused) {
             var content = original.getListCellRendererComponent(list, value, index, selected, focused);
-            if (index < 0 || "ComboBox.list".equals(list.getName()) || Boolean.TRUE.equals(list.getClientProperty("List.isFileList"))
-                || SwingUtilities.getAncestorOfClass(JFileChooser.class, list) != null)
+            if (index < 0 || !DesktopCardSupport.isCardList(list))
                 return content;
             return DesktopListCard.row(content, selected, null);
         }

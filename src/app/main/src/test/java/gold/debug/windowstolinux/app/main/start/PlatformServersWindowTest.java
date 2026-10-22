@@ -254,8 +254,14 @@ class PlatformServersWindowTest {
                         .findFirst().orElseThrow().setValue(JOptionPane.OK_OPTION);
                     return null;
                 });
-                await(() -> ((JTextArea) named(frame, "servers.output")).getText().contains("检查已中断")
+                await(() -> ((JTextArea) named(frame, "servers.taskOutput")).getText().contains("检查已中断")
                     && ((JComboBox<?>) named(frame, "servers.checks")).getItemCount() == 0);
+                onEdt(() -> {
+                    assertEquals(-1, ((JTable) named(frame, "servers.table")).getSelectedRow());
+                    assertFalse(((JTextArea) named(frame, "servers.output")).getText().contains("检查已中断"));
+                    assertTrue(named(frame, "servers.tasks").isVisible());
+                    return null;
+                });
                 assertTrue(runtime.tasks().snapshots().isEmpty());
                 assertEquals(0, PlatformTaskAdmissionIntegrationTest.count(runtime.persistence().database(),
                     "SELECT COUNT(*) FROM platform_task_resource"));

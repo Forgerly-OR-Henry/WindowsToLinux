@@ -170,6 +170,45 @@ class PlatformModOriginalsTest {
     }
 
     @Test
+    void clearedOriginalSelectionSurvivesSearchRefreshAndPageReentryWithoutEnablingWrites() throws Exception {
+        fixture.original("first.wtlmod", "1.0.0", "first");
+        fixture.original("second.wtlmod", "2.0.0", "second");
+        window(false);
+        select("first.wtlmod");
+        assertTrue(onEdt(() -> named(frame, "originals.install").isEnabled()));
+        onEdt(() -> {
+            ((JList<?>) named(frame, "originals.inventory")).clearSelection();
+            assertFalse(named(frame, "originals.install").isEnabled());
+            assertFalse(named(frame, "originals.delete").isEnabled());
+            assertFalse(((JTextArea) named(frame, "originals.details")).getText().contains("first.wtlmod"));
+            return null;
+        });
+        search("first");
+        assertEquals(1, rows());
+        assertNull(onEdt(() -> ((JList<?>) named(frame, "originals.inventory")).getSelectedValue()));
+        search("");
+        click("originals.refresh");
+        idle();
+        onEdt(() -> {
+            assertNull(((JList<?>) named(frame, "originals.inventory")).getSelectedValue());
+            var tabs = (JTabbedPane) named(frame, "mods.management");
+            tabs.setSelectedIndex(0);
+            tabs.setSelectedIndex(1);
+            return null;
+        });
+        idle();
+        onEdt(() -> {
+            assertEquals(2, ((JList<?>) named(frame, "originals.inventory")).getModel().getSize());
+            assertNull(((JList<?>) named(frame, "originals.inventory")).getSelectedValue());
+            assertFalse(named(frame, "originals.install").isEnabled());
+            assertFalse(named(frame, "originals.delete").isEnabled());
+            return null;
+        });
+        assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_version"));
+        assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
+    }
+
+    @Test
     void scansAndSearchesDeclaredFactsAndMalformedFilenamesWithoutInstalling() throws Exception {
         fixture.original("第一版.wtlmod", "1.0.0", "one");
         fixture.original("second.wtlmod", "2.0.0", "two");
@@ -184,6 +223,7 @@ class PlatformModOriginalsTest {
         assertEquals(1, rows());
         search("半包");
         assertEquals(1, rows());
+        select("半包.wtlmod");
         assertTrue(onEdt(() -> ((JTextArea) named(frame, "originals.details")).getText()).contains("不完整"));
         assertFalse(onEdt(() -> named(frame, "originals.install").isEnabled()));
         assertTrue(onEdt(() -> named(frame, "originals.delete").isEnabled()));

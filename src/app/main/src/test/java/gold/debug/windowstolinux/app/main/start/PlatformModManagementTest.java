@@ -49,6 +49,34 @@ class PlatformModManagementTest {
     }
 
     @Test
+    void clearedCardSelectionSurvivesRefreshAndDisablesSelectedModActions() throws Exception {
+        development(false);
+        select(P);
+        assertFalse(details().isBlank());
+        onEdt(() -> {
+            ((JList<?>) named(frame, "mods.inventory")).clearSelection();
+            assertEquals("", ((JTextArea) named(frame, "mods.details")).getText());
+            for (String name : List.of("mods.enabled", "mods.save", "mods.prepare", "mods.openPage", "mods.cancel", "mods.reconcile", "mods.retry"))
+                assertFalse(named(frame, name).isEnabled(), name);
+            return null;
+        });
+        click("mods.refresh");
+        idle();
+        onEdt(() -> {
+            var list = (JList<?>) named(frame, "mods.inventory");
+            assertTrue(list.getModel().getSize() > 0);
+            assertNull(list.getSelectedValue());
+            assertEquals("", ((JTextArea) named(frame, "mods.details")).getText());
+            assertFalse(named(frame, "mods.enabled").isEnabled());
+            assertFalse(named(frame, "mods.save").isEnabled());
+            assertFalse(named(frame, "mods.openPage").isEnabled());
+            return null;
+        });
+        assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
+        assertTrue(fixture.actions().isEmpty());
+    }
+
+    @Test
     void firstDataPreparationUsesVisibleConfirmationAndLockRevokesTheUnsubmittedReview() throws Exception {
         initial = new PlatformModInitializationTest();
         initial.root = root;

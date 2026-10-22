@@ -23,6 +23,51 @@ import org.junit.jupiter.api.Test;
 /** Actual Swing clicks use real owned inventory tasks and the concrete desktop action boundary. / 实际Swing点击使用真实所属清单任务与具体桌面动作边界。 */
 class DeploymentApplicationsPageInteractionTest extends DeploymentAutostartFixture {
     @Test
+    void clearedApplicationSelectionSurvivesRefreshAndLeavesIndependentTaskOutputIntact() throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            usageServer(runtime);
+            seedUsage(runtime, usageGraph("demo", false, true), 1);
+            var effects = new DesktopEffects();
+            var mounted = mount(new DeploymentApplicationsService(context(runtime)), effects);
+            try {
+                var component = mounted.root();
+                var inventory = (JList<?>) named(component, "applications.inventory");
+                var commands = (JComboBox<?>) named(component, "delivery.commands");
+                var taskOutput = (JTextArea) named(component, "applications.tasks");
+                waitEdt(() -> inventory.isEnabled() && inventory.getSelectedValue() != null && commands.getItemCount() == 3);
+                SwingUtilities.invokeAndWait(() -> {
+                    String originalTasks = taskOutput.getText();
+                    inventory.clearSelection();
+                    assertEquals(originalTasks, taskOutput.getText());
+                    assertNotNull(taskOutput.getParent());
+                    assertEquals(0, commands.getItemCount());
+                    assertFalse(named(component, "applications.inspect").isEnabled());
+                    assertFalse(named(component, "applications.edit").isEnabled());
+                    ((JButton) named(component, "applications.refresh")).doClick();
+                });
+                waitEdt(() -> inventory.isEnabled() && ((JButton) named(component, "applications.refresh")).isEnabled());
+                SwingUtilities.invokeAndWait(() -> {
+                    assertNull(inventory.getSelectedValue());
+                    assertEquals(1, inventory.getModel().getSize());
+                    assertEquals(0, commands.getItemCount());
+                    assertFalse(named(component, "applications.inspect").isEnabled());
+                    assertFalse(named(component, "applications.edit").isEnabled());
+                    assertSame(taskOutput, named(component, "applications.tasks"));
+                    assertTrue(effects.copies.isEmpty());
+                    assertTrue(effects.opens.isEmpty());
+                });
+                assertEquals(0, peer.effects.get());
+            } finally {
+                SwingUtilities.invokeAndWait(mounted.page()::close);
+            }
+            waitEdt(() -> noResources(runtime));
+            assertNoActiveResources(runtime);
+        }
+    }
+
+    @Test
     void actualButtonsCopyFixedCommandsAndIpv6EndpointsAndOpenOnlyHttpAcrossFilterAndLockChanges() throws Exception {
         enable();
         try (var runtime = open()) {

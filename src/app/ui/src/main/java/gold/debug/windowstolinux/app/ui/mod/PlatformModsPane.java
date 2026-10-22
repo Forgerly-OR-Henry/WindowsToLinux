@@ -101,6 +101,9 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     /** Current privacy, lifetime and worker exclusion. / 当前隐私、寿命及工作线程互斥。 */
     private boolean locked = true, closed, busy;
 
+    /** Separates first-load convenience from an explicitly cleared selection. / 区分首次加载默认项与明确清空的选择。 */
+    private boolean initialized;
+
     /** Invalidates results and confirmations across lock changes. / 使跨锁定变化的结果及确认失效。 */
     private long epoch;
 
@@ -271,8 +274,9 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             for (int i = 0; i < rows.size(); i++)
                 if (rows.get(i).owner().equals(owner))
                     inventory.setSelectedIndex(i);
-            if (inventory.getSelectedIndex() < 0 && !rows.isEmpty())
+            if (!initialized && inventory.getSelectedIndex() < 0 && !rows.isEmpty())
                 inventory.setSelectedIndex(0);
+            initialized = true;
             if (rows.isEmpty() && view.status.getText().isBlank())
                 messages.bind(view.status, "mods.empty");
             render();
@@ -399,17 +403,17 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             && enabled.isSelected() == value.choice().enabled()
             && Optional.ofNullable(selectedVersion).equals(value.choice().version()));
         view.cancel.setVisible(value != null && value.operations().stream().anyMatch(o -> o.request().isPresent()));
-        view.cancel.setEnabled(active);
+        view.cancel.setEnabled(active && value != null);
         view.reconcile.setVisible(value != null && value.operations().stream()
             .anyMatch(o -> o.type().equals("MIGRATE") && o.state().equals("UNKNOWN")));
-        view.reconcile.setEnabled(active);
+        view.reconcile.setEnabled(active && value != null);
         boolean finishing = value != null && retained.containsKey(value.owner());
         messages.bind(view.retry, finishing ? "mods.finish" : "mods.retry");
         view.retry.setVisible(finishing || value != null && value.choice().enabled() && value.versions().stream()
             .anyMatch(v -> value.choice().version().equals(Optional.of(v.manifest().version().toString()))
                 && value.data().stream().anyMatch(d -> d.retryable()
                 && v.manifest().schemaVersion().equals(Optional.of(d.identity().schemaVersion())))));
-        view.retry.setEnabled(active);
+        view.retry.setEnabled(active && value != null);
         view.deleteVersion.setVisible(maintenance.deletion != null);
         view.deleteVersion.setEnabled(active && maintenance.deletion != null && value != null
             && !value.choice().enabled() && value.stopAcknowledged() && !enabled.isSelected()
@@ -502,6 +506,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
      * @param preparing whether explicitly preparing the unchanged selection / 是否明确准备未改变的选择 */
     private void reviewChoice(boolean preparing) {
         var value = inventory.getSelectedValue();
+        if (value == null) return;
         var target = new Choice(enabled.isSelected(), Optional.ofNullable(selectedVersion));
         var source = target.enabled() ? source(value, selectedVersion, false) : Optional.<SchemaIdentity>empty();
         if (source == null)
@@ -534,7 +539,9 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
 
     /** Reviews withdrawal of the entire original pending group. / 审阅撤销整个原待执行组。 */
     private void cancelRequest() {
-        var request = inventory.getSelectedValue().operations().stream().flatMap(o -> o.request().stream()).findFirst()
+        var value = inventory.getSelectedValue();
+        if (value == null) return;
+        var request = value.operations().stream().flatMap(o -> o.request().stream()).findFirst()
             .orElseThrow();
         run(() -> service.reviewCancellation(request), review -> {
             if (confirm(messages.text("mods.confirmCancel") + "\n" + summary(review, Optional.empty())))
@@ -544,7 +551,9 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
 
     /** Explicitly validates the original unknown target without replaying migration. / 明确验证原未知目标，不重放迁移。 */
     private void reconcile() {
-        var operation = inventory.getSelectedValue().operations().stream()
+        var value = inventory.getSelectedValue();
+        if (value == null) return;
+        var operation = value.operations().stream()
             .filter(o -> o.type().equals("MIGRATE") && o.state().equals("UNKNOWN")).findFirst().orElseThrow();
         if (confirm(messages.text("mods.confirmReconcile")))
             run(() -> schemas.reconcile(operation.id()), this::outcome, true);
@@ -553,6 +562,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     /** Rebuilds one reviewed failed target or only finishes its retained original cleanup. / 重建一个已审阅失败目标，或仅完成其保留原清理。 */
     private void retry() {
         var value = inventory.getSelectedValue();
+        if (value == null) return;
         var original = retained.get(value.owner());
         if (original != null) {
             executeRetry(value.owner(), original);
@@ -714,7 +724,9 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         /** Reviews a concrete installed release or the entire selected owner before confirmation. / 确认前审阅具体安装发布或完整已选所有者。
          * @param version selected release, null for the complete owner / 已选发布，完整所有者为空 */
         private void reviewDeletion(String version) {
-            String owner = inventory.getSelectedValue().owner();
+            var selectedMod = inventory.getSelectedValue();
+            if (selectedMod == null) return;
+            String owner = selectedMod.owner();
             run(() -> deletion.review(owner, version), review -> {
                 var text = new StringBuilder(review.whole()
                     ? messages.text("mods.confirmDeleteMod",
@@ -764,7 +776,9 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
 
         /** Continues an original accepted deletion without choosing a fresh file scope. / 继续原已接纳删除，不选择新的文件范围。 */
         private void reconcileDeletion() {
-            var operation = inventory.getSelectedValue().operations().stream()
+            var selected = inventory.getSelectedValue();
+            if (selected == null) return;
+            var operation = selected.operations().stream()
                 .filter(o -> InstalledMaintenance.deletionOperation(o) && o.state().equals("UNKNOWN")).findFirst()
                 .orElseThrow();
             if (confirm(messages.text("mods.confirmDeletionReconcile")))
@@ -791,7 +805,9 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
 
         /** Lists matching managed archives before allowing an explicit external file selection. / 允许明确选择外部文件前列出匹配受管归档。 */
         private void chooseRepair() {
-            String owner = inventory.getSelectedValue().owner(), version = selectedVersion;
+            var selectedMod = inventory.getSelectedValue();
+            if (selectedMod == null) return;
+            String owner = selectedMod.owner(), version = selectedVersion;
             run(installation::scan, observation -> {
                 var paths = observation.originals().stream()
                     .filter(o -> o.state().equals("INSTALLED") && o.packageInfo().isPresent()
@@ -889,6 +905,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
 
         /** Continues the original durable replacement or already selected restoration. / 继续原持久替换或已选定恢复。 */
         private void reconcileRepair() {
+            if (inventory.getSelectedValue() == null) return;
             var operation = repairOperation();
             if (confirm(messages.text("mods.confirmRepairReconcile", Map.of("id", operation.id().toString()))))
                 run(() -> installation.reinstallation().reconcile(operation.id()), this::repaired, true);
@@ -896,6 +913,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
 
         /** Reviews exactly which new files will be removed before restoring the saved old program. / 恢复保留旧程序前审阅精确将移除的新文件。 */
         private void restoreProgram() {
+            if (inventory.getSelectedValue() == null) return;
             var operation = repairOperation();
             run(() -> installation.reinstallation().reviewRestore(operation.id()), review -> {
                 var text = new StringBuilder(messages.text("mods.confirmRestoreProgram",

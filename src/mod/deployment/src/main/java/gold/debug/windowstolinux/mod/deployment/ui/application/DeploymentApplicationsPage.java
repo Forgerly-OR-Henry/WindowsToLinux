@@ -126,6 +126,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         servers.setName("applications.scanServer");
         discovered.setName("applications.discovered");
         details.setName("applications.details");
+        tasks.setName("applications.tasks");
         var filters = new JPanel();
         filters.add(categories);
         filters.add(serverFilter);
@@ -635,6 +636,8 @@ public final class DeploymentApplicationsPage implements ModPage {
             button -> button.setEnabled(!closed && !locked && (!busy || keys.get(button).equals("cancel"))));
         var selected = selected();
         keys.forEach((button, key) -> {
+            if (key.equals("inspect") || key.equals("edit"))
+                button.setEnabled(!closed && !locked && !busy && selected != null);
             if (key.equals("history"))
                 button.setEnabled(!closed && !locked && !busy && selected != null && selected.managed().isPresent());
             if (key.equals("reattach"))

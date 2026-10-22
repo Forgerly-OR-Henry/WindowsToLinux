@@ -33,7 +33,7 @@ class PlatformServerSelectionMigrationTest {
     }
 
     @Test
-    void initialInventoryPublishesSelectionButRestoringDoesNotOverwriteUnsavedContext() throws Exception {
+    void initialInventoryStaysUnselectedAndRestoringDoesNotOverwriteUnsavedContext() throws Exception {
         assertFalse(GraphicsEnvironment.isHeadless(), "Actual platform selection migration requires the local desktop");
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             setup(runtime);
@@ -46,13 +46,17 @@ class PlatformServerSelectionMigrationTest {
                 create(runtime, catalog, view, frame);
                 settled(view.get());
                 onEdt(() -> {
+                    assertEquals(-1, table(view.get()).getSelectedRow(), "Opening the inventory must not choose a server");
+                    table(view.get()).setRowSelectionInterval(0, 0);
                     assertEquals("Production EU", selected(table(view.get())));
                     var dialog = new ServerProfileDialog(frame.get(), runtime.servers(), new DesktopPartFactory(ThemePalette.light()), messages, first(), ignored -> fail("Unsaved draft cannot publish"));
                     dialog.setModalityType(Dialog.ModalityType.MODELESS);
                     editor.set(dialog);
                     ((JTextField) named(dialog, "server.name")).setText("Unsaved draft");
                     dialog.setVisible(true);
-                    table(view.get()).clearSelection();
+                    ((JButton) named(view.get(), "servers.collapseDetails")).doClick(0);
+                    assertEquals(-1, table(view.get()).getSelectedRow());
+                    assertFalse(named(view.get(), "servers.details.scroll").isVisible());
                     ((JButton) named(view.get(), "servers.refresh")).doClick(0);
                     return null;
                 });
@@ -101,6 +105,7 @@ class PlatformServerSelectionMigrationTest {
                 settled(view.get());
                 onEdt(() -> {
                     var table = table(view.get());
+                    table.setRowSelectionInterval(0, 0);
                     var search = (JTextField) named(view.get(), "servers.search");
                     search.setText("DUCt");
                     assertEquals(1, table.getRowCount());
@@ -157,6 +162,7 @@ class PlatformServerSelectionMigrationTest {
                 create(runtime, catalog, view, frame);
                 settled(view.get());
                 onEdt(() -> {
+                    table(view.get()).setRowSelectionInterval(0, 0);
                     var dialog = new ServerProfileDialog(frame.get(), runtime.servers(), new DesktopPartFactory(ThemePalette.light()), new PageMessagePresenter(catalog), first(), value -> {
                         saved.set(value);
                         notifications.incrementAndGet();

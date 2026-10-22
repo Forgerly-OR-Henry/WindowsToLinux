@@ -205,6 +205,8 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
         } finally {
             filtering = false;
         }
+        if (selection != null && list.getSelectedValue() == null)
+            clearSelectionDraft();
     }
 
     /** Starts a new explicit root draft with optional branches unselected. / 开始新的明确主项草稿，可选分支不选中。 */
@@ -213,6 +215,20 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
         var release = list.getSelectedValue();
         if (release != null)
             change(new ModStoreSelection(new ReleaseKey(release.owner(), release.version()), Set.of(), Map.of()));
+        else
+            clearSelectionDraft();
+    }
+
+    /** Revokes only the unsubmitted selection and its readers, retaining accepted batch facts. / 仅撤销未提交选择及其读取，保留已接纳批次事实。 */
+    private void clearSelectionDraft() {
+        revision++;
+        readToken.set(true);
+        confirmation.revoke();
+        selection = null;
+        plan = null;
+        selectionView.display(null, null);
+        messages.bind(status, rows.isEmpty() ? "store.empty" : service.canInstall() ? "store.ready" : "store.classMode");
+        controls();
     }
 
     /** Invalidates every former approval and recomputes the explicit selection. / 使全部旧批准失效并重算明确选择。
@@ -267,6 +283,7 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
         }
         if (revision != draft) {
             resolve();
+            controls();
             return false;
         }
         return true;

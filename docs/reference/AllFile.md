@@ -392,12 +392,16 @@ WindowsToLinux/
    │  │  │  └─ UiDebugPreviewHost.java  # 在宿主持有的对话框中挂载隔离作者预览
    │  │  ├─ display/  # 语言、主题和显示设置
    │  │  │  ├─ DesktopComboBoxUi.java  # 固定各下拉框显示后的宽度，保留 FlatLaf 输入及展开列表绘制
+   │  │  │  ├─ DesktopCardSelection.java  # 卡片点击切换及原生选择、拖拽手势协调
+   │  │  │  ├─ DesktopCardSupport.java  # 卡片适用范围、命中边界及共用尺寸
    │  │  │  ├─ DesktopControlDefaults.java  # 统一全局控件形状、主题表面及交互状态
    │  │  │  ├─ DesktopDisplayConfig.java  # 在桌面设置页面选择的可持久化显示偏好
    │  │  │  ├─ DesktopListCard.java  # 共用独立圆角列表卡片与选中竖条
    │  │  │  ├─ DesktopListUi.java  # 保留原模型与渲染器的对象列表绘制及行高缩放
    │  │  │  ├─ DesktopMotion.java  # 共用实际时间运动时钟及系统动画偏好
    │  │  │  ├─ DesktopSwitchIcon.java  # 普通复选组件的圆形滑块及鼠标键盘状态反馈
+   │  │  │  ├─ DesktopScrollBarUi.java  # 卡片专用细滚动条及无溢出满轨道绘制
+   │  │  │  ├─ DesktopScrollPaneUi.java  # 卡片滚动视口、常驻策略及主题重装清理
    │  │  │  ├─ DesktopTableUi.java  # 保留列与操作的表格多选标记绘制
    │  │  │  ├─ DesktopTextAreaUi.java  # 保留原生正文与选择，仅绘制多行文本的圆角背景
    │  │  │  ├─ DesktopThemeService.java  # 受管部署 Swing 桌面客户端共用的 FlatLaf 设置

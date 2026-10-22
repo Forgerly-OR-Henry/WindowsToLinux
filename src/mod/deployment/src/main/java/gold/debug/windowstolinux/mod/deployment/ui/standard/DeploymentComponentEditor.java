@@ -40,6 +40,9 @@ public final class DeploymentComponentEditor {
     /** Explicit selection for editing or deletion. / 明确编辑或删除选择。 */
     private final JList<String> list = new JList<>(components);
 
+    /** Deletes only a visibly selected component, independently of its retained edit draft. / 仅删除可见选中的组件，独立于保留的编辑草稿。 */
+    private final JButton remove;
+
     /** Actual health owner, absent in a one-component graph. / 实际健康所属者，单组件图时为空。 */
     private final JComboBox<String> healthOwner = new JComboBox<>();
 
@@ -61,6 +64,7 @@ public final class DeploymentComponentEditor {
         form = new ComponentForm(text, this::invalidate);
         panel.setName("deployment.components.editor");
         list.setName("deployment.components.list");
+        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         application.setName("deployment.components.application");
         healthOwner.setName("deployment.components.health");
         var identity = new JPanel(new GridLayout(0, 2, 8, 8));
@@ -76,7 +80,8 @@ public final class DeploymentComponentEditor {
         var actions = new JPanel();
         var add = new JButton(text.apply("component.addUpdate"));
         add.setName("deployment.components.addUpdate");
-        var remove = new JButton(text.apply("component.remove"));
+        remove = new JButton(text.apply("component.remove"));
+        remove.setEnabled(false);
         remove.setName("deployment.components.remove");
         var create = new JButton(text.apply("component.new"));
         create.setName("deployment.components.new");
@@ -98,8 +103,11 @@ public final class DeploymentComponentEditor {
             form.empty();
         });
         list.addListSelectionListener(ignored -> {
-            if (!list.getValueIsAdjusting() && list.getSelectedValue() != null)
-                form.load(list.getSelectedValue(), choices.get(list.getSelectedValue()));
+            if (list.getValueIsAdjusting()) return;
+            String selected = list.getSelectedValue();
+            if (selected != null && !selected.equals(form.loadedId))
+                form.load(selected, choices.get(selected));
+            remove.setEnabled(selected != null);
         });
         for (var component : discovered) {
             var type = component.types().stream().filter(DeploymentProjectKind::deployable).findFirst().orElse(null);
@@ -163,7 +171,7 @@ public final class DeploymentComponentEditor {
             var id = form.id.getText().trim();
             if (!id.matches("[a-z0-9][a-z0-9-]{0,62}") || choices.size() >= 16 && !choices.containsKey(id))
                 throw new IllegalArgumentException("Invalid component ID or graph limit");
-            String old = list.getSelectedValue();
+            String old = form.loadedId;
             if (old != null && !old.equals(id) && choices.containsKey(id))
                 throw new IllegalArgumentException("Component ID already exists");
             var next = form.choice();

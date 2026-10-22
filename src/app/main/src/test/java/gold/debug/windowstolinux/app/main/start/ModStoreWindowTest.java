@@ -39,6 +39,62 @@ class ModStoreWindowTest {
     }
 
     @Test
+    void nativeSecondClickClearsPlanAndRefreshDoesNotRestoreSelectionOrApproval() throws Exception {
+        try (var fixture = new ModStoreFixture(root)) {
+            var main = fixture.publish("sample.deselect.root", "1.0.0", Map.of(), Map.of(), Map.of());
+            try (var window = open(fixture, "en", ThemeMode.LIGHT, 100)) {
+                idle();
+                selectMain(window, main);
+                var list = (JList<?>) named(window.frame, "store.results");
+                clickArea(window.robot, list, onEdt(() -> list.getCellBounds(0, 0)));
+                idle();
+                assertNull(onEdt(list::getSelectedValue));
+                assertEquals(0, onEdt(() -> ((JTable) named(window.frame, "store.plan")).getRowCount()));
+                assertFalse(onEdt(() -> named(window.frame, "store.install").isEnabled()));
+                click(window.robot, (JComponent) named(window.frame, "store.retry"));
+                idle();
+                assertNull(onEdt(list::getSelectedValue));
+                assertEquals(0, onEdt(() -> ((JTable) named(window.frame, "store.plan")).getRowCount()));
+                selectMain(window, main);
+                openConfirmation(window);
+                var approval = dialog(window.frame);
+                onEdt(() -> {
+                    list.clearSelection();
+                    return null;
+                });
+                await(() -> !approval.isDisplayable());
+                idle();
+                assertFalse(onEdt(() -> named(window.frame, "store.install").isEnabled()));
+                noDownloads(fixture, main);
+            }
+        }
+    }
+
+    @Test
+    void clearedSelectionRejectsItsAlreadyQueuedResolutionWithoutRevivingPlan() throws Exception {
+        try (var fixture = new ModStoreFixture(root)) {
+            var main = fixture.publish("sample.stale.selection", "1.0.0", Map.of(), Map.of(), Map.of());
+            try (var window = open(fixture, "en", ThemeMode.LIGHT, 100)) {
+                idle();
+                var list = (JList<?>) named(window.frame, "store.results");
+                onEdt(() -> {
+                    list.setSelectedIndex(0);
+                    list.clearSelection();
+                    return null;
+                });
+                idle();
+                assertNull(onEdt(list::getSelectedValue));
+                assertEquals(0, onEdt(() -> ((JTable) named(window.frame, "store.plan")).getRowCount()));
+                assertFalse(onEdt(() -> named(window.frame, "store.install").isEnabled()));
+                assertTrue(onEdt(() -> named(window.frame, "store.retry").isEnabled()));
+                selectMain(window, main);
+                assertTrue(onEdt(() -> named(window.frame, "store.install").isEnabled()));
+                noDownloads(fixture, main);
+            }
+        }
+    }
+
+    @Test
     void nativeCompatibleVersionOptionalBranchesConfirmationAndInstalledReuseUseRealWire() throws Exception {
         try (var fixture = new ModStoreFixture(root)) {
             var core = fixture.publish("sample.store.core", "1.9.0", Map.of(), Map.of(), Map.of());
@@ -607,7 +663,8 @@ class ModStoreWindowTest {
             }
             throw new AssertionError("Actual main release not displayed: " + key);
         });
-        clickArea(window.robot, list, onEdt(() -> list.getCellBounds(index, index)));
+        if (onEdt(list::getSelectedIndex) != index)
+            clickArea(window.robot, list, onEdt(() -> list.getCellBounds(index, index)));
         idle();
         assertTrue(onEdt(() -> named(window.frame, "store.install").isEnabled()));
     }

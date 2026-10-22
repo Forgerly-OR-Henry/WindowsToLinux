@@ -72,6 +72,9 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
     /** Whether the most recent requested scan completed successfully. / 最近一次请求的扫描是否成功完成。 */
     private boolean current;
 
+    /** Keeps an explicit clear distinct from the first successful scan. / 区分明确清空与首次成功扫描。 */
+    private boolean initialized;
+
     /** Invalidates review results across lock transitions. / 使跨锁定变化的审阅结果失效。 */
     private long epoch;
 
@@ -192,12 +195,16 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
                 for (int i = 0; i < rows.size(); i++)
                     if (rows.get(i).file().equals(selected.file()))
                         inventory.setSelectedIndex(i);
+            if (!initialized && inventory.getSelectedIndex() < 0 && !rows.isEmpty())
+                inventory.setSelectedIndex(0);
+            initialized = true;
             controls();
         }, false);
     }
 
     /** Applies filename and author metadata filtering without filesystem effects. / 不产生文件系统效果地按文件名及作者元数据筛选。 */
     private void filter() {
+        var selected = inventory.getSelectedValue();
         String query = search.getText().strip().toLowerCase(Locale.ROOT);
         rows.clear();
         for (var value : all) {
@@ -206,8 +213,10 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
             if (text.toLowerCase(Locale.ROOT).contains(query))
                 rows.addElement(value);
         }
-        if (!rows.isEmpty())
-            inventory.setSelectedIndex(0);
+        if (selected != null)
+            for (int i = 0; i < rows.size(); i++)
+                if (rows.get(i).file().equals(selected.file()))
+                    inventory.setSelectedIndex(i);
         render();
     }
 
@@ -280,7 +289,9 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
 
     /** Reviews original bytes before showing the exact installation effects. / 展示精确安装效果之前审阅原字节。 */
     private void reviewInstall() {
-        var file = inventory.getSelectedValue().file();
+        var selected = inventory.getSelectedValue();
+        if (selected == null) return;
+        var file = selected.file();
         run(() -> service.review(file), review -> {
             var manifest = review.packageInfo();
             String text = messages.text("originals.confirmInstall",
@@ -294,7 +305,9 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
 
     /** Reviews removal of the original archive only, including invalid packages. / 审阅仅移除原归档，包括无效包。 */
     private void reviewDelete() {
-        var file = inventory.getSelectedValue().file();
+        var selected = inventory.getSelectedValue();
+        if (selected == null) return;
+        var file = selected.file();
         run(() -> service.reviewDelete(file), review -> {
             if (confirm(messages.text("originals.confirmDelete", Map.of("path", review.file().toString()))))
                 run(() -> {

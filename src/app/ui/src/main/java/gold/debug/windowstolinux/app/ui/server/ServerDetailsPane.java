@@ -13,12 +13,12 @@ import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
 /** Selected connection metadata and dated evidence, without reading credentials. / 所选连接元数据与带时间证据，不读取凭据。 */
-final class ServerDetailsPane extends JPanel {
+final class ServerDetailsPane extends JPanel implements Scrollable {
     /** Current localized captions. / 当前本地化文案。 */
     private final PageMessagePresenter messages;
 
-    /** Selected identity and dated check evidence. / 所选身份与带时间检查证据。 */
-    private final JLabel title = new JLabel(), endpoint = new JLabel(), state = new JLabel(), time = new JLabel();
+    /** Selected identity without duplicated check evidence. / 所选身份，不重复检查证据。 */
+    private final JLabel title = new JLabel(), endpoint = new JLabel();
 
     /** Non-secret connection field values. / 非秘密连接字段值。 */
     private final JLabel[] values = {new JLabel(), new JLabel(), new JLabel(), new JLabel()};
@@ -27,10 +27,10 @@ final class ServerDetailsPane extends JPanel {
      * @param components themed factory / 主题工厂
      * @param messages safe localized captions / 安全本地化文案
      * @param actions original actions / 原操作
-     * @param records original check records / 原检查记录
-     * @param tasks original unfinished-task controls / 原未结束任务控件 */
+     * @param records current authentication result / 当前认证结果
+     * @param collapse clears the original selection / 清空原选择 */
     ServerDetailsPane(DesktopPartFactory components, PageMessagePresenter messages,
-                      JComponent actions, JComponent records, JComponent tasks) {
+                      JComponent actions, JComponent records, Runnable collapse) {
         super(new BorderLayout(0, UIScale.scale(20)));
         this.messages = messages;
         components.stylePage(this);
@@ -47,16 +47,16 @@ final class ServerDetailsPane extends JPanel {
         copy.add(title);
         copy.add(endpoint);
         var icon = new JLabel(DesktopIcons.icon("server/server", 32, () -> UIManager.getColor("Component.focusColor")));
+        icon.setName("servers.details.icon");
         icon.setBorder(new FlatEmptyBorder(12, 10, 12, 10));
         heading.add(icon, BorderLayout.WEST);
         heading.add(copy, BorderLayout.CENTER);
-        var evidence = components.transparent(new GridLayout(2, 1, 0, UIScale.scale(6)));
-        state.setHorizontalAlignment(SwingConstants.RIGHT);
-        time.setHorizontalAlignment(SwingConstants.RIGHT);
-        state.setName("servers.details.state");
-        evidence.add(state);
-        evidence.add(time);
-        heading.add(evidence, BorderLayout.EAST);
+        var collapseButton = messages.bind(components.secondaryButton(""), "server.collapseDetails");
+        collapseButton.setName("servers.collapseDetails");
+        collapseButton.addActionListener(event -> collapse.run());
+        var collapseGroup = components.transparent(new GridBagLayout());
+        collapseGroup.add(collapseButton);
+        heading.add(collapseGroup, BorderLayout.EAST);
         upper.add(heading, BorderLayout.NORTH);
         var fields = components.card(new GridLayout(1, 4, UIScale.scale(16), UIScale.scale(12)));
         for (int i = 0; i < values.length; i++) {
@@ -91,8 +91,9 @@ final class ServerDetailsPane extends JPanel {
         upper.add(responsive, BorderLayout.CENTER);
         upper.add(actions, BorderLayout.SOUTH);
         add(upper, BorderLayout.NORTH);
-        add(records, BorderLayout.CENTER);
-        add(tasks, BorderLayout.SOUTH);
+        var resultRegion = components.transparent(new BorderLayout());
+        resultRegion.add(records, BorderLayout.NORTH);
+        add(resultRegion, BorderLayout.CENTER);
     }
 
     /** Displays only the current saved selection and observation. / 仅展示当前保存的选择与观测。
@@ -105,16 +106,37 @@ final class ServerDetailsPane extends JPanel {
         title.setToolTipText(title.getText());
         endpoint.setText(profile == null ? " " : endpoint(summary));
         endpoint.setToolTipText(endpoint.getText());
-        state.setText(summary == null ? " " : messages.text("server.lastCheck") + ": " + status(summary, messages));
-        state.setForeground(statusColor(summary));
-        time.setText(summary == null ? " " : checkedAt(summary));
-        time.setForeground(UIManager.getColor("Label.disabledForeground"));
         String[] content = profile == null ? new String[]{"—", "—", "—", "—"}
             : new String[]{profile.host(), Integer.toString(profile.sshPort()), profile.username(), messages.text("server.credentialConfigured")};
         for (int i = 0; i < values.length; i++) {
             values[i].setText(content[i]);
             values[i].setToolTipText(content[i]);
         }
+    }
+
+    @Override
+    public Dimension getPreferredScrollableViewportSize() {
+        return getPreferredSize();
+    }
+
+    @Override
+    public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+        return UIScale.scale(20);
+    }
+
+    @Override
+    public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+        return Math.max(UIScale.scale(20), visibleRect.height - UIScale.scale(20));
+    }
+
+    @Override
+    public boolean getScrollableTracksViewportWidth() {
+        return true;
+    }
+
+    @Override
+    public boolean getScrollableTracksViewportHeight() {
+        return getParent() instanceof JViewport viewport && viewport.getHeight() > getPreferredSize().height;
     }
 
     /** Formats the selected connection without exposing credentials. / 格式化所选连接而不暴露凭据。
@@ -146,7 +168,7 @@ final class ServerDetailsPane extends JPanel {
      * @param summary original observation or none / 原观测或无观测
      * @return current evidence color / 当前证据颜色 */
     static Color statusColor(ServerSummary summary) {
-        if (summary == null || summary.checkedAt().isEmpty()) return UIManager.getColor("Label.disabledForeground");
+        if (summary == null || summary.checkedAt().isEmpty()) return UIManager.getColor("Label.foreground");
         boolean dark = com.formdev.flatlaf.FlatLaf.isLafDark();
         return summary.connected() ? new Color(dark ? 0x68D391 : 0x14804A) : new Color(dark ? 0xFF9292 : 0xC23939);
     }

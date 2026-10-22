@@ -39,6 +39,12 @@ public final class UiDebugDialog extends JDialog {
     /** Pure local choice control. / 纯本地选项控件。 */
     private final DesktopCardList<ModPageRegistry.PageContribution> list = new DesktopCardList<>(entries, 48);
 
+    /** Opens only the current explicit preview selection. / 仅打开当前明确选择的预览。 */
+    private final JButton open;
+
+    /** Distinguishes initial convenience selection from a user's explicit clear. / 区分初始默认选择与用户明确清空。 */
+    private boolean initialized;
+
     /** Removable original metadata listener. / 可移除原元数据监听器。 */
     private AutoCloseable subscription;
 
@@ -79,9 +85,11 @@ public final class UiDebugDialog extends JDialog {
         var server = messages.bind(components.secondaryButton(""), "auto.addServer");
         server.setName("debug.server");
         server.addActionListener(event -> server());
-        var open = messages.bind(components.primaryButton(""), "debug.open");
+        open = messages.bind(components.primaryButton(""), "debug.open");
         open.setName("debug.open");
         open.addActionListener(event -> open());
+        list.addListSelectionListener(event -> open.setEnabled(list.getSelectedValue() != null));
+        open.setEnabled(false);
         var model = messages.bind(components.secondaryButton(""), "debug.ai.edit");
         model.setName("debug.model");
         model.addActionListener(event -> {
@@ -117,12 +125,19 @@ public final class UiDebugDialog extends JDialog {
 
     /** Refreshes registered metadata without opening any author view. / 不打开作者视图地刷新登记元数据。 */
     private void refresh() {
+        var selected = list.getSelectedValue();
         try {
             entries.clear();
             for (var contribution : pages.previews())
                 entries.addElement(contribution);
-            if (!entries.isEmpty())
+            if (selected != null)
+                for (int i = 0; i < entries.size(); i++)
+                    if (entries.get(i).key().equals(selected.key()))
+                        list.setSelectedIndex(i);
+            if (!initialized && !entries.isEmpty())
                 list.setSelectedIndex(0);
+            initialized = true;
+            open.setEnabled(list.getSelectedValue() != null);
         } catch (gold.debug.windowstolinux.appapi.task.result.ApiException failure) {
             getRootPane().putClientProperty("debug.problem", failure.problem());
         }

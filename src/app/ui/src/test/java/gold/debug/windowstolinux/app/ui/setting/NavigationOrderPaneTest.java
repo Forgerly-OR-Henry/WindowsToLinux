@@ -24,6 +24,58 @@ import org.junit.jupiter.api.Test;
 
 class NavigationOrderPaneTest {
     @Test
+    void clearedSelectionSurvivesReloadWithoutSavingAndEmptyInventoryKeepsItsScroll() throws Exception {
+        var saved = new AtomicReference<>(List.of("platform.servers", "platform.models"));
+        var writes = new AtomicInteger();
+        var pane = edt(() -> {
+            DesktopThemeService.install(ThemeMode.LIGHT);
+            var root = new NavigationOrderPane(new DesktopPartFactory(ThemePalette.light()),
+                new PageMessagePresenter(MessageCatalog.forLanguageTag("en"), FailureReportStore.disabled()));
+            root.section("navigation.platform", saved::get, List::copyOf, ignored -> List.of(), value -> value,
+                (expected, requested) -> {
+                    writes.incrementAndGet();
+                    return requested;
+                }, ignored -> {
+                });
+            root.setLocked(false);
+            return root;
+        });
+        try {
+            var list = edt(() -> (JList<?>) named(pane, "navigation.platform.list"));
+            await(() -> list.isEnabled() && list.getModel().getSize() == 2);
+            edt(() -> {
+                list.setSelectedIndex(0);
+                list.clearSelection();
+                assertFalse(named(pane, "navigation.platform.up").isEnabled());
+                assertFalse(named(pane, "navigation.platform.down").isEnabled());
+                pane.refresh();
+                return null;
+            });
+            await(list::isEnabled);
+            edt(() -> {
+                assertEquals(-1, list.getSelectedIndex());
+                saved.set(List.of());
+                pane.refresh();
+                return null;
+            });
+            await(() -> list.isEnabled() && list.getModel().getSize() == 0);
+            edt(() -> {
+                var scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, list);
+                assertTrue(scroll.isVisible());
+                assertTrue(named(pane, "navigation.platform.empty").isVisible());
+                assertEquals(0, writes.get());
+                return null;
+            });
+        } finally {
+            edt(() -> {
+                pane.close();
+                return null;
+            });
+            await(() -> !gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner.hasActiveTasks());
+        }
+    }
+
+    @Test
     void realCardDraggingSavesOnlyItsSectionAndRetainsConfirmedOrderOnFailureOrLock() throws Exception {
         assertFalse(GraphicsEnvironment.isHeadless());
         for (var theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK}) {
@@ -153,22 +205,30 @@ class NavigationOrderPaneTest {
         boolean allowed = edt(() -> ((gold.debug.windowstolinux.app.ui.control.DesktopCardList<?>) from).canReorder());
         Point start = edt(() -> point(from, source, false, true));
         Point end = edt(() -> point(to, target, after, false));
+        var diagnostics = edt(() -> new gold.debug.windowstolinux.app.ui.display.DesktopCardDragDiagnostics(from));
         robot.mouseMove(start.x, start.y);
         robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
-        for (int step = 1; step <= 14; step++) {
-            robot.mouseMove(start.x + (end.x - start.x) * step / 14, start.y + (end.y - start.y) * step / 14);
-            if (step == 9 && from == to && allowed) {
-                robot.delay(140);
-                edt(() -> {
-                    assertEquals(true, from.getClientProperty("desktop.cardDragActive"));
-                    assertEquals(original, values(from), "Drag preview must preserve the confirmed model");
-                    capture((JFrame) SwingUtilities.getWindowAncestor(from), "navigation-drag-"
-                        + UIManager.getLookAndFeel().getClass().getSimpleName() + "-" + source + "-" + target);
-                    return null;
-                });
+        try {
+            for (int step = 1; step <= 14; step++) {
+                robot.mouseMove(start.x + (end.x - start.x) * step / 14, start.y + (end.y - start.y) * step / 14);
+                if (step == 9 && from == to && allowed) {
+                    robot.delay(140);
+                    edt(() -> {
+                        assertEquals(true, from.getClientProperty("desktop.cardDragActive"), diagnostics::describe);
+                        assertEquals(original, values(from), "Drag preview must preserve the confirmed model");
+                        capture((JFrame) SwingUtilities.getWindowAncestor(from), "navigation-drag-"
+                            + UIManager.getLookAndFeel().getClass().getSimpleName() + "-" + source + "-" + target);
+                        return null;
+                    });
+                }
             }
+        } finally {
+            robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
+            edt(() -> {
+                diagnostics.close();
+                return null;
+            });
         }
-        robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
         robot.waitForIdle();
     }
 

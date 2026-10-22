@@ -93,14 +93,16 @@ public final class DesktopCardList<E> extends JList<E> {
             public void mousePressed(MouseEvent event) {
                 if (!SwingUtilities.isLeftMouseButton(event) || !canReorder()) return;
                 int index = locationToIndex(event.getPoint());
-                if (index < 0 || !getCellBounds(index, index).contains(event.getPoint())) return;
+                Rectangle card = index < 0 ? null : getCellBounds(index, index);
+                if (card == null) return;
+                card.grow(0, -UIScale.scale(6));
+                if (!card.contains(event.getPoint())) return;
                 clear();
                 pressed = true;
                 pressedAt = event.getPoint();
                 pointerOnScreen = event.getLocationOnScreen();
                 source = destination = index;
                 grab = event.getY() - getCellBounds(index, index).y;
-                setSelectedIndex(index);
                 requestFocusInWindow();
             }
 

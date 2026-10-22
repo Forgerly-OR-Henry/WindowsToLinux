@@ -70,6 +70,37 @@ class DeploymentComponentEditorTest {
     }
 
     @Test
+    void deselectionRetainsPendingRenameAndReselectDoesNotOverwriteTheDraft() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            var messages = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page", Locale.ENGLISH);
+            var editor = new DeploymentComponentEditor(messages::getString,
+                List.of(new DiscoveredProjectPart("service", Path.of(""), List.of(DeploymentProjectKind.GO_SERVICE))));
+            var panel = editor.panel();
+            var list = (JList<?>) named(panel, "deployment.components.list");
+            assertEquals(ListSelectionModel.SINGLE_SELECTION, list.getSelectionMode());
+            text(panel, "id").setText("renamed");
+            text(panel, "root").setText("services/app");
+            Object revision = panel.getClientProperty("deployment.components.draftRevision");
+            list.clearSelection();
+            assertEquals(revision, panel.getClientProperty("deployment.components.draftRevision"));
+            assertEquals("service", list.getModel().getElementAt(0));
+            assertFalse(button(panel, "deployment.components.remove").isEnabled());
+            button(panel, "deployment.components.remove").doClick();
+            list.setSelectedValue("service", true);
+            assertEquals("renamed", text(panel, "id").getText());
+            assertEquals("services/app", text(panel, "root").getText());
+            list.clearSelection();
+            button(panel, "deployment.components.addUpdate").doClick();
+            var selection = editor.selection();
+            assertEquals(Set.of("renamed"), selection.choices().keySet());
+            assertEquals("services/app", selection.choices().get("renamed").inputs().orElseThrow().relativeRoot());
+            text(panel, "id").setText("reviewed");
+            list.clearSelection();
+            assertEquals(Set.of("reviewed"), editor.selection().choices().keySet());
+        });
+    }
+
+    @Test
     void traversalAndInvalidPortsRemainEditableAndExplicitEmptyIsNotAutomatic() throws Exception {
         SwingUtilities.invokeAndWait(() -> {
             var messages = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page", Locale.ENGLISH);

@@ -352,7 +352,6 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
             int index = list.getSelectedIndex();
             list.setEnabled(enabled);
             if (locked || closed) list.cancelInteraction();
-            scroll.setVisible(list.getModel().getSize() > 0);
             empty.setVisible(loaded && list.getModel().getSize() == 0);
             up.setEnabled(enabled && index > 0);
             down.setEnabled(enabled && index >= 0 && index + 1 < list.getModel().getSize());

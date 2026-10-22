@@ -41,6 +41,8 @@ final class DesktopControlDefaults {
         UIManager.put("TextAreaUI", DesktopTextAreaUi.class.getName());
         UIManager.put("ListUI", DesktopListUi.class.getName());
         UIManager.put("TableUI", DesktopTableUi.class.getName());
+        UIManager.put("ScrollPaneUI", DesktopScrollPaneUi.class.getName());
+        UIManager.put("ScrollBarUI", DesktopScrollBarUi.class.getName());
         UIManager.put("Table.rowHeight", 32);
         UIManager.put("Table.intercellSpacing", new java.awt.Dimension(0, 4));
         UIManager.put("Table.cellMargins", new InsetsUIResource(4, 12, 4, 12));

@@ -67,6 +67,21 @@ final class ServerPagePresentation extends JPanel {
     /** Selected connection metadata. / 所选连接元数据。 */
     private final ServerDetailsPane details;
 
+    /** Independent viewports keep the inventory header fixed. / 独立视口保持清单标题固定。 */
+    private final JScrollPane detailScroll;
+
+    /** Selection changes resize this workspace without rebuilding controls. / 选择变化仅调整工作区尺寸，不重建控件。 */
+    private final JPanel workspace;
+
+    /** Task evidence remains available without a selected server. / 未选服务器时仍可访问任务证据。 */
+    private final JComponent taskRegion;
+
+    private final JTextArea taskOutput = DesktopPartFactory.outputArea();
+
+    private final JScrollPane taskOutputScroll = new JScrollPane(taskOutput);
+
+    private final JLabel taskTarget = new JLabel(), recordState = new JLabel(), recordTime = new JLabel();
+
     /** Count, empty-state, operation feedback and original record identity. / 数量、空状态、操作反馈及原记录身份。 */
     private final JLabel count = new JLabel(), empty = new JLabel(), feedback = new JLabel(), recordTarget = new JLabel();
 
@@ -94,8 +109,15 @@ final class ServerPagePresentation extends JPanel {
         this.output = output;
         this.buttons = buttons;
         var inventory = inventory(search);
-        details = new ServerDetailsPane(components, messages, actions(), records(), tasks(checks));
-        var workspace = components.transparent(new BorderLayout());
+        details = new ServerDetailsPane(components, messages, actions(), records(), table::clearSelection);
+        detailScroll = new JScrollPane(details, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+            JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        detailScroll.setName("servers.details.scroll");
+        detailScroll.setBorder(BorderFactory.createEmptyBorder());
+        detailScroll.getVerticalScrollBar().setUnitIncrement(com.formdev.flatlaf.util.UIScale.scale(20));
+        detailScroll.setVisible(false);
+        workspace = components.transparent(new BorderLayout());
+        workspace.setName("servers.workspace");
         workspace.setLayout(new java.awt.LayoutManager() {
             /** Keeps composition-owned children unchanged. / 保持组合持有的子组件不变。
              * @param name original layout name / 原布局名称
@@ -112,8 +134,7 @@ final class ServerPagePresentation extends JPanel {
              * @param parent original workspace / 原工作区
              * @return preferred dimensions / 首选尺寸 */
             public Dimension preferredLayoutSize(Container parent) {
-                int height = Math.max(inventory.getPreferredSize().height, details.getPreferredSize().height);
-                return new Dimension(com.formdev.flatlaf.util.UIScale.scale(1100), Math.max(com.formdev.flatlaf.util.UIScale.scale(600), height));
+                return com.formdev.flatlaf.util.UIScale.scale(new Dimension(1100, 600));
             }
 
             /** Allows the surrounding page to provide scrolling. / 允许周围页面提供滚动。
@@ -126,15 +147,18 @@ final class ServerPagePresentation extends JPanel {
             /** Keeps inventory and detail widths at the selected ratio. / 将清单与详情宽度保持在选定比例。
              * @param parent original workspace / 原工作区 */
             public void layoutContainer(Container parent) {
-                int gap = com.formdev.flatlaf.util.UIScale.scale(16);
-                int left = (int) ((parent.getWidth() - gap) * .4);
+                int gap = detailScroll.isVisible() ? com.formdev.flatlaf.util.UIScale.scale(16) : 0;
+                int left = detailScroll.isVisible() ? (int) ((parent.getWidth() - gap) * .4) : parent.getWidth();
                 inventory.setBounds(0, 0, left, parent.getHeight());
-                details.setBounds(left + gap, 0, parent.getWidth() - left - gap, parent.getHeight());
+                detailScroll.setBounds(left + gap, 0, parent.getWidth() - left - gap, parent.getHeight());
             }
         });
         workspace.add(inventory);
-        workspace.add(details);
+        workspace.add(detailScroll);
         add(workspace, BorderLayout.CENTER);
+        taskRegion = tasks(checks);
+        taskRegion.setVisible(false);
+        add(taskRegion, BorderLayout.SOUTH);
     }
 
     /** Builds wrapping actions and the primary check. / 构建换行操作及主要检查按钮。
@@ -202,6 +226,7 @@ final class ServerPagePresentation extends JPanel {
         var add = buttons.add();
         var refresh = buttons.refresh();
         var inventory = components.transparent(new BorderLayout(0, 12));
+        inventory.setName("servers.inventory");
         var heading = components.transparent(new BorderLayout(8, 12));
         var titleRow = components.transparent(new BorderLayout(8, 0));
         messages.bind(inventoryTitle, "server.inventory");
@@ -236,6 +261,7 @@ final class ServerPagePresentation extends JPanel {
         var cancel = buttons.cancel();
         var reconcile = buttons.reconcile();
         var tasks = components.transparent(new BorderLayout(8, 8));
+        tasks.setName("servers.tasks");
         messages.bind(tasksTitle, "server.pending");
         tasksTitle.setFont(tasksTitle.getFont().deriveFont(Font.BOLD, com.formdev.flatlaf.util.UIScale.scale(18f)));
         tasks.add(tasksTitle, BorderLayout.NORTH);
@@ -266,7 +292,23 @@ final class ServerPagePresentation extends JPanel {
         recoveryActions.add(cancel);
         recoveryActions.add(reconcile);
         taskActions.add(recoveryActions, BorderLayout.EAST);
-        tasks.add(taskActions, BorderLayout.CENTER);
+        var taskBody = components.transparent(new BorderLayout(0, 6));
+        taskBody.add(taskActions, BorderLayout.NORTH);
+        var taskEvidence = components.transparent(new BorderLayout(0, 4));
+        taskTarget.setName("servers.taskTarget");
+        taskEvidence.add(taskTarget, BorderLayout.NORTH);
+        taskOutput.setName("servers.taskOutput");
+        taskOutput.setRows(2);
+        taskOutput.setLineWrap(true);
+        taskOutput.setWrapStyleWord(true);
+        taskOutputScroll.setBorder(BorderFactory.createEmptyBorder());
+        taskEvidence.add(taskOutputScroll, BorderLayout.CENTER);
+        taskBody.add(taskEvidence, BorderLayout.CENTER);
+        tasks.add(taskBody, BorderLayout.CENTER);
+        var failureActions = components.transparent(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        buttons.failedRescue().setVisible(false);
+        failureActions.add(buttons.failedRescue());
+        tasks.add(failureActions, BorderLayout.SOUTH);
 
         return tasks;
     }
@@ -274,28 +316,32 @@ final class ServerPagePresentation extends JPanel {
     /** Builds the actual output surface and captured rescue action. / 构建实际输出表面及捕获目标救援动作。
      * @return owned presentation region / 所属展示区域 */
     private JComponent records() {
-        var failedRescue = buttons.failedRescue();
         var recordPane = components.transparent(new BorderLayout(0, 12));
         var recordHeading = components.transparent(new BorderLayout(0, 6));
         messages.bind(recordTitle, "server.records");
         recordTitle.setFont(recordTitle.getFont().deriveFont(Font.BOLD, com.formdev.flatlaf.util.UIScale.scale(18f)));
         recordHeading.add(recordTitle, BorderLayout.NORTH);
         recordTarget.setName("servers.recordTarget");
-        recordHeading.add(recordTarget, BorderLayout.CENTER);
+        recordTarget.setVisible(false);
+        recordHeading.add(recordTarget, BorderLayout.SOUTH);
+        recordState.setName("servers.auth.state");
+        recordState.setFont(recordState.getFont().deriveFont(Font.BOLD, com.formdev.flatlaf.util.UIScale.scale(18f)));
+        recordTime.setName("servers.auth.checkedAt");
+        recordTime.setForeground(UIManager.getColor("Label.disabledForeground"));
         recordPane.add(recordHeading, BorderLayout.NORTH);
         output.setName("servers.output");
-        output.setRows(8);
-        output.setFont(new Font(Font.MONOSPACED, Font.PLAIN, com.formdev.flatlaf.util.UIScale.scale(13)));
-        output.setBorder(BorderFactory.createCompoundBorder(null, new com.formdev.flatlaf.ui.FlatEmptyBorder(14, 16, 14, 16)));
+        output.setRows(3);
+        output.setFont(UIManager.getFont("Label.font"));
+        output.setBorder(BorderFactory.createEmptyBorder());
         output.setLineWrap(true);
         output.setWrapStyleWord(true);
         var logSurface = components.outputCard("", "", output);
         logSurface.remove(0);
+        ((BorderLayout) logSurface.getLayout()).setVgap(com.formdev.flatlaf.util.UIScale.scale(8));
+        logSurface.setBorder(new com.formdev.flatlaf.ui.FlatEmptyBorder(18, 20, 18, 20));
+        logSurface.add(recordState, BorderLayout.NORTH);
+        logSurface.add(recordTime, BorderLayout.SOUTH);
         recordPane.add(logSurface, BorderLayout.CENTER);
-        failedRescue.setVisible(false);
-        var failureActions = components.transparent(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        failureActions.add(failedRescue);
-        recordPane.add(failureActions, BorderLayout.SOUTH);
 
         return recordPane;
     }
@@ -318,6 +364,7 @@ final class ServerPagePresentation extends JPanel {
             return serverCard(profiles.get().get(model), selected);
         });
         var inventoryScroll = new JScrollPane(table);
+        inventoryScroll.setName("servers.inventory.scroll");
         inventoryScroll.setPreferredSize(new Dimension(400, com.formdev.flatlaf.util.UIScale.scale(470)));
         inventoryScroll.setBorder(BorderFactory.createEmptyBorder());
         components.stylePage(table);
@@ -370,8 +417,15 @@ final class ServerPagePresentation extends JPanel {
      * @param text actual output or saved summary / 实际输出或保存摘要
      * @param target original record caption / 原记录标题
      * @param identity original record identity / 原记录身份 */
-    void show(ServerSummary summary, int total, String text, String target, String identity) {
+    void show(ServerSummary summary, int total, String text, String target, String identity,
+              String state, Color color, String checkedAt) {
         details.show(summary);
+        boolean expanded = summary != null;
+        if (detailScroll.isVisible() != expanded) {
+            detailScroll.setVisible(expanded);
+            workspace.revalidate();
+            workspace.repaint();
+        }
         count.setText(table.getRowCount() == total
             ? messages.text("server.inventoryCount", Map.of("count", total))
             : messages.text("server.inventoryFiltered", Map.of("shown", table.getRowCount(), "total", total)));
@@ -379,7 +433,24 @@ final class ServerPagePresentation extends JPanel {
         empty.setText(messages.text(total == 0 ? "server.inventoryEmpty" : "server.searchEmpty"));
         recordTarget.setText(target);
         recordTarget.setToolTipText(identity);
+        recordState.setText(state);
+        recordState.setForeground(color);
+        recordTime.setText(messages.text("server.checkedAt") + ": " + checkedAt);
+        recordTime.setForeground(UIManager.getColor("Label.disabledForeground"));
         if (!output.getText().equals(text)) output.setText(text);
+    }
+
+    /** Shows original task feedback separately from authentication evidence. / 将原任务反馈与认证证据分开展示。
+     * @param text original task feedback / 原任务反馈
+     * @param target original task caption / 原任务标题
+     * @param pending whether unfinished tasks exist / 是否存在未结束任务 */
+    void taskFeedback(String text, String target, boolean pending) {
+        String feedback = text == null ? "" : text;
+        taskTarget.setText(target == null ? "" : target);
+        taskTarget.setVisible(!taskTarget.getText().isBlank());
+        if (!taskOutput.getText().equals(feedback)) taskOutput.setText(feedback);
+        taskOutputScroll.setVisible(!feedback.isBlank());
+        taskRegion.setVisible(pending || !feedback.isBlank() || buttons.failedRescue().isVisible());
     }
 
     /** Updates non-secret failure feedback. / 更新非秘密失败反馈。
@@ -401,7 +472,8 @@ final class ServerPagePresentation extends JPanel {
         inventoryTitle.setFont(inventoryTitle.getFont().deriveFont(Font.BOLD, com.formdev.flatlaf.util.UIScale.scale(20f)));
         for (var title : new JLabel[]{recordTitle, tasksTitle})
             title.setFont(title.getFont().deriveFont(Font.BOLD, com.formdev.flatlaf.util.UIScale.scale(18f)));
+        recordState.setFont(recordState.getFont().deriveFont(Font.BOLD, com.formdev.flatlaf.util.UIScale.scale(18f)));
         table.setRowHeight(com.formdev.flatlaf.util.UIScale.scale(116));
-        output.setFont(new Font(Font.MONOSPACED, Font.PLAIN, com.formdev.flatlaf.util.UIScale.scale(13)));
+        output.setFont(UIManager.getFont("Label.font"));
     }
 }
