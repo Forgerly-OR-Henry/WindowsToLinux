@@ -284,7 +284,7 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
         this.hosts = new DeploymentAgentHostChannel(session, this.interaction, server, task, configurationRevision,
             budget, beforeSend, layout);
         this.projects = new DeploymentAgentProjectChannel(session, this.interaction, server, task, configurationRevision,
-            currentRevision, layout);
+            currentRevision, layout, journal);
         this.sources = new DeploymentAgentSources(this.context, task, material);
         this.approvalAgent = gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.forTask(context, task, () -> {
             var browsers = new java.util.LinkedHashMap<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser>();
@@ -833,7 +833,19 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
         try (var request = probe.request(scope, UUID.randomUUID())) {
             var intent = RemoteActions.command(server, configurationRevision, request.command()).withSemantics(
                 new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentIsolationProbe.OPERATION, request.resourceTargets()));
-            var grant = value(DeploymentCommandReviewRouter.approve(interaction, intent, request.command(), task));
+            gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentUnsentReview.requireDifferent(
+                journal, task, server, "ISOLATION", request.bindingSha256());
+            OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant> approved;
+            try {
+                approved = DeploymentCommandReviewRouter.approve(interaction, intent, request.command(), task);
+            } catch (ApiException denied) {
+                if (denied.problem().code() == ProblemCode.ACCESS_DENIED
+                    && denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED"))
+                    throw gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentUnsentReview.command(
+                        journal, task, server, "ISOLATION", request.bindingSha256(), intent, request.command(), denied);
+                throw denied;
+            }
+            var grant = value(approved);
             beforeSend.verify();
             var actual = session.execute(request.command(), grant);
             DeploymentAgentIsolationProbe.Receipt receipt;

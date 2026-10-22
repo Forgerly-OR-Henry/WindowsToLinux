@@ -3164,11 +3164,12 @@ class DeploymentAgentApprovalTest {
                 REVISION, () -> ledger.language, ledger.journal, null, permit);
             var patch = new gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentPatch("entry.sh", REVISION, REVISION,
                 List.of(new gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentPatch.Edit(1, List.of("printf actual"), List.of("printf revised"))));
-            reviewer.patch(patch);
+            String fixtureRoot = new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace("api", REVISION).candidateRoot();
+            reviewer.patch(fixtureRoot, patch);
             assertEquals(1, fixture.decisions());
             assertTrue(ledger.journal.events(ledger.f.task).stream().anyMatch(event -> event.type().equals("PATCH_APPROVED")));
             ledger.language = "e".repeat(64);
-            assertThrows(SecurityException.class, () -> reviewer.patch(patch));
+            assertThrows(SecurityException.class, () -> reviewer.patch(fixtureRoot, patch));
             assertEquals(1, fixture.decisions());
             ledger.noAuthority(0);
         }

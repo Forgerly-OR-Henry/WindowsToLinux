@@ -5,6 +5,7 @@ import copy
 import hashlib
 import io
 import json
+import pathlib
 import sys
 import types
 import unittest
@@ -66,6 +67,7 @@ class AgentToolchainResolutionTest(unittest.TestCase):
     def test_prepare_consumes_pinned_descriptor_without_another_metadata_lookup(self):
         manifest = {'operation': OPERATION}
         with mock.patch.object(self.c, 'release', side_effect=AssertionError('Must not re-resolve')), \
+            mock.patch.object(self.c, 'agent_installation_selection', return_value=(None, pathlib.PurePosixPath('/controlled/absent'))), \
             mock.patch.object(self.c, 'agent_create', return_value=manifest), \
             mock.patch.object(self.c, 'agent_prepare_selected') as selected:
             self.c.agent_prepare(['RUST', '1.95', '-', '60', '-', OPERATION, self.encoded()])

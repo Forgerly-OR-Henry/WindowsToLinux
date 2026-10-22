@@ -30,7 +30,8 @@ def controller():
     metadata = resource(SHARED / '10-release-metadata.py') + '\n'
     resolution = resource(AGENT / 'agent-toolchain-resolution.py')
     resolver = metadata + resolution + "\nif __name__ == '__main__':\n    resolution_cli()\n"
-    source = metadata + resolution + '\nEXPECTED_RESOLVER_SOURCE_SHA256 = ' + repr(hashlib.sha256(resolver.encode()).hexdigest()) + '\n' + resource(SHARED / 'archive-boundaries.py') + '\n' + resource(AGENT / 'agent-toolchain-controller.py')
+    controller_source = resource(AGENT / 'agent-toolchain-controller.py').replace('# @WTL_AGENT_TRACKED_OPERATIONS@', resource(AGENT / 'agent-toolchain-tracked.py'))
+    source = metadata + resolution + '\nEXPECTED_RESOLVER_SOURCE_SHA256 = ' + repr(hashlib.sha256(resolver.encode()).hexdigest()) + '\n' + resource(SHARED / 'archive-boundaries.py') + '\n' + controller_source
     namespace = types.ModuleType('agent_contract')
     namespace.PROGRAM_SOURCE = source.encode()
     exec(compile(source, '<actual-agent-resources>', 'exec'), namespace.__dict__)
@@ -178,12 +179,19 @@ class AgentToolchainIsolationTest(unittest.TestCase):
             call()
         self.assertEqual(tag, failure.exception.detail)
 
-    def manifest(self):
-        return {'format': 'WTL_AGENT_TOOLCHAIN_1', 'operation': OPERATION,
+    def snapshot(self, record, identity=None):
+        return {'record': copy.deepcopy(record), 'directoryIdentity': [5, 99] if identity is None else identity,
+                'markerSha256': hashlib.sha256(self.c.agent_encode(record)).hexdigest()}
+
+    def manifest(self, volume_mode='PROBE'):
+        record = self.installation()[2]
+        return {'format': 'WTL_AGENT_TOOLCHAIN_2', 'operation': OPERATION,
             'programSha256': hashlib.sha256(self.c.PROGRAM_SOURCE).hexdigest(), 'seconds': 60,
             'deadline': 999999999, 'action': 'PROBE', 'request': {'probes': [{
                 'ecosystem': 'RUST', 'version': '1.95.0',
-                'directory': str(self.c.ROOT) + '/versions/rust-' + 'a' * 64}], 'javaHome': '-'},
+                'directory': record['directory']}], 'javaHome': '-'},
+            'volumeMode': volume_mode, 'volumeBytes': self.c.agent_volume_bytes(volume_mode),
+            'selections': {'probes': [self.snapshot(record)], 'javaHome': None},
             'directories': {key: [5, index] for index, key in enumerate(('out', 'work', 'home', 'tmp'), 1)},
             'loop': '/dev/loop9', 'imageIdentity': [5, 10], 'mountIdentity': [5, 11], 'readyIdentity': [5, 12]}
 
@@ -585,7 +593,7 @@ class AgentToolchainIsolationTest(unittest.TestCase):
 
     def test_absent_installation_uses_original_new_install_path(self):
         _, _, record, release, args = self.installation(False)
-        manifest = self.manifest()
+        manifest = self.manifest('INSTALL')
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
             (root / 'versions').mkdir()
@@ -612,16 +620,19 @@ class AgentToolchainIsolationTest(unittest.TestCase):
     def test_existing_managed_record_is_rechecked_and_still_uses_isolated_probe(self):
         root, _, record, release, args = self.installation()
         manifest = self.manifest()
-        with mock.patch.object(self.c, 'ROOT', root), mock.patch.object(self.c, 'agent_system', return_value=None), \
+        with mock.patch.object(self.c, 'ROOT', root), mock.patch.object(self.c, 'pathlib', types.SimpleNamespace(Path=pathlib.PurePosixPath)), \
+             mock.patch.object(self.c, 'agent_system', return_value=None), \
              mock.patch.object(self.c, 'agent_record', return_value=record) as read, \
+             mock.patch.object(self.c, 'agent_identity', return_value=[5, 99]), \
+             mock.patch.object(self.c, 'agent_regular', return_value=self.c.agent_encode(record)), \
              mock.patch.object(self.c, 'resolution_decode', return_value=release), \
              mock.patch.object(self.c, 'agent_create', return_value=manifest) as create, \
              mock.patch.object(self.c, 'agent_publish_manifest', side_effect=lambda value: value), \
              mock.patch.object(self.c, 'agent_execute') as execute, mock.patch.object(self.c, 'agent_release_source') as download, \
              mock.patch.object(self.c, 'agent_detach') as detach, contextlib.redirect_stdout(io.StringIO()):
             self.c.agent_prepare(args)
-            self.assertEqual(2, read.call_count)
-            create.assert_called_once()
+            self.assertEqual(5, read.call_count)
+            create.assert_called_once_with(OPERATION, 60, 'PROBE')
             execute.assert_called_once_with(manifest)
             self.assertEqual('PROBE', manifest['action'])
             self.assertEqual([{key: record[key] for key in ('ecosystem', 'version', 'directory')}], manifest['request']['probes'])
@@ -634,6 +645,8 @@ class AgentToolchainIsolationTest(unittest.TestCase):
         changed = dict(record, official_digest='b' * 64)
         with mock.patch.object(self.c, 'ROOT', root), mock.patch.object(self.c, 'agent_system', return_value=None), \
              mock.patch.object(self.c, 'agent_record', side_effect=[record, changed]) as read, \
+             mock.patch.object(self.c, 'agent_identity', return_value=[5, 99]), \
+             mock.patch.object(self.c, 'agent_regular', return_value=self.c.agent_encode(record)), \
              mock.patch.object(self.c, 'resolution_decode', return_value=release), \
              mock.patch.object(self.c, 'agent_create', return_value=manifest), \
              mock.patch.object(self.c, 'agent_probe_records') as probe, mock.patch.object(self.c, 'agent_release_source') as download, \
@@ -650,8 +663,11 @@ class AgentToolchainIsolationTest(unittest.TestCase):
         root, _, record, release, args = self.installation()
         system_record = dict(record, origin='SYSTEM', source='system:/usr/bin/rustc')
         manifest = self.manifest()
-        with mock.patch.object(self.c, 'ROOT', root), mock.patch.object(self.c, 'agent_system', return_value=system_record) as system, \
-             mock.patch.object(self.c, 'agent_record', side_effect=FileNotFoundError('unrelated')) as managed, \
+        with mock.patch.object(self.c, 'ROOT', root), mock.patch.object(self.c, 'pathlib', types.SimpleNamespace(Path=pathlib.PurePosixPath)), \
+             mock.patch.object(self.c, 'agent_system', return_value=system_record) as system, \
+             mock.patch.object(self.c, 'agent_record', return_value=system_record) as read, \
+             mock.patch.object(self.c, 'agent_identity', return_value=[5, 99]), \
+             mock.patch.object(self.c, 'agent_regular', return_value=self.c.agent_encode(system_record)), \
              mock.patch.object(self.c, 'resolution_decode', return_value=release), \
              mock.patch.object(self.c, 'agent_create', return_value=manifest), \
              mock.patch.object(self.c, 'agent_publish_manifest', side_effect=lambda value: value), \
@@ -659,10 +675,176 @@ class AgentToolchainIsolationTest(unittest.TestCase):
              mock.patch.object(self.c, 'agent_detach'), contextlib.redirect_stdout(io.StringIO()):
             self.c.agent_prepare(args)
             self.assertEqual(2, system.call_count)
-            managed.assert_not_called()
+            self.assertTrue(all(str(call.args[0]) == system_record['directory'] for call in read.call_args_list))
             download.assert_not_called()
             execute.assert_called_once_with(manifest)
             self.assertEqual('PROBE', manifest['action'])
+
+    def test_probe_capacity_requires_frozen_registered_selection_and_never_falls_back(self):
+        root, _, original, release, args = self.installation()
+        for origin in ('MANAGED', 'SYSTEM', 'BIND'):
+            record = dict(original, origin='SYSTEM', source='system:/usr/bin/rustc') if origin == 'SYSTEM' else original
+            manifests = []
+            def create(operation, seconds, mode='INSTALL'):
+                manifest = self.manifest(mode)
+                manifests.append(manifest)
+                return manifest
+            output = io.StringIO()
+            with self.subTest(origin=origin), mock.patch.object(self.c, 'ROOT', root), \
+                 mock.patch.object(self.c, 'pathlib', types.SimpleNamespace(Path=pathlib.PurePosixPath)), \
+                 mock.patch.object(self.c, 'resolution_decode', return_value=release), \
+                 mock.patch.object(self.c, 'agent_installation_selection', return_value=(record, pathlib.PurePosixPath(record['directory']))), \
+                 mock.patch.object(self.c, 'agent_record', side_effect=lambda _: copy.deepcopy(record)), \
+                 mock.patch.object(self.c, 'agent_regular', return_value=self.c.agent_encode(record)), \
+                 mock.patch.object(self.c, 'agent_identity', return_value=[5, 99]), \
+                 mock.patch.object(self.c, 'agent_create', side_effect=create) as allocation, \
+                 mock.patch.object(self.c, 'agent_publish_manifest', side_effect=self.parse_manifest), \
+                 mock.patch.object(self.c, 'agent_execute') as execute, mock.patch.object(self.c, 'agent_detach') as detach, \
+                 mock.patch.object(self.c, 'agent_release_source') as download, mock.patch.object(self.c, 'agent_promote') as promote, \
+                 contextlib.redirect_stdout(output):
+                if origin == 'BIND':
+                    fields = ['RUST', '-', '-', '-', '-', '-', record['version'], record['directory'], record['origin'],
+                              base64.b64encode(record['source'].encode()).decode(), record['sha256']]
+                    binding = ('WTL-TOOLS-1\tfixture\n' + '\t'.join(fields) + '\n').encode()
+                    with mock.patch.object(type(root), 'exists', lambda path: path.parent.name != 'bindings'), \
+                         mock.patch.object(self.c, 'agent_write') as write:
+                        self.c.agent_bind([base64.b64encode(binding).decode(), '60', OPERATION])
+                        self.assertEqual(binding, write.call_args.args[1])
+                else:
+                    self.c.agent_prepare(args)
+                allocation.assert_called_once_with(OPERATION, 60, 'PROBE')
+                self.assertEqual(self.c.AGENT_PROBE_VOLUME_BYTES, manifests[0]['volumeBytes'])
+                self.assertEqual(self.snapshot(record), manifests[0]['selections']['probes'][0])
+                execute.assert_called_once()
+                detach.assert_called_once()
+                download.assert_not_called()
+                promote.assert_not_called()
+                self.assertTrue(output.getvalue().startswith('TOOLCHAIN_BINDING=' if origin == 'BIND' else 'TOOLCHAIN='))
+
+    def test_volume_policy_binds_manifest_image_allocation_and_original_isolation(self):
+        good = self.manifest()
+        self.assertEqual(good, self.parse_manifest(good))
+        for field, value in (('volumeMode', 'OTHER'), ('volumeMode', 'INSTALL'), ('volumeBytes', True),
+                             ('volumeBytes', self.c.AGENT_VOLUME_BYTES), ('volumeBytes', self.c.AGENT_PROBE_VOLUME_BYTES + 1),
+                             ('action', 'INSTALL')):
+            with self.subTest(field=field, value=value):
+                bad = dict(good, **{field: value})
+                self.rejected('VOLUME_POLICY', lambda: self.parse_manifest(bad))
+        bad = copy.deepcopy(good)
+        bad['selections']['probes'][0]['directoryIdentity'] = [5, 0]
+        self.rejected('MANIFEST_SELECTIONS', lambda: self.parse_manifest(bad))
+        bad = copy.deepcopy(good)
+        bad['selections']['probes'][0]['record']['version'] = '1.94.0'
+        self.rejected('MANIFEST_SELECTIONS', lambda: self.parse_manifest(bad))
+        observed, writes, made = [], [], []
+        image_size = self.c.AGENT_PROBE_VOLUME_BYTES
+        class Path(pathlib.PurePosixPath):
+            def exists(self): return not self.name.startswith('agent-')
+            def is_symlink(self): return False
+            def mkdir(self, **_): made.append(str(self))
+            def read_text(self): return 'memory pids\n'
+            def lstat(self):
+                return types.SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=0, st_nlink=1,
+                    st_size=image_size, st_dev=5, st_ino=10 if self.name == 'volume.ext4' else 12)
+        def command(argv, **_):
+            observed.append(argv)
+            if 'LoadState' in ' '.join(argv): return 0, b'not-found\n'
+            if '--find' in argv: return 0, b'/dev/loop9\n'
+            if 'BACK-FILE,SIZELIMIT' in argv:
+                return 0, (str(root / 'work' / ('agent-' + OPERATION) / 'volume.ext4') + ' ' + str(loop_size) + '\n').encode()
+            if argv[0].endswith('findmnt'): return 0, b'/dev/loop9 ext4 rw,nodev,nosuid\n'
+            return 0, b''
+        root = Path('/root/toolchains')
+        with mock.patch.object(self.c, 'ROOT', root), mock.patch.object(self.c.pathlib, 'Path', Path), \
+             mock.patch.object(self.c, 'DEADLINE', 999999999), \
+             mock.patch.object(self.c, 'owned_directory'), mock.patch.object(self.c.os, 'geteuid', return_value=0, create=True), \
+             mock.patch.dict('sys.modules', {'pwd': types.SimpleNamespace(getpwnam=mock.Mock(side_effect=KeyError))}), \
+             mock.patch.object(self.c, 'agent_tool', lambda name: '/usr/bin/' + name), \
+             mock.patch.object(self.c, 'agent_os', side_effect=command), \
+             mock.patch.object(self.c, 'agent_identity', return_value=[5, 11]), \
+             mock.patch.object(self.c, 'agent_write', side_effect=lambda path, *_, **__: writes.append(str(path))):
+            for mode in ('INSTALL', 'PROBE'):
+                amount = self.c.agent_volume_bytes(mode)
+                for offset in (-4096, 0):
+                    observed.clear(); writes.clear(); made.clear()
+                    available = amount + self.c.AGENT_HOST_RESERVE_BYTES + offset
+                    with self.subTest(mode=mode, offset=offset), mock.patch.object(self.c.os, 'statvfs',
+                            return_value=types.SimpleNamespace(f_frsize=4096, f_bavail=available // 4096), create=True):
+                        if offset < 0:
+                            self.rejected('HOST_SPACE_REQUIRED', lambda: self.c.agent_create(OPERATION, 60, mode))
+                            self.assertEqual([], writes)
+                            self.assertFalse(any('/agent-' in path for path in made))
+                        else:
+                            created = self.c.agent_create(OPERATION, 60, mode)
+                            self.assertEqual((mode, amount), (created['volumeMode'], created['volumeBytes']))
+                            self.assertEqual(str(amount), next(call for call in observed if call[0].endswith('fallocate'))[2])
+                            loop = next(call for call in observed if '--sizelimit' in call)
+                            self.assertEqual(str(amount), loop[loop.index('--sizelimit') + 1])
+            loop_size = image_size = self.c.AGENT_PROBE_VOLUME_BYTES
+            self.c.agent_volume(good)
+            image_size += 1
+            self.rejected('VOLUME_IMAGE', lambda: self.c.agent_volume(good))
+            image_size -= 1
+            loop_size += 1
+            self.rejected('VOLUME_LOOP_OWNER', lambda: self.c.agent_volume(good))
+        properties = self.c.agent_sandbox_properties(good)
+        self.assertIn('DynamicUser=yes', properties)
+        self.assertIn('PrivateNetwork=yes', properties)
+        self.assertIn('ProtectSystem=strict', properties)
+        self.assertIn('NoNewPrivileges=yes', properties)
+
+    def test_probe_failures_retain_original_state_without_growth_or_replay(self):
+        root, _, record, release, args = self.installation()
+        for fault in ('record', 'directory', 'marker', 'javaHome', 'afterWorker'):
+            manifest = self.manifest()
+            java = dict(record, ecosystem='JAVA', version='21.0.1', directory=str(root / 'versions' / ('java-' + 'b' * 64)))
+            if fault == 'javaHome':
+                manifest['request']['javaHome'] = java['directory']
+                manifest['selections']['javaHome'] = self.snapshot(java)
+            started = False
+            def execute(_):
+                nonlocal started
+                started = True
+            def read_record(path):
+                result = java if str(path) == java['directory'] else record
+                if fault == 'record' or fault == 'javaHome' and result['ecosystem'] == 'JAVA' or fault == 'afterWorker' and started:
+                    result = dict(result, source=result['source'] + '-changed')
+                return result
+            def raw(path, maximum=65536):
+                result = java if str(path.parent) == java['directory'] else record
+                return self.c.agent_encode(result) + (b' ' if fault == 'marker' else b'')
+            with self.subTest(fault=fault), mock.patch.object(self.c, 'pathlib', types.SimpleNamespace(Path=pathlib.PurePosixPath)), \
+                 mock.patch.object(self.c, 'agent_record', side_effect=read_record), \
+                 mock.patch.object(self.c, 'agent_regular', side_effect=raw), \
+                 mock.patch.object(self.c, 'agent_identity', return_value=[5, 100] if fault == 'directory' else [5, 99]), \
+                 mock.patch.object(self.c, 'agent_publish_manifest', side_effect=lambda value: value), \
+                 mock.patch.object(self.c, 'agent_execute', side_effect=execute) as worker, \
+                 mock.patch.object(self.c, 'agent_release_source') as download, mock.patch.object(self.c, 'agent_promote') as promote:
+                self.rejected('INSTALLATION_SELECTION_CHANGED', lambda: self.c.agent_probe_records(manifest, [record], manifest['request']['javaHome']))
+                self.assertEqual(1 if fault == 'afterWorker' else 0, worker.call_count)
+                download.assert_not_called(); promote.assert_not_called()
+        for failure in (self.c.PreparationFailure('installation', 'NONROOT_WORKER_FAILED'),
+                        self.c.PreparationFailure('unknown', 'AGENT_FREEZE_UNCONFIRMED'), OSError(28, 'public disk full')):
+            with self.subTest(failure=type(failure).__name__), \
+                 mock.patch.object(self.c, 'agent_verify_selection'), mock.patch.object(self.c, 'agent_publish_manifest', side_effect=lambda value: value), \
+                 mock.patch.object(self.c, 'agent_execute', side_effect=failure) as worker, \
+                 mock.patch.object(self.c, 'agent_create') as allocation, mock.patch.object(self.c, 'agent_release_source') as download, \
+                 mock.patch.object(self.c, 'agent_promote') as promote:
+                with self.assertRaises(type(failure)) as rejected:
+                    self.c.agent_probe_records(self.manifest(), [record], '-')
+                self.assertIs(failure, rejected.exception)
+                worker.assert_called_once(); allocation.assert_not_called(); download.assert_not_called(); promote.assert_not_called()
+        manifest = self.manifest()
+        with mock.patch.object(self.c, 'resolution_decode', return_value=release), \
+             mock.patch.object(self.c, 'agent_installation_selection', side_effect=[(record, root), (None, root)]), \
+             mock.patch.object(self.c, 'agent_selection_snapshot', return_value=self.snapshot(record)), \
+             mock.patch.object(self.c, 'agent_create', return_value=manifest) as allocation, \
+             mock.patch.object(self.c, 'agent_cleanup_before_start', return_value=False), \
+             mock.patch.object(self.c, 'agent_release_source') as download, mock.patch.object(self.c, 'agent_promote') as promote, \
+             mock.patch.object(self.c, 'agent_detach') as detach:
+            self.rejected('INSTALLATION_SELECTION_CHANGED', lambda: self.c.agent_prepare(args))
+            allocation.assert_called_once_with(OPERATION, 60, 'PROBE')
+            download.assert_not_called(); promote.assert_not_called(); detach.assert_not_called()
 
     def test_setup_only_chowns_four_original_empty_directories_to_positive_unit_identity(self):
         manifest = self.manifest()
@@ -714,6 +896,8 @@ class AgentToolchainIsolationTest(unittest.TestCase):
             'KOTLIN': 'archive', 'GO': 'archive', 'RUST': 'rust', 'PHP': 'php', 'RUBY': 'ruby'}
         for ecosystem, version in versions.items():
             manifest['action'] = 'INSTALL'
+            manifest['volumeMode'], manifest['volumeBytes'] = 'INSTALL', self.c.AGENT_VOLUME_BYTES
+            manifest['selections'] = {'probes': [], 'javaHome': None}
             manifest['request'] = {'ecosystem': ecosystem, 'version': version, 'destination': '/final/' + ecosystem,
                 'layout': layouts[ecosystem], 'javaHome': '-', 'legacyGem': ecosystem == 'RUBY'}
             commands = []
@@ -798,7 +982,8 @@ class AgentToolchainIsolationTest(unittest.TestCase):
         rename.assert_not_called()
 
     def test_failed_official_download_does_not_create_final_key_placeholder(self):
-        manifest = self.manifest()
+        manifest = self.manifest('INSTALL')
+        manifest['selections']['probes'] = []
         created = []
         class Path:
             def __init__(self, value): self.value = str(value)
@@ -1755,7 +1940,7 @@ APT::Planner "internal";
         actual = json.loads(resource(AGENT / 'dependency-packages.json'))
         for manager, packages in expected.items():
             with self.subTest(manager=manager):
-                self.assertEqual({'PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD'}, set(actual[manager]))
+                self.assertEqual({'PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD', 'HELPER_RUNTIME'}, set(actual[manager]))
                 self.assertEqual(packages, actual[manager]['NATIVE_BUILD'])
                 self.assertEqual(packages, self.d.dependency_packages(manager, 'NATIVE_BUILD'))
         self.assertEqual(1, self.source.count('DEPENDENCY_PACKAGES='))

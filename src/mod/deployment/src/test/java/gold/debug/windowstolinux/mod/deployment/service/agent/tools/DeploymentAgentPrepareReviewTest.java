@@ -58,6 +58,9 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
     private boolean diagnosticCandidateSessionIdentityJourney;
     private boolean isolationMissingPlanJourney, isolationMissingHelperJourney, isolationRefusalJourney, isolationUnknownJourney, isolationReadyJourney;
     private boolean isolationCancelAfterCreateJourney;
+    private boolean isolationReviewDeniedJourney, isolationReviewPersistenceFailure;
+    private boolean patchReviewDeniedJourney;
+    private boolean patchCommandReviewDeniedJourney;
     private boolean isolationExistingToolchainJourney;
     private boolean isolationQuotaReplanJourney;
     private boolean isolationToolchainDeniedJourney, isolationToolchainPersistenceFailure;
@@ -79,6 +82,38 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
     @Test
     void confirmedIsolationRefusalReturnsBudgetsAndAllowsFreshPlanWithoutEffects() throws Exception {
         isolationRefusalJourney = true;
+        runVerification(VerificationMode.APPROVE, false);
+    }
+
+    @Test
+    void independentIsolationDenialIsDurablyUnsentBeforeDifferentScopeIsReviewed() throws Exception {
+        isolationRefusalJourney = true;
+        isolationReviewDeniedJourney = true;
+        runVerification(VerificationMode.APPROVE, false);
+    }
+
+    @Test
+    void isolationDenialWithFailedNotSentRecordNeverReturnsToMainModel() throws Exception {
+        isolationRefusalJourney = true;
+        isolationReviewDeniedJourney = true;
+        isolationReviewPersistenceFailure = true;
+        runVerification(VerificationMode.APPROVE, false);
+    }
+
+    @Test
+    void patchDenialReturnsToSameSessionBeforeDifferentPatchGetsFreshReviewAndGrant() throws Exception {
+        patchReviewDeniedJourney = true;
+        verifyPatchUnknownTail();
+    }
+
+    @Test
+    void patchCommandDenialIsRecordedBeforeDifferentPatchReceivesFreshFullCommandReview() throws Exception {
+        patchReviewDeniedJourney = true;
+        patchCommandReviewDeniedJourney = true;
+        verifyPatchUnknownTail();
+    }
+
+    private void verifyPatchUnknownTail() throws Exception {
         runVerification(VerificationMode.APPROVE, false);
     }
 
@@ -295,6 +330,7 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
         String pageBinding = "";
 
         int decisions, approvalCalls, pages, creates, uploads, verifyGrants, verifySends, opens, verifyVerdicts, capacityReads, readinessReads, installs, openReviews;
+        int patchVerdicts, patchGrants, patchSends, patchCommandVerdicts;
 
         String openEvidence = "", openPolicy = "";
 
@@ -371,6 +407,10 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
             var host = proxy(InteractionService.class, (p, m, a) -> {
                 if (m.getName().equals("approveReviewedAction")) {
                     var intent = (ActionIntent) a[0];
+                    if (patchReviewDeniedJourney && intent.exactAction().contains("'agent-patch'")) {
+                        assertEquals(2, patchVerdicts);
+                        patchGrants++;
+                    }
                     if (intent.semantics().orElseThrow().operation().equals("deployment.candidate.verify.v1")) {
                         assertTrue(mode.verified());
                         assertEquals(1, verifyVerdicts);
@@ -490,9 +530,49 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
                 var session = new DeploymentAgentSession(context, task, server, Map.of("goal", "Observe actual source"),
                     new DeploymentSourceBrowser(material.snapshot().directory(), material.snapshot().sha256()), tools, journal,
                     "FULL_CONTROL", true, REVISION, () -> revision.get());
+                if (isolationReviewPersistenceFailure)
+                    try (var connection = context.db().openConnection(task); var statement = connection.createStatement()) {
+                        statement.execute("ALTER TABLE deployment_agent_event ADD CONSTRAINT reject_isolation_not_sent CHECK (event_type <> 'ACTION_REVIEW_NOT_SENT')");
+                    }
                 if (mode == VerificationMode.CAPACITY_UNSETTLED)
                     journal.event(task, "CAPABILITY_EXECUTING", "c".repeat(64), "earlier-unconfirmed");
                 var error = assertThrows(Exception.class, session::run);
+                if (patchReviewDeniedJourney) {
+                    var events = journal.events(task);
+                    assertSame(stop, error);
+                    assertEquals(5, decisions);
+                    assertEquals(2, patchVerdicts);
+                    assertEquals(1, patchGrants);
+                    assertEquals(1, patchSends);
+                    assertEquals(1, events.stream().filter(event -> event.type().equals("ACTION_REVIEW_NOT_SENT")).count());
+                    assertEquals(patchCommandReviewDeniedJourney ? 2 : 1, events.stream().filter(event -> event.type().equals("PATCH_EXECUTING")).count());
+                    assertEquals(patchCommandReviewDeniedJourney ? 1 : 0, events.stream().filter(event -> event.type().equals("PATCH_NOT_SENT")).count());
+                    assertFalse(events.stream().anyMatch(event -> event.type().equals("PATCH_RESULT")));
+                    assertFalse(DeploymentAgentActionLog.effectsSettled(events), "Unconfirmed sent replacement stops further proposals");
+                    assertEquals("UNKNOWN", journal.find(task).orElseThrow().state());
+                    return;
+                }
+                if (isolationReviewDeniedJourney) {
+                    var events = journal.events(task);
+                    assertEquals(0, creates + uploads + installs + opens + verifyGrants + verifySends);
+                    assertFalse(events.stream().anyMatch(event -> Set.of("PREPARE_EXECUTING", "CANDIDATE", "ISOLATION_PREFLIGHT").contains(event.type())));
+                    if (isolationReviewPersistenceFailure) {
+                        assertEquals(4, decisions, "An unrecorded DENY cannot be returned as a known alternative");
+                        assertEquals(0, isolationSends + isolationGrants.size());
+                        assertEquals(1, isolationVerdicts);
+                        assertEquals("UNKNOWN", journal.find(task).orElseThrow().state());
+                        assertFalse(events.stream().anyMatch(event -> event.type().equals("ACTION_REVIEW_NOT_SENT")));
+                    } else {
+                        assertSame(stop, error);
+                        assertEquals(7, decisions);
+                        assertEquals(2, isolationVerdicts, "Changed scope obtains a new complete independent review");
+                        assertEquals(1, isolationSends);
+                        assertEquals(1, isolationGrants.size(), "Denied scope never gets a host permit");
+                        assertEquals(1, events.stream().filter(event -> event.type().equals("ACTION_REVIEW_NOT_SENT")).count());
+                        assertTrue(DeploymentAgentActionLog.effectsSettled(events));
+                    }
+                    return;
+                }
                 if (isolationRefusalJourney || isolationUnknownJourney) {
                     var events = journal.events(task);
                     assertEquals(0, creates + uploads + installs + opens + verifyGrants + verifySends);
@@ -889,6 +969,18 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
         AiResponse approve(AiRequest request) throws Exception {
             approvalCalls++;
             var dynamic = (ObjectNode) JSON.readTree(request.messages().getLast().text());
+            if (patchReviewDeniedJourney && dynamic.path("type").asText().equals("PATCH")) {
+                patchVerdicts++;
+                assertEquals(workspace.candidateRoot(), dynamic.at("/facts/candidateRoot").asText());
+                assertEquals(DeploymentAgentSourceRevision.digest(material.snapshot().directory()), dynamic.at("/facts/sourceRevision").asText());
+                assertEquals(0, patchSends);
+                var answer = JSON.createObjectNode()
+                    .put("decision", patchVerdicts == 1 && !patchCommandReviewDeniedJourney ? "DENY" : "APPROVE").put("requiresUserConfirmation", false)
+                    .put("reason", "Exact original structured patch review");
+                return new AiResponse("", "controlled-patch", "tool_calls",
+                    new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
+                    List.of(new AiToolCall("patch_review_" + patchVerdicts, "submit_result", answer.toString())), Optional.empty());
+            }
             assertEquals("FIRST_USER_MESSAGE_AFTER_BASE_SYSTEM", dynamic.path("currentEvidence").asText());
             var input = (ObjectNode) JSON.readTree(request.messages().get(1).text());
             input.setAll(dynamic);
@@ -983,12 +1075,19 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
                 assertTrue(input.at("/currentRequest/currentCommandEvidence").isMissingNode(), "Only this actual verify carries its consumer evidence");
             var page = bodyPage(request, input, verification);
             if (page != null) return page;
+            if (patchReviewDeniedJourney && input.at("/currentRequest/inputKind").asText().equals("SOURCE_PATCH")) {
+                patchCommandVerdicts++;
+                return verdict(patchCommandReviewDeniedJourney && patchCommandVerdicts == 1 ? "DENY" : "APPROVE");
+            }
             if (verification) {
                 verifyVerdicts++;
                 if (mode == VerificationMode.DENY) return verdict("DENY");
                 if (mode == VerificationMode.CONFIGURATION_CHANGED) revision.set("e".repeat(64));
             }
-            if (input.at("/currentRequest/operation").asText().equals(gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.OPERATION)) isolationVerdicts++;
+            if (input.at("/currentRequest/operation").asText().equals(gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.OPERATION)) {
+                isolationVerdicts++;
+                if (isolationReviewDeniedJourney && isolationVerdicts == 1) return verdict("DENY");
+            }
             if (input.at("/currentRequest/operation").asText().equals("deployment.candidate.query.v1")) candidateQueryVerdicts++;
             if (isolationExistingToolchainJourney && input.at("/currentRequest/operation").asText().equals("deployment.agent.toolchain.prepare.v1")) {
                 assertEquals(1, controllerReadinessSends);
@@ -1056,7 +1155,20 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
             if (isolationReadyJourney) return decideIsolatedFileTransfer(request);
             request.messages().stream().flatMap(m -> m.toolResult().stream()).reduce((a, b) -> b)
                 .ifPresent(result -> {
-                    if (isolationRefusalJourney && (decisions == 4 || decisions == 6)) {
+                    if (patchReviewDeniedJourney && decisions == 4) {
+                        assertTrue(result.error());
+                        assertTrue(result.text().contains("APPROVAL_DENIED"), result.text());
+                        assertEquals(1, patchVerdicts);
+                        assertEquals(0, patchGrants + patchSends);
+                    } else if (isolationReviewDeniedJourney && decisions == 4) {
+                        assertTrue(result.error());
+                        assertTrue(result.text().contains("APPROVAL_DENIED"));
+                        assertTrue(result.text().contains("NOT_SENT"));
+                        try {
+                            assertEquals(1, journal.events(task).stream().filter(event -> event.type().equals("ACTION_REVIEW_NOT_SENT")).count());
+                        } catch (Exception unavailable) { throw new AssertionError(unavailable); }
+                        assertEquals(0, isolationSends + isolationGrants.size());
+                    } else if (isolationRefusalJourney && (decisions == 4 || decisions == 6)) {
                         assertTrue(result.error());
                         assertTrue(result.text().contains("AGENT_ISOLATION_NOT_ADMITTED"));
                         assertTrue(result.text().contains("additionalDiskDemands"));
@@ -1085,6 +1197,14 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
             } else if (turn == 2 || isolationRefusalJourney && turn == 4) {
                 tool = "plan";
                 args = (ObjectNode) JSON.readTree("{\"applicationId\":\"demo\",\"explanation\":\"Plan the read source\",\"components\":[{\"id\":\"api\",\"sourceRoot\":\".\",\"dependencies\":[],\"evidence\":[\"o1\"],\"backend\":\"PROCESS\",\"mode\":\"DAEMON\",\"entrypoint\":\"current.sh\",\"arguments\":[],\"workingDirectory\":\"\",\"health\":{\"type\":\"HTTP\",\"url\":\"http://127.0.0.1:8080/\",\"status\":200,\"timeout\":10},\"ports\":[],\"resources\":[],\"configuration\":[],\"databases\":[],\"secretReferences\":[]}],\"applicationHealth\":{\"component\":\"api\",\"health\":{\"type\":\"HTTP\",\"url\":\"http://127.0.0.1:8080/\",\"status\":200,\"timeout\":10}}}");
+            } else if (patchReviewDeniedJourney && (turn == 3 || turn == 4)) {
+                tool = "patch";
+                args = JSON.createObjectNode().put("component", "api").put("path", "index.html")
+                    .put("beforeDigest", fixtureDigest("<html>actual controlled source</html>\n"))
+                    .put("sourceRevision", DeploymentAgentSourceRevision.digest(material.snapshot().directory()));
+                var edit = args.putArray("edits").addObject().put("line", 1);
+                edit.putArray("removed").add("<html>actual controlled source</html>");
+                edit.putArray("added").add(turn == 3 ? "<html>first proposal</html>" : "<html>different proposal</html>");
             } else if (mode.name().startsWith("BUILD_") && turn == 3) {
                 tool = "analyze";
                 args = JSON.createObjectNode().put("component", "api").put("type", "STATIC_SITE");
@@ -1104,7 +1224,7 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
                 ((ObjectNode) args.path("components").get(0)).putObject("workspace").put("mode", "AUTO")
                     .put("minimumBuildBytes", 0).put("preferredBuildBytes", mode == VerificationMode.BUILD_LARGE ? 536870912 : isolationRefusalJourney && turn == 4 ? 0 : 134217728).put("explicitBytes", 0);
             }
-            if (Set.of("plan", "prepare_tools", "build").contains(tool)) {
+            if (Set.of("plan", "prepare_tools", "build", "patch").contains(tool)) {
                 var assessment = args.putObject("assessment");
                 var basis = assessment.putArray("basis");
                 var pending = JSON.readTree(request.messages().getLast().text()).at("/state/judgement/pending");
@@ -1189,6 +1309,13 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
         }
 
         OperationResult<CommandResult> transport(CommandRequest request) throws Exception {
+            if (patchReviewDeniedJourney && request.script().contains("'agent-patch'")) {
+                patchSends++;
+                assertEquals(2, patchVerdicts);
+                assertEquals(1, patchGrants);
+                assertTrue(new String(request.stdin(), StandardCharsets.UTF_8).contains("different proposal"));
+                throw stop;
+            }
             if (isolationExistingToolchainJourney) {
                 var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
                 String input = new String(request.stdin(), StandardCharsets.UTF_8);
@@ -1331,7 +1458,8 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
             if (request.script().contains("'agent-open'")) {
                 opens++;
                 assertEquals(1, verifySends);
-                return reply("SOURCE_REVISION=" + material.snapshot().sha256() + "\n");
+                return reply("SOURCE_REVISION=" + (patchReviewDeniedJourney
+                    ? DeploymentAgentSourceRevision.digest(material.snapshot().directory()) : material.snapshot().sha256()) + "\n");
             }
             if (request.script().contains("'agent-run'")) {
                 buildScript = new String(request.stdin(), StandardCharsets.UTF_8);

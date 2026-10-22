@@ -284,7 +284,8 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
                 .collect(java.util.stream.Collectors.joining(" "));
             try (var expected = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, layout), new byte[0], Duration.ofSeconds(90), 4096)) {
                 var actual = RemoteActions.command(server, candidate.artifactSha256(), expected).withSemantics(new ActionSemantics(OPERATION,
-                    Set.of(new ActionTarget(server.id(), "deployment-release", part.unit().releaseRoot()))));
+                    Set.of(new ActionTarget(server.id(), "deployment-release", part.unit().releaseRoot()),
+                        new ActionTarget(server.id(), "deployment-candidate", layout.candidateRoot(candidate.candidateId())))));
                 if (!actual.equals(intent) || !request.script().equals(expected.script())
                     || !request.timeout().equals(expected.timeout()) || request.outputLimitBytes() != 4096 || request.stdin().length != 0)
                     continue;
@@ -321,7 +322,9 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
                 || !retained.graph().equals(proposal.graph()) || !retained.units().equals(proposal.units()))
                 throw new IllegalStateException("Original formal proposal changed");
             var commands = original.tasks().findCheckpoint(task, DeploymentModelCommandRunner.KEY);
-            if (!settledMutations(events)
+            if (gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramState.hasUnconfirmed(
+                original.tasks(), task, server.id(), layout, events)
+                || !settledMutations(events)
                 || commands.isPresent() && !commands.orElseThrow().snapshot().released()
                 || successful && (!events.stream().anyMatch(value -> value.type().equals("AI_PUBLICATION_FINISHED"))
                 || !events.stream().anyMatch(value -> value.type().equals("AI_PUBLICATION_VERIFIED"))))
@@ -390,7 +393,8 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
 
     private static Map<String, Object> requestFacts(ActionIntent intent, CommandRequest request) {
         return Map.of("exactAction", intent.exactAction(), "operation", intent.semantics().orElseThrow().operation(),
-            "serverTargets", intent.serverIds(), "resourceTargets", intent.semantics().orElseThrow().targets(),
+            "serverTargets", intent.serverIds(), "resourceTargets", intent.semantics().orElseThrow().targets().stream()
+                .sorted(Comparator.comparing(ActionTarget::serverId).thenComparing(ActionTarget::kind).thenComparing(ActionTarget::id)).toList(),
             "businessRevision", intent.revision(), "timeout", request.timeout().toString(),
             "outputLimitBytes", request.outputLimitBytes(), "stdinBytes", request.stdin().length);
     }
@@ -418,7 +422,10 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
             var candidate = observing.part();
             var intent = RemoteActions.command(server, observing.candidate().artifactSha256(), request)
                 .withSemantics(new ActionSemantics("deployment.publication.original-status.v1",
-                    Set.of(new ActionTarget(server.id(), "deployment-release", candidate.unit().releaseRoot()))));
+                    Set.of(new ActionTarget(server.id(), "deployment-release", candidate.unit().releaseRoot()),
+                        new ActionTarget(server.id(), "deployment-candidate", layout.candidateRoot(observing.candidate().candidateId())),
+                        new ActionTarget(server.id(), "deployment-snapshot", layout.snapshotRoot(candidate.unit().id(), task.id())),
+                        new ActionTarget(server.id(), "deployment-application-locks", layout.applicationLockRoot(candidate.unit().id())))));
             capture = new Capture(intent, requestFacts(intent, request), result);
         }
         if (!deleting) return result;

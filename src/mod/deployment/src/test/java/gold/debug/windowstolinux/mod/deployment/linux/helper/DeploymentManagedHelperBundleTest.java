@@ -36,9 +36,9 @@ class DeploymentManagedHelperBundleTest {
         assertTrue(entry.indexOf("application_maintenance ") < entry.indexOf("assert_deployment_current_or_empty "));
         assertTrue(entry.indexOf("assert_deployment_current_or_empty ") < entry.indexOf("rollback_deployment_first "));
         assertTrue(entry.indexOf("recovery-maintenance-remains") > entry.indexOf("rollback_deployment_first "));
-        for (var pin : java.util.Map.of("agent-controller-loader.py", "8a3732f95e1be94355569c78ec36d4f389788da9b2c484ae879e09e1377cce19",
+        for (var pin : java.util.Map.of("agent-controller-loader.py", "d04eca875afd038c58b44cd4699470a9f384136ad7cec5c122942d6e0bc204be",
             "agent-controller-install.py", "4c25923129cf686edcd50edab7ed947cd966c92ea590a68f2d79aeb20364ec6a",
-            "agent-controller-program-manifest.json", "4663fe75daf840534d994a5c80654d020feb1dbca8d5411cde1807939adfadda").entrySet()) {
+            "agent-controller-program-manifest.json", "da40a8654e8fe1c7949f5f20a1412960d15a2d4521e69152ffe7206d6092f6b7").entrySet()) {
             try (var stream = getClass().getResourceAsStream("/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/" + pin.getKey())) {
                 assertEquals(pin.getValue(), HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(stream.readAllBytes())));
             }

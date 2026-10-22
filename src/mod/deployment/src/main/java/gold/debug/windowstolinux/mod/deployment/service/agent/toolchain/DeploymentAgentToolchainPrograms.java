@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.toolchain;
 
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -28,6 +29,10 @@ public final class DeploymentAgentToolchainPrograms {
 
     private static final String COMMAND_PREFIX = "/usr/bin/python3 -I -S -c " + quote(BOOTSTRAP) + " ";
 
+    public static final String BOOTSTRAP_TRACKED = "import sys;sys.dont_write_bytecode=True;n=sys.argv[1];assert n.isdecimal() and str(int(n))==n and 1<=int(n)<=1048576;raw=sys.stdin.buffer.read(int(n)+131073);code=raw[:int(n)];recipe=raw[int(n):];assert len(code)==int(n) and 1<=len(recipe)<=131072;sys.argv=['<wtl-agent-toolchain>',*sys.argv[2:]];exec(compile(code,'<wtl-agent-toolchain>','exec'),{'__name__':'__main__','PROGRAM_SOURCE':code,'AGENT_TRACKED_REQUEST_RAW':recipe})";
+
+    private static final String TRACKED_COMMAND_PREFIX = "/usr/bin/python3 -I -S -c " + quote(BOOTSTRAP_TRACKED) + " ";
+
     private DeploymentAgentToolchainPrograms() {
     }
 
@@ -37,13 +42,27 @@ public final class DeploymentAgentToolchainPrograms {
     }
 
     public static String controller(DeploymentRemoteLayout layout) {
+        String controller = resource("agent-toolchain-controller.py");
+        String marker = "# @WTL_AGENT_TRACKED_OPERATIONS@";
+        if (controller.indexOf(marker) < 0 || controller.indexOf(marker) != controller.lastIndexOf(marker))
+            throw new IllegalStateException("Tracked controller insertion boundary changed");
+        controller = controller.replace(marker, resource("agent-toolchain-tracked.py"));
         return DeploymentToolchainSources.metadata(layout) + resource("agent-toolchain-resolution.py") + "\n"
             + "EXPECTED_RESOLVER_SOURCE_SHA256 = '" + sha256(resolver(layout)) + "'\n"
             + DeploymentToolchainSources.archives() + "\n"
             + gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTemplate.render(
-                resource("agent-toolchain-controller.py").replace("/etc/opt/windowstolinux/apps", "@wtl:configuration-root@")
-                    .replace("/var/opt/windowstolinux/apps", "@wtl:data-root@")
-                    .replace("/opt/windowstolinux/apps", "@wtl:applications-root@"), layout);
+            controller.replace("/etc/opt/windowstolinux/apps", "@wtl:configuration-root@")
+                .replace("/var/opt/windowstolinux/apps", "@wtl:data-root@")
+                .replace("/opt/windowstolinux/apps", "@wtl:applications-root@"), layout);
+    }
+
+    /** Same fixed controller definitions with a closed precreation guard; old installed source/version stays unchanged. */
+    public static String existingController(DeploymentRemoteLayout layout) {
+        String source = controller(layout);
+        String marker = "    selections = [agent_selection_snapshot(record)] if record is not None else []\n";
+        if (source.indexOf(marker) < 0 || source.indexOf(marker) != source.lastIndexOf(marker))
+            throw new IllegalStateException("Existing-toolchain insertion boundary changed");
+        return source.replace(marker, marker + "    if not selections:\n        agent_reject('EXISTING_INSTALLATION_REQUIRED')\n");
     }
 
     /** Resolves official metadata without entering the installation controller. / 仅解析官方元数据，不进入安装控制器。 */
@@ -99,6 +118,20 @@ public final class DeploymentAgentToolchainPrograms {
     public static String command(List<String> arguments) {
         return COMMAND_PREFIX + List.copyOf(arguments).stream().map(DeploymentAgentToolchainPrograms::quote)
             .collect(java.util.stream.Collectors.joining(" "));
+    }
+
+    public static String trackedCommand(DeploymentAgentToolchainTracked.Recipe recipe) {
+        if (!recipe.invocationKind().equals("EXISTING_INLINE") || !recipe.phase().equals("PREPARE"))
+            throw new IllegalArgumentException("Only existing inline preparation is admitted");
+        int bytes = existingController(recipe.layout()).getBytes(StandardCharsets.UTF_8).length;
+        return TRACKED_COMMAND_PREFIX + quote(Integer.toString(bytes)) + " " + recipe.frame("prepare-tracked").stream()
+            .map(DeploymentAgentToolchainPrograms::quote).collect(java.util.stream.Collectors.joining(" "));
+    }
+
+    public static byte[] trackedInput(DeploymentAgentToolchainTracked.Recipe recipe) {
+        byte[] source = existingController(recipe.layout()).getBytes(StandardCharsets.UTF_8), request = recipe.bytes();
+        byte[] result = java.util.Arrays.copyOf(source, source.length + request.length);
+        System.arraycopy(request, 0, result, source.length, request.length); return result;
     }
 
     static List<String> arguments(String command) {

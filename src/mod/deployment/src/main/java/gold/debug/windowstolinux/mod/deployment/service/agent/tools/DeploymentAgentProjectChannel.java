@@ -70,6 +70,7 @@ public final class DeploymentAgentProjectChannel {
 
     /** Bounded structured patch wire serializer. / 有界结构化补丁传输序列化器。 */
     private final ObjectMapper json = new ObjectMapper();
+    private final gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog journal;
 
     /** Binds real capabilities without taking ownership of the session. / 绑定真实能力但不取得会话所有权。
      * @param session borrowed authenticated SSH / 借用已认证 SSH
@@ -85,6 +86,13 @@ public final class DeploymentAgentProjectChannel {
 
     public DeploymentAgentProjectChannel(RemoteSession session, InteractionService interaction, ServerId server,
                                          TaskContext task, String configurationRevision, Supplier<String> currentRevision, DeploymentRemoteLayout layout) {
+        this(session, interaction, server, task, configurationRevision, currentRevision, layout, null);
+    }
+
+    DeploymentAgentProjectChannel(RemoteSession session, InteractionService interaction, ServerId server,
+                                         TaskContext task, String configurationRevision, Supplier<String> currentRevision, DeploymentRemoteLayout layout,
+                                         gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog journal) {
+        this.journal = journal;
         this.layout = Objects.requireNonNull(layout);
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
@@ -228,7 +236,8 @@ public final class DeploymentAgentProjectChannel {
         String binding = sha256(bytes);
         try {
             var result = send(render("agent-patch", candidate.workspace(), patch.sourceRevision(), binding), bytes,
-                Duration.ofSeconds(45), 4096, true, null, candidate.workspace().candidateId());
+                Duration.ofSeconds(45), 4096, true, null, candidate.workspace().candidateId(), () -> { },
+                DeploymentAgentReview.patchScope(candidate.workspace().candidateRoot(), patch));
             if (result.outcome() == TaskResult.SUCCEEDED && result.value().isPresent()
                 && result.value().orElseThrow().exitCode().equals(Optional.of(0)))
                 return digest(result, "SOURCE_REVISION");
@@ -459,6 +468,13 @@ public final class DeploymentAgentProjectChannel {
     private OperationResult<CommandResult> send(String script, byte[] stdin, Duration timeout, long limit,
                                                 boolean effect, PendingCommand pending, String mutatedCandidate,
                                                 gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard guard) throws Exception {
+        return send(script, stdin, timeout, limit, effect, pending, mutatedCandidate, guard, null);
+    }
+
+    private OperationResult<CommandResult> send(String script, byte[] stdin, Duration timeout, long limit,
+                                                boolean effect, PendingCommand pending, String mutatedCandidate,
+                                                gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard guard,
+                                                String patchScope) throws Exception {
         if (effect)
             requireConfiguration();
         String guarded = DeploymentManagedHelperBundle.verifiedCommand(script, layout);
@@ -467,11 +483,21 @@ public final class DeploymentAgentProjectChannel {
                 DeploymentAgentQuestionScope.meaning(server.id(), script, stdin,
                     sha256((guarded + "\n" + sha256(stdin)).getBytes(StandardCharsets.UTF_8))));
             OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant> review;
+            if (patchScope != null && journal != null)
+                gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentUnsentReview.requireDifferent(
+                    journal, task, server, "PATCH", patchScope);
             try {
                 review = DeploymentCommandReviewRouter.approve(interaction, intent, request, task);
                 if (review.outcome() != TaskResult.SUCCEEDED)
                     throw new DeploymentAiJson.CapabilityOutcomeException(review.outcome(), review.problem());
             } catch (ApiException | DeploymentAiJson.CapabilityOutcomeException failure) {
+                if (patchScope != null && journal != null && failure instanceof ApiException denied
+                    && denied.problem().code() == ProblemCode.ACCESS_DENIED
+                    && denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")) {
+                    requireConfiguration();
+                    throw gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentUnsentReview.command(
+                        journal, task, server, "PATCH", patchScope, intent, request, denied);
+                }
                 if (!script.startsWith(quote(layout.helperPath()) + " 'agent-run' "))
                     throw failure;
                 if (failure instanceof ApiException denied && denied.problem().code() == ProblemCode.ACCESS_DENIED

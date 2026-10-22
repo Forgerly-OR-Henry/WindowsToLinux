@@ -237,6 +237,10 @@ public final class DeploymentBuildCommandChannel {
         return budget.remainingSeconds();
     }
 
+    public String authenticatedFingerprint() throws ApiException {
+        return session.facts().fingerprint();
+    }
+
     /** Prepares one catalog branch with the helper's fixed official release protocol. / 使用 helper 的固定官方发布协议准备一个目录分支。
      * @param ecosystem reviewed ecosystem / 已审阅生态
      * @param branch selected catalog branch / 已选目录分支

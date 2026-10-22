@@ -18,10 +18,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram;
 
 /** Necessary delivery condition for one original executable input; it carries no review authority. */
 final class DeploymentAgentInputCoverage {
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    static final int PAGE_CHARACTERS = 8000;
+
+    static final int INLINE_PAYLOAD_BYTES = 14000;
 
     private static final int MAX_RANGES = 64;
 
@@ -101,6 +106,8 @@ final class DeploymentAgentInputCoverage {
     private final List<String> structured;
 
     private final List<Pending> pending = new ArrayList<>();
+    private final List<Body> requiredEvidence = new ArrayList<>();
+    private Body embeddedExecutable;
 
     DeploymentAgentInputCoverage(CommandRequest request, JsonNode facts) throws IOException {
         script = new Body("request", "part", "script", request.script());
@@ -118,6 +125,35 @@ final class DeploymentAgentInputCoverage {
                 structured = List.of();
                 return;
             }
+            if (kind.equals("TRACKED_TOOLCHAIN_REQUEST")) {
+                var tracked = facts.path("agentTrackedToolchain");
+                var recipeNode = tracked.path("recipeUtf8");
+                boolean inline = tracked.path("invocationKind").asText().equals("EXISTING_INLINE");
+                String sourcePointer = inline ? INPUT : "/agentToolchainInstalledInputBinding/controllerSource";
+                var sourceNode = facts.at(sourcePointer);
+                if (!recipeNode.isTextual() || !sourceNode.isTextual())
+                    throw new IOException("Tracked controller requires its complete recipe and executable source");
+                try {
+                    var recipe = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainTracked
+                        .decode(recipeNode.textValue().getBytes(StandardCharsets.UTF_8));
+                    String source = sourceNode.textValue();
+                    if (!sha(source).equals(inline ? recipe.executedSourceSha256() : recipe.sourceSha256()))
+                        throw new IOException("Tracked executable source differs from its exact program identity");
+                    byte[] expected = inline ? (source + recipeNode.textValue()).getBytes(StandardCharsets.UTF_8) : recipe.bytes();
+                    if (!Arrays.equals(bytes, expected)) throw new IOException("Tracked source and recipe do not reproduce original stdin");
+                    stdin = new Body("request", "part", "stdin", StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString());
+                    var executable = new Body("evidence", "pointer", sourcePointer, source);
+                    var recipeBody = new Body("evidence", "pointer", "/agentTrackedToolchain/recipeUtf8", recipeNode.textValue());
+                    evidence.put(sourcePointer, executable);
+                    evidence.put(recipeBody.value, recipeBody);
+                    requiredEvidence.add(executable);
+                    if (inline) embeddedExecutable = executable;
+                    structured = inline ? List.of(INPUT, recipeBody.value) : List.of(recipeBody.value);
+                    return;
+                } catch (IllegalArgumentException invalid) {
+                    throw new IOException("Tracked original recipe is invalid", invalid);
+                }
+            }
             if (!kind.equals("EXECUTABLE_SCRIPT") && !kind.equals("SOURCE_PATCH"))
                 throw new IOException("Original executable input classification is unavailable");
             String original = StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString();
@@ -132,11 +168,18 @@ final class DeploymentAgentInputCoverage {
                 structured = List.of(INPUT);
             } else {
                 try {
-                    DeploymentInstallerEvidence.verify(represented, original);
+                    if (represented.path("format").asText().equals(DeploymentAgentPublicationRecoveryProgram.INSTALL_EVIDENCE_FORMAT)) {
+                        if (!facts.path("operation").asText().equals(DeploymentAgentPublicationRecoveryProgram.INSTALL))
+                            throw new IllegalArgumentException("Publication installation evidence belongs to a different operation");
+                        DeploymentAgentPublicationRecoveryProgram.verifyInstallationEvidence(represented, original);
+                    } else DeploymentInstallerEvidence.verify(represented, original);
                 } catch (IllegalArgumentException invalid) {
                     throw new IOException("Structured executable evidence does not reproduce the original request", invalid);
                 }
-                structured = STRUCTURED_BODIES;
+                structured = represented.path("format").asText().equals(DeploymentAgentPublicationRecoveryProgram.INSTALL_EVIDENCE_FORMAT)
+                    ? List.of(INPUT + "/sources/bash", INPUT + "/sources/loader", INPUT + "/derived/controller/segments/0/text",
+                        INPUT + "/derived/controller/segments/2/text", INPUT + "/segments/0/text", INPUT + "/segments/2/text", INPUT + "/segments/4/text")
+                    : STRUCTURED_BODIES;
                 for (String leaf : structured) {
                     String pointer = leaf;
                     while (pointer.startsWith(INPUT)) {
@@ -153,21 +196,42 @@ final class DeploymentAgentInputCoverage {
         }
     }
 
-    Map<String, Object> inlineInput() {
+    Map<String, Object> inlineInput(int characterLimit, int encodedByteLimit) {
+        if (characterLimit < 0 || characterLimit > PAGE_CHARACTERS || encodedByteLimit < 1 || encodedByteLimit > INLINE_PAYLOAD_BYTES)
+            throw new IllegalArgumentException("Inline input must stay within one evidence page");
         var value = new LinkedHashMap<String, Object>();
         value.put("script", inline(script));
         if (stdin != null) value.put("stdin", inline(stdin));
         value.put("meaning", "Original request bodies. Descriptors and delivery coverage are not safety review or permission.");
+        try {
+            if (JSON.writeValueAsBytes(value).length > encodedByteLimit)
+                throw new IllegalArgumentException("Complete inline descriptors exceed the evidence page budget");
+        } catch (com.fasterxml.jackson.core.JsonProcessingException impossible) {
+            throw new IllegalStateException("Original inline descriptors cannot be encoded", impossible);
+        }
+        int remaining = characterLimit;
+        for (var body : stdin == null ? List.of(script) : List.of(script, stdin)) {
+            if (!StandardCharsets.UTF_8.newEncoder().canEncode(body.text))
+                throw new IllegalArgumentException("Original inline body is not valid Unicode");
+            if (body.text.length() > remaining) continue;
+            @SuppressWarnings("unchecked") var entry = (Map<String, Object>) value.get(body.value);
+            entry.put("text", body.text);
+            try {
+                if (JSON.writeValueAsBytes(value).length > encodedByteLimit) entry.remove("text");
+                else remaining -= body.text.length();
+            } catch (com.fasterxml.jackson.core.JsonProcessingException impossible) {
+                throw new IllegalStateException("Original inline input cannot be encoded", impossible);
+            }
+        }
         return value;
     }
 
     private static Map<String, Object> inline(Body body) {
         var value = new LinkedHashMap<String, Object>();
         value.put("tool", body.tool);
-        value.put("arguments", Map.of(body.argument, body.value, "offset", 0, "limit", Math.max(1, Math.min(8000, body.text.length()))));
+        value.put("arguments", Map.of(body.argument, body.value, "offset", 0, "limit", Math.max(1, Math.min(PAGE_CHARACTERS, body.text.length()))));
         value.put("total", body.text.length());
         value.put("sha256", body.sha);
-        if (body.text.length() <= 512) value.put("text", body.text);
         return value;
     }
 
@@ -204,6 +268,8 @@ final class DeploymentAgentInputCoverage {
         }
         for (var page : pending)
             if (visibleResult.test(page.result())) page.body().add(page.start(), page.end());
+        if (embeddedExecutable != null && stdin.complete())
+            embeddedExecutable.add(0, embeddedExecutable.text.length());
         pending.clear();
     }
 
@@ -212,11 +278,13 @@ final class DeploymentAgentInputCoverage {
     }
 
     boolean complete() {
-        return script.complete() && (stdin == null || stdin.complete() || !structured.isEmpty()
+        return requiredEvidence.stream().allMatch(Body::complete) && script.complete() && (stdin == null || stdin.complete() || !structured.isEmpty()
             && structured.stream().allMatch(this::represented));
     }
 
     private boolean represented(String pointer) {
+        Body direct = evidence.get(pointer);
+        if (direct != null && direct.complete()) return true;
         while (pointer.startsWith(INPUT)) {
             Body body = evidence.get(pointer);
             if (body != null && body.complete()) return true;
@@ -229,6 +297,7 @@ final class DeploymentAgentInputCoverage {
     Map<String, Object> missing() {
         var gaps = new ArrayList<Map<String, Object>>();
         if (!script.complete()) gaps.add(script.missing());
+        requiredEvidence.stream().filter(body -> !body.complete()).forEach(body -> gaps.add(body.missing()));
         if (stdin != null && !stdin.complete() && (structured.isEmpty() || !structured.stream().allMatch(this::represented)))
             gaps.add(stdin.missing());
         return Map.of("cursorUnit", "UTF16_CODE_UNITS", "missingRanges", gaps,

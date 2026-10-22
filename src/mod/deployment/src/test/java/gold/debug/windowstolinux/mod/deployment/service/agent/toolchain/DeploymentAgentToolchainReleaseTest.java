@@ -36,6 +36,16 @@ public class DeploymentAgentToolchainReleaseTest {
     }
 
     @Test
+    void capturedLayoutResolverReceiptCannotBeComparedToTheDefaultRenderer() {
+        var layout = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(
+            "/srv/release/lib", "/srv/release/apps", "/srv/release/state", "/srv/release/config", "/srv/release/data"));
+        var values = values("RUST", "1.95", "1.95.0", OPERATION);
+        values.put("resolverSourceSha256", DeploymentAgentToolchainPrograms.sha256(DeploymentAgentToolchainPrograms.resolver(layout)));
+        assertEquals("1.95.0", DeploymentAgentToolchainRelease.decode(encode(values), DeploymentToolchainType.RUST, "1.95", "1.95.0", OPERATION, layout).get("version"));
+        assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainRelease.decode(encode(values), DeploymentToolchainType.RUST, "1.95", "1.95.0", OPERATION));
+    }
+
+    @Test
     void officialSha512RemainsThePinnedDigestForDotnet() {
         var release = DeploymentAgentToolchainRelease.decode(encoded("DOTNET", "8", "8.0.100", OPERATION), DeploymentToolchainType.DOTNET, "8", "8.0.100", OPERATION);
         assertEquals("sha512", release.get("algorithm"));
@@ -70,10 +80,27 @@ public class DeploymentAgentToolchainReleaseTest {
         values.put("branch", branch);
         values.put("requestedExact", exact);
         values.put("version", exact.equals("-") ? branch + ".0" : exact);
-        values.put("url", ecosystem.equals("JAVA") ? "https://api.adoptium.net/archive" : ecosystem.equals("PYTHON") ? "https://www.python.org/archive" : ecosystem.equals("DOTNET") ? "https://builds.dotnet.microsoft.com/archive" : "https://static.rust-lang.org/archive");
+        String version = values.get("version");
+        values.put("url", switch (ecosystem) {
+            case "JAVA" -> "https://api.adoptium.net/archive";
+            case "PYTHON" -> "https://www.python.org/archive";
+            case "DOTNET" -> "https://builds.dotnet.microsoft.com/archive";
+            case "RUST" -> "https://static.rust-lang.org/archive";
+            case "GO" -> "https://go.dev/dl/go" + version + ".linux-amd64.tar.gz";
+            case "NODE" -> "https://nodejs.org/dist/v" + version + "/node-v" + version + "-linux-x64.tar.xz";
+            case "KOTLIN" -> "https://github.com/JetBrains/kotlin/releases/download/v" + version + "/kotlin-compiler-" + version + ".zip";
+            case "PHP" -> "https://www.php.net/distributions/php-" + version + ".tar.xz";
+            case "RUBY" -> "https://cache.ruby-lang.org/pub/ruby/" + branch + "/ruby-" + version + ".tar.xz";
+            default -> throw new IllegalArgumentException("No controlled archive release for " + ecosystem);
+        });
         values.put("algorithm", ecosystem.equals("DOTNET") ? "sha512" : "sha256");
         values.put("digest", "c".repeat(ecosystem.equals("DOTNET") ? 128 : 64));
-        values.put("layout", ecosystem.equals("JAVA") ? "archive" : ecosystem.equals("PYTHON") ? "python" : ecosystem.equals("DOTNET") ? "flat" : "rust");
+        values.put("layout", switch (ecosystem) {
+            case "JAVA", "NODE", "GO", "KOTLIN" -> "archive";
+            case "PYTHON" -> "python"; case "PHP" -> "php"; case "RUBY" -> "ruby";
+            case "DOTNET" -> "flat"; case "RUST" -> "rust";
+            default -> throw new IllegalArgumentException("No controlled archive layout for " + ecosystem);
+        });
         values.put("platform", "linux-x86_64");
         values.put("resolverSourceSha256", DeploymentAgentToolchainPrograms.sha256(DeploymentAgentToolchainPrograms.resolver()));
         return values;

@@ -106,11 +106,16 @@ public final class DeploymentAgentReview {
     /** Reviews the whole source patch before its actual command review and host rememberAuthorization. / 实际命令审核及宿主授权前审核完整源码补丁。
      * @param patch exact structured diff / 精确结构化差异
      * @throws Exception if review is denied or unavailable / 审核拒绝或不可用时 */
-    public void patch(DeploymentAgentPatch patch) throws Exception {
-        String action = hash(patch.toString());
-        var reviewed = review("PATCH", action, Map.of("path", patch.path(), "sourceRevision", patch.sourceRevision(),
+    public void patch(String candidateRoot, DeploymentAgentPatch patch) throws Exception {
+        String action = patchScope(candidateRoot, patch);
+        var reviewed = review("PATCH", action, Map.of("candidateRoot", candidateRoot, "path", patch.path(), "sourceRevision", patch.sourceRevision(),
             "beforeDigest", patch.beforeDigest(), "edits", patch.edits()));
         journal.event(task, "PATCH_APPROVED", action, Boolean.toString(reviewed.requiresUserConfirmation()));
+    }
+
+    public static String patchScope(String candidateRoot, DeploymentAgentPatch patch) {
+        if (candidateRoot == null || candidateRoot.isBlank()) throw new IllegalArgumentException("Original patch candidate required");
+        return hash(candidateRoot + ":" + Objects.requireNonNull(patch));
     }
 
     /** Obtains strict independent AI review with frozen all-purpose configuration. / 以冻结全用途配置取得严格独立 AI 审核。
@@ -121,6 +126,7 @@ public final class DeploymentAgentReview {
      * @throws Exception if reviewer denies or fails / 审核者拒绝或失败时 */
     private DeploymentReviewDecision review(String type, String action, Map<String, ?> facts) throws Exception {
         requireRevision();
+        DeploymentAgentUnsentReview.requireDifferent(journal, task, server, type, action);
         DeploymentReviewDecision reviewed;
         if (reviewSource == null) {
             JsonNode answer = ai.ask(AiPurpose.APPROVAL, POLICY,
@@ -133,9 +139,7 @@ public final class DeploymentAgentReview {
         if (!reviewed.decision().equals("APPROVE")) {
             gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentReviewDenied(
                 context, task, type, action, reviewed.reason());
-            if (type.equals("COMMAND"))
-                throw new DeploymentAgentAlternativeRequiredException(task, denialReason(reviewed.reason()));
-            throw new SecurityException("Independent deployment review denied action");
+            throw DeploymentAgentUnsentReview.action(journal, task, server, type, action, revision, facts, reviewed);
         }
         return reviewed;
     }

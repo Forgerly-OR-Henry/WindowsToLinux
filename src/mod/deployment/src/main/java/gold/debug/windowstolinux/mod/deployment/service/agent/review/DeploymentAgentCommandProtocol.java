@@ -34,7 +34,8 @@ public final class DeploymentAgentCommandProtocol implements DeploymentCommandPr
         "deployment.agent.publication-recovery.readiness.v1", "deployment.agent.publication-recovery.install.v1", "deployment.agent.publication-recovery.guarded-first-rollback.v1",
         "deployment.agent.publication-recovery-diagnostic.v1", "deployment.agent.publication-recovery-preflight.v2", "deployment.agent.publication-continuation.v1",
         "deployment.agent.publication-contract-diagnostic.v1", "deployment.agent.publication-contract-diagnostic.followup.v1", "deployment.agent.publication-correction.v1", "deployment.agent.isolation.preflight.v1",
-        "deployment.agent.toolchain.controller.readiness.v1", "deployment.agent.toolchain.controller.install.v1", "deployment.agent.toolchain.controller.prepare.v1", "deployment.agent.toolchain.controller.bind.v1");
+        "deployment.agent.toolchain.controller.readiness.v1", "deployment.agent.toolchain.controller.install.v1", "deployment.agent.toolchain.controller.prepare.v1", "deployment.agent.toolchain.controller.bind.v1",
+        "deployment.agent.toolchain.controller.observe.v1", "deployment.agent.toolchain.controller.cleanup.v1");
     private static final Set<String> EMPTY_INPUT = Set.of("deployment.agent.toolchain.controller.readiness.v1",
         "deployment.agent.toolchain.controller.prepare.v1", "deployment.agent.toolchain.controller.bind.v1",
         "deployment.agent.publication-recovery.readiness.v1", "deployment.agent.publication-recovery.guarded-first-rollback.v1");
@@ -75,7 +76,9 @@ public final class DeploymentAgentCommandProtocol implements DeploymentCommandPr
             if (!intent.revision().equals(arguments.get(arguments.size() - 1).asText()))
                 throw new IllegalArgumentException("Recovery plan revision changed");
         }
-        if (operation.startsWith(DeploymentAgentToolchainProgramStore.PREFIX))
+        if (current.has(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainTracked.FIELD))
+            DeploymentAgentToolchainInputEvidence.requireTrackedCurrent(current, layout, json.valueToTree(receipts.get()), task.id().toString());
+        else if (operation.startsWith(DeploymentAgentToolchainProgramStore.PREFIX))
             DeploymentAgentToolchainInputEvidence.selectInstalled(current, layout,
                 json.valueToTree(receipts.get()), task.id().toString()).orElseThrow();
         else DeploymentAgentToolchainInputEvidence.select(current, layout);
@@ -102,6 +105,16 @@ public final class DeploymentAgentCommandProtocol implements DeploymentCommandPr
             "deployment.agent.publication-correction.v1", "deployment.agent.isolation.preflight.v1").contains(operation)
             && request.script().contains(layout.helperPath());
         var facts = new LinkedHashMap<String, Object>(DeploymentCommandEvidence.baseFacts(intent, request, layout, installedHelper));
+        var tracked = DeploymentAgentToolchainInputEvidence.trackedFacts(operation, request, layout);
+        if (tracked.isPresent()) {
+            facts.put(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainTracked.FIELD, tracked.orElseThrow());
+            facts.put("inputKind", "TRACKED_TOOLCHAIN_REQUEST");
+            if (tracked.orElseThrow().get("invocationKind").equals("EXISTING_INLINE")) {
+                String source = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms.existingController(layout);
+                DeploymentCommandStaticGate.requireFixedAllowed(source); facts.put("completeExecutableInput", source);
+            }
+            return java.util.Collections.unmodifiableMap(facts);
+        }
         String invocation = installedHelper ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout) : request.script();
         if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.OPERATION)) {
             if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Isolation server identity missing");

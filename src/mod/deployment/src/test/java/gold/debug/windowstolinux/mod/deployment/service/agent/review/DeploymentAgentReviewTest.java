@@ -28,6 +28,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class DeploymentAgentReviewTest extends DeploymentRuntimeFixture {
+    private boolean rejectRefusalRecord;
+    private ModContext reviewOwner;
     private static final String DENIAL_REASON = "Retain the existing candidate database and choose a different output path.\n"
         + "api_key=fixture-private-review-value\n" + "evidence ".repeat(100);
 
@@ -97,10 +99,12 @@ class DeploymentAgentReviewTest extends DeploymentRuntimeFixture {
                 });
             var handle = actual.tasks().submit(
                 new TaskRequest("independent_denial", "Independent denial", java.util.List.of(), false), task -> {
+                    var journal = new DeploymentAgentActionLog(actual.db());
+                    journal.create(task, new DeploymentAgentActionLog.Identity("server", "b".repeat(64), "a".repeat(64), policy, true));
                     var conversation = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApprovalConversation(
                         context, task, new ServerId("server"), "fixture-fingerprint", "b".repeat(64), "a".repeat(64));
                     var reviewer = new DeploymentAgentReview(context, new ServerId("server"), task, policy, true,
-                        "a".repeat(64), () -> "a".repeat(64), new DeploymentAgentActionLog(actual.db()), conversation);
+                        "a".repeat(64), () -> "a".repeat(64), journal, conversation);
                     var denied = assertThrows(DeploymentAgentAlternativeRequiredException.class,
                         () -> reviewer.command("service", "b".repeat(64), "rm -rf -- ./build"));
                     assertEquals("DEPLOYMENT_ALTERNATIVE_REQUIRED", denied.problem().eventCode());
@@ -114,6 +118,10 @@ class DeploymentAgentReviewTest extends DeploymentRuntimeFixture {
                     assertEquals(1, refusals.size());
                     assertTrue(refusals.getFirst().event().message().contains("Retain the existing candidate database"));
                     assertTrue(refusals.getFirst().event().message().matches("type=COMMAND action=[0-9a-f]{64} .*"));
+                    assertThrows(DeploymentAgentAlternativeRequiredException.class,
+                        () -> reviewer.command("service", "b".repeat(64), "rm -rf -- ./build"));
+                    assertEquals(1, journal.events(task).stream().filter(event -> event.type().equals(DeploymentAgentUnsentReview.EVENT)).count());
+                    journal.state(task, "SUCCEEDED");
                     return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
                 });
             assertEquals(TaskResult.SUCCEEDED,
@@ -126,14 +134,20 @@ class DeploymentAgentReviewTest extends DeploymentRuntimeFixture {
 
     @ParameterizedTest
     @ValueSource(strings = {"MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL"})
-    void patchDenialRemainsHardFailureWithoutHumanOverride(String policy) throws Exception {
-        checkReview(policy, () -> "a".repeat(64), (request, attempt) -> response("DENY", DENIAL_REASON),
+    void patchDenialIsDurablyUnsentAndOnlyDifferentPatchCanBeReviewed(String policy) throws Exception {
+        checkReview(policy, () -> "a".repeat(64), (request, attempt) -> response(attempt == 1 ? "DENY" : "APPROVE", DENIAL_REASON),
             (reviewer, task, journal) -> {
                 var patch = new DeploymentAgentPatch("app.py", "b".repeat(64), "c".repeat(64),
                     java.util.List.of(new DeploymentAgentPatch.Edit(1, java.util.List.of("old"), java.util.List.of("new"))));
-                var denied = assertThrows(SecurityException.class, () -> reviewer.patch(patch));
-                assertEquals("Independent deployment review denied action", denied.getMessage());
+                var denied = assertThrows(DeploymentAgentAlternativeRequiredException.class, () -> reviewer.patch("/original/candidate", patch));
+                assertEquals("DEPLOYMENT_ALTERNATIVE_REQUIRED", denied.problem().eventCode());
+                assertThrows(DeploymentAgentAlternativeRequiredException.class, () -> reviewer.patch("/original/candidate", patch));
                 assertTrue(journal.events(task).stream().noneMatch(event -> event.type().endsWith("APPROVED")));
+                assertEquals(1, journal.events(task).stream().filter(event -> event.type().equals(DeploymentAgentUnsentReview.EVENT)).count());
+                var next = new DeploymentAgentPatch("app.py", "b".repeat(64), "c".repeat(64),
+                    java.util.List.of(new DeploymentAgentPatch.Edit(1, java.util.List.of("old"), java.util.List.of("different"))));
+                reviewer.patch("/original/candidate", next);
+                assertEquals(1, journal.events(task).stream().filter(event -> event.type().equals("PATCH_APPROVED")).count());
             });
     }
 
@@ -147,7 +161,7 @@ class DeploymentAgentReviewTest extends DeploymentRuntimeFixture {
         }, (reviewer, task, journal) -> {
             var denied = assertThrows(SecurityException.class, () -> {
                 if (type.equals("COMMAND")) reviewer.command("service", "b".repeat(64), "printf artifact");
-                else reviewer.patch(new DeploymentAgentPatch("app.py", "b".repeat(64), "c".repeat(64),
+                else reviewer.patch("/original/candidate", new DeploymentAgentPatch("app.py", "b".repeat(64), "c".repeat(64),
                     java.util.List.of(new DeploymentAgentPatch.Edit(1, java.util.List.of("old"), java.util.List.of("new")))));
             });
             assertEquals("Agent approval configuration changed", denied.getMessage());
@@ -186,6 +200,57 @@ class DeploymentAgentReviewTest extends DeploymentRuntimeFixture {
             });
     }
 
+    @Test
+    void failedNotSentPersistenceNeverBecomesAnAlternative() throws Exception {
+        rejectRefusalRecord = true;
+        checkReview("AUTOMATIC", () -> "a".repeat(64), (request, attempt) -> response("DENY", DENIAL_REASON),
+            (reviewer, task, journal) -> {
+                var failure = assertThrows(gold.debug.windowstolinux.appapi.task.result.ApiException.class,
+                    () -> reviewer.patch("/original/candidate", new DeploymentAgentPatch("app.py", "b".repeat(64), "c".repeat(64),
+                        java.util.List.of(new DeploymentAgentPatch.Edit(1, java.util.List.of("old"), java.util.List.of("new"))))));
+                assertFalse(failure instanceof DeploymentAgentAlternativeRequiredException);
+                assertEquals(gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNKNOWN, failure.problem().code());
+                assertEquals("DEPLOYMENT_AGENT_REFUSAL_EVIDENCE_UNCONFIRMED", failure.problem().eventCode());
+                assertTrue(journal.events(task).stream().noneMatch(event -> event.type().equals(DeploymentAgentUnsentReview.EVENT)));
+            });
+    }
+
+    @Test
+    void changedDurableRefusalCannotBeUsedToContinue() throws Exception {
+        checkReview("AUTOMATIC", () -> "a".repeat(64), (request, attempt) -> response("DENY", DENIAL_REASON),
+            (reviewer, task, journal) -> {
+                assertThrows(DeploymentAgentAlternativeRequiredException.class,
+                    () -> reviewer.command("service", "b".repeat(64), "printf old"));
+                try (var connection = reviewOwner.db().openConnection(task); var statement = connection.prepareStatement(
+                    "UPDATE deployment_agent_event SET event_detail=? WHERE task_id=? AND event_type=?")) {
+                    statement.setString(1, "{\"formatVersion\":1,\"formatVersion\":2}");
+                    statement.setString(2, task.id().toString()); statement.setString(3, DeploymentAgentUnsentReview.EVENT);
+                    assertEquals(1, statement.executeUpdate());
+                }
+                var failure = assertThrows(gold.debug.windowstolinux.appapi.task.result.ApiException.class,
+                    () -> reviewer.command("service", "b".repeat(64), "printf different"));
+                assertEquals(gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNKNOWN, failure.problem().code());
+                assertFalse(failure instanceof DeploymentAgentAlternativeRequiredException);
+            });
+    }
+
+    @Test
+    void commandRefusalWithFailedEvidenceCannotBeConvertedToDenyFeedback() {
+        var id = java.util.UUID.randomUUID();
+        var task = (gold.debug.windowstolinux.appapi.task.run.TaskContext) Proxy.newProxyInstance(getClass().getClassLoader(),
+            new Class<?>[]{gold.debug.windowstolinux.appapi.task.run.TaskContext.class}, (proxy, method, args) -> {
+                assertEquals("id", method.getName()); return id;
+            });
+        var denial = new gold.debug.windowstolinux.appapi.task.result.ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.ACCESS_DENIED, "DEPLOYMENT_COMMAND_REVIEW_DENIED", "actual denial",
+            java.util.Map.of("task", id.toString()), Optional.of(id)));
+        denial.addSuppressed(new IllegalStateException("Evidence write failed"));
+        var failure = assertThrows(gold.debug.windowstolinux.appapi.task.result.ApiException.class,
+            () -> DeploymentAgentAlternativeRequiredException.fromReview(task, denial));
+        assertEquals(gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNKNOWN, failure.problem().code());
+        assertSame(denial, failure.getCause());
+    }
+
     private void checkReview(String policy, java.util.function.Supplier<String> revision,
                              java.util.function.BiFunction<AiRequest, Integer, OperationResult<AiResponse>> answer,
                              ReviewAssertions assertions) throws Exception {
@@ -195,6 +260,7 @@ class DeploymentAgentReviewTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             var actual = runtime.modContexts().get(OWNER).context();
+            reviewOwner = actual;
             var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(),
                 new Class<?>[]{AiService.class}, (proxy, method, arguments) -> {
                     if (method.getName().equals("configurationRevision")) return revision.get();
@@ -216,6 +282,9 @@ class DeploymentAgentReviewTest extends DeploymentRuntimeFixture {
             var handle = actual.tasks().submit(new TaskRequest("review_boundary", "Review boundary", java.util.List.of(), false), task -> {
                 var journal = new DeploymentAgentActionLog(actual.db());
                 journal.create(task, new DeploymentAgentActionLog.Identity("server", "b".repeat(64), "a".repeat(64), policy, true));
+                if (rejectRefusalRecord) try (var connection = actual.db().openConnection(task); var statement = connection.createStatement()) {
+                    statement.execute("ALTER TABLE deployment_agent_event ADD CONSTRAINT reject_refusal_proof CHECK(event_type <> 'ACTION_REVIEW_NOT_SENT')");
+                }
                 var reviewer = new DeploymentAgentReview(context, new ServerId("server"), task, policy, true,
                     "a".repeat(64), revision, journal);
                 assertions.check(reviewer, task, journal);

@@ -804,6 +804,16 @@ public final class DeploymentAgentSession {
             }
             throw stopped.originalFailure();
         } catch (DeploymentAiJson.CapabilityOutcomeException classified) {
+            if (effect && classified.outcome() == TaskResult.FAILED
+                && (gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramState.hasUnconfirmed(
+                    context.tasks(), task, server.id(), gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task), journal.events(task))
+                    || classified.problem().filter(problem -> problem.eventCode().equals("DEPLOYMENT_AGENT_TOOLCHAIN_EXECUTION_FAILED")).isPresent()
+                    && !gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainFailureEvidence.settledTrackedFailure(classified.problem()))) {
+                journal.state(task, "UNKNOWN");
+                throw new DeploymentAiJson.CapabilityOutcomeException(TaskResult.UNKNOWN, Optional.of(new Problem(ProblemCode.UNKNOWN,
+                    "DEPLOYMENT_AGENT_CONTROLLER_EFFECTS_UNCONFIRMED", "Original worker outcome lacks complete effect settlement",
+                    Map.of("task", task.id().toString()), Optional.of(task.id()))));
+            }
             if (effect && classified.outcome() != TaskResult.UNKNOWN)
                 journal.event(task, "CAPABILITY_RESULT", binding, classified.outcome().name());
             String diagnostic = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainFailureEvidence.observation(classified.problem());
@@ -1010,6 +1020,8 @@ public final class DeploymentAgentSession {
             remote.validateIsolationAdmission();
         } catch (gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.IsolationRefusal refused) {
             requireIsolationRefusal(refused);
+            throw refused;
+        } catch (DeploymentAgentAlternativeRequiredException refused) {
             throw refused;
         } catch (Exception uncertain) {
             journal.state(task, "UNKNOWN");
@@ -1327,7 +1339,7 @@ public final class DeploymentAgentSession {
                 throw new SecurityException("Protected source path");
         String binding = digest(old + ":" + patch);
         tools.validatePatch(task, candidate, patch);
-        models.reviewer().patch(patch);
+        models.reviewer().patch(candidate.workspace().candidateRoot(), patch);
         requireConfiguration();
         checkpoint();
         requireConfiguration();

@@ -450,8 +450,13 @@ public final class DeploymentAgentPublishRunner {
             && task.id().toString().equals(typed.problem().context().get("task"))) refusal = typed;
         else if (failure instanceof ApiException typed && typed.problem().code() == ProblemCode.ACCESS_DENIED
             && typed.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
-            && task.id().toString().equals(typed.problem().context().get("task")))
-            refusal = gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentAlternativeRequiredException.fromReview(task, typed);
+            && task.id().toString().equals(typed.problem().context().get("task"))) {
+            try {
+                refusal = gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentAlternativeRequiredException.fromReview(task, typed);
+            } catch (ApiException unconfirmedEvidence) {
+                failure = unconfirmedEvidence;
+            }
+        }
         if (refusal != null) {
             facts.put("kind", "APPROVAL_DENIED");
             facts.put("pendingInvocation", "NOT_SENT_AT_ORIGINAL_REVIEW_BOUNDARY");

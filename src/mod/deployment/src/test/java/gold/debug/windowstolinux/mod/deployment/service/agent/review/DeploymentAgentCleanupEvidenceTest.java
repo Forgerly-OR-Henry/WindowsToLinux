@@ -85,7 +85,11 @@ class DeploymentAgentCleanupEvidenceTest {
                 assertEquals(List.of("deployment.publication.original-status.v1", "deployment.publication.original-status.v1",
                     "deployment.publication.candidate-cleanup.v1", "deployment.agent.helper.v1"), frame.approvalOperations());
             }
-            assertEquals(frame.reviewFacts.size() * 2, frame.nativeRequests.size(), "Model-selected exact-request reads precede native verdicts");
+            assertEquals(frame.reviewFacts.size(), frame.nativeRequests.stream()
+                .filter(request -> request.messages().stream().noneMatch(message -> message.toolResult().isPresent())).count(),
+                "Every native review begins with its own exact-request read");
+            assertTrue(frame.nativeRequests.size() >= frame.reviewFacts.size() * 2,
+                "Exact-request reads and any required evidence pages precede native verdicts");
             assertTrue(frame.nativeRequests.stream().allMatch(request -> request.purpose() == AiPurpose.APPROVAL
                 && request.tools().stream().anyMatch(tool -> tool.name().equals("request"))));
             assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state(), "Review and cleanup cannot replace the original outcome");
@@ -145,6 +149,21 @@ class DeploymentAgentCleanupEvidenceTest {
             assertEquals(0, frame.statusQueries);
             assertEquals(0, frame.healthDispatches);
             assertEquals(0, frame.deletions);
+        }
+    }
+
+    @Test
+    void retainedControllerIntentBlocksFormalCleanupAndRecoveryBeforeAnyRemoteObservation() throws Exception {
+        try (var frame = new Frame()) {
+            frame.journal.event(frame.task, "CONTROLLER_PROGRAM_ACTION", "a".repeat(32), "{}");
+            var before = frame.journal.events(frame.task);
+            assertThrows(ApiException.class, frame::cleanup);
+            assertEquals(0, frame.statusQueries + frame.deletions + frame.absenceQueries);
+            var recovery = new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentRecovery(frame.context, frame.journal);
+            assertEquals(TaskResult.UNKNOWN, recovery.reconcile(frame.task, frame.journal.find(frame.task).orElseThrow()).outcome());
+            assertEquals(0, frame.statusQueries + frame.deletions + frame.absenceQueries);
+            assertEquals(before, frame.journal.events(frame.task));
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
         }
     }
 
@@ -214,10 +233,12 @@ class DeploymentAgentCleanupEvidenceTest {
     @Test
     void liveReceiptAndOriginalUnknownDeliveryReachOnlyTheNewCleanupReview() throws Exception {
         try (var frame = new Frame()) {
+            frame.nativeAgent = true;
             assertFalse(DeploymentAgentActionLog.effectsSettled(frame.journal.events(frame.task)));
             var before = frame.journal.events(frame.task);
             var result = frame.cleanup();
-            assertEquals(TaskResult.SUCCEEDED, result.outcome());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), () -> result + " operations=" + frame.approvalOperations()
+                + " deletions=" + frame.deletions + " absenceQueries=" + frame.absenceQueries);
             assertEquals(2, frame.statusQueries);
             assertEquals(1, frame.deletions);
             assertEquals(1, frame.absenceQueries);
@@ -227,6 +248,14 @@ class DeploymentAgentCleanupEvidenceTest {
             var evidence = cleanup.path("currentCommandEvidence");
             assertEquals(frame.status(false), evidence.at("/queryResult/stdout").asText());
             assertEquals(frame.lastStatusAction, evidence.at("/queryRequest/exactAction").asText());
+            assertEquals(Set.of(new ActionTarget(frame.server.id(), "deployment-release", frame.unit.releaseRoot()),
+                new ActionTarget(frame.server.id(), "deployment-candidate", frame.unit.layout().candidateRoot(frame.candidate.candidateId()))),
+                JSON.convertValue(cleanup.path("resourceTargets"), new com.fasterxml.jackson.core.type.TypeReference<Set<ActionTarget>>() { }));
+            assertEquals(Set.of(new ActionTarget(frame.server.id(), "deployment-release", frame.unit.releaseRoot()),
+                new ActionTarget(frame.server.id(), "deployment-candidate", frame.unit.layout().candidateRoot(frame.candidate.candidateId())),
+                new ActionTarget(frame.server.id(), "deployment-snapshot", frame.unit.layout().snapshotRoot(frame.unit.id(), frame.task.id())),
+                new ActionTarget(frame.server.id(), "deployment-application-locks", frame.unit.layout().applicationLockRoot(frame.unit.id()))),
+                JSON.convertValue(evidence.at("/queryRequest/resourceTargets"), new com.fasterxml.jackson.core.type.TypeReference<Set<ActionTarget>>() { }));
             assertEquals(0, evidence.at("/queryResult/exitCode").asInt());
             assertFalse(evidence.at("/queryResult/truncated").asBoolean());
             assertEquals("owned", evidence.at("/parsedStatus/candidate").asText());
@@ -333,7 +362,8 @@ class DeploymentAgentCleanupEvidenceTest {
             var evidence = frame.evidence();
             var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(frame.server, ARTIFACT, request)
                 .withSemantics(new ActionSemantics("deployment.publication.candidate-cleanup.v1",
-                    Set.of(new ActionTarget(frame.server.id(), "deployment-release", frame.unit.releaseRoot()))));
+                    Set.of(new ActionTarget(frame.server.id(), "deployment-release", frame.unit.releaseRoot()),
+                        new ActionTarget(frame.server.id(), "deployment-candidate", frame.unit.layout().candidateRoot(frame.candidate.candidateId())))));
             var grant = ((DeploymentCommandReview) evidence.context().interaction()).approveCommand(intent, request, frame.task);
             assertEquals(TaskResult.SUCCEEDED, grant.outcome());
             frame.changeBinding(type);
@@ -386,14 +416,19 @@ class DeploymentAgentCleanupEvidenceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"task", "server", "target", "revision", "timeout", "stdin"})
+    @ValueSource(strings = {"task", "server", "target", "revision", "timeout", "stdin", "missingCandidate", "candidate", "extra"})
     void supplementalEvidenceRejectsChangedIdentityOrRequest(String change) throws Exception {
         try (var frame = new Frame(); var request = frame.cleanupRequest(change)) {
             var evidence = frame.evidence();
             var server = change.equals("server") ? new ServerId("foreign") : frame.server;
+            var targets = new HashSet<ActionTarget>();
+            targets.add(new ActionTarget(server.id(), "deployment-release", change.equals("target") ? "/opt/foreign" : frame.unit.releaseRoot()));
+            if (!change.equals("missingCandidate")) targets.add(new ActionTarget(server.id(), "deployment-candidate",
+                change.equals("candidate") ? "/opt/foreign" : frame.unit.layout().candidateRoot(frame.candidate.candidateId())));
+            if (change.equals("extra")) targets.add(new ActionTarget(server.id(), "deployment-candidate", "/opt/extra"));
             var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server,
                 change.equals("revision") ? SOURCE : ARTIFACT, request).withSemantics(new ActionSemantics("deployment.publication.candidate-cleanup.v1",
-                Set.of(new ActionTarget(server.id(), "deployment-release", change.equals("target") ? "/opt/foreign" : frame.unit.releaseRoot()))));
+                targets));
             assertThrows(ApiException.class, () -> evidence.facts(intent, request, frame.task));
             assertEquals(0, frame.statusQueries);
             assertEquals(0, frame.deletions);
@@ -627,10 +662,40 @@ class DeploymentAgentCleanupEvidenceTest {
                 var facts = JSON.readTree(request.messages().getLast().text());
                 if (nativeAgent) {
                     nativeRequests.add(request);
-                    facts = facts.path("currentRequest");
+                    facts = JSON.readTree(request.messages().get(1).text()).path("currentRequest");
                     if (request.messages().stream().noneMatch(message -> message.toolResult().isPresent()))
                         return success(new AiResponse("", "controlled", "tool_calls", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
                             List.of(new AiToolCall("read-" + nativeRequests.size(), "request", "{\"part\":\"script\",\"offset\":0,\"limit\":8000}")), Optional.empty()));
+                    var envelope = JSON.readTree(request.messages().get(1).text());
+                    facts = envelope.path("currentRequest").deepCopy();
+                    for (var descriptor : envelope.path("evidencePages").properties()) {
+                        String pointer = descriptor.getKey();
+                        var delivered = new StringBuilder();
+                        for (var message : request.messages()) {
+                            if (message.toolResult().isEmpty()) continue;
+                            var receipt = message.toolResult().orElseThrow();
+                            var call = request.messages().stream().flatMap(value -> value.toolCalls().stream())
+                                .filter(value -> value.id().equals(receipt.callId())).findFirst().orElseThrow();
+                            var parameters = JSON.readTree(call.arguments());
+                            if (!call.name().equals("evidence") || !parameters.path("pointer").asText().equals(pointer)) continue;
+                            assertFalse(receipt.error());
+                            var response = JSON.readTree(receipt.text());
+                            assertEquals(envelope.path("reviewBinding"), response.path("reviewBinding"));
+                            var page = response.path("value");
+                            assertEquals(delivered.length(), page.path("offset").asInt());
+                            delivered.append(page.path("text").asText());
+                        }
+                        if (delivered.length() < descriptor.getValue().path("characters").asInt())
+                            return success(new AiResponse("", "controlled", "tool_calls", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
+                                List.of(new AiToolCall("evidence-" + nativeRequests.size(), "evidence", JSON.writeValueAsString(Map.of("pointer", pointer, "offset", delivered.length(), "limit", 8000)))), Optional.empty()));
+                        assertEquals(descriptor.getValue().path("characters").asInt(), delivered.length());
+                        assertEquals(descriptor.getValue().path("sha256").asText(), DeploymentAgentInputs.hash(delivered.toString()));
+                        int slash = pointer.lastIndexOf('/');
+                        var parent = facts.at(pointer.substring(0, slash));
+                        String member = pointer.substring(slash + 1).replace("~1", "/").replace("~0", "~");
+                        if (parent.isObject()) ((com.fasterxml.jackson.databind.node.ObjectNode) parent).put(member, delivered.toString());
+                        else ((com.fasterxml.jackson.databind.node.ArrayNode) parent).set(Integer.parseInt(member), JSON.getNodeFactory().textNode(delivered.toString()));
+                    }
                 }
                 reviewFacts.add(facts);
                 String operation = facts.path("operation").asText();

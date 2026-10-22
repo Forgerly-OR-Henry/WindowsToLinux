@@ -26,6 +26,59 @@ class DeploymentAgentInputCoverageTest {
 
     private static final String PREFIX = "/completeExecutableInput";
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void trackedRecipeAndActualControllerEachRequireCompleteDelivery(boolean inline) throws Exception {
+        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+        String operation = "a".repeat(32);
+        var argv = List.of("prepare", "GO", "1.24", "1.24.13", "90", "-", operation,
+            gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainReleaseTest
+                .encoded("GO", "1.24", "1.24.13", operation));
+        var recipe = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainTracked.create(
+            java.util.UUID.randomUUID().toString(), "server", "SHA256:" + "A".repeat(43), layout, "PREPARE", operation, argv, inline);
+        String source = inline
+            ? gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms.existingController(layout)
+            : gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms.controller(layout);
+        String raw = new String(recipe.bytes(), StandardCharsets.UTF_8);
+        String sourcePointer = inline ? PREFIX : "/agentToolchainInstalledInputBinding/controllerSource";
+        var facts = JSON.createObjectNode().put("inputKind", "TRACKED_TOOLCHAIN_REQUEST");
+        if (inline) facts.put("completeExecutableInput", source);
+        else facts.putObject("agentToolchainInstalledInputBinding").put("controllerSource", source);
+        facts.putObject("agentTrackedToolchain").put("recipeUtf8", raw).put("invocationKind", inline ? "EXISTING_INLINE" : "INSTALLED_LOADER");
+        String stdin = inline ? source + raw : raw;
+        try (var request = request("fixed reviewed launcher", stdin)) {
+            var coverage = new DeploymentAgentInputCoverage(request, facts);
+            coverage.delivered(input(coverage), ignored -> false);
+            if (!inline) {
+                deliverAll(coverage, "request", "stdin", raw);
+                assertFalse(coverage.complete(), "Recipe delivery cannot stand in for the actual executed controller");
+            }
+            deliverAll(coverage, "evidence", sourcePointer, source);
+            if (inline) {
+                assertFalse(coverage.complete(), "Controller source alone cannot stand in for the appended original recipe");
+                deliverAll(coverage, "evidence", "/agentTrackedToolchain/recipeUtf8", raw);
+            }
+            assertTrue(coverage.complete());
+            var changed = facts.deepCopy();
+            if (inline) changed.put("completeExecutableInput", source + "# changed\n");
+            else ((ObjectNode) changed.path("agentToolchainInstalledInputBinding")).put("controllerSource", source + "# changed\n");
+            assertThrows(IOException.class, () -> new DeploymentAgentInputCoverage(request, changed));
+        }
+        try (var changed = request("fixed reviewed launcher", stdin + " ")) {
+            assertThrows(IOException.class, () -> new DeploymentAgentInputCoverage(changed, facts));
+        }
+        if (inline) try (var request = request("fixed reviewed launcher", stdin)) {
+            var coverage = new DeploymentAgentInputCoverage(request, facts);
+            deliverAll(coverage, "request", "stdin", stdin);
+            assertTrue(coverage.complete(), "The exact full stdin really contains both the source and recipe");
+        }
+    }
+
+    private static void deliverAll(DeploymentAgentInputCoverage coverage, String tool, String route, String body) {
+        for (int start = 0; start < body.length(); start += 8000)
+            deliver(coverage, tool, route, body, start, Math.min(start + 8000, body.length()));
+    }
+
     private static CommandRequest request(String script, String stdin) {
         return new CommandRequest(script, stdin.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(5), 8192);
     }
@@ -35,7 +88,7 @@ class DeploymentAgentInputCoverageTest {
     }
 
     private static JsonNode input(DeploymentAgentInputCoverage coverage) {
-        return JSON.valueToTree(Map.of("executableInput", coverage.inlineInput(), "currentRequest", Map.of()));
+        return JSON.valueToTree(Map.of("executableInput", coverage.inlineInput(512, DeploymentAgentInputCoverage.INLINE_PAYLOAD_BYTES), "currentRequest", Map.of()));
     }
 
     private static Map<String, Object> page(String original, int start, int end) {
@@ -62,6 +115,54 @@ class DeploymentAgentInputCoverageTest {
         value.put("sha256", DeploymentAgentInputs.hash(executable));
         value.put("utf8Bytes", executable.getBytes(StandardCharsets.UTF_8).length);
         return value;
+    }
+
+    @Test
+    void onePageInlineBodiesShareRawAndEncodedBudgets() throws Exception {
+        for (String body : List.of("x".repeat(7000), "中".repeat(5000), "\u0001".repeat(3000), "🙂".repeat(4000))) {
+            try (var request = request("printf actual", body)) {
+                var coverage = new DeploymentAgentInputCoverage(request, facts(body));
+                var inline = JSON.valueToTree(coverage.inlineInput(8000, 14000));
+                assertTrue(JSON.writeValueAsBytes(inline).length <= 14000);
+                int chars = inline.path("script").path("text").asText().length() + inline.path("stdin").path("text").asText().length();
+                assertTrue(chars <= 8000);
+                if (body.startsWith("x")) assertEquals(body, inline.at("/stdin/text").asText());
+                else
+                    assertFalse(inline.path("stdin").has("text"), "No partial text may stand in for the original body");
+                assertEquals(body.length(), inline.at("/stdin/total").asInt());
+                assertFalse(coverage.complete(), "Presentation alone is not delivery");
+                System.out.println("APP_INLINE_MEASUREMENT originalUtf16=" + body.length() + " encodedUtf8Bytes=" + JSON.writeValueAsBytes(inline).length + " bodyPreloaded=" + inline.path("stdin").has("text"));
+            }
+        }
+        try (var request = request("s".repeat(4100), "i".repeat(4100))) {
+            var coverage = new DeploymentAgentInputCoverage(request, facts("i".repeat(4100)));
+            var inline = JSON.valueToTree(coverage.inlineInput(8000, 14000));
+            assertTrue(inline.path("script").has("text"));
+            assertFalse(inline.path("stdin").has("text"));
+        }
+        try (var request = request("printf actual", "x".repeat(8001))) {
+            var coverage = new DeploymentAgentInputCoverage(request, facts("x".repeat(8001)));
+            assertFalse(JSON.valueToTree(coverage.inlineInput(8000, 14000)).path("stdin").has("text"));
+            assertThrows(IllegalArgumentException.class, () -> coverage.inlineInput(8001, 14000));
+            assertThrows(IllegalArgumentException.class, () -> coverage.inlineInput(8000, 1));
+        }
+    }
+
+    @Test
+    void inlinePresentationDoesNotManufactureDeliveryAcrossFailures() throws Exception {
+        String original = "#complete public input\n" + "x".repeat(1200);
+        try (var request = request("printf actual", original)) {
+            var coverage = new DeploymentAgentInputCoverage(request, facts(original));
+            var shown = JSON.valueToTree(Map.of("executableInput", coverage.inlineInput(8000, 14000), "currentRequest", Map.of()));
+            assertFalse(coverage.complete());
+            coverage.delivered(JSON.createObjectNode(), result -> false);
+            assertFalse(coverage.complete(), "Failed, cancelled or absent fixed evidence cannot confirm inline input");
+            coverage.delivered(shown, result -> false);
+            assertTrue(coverage.complete());
+            var fresh = new DeploymentAgentInputCoverage(request, facts(original));
+            assertFalse(fresh.complete());
+            assertFalse(JSON.valueToTree(fresh.inlineInput(512, 14000)).path("stdin").has("text"));
+        }
     }
 
     @ParameterizedTest
@@ -194,7 +295,7 @@ class DeploymentAgentInputCoverageTest {
     void protectedOpaqueBytesStayOpaqueAndMissingClassificationOrChangedReconstructionCloses() throws Exception {
         try (var request = new CommandRequest("printf actual", new byte[]{(byte) 0xff, 0, 1}, Duration.ofSeconds(5), 8192)) {
             var coverage = new DeploymentAgentInputCoverage(request, JSON.valueToTree(Map.of("inputKind", "OPAQUE_BOUND_DATA")));
-            assertFalse(JSON.writeValueAsString(coverage.inlineInput()).contains("stdin"));
+            assertFalse(JSON.writeValueAsString(coverage.inlineInput(512, DeploymentAgentInputCoverage.INLINE_PAYLOAD_BYTES)).contains("stdin"));
             coverage.delivered(input(coverage), result -> false);
             assertTrue(coverage.complete());
             assertThrows(IOException.class, () -> new DeploymentAgentInputCoverage(request, JSON.createObjectNode()));
@@ -208,4 +309,63 @@ class DeploymentAgentInputCoverageTest {
             assertThrows(IOException.class, () -> new DeploymentAgentInputCoverage(request, facts("different original stdin")));
         }
     }
+    @Test
+    void recoveryInstallerRequiresEveryLeafAfterActualDelivery() throws Exception {
+        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+        var program = new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram(layout);
+        var unit = gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitIdentity
+            .forManaged("backend", new gold.debug.windowstolinux.appapi.server.model.ServerId("original-host"), "a".repeat(64), layout);
+        JsonNode structure = JSON.valueToTree(program.installationEvidence());
+        var leaves = List.of("/sources/bash", "/sources/loader", "/derived/controller/segments/0/text",
+            "/derived/controller/segments/2/text", "/segments/0/text", "/segments/2/text", "/segments/4/text");
+        try (var original = program.install(unit, java.util.UUID.randomUUID(), java.util.UUID.randomUUID())) {
+            var current = facts(program.installer()).put("operation",
+                gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.INSTALL);
+            current.set("completeExecutableInput", structure);
+            for (String missing : leaves) {
+                var coverage = new DeploymentAgentInputCoverage(original.command(), current);
+                for (String pointer : leaves) if (!pointer.equals(missing)) deliverRecoveryLeaf(coverage, structure, pointer);
+                assertFalse(coverage.complete(), missing);
+                coverage.returned("save_review_notes", JSON.createObjectNode(), Map.of("summary", "All sources reviewed"), "notes");
+                coverage.delivered(input(coverage), "notes"::equals);
+                assertFalse(coverage.complete(), "Notes and descriptors cannot fill " + missing);
+                deliverRecoveryLeaf(coverage, structure, missing);
+                assertTrue(coverage.complete());
+                assertEquals("NONE", JSON.valueToTree(coverage.missing()).path("authority").asText());
+                var fresh = new DeploymentAgentInputCoverage(original.command(), current);
+                assertFalse(fresh.complete(), "New reviews inherit neither delivery nor authority");
+            }
+            assertThrows(IOException.class, () -> new DeploymentAgentInputCoverage(original.command(), current.deepCopy().put("operation", "other")));
+        }
+        try (var rollback = program.guardedFirstRollback(unit, java.util.UUID.randomUUID(), java.util.UUID.randomUUID(),
+            "backend-0123456789abcdef", "b".repeat(64), "c".repeat(64), java.util.UUID.randomUUID())) {
+            var current = facts(""); current.put("operation",
+                gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.ROLLBACK);
+            current.putObject("publicationRecoveryProgram").set("sourceView", JSON.valueToTree(program.rollbackSourceEvidence()));
+            var coverage = new DeploymentAgentInputCoverage(rollback.command(), current);
+            var view = current.at("/publicationRecoveryProgram/sourceView");
+            for (String pointer : List.of("/sources/bash", "/sources/loader", "/derived/controller/segments/0/text", "/derived/controller/segments/2/text")) {
+                String body = view.at(pointer).textValue();
+                deliver(coverage, "evidence", "/publicationRecoveryProgram/sourceView" + pointer, body, 0, body.length());
+            }
+            assertFalse(coverage.complete(), "Non-stdin source view cannot fill the actual loader script gap");
+            String script = rollback.command().script();
+            deliver(coverage, "request", "script", script, 0, script.length());
+            assertTrue(coverage.complete(), "Only the actual current script satisfies its executable delivery gate");
+        }
+    }
+
+    private static void deliverRecoveryLeaf(DeploymentAgentInputCoverage coverage, JsonNode structure, String pointer) throws Exception {
+        String body = structure.at(pointer).textValue(); assertTrue(body != null && !body.isEmpty());
+        for (int start = 0; start < body.length();) {
+            int end = Math.min(body.length(), start + 8000);
+            while (JSON.writeValueAsString(Map.of("trust", "UNTRUSTED_DATA", "reviewBinding", "a".repeat(64),
+                "value", page(body, start, end))).length() > 14000) {
+                end = start + (end - start) / 2; assertTrue(end > start);
+            }
+            deliver(coverage, "evidence", PREFIX + pointer, body, start, end);
+            start = end;
+        }
+    }
+
 }

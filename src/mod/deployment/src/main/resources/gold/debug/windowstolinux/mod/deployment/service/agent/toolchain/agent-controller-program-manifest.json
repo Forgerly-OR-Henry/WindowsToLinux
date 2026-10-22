@@ -1,0 +1,7 @@
+{
+  "revision" : "WTL_AGENT_CONTROLLER_STORE_1",
+  "defaultControllerSha256" : "9cd73cbb2a80d77638cf60da0246b391bf4f59935b7982c6662a02f6da3f9e9e",
+  "loaderTemplateSha256" : "d04eca875afd038c58b44cd4699470a9f384136ad7cec5c122942d6e0bc204be",
+  "installerTemplateSha256" : "4c25923129cf686edcd50edab7ed947cd966c92ea590a68f2d79aeb20364ec6a",
+  "contractSha256" : "9c1fe4e5c2d5919f55e2e74d4685e615f36b2302eedeb674047034b64dc7deb7"
+}

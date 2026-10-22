@@ -41,11 +41,17 @@ public final class DeploymentAgentAlternativeRequiredException extends ApiExcept
     }
 
     /** Called only at an actual approval boundary before any dispatch or grant. */
-    public static DeploymentAgentAlternativeRequiredException fromReview(TaskContext task, ApiException denied) {
+    public static DeploymentAgentAlternativeRequiredException fromReview(TaskContext task, ApiException denied) throws ApiException {
         if (denied.problem().code() != ProblemCode.ACCESS_DENIED
             || !denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
             || !task.id().toString().equals(denied.problem().context().get("task")))
             throw new IllegalArgumentException("Refusal is not an original unsent review");
+        if (denied.getSuppressed().length != 0) {
+            var unknown = new ApiException(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_REFUSAL_EVIDENCE_UNCONFIRMED",
+                "Original refusal evidence could not be persisted", Map.of("task", task.id().toString()), Optional.of(task.id())));
+            unknown.initCause(denied);
+            throw unknown;
+        }
         var data = new java.util.LinkedHashMap<String, String>();
         for (String key : java.util.List.of("missingEvidence", "adjustments", "candidateCommands", "reviewBinding", "discussionStatus")) {
             String value = denied.problem().context().get(key);

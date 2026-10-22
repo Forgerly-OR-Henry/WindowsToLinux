@@ -10,6 +10,9 @@ import selectors
 import stat
 
 AGENT_VOLUME_BYTES = 8 * 1024 * 1024 * 1024
+# A matched installation needs bounded writable probe scratch, not a cold-install volume.
+# This fixed quota is not a claim that every vendor probe fits; exhaustion never grows/retries it.
+AGENT_PROBE_VOLUME_BYTES = 64 * 1024 * 1024
 AGENT_HOST_RESERVE_BYTES = 1024 * 1024 * 1024
 AGENT_SYSTEM_COMMANDS = frozenset(('fallocate', 'findmnt', 'losetup', 'mkfs.ext4', 'mke2fs',
     'mount', 'systemctl', 'systemd-run', 'umount', 'UNCLASSIFIED'))
@@ -32,7 +35,8 @@ AGENT_LIFECYCLE_CODES = frozenset(('UNCLASSIFIED', 'SETUP_NOT_COMPLETED', 'UNIT_
     'MANIFEST_INODE', 'MANIFEST_DIRECTORIES', 'MANIFEST_DIRECTORY_INODE', 'INSTALL_SCHEMA', 'INSTALL_LAYOUT',
     'INSTALL_SOURCE', 'INSTALL_GEM', 'PROBE_SCHEMA', 'PROBE_COUNT', 'PROBE_RECORD', 'SELECTION',
     'SELECTION_DIRECTORY', 'MANAGED_DIRECTORY', 'VOLUME_IMAGE', 'VOLUME_IMAGE_CHANGED', 'VOLUME_LOOP_OWNER',
-    'VOLUME_MOUNT', 'VOLUME_NOT_FROZEN', 'VOLUME_MOUNT_CHANGED', 'REQUIRED_SYSTEM_TOOL', 'SYSTEM_COMMAND_FAILED',
+    'VOLUME_MOUNT', 'VOLUME_NOT_FROZEN', 'VOLUME_MOUNT_CHANGED', 'VOLUME_POLICY', 'MANIFEST_SELECTIONS',
+    'INSTALLATION_SELECTION_CHANGED', 'REQUIRED_SYSTEM_TOOL', 'SYSTEM_COMMAND_FAILED',
     'SYSTEM_COMMAND_TIMEOUT', 'SYSTEM_COMMAND_OUTPUT_LIMIT', 'DEADLINE_EXHAUSTED', 'UNIT_STATE_UNCONFIRMED',
     'UNIT_NOT_STOPPED', 'CGROUP_NOT_EMPTY', 'FREEZE_REQUIRES_ROOT', 'FREEZE_IDENTITY', 'FREEZE_DIRECTORY_CHANGED',
     'FREEZE_RECEIPT'))
@@ -55,7 +59,8 @@ AGENT_DIAGNOSTIC_FUNCTIONS = frozenset(('agent_main', 'agent_prepare', 'agent_cr
     'agent_cleanup_placeholder', 'agent_os', 'agent_tool', 'agent_regular', 'agent_write',
     'agent_record', 'agent_identity', 'agent_scan', 'agent_copy_tree', 'agent_require_space',
     'agent_unit_identity', 'agent_ready_file', 'agent_publish_ready', 'agent_wait_ready',
-    'agent_unit_stopped', 'agent_stopped', 'agent_manifest', 'entry'))
+    'agent_unit_stopped', 'agent_stopped', 'agent_manifest', 'agent_volume_bytes',
+    'agent_selection_snapshot', 'agent_validate_snapshot', 'agent_verify_selection', 'agent_verify_selections', 'entry'))
 
 
 def remaining():
@@ -175,11 +180,16 @@ def agent_tool(name):
 def agent_os(command, allow_failure=False, timeout=None, on_poll=None):
     """Root executes only product-selected OS administration tools, never a vendor path."""
     deadline = time.monotonic() + (timeout if timeout is not None else remaining())
+    tracked = globals().get('AGENT_TRACKED_CONTEXT')
+    inherited = {'pass_fds': (tracked['fd'],)} if tracked is not None else {}
+    spawn = agent_tracked_spawn() if tracked is not None and not tracked.get('readOnly', False) else None
     process = subprocess.Popen(command, cwd='/', stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'},
-                               start_new_session=True)
+                               start_new_session=True, **inherited)
     output = bytearray()
     try:
+        if tracked is not None:
+            agent_tracked_child(process, spawn=spawn)
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
             while selector.get_map():
@@ -217,6 +227,8 @@ def agent_os(command, allow_failure=False, timeout=None, on_poll=None):
                 pass
         process.wait()
         process.stdout.close()
+        if tracked is not None:
+            agent_tracked_child(process, ended=True)
 
 
 def agent_unit(operation):
@@ -240,8 +252,8 @@ def agent_manifest(operation, alias=False):
     owned_directory(base)
     manifest = agent_json(agent_regular(base / 'manifest.json'))
     fields = {'format', 'operation', 'programSha256', 'seconds', 'deadline', 'action', 'request',
-              'directories', 'loop', 'imageIdentity', 'mountIdentity', 'readyIdentity'}
-    if not isinstance(manifest, dict) or set(manifest) != fields or manifest['format'] != 'WTL_AGENT_TOOLCHAIN_1':
+              'directories', 'loop', 'imageIdentity', 'mountIdentity', 'readyIdentity', 'volumeMode', 'volumeBytes', 'selections'}
+    if not isinstance(manifest, dict) or set(manifest) != fields or manifest['format'] != 'WTL_AGENT_TOOLCHAIN_2':
         agent_reject('MANIFEST_SCHEMA')
     if manifest['operation'] != operation or not agent_hash(manifest['programSha256']):
         agent_reject('MANIFEST_BINDING')
@@ -254,6 +266,8 @@ def agent_manifest(operation, alias=False):
         agent_reject('MANIFEST_DEADLINE')
     if manifest['action'] not in ('INSTALL', 'PROBE'):
         agent_reject('MANIFEST_ACTION')
+    if type(manifest['volumeBytes']) is not int or manifest['volumeBytes'] != agent_volume_bytes(manifest['volumeMode']) or manifest['volumeMode'] == 'PROBE' and manifest['action'] != 'PROBE':
+        agent_reject('VOLUME_POLICY')
     if not isinstance(manifest['loop'], str) or not re.fullmatch('/dev/loop[0-9]+', manifest['loop']):
         agent_reject('MANIFEST_LOOP')
     for key in ('imageIdentity', 'mountIdentity', 'readyIdentity'):
@@ -287,6 +301,27 @@ def agent_manifest(operation, alias=False):
             if not isinstance(probe, dict) or set(probe) != {'ecosystem', 'version', 'directory'}:
                 agent_reject('PROBE_RECORD')
             agent_selection(probe['ecosystem'], probe['version'], probe['directory'], managed=False)
+    selections = manifest['selections']
+    if not isinstance(selections, dict) or set(selections) != {'probes', 'javaHome'} or not isinstance(selections['probes'], list):
+        agent_reject('MANIFEST_SELECTIONS')
+    selected = selections['probes']
+    if manifest['action'] == 'INSTALL':
+        if selected or manifest['volumeMode'] != 'INSTALL':
+            agent_reject('MANIFEST_SELECTIONS')
+    elif len(selected) != len(request['probes']):
+        agent_reject('MANIFEST_SELECTIONS')
+    for index, selection in enumerate(selected):
+        agent_validate_snapshot(selection)
+        if {key: selection['record'][key] for key in ('ecosystem', 'version', 'directory')} != request['probes'][index]:
+            agent_reject('MANIFEST_SELECTIONS')
+    java = selections['javaHome']
+    if request['javaHome'] == '-':
+        if java is not None:
+            agent_reject('MANIFEST_SELECTIONS')
+    else:
+        agent_validate_snapshot(java)
+        if java['record']['ecosystem'] != 'JAVA' or java['record']['directory'] != request['javaHome']:
+            agent_reject('MANIFEST_SELECTIONS')
     return manifest
 
 
@@ -308,12 +343,13 @@ def agent_volume(manifest, require_ro=False):
     owned_directory(base)
     image = base / 'volume.ext4'
     info = image.lstat()
-    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077 or info.st_nlink != 1 or info.st_size != AGENT_VOLUME_BYTES:
+    expected_bytes = agent_volume_bytes(manifest['volumeMode'])
+    if type(manifest['volumeBytes']) is not int or manifest['volumeBytes'] != expected_bytes or not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077 or info.st_nlink != 1 or info.st_size != expected_bytes:
         agent_reject('VOLUME_IMAGE')
     if [info.st_dev, info.st_ino] != manifest['imageIdentity']:
         agent_reject('VOLUME_IMAGE_CHANGED')
-    _, output = agent_os([agent_tool('losetup'), '--noheadings', '--raw', '--output', 'BACK-FILE', manifest['loop']])
-    if output.strip().decode() != str(image):
+    _, output = agent_os([agent_tool('losetup'), '--noheadings', '--raw', '--output', 'BACK-FILE,SIZELIMIT', manifest['loop']])
+    if output.decode().strip().split() != [str(image), str(expected_bytes)]:
         agent_reject('VOLUME_LOOP_OWNER')
     _, output = agent_os([agent_tool('findmnt'), '-rn', '-M', str(base / 'mutable'), '-o', 'SOURCE,FSTYPE,OPTIONS'])
     parts = output.decode().strip().split()
@@ -407,7 +443,12 @@ def agent_publish_ready(manifest, identity):
     if agent_unit_identity(manifest) != identity:
         agent_reject('UNIT_IDENTITY_CHANGED', 'unknown')
     value = {'operation': manifest['operation'], 'programSha256': manifest['programSha256'], **identity}
+    if globals().get('AGENT_TRACKED_CONTEXT') is not None:
+        group = pathlib.Path('/sys/fs/cgroup/system.slice') / agent_unit(manifest['operation'])
+        agent_tracked_step('UNIT_READY', dict(identity, groupIdentity=agent_identity(group)))
     agent_ready_file(manifest, agent_encode(value))
+    if globals().get('AGENT_TRACKED_CONTEXT') is not None:
+        agent_tracked_step('UNIT_READY', dict(identity, groupIdentity=agent_identity(group)), True)
 
 
 def agent_wait_ready(manifest):
@@ -561,6 +602,8 @@ def agent_execute(manifest):
             agent_publish_ready(manifest, identity)
             setup_complete = True
         stage = 'RUN'
+    if globals().get('AGENT_TRACKED_CONTEXT') is not None:
+        agent_tracked_step('UNIT_START', {'unit': agent_unit(manifest['operation'])})
     agent_write(agent_operation(manifest['operation']) / 'start-intent.json', agent_encode({
         'operation': manifest['operation'], 'programSha256': manifest['programSha256']}))
     try:
@@ -572,6 +615,8 @@ def agent_execute(manifest):
         observation = getattr(error, 'run_observation', observation)
     finally:
         try:
+            if globals().get('AGENT_TRACKED_CONTEXT') is not None:
+                agent_tracked_unit(AGENT_TRACKED_CONTEXT['state'])
             agent_os([agent_tool('systemctl'), 'stop', agent_unit(manifest['operation'])], allow_failure=True, timeout=30)
             agent_unit_stopped(manifest)
         except Exception as error:
@@ -682,6 +727,7 @@ def agent_worker(operation):
             agent_reject('WORKER_DIRECTORY')
     os.chdir(str(AGENT_ALIAS / 'work'))
     request = manifest['request']
+    agent_verify_selections(manifest)
     if manifest['action'] == 'PROBE':
         for selected in request['probes']:
             agent_probe(selected['ecosystem'], selected['directory'], selected['version'], request['javaHome'])
@@ -731,7 +777,15 @@ def agent_installation_key(ecosystem, version, digest):
     return hashlib.sha256((ecosystem + '\n' + version + '\n' + digest + suffix).encode()).hexdigest()
 
 
-def agent_require_space(path, operation, stage, entries=None):
+def agent_volume_bytes(mode):
+    if mode == 'INSTALL':
+        return AGENT_VOLUME_BYTES
+    if mode == 'PROBE':
+        return AGENT_PROBE_VOLUME_BYTES
+    agent_reject('VOLUME_POLICY')
+
+
+def agent_require_space(path, operation, stage, entries=None, volume_mode='INSTALL'):
     owned_directory(path)
     filesystem = os.statvfs(str(path))
     block = filesystem.f_frsize
@@ -739,8 +793,8 @@ def agent_require_space(path, operation, stage, entries=None):
     if type(block) is not int or not 1 <= block <= 1024 * 1024 or type(available) is not int or not 0 <= available <= 2 ** 63 - 1:
         agent_reject('FILESYSTEM_SPACE_UNCONFIRMED', 'unknown')
     if stage == 'VOLUME' and entries is None:
-        requested = AGENT_VOLUME_BYTES
-    elif stage == 'PROMOTION' and isinstance(entries, dict):
+        requested = agent_volume_bytes(volume_mode)
+    elif stage == 'PROMOTION' and isinstance(entries, dict) and volume_mode == 'INSTALL':
         requested = sum(((info.st_size + block - 1) // block) * block for info, _ in entries.values() if stat.S_ISREG(info.st_mode))
         requested += len(entries) * block
     else:
@@ -753,15 +807,18 @@ def agent_require_space(path, operation, stage, entries=None):
         raise error
 
 
-def agent_create(operation, seconds):
+def agent_create(operation, seconds, volume_mode='INSTALL'):
     import pwd
     if os.geteuid() != 0:
         agent_reject('CONTROLLER_REQUIRES_ROOT')
+    volume_bytes = agent_volume_bytes(volume_mode)
     base = agent_operation(operation)
     for path in (ROOT, ROOT / 'versions', ROOT / 'bindings', ROOT / 'work'):
         owned_directory(path)
         path.mkdir(mode=0o755 if path.name != 'work' else 0o700, parents=True, exist_ok=True)
-    if base.exists() or base.is_symlink():
+    tracked = globals().get('AGENT_TRACKED_CONTEXT')
+    if (base.exists() or base.is_symlink()) and not (tracked is not None and tracked['base'] == base
+            and not tracked['state']['steps'].get('IMAGE_CREATE')):
         agent_reject('OPERATION_ALREADY_EXISTS', 'unknown')
     _, state = agent_os([agent_tool('systemctl'), 'show', '--value', '--property=LoadState', agent_unit(operation)], allow_failure=True)
     if state.strip() != b'not-found':
@@ -778,27 +835,57 @@ def agent_create(operation, seconds):
     controllers = pathlib.Path('/sys/fs/cgroup/cgroup.controllers').read_text().split()
     if not {'memory', 'pids'} <= set(controllers):
         agent_reject('CGROUP_V2_REQUIRED')
-    agent_require_space(base.parent, operation, 'VOLUME')
-    base.mkdir(mode=0o755)
-    agent_write(base / 'controller.py', source)
-    agent_write(base / 'identity.json', agent_encode({'operation': operation, 'uid': 0, 'gid': 0, 'programSha256': hashlib.sha256(source).hexdigest()}))
-    agent_write(base / 'ready.json', b'')
+    agent_require_space(base.parent, operation, 'VOLUME', volume_mode=volume_mode)
+    if tracked is None:
+        base.mkdir(mode=0o755)
+        agent_write(base / 'controller.py', source)
+        agent_write(base / 'identity.json', agent_encode({'operation': operation, 'uid': 0, 'gid': 0, 'programSha256': hashlib.sha256(source).hexdigest()}))
+        agent_write(base / 'ready.json', b'')
+    else:
+        agent_tracked_owned(base, True, tracked['creation']['baseIdentity'])
+        agent_tracked_check(agent_tracked_read(base / 'controller.py', AGENT_MAX_PROGRAM) == source, 'IDENTITY_MISMATCH')
     ready = (base / 'ready.json').lstat()
     image = base / 'volume.ext4'
+    if tracked is not None:
+        agent_tracked_step('IMAGE_CREATE', {'path': 'volume.ext4', 'volumeMode': volume_mode, 'volumeBytes': volume_bytes})
     agent_write(image, b'', 0o600)
-    agent_os([agent_tool('fallocate'), '-l', str(AGENT_VOLUME_BYTES), '--', str(image)])
-    agent_os([agent_tool('mkfs.ext4'), '-q', '-F', '-m', '0', '-E', 'nodiscard,lazy_itable_init=0,lazy_journal_init=0', str(image)])
-    _, output = agent_os([agent_tool('losetup'), '--find', '--show', '--nooverlap', '--sizelimit', str(AGENT_VOLUME_BYTES), str(image)])
+    if tracked is not None:
+        agent_tracked_step('IMAGE_CREATE', {'path': 'volume.ext4', 'volumeMode': volume_mode,
+            'volumeBytes': volume_bytes, 'identity': agent_identity_file(image)}, True)
+        agent_tracked_step('ALLOCATE', {'bytes': volume_bytes})
+    agent_os([agent_tool('fallocate'), '-l', str(volume_bytes), '--', str(image)])
+    if tracked is not None:
+        agent_tracked_step('ALLOCATE', {'bytes': volume_bytes}, True)
+        agent_tracked_step('MKFS', {'uuid': operation})
+    filesystem_uuid = ['-U', str(uuid.UUID(operation))] if tracked is not None else []
+    agent_os([agent_tool('mkfs.ext4'), '-q', '-F', '-m', '0', '-E', 'nodiscard,lazy_itable_init=0,lazy_journal_init=0'] + filesystem_uuid + [str(image)])
+    if tracked is None:
+        _, output = agent_os([agent_tool('losetup'), '--find', '--show', '--nooverlap', '--sizelimit', str(volume_bytes), str(image)])
+    else:
+        agent_tracked_step('MKFS', {'uuid': operation}, True)
+        _, output = agent_os([agent_tool('losetup'), '--find'])
+        candidate = output.decode().strip()
+        loop = agent_tracked_loop_candidate(candidate, volume_bytes)
+        agent_tracked_step('LOOP_ATTACH', loop)
+        agent_os([agent_tool('losetup'), '--nooverlap', '--sizelimit', str(volume_bytes), candidate, str(image)])
+        agent_tracked_check(agent_tracked_loop(candidate) == dict(device=candidate, rdev=loop['rdev'],
+            backingIdentity=agent_identity_file(image), offset=0, sizeLimit=volume_bytes), 'RESOURCE_CHANGED')
+        agent_tracked_step('LOOP_ATTACH', loop, True)
     device = output.decode().strip()
     if not re.fullmatch('/dev/loop[0-9]+', device):
         agent_reject('LOOP_IDENTITY', 'unknown')
     (base / 'mutable').mkdir(mode=0o755)
+    if tracked is not None:
+        agent_tracked_step('MOUNT', {'directoryIdentity': agent_identity(base / 'mutable')})
     agent_os([agent_tool('mount'), '-t', 'ext4', '-o', 'nodev,nosuid', device, str(base / 'mutable')])
+    if tracked is not None:
+        agent_tracked_step('MOUNT', agent_tracked_capture_mount(base / 'mutable'), True)
     for name in ('input', 'out', 'work', 'home', 'tmp'):
         (base / 'mutable' / name).mkdir(mode=0o755)
     info = image.lstat()
-    return {'format': 'WTL_AGENT_TOOLCHAIN_1', 'operation': operation, 'programSha256': hashlib.sha256(source).hexdigest(),
+    return {'format': 'WTL_AGENT_TOOLCHAIN_2', 'operation': operation, 'programSha256': hashlib.sha256(source).hexdigest(),
             'seconds': seconds, 'deadline': int(DEADLINE), 'action': '', 'request': {},
+             'volumeMode': volume_mode, 'volumeBytes': volume_bytes, 'selections': {'probes': [], 'javaHome': None},
             'directories': {name: agent_identity(base / 'mutable' / name) for name in ('out', 'work', 'home', 'tmp')},
             'loop': device, 'imageIdentity': [info.st_dev, info.st_ino], 'mountIdentity': agent_identity(base / 'mutable'),
             'readyIdentity': [ready.st_dev, ready.st_ino]}
@@ -945,7 +1032,11 @@ def agent_promote(manifest, destination, original, record):
     temporary = ROOT / 'versions' / ('.agent-promote-' + manifest['operation'])
     if temporary.exists() or temporary.is_symlink():
         agent_reject('PROMOTION_ALREADY_EXISTS', 'unknown')
+    if globals().get('AGENT_TRACKED_CONTEXT') is not None:
+        agent_tracked_step('PROMOTION_CREATE', {'parentIdentity': agent_identity(temporary.parent)})
     temporary.mkdir(mode=0o700)
+    if globals().get('AGENT_TRACKED_CONTEXT') is not None:
+        agent_tracked_step('PROMOTION_CREATE', {'parentIdentity': agent_identity(temporary.parent), 'identity': agent_identity(temporary)}, True)
     source_fd = os.open(str(agent_operation(manifest['operation']) / 'mutable/out'), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     target_fd = os.open(str(temporary), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
@@ -965,12 +1056,18 @@ def agent_promote(manifest, destination, original, record):
     agent_detach(manifest)
     if agent_identity(destination) != original or list(destination.iterdir()):
         agent_reject('PROMOTION_TARGET_CHANGED', 'unknown')
+    if globals().get('AGENT_TRACKED_CONTEXT') is not None:
+        agent_tracked_step('PROMOTION_PUBLISH', {'identity': agent_identity(temporary),
+            'markerSha256': hashlib.sha256(agent_regular(temporary / '.w2l-toolchain.json')).hexdigest()})
     os.rename(str(temporary), str(destination))
     fd = os.open(str(ROOT / 'versions'), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.fsync(fd)
     finally:
         os.close(fd)
+    if globals().get('AGENT_TRACKED_CONTEXT') is not None:
+        agent_tracked_step('PROMOTION_PUBLISH', {'identity': agent_identity(destination),
+            'markerSha256': hashlib.sha256(agent_regular(destination / '.w2l-toolchain.json')).hexdigest()}, True)
 
 
 def agent_record(directory):
@@ -1030,10 +1127,53 @@ def agent_publish_manifest(manifest):
     return agent_manifest(manifest['operation'])
 
 
+def agent_selection_snapshot(record):
+    directory = pathlib.Path(record['directory'])
+    identity = agent_identity(directory)
+    data = agent_regular(directory / '.w2l-toolchain.json')
+    if agent_json(data) != record or agent_identity(directory) != identity:
+        agent_reject('INSTALLATION_SELECTION_CHANGED', 'unknown')
+    return {'record': agent_json(agent_encode(record)), 'directoryIdentity': identity,
+            'markerSha256': hashlib.sha256(data).hexdigest()}
+
+
+def agent_validate_snapshot(selection):
+    if not isinstance(selection, dict) or set(selection) != {'record', 'directoryIdentity', 'markerSha256'}:
+        agent_reject('MANIFEST_SELECTIONS')
+    record, identity = selection['record'], selection['directoryIdentity']
+    if not isinstance(record, dict) or not {'ecosystem', 'version', 'directory'} <= set(record) or not agent_hash(selection['markerSha256']):
+        agent_reject('MANIFEST_SELECTIONS')
+    agent_selection(record['ecosystem'], record['version'], record['directory'])
+    if not isinstance(identity, list) or len(identity) != 2 or any(type(value) is not int or value <= 0 for value in identity):
+        agent_reject('MANIFEST_SELECTIONS')
+
+
+def agent_verify_selection(selection):
+    agent_validate_snapshot(selection)
+    directory = pathlib.Path(selection['record']['directory'])
+    if agent_identity(directory) != selection['directoryIdentity']:
+        agent_reject('INSTALLATION_SELECTION_CHANGED', 'unknown')
+    record = agent_record(directory)
+    data = agent_regular(directory / '.w2l-toolchain.json')
+    if record != selection['record'] or agent_json(data) != record or hashlib.sha256(data).hexdigest() != selection['markerSha256'] or agent_identity(directory) != selection['directoryIdentity']:
+        agent_reject('INSTALLATION_SELECTION_CHANGED', 'unknown')
+
+
+def agent_verify_selections(manifest):
+    for selection in manifest['selections']['probes']:
+        agent_verify_selection(selection)
+    if manifest['selections']['javaHome'] is not None:
+        agent_verify_selection(manifest['selections']['javaHome'])
+
+
 def agent_probe_records(manifest, records, java_home):
     manifest['action'] = 'PROBE'
     manifest['request'] = {'probes': [{key: record[key] for key in ('ecosystem', 'version', 'directory')} for record in records], 'javaHome': java_home}
+    if manifest['volumeMode'] != 'PROBE' or records != [selection['record'] for selection in manifest['selections']['probes']]:
+        agent_reject('INSTALLATION_SELECTION_CHANGED', 'unknown')
+    agent_verify_selections(manifest)
     agent_execute(agent_publish_manifest(manifest))
+    agent_verify_selections(manifest)
 
 
 def agent_release_source(manifest, url, algorithm, expected, layout):
@@ -1158,12 +1298,18 @@ def agent_prepare(args):
         agent_reject('PREPARE_ARGUMENTS')
     if exact != '-' and (not re.fullmatch('[0-9][A-Za-z0-9._+-]{0,95}', exact) or not version_key(exact)):
         agent_reject('EXACT_VERSION')
-    if java_home != '-' and agent_record(pathlib.Path(java_home))['ecosystem'] != 'JAVA':
-        agent_reject('JAVA_HOME_RECORD')
+    java_selection = None
+    if java_home != '-':
+        java_record = agent_record(pathlib.Path(java_home))
+        if java_record['ecosystem'] != 'JAVA':
+            agent_reject('JAVA_HOME_RECORD')
+        java_selection = agent_selection_snapshot(java_record)
     selected = resolution_decode(encoded_release, ecosystem, branch, exact, operation, EXPECTED_RESOLVER_SOURCE_SHA256)
     version, url, algorithm, expected, layout = (selected[key] for key in ('version', 'url', 'algorithm', 'digest', 'layout'))
-    agent_installation_selection(ecosystem, version, url, algorithm, expected)
-    manifest = agent_create(operation, seconds)
+    record, directory = agent_installation_selection(ecosystem, version, url, algorithm, expected)
+    selections = [agent_selection_snapshot(record)] if record is not None else []
+    manifest = agent_create(operation, seconds, 'PROBE') if selections else agent_create(operation, seconds)
+    manifest['selections'] = {'probes': selections, 'javaHome': java_selection}
     try:
         agent_prepare_selected(manifest, ecosystem, version, url, algorithm, expected, layout, java_home)
     except (PreparationFailure, OSError, ValueError) as error:
@@ -1194,9 +1340,13 @@ def agent_prepare_selected(manifest, ecosystem, version, url, algorithm, expecte
     operation = manifest['operation']
     detached = False
     record, directory = agent_installation_selection(ecosystem, version, url, algorithm, expected)
-    if record is not None:
+    if manifest['volumeMode'] == 'PROBE':
+        if record is None or [record] != [selection['record'] for selection in manifest['selections']['probes']]:
+            agent_reject('INSTALLATION_SELECTION_CHANGED', 'unknown')
         agent_probe_records(manifest, [record], java_home)
     else:
+        if manifest['volumeMode'] != 'INSTALL' or record is not None or manifest['selections']['probes']:
+            agent_reject('INSTALLATION_SELECTION_CHANGED', 'unknown')
         sha256 = agent_release_source(manifest, url, algorithm, expected, layout)
         legacy = ecosystem == 'RUBY' and version_key(version)[:2] == (3, 0)
         dependencies = {}
@@ -1205,21 +1355,28 @@ def agent_prepare_selected(manifest, ecosystem, version, url, algorithm, expecte
             gem_url = 'https://rubygems.org/downloads/openssl-3.0.3.gem'
             download(gem_url, agent_operation(operation) / 'mutable/input/openssl-3.0.3.gem', 'sha256', gem_digest)
             dependencies['openssl'] = {'version': '3.0.3', 'source': gem_url, 'sha256': gem_digest}
+        if globals().get('AGENT_TRACKED_CONTEXT') is not None:
+            agent_tracked_step('PLACEHOLDER', {'path': str(directory), 'parentIdentity': agent_identity(directory.parent)})
         directory.mkdir(mode=0o755)
         original = agent_identity(directory)
+        if globals().get('AGENT_TRACKED_CONTEXT') is not None:
+            agent_tracked_step('PLACEHOLDER', {'path': str(directory), 'parentIdentity': agent_identity(directory.parent), 'identity': original}, True)
         agent_write(agent_operation(operation) / 'placeholder.json', agent_encode({
             'operation': operation, 'ecosystem': ecosystem, 'version': version,
             'directory': str(directory), 'identity': original}))
         manifest['action'] = 'INSTALL'
         manifest['request'] = {'ecosystem': ecosystem, 'version': version, 'destination': str(directory), 'layout': layout,
                                'sourceName': 'release', 'javaHome': java_home, 'legacyGem': legacy}
+        agent_verify_selections(manifest)
         agent_execute(agent_publish_manifest(manifest))
+        agent_verify_selections(manifest)
         record = {'ecosystem': ecosystem, 'version': version, 'directory': str(directory), 'origin': 'MANAGED', 'source': url,
                   'sha256': sha256, 'official_algorithm': algorithm, 'official_digest': expected, 'dependencies': dependencies}
         agent_promote(manifest, directory, original, record)
         detached = True
     if not detached:
         agent_detach(manifest)
+    agent_verify_selections(manifest)
     print('TOOLCHAIN=' + '|'.join(record[key] for key in ('ecosystem', 'version', 'directory', 'origin', 'source', 'sha256')))
 
 
@@ -1234,7 +1391,7 @@ def agent_bind(args):
     rows = payload.decode().splitlines()
     if not payload.endswith(b'\n') or not 2 <= len(rows) <= 33 or not re.fullmatch(r'WTL-TOOLS-1\t[A-Za-z0-9._-]{1,96}', rows[0]):
         agent_reject('BINDING_FORMAT')
-    records, java_home = [], '-'
+    records, selections, java_home, java_selection = [], [], '-', None
     for row in rows[1:]:
         values = row.split('\t')
         if len(values) != 11 or values[8] not in ('MANAGED', 'SYSTEM') or not agent_hash(values[10]):
@@ -1250,23 +1407,38 @@ def agent_bind(args):
             agent_reject('BINDING_RECORD_MISMATCH')
         if record['ecosystem'] == 'JAVA':
             java_home = record['directory']
+        selection = agent_selection_snapshot(record)
+        if record['ecosystem'] == 'JAVA':
+            java_selection = selection
         records.append(record)
-    manifest = agent_create(operation, seconds)
+        selections.append(selection)
+    manifest = agent_create(operation, seconds, 'PROBE')
+    manifest['selections'] = {'probes': selections, 'javaHome': java_selection}
     agent_probe_records(manifest, records, java_home)
     identity = hashlib.sha256(payload).hexdigest()
     target = ROOT / 'bindings' / identity
     agent_detach(manifest)
+    agent_verify_selections(manifest)
     if target.exists() or target.is_symlink():
         if agent_regular(target) != payload:
             agent_reject('BINDING_COLLISION')
     else:
-        agent_write(target, payload)
+        if globals().get('AGENT_TRACKED_CONTEXT') is not None:
+            agent_tracked_atomic_binding(target, payload)
+        else:
+            agent_write(target, payload)
     print('TOOLCHAIN_BINDING=' + identity)
+
+
+# @WTL_AGENT_TRACKED_OPERATIONS@
 
 
 def agent_main(args):
     import fcntl
     global DEADLINE
+    if args and args[0] in ('prepare-tracked', 'bind-tracked', 'observe-tracked', 'cleanup-tracked'):
+        agent_tracked_main(args)
+        return
     if len(args) == 2 and args[0] == 'worker':
         agent_worker(args[1])
         return
@@ -1403,7 +1575,7 @@ def agent_space_diagnostic(error, args):
         return None
     if value['reserveBytes'] != AGENT_HOST_RESERVE_BYTES or not 0 <= value['availableBytes'] < value['requiredBytes'] <= 1024 ** 4:
         return None
-    if value['stage'] == 'VOLUME' and value['requiredBytes'] != AGENT_VOLUME_BYTES + AGENT_HOST_RESERVE_BYTES or value['requiredBytes'] < AGENT_HOST_RESERVE_BYTES:
+    if value['stage'] == 'VOLUME' and value['requiredBytes'] not in (AGENT_VOLUME_BYTES + AGENT_HOST_RESERVE_BYTES, AGENT_PROBE_VOLUME_BYTES + AGENT_HOST_RESERVE_BYTES) or value['requiredBytes'] < AGENT_HOST_RESERVE_BYTES:
         return None
     return 'TOOLCHAIN_DIAGNOSTIC=' + json.dumps(value, sort_keys=True, separators=(',', ':'))
 

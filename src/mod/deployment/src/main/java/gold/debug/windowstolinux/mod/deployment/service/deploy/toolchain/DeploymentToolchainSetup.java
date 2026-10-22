@@ -35,6 +35,16 @@ public final class DeploymentToolchainSetup {
         OperationResult<CommandResult> bind(String encoded) throws ApiException;
     }
 
+    /** Physical protocol adapters return data without manufacturing legacy command output. */
+    public interface VerifiedCommands extends Commands {
+        OperationResult<VerifiedSelection> prepareVerified(DeploymentToolchainType ecosystem, String branch, String exact,
+                                                           int seconds, String javaHome) throws ApiException;
+        OperationResult<String> bindVerified(String encoded) throws ApiException;
+    }
+
+    public record VerifiedSelection(DeploymentToolchainType ecosystem, String version, String directory,
+                                    DeploymentResolvedToolchains.OriginType origin, String source, String sha256) { }
+
     /** Original helper command channel. / 原 helper 命令通道。 */
     private final Commands commands;
 
@@ -49,6 +59,8 @@ public final class DeploymentToolchainSetup {
     private final PreparedObserver preparedObserver;
 
     private final DeploymentBuildCommandChannel trackedCommands;
+
+    private final VerifiedCommands verifiedCommands;
 
     /** Binds a single original remote task and catalog. / 绑定单一原远端任务与目录。
      * @param commands original command channel / 原命令通道
@@ -81,6 +93,7 @@ public final class DeploymentToolchainSetup {
         this.catalog = Objects.requireNonNull(catalog);
         this.preparedObserver = Objects.requireNonNull(preparedObserver);
         this.trackedCommands = trackedCommands;
+        this.verifiedCommands = commands instanceof VerifiedCommands verified ? verified : null;
     }
 
     /** Prepares one of at most two admitted branches and confirms its immutable binding. / 准备最多两个准入分支之一，并确认其不可变绑定。
@@ -120,6 +133,14 @@ public final class DeploymentToolchainSetup {
                     || observed.value().orElseThrow().cleanupState() == gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.CleanupState.REQUIRED)
                     return unknown("DEPLOYMENT_TOOLCHAIN_RECEIPT_UNCONFIRMED");
                 var selection = observed.value().orElseThrow().selection();
+                fields = new String[]{selection.ecosystem().name(), selection.version(), selection.directory(),
+                    selection.origin().name(), selection.source(), selection.sha256()};
+            } else if (verifiedCommands != null) {
+                var observed = verifiedCommands.prepareVerified(requirement.ecosystem(), branch.version(), exact,
+                    Math.max(30, Math.min(7200, seconds)), javaHome);
+                if (observed.outcome() != TaskResult.SUCCEEDED) return withoutValue(observed);
+                if (observed.value().isEmpty()) return unknown("DEPLOYMENT_TOOLCHAIN_RECEIPT_UNCONFIRMED");
+                var selection = observed.value().orElseThrow();
                 fields = new String[]{selection.ecosystem().name(), selection.version(), selection.directory(),
                     selection.origin().name(), selection.source(), selection.sha256()};
             } else {
@@ -170,6 +191,11 @@ public final class DeploymentToolchainSetup {
                 if (bound.value().isEmpty() || !bound.value().orElseThrow().bound()
                     || bound.value().orElseThrow().cleanupState() == gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.CleanupState.REQUIRED
                     || !DeploymentToolchainBindingCodec.identity(set).equals(bound.value().orElseThrow().bindingSha256()))
+                    return unknown("DEPLOYMENT_TOOLCHAIN_BINDING_UNCONFIRMED");
+            } else if (verifiedCommands != null) {
+                var bound = verifiedCommands.bindVerified(encoded);
+                if (bound.outcome() != TaskResult.SUCCEEDED) return withoutValue(bound);
+                if (bound.value().isEmpty() || !DeploymentToolchainBindingCodec.identity(set).equals(bound.value().orElseThrow()))
                     return unknown("DEPLOYMENT_TOOLCHAIN_BINDING_UNCONFIRMED");
             } else {
             var bound = commands.bind(encoded);

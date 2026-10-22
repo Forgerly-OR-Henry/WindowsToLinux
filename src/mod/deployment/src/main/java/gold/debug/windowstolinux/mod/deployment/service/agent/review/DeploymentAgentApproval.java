@@ -658,7 +658,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 if (part.equals("script")) return page(request.script(), offset, limit);
                 if (!part.equals("stdin")) throw new PageArgumentException("part", "REQUEST_PART_UNKNOWN");
                 String kind = facts.path("inputKind").asText();
-                if (!Set.of("EXECUTABLE_SCRIPT", "SOURCE_PATCH", "EMPTY").contains(kind))
+                if (!Set.of("EXECUTABLE_SCRIPT", "SOURCE_PATCH", "TRACKED_TOOLCHAIN_REQUEST", "EMPTY").contains(kind))
                     return Map.of("kind", "PROTECTED_BOUND_DATA", "meaning", "Opaque configuration/secret bytes are not model evidence; exactAction retains their byte length and SHA-256.");
                 byte[] bytes = request.stdin();
                 try {

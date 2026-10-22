@@ -37,7 +37,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.Dep
 import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainSetup;
 
 /** Keeps Agent preparation effects separate while retaining the original approvals, grants and cumulative deadline. / 独立承载 Agent 准备副作用，保留原审批、许可及累计期限。 */
-public final class DeploymentAgentToolchainCommands implements DeploymentToolchainSetup.Commands {
+public final class DeploymentAgentToolchainCommands implements DeploymentToolchainSetup.VerifiedCommands {
     private final DeploymentRemoteLayout layout;
 
     private final boolean reuseExistingOnly;
@@ -53,6 +53,31 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
     private JsonNode readyProgram;
 
     private OperationResult<CommandResult> readyObservation;
+
+    private DeploymentAgentToolchainTracked.Observation lastTracked;
+
+    @Override
+    public OperationResult<DeploymentToolchainSetup.VerifiedSelection> prepareVerified(DeploymentToolchainType ecosystem,
+            String branch, String exact, int seconds, String javaHome) throws ApiException {
+        lastTracked = null;
+        var result = prepare(ecosystem, branch, exact, seconds, javaHome);
+        if (result.outcome() != TaskResult.SUCCEEDED) return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+        if (lastTracked == null || !lastTracked.succeeded()) return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(DeploymentAgentToolchainProgramState.unconfirmed().problem()));
+        var selection = lastTracked.value().path("selection");
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new DeploymentToolchainSetup.VerifiedSelection(
+            DeploymentToolchainType.valueOf(selection.path("ecosystem").asText()), selection.path("version").asText(),
+            selection.path("directory").asText(), DeploymentResolvedToolchains.OriginType.valueOf(selection.path("origin").asText()),
+            selection.path("source").asText(), selection.path("sha256").asText())), Optional.empty());
+    }
+
+    @Override
+    public OperationResult<String> bindVerified(String encoded) throws ApiException {
+        lastTracked = null;
+        var result = bind(encoded);
+        if (result.outcome() != TaskResult.SUCCEEDED) return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+        if (lastTracked == null || !lastTracked.succeeded()) return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(DeploymentAgentToolchainProgramState.unconfirmed().problem()));
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.ofNullable(lastTracked.bindingSha256()), Optional.empty());
+    }
 
     public DeploymentAgentToolchainCommands(DeploymentBuildCommandChannel commands, ServerId server,
                                             gold.debug.windowstolinux.appapi.mod.ModContext context,
@@ -162,26 +187,42 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
     private StoredResult stored(String phase, String operation, List<String> arguments, long seconds, JsonNode installation) throws ApiException {
         if (seconds < 1) return new StoredResult(budgetExhausted(), null);
         boolean existingPreparation = reuseExistingOnly && phase.equals("prepare");
-        String script = existingPreparation ? DeploymentAgentToolchainPrograms.command(arguments)
+        var recipe = Set.of("prepare", "bind").contains(phase) ? DeploymentAgentToolchainTracked.create(programState.taskId(), server.id(),
+            commands.authenticatedFingerprint(), layout, phase.toUpperCase(java.util.Locale.ROOT), operation, arguments, existingPreparation) : null;
+        String verb = phase + "-tracked";
+        String script = recipe != null ? existingPreparation ? DeploymentAgentToolchainPrograms.trackedCommand(recipe)
+            : DeploymentAgentToolchainProgramStore.trackedCommand(verb, recipe)
             : phase.equals("install") ? DeploymentAgentToolchainPrograms.command(List.of(programState.taskId(), operation))
             : DeploymentAgentToolchainProgramStore.command(phase, programState.taskId(), operation, arguments, layout);
-        byte[] input = existingPreparation ? DeploymentAgentToolchainPrograms.existingController(layout).getBytes(StandardCharsets.UTF_8)
+        byte[] input = recipe != null ? existingPreparation ? DeploymentAgentToolchainPrograms.trackedInput(recipe) : recipe.bytes()
             : phase.equals("install") ? DeploymentAgentToolchainProgramStore.installer(layout).getBytes(StandardCharsets.UTF_8) : new byte[0];
         try (var request = new gold.debug.windowstolinux.appapi.linux.command.CommandRequest(script, input,
             Duration.ofSeconds(Math.min(seconds, commands.remainingSeconds())), 65536)) {
             String exact = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, "controller-action-state", request).exactAction();
-            var retained = programState.begin(phase.toUpperCase(java.util.Locale.ROOT), operation, exact, installation);
+            var storeFrame = recipe == null ? DeploymentAgentToolchainTracked.JSON.createObjectNode().put("formatVersion", 1)
+                .put("task", programState.taskId()).put("server", server.id()).put("fingerprintSha256", DeploymentAgentToolchainTracked.hash(commands.authenticatedFingerprint().getBytes(StandardCharsets.UTF_8)))
+                .put("layout", layout.canonical()).put("phase", phase).put("operation", operation)
+                .put("version", DeploymentAgentToolchainProgramStore.version(layout)).put("sourceSha256", DeploymentAgentToolchainProgramStore.sourceSha256(layout))
+                .put("scriptSha256", DeploymentAgentToolchainPrograms.sha256(script)).put("stdinSha256", DeploymentAgentToolchainTracked.hash(input))
+                .put("stdinBytes", input.length).put("timeout", request.timeout().toString()).put("outputLimit", request.outputLimitBytes()) : null;
+            var retained = programState.begin(phase.toUpperCase(java.util.Locale.ROOT), operation, exact, installation, recipe, storeFrame);
             OperationResult<CommandResult> result;
             boolean[] dispatchBoundary = {false};
             try {
                 result = commands.send(existingPreparation ? "deployment.agent.toolchain.prepare.v1" : DeploymentAgentToolchainProgramStore.PREFIX + phase + ".v1",
                     existingPreparation ? controllerTargets(server, operation, layout)
                         : DeploymentAgentToolchainProgramStore.targets(server, phase, operation, operation, layout), script, input, request.timeout(), 65536,
-                    () -> dispatchBoundary[0] = true);
+                    () -> {
+                        try { programState.dispatched(retained); }
+                        catch (ApiException failure) { throw new IllegalStateException("Original controller dispatch could not be retained", failure); }
+                        dispatchBoundary[0] = true;
+                    });
             } catch (ApiException failure) {
                 try {
-                    programState.finish(retained, new OperationResult<>(failure.problem().code() == ProblemCode.CANCELLED ? TaskResult.CANCELLED : TaskResult.UNKNOWN,
-                        Optional.empty(), Optional.of(failure.problem())), false, null, !dispatchBoundary[0]);
+                    var failed = new OperationResult<CommandResult>(failure.problem().code() == ProblemCode.CANCELLED ? TaskResult.CANCELLED : TaskResult.UNKNOWN,
+                        Optional.empty(), Optional.of(failure.problem()));
+                    programState.transport(retained, failed);
+                    programState.finish(retained, failed, false, null, !dispatchBoundary[0]);
                 } catch (ApiException persistence) {
                     if (failure instanceof gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentAlternativeRequiredException) {
                         var uncertain = new ApiException(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_CONTROLLER_STATE_UNCONFIRMED",
@@ -196,6 +237,13 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
             }
             JsonNode receipt = null;
             boolean confirmed = DeploymentAgentToolchainProgramStore.successful(result);
+            programState.transport(retained, result);
+            if (recipe != null) {
+                try {
+                    lastTracked = DeploymentAgentToolchainTracked.receipt(result, recipe, verb);
+                    receipt = lastTracked.value(); confirmed = lastTracked.settled();
+                } catch (IllegalArgumentException invalid) { lastTracked = null; confirmed = false; }
+            }
             if (confirmed && Set.of("readiness", "install").contains(phase)) {
                 try {
                     receipt = DeploymentAgentToolchainProgramStore.receipt(result, programState.taskId(), operation, layout, phase.equals("install"));
@@ -203,10 +251,13 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
                     confirmed = false;
                 }
             }
-            var refusal = dispatchBoundary[0] ? DeploymentAgentToolchainFailureEvidence.precreationRefusal(retained,
+            var refusal = recipe == null && dispatchBoundary[0] ? DeploymentAgentToolchainFailureEvidence.precreationRefusal(retained,
                 phase, operation, programState.taskId(), server, layout, request, result).orElse(null) : null;
             programState.finish(retained, result, confirmed, receipt, !dispatchBoundary[0], refusal);
-            var reported = !confirmed && result.outcome() == TaskResult.SUCCEEDED ? DeploymentAgentToolchainProgramStore.unconfirmed() : result;
+            if (recipe != null) return new StoredResult(DeploymentAgentToolchainFailureEvidence.tracked(result, lastTracked,
+                retained.id(), retained.checkpoint().snapshot().released(), retained.checkpoint().snapshot().payload()), receipt);
+            var reported = !confirmed && dispatchBoundary[0] && result.outcome() != TaskResult.CANCELLED
+                ? DeploymentAgentToolchainProgramStore.unconfirmed() : result;
             if (Set.of("prepare", "bind").contains(phase))
                 reported = DeploymentAgentToolchainFailureEvidence.retain(reported, phase, server, operation);
             return new StoredResult(reported, receipt);
