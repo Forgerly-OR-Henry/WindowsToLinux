@@ -7,6 +7,7 @@
 | 文档 | 内容 |
 | --- | --- |
 | [产品说明书](reference/PRODUCT-MANUAL.md) | 功能入口、操作流程、输入与反馈 |
+| [UI 设计与交互规范](reference/UI.md) | 通用视觉、颜色、字体、卡片交互及服务器／AI 页面实例 |
 | [配置说明](reference/Config.md) | 配置资源、字段、默认值和填写示例 |
 | [源码结构与约定](reference/File.md) | 模块、包、依赖、资源归属及数据库字段列序 |
 | [生产文件索引](reference/AllFile.md) | 当前非测试生产文件清单 |
