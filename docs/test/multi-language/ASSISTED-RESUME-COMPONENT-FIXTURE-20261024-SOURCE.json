@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "status": "LOCAL_FIXTURE_DELTA_VERIFIED_RUN04_FAILED_RUN05_PASSED_AFTER_SCOPE_DELTA",
+  "patch": "docs/test/multi-language/patches/ASSISTED-RESUME-COMPONENT-FIXTURE-20261024.patch",
+  "patchSha256": "bd69c9a85b0bc31ed4ad04e6272f6b615b0f6d5952cb46414cb47a73205edfee",
+  "patchBytes": 2157,
+  "source11Sha256": "a263879f7d2aff10dfed4302201b135d21015da6661e8d07bc61f00a7f976604",
+  "source12Sha256": "59dc451af32a41a8039883909fa34bef6fe58236af547bcd56f2e251161a9ec1",
+  "mainAndFrozenFixtureBindings": [
+    {
+      "source": "main",
+      "path": "src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java",
+      "sha256": "fc5e70d47fc03f47f07e4ea4248d5b33002c37b328e2c76fd4af57b6e40ad79d",
+      "bytes": 813181,
+      "afterSha256": "c74c00a64bbadbf4c03c31ef983f0433fc45f5fdc06e31a8b850a74c46adacec"
+    },
+    {
+      "source": "frozen",
+      "path": "src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java",
+      "sha256": "3bec25b9da2135c712646dcff15ddf30a963516e433e0e739cb5026aeb1280e8",
+      "bytes": 823254,
+      "afterSha256": "41c22bd303692ea3d84fc54510519e93dc8fa172e12b968a8761da73be7791f5"
+    }
+  ],
+  "verification": {
+    "mainPatchCheckExit": 0,
+    "mainPatchApplyExit": 0,
+    "mainPatchedBytesMatch": true,
+    "patchAppliesToMainBaselineOnly": true,
+    "frozenSameTwoCallsAndConstructorExactByteReplacementVerified": true,
+    "crossBaselineApplyFailureRetained": true,
+    "mavenSelector": "DeploymentApplicationLifecycleTest#singleComponentStopPreservesOtherRawStateAndStartRestoresHealth+componentIntentAndVersionTwoFactsFailClosed+agentManagementUsesActualTaskAppAndFreshGrantForEveryRemoteAction",
+    "local02Exit": 0,
+    "tests": 3,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "firstSandboxFailureRetained": true,
+    "fullSuite": false,
+    "remoteAcceptance": "SOURCE12_RUN04_FAILED_SOURCE13_RUN05_PASSED_AFTER_MANAGEMENT_SCOPE_DELTA"
+  },
+  "run04": {
+    "businessResult": "FAILED_3_OF_5_DOWNLOADS",
+    "application": "wtl-assisted-file-transfer-5e3j830bw",
+    "publicationTask": "77b26ddf-ed0a-4d66-b094-8d63ad0ea7b6",
+    "originalUnknownComponentStopTask": "1733e83a-7b57-4071-9471-173e19f14520",
+    "reconciled": "ENDED_FAILED_DEPLOYMENT_MANAGEMENT_NOT_STARTED",
+    "originalUncertaintyHistoryRetained": true,
+    "separateCleanupReceiptSha256": "3a61553d53ebf904f343bb1ea75ff227b2940cc7a3bb72f3e13b2d7fa247859a",
+    "componentStartSubmitted": false,
+    "fullManagementExportCompleted": false
+  },
+  "boundary": "Fixture-only: two component fault-injection actions explicitly use existing INDEPENDENT_APP independent review/newgrant path. ASSISTED publication/default whole-app manager and all production guards/rules/timeouts/model/budget unchanged. More review calls expected. Main LF and frozen CRLF environment fixture baselines retained separately; no wholesale copy.",
+  "finalRegressionAfterManagementScopeDelta": {
+    "businessResult": "PASSED_FULL_ASSISTED_V2_5_OF_5_DOWNLOADS",
+    "source13Sha256": "65e6f1dd83c0144174b059f8b08f3376ab7e0ea0ecf923c5232720c2040785aa",
+    "application": "wtl-assisted-file-transfer-6eji12egk",
+    "revisionSha256": "b8eb9df7eb5afd54a0bbfbf31372ce9ec5794248b09826ffbe11bd51ca16fb85",
+    "ownershipSha256": "ed547b416bb1ce5c29d3b8e558b1868a7f1e29088caabd4ff5423d4e1bbf159f",
+    "mavenActualExitCode": 0,
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "fullManagementExportCompleted": true,
+    "exportSha256": "396dfe2ec4b4c875262b18cda0dd70619bc8631616b8987ba1e29205f5e5f5d8",
+    "finalCleanupReceiptSha256": "4035e99db09a72730f1cf78416fbc6d9ef7759efd46aa32e5f241c4b9462febe",
+    "finalState": "STOPPED",
+    "autostart": "DISABLED",
+    "mainPids": [
+      0,
+      0
+    ],
+    "fullSuite": false,
+    "agentDeploymentAcceptance": false,
+    "finalUsageAudit": {
+      "status": "COMPLETE",
+      "handoffPath": ".ai-workspace/evidence/assisted-resume-20261024/tools/live-monitor-run05/handoff-safe-final-01.json",
+      "handoffSha256": "ae4b2fafcf3c1c4c837b460058c03a984de3c46145a8769e0f2e03b5c96b2a6b",
+      "usagePath": ".ai-workspace/evidence/assisted-resume-20261024/tools/live-monitor-run05/finalized-usage-01.json",
+      "usageSha256": "2b5060f2b2835d29f3466982ab260294639f99e39d7108820940e2159f937fdb",
+      "knownPhysicalAttempts": 123,
+      "knownInputTokens": 937544,
+      "knownOutputTokens": 182169,
+      "knownTotalTokens": 1119713,
+      "capabilityProbeUsageAndPhysicalRequestsUnknown": 4,
+      "persistentCoverage": {
+        "stdoutAndPersisted": 97,
+        "stdoutOnly": 26,
+        "persistedOnly": 0
+      },
+      "retentionBoundary": {
+        "category": "deployment",
+        "retentionPerCategory": 100,
+        "retainedRecords": 100,
+        "eligibleUsageRecords": 97,
+        "stdoutOnlyAttemptsRecoveredFromCompleteOriginalLog": 26,
+        "stdoutLogFullyConsumed": true,
+        "unavailableUsageRecords": []
+      },
+      "archivedTasks": 31,
+      "archivedStates": {
+        "ENDED": 31
+      },
+      "archivedResults": {
+        "SUCCEEDED": 31
+      },
+      "retainedExecutionRows": 0,
+      "unreleasedResources": 0,
+      "currentUnknownTasks": 0,
+      "nativeSubmissionRejectionsPreserved": 4,
+      "expectedFaultInjectionHealthFailuresPreserved": 3,
+      "auditConnectionsClosed": true,
+      "ownedReaderJavaCount": 0,
+      "databaseAndBootstrapUnchanged": true,
+      "oldFailuresAndUnknownHistoryPreserved": true
+    }
+  }
+}

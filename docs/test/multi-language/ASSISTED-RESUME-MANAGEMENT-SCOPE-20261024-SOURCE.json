@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "status": "FULL_ASSISTED_RUN05_PASSED_CLEANED_AND_AUDITED",
+  "patch": "docs/test/multi-language/patches/ASSISTED-RESUME-MANAGEMENT-SCOPE-20261024.patch",
+  "patchSha256": "ae11c2f36196286f838b47435ab81d4050d610b4f7037ab2067a202cfa650708",
+  "patchBytes": 9128,
+  "source12Sha256": "59dc451af32a41a8039883909fa34bef6fe58236af547bcd56f2e251161a9ec1",
+  "source13Sha256": "65e6f1dd83c0144174b059f8b08f3376ab7e0ea0ecf923c5232720c2040785aa",
+  "baseline": "Exact source12 main/frozen service and test bytes. Their two baselines are equal; other mixed HEAD changes are not included.",
+  "changes": [
+    {
+      "path": "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/application/DeploymentApplicationsService.java",
+      "beforeSha256": "e2f864e8f81357116d67f5519cf38fea8ed9d3a91c46a56185175daa8ef116e8",
+      "afterSha256": "5b8143fc422320fa01161901898df0ef09e0d57a9d710e412c429abefab8829d"
+    },
+    {
+      "path": "src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/DeploymentApplicationLifecycleTest.java",
+      "beforeSha256": "86a7858fce9762143f5de3f54469362ea7cc38aefcb114c9a8521a749dc04782",
+      "afterSha256": "4f0ca4414f9192e95b39ebd61d60d497459f097938bc203e75d1d55f530f099c"
+    }
+  ],
+  "verification": {
+    "checkExit": 0,
+    "applyExit": 0,
+    "mainAndFrozenBytesMatched": true,
+    "bothBaselinesEqualBeforeAndAfter": true,
+    "patchSha256": "ae11c2f36196286f838b47435ab81d4050d610b4f7037ab2067a202cfa650708"
+  },
+  "localRegression": {
+    "beforeExit": 1,
+    "beforeCause": "Independent review rejects non-target inspect-runtime when effect versus observation scopes are ambiguous",
+    "afterExit": 0,
+    "tests": 3,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "selector": "DeploymentApplicationLifecycleTest#singleComponentStopPreservesOtherRawStateAndStartRestoresHealth+componentIntentAndVersionTwoFactsFailClosed+agentManagementUsesActualTaskAppAndFreshGrantForEveryRemoteAction",
+    "realModelOrSsh": false,
+    "fullSuite": false
+  },
+  "remoteAcceptance": "RUN05_FULL_ASSISTED_PASSED_AND_FINAL_STOPPED_DISABLED",
+  "run05": {
+    "stateDirectory": "src/app/db/data/assisted-live-file-transfer-6ejhzihcc",
+    "application": "wtl-assisted-file-transfer-6eji12egk",
+    "publicationTask": "eac0c190-f67c-4b53-bdbf-08ca4ef5f6d8",
+    "businessResult": "PASSED_FULL_ASSISTED_V2_5_OF_5_DOWNLOADS",
+    "source13Sha256": "65e6f1dd83c0144174b059f8b08f3376ab7e0ea0ecf923c5232720c2040785aa",
+    "revisionSha256": "b8eb9df7eb5afd54a0bbfbf31372ce9ec5794248b09826ffbe11bd51ca16fb85",
+    "ownershipSha256": "ed547b416bb1ce5c29d3b8e558b1868a7f1e29088caabd4ff5423d4e1bbf159f",
+    "mavenActualExitCode": 0,
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "fullManagementExportCompleted": true,
+    "exportSha256": "396dfe2ec4b4c875262b18cda0dd70619bc8631616b8987ba1e29205f5e5f5d8",
+    "finalCleanupReceiptSha256": "4035e99db09a72730f1cf78416fbc6d9ef7759efd46aa32e5f241c4b9462febe",
+    "finalState": "STOPPED",
+    "autostart": "DISABLED",
+    "mainPids": [
+      0,
+      0
+    ],
+    "fullSuite": false,
+    "agentDeploymentAcceptance": false,
+    "finalUsageAudit": {
+      "status": "COMPLETE",
+      "handoffPath": ".ai-workspace/evidence/assisted-resume-20261024/tools/live-monitor-run05/handoff-safe-final-01.json",
+      "handoffSha256": "ae4b2fafcf3c1c4c837b460058c03a984de3c46145a8769e0f2e03b5c96b2a6b",
+      "usagePath": ".ai-workspace/evidence/assisted-resume-20261024/tools/live-monitor-run05/finalized-usage-01.json",
+      "usageSha256": "2b5060f2b2835d29f3466982ab260294639f99e39d7108820940e2159f937fdb",
+      "knownPhysicalAttempts": 123,
+      "knownInputTokens": 937544,
+      "knownOutputTokens": 182169,
+      "knownTotalTokens": 1119713,
+      "capabilityProbeUsageAndPhysicalRequestsUnknown": 4,
+      "persistentCoverage": {
+        "stdoutAndPersisted": 97,
+        "stdoutOnly": 26,
+        "persistedOnly": 0
+      },
+      "retentionBoundary": {
+        "category": "deployment",
+        "retentionPerCategory": 100,
+        "retainedRecords": 100,
+        "eligibleUsageRecords": 97,
+        "stdoutOnlyAttemptsRecoveredFromCompleteOriginalLog": 26,
+        "stdoutLogFullyConsumed": true,
+        "unavailableUsageRecords": []
+      },
+      "archivedTasks": 31,
+      "archivedStates": {
+        "ENDED": 31
+      },
+      "archivedResults": {
+        "SUCCEEDED": 31
+      },
+      "retainedExecutionRows": 0,
+      "unreleasedResources": 0,
+      "currentUnknownTasks": 0,
+      "nativeSubmissionRejectionsPreserved": 4,
+      "expectedFaultInjectionHealthFailuresPreserved": 3,
+      "auditConnectionsClosed": true,
+      "ownedReaderJavaCount": 0,
+      "databaseAndBootstrapUnchanged": true,
+      "oldFailuresAndUnknownHistoryPreserved": true
+    }
+  },
+  "originalRun04": {
+    "businessResult": "FAILED_3_OF_5_DOWNLOADS",
+    "originalUnknownTask": "1733e83a-7b57-4071-9471-173e19f14520",
+    "reconciled": "ENDED_FAILED_DEPLOYMENT_MANAGEMENT_NOT_STARTED",
+    "originalHistoryRetained": true,
+    "separateCleanupReceiptSha256": "3a61553d53ebf904f343bb1ea75ff227b2940cc7a3bb72f3e13b2d7fa247859a"
+  },
+  "boundary": "Only ManagementEvidence/frozen workflow scope description and its controlled regression test changed. Actual runner, helper, review rules, guards, model configuration, budgets, timeouts and samples unchanged."
+}

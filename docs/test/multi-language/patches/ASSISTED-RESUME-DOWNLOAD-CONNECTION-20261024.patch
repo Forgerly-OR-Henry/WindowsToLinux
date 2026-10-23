@@ -1,0 +1,143 @@
+diff --git a/test/multi-language/success-file-transfer/web/src/server/server.ts b/test/multi-language/success-file-transfer/web/src/server/server.ts
+--- a/test/multi-language/success-file-transfer/web/src/server/server.ts
++++ b/test/multi-language/success-file-transfer/web/src/server/server.ts
+@@ -228,7 +228,10 @@
+           return;
+         }
+         if (downloadVersion) proxy.setTimeout(0);
+-        res.writeHead(response.statusCode || 502, response.headers);
++        // The client can finish draining a file after the server's keep-alive window has expired.
++        const downloadHeaders: http.OutgoingHttpHeaders = { ...response.headers, connection: "close" };
++        delete downloadHeaders["keep-alive"];
++        res.writeHead(response.statusCode || 502, downloadHeaders);
+         response.pipe(res);
+         if (diagnose) response.on("data", (chunk: Buffer) => {
+           upstreamDataBytes += chunk.length;
+diff --git a/test/multi-language/success-file-transfer/web/test/download-proxy.mjs b/test/multi-language/success-file-transfer/web/test/download-proxy.mjs
+--- a/test/multi-language/success-file-transfer/web/test/download-proxy.mjs
++++ b/test/multi-language/success-file-transfer/web/test/download-proxy.mjs
+@@ -96,6 +96,9 @@
+   let observationDeadline;
+   let release;
+   let listenerClosed = false;
++  const clientAgent = new http.Agent({ keepAlive: true });
++  let downloadSocket;
++  let downloadClosed = false;
+   try {
+     const gatewayReady = new Promise((resolve, reject) => {
+       http.createServer = function (...args) {
+@@ -130,8 +133,10 @@
+ 
+     const result = await new Promise((resolve, reject) => {
+       observationDeadline = setTimeout(() => reject(new Error("LOCAL_TEST_OBSERVATION_DEADLINE")), 5000);
+-      request = originalRequest(`http://127.0.0.1:${gateway.address().port}/api/versions/0123456789abcdef0123456789abcdef/download`, { agent: false }, (incoming) => {
++      request = originalRequest(`http://127.0.0.1:${gateway.address().port}/api/versions/0123456789abcdef0123456789abcdef/download`, { agent: clientAgent }, (incoming) => {
+         response = incoming;
++        downloadSocket = incoming.socket;
++        downloadSocket.once("close", () => { downloadClosed = true; });
+         response.on("data", (chunk) => {
+           trace.bodyBytes += chunk.length;
+           receivedDigest.update(chunk);
+@@ -151,6 +156,31 @@
+     assert.ok(trace.upstreamPauseEvents > 0, "the proxy must experience backpressure");
+     assert.ok(trace.bodyBytes === bytes && trace.ended && result.complete && !trace.aborted && !trace.errorType, "a truncated response must never count as a complete 64 MiB transfer");
+     assert.equal(receivedDigest.digest("hex"), expectedDigest);
++    assert.equal(result.headers.connection, "close", "a completed file must not enter the client's keep-alive cache");
++    assert.equal(result.headers["keep-alive"], undefined);
++    const closeDeadline = performance.now() + 1000;
++    while (!downloadClosed) {
++      assert.ok(performance.now() < closeDeadline, "the completed download socket must close without waiting for keep-alive expiry");
++      await new Promise((resolve) => setTimeout(resolve, 5));
++    }
++    async function ordinaryRequest() {
++      return new Promise((resolve, reject) => {
++        const client = originalRequest(`http://127.0.0.1:${gateway.address().port}/healthz`, { agent: clientAgent }, (incoming) => {
++          const socket = incoming.socket;
++          const chunks = [];
++          incoming.on("data", (chunk) => chunks.push(chunk));
++          incoming.on("error", reject);
++          incoming.on("end", () => resolve({ socket, headers: incoming.headers, body: JSON.parse(Buffer.concat(chunks).toString("utf8")) }));
++        });
++        client.on("error", reject); client.end();
++      });
++    }
++    const ordinaryFirst = await ordinaryRequest();
++    const ordinarySecond = await ordinaryRequest();
++    assert.equal(ordinaryFirst.body.component, "node-gateway");
++    assert.equal(ordinaryFirst.headers.connection, "keep-alive");
++    assert.notEqual(ordinaryFirst.socket, downloadSocket);
++    assert.equal(ordinaryFirst.socket, ordinarySecond.socket, "ordinary API keep-alive must remain enabled");
+     assert.deepEqual(trace.downloadTimeouts, [0]);
+     assertBackpressureObservations(observations);
+     assert.ok(observations.every((entry) => entry.firstObservedTerminationEvent === null));
+@@ -165,6 +195,7 @@
+     t.diagnostic(JSON.stringify({ marker: "LOCAL_NODE_FINAL_OBSERVATION", ...trace }));
+     response?.destroy();
+     request?.destroy();
++    clientAgent.destroy();
+     http.createServer = originalCreateServer;
+     http.request = originalRequest;
+     console.info = originalInfo;
+diff --git a/test/multi-language/success-file-transfer/web/test/upload-proxy.mjs b/test/multi-language/success-file-transfer/web/test/upload-proxy.mjs
+--- a/test/multi-language/success-file-transfer/web/test/upload-proxy.mjs
++++ b/test/multi-language/success-file-transfer/web/test/upload-proxy.mjs
+@@ -33,6 +33,7 @@
+   const env = Object.fromEntries(["HOST", "PORT", "API_URL", "API_TIMEOUT_MS"].map((key) => [key, process.env[key]]));
+   Object.assign(process.env, { HOST: "127.0.0.1", PORT: "0", API_URL: origin, API_TIMEOUT_MS: "30000" });
+   const trace = { records: [], requests: [], proxies: [], unpipeDataListenerCounts: [] };
++  const backendAgent = new http.Agent({ keepAlive: true });
+   let server;
+   const ready = new Promise((resolve, reject) => {
+     http.createServer = function (listener, ...args) {
+@@ -42,6 +43,7 @@
+   });
+   http.request = function (...args) {
+     assert.equal(args[1].timeout, 30000);
++    args[1] = { ...args[1], agent: backendAgent };
+     const proxy = original.request.apply(this, args);
+     const record = { destroyCalls: 0, timeouts: [] }; trace.proxies.push(record);
+     const destroy = proxy.destroy;
+@@ -56,7 +58,7 @@
+     else original.info.apply(this, args);
+   };
+   async function close() {
+-    http.createServer = original.createServer; http.request = original.request;
++    http.createServer = original.createServer; http.request = original.request; backendAgent.destroy();
+     if (server?.listening) { const stopped = new Promise((resolve) => server.close(resolve)); server.closeAllConnections(); await stopped; }
+     console.info = original.info;
+     for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+@@ -195,7 +197,7 @@
+   });
+   upstream.listen(0,"127.0.0.1"); await once(upstream,"listening");
+   let proxy, client;
+-  const responses=[]; let pending=Buffer.alloc(0);
++  const responses=[]; let pending=Buffer.alloc(0); let parseError;
+   try {
+     proxy=await gateway(`http://127.0.0.1:${upstream.address().port}`);
+     client=net.connect(new URL(proxy.url).port,"127.0.0.1");
+@@ -206,7 +208,7 @@
+         const split=pending.indexOf("\r\n\r\n"); if(split<0) return;
+         const head=pending.subarray(0,split).toString();
+         const length=Number(/Content-Length: (\d+)/i.exec(head)?.[1]);
+-        if(!Number.isSafeInteger(length)) throw new Error("EXPECTED_CONTENT_LENGTH");
++        if(!Number.isSafeInteger(length)) { parseError = new Error("EXPECTED_CONTENT_LENGTH: " + head); return; }
+         if(pending.length<split+4+length) return;
+         responses.push({status:Number(/^HTTP\/1\.1 (\d+)/.exec(head)[1]),body:pending.subarray(split+4,split+4+length).toString()});
+         pending=pending.subarray(split+4+length);
+@@ -215,12 +217,14 @@
+     await once(client,"connect");
+     client.write(`PUT /api/uploads/${id}/chunks/1 HTTP/1.1\r\nHost: localhost\r\nContent-Length: 1048576\r\nConnection: keep-alive\r\n\r\n`);
+     client.write(Buffer.alloc(5792,0x5a));
+-    await waitFor(()=>responses.length===1);
++    await waitFor(()=>responses.length===1 || parseError);
++    if (parseError) throw parseError;
+     assert.equal(responses[0].status,409);
+     assert.equal(proxy.requests[0].complete,false);
+     client.write(Buffer.alloc(1048576-5792,0x5a));
+     client.write(`POST /api/uploads/${id}/complete HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n`);
+-    await waitFor(()=>responses.length===2);
++    await waitFor(()=>responses.length===2 || parseError);
++    if (parseError) throw parseError;
+     assert.equal(responses[1].status,409);
+     assert.equal(proxy.requests[0].complete,true);
+     assert.equal(seen.length,2);

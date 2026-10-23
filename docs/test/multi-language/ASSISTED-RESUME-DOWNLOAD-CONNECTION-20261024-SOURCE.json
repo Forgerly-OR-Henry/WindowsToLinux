@@ -1,0 +1,198 @@
+{
+  "schema": 1,
+  "status": "LOCAL_DELTA_VERIFIED_RUN05_FULL_ASSISTED_PASSED_STOPPED_DISABLED_AUDITED",
+  "scope": "Three-path increment after source10; not a standalone diff from mixed HEAD",
+  "previousDeliveryCommit": "00e9fb246f7941743730b3cd4fdc013c81f247d2",
+  "previousExecutionSource10Sha256": "c06fe01b9bd3ef5cadc692a1203e0fca321b572c0bb202000eb9f143c45685f1",
+  "fixedExecutionSource11Sha256": "a263879f7d2aff10dfed4302201b135d21015da6661e8d07bc61f00a7f976604",
+  "patch": "docs/test/multi-language/patches/ASSISTED-RESUME-DOWNLOAD-CONNECTION-20261024.patch",
+  "patchSha256": "115d48721930e73af1664666edab5ba657342ce75bbae8a2f4a5d37af6f3b36e",
+  "patchBytes": 8469,
+  "files": [
+    {
+      "path": "test/multi-language/success-file-transfer/web/src/server/server.ts",
+      "beforeSha256": "433dc8d07a9a9b0ac421fc43beac02b27c6b0ddb088fbbd3b344f17c7ba306e4",
+      "afterSha256": "4fdfec138aa93ac1b3120e1d367d5d6f5ad78598ca49ed37c20b7a3033b2562c",
+      "beforeBytes": 14817,
+      "afterBytes": 15065
+    },
+    {
+      "path": "test/multi-language/success-file-transfer/web/test/download-proxy.mjs",
+      "beforeSha256": "7527702816f3bfa5f35f6ddc0b45ee35838945f67809ab581f51e7f858c46ca3",
+      "afterSha256": "e4cc6f7d08d21b1bcc6eedaad083976e10e630e971e9e6ffa503b86d351fe703",
+      "beforeBytes": 20334,
+      "afterBytes": 22069
+    },
+    {
+      "path": "test/multi-language/success-file-transfer/web/test/upload-proxy.mjs",
+      "beforeSha256": "3ba9ae7f0e72c10ff03d00593ad32f16dd753e750d1707ea2797849bdf48085d",
+      "afterSha256": "8be3a6fbacfa43f7eb83c9dafb2222c211b8bd0ce3b2f78aa8ae4b23b7ffed00",
+      "beforeBytes": 15505,
+      "afterBytes": 15788
+    }
+  ],
+  "patchVerification": {
+    "commands": [
+      {
+        "argv": [
+          "git",
+          "-c",
+          "core.autocrlf=false",
+          "-c",
+          "core.eol=lf",
+          "apply",
+          "--check",
+          "I:\\Program\\WindowsToLinux\\docs\\test\\multi-language\\patches\\ASSISTED-RESUME-DOWNLOAD-CONNECTION-20261024.patch"
+        ],
+        "exitCode": 0,
+        "stderr": ""
+      },
+      {
+        "argv": [
+          "git",
+          "-c",
+          "core.autocrlf=false",
+          "-c",
+          "core.eol=lf",
+          "apply",
+          "I:\\Program\\WindowsToLinux\\docs\\test\\multi-language\\patches\\ASSISTED-RESUME-DOWNLOAD-CONNECTION-20261024.patch"
+        ],
+        "exitCode": 0,
+        "stderr": ""
+      }
+    ],
+    "allPatchedBytesMatch": true
+  },
+  "localVerificationEvidence": [
+    {
+      "path": "tools/transport-causality/FINDINGS.md",
+      "sha256": "e982d5298ea9aad403bc184e15adc901fd550ba4463c87356729b50b7e14e1ea"
+    },
+    {
+      "path": "tools/transport-causality/original-relay-native-half-close.log",
+      "sha256": "cd8a4a7bfd6c74b02b3797d02f0ae5baa96af9d599212b1ffff081993becd916"
+    },
+    {
+      "path": "tools/transport-causality/close-download-relay-native-half-close.log",
+      "sha256": "09979b8cec67e66dbd7ece046b96515270c599c98932ae2e3fc1311b1d842c6d"
+    },
+    {
+      "path": "tools/transport-causality/close-download-direct-two-cycles.log",
+      "sha256": "06590b0768e3921cba88a24485dea0123241fc8952064e991df13b1bec8bfa6d"
+    },
+    {
+      "path": "tools/download-close-baseline/after-download-01.log",
+      "sha256": "ebb886c1465e06e3bb8e196d5e235d825bb4fd8000f00a520e4d1050b3ea35ef"
+    },
+    {
+      "path": "tools/download-close-baseline/upload-related-02.log",
+      "sha256": "3fccbf0e6a85809b4b9ba20e6beb3ee9c038f40ff96b19b4843469c0e545f304"
+    },
+    {
+      "path": "tools/download-close-baseline/go-cancel-01.log",
+      "sha256": "c62caec161e332713322a5f5722397fe960a0b61a9b618a868a7fe64e67a13c6"
+    },
+    {
+      "path": "tools/download-close-typescript/compile-verification.json",
+      "sha256": "e3f832ba7edba8032dc487a19ed8e02d81f144b1d445ac501b0a3296337007cf"
+    }
+  ],
+  "causalityBoundary": "A local sufficient condition and before/after are proven. Remote run02 FIN/RST timing remains unproven. Run03 FAILED at local component-management admission. Run04 retained original component STOP UNKNOWN history, then reconciled exactly once through the product to ENDED/FAILED, DEPLOYMENT_MANAGEMENT_NOT_STARTED, without resending STOP, followed by separate whole-application cleanup. After the later fixture and management-evidence scope repairs, independent run05 passed full ASSISTED V2 and actual management export, then a separate product STOP confirmed STOPPED/DISABLED. Final run05 usage and archive audit completed. Prior failures remain FAILED; later success is not first-pass success or proof of all historical causes.",
+  "configurationBoundary": "This source10-to-source11 download delta changes no timeout, retry, model, budget, approval policy, Java fixture, shared helper or schema; download-only close response; ordinary API keep-alive preserved. The later source12 fixture-only delta explicitly selects the existing independently reviewed component STOP/START management path without changing production guards, ASSISTED deployment mode or global application management.",
+  "followupExecutionSource12Sha256": "59dc451af32a41a8039883909fa34bef6fe58236af547bcd56f2e251161a9ec1",
+  "followupExecutionSource13Sha256": "65e6f1dd83c0144174b059f8b08f3376ab7e0ea0ecf923c5232720c2040785aa",
+  "followupFixtureSource": "docs/test/multi-language/ASSISTED-RESUME-COMPONENT-FIXTURE-20261024-SOURCE.json",
+  "followupManagementScopeSource": "docs/test/multi-language/ASSISTED-RESUME-MANAGEMENT-SCOPE-20261024-SOURCE.json",
+  "run03Evidence": {
+    "businessResult": "FAILED_FIXTURE_COMPONENT_MANAGEMENT_LOCAL_ADMISSION_BEFORE_DISPATCH",
+    "downloadsVerified": 3,
+    "downloadsRequired": 5,
+    "componentActionSubmitted": false,
+    "cleanupReceipt": "tools/file-transfer-new-host-03-finally-cleanup-receipt.json",
+    "cleanupReceiptSha256": "464c89fafa291d5f1b97adb584ced0b5981a3e25f400b4165357c5734c61b415",
+    "finalHandoff": "tools/live-monitor-run03/handoff-safe-02.json",
+    "finalHandoffSha256": "0f226409012cfcfec675c8bb898f3ddf9676dea42a646b0b0f63a0575cc34f26",
+    "knownGenerationAttempts": 70,
+    "knownInputPlusOutputTokens": 712441,
+    "capabilityProbeTokenUsageAndPhysicalRequestsUnknown": 4,
+    "cleanupState": "STOPPED",
+    "autostart": "DISABLED"
+  },
+  "run04Evidence": {
+    "businessResult": "FAILED_COMPONENT_REVIEW_DENIED_BEFORE_LIFECYCLE",
+    "downloadsVerified": 3,
+    "downloadsRequired": 5,
+    "originalUnknownTask": "1733e83a-7b57-4071-9471-173e19f14520",
+    "originalTaskReconciled": "ENDED_FAILED_DEPLOYMENT_MANAGEMENT_NOT_STARTED",
+    "originalUnknownHistoryRetained": true,
+    "originalComponentStopReplayed": false,
+    "separateCleanupReceipt": "tools/file-transfer-new-host-04-separate-cleanup-receipt.json",
+    "separateCleanupReceiptSha256": "3a61553d53ebf904f343bb1ea75ff227b2940cc7a3bb72f3e13b2d7fa247859a",
+    "finalHandoff": "tools/live-monitor-run04/handoff-safe-final-01.json",
+    "finalHandoffSha256": "5834e5650fec165a9e346b449f52752f839cf817a872fa6285ec53318a96c87f",
+    "knownGenerationAttempts": 78,
+    "knownInputPlusOutputTokens": 734281,
+    "capabilityProbeTokenUsageAndPhysicalRequestsUnknown": 4,
+    "cleanupState": "STOPPED",
+    "autostart": "DISABLED",
+    "fullManagementExportCompleted": false
+  },
+  "run05Acceptance": {
+    "businessResult": "PASSED_FULL_ASSISTED_V2_5_OF_5_DOWNLOADS",
+    "actualProcessExitCode": 0,
+    "mode": "ASSISTED",
+    "application": "wtl-assisted-file-transfer-6eji12egk",
+    "stateDirectory": "assisted-live-file-transfer-6ejhzihcc",
+    "publicationTask": "eac0c190-f67c-4b53-bdbf-08ca4ef5f6d8",
+    "downloadsVerified": 5,
+    "downloadsRequired": 5,
+    "fullManagementExportCompleted": true,
+    "managementExport": "file-transfer-new-host-05-delivery/file-transfer.json",
+    "managementExportSha256": "396dfe2ec4b4c875262b18cda0dd70619bc8631616b8987ba1e29205f5e5f5d8",
+    "exportObservedState": "RUNNING",
+    "exportAutostart": "DISABLED",
+    "finalCleanupReceipt": "tools/file-transfer-new-host-05-final-cleanup-receipt.json",
+    "finalCleanupReceiptSha256": "4035e99db09a72730f1cf78416fbc6d9ef7759efd46aa32e5f241c4b9462febe",
+    "cleanupState": "STOPPED",
+    "autostart": "DISABLED",
+    "negativeHealthExit64ObservationsRetained": 3,
+    "finalUsageAndArchiveAuditComplete": true,
+    "finalHandoff": "tools/live-monitor-run05/handoff-safe-final-01.json",
+    "finalHandoffSha256": "ae4b2fafcf3c1c4c837b460058c03a984de3c46145a8769e0f2e03b5c96b2a6b",
+    "finalizedUsage": "tools/live-monitor-run05/finalized-usage-01.json",
+    "finalizedUsageSha256": "2b5060f2b2835d29f3466982ab260294639f99e39d7108820940e2159f937fdb",
+    "knownGenerationAttempts": 123,
+    "knownInputTokens": 937544,
+    "knownOutputTokens": 182169,
+    "knownInputPlusOutputTokens": 1119713,
+    "stdoutAndPersistedAttempts": 97,
+    "stdoutOnlyAttemptsRecoveredFromCompleteOriginalLog": 26,
+    "capabilityProbeTokenUsageAndPhysicalRequestsUnknown": 4,
+    "validatedArchivedTasks": 31,
+    "archivedTaskState": "ENDED",
+    "archivedTaskResult": "SUCCEEDED",
+    "implicitWrapperArchivedTasks": 5,
+    "retainedExecutionRows": 0,
+    "unreleasedResources": 0,
+    "currentUnknownTasks": 0,
+    "missingArchiveProofs": 0,
+    "ownedReaderJavaCount": 0,
+    "databaseAndBootstrapUnchanged": true,
+    "afterSourceVerification": "tools/run05-source13-after-verification.json",
+    "afterSourceVerificationSha256": "efbb4b0d2ff9acc4f1666da56dbefaac947c7ecd95bfec4d1ec038389fba4d10"
+  },
+  "newHostFiveRunUsageKnownOnly": {
+    "knownGenerationAttempts": 417,
+    "knownInputTokens": 3765760,
+    "knownOutputTokens": 405402,
+    "knownInputPlusOutputTokens": 4171162,
+    "capabilityProbeTokenUsageAndPhysicalRequestsUnknown": 20,
+    "physicalRequestTotal": null,
+    "billingAmountKnown": false,
+    "includesCodexUsage": false,
+    "includesOriginalHostHistory": false
+  },
+  "verificationScope": "Frozen F 2363 paths and the seven owned main-tree source/test paths verified against source13. Unrelated pre-existing mixed main-tree changes were not fully retested. No full suite, eight-fixture round or live Agent deployment was performed.",
+  "secretsIncluded": false,
+  "fullSuite": false
+}

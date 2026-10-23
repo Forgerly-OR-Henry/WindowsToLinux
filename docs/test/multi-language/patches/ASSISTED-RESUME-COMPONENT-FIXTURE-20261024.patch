@@ -1,0 +1,23 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -9774,7 +9774,9 @@
+         String pending = fileTransferUpload(web, folder, "downstream-v2.bin", bytes, secondSha);
+         fileTransferChunk(pending, 0, bytes);
+         var pendingBefore = get(pending);
+-        var stop = applications.lifecycleComponent(completed(applications.inspect(app), 2), backend.componentId(), DeploymentLifecycleAction.STOP);
++        var componentManagement = new DeploymentApplicationsService(context,
++            DeploymentApplicationsService.AgentManagementPolicy.INDEPENDENT_APP);
++        var stop = componentManagement.lifecycleComponent(completed(applications.inspect(app), 2), backend.componentId(), DeploymentLifecycleAction.STOP);
+         completed(stop, 5);
+         assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, stop.snapshot().state(), "Do not start compensation for UNKNOWN STOP");
+         var stopped = completed(applications.inspect(app), 2);
+@@ -9789,7 +9791,7 @@
+         assertEquals("后端服务不可用", failure.path("error").asText());
+         http(pending, "GET", null, "application/json", 502);
+         http(pending + "/complete", "POST", new byte[0], "application/json", 502);
+-        var start = applications.lifecycleComponent(stopped, backend.componentId(), DeploymentLifecycleAction.START);
++        var start = componentManagement.lifecycleComponent(stopped, backend.componentId(), DeploymentLifecycleAction.START);
+         completed(start, 5);
+         assertNotEquals(stop.id(), start.id());
+         assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, start.snapshot().state());
