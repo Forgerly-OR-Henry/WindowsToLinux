@@ -150,7 +150,7 @@ public final class ModStoreFixture implements AutoCloseable {
      * @throws Exception if compilation or archive writing fails / 编译或归档写入失败时 */
     public ReleaseKey publish(String owner, String version, Map<String, String> required, Map<String, String> optional,
                               Map<String, String> purposes) throws Exception {
-        return publish(owner, version, required, optional, purposes, 21, "[1.0.0-dev.1,2.0.0)");
+        return publish(owner, version, required, optional, purposes, 21, "[1.0.0,2.0.0)");
     }
 
     /** Builds one actual package with explicit host bounds. / 构建一个具备明确宿主界限的实际包。
@@ -197,7 +197,7 @@ public final class ModStoreFixture implements AutoCloseable {
      * @param required different directory-required ranges / 不同目录必需范围
      * @throws Exception if metadata is invalid / 元数据无效时 */
     public synchronized void differentDeclaration(ReleaseKey key, Map<String, String> required) throws Exception {
-        differentDeclaration(key, required, Map.of(), 21, "[1.0.0-dev.1,2.0.0)");
+        differentDeclaration(key, required, Map.of(), 21, "[1.0.0,2.0.0)");
     }
 
     /** Changes complete served metadata while preserving actual package bytes. / 保留实际包字节而改变完整服务元数据。

@@ -377,7 +377,9 @@ class PlatformWindowStateMigrationTest {
                 assertEquals(0, pageCloses.get());
                 assertSame(page, named(frame, "migration.contract.page"));
                 assertTrue(page.isShowing());
-                assertSame(page, ((JTabbedPane) page.getParent()).getSelectedComponent());
+                var host = (JTabbedPane) SwingUtilities.getAncestorOfClass(JTabbedPane.class, page);
+                assertNotNull(host);
+                assertTrue(SwingUtilities.isDescendingFrom(page, host.getSelectedComponent()));
                 assertEquals("Unsubmitted source draft", draft.getText());
                 assertEquals("Original non-secret output\nSecond original line", output.getText());
                 assertEquals(1, selection.getSelectedIndex());

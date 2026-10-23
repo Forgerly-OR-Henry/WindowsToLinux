@@ -136,11 +136,31 @@ public final class PlatformFrame extends JFrame {
         /** Safe failure viewer, unavailable while the desktop is locked. / 安全失败查看器，桌面锁定时不可用。 */
         private final JButton modIssues = new JButton();
 
+        /** Navigation into the original log history page. / 导航到原日志历史页面。 */
+        private final JButton openLogs = new JButton();
+
+        /** Single-line status surface with an invariant application-pixel height. / 应用像素高度恒定的单行状态界面。 */
+        private final JPanel bar = new JPanel(new BorderLayout(12, 0));
+
         /** Original bounded startup evidence for this boot. / 本次启动的原有界启动证据。 */
         private java.util.List<gold.debug.windowstolinux.appapi.task.result.Problem> modProblems = java.util.List.of();
 
         /** Actual feedback subscription owned by this window. / 此窗口持有的实际反馈订阅。 */
         private AutoCloseable logSubscription;
+
+        /** Refreshes compact status controls without increasing the reserved height. / 刷新紧凑状态控件，不增加预留高度。
+         * @param palette effective colors / 生效配色 */
+        private void appearance(ThemePalette palette) {
+            bar.setBackground(palette.sidebarBackground());
+            bar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, palette.cardBorder()),
+                BorderFactory.createEmptyBorder(0, 12, 0, 8)));
+            var font = UIManager.getFont("Label.font");
+            for (var control : new JComponent[]{logIssue, modStatus, modIssues, openLogs}) {
+                control.setForeground(palette.sidebarForeground());
+                control.setFont(font.deriveFont(Math.min(18f, font.getSize2D())));
+            }
+        }
 
     }
 
@@ -180,12 +200,18 @@ public final class PlatformFrame extends JFrame {
         shell = new PlatformNavigationShell(content, catalog, palette);
         extensions = new ExtensionPagePane(this::closePage, owner -> owner, () -> catalog.text("security.locked"),
             this::selectModSurface);
+        shell.workspaceHeading(extensions.headingComponent());
         extensions.platformNavigation(target -> shell.select(switch (target) {
             case SERVERS -> "platform.servers";
             case AI_MODELS -> "platform.models";
             case TASKS -> "tasks.title";
         }));
         pages = new ModPageRegistry(extensions, environment);
+        try {
+            pages.extensions().diagnostics(problem -> feedback.logIssue.setText(messages.safe(problem)));
+        } catch (gold.debug.windowstolinux.appapi.task.result.ApiException failure) {
+            throw new IllegalStateException("Extension feedback could not be composed", failure);
+        }
         var settings = new SecuritySettingsPane(security, appearance.components, messages);
         var settingsSurface = appearance.components.pagePanel();
         settingsSurface.setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
@@ -199,19 +225,17 @@ public final class PlatformFrame extends JFrame {
         settingsScroll.setBorder(BorderFactory.createEmptyBorder());
         content.setName("platform.pages");
         content.addTab(catalog.text("shell.home"), messages.bind(home, "shell.home"));
-        if (config.modLoad())
-            content.addTab(catalog.text("platform.pages"), messages.bind(extensions, "platform.pages"));
+        content.addTab(catalog.text("platform.pages"), messages.bind(extensions, "platform.pages"));
         content.addTab(catalog.text("security.settings"), messages.bind(settingsScroll, "security.settings"));
-        if (config.modLoad()) content.addTab(catalog.text("platform.modSettings"),
+        content.addTab(catalog.text("platform.modSettings"),
             messages.bind(extensions.settingsComponent(), "platform.modSettings"));
         shell.home(home, this::showHome);
         installWorkspaceNavigation();
-        if (config.modLoad()) shell.register(extensions, "shell.workspace", "navigation/panels-top-left", 0, false);
+        shell.register(extensions, "shell.workspace", "navigation/panels-top-left", 0, false);
         shell.register(settingsScroll, "security.settings", "security/shield", 20, true);
-        if (config.modLoad())
-            shell.register(extensions.settingsComponent(), "platform.modSettings", "navigation/panels-top-left", 60, true);
+        shell.register(extensions.settingsComponent(), "platform.modSettings", "navigation/panels-top-left", 60, true);
         getContentPane().add(shell, BorderLayout.CENTER);
-        installFooter();
+        installFooter(palette);
         lock = DesktopLockController.attach(this, security, catalog, reports, shell.utilities(), appearance.components,
             false, () -> content.setSelectedComponent(settingsScroll));
         lock.onLockChange(locked -> {
@@ -277,21 +301,46 @@ public final class PlatformFrame extends JFrame {
         });
     }
 
-    /** Mounts startup and diagnostic feedback independently of the page shell. / 独立于页面外壳挂载启动及诊断反馈。 */
-    private void installFooter() {
+    /** Mounts startup and diagnostic feedback independently of the page shell. / 独立于页面外壳挂载启动及诊断反馈。
+     * @param palette effective colors / 生效配色 */
+    private void installFooter(ThemePalette palette) {
         feedback.logIssue.setName("platform.logIssue");
         feedback.modStatus.setName("platform.modStatus");
         feedback.modIssues.setName("platform.modProblems");
         messages.bind(feedback.modIssues, "platform.modProblems");
         feedback.modIssues.setVisible(false);
         feedback.modIssues.addActionListener(event -> showModProblems());
-        var footer = new JPanel(new java.awt.GridLayout(0, 1));
-        var modLine = new JPanel(new BorderLayout());
-        modLine.add(feedback.modStatus, BorderLayout.CENTER);
-        modLine.add(feedback.modIssues, BorderLayout.EAST);
-        footer.add(feedback.logIssue);
-        if (config.modLoad()) footer.add(modLine);
-        getContentPane().add(footer, BorderLayout.SOUTH);
+        feedback.openLogs.setName("platform.viewLogs");
+        messages.bind(feedback.openLogs, "platform.viewLogs");
+        feedback.openLogs.putClientProperty("desktop.navigation", true);
+        feedback.openLogs.setEnabled(false);
+        feedback.openLogs.addActionListener(event -> content.setSelectedComponent(settingsViews.logs));
+        messages.bind(feedback.logIssue, "platform.ready");
+        for (var label : new JLabel[]{feedback.logIssue, feedback.modStatus}) {
+            label.putClientProperty("html.disable", true);
+            label.setMinimumSize(new java.awt.Dimension(0, 0));
+            label.setToolTipText(label.getText());
+            label.addPropertyChangeListener("text", event -> label.setToolTipText(label.getText()));
+        }
+        var actions = new JPanel();
+        actions.setOpaque(false);
+        actions.setLayout(new BoxLayout(actions, BoxLayout.X_AXIS));
+        actions.add(feedback.modStatus);
+        actions.add(Box.createHorizontalStrut(12));
+        actions.add(feedback.modIssues);
+        actions.add(feedback.openLogs);
+        for (var button : new JButton[]{feedback.modIssues, feedback.openLogs}) {
+            button.setBorderPainted(false);
+            button.setContentAreaFilled(false);
+            button.setMargin(new java.awt.Insets(0, 8, 0, 8));
+            button.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, 26));
+        }
+        feedback.bar.setName("platform.statusBar");
+        feedback.bar.setPreferredSize(new java.awt.Dimension(0, 30));
+        feedback.bar.add(feedback.logIssue, BorderLayout.CENTER);
+        feedback.bar.add(actions, BorderLayout.EAST);
+        feedback.appearance(palette);
+        getContentPane().add(feedback.bar, BorderLayout.SOUTH);
     }
 
     /** Sets standard dialog labels from the chosen application language. / 按所选应用语言设置标准弹窗按钮。 */
@@ -320,7 +369,7 @@ public final class PlatformFrame extends JFrame {
             throw new IllegalStateException("Mod management must be installed once on the EDT");
         navigation = new gold.debug.windowstolinux.app.ui.mod.ModNavigationPane(service, pages, appearance.components,
             messages);
-        shell.pins(navigation, navigation::setCollapsed);
+        shell.pins(navigation, navigation::presentation);
         mods = new gold.debug.windowstolinux.app.ui.mod.PlatformModsPane(service, actions, appearance.components,
             messages, () -> {
             if (settingsViews.logs != null)
@@ -375,8 +424,8 @@ public final class PlatformFrame extends JFrame {
     /** Mounts the explicit store only after Mod management exists. / Mod 管理具备后才挂载明确商店。
      * @param service configured store adapter / 配置商店适配器 */
     public void installStore(gold.debug.windowstolinux.app.service.mod.store.ModStoreService service) {
-        if (!SwingUtilities.isEventDispatchThread() || !config.modLoad() || mods == null || store != null)
-            throw new IllegalStateException("Store composition requires enabled Mod management");
+        if (!SwingUtilities.isEventDispatchThread() || mods == null || store != null)
+            throw new IllegalStateException("Store composition requires Mod management");
         store = new gold.debug.windowstolinux.app.ui.mod.ModStorePane(service, appearance.components, messages,
             () -> {
                 mods.refresh();
@@ -440,6 +489,7 @@ public final class PlatformFrame extends JFrame {
             messages);
         content.insertTab(messages.text("platform.servers"), null, messages.bind(servers, "platform.servers"), null, 0);
         shell.register(servers, "platform.servers", "server/server", 10, false);
+        servers.installExtensions(pages.extensions().platform());
         servers.setLocked(!security.securityState().unlocked());
     }
 
@@ -501,6 +551,7 @@ public final class PlatformFrame extends JFrame {
         feedback.logSubscription = service.onIssue(problem -> SwingUtilities.invokeLater(() -> showLogIssue(problem)));
         service.issue().ifPresent(this::showLogIssue);
         settingsViews.logs.setLocked(!security.securityState().unlocked());
+        feedback.openLogs.setEnabled(true);
     }
 
     /** Mounts retained tasks through a narrow host contract, reusing the existing log history page. / 通过窄宿主契约挂载保留任务，复用已有日志历史页。
@@ -654,7 +705,8 @@ public final class PlatformFrame extends JFrame {
             }
         } catch (Exception failure) {
             showHome();
-            feedback.logIssue.setText(messages.safe(failure));
+            gold.debug.windowstolinux.app.ui.language.LocaleBinding.unbind(feedback.logIssue);
+            feedback.logIssue.setText(messages.safe(new Exception(failure)));
         }
     }
 
@@ -956,9 +1008,13 @@ public final class PlatformFrame extends JFrame {
             shell.appearance(effective == gold.debug.windowstolinux.app.ui.display.ThemeMode.DARK
                 ? ThemePalette.dark()
                 : ThemePalette.light());
+            feedback.appearance(effective == gold.debug.windowstolinux.app.ui.display.ThemeMode.DARK
+                ? ThemePalette.dark() : ThemePalette.light());
             debug.localize();
             if (models != null)
                 models.localize();
+            if (servers != null)
+                servers.localize();
             if (tasks != null)
                 tasks.localize();
             for (var owned : getOwnedWindows()) {

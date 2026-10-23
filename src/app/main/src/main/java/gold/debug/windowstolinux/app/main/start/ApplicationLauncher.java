@@ -122,15 +122,13 @@ public final class ApplicationLauncher {
                 created.setVisible(true);
                 return null;
             });
-            if (config.modLoad()) {
-                var modReport = startMods(runtime, layout, System.getProperty("wtl.workspace"), created.pages());
-                installModManagement(runtime, created);
-                onEdt(() -> {
-                    if (created.isDisplayable())
-                        created.showModStartup(modReport.running().size(), modReport.problems());
-                    return null;
-                });
-            }
+            var modReport = startMods(runtime, layout, System.getProperty("wtl.workspace"), created.pages());
+            installModManagement(runtime, created);
+            onEdt(() -> {
+                if (created.isDisplayable())
+                    created.showModStartup(modReport.running().size(), modReport.problems());
+                return null;
+            });
             onEdt(() -> {
                 created.finishStartupNavigation();
                 return null;
