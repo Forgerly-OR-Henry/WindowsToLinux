@@ -244,6 +244,22 @@ public final class PlatformFrame extends JFrame {
         shell.appearance(palette);
         shell.collapse(config.ui().navigationCollapsed(), false);
         DesktopWindowGeometry.install(this);
+        ((PlatformNavigationShell.PageDeck) content).beforeLeave((current, next) ->
+            gold.debug.windowstolinux.app.ui.control.CardEditGate.save(current).whenComplete((ok, failure) -> {
+                if (failure == null && Boolean.TRUE.equals(ok)) next.run();
+                else {
+                    ((PlatformNavigationShell.PageDeck) content).cancelDeparture();
+                    if (failure != null) JOptionPane.showMessageDialog(this, messages.safe(new Exception(failure)));
+                }
+            }));
+        lock.beforeExit(() -> {
+            if (!security.securityState().unlocked()
+                && gold.debug.windowstolinux.app.ui.control.CardEditGate.dirty(content)) {
+                lock.requireUnlockForDrafts();
+                return java.util.concurrent.CompletableFuture.completedFuture(false);
+            }
+            return gold.debug.windowstolinux.app.ui.control.CardEditGate.save(content);
+        });
         setLocationRelativeTo(null);
     }
 
@@ -529,7 +545,7 @@ public final class PlatformFrame extends JFrame {
                 location = currentPage();
             } catch (RuntimeException failure) {
                 closing = false;
-                JOptionPane.showMessageDialog(PlatformFrame.this, messages.safe(failure), "WindowsToLinux", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(PlatformFrame.this, messages.safe(new Exception(failure)), "WindowsToLinux", JOptionPane.ERROR_MESSAGE);
                 return;
             }
             new SwingWorker<Void, Void>() {
@@ -551,7 +567,7 @@ public final class PlatformFrame extends JFrame {
                         dispose();
                     } catch (Exception failure) {
                         closing = false;
-                        JOptionPane.showMessageDialog(PlatformFrame.this, messages.safe(failure), "WindowsToLinux",
+                        JOptionPane.showMessageDialog(PlatformFrame.this, messages.safe(new Exception(failure)), "WindowsToLinux",
                             JOptionPane.ERROR_MESSAGE);
                     }
                 }
@@ -665,7 +681,7 @@ public final class PlatformFrame extends JFrame {
         try {
             pages.closeView(key);
         } catch (Exception failure) {
-            JOptionPane.showMessageDialog(this, messages.safe(failure), "WindowsToLinux", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, messages.safe(new Exception(failure)), "WindowsToLinux", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -955,7 +971,7 @@ public final class PlatformFrame extends JFrame {
             try {
                 pages.environment(environment);
             } catch (Exception failure) {
-                JOptionPane.showMessageDialog(PlatformFrame.this, messages.safe(failure), "WindowsToLinux",
+                JOptionPane.showMessageDialog(PlatformFrame.this, messages.safe(new Exception(failure)), "WindowsToLinux",
                     JOptionPane.ERROR_MESSAGE);
             }
             revalidate();

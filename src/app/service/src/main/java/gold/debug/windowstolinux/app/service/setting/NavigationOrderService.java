@@ -57,7 +57,7 @@ public final class NavigationOrderService {
      * @param cause original storage failure / 原存储失败
      * @return public unavailable result / 公开不可用结果 */
     private static ApiException failure(SQLException cause) {
-        return new ApiException(new Problem(ProblemCode.UNAVAILABLE, "NAVIGATION_PREFERENCE_UNCONFIRMED",
+        return new ApiException(new Problem(ProblemCode.UNAVAILABLE, "40001".equals(cause.getSQLState()) ? "ORDER_BASELINE_CONFLICT" : "NAVIGATION_PREFERENCE_UNCONFIRMED",
             "Navigation preference could not be confirmed; original value retained", Map.of(), Optional.empty()));
     }
 }

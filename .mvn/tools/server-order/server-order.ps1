@@ -9,7 +9,9 @@ param(
     [string] $JavaHome = $env:JAVA_HOME,
     [Parameter(Mandatory = $true)]
     [string] $MavenRepository,
-    [string] $CompiledRoot
+    [string] $CompiledRoot,
+    [ValidateSet('server-order', 'ai-model')]
+    [string] $Operation = 'server-order'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -73,20 +75,22 @@ $buildDirectory = Join-Path ([IO.Path]::GetTempPath()) ('server-order-tool-' + [
 $exitCode = 1
 try {
     $classPath = $classPathParts -join [IO.Path]::PathSeparator
-    $sources = @('ServerOrderFiles.java', 'ServerOrderData.java', 'ServerOrderMaintenance.java', 'ServerOrderAtomicMove.java') |
+    $sources = @('ServerOrderFiles.java', 'ServerOrderData.java', 'ServerOrderMaintenance.java', 'ServerOrderAtomicMove.java', 'OfflineTableChange.java', 'OfflineSchemaMaintenance.java', 'AiModelData.java', 'AiModelMaintenance.java') |
         ForEach-Object { Join-Path $PSScriptRoot $_ }
-    if ($Mode -eq 'test') { $sources += Join-Path $PSScriptRoot 'ServerOrderMaintenanceTest.java' }
+    if ($Mode -eq 'test') { $sources += Join-Path $PSScriptRoot $(if ($Operation -eq 'ai-model') { 'AiModelMaintenanceTest.java' } else { 'ServerOrderMaintenanceTest.java' }) }
     & $javac '--release' '21' '-encoding' 'UTF-8' '-cp' $classPath '-d' $buildDirectory @sources
     if ($LASTEXITCODE -ne 0) { throw 'The one-time maintenance tool did not compile.' }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'platform-v1-before-server-order.sql') `
         -Destination (Join-Path $buildDirectory 'server-order-before.sql')
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'platform-v1-before-ai-model.sql') -Destination (Join-Path $buildDirectory 'server-order-after.sql')
+    $entry = if ($Operation -eq 'ai-model') { 'AiModelMaintenance' } else { 'ServerOrderMaintenance' }
     $runtimeClassPath = $buildDirectory + [IO.Path]::PathSeparator + $classPath
     if ($Mode -eq 'test') {
-        $testArguments = @('-cp', $runtimeClassPath, 'gold.debug.windowstolinux.app.db.init.ServerOrderMaintenanceTest')
+        $testArguments = @('-cp', $runtimeClassPath, ('gold.debug.windowstolinux.app.db.init.' + $entry + 'Test'))
         if (-not [string]::IsNullOrWhiteSpace($Case)) { $testArguments += $Case }
         & $java @testArguments
     } else {
-        & $java '-cp' $runtimeClassPath 'gold.debug.windowstolinux.app.db.init.ServerOrderMaintenance' `
+        & $java '-cp' $runtimeClassPath ('gold.debug.windowstolinux.app.db.init.' + $entry) `
             $Mode $DataDirectory $BackupDirectory
     }
     $exitCode = $LASTEXITCODE

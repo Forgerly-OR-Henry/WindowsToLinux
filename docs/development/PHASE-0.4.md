@@ -212,7 +212,7 @@
 
 正常流程由程序推进，已验证计划及真实服务器观察进行一次预检；相关输入或环境事实改变才重新预检。失败解释使用实际阶段及脱敏诊断；随后只能修改受支持参数，或调用登记的诊断、状态、环境准备、重启和候选清理工具。必须确认失败且完成有效修正或验证恢复确实改变环境，才生成新计划重试；最多两次，分析、节点建议及恢复共用 30 次决策预算，模型接替不重置。未知结果、没有新进展、恢复无法验证、预算耗尽或人工接管时停止自动继续。多组件复用同一策略并重新验证完整依赖图及整应用健康条件。网络或协议错误明确询问是否人工继续，独立命令审批仍不可省略。
 
-APP v21 的 `ai_model` 单表保存独立显示顺序、用途成员/顺序/启用和文字/视觉验证修订。AI 页面默认全宽库存，右侧用途入口在本页展开等宽双栏，左右箭头管理成员，拖动/上下按钮或 Alt+方向键排序。库存始终完整，显示顺序不参与调用；用途草稿保存时原子提交，取消丢弃，失败保留。修改端点、模型或凭据使相应测试失效，文字与视觉需分别通过。API Key 内容变化递增配置修订；修改主密码不改变模型修订。任务固定用途顺序，调用前在同一读取事务复核端点身份、能力验证和凭据，避免把更新后的凭据发送到旧端点。
+`ai_model` 当前每条记录仅保留一个完整 URL，四种用途以可空顺序表示成员，不设独立启用状态。AI 页有全宽清单、模型详情和用途编排三态；能力核验和未结束模型任务归属详情。清单展示与四用途调用顺序分别持久化，按共用三次自动保存和离开补存规则执行，失败保留草稿。修改端点、模型、协议、推理配置或凭据使旧修订证据失效；显示名称和排序不影响。API Key 替换创建新引用，主密码修改不改变模型修订。任务冻结用途顺序与配置，调用前核对当前能力和身份；首语言成员失效明确报错，不静默跳过。具体界面及恢复规则见[产品说明书](../reference/PRODUCT-MANUAL.md#163-全部模型详情与四种用途)。
 
 部署、审批、视觉按各自冻结顺序串行调用，不跨用途回退。旧常规/视觉分别迁入部署/视觉，审批留空；固定旧角色绑定只保留迁移数据，不控制 App 调用。有效拒绝不切换审批模型。Agent 的审批矩阵、预算、生命周期和未知结果限制见[三模式](#agent-modes)，用户操作见[产品手册](../reference/PRODUCT-MANUAL.md#16-app-部署模式与模型用途)。
 
@@ -271,13 +271,13 @@ DB 的模型、分析和远程契约仍使用 `ecosystem.db`；SSHD 固定执行
 
 **涉及模块与分工：** `shared/model` 保存目录与选择规则；分析器提取声明，`shared/deploy` 编排匹配，Linux 窄端口与 SSHD 安装执行分离。
 
-代码依据：[ToolchainSupportCatalog.java](../../src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/toolchain/ToolchainSupportCatalog.java)（目录修订 `2026-09-09.1`）和 [ToolchainSelectionPolicy.java](../../src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/toolchain/ToolchainSelectionPolicy.java)。目录允许分支不等于每个补丁或环境都已实测，元数据中的维护状态是程序内置值，不是本次重新查询的上游政策。
+代码依据：[ToolchainSupportCatalog.java](../../history-src/src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/toolchain/ToolchainSupportCatalog.java)（目录修订 `2026-09-09.1`）和 [ToolchainSelectionPolicy.java](../../history-src/src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/toolchain/ToolchainSelectionPolicy.java)。目录允许分支不等于每个补丁或环境都已实测，元数据中的维护状态是程序内置值，不是本次重新查询的上游政策。
 
 #### 目标、顺序和证据边界
 
 面向已有源码项目的迁移需求，分离全版本识别、受控构建和可扩展版本目录。不得将未经验证的开发者使用率或偏好作为产品事实。
 
-执行顺序为：本文件及相关文档引用核对 → Kotlin Ubuntu 专属补装清理 → 集中目录与全版本识别 → 公共选择与环境准备 → 各生态构建/运行绑定 → 持久化和恢复 → 完整回归。进度以 `.ai-workspace/paper/progress/history/2026-10-22-before-workspace-organization.md` 为准。
+执行顺序为：本文件及相关文档引用核对 → Kotlin Ubuntu 专属补装清理 → 集中目录与全版本识别 → 公共选择与环境准备 → 各生态构建/运行绑定 → 持久化和恢复 → 完整回归。该顺序属于当时实施安排，结果以本文所属验收章节为准，不依赖后续任务的临时进度。
 
 保留现有六种发行版、x86-64/CPU 支持边界及已有构建形态；不新增旧 GOPATH、Python 2 构建、.NET Framework、容器内工具链或数据库版本适配。WindowsToLinux 自身继续使用 JDK 21。版本可识别不代表项目构建形态受支持。
 

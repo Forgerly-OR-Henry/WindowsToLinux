@@ -83,11 +83,11 @@ class PlatformStorageTest {
             p.aiProfiles().saveNamed(first);
             p.aiProfiles().saveVerified(second, "Second", Instant.now());
             assertThrows(SQLException.class, () -> p.aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
-                List.of(new AiPurposeAssignment("first", true))));
+                List.of(new AiPurposeAssignment("first"))));
             p.aiProfiles().saveVerified(first, "First", Instant.now());
             p.aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
-                List.of(new AiPurposeAssignment("first", true), new AiPurposeAssignment("second", true)));
-            p.aiProfiles().purposes().save(AiPurposeType.APPROVAL, List.of(new AiPurposeAssignment("second", true)));
+                List.of(new AiPurposeAssignment("first"), new AiPurposeAssignment("second")));
+            p.aiProfiles().purposes().save(AiPurposeType.APPROVAL, List.of(new AiPurposeAssignment("second")));
             p.aiProfiles().reorder(List.of("second", "first"));
             assertEquals(List.of("first", "second"), p.aiProfiles().configuredFor(AiPurposeType.DEPLOYMENT).stream()
                 .map(v -> v.profile().id()).toList());

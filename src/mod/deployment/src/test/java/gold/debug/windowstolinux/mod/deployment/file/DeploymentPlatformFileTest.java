@@ -127,7 +127,7 @@ class DeploymentPlatformFileTest extends DeploymentRuntimeFixture {
             }
             runtime.persistence().aiProfiles().saveVerified(new StoredAiModelProfile("file-review", "http://127.0.0.1:" + http.getAddress().getPort() + "/approval", "fixture-model", credential), "file-review", java.time.Instant.now(), AiCapabilityType.TEXT);
             runtime.persistence().aiProfiles().saveOutputLimit("file-review", 512);
-            runtime.persistence().aiProfiles().purposes().save(AiPurposeType.APPROVAL, List.of(new AiPurposeAssignment("file-review", true)));
+            runtime.persistence().aiProfiles().purposes().save(AiPurposeType.APPROVAL, List.of(new AiPurposeAssignment("file-review")));
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var file = context.file();

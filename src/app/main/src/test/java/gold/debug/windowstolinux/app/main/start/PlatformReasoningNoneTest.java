@@ -22,8 +22,7 @@ class PlatformReasoningNoneTest {
         try (var fixture = new PlatformAiServiceTest.Fixture();
              var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var service = PlatformModelServiceTest.setup(runtime);
-            var profile = new AiModelProfile("sample", fixture.uri("/chat"), "fixture-model", "ai/provider/sample/key",
-                null, null, ModelReasoningLevel.NONE);
+            var profile = new AiModelProfile("sample", fixture.uri("/chat"), "fixture-model", "ai/provider/sample/key", ModelReasoningLevel.NONE);
             fixture.handler.set(exchange -> {
                 assertEquals("none", fixture.requests.remove().body().path("reasoning_effort").asText());
                 calls.incrementAndGet();

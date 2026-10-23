@@ -722,8 +722,8 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                 var configured = member.configuration();
                 var profile = configured.profile();
                 var value = members.addObject().put("enabled", member.enabled()).put("id", profile.id())
-                    .put("endpoint", profile.endpoint()).put("fileEndpoint", profile.fileEndpoint())
-                    .put("realtimeEndpoint", profile.realtimeEndpoint()).put("model", profile.model())
+                    .put("endpoint", profile.endpoint()).put("fileEndpoint", profile.endpoint())
+                    .put("realtimeEndpoint", profile.endpoint()).put("model", profile.model())
                     .put("credentialKey", profile.credentialKey()).put("revision", configured.revision())
                     .put("outputLimit", runtime.persistence().aiProfiles().outputLimit(profile.id()).orElse(-1));
                 for (var capability : AiCapabilityType.values())
@@ -762,9 +762,9 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
         assertTrue(runtime.persistence().aiProfiles().listConfigured().stream().filter(value -> value.profile().id().equals(profile.id()))
             .allMatch(value -> value.verified(AiCapabilityType.TEXT) && value.verified(AiCapabilityType.TOOL_CALLING)));
         runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
-            List.of(new AiPurposeAssignment("environment-sentinel", true)));
+            List.of(new AiPurposeAssignment("environment-sentinel")));
         runtime.persistence().aiProfiles().purposes().save(AiPurposeType.APPROVAL,
-            List.of(new AiPurposeAssignment("environment-sentinel", true)));
+            List.of(new AiPurposeAssignment("environment-sentinel")));
     }
 
     private Path record(String phase) {

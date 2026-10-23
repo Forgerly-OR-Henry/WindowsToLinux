@@ -28,9 +28,9 @@ class AiProtocolStoreTest {
     }
 
     @Test
-    void protocolAndIndependentToolCheckSurviveRestartAndChangesInvalidateOnlyAffectedCapabilities() throws Exception {
-        var old = new StoredAiModelProfile("a", "https://example.test/v1/chat/completions", "model", "ai/a", "https://example.test/audio", "", ModelReasoningLevel.DEFAULT, ModelProtocol.OPENAI_CHAT_COMPLETIONS);
-        var updated = new StoredAiModelProfile(old.id(), old.endpoint(), old.model(), old.credentialKey(), old.fileEndpoint(), old.realtimeEndpoint(), old.reasoningEffort(), ModelProtocol.ANTHROPIC_MESSAGES);
+    void protocolAndIndependentToolCheckSurviveRestartAndProtocolChangesInvalidateEvidence() throws Exception {
+        var old = new StoredAiModelProfile("a", "https://example.test/v1/chat/completions", "model", "ai/a", ModelReasoningLevel.DEFAULT, ModelProtocol.OPENAI_CHAT_COMPLETIONS);
+        var updated = new StoredAiModelProfile(old.id(), old.endpoint(), old.model(), old.credentialKey(), old.reasoningEffort(), ModelProtocol.ANTHROPIC_MESSAGES);
         try (var db = PlatformStoreTestFixture.open(directory)) {
             PlatformStoreTestFixture.credential(db, "ai/a");
             var store = db.aiProfiles();
@@ -43,7 +43,7 @@ class AiProtocolStoreTest {
             assertEquals(2, saved.revision());
             for (var capability : java.util.List.of(AiCapabilityType.TEXT, AiCapabilityType.VISION, AiCapabilityType.TOOL_CALLING))
                 assertFalse(saved.verified(capability));
-            assertTrue(saved.verified(AiCapabilityType.VOICE_FILE));
+            assertFalse(saved.verified(AiCapabilityType.VOICE_FILE));
             assertThrows(java.sql.SQLException.class, () -> store.recordVerification(old, 1, AiCapabilityType.TOOL_CALLING, Instant.now()));
             store.recordVerification(updated, 2, AiCapabilityType.TOOL_CALLING, Instant.now());
         }

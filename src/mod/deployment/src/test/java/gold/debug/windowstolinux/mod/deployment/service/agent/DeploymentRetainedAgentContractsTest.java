@@ -99,10 +99,10 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
             runtime.persistence().aiProfiles().saveOutputLimit("model", 1600);
             if (selected.language)
                 runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
-                    List.of(new AiPurposeAssignment("model", true)));
+                    List.of(new AiPurposeAssignment("model")));
             if (selected.approval != null)
                 runtime.persistence().aiProfiles().purposes().save(AiPurposeType.APPROVAL,
-                    List.of(new AiPurposeAssignment("model", selected.approval)));
+                    List.of(new AiPurposeAssignment("model")));
 
             var selections = new AtomicInteger();
             var captures = new AtomicInteger();

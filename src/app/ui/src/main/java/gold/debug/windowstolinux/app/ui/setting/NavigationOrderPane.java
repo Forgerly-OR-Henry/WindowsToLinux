@@ -17,7 +17,7 @@ import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
 import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 
 /** Separate platform and Mod permutations with commit-before-render semantics. / 分区入口排列，提交后才渲染。 */
-public final class NavigationOrderPane extends JPanel implements AutoCloseable, Scrollable {
+public final class NavigationOrderPane extends JPanel implements AutoCloseable, Scrollable, gold.debug.windowstolinux.app.ui.control.PendingCardEdits {
     /** Independently persisted platform and Mod order sections. / 独立持久化的平台及 Mod 顺序分区。 */
     private final List<Section<?>> sections = new ArrayList<>();
 
@@ -63,7 +63,24 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
 
     /** Reloads when entering appearance or publication changes. / 进入外观或发布变化时重读。 */
     public void refresh() {
-        sections.forEach(Section::reload);
+        if (locked || closed) return;
+        sections.forEach(section -> section.session.savePending().thenAccept(ok -> {
+            if (ok) section.reload();
+        }));
+    }
+
+    @Override
+    public boolean hasPendingEdits() {
+        return sections.stream().anyMatch(section -> section.session.hasPendingEdits());
+    }
+
+    @Override
+    public java.util.concurrent.CompletionStage<Boolean> saveBeforeLeave() {
+        java.util.concurrent.CompletionStage<Boolean> result = java.util.concurrent.CompletableFuture.completedFuture(true);
+        for (var section : sections)
+            result = result.thenCompose(ok -> ok ? section.session.saveBeforeLeave()
+                : java.util.concurrent.CompletableFuture.completedFuture(false));
+        return result;
     }
 
     /** Measures the natural card stack. / 测量卡片栈的自然尺寸。
@@ -113,7 +130,8 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
         locked = value;
         sections.forEach(section -> {
             section.epoch++;
-            section.loaded = false;
+
+            section.session.setLocked(value);
             section.controls();
         });
         if (!locked) refresh();
@@ -172,7 +190,7 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
         private final JLabel status = new JLabel();
 
         /** Last complete order confirmed by persistence. / 持久化上次确认的完整顺序。 */
-        private List<T> confirmed = List.of();
+        private final gold.debug.windowstolinux.app.ui.control.CardOrderSession<T> session;
 
         /** In-flight operation and confirmed-load readiness flags. / 执行中操作及已确认加载就绪标志。 */
         private boolean busy, loaded;
@@ -197,11 +215,13 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
             this.defaults = defaults;
             this.save = save;
             this.applied = applied;
+            session = new gold.debug.windowstolinux.app.ui.control.CardOrderSession<>(this, messages,
+                (expected, requested) -> save.save(expected, visible.apply(requested)), load, applied, this::render);
             setName(key);
             setOpaque(false);
             setBorder(BorderFactory.createEmptyBorder(14, 0, 0, 0));
             var editor = components.card(new BorderLayout(0, UIScale.scale(12)));
-            editor.add(components.sectionHeading(messages, key, "navigation.dragHint"), BorderLayout.NORTH);
+            editor.add(messages.bind(new JLabel(), key), BorderLayout.NORTH);
             list.setName(key + ".list");
             list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
             list.setOpaque(false);
@@ -214,7 +234,7 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
                 return text;
             });
             components.cardList(list, true);
-            list.reorder(this::commit, () -> !locked && !closed && !busy && loaded);
+            list.reorder(this::commit, () -> !locked && !closed && !busy && !session.busy() && loaded);
             scroll = new JScrollPane(list);
             scroll.setBorder(BorderFactory.createEmptyBorder());
             scroll.setOpaque(false);
@@ -236,7 +256,17 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
             reset.setName(key + ".reset");
             up.addActionListener(event -> move(-1));
             down.addActionListener(event -> move(1));
-            reset.addActionListener(event -> commit(defaults.apply(visible.apply(confirmed))));
+            for (int delta : new int[]{-1, 1}) {
+                String action = delta < 0 ? "alt UP" : "alt DOWN";
+                list.getInputMap().put(KeyStroke.getKeyStroke(action), action);
+                list.getActionMap().put(action, new AbstractAction() {
+                    @Override
+                    public void actionPerformed(java.awt.event.ActionEvent event) {
+                        move(delta);
+                    }
+                });
+            }
+            reset.addActionListener(event -> commit(defaults.apply(visible.apply(session.draft()))));
             var buttons = components.transparent(new FlowLayout(FlowLayout.LEADING, 6, 0));
             buttons.add(up);
             buttons.add(down);
@@ -267,7 +297,7 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
         /** Requests a bounded swap of the selected visible entrance. / 请求对所选可见入口进行有界交换。
          * @param delta relative destination offset / 相对目标偏移 */
         private void move(int delta) {
-            var requested = new ArrayList<>(visible.apply(confirmed));
+            var requested = new ArrayList<>(visible.apply(session.draft()));
             int index = list.getSelectedIndex();
             if (index < 0 || index + delta < 0 || index + delta >= requested.size()) return;
             java.util.Collections.swap(requested, index, index + delta);
@@ -276,7 +306,7 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
 
         /** Loads confirmed order and rejects responses crossing privacy generations. / 加载已确认顺序并拒绝跨隐私代的响应。 */
         private void reload() {
-            if (locked || closed || busy) return;
+            if (locked || closed || busy || session.busy() || session.hasPendingEdits()) return;
             busy = true;
             long generation = epoch;
             controls();
@@ -287,9 +317,9 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
                     reload();
                     return;
                 }
-                confirmed = List.copyOf(value);
                 loaded = true;
-                applied.accept(confirmed);
+                session.accept(value);
+                applied.accept(session.confirmed());
                 render();
             }, failure -> {
                 busy = false;
@@ -304,41 +334,20 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
         /** Commits against the original full snapshot before applying visible order. / 针对原完整快照提交后才应用可见顺序。
          * @param requested visible identity permutation / 可见身份排列 */
         private void commit(List<T> requested) {
-            if (locked || closed || busy || !loaded) return;
-            var expected = confirmed;
-            var selection = list.getSelectedValue();
-            long generation = epoch;
-            busy = true;
-            controls();
-            messages.bind(status, "navigation.saving");
-            DesktopTaskRunner.run(() -> save.save(expected, requested), value -> {
-                busy = false;
-                if (closed || locked) return;
-                if (epoch != generation) {
-                    reload();
-                    return;
-                }
-                confirmed = List.copyOf(value);
-                applied.accept(confirmed);
-                messages.bind(status, "navigation.saved");
-                render();
-                list.setSelectedValue(selection, true);
-            }, failure -> {
-                busy = false;
-                if (closed || locked) return;
-                LocaleBinding.unbind(status);
-                status.setText(messages.safe(failure));
-                loaded = false;
-                controls();
-                reload();
-            });
+            if (locked || closed || busy || session.busy() || !loaded) return;
+            var current = visible.apply(session.draft());
+            if (requested.size() != current.size() || !new java.util.HashSet<>(current).equals(new java.util.HashSet<>(requested)))
+                throw new IllegalArgumentException("Invalid visible permutation");
+            var remaining = requested.iterator();
+            var full = session.draft().stream().map(id -> current.contains(id) ? remaining.next() : id).toList();
+            session.edit(full, true);
         }
 
         /** Renders confirmed visible identities while retaining selection. / 渲染已确认可见身份并保留选择。 */
         private void render() {
             T selected = list.getSelectedValue();
             var model = new DefaultListModel<T>();
-            if (!closed) visible.apply(confirmed).forEach(model::addElement);
+            if (!closed) visible.apply(session.draft()).forEach(model::addElement);
             list.setModel(model);
             list.setVisibleRowCount(Math.max(1, Math.min(5, model.size())));
             list.setSelectedValue(selected, true);
@@ -348,7 +357,7 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
 
         /** Admits order edits only after an unlocked idle confirmed load. / 仅在解锁、空闲且确认加载后允许顺序编辑。 */
         private void controls() {
-            boolean enabled = !locked && !closed && !busy && loaded;
+            boolean enabled = !locked && !closed && !busy && !session.busy() && loaded;
             int index = list.getSelectedIndex();
             list.setEnabled(enabled);
             if (locked || closed) list.cancelInteraction();

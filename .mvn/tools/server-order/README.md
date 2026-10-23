@@ -60,3 +60,24 @@ H2 DDL 隐式提交，因此不能声称 `rollback()` 会撤销表重建。本�
 恢复会重新验证备份、receipt 的目录/DDL 绑定、原引导文件 hash 和 generation，且只接受当前数据库 hash 正好等于原图像或已验证新图像；恢复文件同样经复制/hash/原子替换，不修改引导文件。若备份不完整、receipt 缺失/损坏、原配对材料或图像出现未知变动，则拒绝覆盖，保留现状，交给人工核对。最早期的备份阶段中断尚未产生 receipt 时，原文件尚未进行任何 JDBC 打开或发布，保持原样；不要把零散文件当作有效恢复集。
 
 成功后若已经重新打开应用或数据库客户端，H2 或业务写入会改变文件 hash；此时恢复拒绝回滚，以免覆盖后来数据。没有“强制恢复”“跳过校验”“兼容旧库启动”选项。正常启动对旧 DDL 不匹配的拒绝行为保持原样；这是 schema 1 开发阶段的一次性维护，不建立长期迁移机制。
+
+## AI 模型表专用重建
+
+`ai-model.ps1` 复用相同独占锁、配对备份、同卷工作副本校验及受保护原子替换流程；不接入启动迁移，不新增 Schema 版本。旧 DDL 固定为 `platform-v1-before-ai-model.sql`（服务器排序后的正式结构），原服务器工具的两端 DDL 也保持固定，不受后续 AI 基准改变影响。
+
+AI 重建物理删除两个音频 URL 和四个用途 enabled 列，保留唯一必填 `endpoint_url` 及四个可空、唯一、非负的用途顺序。先移出旧停用成员，再将不同旧端点拆成相邻独立模型，同端点去重；优先保留文字端点原 ID，随后完整音频、实时音频。旧实时传输实际附带的 `intent=transcription` 固化为明确 URL，之后运行时不再追加。语言/审批/视觉保留原文字端点成员，语音按文件、实时展开；缺失对应端点的失效旧成员保留主记录。精确对应端点的原证据保留状态、原因、时间及原修订，过期证据不会变有效；新记录共享旧不透明凭据引用，更换 Key 时由模型服务创建新引用。
+
+重建验证 AI 目标行与预期排列完全相等，其他业务表、服务器顺序、凭据、任务、Mod 元数据和授权不变；只允许复制必要的模型偏好，再条件更新 Schema 摘要。普通失败保留原库及验证过的恢复材料。不要在 APP、数据库客户端或相关测试使用实际库时执行；工具不会终止它们。
+
+```powershell
+& ./.mvn/tools/server-order/ai-model.ps1 -Mode test -Case split `
+  -JavaHome 'E:/Program/Java/JDK21' -MavenRepository '<isolated-maven-repository>' -CompiledRoot '<isolated-build-root>'
+& ./.mvn/tools/server-order/ai-model.ps1 -Mode test -Case failure `
+  -JavaHome 'E:/Program/Java/JDK21' -MavenRepository '<isolated-maven-repository>' -CompiledRoot '<isolated-build-root>'
+& ./.mvn/tools/server-order/ai-model.ps1 -Mode test -Case guards `
+  -JavaHome 'E:/Program/Java/JDK21' -MavenRepository '<isolated-maven-repository>' -CompiledRoot '<isolated-build-root>'
+```
+
+`split` 覆盖拆分、同 URL 去重、用途保序、旧停用成员、失效成员和证据/凭据隔离；`failure` 注入备份后、表改动后、发布前、发布后异常并验证原图像逐字节恢复；`guards` 验证独占锁及未知 Schema 摘要拒绝。均只使用新建合成数据库。
+
+实际 apply/restore 参数与服务器工具相同，入口改为 `ai-model.ps1`，必须另选未存在的私有备份子目录。配对数据库、`db-access.bin` 和 receipt 不进入 Git 或 AI 证据目录，不覆盖此前服务器维护的恢复材料。成功后若已发生业务写入，显式恢复仍拒绝覆盖未知的新数据。

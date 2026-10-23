@@ -23,6 +23,8 @@ public final class DesktopListCard extends JPanel {
     /** Original selection state for this renderer invocation. / 本次渲染的原选择状态。 */
     private boolean selected;
 
+    private boolean available;
+
     private JLabel grip;
 
     /** Builds one surface around author content. / 围绕作者内容构建一个表面。
@@ -32,6 +34,7 @@ public final class DesktopListCard extends JPanel {
     private DesktopListCard(Component content, boolean selected, boolean draggable) {
         super(new BorderLayout(UIScale.scale(10), 0));
         this.selected = selected;
+        this.available = content.isEnabled();
         setOpaque(false);
         setBorder(new FlatEmptyBorder(10, 16, 10, 16));
         transparent(content);
@@ -65,11 +68,12 @@ public final class DesktopListCard extends JPanel {
         if (content instanceof JComponent component && component.getClientProperty(ROW) instanceof DesktopListCard card) {
             card.selected = selected;
             card.draggable(draggable);
+            card.available = ((BorderLayout) card.getLayout()).getLayoutComponent(BorderLayout.CENTER).isEnabled();
             return component;
         }
         var row = new Row();
         row.setOpaque(false);
-        row.setBorder(new FlatEmptyBorder(6, 0, 6, 0));
+        row.setBorder(new FlatEmptyBorder(9, 0, 9, 0));
         var card = new DesktopListCard(content, selected, draggable);
         row.putClientProperty(ROW, card);
         row.add(card);
@@ -152,7 +156,8 @@ public final class DesktopListCard extends JPanel {
         var g = (Graphics2D) graphics.create();
         try {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g.setColor(UIManager.getColor(selected ? "List.selectionBackground" : "List.cardBackground"));
+            g.setColor(UIManager.getColor(selected && available ? "List.selectionBackground"
+                : available ? "List.cardBackground" : "Button.disabledBackground"));
             g.fill(outline());
             if (selected) {
                 g.clip(outline());
@@ -169,6 +174,8 @@ public final class DesktopListCard extends JPanel {
      * @param graphics current context / 当前绘制上下文 */
     @Override
     protected void paintChildren(Graphics graphics) {
+        // Renderer trees can be freshly created without a displayable peer; lay out nested content before painting.
+        layout(this);
         var g = (Graphics2D) graphics.create();
         try {
             g.clip(outline());

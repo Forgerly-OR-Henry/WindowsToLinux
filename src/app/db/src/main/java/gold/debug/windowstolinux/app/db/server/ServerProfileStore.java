@@ -58,7 +58,7 @@ public final class ServerProfileStore {
                 var current = listServerProfiles().stream().map(StoredServerProfile::id).toList();
                 if (!current.equals(expected) || requested.size() != current.size()
                     || !new HashSet<>(requested).equals(new HashSet<>(current)))
-                    throw new SQLException("Server order changed or is not a complete permutation");
+                    throw new SQLException("Server order changed or is not a complete permutation", "40001");
                 long offset;
                 try (var statement = connection.createStatement();
                      var rows = statement.executeQuery("SELECT COALESCE(MAX(display_order),-1)+CAST(1 AS BIGINT) FROM server_profile")) {

@@ -49,7 +49,7 @@ final class DesktopCardSupport {
             if (bounds != null) bounds.width = table.getWidth();
         } else return -1;
         if (bounds == null || !bounds.contains(point)) return -1;
-        int gap = UIScale.scale(6);
+        int gap = UIScale.scale(9);
         return point.y >= bounds.y + gap && point.y < bounds.y + bounds.height - gap ? row : -1;
     }
 

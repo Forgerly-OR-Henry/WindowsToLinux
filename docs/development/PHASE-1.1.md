@@ -177,7 +177,7 @@
 
 - S3 传输冲突与发布：双向 SFTP 已接真实“覆盖/保留两份/终止”窗口及独立业务选择，使用同目录临时文件、校验后发布、发布后回读，返回实际路径；覆盖前核对原目标内容和元数据，不先删旧文件。此前 6 项新增发布/宿主/窗口验证与 35 项受影响回归通过，共 41、零跳过；包含 SFTP 3/6、目标同大小同时间戳变化、临时失败保留、实际中文窗口及公开值契约。持久归属的后续实现见上项；总时限的后续替换见本节最新进度。未做远端验证，不认定完整追加需求或 S3 已交付。
 
-- 2026-09-26 追加验收：上传/下载提供覆盖、保留两份、终止，先所属临时文件传输和校验再发布；连接超时独立默认 30 秒，无进展阈值默认 5 分钟且均可配置，有进展不设固定总时限，校验单独显示，续传核对原源与残留。平台授权独立于 AI 审批，默认通用授权，三档行为与持久偏好、任务范围、保存失败回滚按 [Mod.md](../reference/Mod.md#平台授权与-ai-审批的独立边界)执行。同名冲突与暂存发布的实现进度见本节最新记录；独立三档平台授权基础已接入，官方业务 Mod 组合仍待完成。此前相关测试只证明对应中间实现，不作为全部追加需求完成证据。这些工作纳入 S3 平台能力和 S5/S6 真实业务流程验收，S7 继续暂缓。
+- 2026-09-26 追加验收：上传/下载提供覆盖、保留两份、终止，先所属临时文件传输和校验再发布；连接超时独立默认 30 秒，无进展阈值默认 5 分钟且均可配置，有进展不设固定总时限，校验单独显示，续传核对原源与残留。平台授权独立于 AI 审批，默认通用授权，三档行为与持久偏好、任务范围、保存失败回滚按 [Mod.md](../reference/Runtime.md#ai-命令审批长期规则)执行。同名冲突与暂存发布的实现进度见本节最新记录；独立三档平台授权基础已接入，官方业务 Mod 组合仍待完成。此前相关测试只证明对应中间实现，不作为全部追加需求完成证据。这些工作纳入 S3 平台能力和 S5/S6 真实业务流程验收，S7 继续暂缓。
 
 - S3 通用 Source：`app/source`、默认运行时工厂和窗口所属目录选择器已接通；原对象授权、目录边界、明确文件清单、只读快照和实际 FILE 占用通过本机验证。Windows 使用既有 JNA 读取原生身份，修复 JDK `fileKey()` 返回空值造成正常目录拒绝的问题；恢复只清理核实归属的原快照，不重放来源复制。7 项文件系统、6 项真实 H2 集成、1 项真实窗口与 24 项受影响任务/入口回归通过，共 38、零跳过；7 个生产文件 149 声明双语检查通过。Mod 自动启用协调、救援、活动模块切换及 S4～S6 仍未完成，S7 暂缓；没有远端或发行物验收。
 
@@ -722,29 +722,48 @@ CREATE TABLE server_profile (
  CHECK((host_key_sha256 IS NULL AND host_key_format IS NULL AND trusted_host IS NULL AND trusted_ssh_port IS NULL) OR
        (host_key_sha256 IS NOT NULL AND host_key_format IS NOT NULL AND trusted_host IS NOT NULL AND trusted_ssh_port IS NOT NULL))
 );
-CREATE TABLE ai_model (
- model_id CHARACTER VARYING NOT NULL PRIMARY KEY,
- credential_id CHARACTER VARYING NOT NULL REFERENCES credential(credential_id),
- endpoint_url CHARACTER VARYING NOT NULL,
- model_name CHARACTER VARYING NOT NULL,
- configuration_revision INTEGER NOT NULL DEFAULT 1 CHECK(configuration_revision>0),
- text_verified_revision INTEGER CHECK(text_verified_revision>0),
- text_verified_at BIGINT,
- vision_verified_revision INTEGER CHECK(vision_verified_revision>0),
- vision_verified_at BIGINT,
- is_language_enabled INTEGER NOT NULL DEFAULT 0 CHECK(is_language_enabled IN (0,1)),
- is_approval_enabled INTEGER NOT NULL DEFAULT 0 CHECK(is_approval_enabled IN (0,1)),
- is_vision_enabled INTEGER NOT NULL DEFAULT 0 CHECK(is_vision_enabled IN (0,1)),
- display_name CHARACTER VARYING NOT NULL,
- display_order INTEGER NOT NULL UNIQUE CHECK(display_order>=0),
- language_call_order INTEGER UNIQUE CHECK(language_call_order>=0),
- approval_call_order INTEGER UNIQUE CHECK(approval_call_order>=0),
- vision_call_order INTEGER UNIQUE CHECK(vision_call_order>=0),
- CHECK((text_verified_revision IS NULL)=(text_verified_at IS NULL)),
- CHECK((vision_verified_revision IS NULL)=(vision_verified_at IS NULL)),
- CHECK(is_language_enabled=0 OR language_call_order IS NOT NULL),
- CHECK(is_approval_enabled=0 OR approval_call_order IS NOT NULL),
- CHECK(is_vision_enabled=0 OR vision_call_order IS NOT NULL)
+CREATE TABLE ai_model
+(
+    model_id                         CHARACTER VARYING     NOT NULL PRIMARY KEY,
+    credential_id                    CHARACTER VARYING     NOT NULL REFERENCES credential (credential_id),
+    model_name                       CHARACTER VARYING     NOT NULL,
+    display_name                     CHARACTER VARYING     NOT NULL,
+    display_order                    INTEGER               NOT NULL UNIQUE CHECK (display_order >= 0),
+    configuration_revision           BIGINT                NOT NULL DEFAULT 1 CHECK (configuration_revision > 0),
+    endpoint_url                     CHARACTER VARYING     NOT NULL DEFAULT '',
+    language_call_order              INTEGER UNIQUE CHECK (language_call_order >= 0),
+    text_verified_revision           BIGINT CHECK (text_verified_revision > 0),
+    text_state                       CHARACTER VARYING     NOT NULL DEFAULT 'UNVERIFIED' CHECK (text_state IN ('UNVERIFIED', 'AVAILABLE', 'UNSUPPORTED', 'FAILED')),
+    text_reason                      CHARACTER VARYING(80) NOT NULL DEFAULT '',
+    text_verified_at                 BIGINT,
+    approval_call_order              INTEGER UNIQUE CHECK (approval_call_order >= 0),
+    vision_call_order                INTEGER UNIQUE CHECK (vision_call_order >= 0),
+    vision_verified_revision         BIGINT CHECK (vision_verified_revision > 0),
+    vision_state                     CHARACTER VARYING     NOT NULL DEFAULT 'UNVERIFIED' CHECK (vision_state IN ('UNVERIFIED', 'AVAILABLE', 'UNSUPPORTED', 'FAILED')),
+    vision_reason                    CHARACTER VARYING(80) NOT NULL DEFAULT '',
+    vision_verified_at               BIGINT,
+    voice_call_order                 INTEGER UNIQUE CHECK (voice_call_order >= 0),
+    voice_file_verified_revision     BIGINT CHECK (voice_file_verified_revision > 0),
+    voice_file_state                 CHARACTER VARYING     NOT NULL DEFAULT 'UNVERIFIED' CHECK (voice_file_state IN ('UNVERIFIED', 'AVAILABLE', 'UNSUPPORTED', 'FAILED')),
+    voice_file_reason                CHARACTER VARYING(80) NOT NULL DEFAULT '',
+    voice_file_verified_at           BIGINT,
+    voice_realtime_verified_revision BIGINT CHECK (voice_realtime_verified_revision > 0),
+    voice_realtime_state             CHARACTER VARYING     NOT NULL DEFAULT 'UNVERIFIED' CHECK (voice_realtime_state IN
+                                                                                                ('UNVERIFIED',
+                                                                                                 'AVAILABLE',
+                                                                                                 'UNSUPPORTED',
+                                                                                                 'FAILED')),
+    voice_realtime_reason            CHARACTER VARYING(80) NOT NULL DEFAULT '',
+    voice_realtime_verified_at       BIGINT,
+    CHECK (endpoint_url <> ''),
+    CHECK ((text_verified_revision IS NULL) = (text_verified_at IS NULL)),
+    CHECK ((text_state = 'UNVERIFIED') = (text_verified_revision IS NULL)),
+    CHECK ((vision_verified_revision IS NULL) = (vision_verified_at IS NULL)),
+    CHECK ((vision_state = 'UNVERIFIED') = (vision_verified_revision IS NULL)),
+    CHECK ((voice_file_verified_revision IS NULL) = (voice_file_verified_at IS NULL)),
+    CHECK ((voice_file_state = 'UNVERIFIED') = (voice_file_verified_revision IS NULL)),
+    CHECK ((voice_realtime_verified_revision IS NULL) = (voice_realtime_verified_at IS NULL)),
+    CHECK ((voice_realtime_state = 'UNVERIFIED') = (voice_realtime_verified_revision IS NULL))
 );
 CREATE TABLE browser_recovery_task (
  task_id CHARACTER VARYING NOT NULL PRIMARY KEY,

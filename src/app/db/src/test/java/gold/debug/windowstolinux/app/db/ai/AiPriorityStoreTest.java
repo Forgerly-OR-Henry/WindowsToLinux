@@ -22,10 +22,8 @@ class AiPriorityStoreTest {
 
     @Test
     void reasoningEffortPersistsInvalidatesTextAndRejectsStaleVerification() throws Exception {
-        var original = new StoredAiModelProfile("a", profile("a").endpoint(), "model", "ai/a",
-            "https://example.test/audio/transcriptions", "");
-        var low = new StoredAiModelProfile(original.id(), original.endpoint(), original.model(), original.credentialKey(),
-            original.fileEndpoint(), original.realtimeEndpoint(), gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.LOW);
+        var original = new StoredAiModelProfile("a", profile("a").endpoint(), "model", "ai/a");
+        var low = new StoredAiModelProfile(original.id(), original.endpoint(), original.model(), original.credentialKey(), gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.LOW);
         try (var db = PlatformStoreTestFixture.open(directory)) {
             PlatformStoreTestFixture.credential(db, "ai/a");
             var repo = db.aiProfiles();
@@ -38,7 +36,7 @@ class AiPriorityStoreTest {
             assertEquals(low, changed.profile());
             assertFalse(changed.verified(AiCapabilityType.TEXT));
             assertFalse(changed.verified(AiCapabilityType.VISION));
-            assertTrue(changed.verified(AiCapabilityType.VOICE_FILE));
+            assertFalse(changed.verified(AiCapabilityType.VOICE_FILE));
             assertThrows(SQLException.class,
                 () -> repo.recordVerification(original, 1, AiCapabilityType.TEXT, Instant.now()));
             repo.saveConfiguration(low, "Renamed");
@@ -53,7 +51,7 @@ class AiPriorityStoreTest {
             assertEquals(original, repo.findNamed("a").orElseThrow());
             assertEquals(3, repo.listConfigured().getFirst().revision());
             assertFalse(repo.listConfigured().getFirst().verified(AiCapabilityType.TEXT));
-            assertTrue(repo.listConfigured().getFirst().verified(AiCapabilityType.VOICE_FILE));
+            assertFalse(repo.listConfigured().getFirst().verified(AiCapabilityType.VOICE_FILE));
         }
     }
 
@@ -81,9 +79,9 @@ class AiPriorityStoreTest {
             for (var id : List.of("a", "b", "c"))
                 repo.saveVerified(profile(id), id, Instant.now());
             repo.purposes().save(AiPurposeType.DEPLOYMENT,
-                List.of(new AiPurposeAssignment("a", false), new AiPurposeAssignment("c", true)));
+                List.of(new AiPurposeAssignment("a"), new AiPurposeAssignment("c")));
             repo.purposes().save(AiPurposeType.APPROVAL,
-                List.of(new AiPurposeAssignment("c", true), new AiPurposeAssignment("a", true)));
+                List.of(new AiPurposeAssignment("c"), new AiPurposeAssignment("a")));
             repo.reorder(List.of("c", "a", "b"));
             assertThrows(SQLException.class, () -> repo.reorder(List.of("b", "b", "c")));
             assertThrows(SQLException.class, () -> repo.reorder(List.of("a", "c")));
@@ -97,7 +95,7 @@ class AiPriorityStoreTest {
             assertEquals(List.of("c", "a", "b"), repo.listConfigured().stream().map(v -> v.profile().id()).toList());
             assertEquals(List.of("a", "c"), repo.purposes().list(AiPurposeType.DEPLOYMENT).stream()
                 .map(AiPurposeAssignment::profileId).toList());
-            assertEquals(List.of("c"),
+            assertEquals(List.of("a", "c"),
                 repo.configuredFor(AiPurposeType.DEPLOYMENT).stream().map(v -> v.profile().id()).toList());
             assertEquals(List.of("c", "a"),
                 repo.configuredFor(AiPurposeType.APPROVAL).stream().map(v -> v.profile().id()).toList());
@@ -116,14 +114,14 @@ class AiPriorityStoreTest {
             var repo = db.aiProfiles();
             repo.saveVerified(profile("a"), "A", Instant.now());
             repo.recordVerification(profile("a"), 1, AiCapabilityType.VISION, Instant.now());
-            var members = List.of(new AiPurposeAssignment("a", true));
+            var members = List.of(new AiPurposeAssignment("a"));
             for (var type : List.of(AiPurposeType.DEPLOYMENT, AiPurposeType.APPROVAL, AiPurposeType.VISION))
                 repo.purposes().save(type, members);
             assertThrows(SQLException.class, () -> repo.purposes().save(AiPurposeType.VOICE, members));
             assertThrows(IllegalArgumentException.class, () -> repo.purposes().save(AiPurposeType.APPROVAL,
                 List.of(members.getFirst(), members.getFirst())));
             assertThrows(SQLException.class, () -> repo.purposes().save(AiPurposeType.APPROVAL,
-                List.of(new AiPurposeAssignment("missing", true))));
+                List.of(new AiPurposeAssignment("missing"))));
             assertEquals(members, repo.purposes().list(AiPurposeType.APPROVAL));
             var changed = new StoredAiModelProfile("a", profile("a").endpoint(), "changed", "new/exact/key");
             repo.saveVerified(changed, "A", Instant.now(), AiCapabilityType.TEXT);
@@ -139,7 +137,7 @@ class AiPriorityStoreTest {
     }
 
     @Test
-    void fourOrdersCanChangeIndependentlyAndDisabledVisionRetainsItsPlace() throws Exception {
+    void fourOrdersCanChangeIndependentlyAndInvalidVisionRetainsItsPlace() throws Exception {
         try (var db = PlatformStoreTestFixture.open(directory)) {
             var repo = db.aiProfiles();
             for (String id : List.of("a", "b", "c")) {
@@ -148,14 +146,15 @@ class AiPriorityStoreTest {
                 repo.recordVerification(profile(id), 1, AiCapabilityType.VISION, Instant.now());
             }
             repo.purposes().save(AiPurposeType.DEPLOYMENT,
-                List.of(new AiPurposeAssignment("a", true), new AiPurposeAssignment("b", true)));
+                List.of(new AiPurposeAssignment("a"), new AiPurposeAssignment("b")));
             repo.purposes().save(AiPurposeType.APPROVAL,
-                List.of(new AiPurposeAssignment("b", true), new AiPurposeAssignment("a", true)));
-            repo.purposes().save(AiPurposeType.VISION, List.of(new AiPurposeAssignment("c", true),
-                new AiPurposeAssignment("b", true), new AiPurposeAssignment("a", false)));
+                List.of(new AiPurposeAssignment("b"), new AiPurposeAssignment("a")));
+            repo.purposes().save(AiPurposeType.VISION, List.of(new AiPurposeAssignment("c"),
+                new AiPurposeAssignment("b"), new AiPurposeAssignment("a")));
+            repo.saveConfiguration(new StoredAiModelProfile("a", profile("a").endpoint(), "changed", "ai/a"), "a");
             repo.reorder(List.of("b", "a", "c"));
-            repo.purposes().save(AiPurposeType.VISION, List.of(new AiPurposeAssignment("b", true),
-                new AiPurposeAssignment("c", true), new AiPurposeAssignment("a", false)));
+            repo.purposes().save(AiPurposeType.VISION, List.of(new AiPurposeAssignment("b"),
+                new AiPurposeAssignment("c"), new AiPurposeAssignment("a")));
             assertEquals(List.of("b", "a", "c"), repo.listConfigured().stream().map(v -> v.profile().id()).toList());
             assertEquals(List.of("a", "b"), repo.purposes().list(AiPurposeType.DEPLOYMENT).stream()
                 .map(AiPurposeAssignment::profileId).toList());
@@ -164,9 +163,32 @@ class AiPriorityStoreTest {
             assertEquals("a", repo.purposes().list(AiPurposeType.VISION).getLast().profileId());
             assertEquals(List.of("b", "c"),
                 repo.configuredFor(AiPurposeType.VISION).stream().map(v -> v.profile().id()).toList());
-            repo.purposes().save(AiPurposeType.VISION, List.of(new AiPurposeAssignment("a", false)));
+            repo.purposes().save(AiPurposeType.VISION, List.of(new AiPurposeAssignment("a")));
             assertEquals(1, repo.purposes().list(AiPurposeType.VISION).size());
             assertEquals(2, repo.purposes().list(AiPurposeType.DEPLOYMENT).size());
         }
     }
+
+    @Test
+    void completeSnapshotRejectsConflictsAndExistingInvalidMembersRemainEditable() throws Exception {
+        try (var db = PlatformStoreTestFixture.open(directory)) {
+            for (String id : List.of("a", "b")) {
+                PlatformStoreTestFixture.credential(db, "ai/" + id);
+                db.aiProfiles().saveVerified(profile(id), id, Instant.now());
+            }
+            var repo = db.aiProfiles();
+            var expected = List.of("a", "b");
+            repo.reorder(expected, List.of("b", "a"));
+            assertEquals("40001", assertThrows(SQLException.class, () -> repo.reorder(expected, expected)).getSQLState());
+            var original = List.of(new AiPurposeAssignment("a"));
+            repo.purposes().save(AiPurposeType.DEPLOYMENT, List.of(), original);
+            assertEquals("40001", assertThrows(SQLException.class, () -> repo.purposes().save(AiPurposeType.DEPLOYMENT, List.of(), List.of())).getSQLState());
+            repo.saveConfiguration(new StoredAiModelProfile("a", profile("a").endpoint(), "changed", "ai/a"), "a");
+            repo.purposes().save(AiPurposeType.DEPLOYMENT, original, List.of(new AiPurposeAssignment("b"), new AiPurposeAssignment("a")));
+            assertEquals(List.of("b"), repo.configuredFor(AiPurposeType.DEPLOYMENT).stream().map(v -> v.profile().id()).toList());
+            repo.purposes().save(AiPurposeType.DEPLOYMENT, List.of());
+            assertThrows(SQLException.class, () -> repo.purposes().save(AiPurposeType.DEPLOYMENT, original));
+        }
+    }
+
 }

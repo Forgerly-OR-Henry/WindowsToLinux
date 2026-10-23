@@ -256,7 +256,7 @@ class DeploymentAgentContinuationTest extends DeploymentAgentArchiveFixture {
             runtime.persistence().aiProfiles().saveVerified(new gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile("history-metadata",
                 "https://example.invalid/v1/chat/completions", "fixture", "ai/history-metadata"), "Local metadata only", java.time.Instant.now());
             for (var purpose : List.of(gold.debug.windowstolinux.app.ai.model.AiPurposeType.DEPLOYMENT, gold.debug.windowstolinux.app.ai.model.AiPurposeType.APPROVAL))
-                runtime.persistence().aiProfiles().purposes().save(purpose, List.of(new gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment("history-metadata", true)));
+                runtime.persistence().aiProfiles().purposes().save(purpose, List.of(new gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment("history-metadata")));
             for (int semantics : List.of(4, 5))
                 run(runtime, task -> {
                     var actual = runtime.modContexts().get(OWNER).context();

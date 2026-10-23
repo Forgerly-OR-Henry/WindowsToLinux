@@ -7,7 +7,7 @@ import java.sql.*;
 import java.util.*;
 
 /** One pinned schema change with complete row preservation and independent formal metadata checks. */
-final class ServerOrderData {
+final class ServerOrderData implements OfflineTableChange {
     static final String OLD_SHA = "b11e78af458ee53f029d5815b6990573a898e2957fe913b245025419890c96e0";
 
     static final String INSERTION = "    display_order             INTEGER           NOT NULL UNIQUE CHECK (display_order >= 0),\n";
@@ -30,7 +30,7 @@ final class ServerOrderData {
 
     ServerOrderData() throws Exception {
         oldDdl = resource("/server-order-before.sql");
-        newDdl = resource("/gold/debug/windowstolinux/app/db/schema/platform-v1.sql");
+        newDdl = resource("/server-order-after.sql");
         newSha = sha(newDdl);
         var oldText = new String(oldDdl, StandardCharsets.UTF_8).replace("\r\n", "\n");
         var newText = new String(newDdl, StandardCharsets.UTF_8).replace("\r\n", "\n");
@@ -40,6 +40,20 @@ final class ServerOrderData {
             throw new IOException("The pinned old and new formal DDL differ outside the approved server column");
         if (!org.h2.engine.Constants.VERSION.equals("2.5.250"))
             throw new IOException("Only the pinned H2 2.5.250 engine is supported");
+    }
+
+    @Override public String oldSha() { return OLD_SHA; }
+    @Override public String newSha() { return newSha; }
+    @Override public void rebuild(Connection connection, UUID generation, OfflineSchemaMaintenance.Hook hook) throws Exception {
+        preflight(connection, generation);
+        var before = snapshot(connection);
+        var ids = ids(connection);
+        alter(connection, ids);
+        hook.at("after-alter");
+        validateNew(connection, ids, before);
+        commitDigest(connection);
+        history(connection, newSha);
+        validateNew(connection, ids, before);
     }
 
     static byte[] resource(String name) throws IOException {
@@ -145,12 +159,17 @@ final class ServerOrderData {
     }
 
     static Snapshot snapshot(Connection connection) throws Exception {
+        return snapshot(connection, Set.of(), false);
+    }
+
+    static Snapshot snapshot(Connection connection, Set<String> excluded, boolean retainServerOrder) throws Exception {
         var data = new TreeMap<String, List<String>>();
         try (var statement = connection.createStatement(); var tables = statement.executeQuery(
             "SELECT table_schema,table_name FROM information_schema.tables WHERE table_type='BASE TABLE' "
                 + "AND table_schema<>'information_schema' ORDER BY table_schema,table_name")) {
             while (tables.next()) {
                 String schema = tables.getString(1), table = tables.getString(2);
+                if (excluded.contains(schema + "." + table)) continue;
                 var columns = new ArrayList<String>();
                 try (var metadata = connection.prepareStatement("SELECT column_name FROM information_schema.columns "
                     + "WHERE table_schema=? AND table_name=? ORDER BY ordinal_position")) {
@@ -159,7 +178,7 @@ final class ServerOrderData {
                     try (var names = metadata.executeQuery()) {
                         while (names.next()) {
                             var name = names.getString(1);
-                            if (!(schema.equals("app") && (table.equals("server_profile") && name.equals("display_order")
+                            if (!(schema.equals("app") && (!retainServerOrder && table.equals("server_profile") && name.equals("display_order")
                                 || table.equals("app_schema_history") && name.equals("script_sha256"))))
                                 columns.add(quote(name));
                         }

@@ -188,8 +188,8 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
                 "fixture/" + role, "original-model"), role, Instant.now(), AiCapabilityType.TEXT);
             runtime.persistence().aiProfiles().saveOutputLimit(role, 1600);
         }
-        runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT, List.of(new AiPurposeAssignment("language", true)));
-        runtime.persistence().aiProfiles().purposes().save(AiPurposeType.APPROVAL, List.of(new AiPurposeAssignment("approval", true)));
+        runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT, List.of(new AiPurposeAssignment("language")));
+        runtime.persistence().aiProfiles().purposes().save(AiPurposeType.APPROVAL, List.of(new AiPurposeAssignment("approval")));
         start(runtime, true);
         var server = new ServerId("server");
         runtime.servers().saveServerProfile(

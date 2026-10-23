@@ -24,7 +24,7 @@ import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
 
 /** Permanent configuration and authentication-only SSH page with explicit task recovery. / 带显式任务恢复的常驻配置及仅认证 SSH 页面。 */
-public final class PlatformServersPane extends JPanel implements AutoCloseable {
+public final class PlatformServersPane extends JPanel implements AutoCloseable, gold.debug.windowstolinux.app.ui.control.PendingCardEdits {
     /** Current view lifetime and exact request ownership. / 当前视图寿命及精确请求归属。 */
     private final ViewState view = new ViewState();
 
@@ -87,6 +87,8 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
 
     /** Handle-only visual ordering with the original table model. / 使用原表格模型的手柄排序。 */
     private final DesktopCardTableOrder<String> order;
+
+    private gold.debug.windowstolinux.app.ui.control.CardOrderSession<ServerSummary> autosave;
 
     /** Search and stable selection state belonging to this view. / 属于此视图的搜索与稳定选择状态。 */
     private final SelectionControls selection;
@@ -168,6 +170,32 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         presentation = new ServerPagePresentation(components, messages, table, selection.search, () -> rows.values,
             checks, output, new ServerPagePresentation.Controls(add, edit, delete, refresh, check, rescue, more, cancel, reconcile, failedRescue));
         order = components.cardOrder(table, this::visibleOrder, this::reorder, this::canReorder);
+        for (int delta : new int[]{-1, 1}) {
+            String action = delta < 0 ? "alt UP" : "alt DOWN";
+            table.getInputMap().put(KeyStroke.getKeyStroke(action), action);
+            table.getActionMap().put(action, new AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent event) {
+                    if (!canReorder()) return;
+                    int index = table.getSelectedRow();
+                    var ids = new java.util.ArrayList<>(visibleOrder());
+                    if (index < 0 || index + delta < 0 || index + delta >= ids.size()) return;
+                    java.util.Collections.swap(ids, index, index + delta);
+                    reorder(ids);
+                }
+            });
+        }
+        autosave = new gold.debug.windowstolinux.app.ui.control.CardOrderSession<>(this, messages, (expected, requested) -> {
+            service.reorderServerProfiles(expected.stream().map(v -> v.profile().id()).toList(),
+                requested.stream().map(v -> v.profile().id()).toList());
+            return requested;
+        }, service::list, ignored -> {
+        }, () -> {
+            if (autosave != null) {
+                selection.replace(autosave.draft());
+                controls();
+            }
+        });
         table.getSelectionModel().addListSelectionListener(event -> {
             if (!event.getValueIsAdjusting()) selection.remember();
             controls();
@@ -225,6 +253,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             view.taskOutputTarget = null;
         }
         view.locked = value;
+        autosave.setLocked(value);
         if (!value && !view.busy) {
             refresh();
         }
@@ -265,13 +294,21 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
      * @param profile selected profile or null for addition / 所选配置，添加时为空
      */
     private void editor(ServerProfile profile) {
-        if (!view.locked && !view.busy)
-            new ServerProfileDialog(owner, service, components, messages, profile, saved -> refresh()).setVisible(true);
+        if (!view.locked && !view.busy) autosave.savePending().thenAccept(ok -> {
+            if (ok && !view.locked && !view.closed)
+                new ServerProfileDialog(owner, service, components, messages, profile, saved -> refresh()).setVisible(true);
+        });
     }
 
     /** Reloads configuration on a worker, preserving the selected stable identity. / 在工作线程重新加载配置，保留所选稳定身份。 */
     private void refresh() {
-        work(service::list, selection::replace);
+        if (view.locked || view.closed || view.busy || autosave.busy()) return;
+        autosave.savePending().thenAccept(ok -> {
+            if (ok) work(service::list, values -> {
+                autosave.accept(values);
+                selection.replace(autosave.draft());
+            });
+        });
     }
 
     /** Uses exact visible identities, never display text or retained row indexes. / 使用精确可见身份，不使用显示文本或保留行号。 */
@@ -284,7 +321,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
 
     /** Allows unfiltered manual order only under the original interaction gate. / 仅在原交互门禁下允许未筛选清单手动排序。 */
     private boolean canReorder() {
-        return !view.closed && !view.locked && !view.busy && rows.values.size() > 1
+        return !view.closed && !view.locked && !view.busy && (autosave == null || !autosave.busy()) && rows.values.size() > 1
             && selection.search.getText().trim().isEmpty() && selection.sorter.getSortKeys().isEmpty()
             && table.getRowCount() == rows.values.size();
     }
@@ -292,24 +329,30 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** Saves one completed drag and restores the authoritative order on failure. / 保存一次完成拖动，失败时重读权威顺序。 */
     private void reorder(List<String> requested) {
         if (!canReorder()) return;
-        var expected = visibleOrder();
-        if (expected.equals(requested)) return;
-        work(() -> {
-            service.reorderServerProfiles(expected, requested);
-            return service.list();
-        }, selection::replace, failure -> {
-            order.cancelInteraction();
-            String problem = messages.text("server.orderFailed", Map.of("detail", messages.safe(failure)));
-            work(service::list, values -> {
-                selection.replace(values);
-                presentation.feedback(problem + " " + messages.text("server.orderReloaded"));
-            }, reloadFailure -> presentation.feedback(problem + " " + messages.text("server.orderReloadFailed",
-                Map.of("detail", messages.safe(reloadFailure)))));
-        });
+        var current = autosave.draft();
+        autosave.edit(requested.stream().map(id -> current.stream().filter(v -> v.profile().id().equals(id))
+            .findFirst().orElseThrow()).toList(), true);
+    }
+
+    @Override
+    public boolean hasPendingEdits() {
+        return autosave.hasPendingEdits();
+    }
+
+    @Override
+    public java.util.concurrent.CompletionStage<Boolean> saveBeforeLeave() {
+        return autosave.saveBeforeLeave();
     }
 
     /** Confirms removal and delegates task, reference and credential ownership checks. / 确认删除并委派任务、引用及凭据归属检查。 */
     private void delete() {
+        if (view.locked || view.closed || view.busy || autosave.busy()) return;
+        autosave.savePending().thenAccept(ok -> {
+            if (ok && !view.locked && !view.closed) deleteSaved();
+        });
+    }
+
+    private void deleteSaved() {
         var profile = selected();
         if (profile == null || view.locked || view.busy)
             return;
@@ -423,10 +466,9 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
 
     /** Updates action availability without database or network calls. / 更新动作可用状态，不调用数据库或网络。 */
     private void controls() {
-        boolean enabled = !view.closed && !view.locked && !view.busy;
+        boolean enabled = !view.closed && !view.locked && !view.busy && (autosave == null || !autosave.busy());
         if (order != null && !canReorder()) order.cancelInteraction();
-        table.setToolTipText(messages.text(selection.search.getText().trim().isEmpty()
-            && selection.sorter.getSortKeys().isEmpty() ? "server.orderHint" : "server.orderFiltered"));
+        table.setToolTipText(null);
         selection.search.setEnabled(enabled);
         add.setEnabled(enabled);
         refresh.setEnabled(enabled);

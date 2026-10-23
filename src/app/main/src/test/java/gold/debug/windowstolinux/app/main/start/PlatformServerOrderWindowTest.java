@@ -47,7 +47,7 @@ class PlatformServerOrderWindowTest {
                     return null;
                 });
                 await(() -> ready(pane) && names(pane).equals(List.of("Server B", "Server C", "Server A")));
-                assertEquals(List.of("b", "c", "a"), ids(service));
+                assertEquals(List.of("a", "b", "c"), ids(service));
                 onEdt(() -> {
                     assertSame(originalModel, table(pane).getModel());
                     assertSame(originalSorter, table(pane).getRowSorter());
@@ -86,7 +86,7 @@ class PlatformServerOrderWindowTest {
     }
 
     @Test
-    void staleDragRestoresAuthoritativeOrderAndSelectedIdentity() throws Exception {
+    void conflictRetainsDraftUntilExplicitReloadAndPreservesSelectedIdentity() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var service = setup(runtime);
             var frame = create(service);
@@ -118,8 +118,16 @@ class PlatformServerOrderWindowTest {
                     mouse(table(pane), MouseEvent.MOUSE_RELEASED, destination, false);
                     return null;
                 });
-                await(() -> ready(pane) && names(pane).equals(List.of("Server C", "Server A", "Server B"))
-                    && ((JLabel) named(pane, "servers.feedback")).getText().contains("已重新读取"));
+                assertEquals(List.of("c", "a", "b"), ids(service));
+                assertEquals(List.of("Server B", "Server C", "Server A"), onEdt(() -> names(pane)));
+                var save = onEdt(pane::saveBeforeLeave).toCompletableFuture();
+                choose("保留草稿");
+                assertFalse(save.get(5, java.util.concurrent.TimeUnit.SECONDS));
+                assertEquals(List.of("Server B", "Server C", "Server A"), onEdt(() -> names(pane)));
+                save = onEdt(pane::saveBeforeLeave).toCompletableFuture();
+                choose("重新读取");
+                assertFalse(save.get(5, java.util.concurrent.TimeUnit.SECONDS));
+                await(() -> ready(pane) && names(pane).equals(List.of("Server C", "Server A", "Server B")));
                 onEdt(() -> {
                     assertEquals("Server B", table(pane).getValueAt(table(pane).getSelectedRow(), 0));
                     assertEquals("Server B", ((JLabel) named(pane, "servers.details.title")).getText());
@@ -130,6 +138,21 @@ class PlatformServerOrderWindowTest {
                 close(pane, frame);
             }
         }
+    }
+
+    private static void choose(String text) throws Exception {
+        await(() -> {
+            for (var window : Window.getWindows())
+                if (window instanceof JDialog && window.isShowing()) {
+                    var button = descendants(window).filter(JButton.class::isInstance).map(JButton.class::cast)
+                        .filter(control -> text.equals(control.getText())).findFirst();
+                    if (button.isPresent()) {
+                        button.orElseThrow().doClick(0);
+                        return true;
+                    }
+                }
+            return false;
+        });
     }
 
     private static PlatformServerService setup(PlatformRuntime runtime) throws Exception {

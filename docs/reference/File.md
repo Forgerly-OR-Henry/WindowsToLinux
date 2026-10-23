@@ -1106,7 +1106,7 @@ core 共用纯值与窄端口，standard 和 agent 不反向依赖彼此；注�
 
 ### 6.2 ai_model 正式列序与中文含义
 
-以下为当前 `platform-v1.sql` 的33字段正式建库列序。主键、外键在前，随后是基本信息及共用接口，再依次排列文字用途与验证、审批、图像、语音；语音分为文件识别和实时识别。
+以下为当前 `platform-v1.sql` 的27字段正式建库列序。主键、外键在前，随后是基本信息及共用接口，再依次排列文字用途与验证、审批、图像、语音；语音分为文件识别和实时识别。
 
 | 列序 | 分组 | 字段名 | 中文含义 |
 | ---: | --- | --- | --- |
@@ -1116,41 +1116,35 @@ core 共用纯值与窄端口，standard 和 agent 不反向依赖彼此；注�
 | 4 | 基本信息 | `display_name` | 用户自定义的显示名称 |
 | 5 | 基本信息 | `display_order` | 模型在界面列表中的显示顺序 |
 | 6 | 基本信息 | `configuration_revision` | 当前模型配置的修订号 |
-| 7 | 共用接口 | `endpoint_url` | 文字、审批与图像请求共用的接口地址 |
-| 8 | 文字用途 | `is_language_enabled` | 是否启用文字／部署推理用途 |
-| 9 | 文字用途 | `language_call_order` | 文字／部署推理用途的调用优先顺序 |
-| 10 | 文字验证 | `text_verified_revision` | 文字能力验证对应的配置修订号 |
-| 11 | 文字验证 | `text_state` | 文字能力的验证状态 |
-| 12 | 文字验证 | `text_reason` | 文字能力验证结果的原因说明 |
-| 13 | 文字验证 | `text_verified_at` | 文字能力的验证时间 |
-| 14 | 审批用途 | `is_approval_enabled` | 是否启用 AI 审批用途 |
-| 15 | 审批用途 | `approval_call_order` | AI 审批用途的调用优先顺序 |
-| 16 | 图像用途 | `is_vision_enabled` | 是否启用图像理解用途 |
-| 17 | 图像用途 | `vision_call_order` | 图像理解用途的调用优先顺序 |
-| 18 | 图像验证 | `vision_verified_revision` | 图像能力验证对应的配置修订号 |
-| 19 | 图像验证 | `vision_state` | 图像能力的验证状态 |
-| 20 | 图像验证 | `vision_reason` | 图像能力验证结果的原因说明 |
-| 21 | 图像验证 | `vision_verified_at` | 图像能力的验证时间 |
-| 22 | 语音用途 | `is_voice_enabled` | 是否启用语音识别用途 |
-| 23 | 语音用途 | `voice_call_order` | 语音识别用途的调用优先顺序 |
-| 24 | 音频文件识别 | `file_endpoint_url` | 音频文件识别的接口地址 |
-| 25 | 音频文件识别 | `voice_file_verified_revision` | 音频文件识别验证对应的配置修订号 |
-| 26 | 音频文件识别 | `voice_file_state` | 音频文件识别能力的验证状态 |
-| 27 | 音频文件识别 | `voice_file_reason` | 音频文件识别验证结果的原因说明 |
-| 28 | 音频文件识别 | `voice_file_verified_at` | 音频文件识别能力的验证时间 |
-| 29 | 实时语音识别 | `realtime_endpoint_url` | 实时语音识别的接口地址 |
-| 30 | 实时语音识别 | `voice_realtime_verified_revision` | 实时语音识别验证对应的配置修订号 |
-| 31 | 实时语音识别 | `voice_realtime_state` | 实时语音识别能力的验证状态 |
-| 32 | 实时语音识别 | `voice_realtime_reason` | 实时语音识别验证结果的原因说明 |
-| 33 | 实时语音识别 | `voice_realtime_verified_at` | 实时语音识别能力的验证时间 |
+| 7 | 共用接口 | `endpoint_url` | 本模型唯一且必填的完整接口 URL |
+| 8 | 文字用途 | `language_call_order` | 文字／部署推理用途的调用优先顺序 |
+| 9 | 文字验证 | `text_verified_revision` | 文字能力验证对应的配置修订号 |
+| 10 | 文字验证 | `text_state` | 文字能力的验证状态 |
+| 11 | 文字验证 | `text_reason` | 文字能力验证结果的原因说明 |
+| 12 | 文字验证 | `text_verified_at` | 文字能力的验证时间 |
+| 13 | 审批用途 | `approval_call_order` | AI 审批用途的调用优先顺序 |
+| 14 | 图像用途 | `vision_call_order` | 图像理解用途的调用优先顺序 |
+| 15 | 图像验证 | `vision_verified_revision` | 图像能力验证对应的配置修订号 |
+| 16 | 图像验证 | `vision_state` | 图像能力的验证状态 |
+| 17 | 图像验证 | `vision_reason` | 图像能力验证结果的原因说明 |
+| 18 | 图像验证 | `vision_verified_at` | 图像能力的验证时间 |
+| 19 | 语音用途 | `voice_call_order` | 语音识别用途的调用优先顺序 |
+| 20 | 音频文件识别 | `voice_file_verified_revision` | 音频文件识别验证对应的配置修订号 |
+| 21 | 音频文件识别 | `voice_file_state` | 音频文件识别能力的验证状态 |
+| 22 | 音频文件识别 | `voice_file_reason` | 音频文件识别验证结果的原因说明 |
+| 23 | 音频文件识别 | `voice_file_verified_at` | 音频文件识别能力的验证时间 |
+| 24 | 实时语音识别 | `voice_realtime_verified_revision` | 实时语音识别验证对应的配置修订号 |
+| 25 | 实时语音识别 | `voice_realtime_state` | 实时语音识别能力的验证状态 |
+| 26 | 实时语音识别 | `voice_realtime_reason` | 实时语音识别验证结果的原因说明 |
+| 27 | 实时语音识别 | `voice_realtime_verified_at` | 实时语音识别能力的验证时间 |
 
-文字用途与文字验证完整成组，审批紧随其后。文字、审批、图像共用 `endpoint_url`；审批没有独立的一组验证列。语音用途共用启用设置和调用顺序，文件识别、实时识别各自保留接口和验证记录。
+四个用途顺序列可空、唯一且非负：非空表示加入，空表示未加入，不再有独立启用列。一个模型只对应一个 `endpoint_url`，HTTP(S) 与 WS(S) 按现有传输能力使用；其他 URL 另建模型，无 URL 全库唯一限制。两种音频各自保留证据，共用内置核验样本；审批没有额外验证列。Key 更换使用新凭据引用，避免影响拆分后共享旧引用的其他模型。
 
 验证状态为 `UNVERIFIED`（未验证）、`AVAILABLE`（可用）、`UNSUPPORTED`（不支持）、`FAILED`（失败）。配置修订号用于判断验证结果是否对应当前配置，与 Schema 版本不同。表外保存的协议、推理设置或工具能力证据不在此虚构为新列。
 
 ### 6.3 其他表的正式列序与中文含义
 
-APP共23表，官方部署Mod共19表，共418字段；AI表见上节，其余41表如下。APP逻辑Schema为`app`，部署物理Schema由平台按所有者与V1分配，表名与列序不依赖运行代次。主键及联合键的顺序以SQL约束为准，平台标识在Mod私有表中可为逻辑引用，不虚构跨Schema外键。
+APP共23表，官方部署Mod共19表，共412字段；AI表见上节，其余41表如下。APP逻辑Schema为`app`，部署物理Schema由平台按所有者与V1分配，表名与列序不依赖运行代次。主键及联合键的顺序以SQL约束为准，平台标识在Mod私有表中可为逻辑引用，不虚构跨Schema外键。
 
 #### 主 APP
 

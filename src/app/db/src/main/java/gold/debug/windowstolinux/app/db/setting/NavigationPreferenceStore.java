@@ -73,14 +73,15 @@ public final class NavigationPreferenceStore {
     public List<String> reorder(List<String> defaults, List<String> expected, List<String> visible) throws SQLException {
         validate(visible);
         if (!new HashSet<>(defaults).equals(new HashSet<>(visible)))
-            throw new SQLException("Visible navigation identities changed");
+            throw new SQLException("Visible navigation identities changed", "40001");
         var result = new ArrayList<String>();
         connections.transaction(() -> {
             try (var connection = connections.open()) {
                 StoreConnections.lockPlatformState(connection);
             }
             var before = read(defaults);
-            if (!before.equals(expected)) throw new SQLException("Navigation preference changed; reload required");
+            if (!before.equals(expected))
+                throw new SQLException("Navigation preference changed; reload required", "40001");
             result.addAll(reorderVisible(before, visible));
             try {
                 var node = JSON.createObjectNode().put("formatVersion", 1);

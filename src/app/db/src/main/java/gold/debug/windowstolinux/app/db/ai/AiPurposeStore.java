@@ -41,12 +41,12 @@ public final class AiPurposeStore {
     public List<AiPurposeAssignment> list(AiPurposeType purpose) throws SQLException {
         String prefix = prefix(purpose);
         try (var c = connections.open();
-             var s = c.prepareStatement("SELECT model_id,is_" + prefix + "_enabled FROM ai_model WHERE " + prefix
+             var s = c.prepareStatement("SELECT model_id FROM ai_model WHERE " + prefix
                  + "_call_order IS NOT NULL ORDER BY " + prefix + "_call_order");
              var rows = s.executeQuery()) {
             var values = new ArrayList<AiPurposeAssignment>();
             while (rows.next())
-                values.add(new AiPurposeAssignment(rows.getString(1), rows.getBoolean(2)));
+                values.add(new AiPurposeAssignment(rows.getString(1)));
             return List.copyOf(values);
         }
     }
@@ -57,6 +57,13 @@ public final class AiPurposeStore {
      * @throws SQLException if validation or the scoped operation fails / 校验或限定操作失败时
      */
     public void save(AiPurposeType purpose, List<AiPurposeAssignment> assignments) throws SQLException {
+        save(purpose, list(purpose), assignments);
+    }
+
+    /** Saves against the last confirmed membership snapshot. / 以最后确认成员快照校验保存。 */
+    public void save(AiPurposeType purpose, List<AiPurposeAssignment> expected,
+                     List<AiPurposeAssignment> assignments) throws SQLException {
+        var baseline = List.copyOf(expected);
         String prefix = prefix(purpose);
         var members = List.copyOf(assignments);
         if (members.stream().map(AiPurposeAssignment::profileId).distinct().count() != members.size())
@@ -64,22 +71,23 @@ public final class AiPurposeStore {
         connections.transaction(() -> {
             try (var c = connections.open()) {
                 StoreConnections.lockPlatformState(c);
+                var saved = list(purpose);
+                if (!saved.equals(baseline)) throw new SQLException("Purpose membership changed", "40001");
+                var previous = saved.stream().map(AiPurposeAssignment::profileId).collect(java.util.stream.Collectors.toSet());
                 var inventory = new AiModelStore(connections).listConfigured();
                 for (var member : members) {
                     var model = inventory.stream().filter(v -> v.profile().id().equals(member.profileId())).findFirst();
-                    if (model.isEmpty() || member.enabled() && !model.orElseThrow().verified(purpose))
+                    if (model.isEmpty() || !previous.contains(member.profileId()) && !model.orElseThrow().verified(purpose))
                         throw new SQLException("Model capability is not verified");
                 }
                 try (var clear = c.createStatement()) {
                     clear.executeUpdate(
-                        "UPDATE ai_model SET is_" + prefix + "_enabled=0," + prefix + "_call_order=NULL");
+                        "UPDATE ai_model SET " + prefix + "_call_order=NULL");
                 }
-                try (var update = c.prepareStatement("UPDATE ai_model SET is_" + prefix + "_enabled=?," + prefix
-                    + "_call_order=? WHERE model_id=?")) {
+                try (var update = c.prepareStatement("UPDATE ai_model SET " + prefix + "_call_order=? WHERE model_id=?")) {
                     for (int i = 0; i < members.size(); i++) {
-                        update.setInt(1, members.get(i).enabled() ? 1 : 0);
-                        update.setInt(2, i);
-                        update.setString(3, members.get(i).profileId());
+                        update.setInt(1, i);
+                        update.setString(2, members.get(i).profileId());
                         update.addBatch();
                     }
                     update.executeBatch();

@@ -40,12 +40,12 @@ public final class VoiceProtocol {
             throw new IllegalArgumentException("Remote realtime endpoints require WSS");
     }
 
-    /** Builds the explicit transcription intent URL without changing host or path. / 构造明确转写用途地址，不改变主机或路径。
+    /** Keeps the exact configured realtime URL. / 保留精确配置的实时接口 URL。
      * @param endpoint approved complete realtime address / 已审阅完整实时地址
-     * @return same address with required intent / 带必需 intent 的同一地址 */
+     * @return same configured address / 同一配置地址 */
     public static URI transcriptionEndpoint(URI endpoint) {
         validateEndpoint(endpoint);
-        return endpoint.getRawQuery() == null ? URI.create(endpoint.toASCIIString() + "?intent=transcription") : endpoint;
+        return endpoint;
     }
 
     /** Parses complete JSON text, rejecting an absent transcript. / 解析完整 JSON 文字，拒绝缺少转写结果。

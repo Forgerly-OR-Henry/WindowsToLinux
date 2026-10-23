@@ -298,7 +298,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         }
         try {
             try {
-                pending.voiceCall = new VoiceHttpCall(URI.create(profile.fileEndpoint()), key, profile.model(), profile.id(), request,
+                pending.voiceCall = new VoiceHttpCall(URI.create(profile.endpoint()), key, profile.model(), profile.id(), request,
                     VoiceBudget.remaining(request.timeout(), start), connectSeconds);
             } catch (IllegalArgumentException invalid) {
                 throw error(ProblemCode.UNAVAILABLE, "VOICE_CONFIGURATION_INVALID", "The file transcription configuration is invalid");
@@ -363,7 +363,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
             voices.add(managed);
         }
         try {
-            managed.session = VoiceSocketSession.open(URI.create(profile.realtimeEndpoint()), key, profile.model(), profile.id(),
+            managed.session = VoiceSocketSession.open(URI.create(profile.endpoint()), key, profile.model(), profile.id(),
                 options, event -> {
                     try {
                         callback.apply(event, null);
@@ -420,7 +420,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         return call(request, task, Optional.of(expectedRevision));
     }
 
-    /** Generates a bounded file explanation using only the first enabled language model. / 仅使用首个启用语言模型生成有界文件说明。
+    /** Generates a bounded file explanation using only the first language model. / 仅使用首个语言模型生成有界文件说明。
      * @param request platform-owned LANGUAGE request / 平台持有的 LANGUAGE 请求
      * @param task authentic original task / 真实原任务
      * @return first model feedback without rotation / 不轮换的首模型反馈
@@ -446,7 +446,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @param request original bounded request / 原有界请求
      * @param task authentic original task / 真实原任务
      * @param expectedRevision optional frozen routing digest / 可选冻结路由摘要
-     * @param firstOnly whether only the first enabled language model may be used / 是否仅可使用首个启用语言模型
+     * @param firstOnly whether only the first language model may be used / 是否仅可使用首个语言模型
      * @return actual classified model result / 实际分类模型结果
      * @throws ApiException if request, authority, configuration or cleanup fails / 请求、授权、配置或清理失败时 */
     private OperationResult<AiResponse> call(AiRequest request, TaskContext task,
@@ -508,16 +508,15 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         }
     }
 
-    /** Requires the first enabled language member itself to remain available, without skipping it. / 要求首个启用语言成员本身仍可用，不跳过该成员。
+    /** Requires the first language member itself to remain available, without skipping it. / 要求首个语言成员本身仍可用，不跳过该成员。
      * @return single selected language configuration / 唯一所选语言配置
      * @throws SQLException if routing storage cannot be read / 路由存储无法读取时
      * @throws ApiException if the first member is absent or unverified / 首个成员缺失或未验证时 */
     private List<StoredAiModelInfo> firstLanguage() throws SQLException, ApiException {
         var first = profiles.routingState().members().get(AiPurposeType.DEPLOYMENT).stream()
-            .filter(gold.debug.windowstolinux.app.db.ai.AiModelStore.RoutingMember::enabled)
             .findFirst().map(gold.debug.windowstolinux.app.db.ai.AiModelStore.RoutingMember::configuration);
         if (first.isEmpty() || !first.orElseThrow().verified(AiCapabilityType.TEXT))
-            throw error(ProblemCode.UNAVAILABLE, "AI_FIRST_LANGUAGE_UNAVAILABLE", "The first enabled language model is unavailable");
+            throw error(ProblemCode.UNAVAILABLE, "AI_FIRST_LANGUAGE_UNAVAILABLE", "The first language model is unavailable");
         return List.of(first.orElseThrow());
     }
 
@@ -699,7 +698,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         var routes = state.routes();
         try {
             var digest = MessageDigest.getInstance("SHA-256");
-            append(digest, "ai-routing-v3");
+            append(digest, "ai-routing-v4");
             append(digest, Integer.toString(settings.recommendedMaxOutputTokens()));
             append(digest, Boolean.toString(settings.allowOutputTokenOverride()));
             for (AiPurposeType purpose : AiPurposeType.values()) {
@@ -709,11 +708,8 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                 for (var member : members) {
                     var candidate = member.configuration();
                     var profile = candidate.profile();
-                    append(digest, Boolean.toString(member.enabled()));
                     append(digest, profile.id());
                     append(digest, profile.endpoint());
-                    append(digest, profile.fileEndpoint());
-                    append(digest, profile.realtimeEndpoint());
                     append(digest, profile.model());
                     append(digest, profile.reasoningEffort().name());
                     append(digest, profile.protocol().name());

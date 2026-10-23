@@ -30,9 +30,22 @@ public interface AiModelListAccess {
 
     /** Atomically saves one purpose's draft. / 原子保存一个用途的草稿。
      * @param purpose selected purpose / 所选用途
-     * @param assignments ordered members and enablement / 有序成员及启用状态
+     * @param assignments ordered members / 有序成员
      * @throws SQLException if validation or storage fails / 校验或保存失败时
      */
     void saveAiPurpose(AiPurposeType purpose, List<AiPurposeAssignment> assignments) throws SQLException;
 
+    /** Checks the confirmed order before writing. / 写入前检查已确认顺序。 */
+    default void reorderAiProviders(List<String> expected, List<String> requested) throws SQLException {
+        if (!listAiConfigurations().stream().map(v -> v.profile().id()).toList().equals(expected))
+            throw new SQLException("Inventory order changed", "40001");
+        reorderAiProviders(requested);
+    }
+
+    /** Checks the confirmed membership before writing. / 写入前检查已确认成员。 */
+    default void saveAiPurpose(AiPurposeType purpose, List<AiPurposeAssignment> expected,
+                               List<AiPurposeAssignment> requested) throws SQLException {
+        if (!listAiPurpose(purpose).equals(expected)) throw new SQLException("Purpose membership changed", "40001");
+        saveAiPurpose(purpose, requested);
+    }
 }

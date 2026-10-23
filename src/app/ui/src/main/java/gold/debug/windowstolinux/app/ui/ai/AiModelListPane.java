@@ -4,118 +4,94 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.util.*;
 import java.util.List;
-import java.util.function.Consumer;
-
+import java.util.concurrent.*;
+import java.util.function.*;
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
-import gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment;
-import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
-import gold.debug.windowstolinux.app.service.ai.AiModelInfo;
-import gold.debug.windowstolinux.app.service.ai.AiModelListAccess;
-import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
-import gold.debug.windowstolinux.app.ui.control.DesktopCardList;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
+import gold.debug.windowstolinux.app.ai.model.*;
+import gold.debug.windowstolinux.app.service.ai.*;
+import gold.debug.windowstolinux.app.ui.control.*;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 
-/** Keeps the original inventory visible while editing a purpose inline. / 内联编辑用途时保持原模型清单可见。 */
-final class AiModelListPane extends JPanel {
-    /** Current view lifetime and exact request ownership. / 当前视图寿命及精确请求归属。 */
-    private final ViewState view = new ViewState();
-
-    /** Mutable state confined to the EDT. / 限于 EDT 的可变状态。 */
-    private static final class ViewState {
-        /** Rejects earlier view intents and busy owners. / 拒绝早期视图意图及忙碌状态所有者。 */
-        private long epoch, request;
-
-        /** Current privacy, lifetime and active request. / 当前隐私、寿命及活动请求。 */
-        private boolean locked, closed, busy;
-    }
-
-    /** Model application boundary. / 模型应用边界。 */
+/** Inventory, model details and independent purpose composition. / 清单、模型详情及独立用途编排。 */
+final class AiModelListPane extends JPanel implements PendingCardEdits {
     private final AiModelListAccess service;
 
-    /** Localized messages. / 本地化消息。 */
+    private final DesktopPartFactory components;
+
     private final PageMessagePresenter messages;
 
-    /** Full inventory model. / 完整清单模型。 */
-    private final DefaultListModel<String> inventoryModel = new DefaultListModel<>();
+    private final Consumer<AiModelInfo> edit;
 
-    /** Purpose membership model. / 用途成员模型。 */
-    private final DefaultListModel<String> purposeModel = new DefaultListModel<>();
+    private final Function<AiModelInfo, JComponent> details;
 
-    /** Original inventory list. / 原始清单列表。 */
-    private final DesktopCardList<String> inventory = new DesktopCardList<>(inventoryModel, 90);
+    private final DefaultListModel<String> inventoryModel = new DefaultListModel<>(), purposeModel = new DefaultListModel<>();
 
-    /** Purpose list. / 用途列表。 */
-    private final DesktopCardList<String> selected = new DesktopCardList<>(purposeModel, 90);
+    private final DesktopCardList<String> inventory = new DesktopCardList<>(inventoryModel, 92),
+        selected = new DesktopCardList<>(purposeModel, 92);
 
-    /** Original scroll pane retained when expanding. / 展开时保留的原滚动面板。 */
-    private final JScrollPane inventoryScroll = new JScrollPane(inventory);
+    private final JScrollPane inventoryScroll = new JScrollPane(inventory), purposeScroll = new JScrollPane(selected);
 
-    /** Purpose scroll pane. / 用途滚动面板。 */
-    private final JScrollPane purposeScroll = new JScrollPane(selected);
+    private final JPanel columns = new JPanel(new GridBagLayout()), left = new JPanel(new BorderLayout(0, 14)),
+        leftTools = new JPanel(new BorderLayout(8, 0)), editor = new JPanel(new BorderLayout(0, 14)),
+        roles = new JPanel(new GridLayout(1, 4, 6, 0)), arrows = new JPanel(new GridLayout(2, 1, 0, 10)),
+        heading = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
 
-    /** Shared column container. / 共用列容器。 */
-    private final JPanel columns = new JPanel(new GridBagLayout());
+    private final JLabel title = new JLabel(), status = new JLabel();
 
-    /** Purpose editing column. / 用途编辑列。 */
-    private final JPanel editor = new JPanel(new BorderLayout(6, 8));
+    private final JButton add = new JButton("→"), remove = new JButton("←"), newModel;
 
-    /** Membership arrow column. / 成员箭头列。 */
-    private final JPanel arrows = new JPanel(new GridLayout(2, 1, 0, 8));
-
-    /** Feedback label. / 反馈标签。 */
-    private final JLabel status = new JLabel();
-
-    /** Purpose heading. / 用途标题。 */
-    private final JLabel title = new JLabel();
-
-    /** Add membership button. / 添加成员按钮。 */
-    private final JButton add = new JButton("→");
-
-    /** Remove membership button. / 移除成员按钮。 */
-    private final JButton remove = new JButton("←");
-
-    /** Purpose enablement. / 用途启用开关。 */
-    private final JCheckBox enabled = new JCheckBox();
-
-    /** Role navigation controls. / 用途导航控件。 */
     private final Map<AiPurposeType, JButton> buttons = new EnumMap<>(AiPurposeType.class);
 
-    /** Stable inventory snapshot. / 稳定清单快照。 */
+    private final CardOrderSession<String> order;
+
+    private final Map<AiPurposeType, CardOrderSession<String>> purposes = new EnumMap<>(AiPurposeType.class);
+
     private List<AiModelInfo> models = List.of();
 
-    /** Saved membership snapshots. / 已保存成员快照。 */
-    private Map<AiPurposeType, List<AiPurposeAssignment>> memberships = new EnumMap<>(AiPurposeType.class);
-
-    /** Current unsaved membership. / 当前未保存成员。 */
-    private List<AiPurposeAssignment> draft = List.of();
-
-    /** Original membership for dirty comparison. / 用于比较修改的原成员。 */
-    private List<AiPurposeAssignment> original = List.of();
-
-    /** Currently open purpose. / 当前打开用途。 */
     private AiPurposeType purpose;
 
-    /** State waiting for the asynchronous inventory read. / 等待异步清单读取的状态。 */
-    private AiModelListState restored;
+    private JComponent detail;
 
-    /** Builds inventory and one inline purpose editor. / 构建清单及单个内联用途编辑器。
-     * @param service application boundary / 应用边界
-     * @param c component factory / 控件工厂
-     * @param messages localized messages / 本地化消息
-     * @param edit model editing callback / 模型编辑回调
-     */
+    private String detailId;
+
+    private boolean locked, closed, loading, rendering, transition;
+
+    private long epoch, loadRequest;
+
     AiModelListPane(AiModelListAccess service, DesktopPartFactory c, PageMessagePresenter messages,
                     Consumer<AiModelInfo> edit) {
-        super(new BorderLayout(8, 8));
+        this(service, c, messages, edit, info -> new JLabel(info.name()));
+    }
+
+    AiModelListPane(AiModelListAccess service, DesktopPartFactory c, PageMessagePresenter messages,
+                    Consumer<AiModelInfo> edit, Function<AiModelInfo, JComponent> details) {
+        super(new BorderLayout(0, 6));
         this.service = service;
+        this.components = c;
         this.messages = messages;
-        setOpaque(false);
-        columns.setOpaque(false);
-        editor.setOpaque(false);
-        arrows.setOpaque(false);
+        this.edit = edit;
+        this.details = details;
+        for (var panel : List.of(this, columns, left, leftTools, editor, roles, arrows, heading))
+            panel.setOpaque(false);
+        order = new CardOrderSession<>(this, messages, (expected, requested) -> {
+            service.reorderAiProviders(expected, requested);
+            return requested;
+        }, () -> service.listAiConfigurations().stream().map(v -> v.profile().id()).toList(), ignored -> {
+        }, this::render);
+        for (var type : AiPurposeType.values()) {
+            purposes.put(type, new CardOrderSession<>(this, messages, (expected, requested) -> {
+                service.saveAiPurpose(type, assignments(expected), assignments(requested));
+                return requested;
+            }, () -> service.listAiPurpose(type).stream().map(AiPurposeAssignment::profileId).toList(), ignored -> {
+            }, this::render));
+            var button = c.secondaryButton("");
+            button.setName("ai.open." + type.name());
+            button.addActionListener(event -> open(type));
+            buttons.put(type, button);
+            roles.add(button);
+        }
         inventory.setName("ai.inventory");
         selected.setName("ai.purpose");
         inventory.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -124,426 +100,291 @@ final class AiModelListPane extends JPanel {
         selected.setCellRenderer(renderer(true));
         c.cardList(inventory, true);
         c.cardList(selected, true);
+        inventoryScroll.setBorder(BorderFactory.createEmptyBorder());
+        purposeScroll.setBorder(BorderFactory.createEmptyBorder());
         installOrder(inventory, false);
         installOrder(selected, true);
-        inventory.addListSelectionListener(event -> updateControls());
-        selected.addListSelectionListener(event -> updateControls());
-        toolbar(c);
-        editor(c);
-        footer(c, edit);
+        inventory.addListSelectionListener(event -> controls());
+        selected.addListSelectionListener(event -> controls());
+        inventory.putClientProperty("desktop.cardClick", (Runnable) this::choose);
+        inventory.getInputMap().put(KeyStroke.getKeyStroke("ENTER"), "details");
+        inventory.getActionMap().put("details", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent event) {
+                choose();
+            }
+        });
+        newModel = messages.bind(c.primaryButton(""), "ai.models.add");
+        newModel.setName("ai.models.add");
+        newModel.addActionListener(event -> before(() -> edit.accept(null)));
+        heading.add(title);
+        left.add(leftTools, BorderLayout.NORTH);
+        left.add(inventoryScroll);
+        var orderButtons = c.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        var up = c.secondaryButton("↑");
+        var down = c.secondaryButton("↓");
+        up.addActionListener(event -> move(false, -1));
+        down.addActionListener(event -> move(false, 1));
+        orderButtons.add(up);
+        orderButtons.add(down);
+        left.add(orderButtons, BorderLayout.SOUTH);
+        add.setName("ai.purpose.add");
+        remove.setName("ai.purpose.remove");
+        add.setToolTipText(messages.text("ai.purpose.add"));
+        remove.setToolTipText(messages.text("ai.purpose.remove"));
+        add.addActionListener(event -> member(true));
+        remove.addActionListener(event -> member(false));
+        arrows.add(add);
+        arrows.add(remove);
         add(columns);
+        add(status, BorderLayout.SOUTH);
+        localize();
         layoutColumns();
     }
 
-    /** Builds purpose navigation. / 构建用途导航。
-     * @param c component factory / 控件工厂
-     */
-    private void toolbar(DesktopPartFactory c) {
-        JPanel toolbar = c.transparent(new BorderLayout(8, 8));
-        toolbar.add(c.sectionHeading(messages, "ai.models.title", "ai.models.description"), BorderLayout.NORTH);
-        JPanel roles = c.transparent(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        for (var value : AiPurposeType.values()) {
-            JButton button = c.secondaryButton(messages.text("ai.purpose." + value.name()));
-            button.setName("ai.open." + value.name());
-            button.addActionListener(event -> open(value));
-            buttons.put(value, button);
-            roles.add(button);
-        }
-        toolbar.add(roles, BorderLayout.SOUTH);
-        add(toolbar, BorderLayout.NORTH);
+    private static List<AiPurposeAssignment> assignments(List<String> ids) {
+        return ids.stream().map(AiPurposeAssignment::new).toList();
     }
 
-    /** Builds inline membership controls. / 构建内联成员控件。
-     * @param c component factory / 控件工厂
-     */
-    private void editor(DesktopPartFactory c) {
-        add.setToolTipText(messages.text("ai.purpose.add"));
-        remove.setToolTipText(messages.text("ai.purpose.remove"));
-        add.getAccessibleContext().setAccessibleName(messages.text("ai.purpose.add"));
-        remove.getAccessibleContext().setAccessibleName(messages.text("ai.purpose.remove"));
-        add.addActionListener(event -> addMember());
-        remove.addActionListener(event -> removeMember());
-        arrows.add(add);
-        arrows.add(remove);
-        editor.add(title, BorderLayout.NORTH);
-        editor.add(purposeScroll);
-        enabled.setText(messages.text("ai.models.enabled"));
-        enabled.addActionListener(event -> setEnabledMember());
-        JPanel controls = c.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        controls.add(enabled);
-        JButton up = c.secondaryButton("↑"), down = c.secondaryButton("↓");
-        up.addActionListener(event -> move(true, -1));
-        down.addActionListener(event -> move(true, 1));
-        controls.add(up);
-        controls.add(down);
-        JButton cancel = messages.bind(c.secondaryButton(""), "button.cancel"),
-            save = messages.bind(c.primaryButton(""), "button.save");
-        cancel.setName("ai.purpose.cancel");
-        save.setName("ai.purpose.save");
-        cancel.addActionListener(event -> {
-            if (!blocked())
-                closeEditor();
-        });
-        save.addActionListener(event -> save());
-        controls.add(cancel);
-        controls.add(save);
-        editor.add(controls, BorderLayout.SOUTH);
-    }
-
-    /** Builds model inventory actions. / 构建模型清单操作。
-     * @param c component factory / 控件工厂
-     * @param edit model editor callback / 模型编辑回调
-     */
-    private void footer(DesktopPartFactory c, Consumer<AiModelInfo> edit) {
-        JPanel footer = c.transparent(new BorderLayout(8, 0));
-        footer.add(status);
-        JPanel modelActions = c.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        JButton newModel = messages.bind(c.primaryButton(""), "ai.models.add"),
-            editModel = messages.bind(c.secondaryButton(""), "ai.models.edit");
-        newModel.setName("ai.models.add");
-        editModel.setName("ai.models.edit");
-        newModel.addActionListener(event -> {
-            if (!blocked())
-                edit.accept(null);
-        });
-        editModel.addActionListener(event -> {
-            if (!blocked() && current() != null)
-                edit.accept(current());
-        });
-        JButton upInventory = c.secondaryButton("↑"), downInventory = c.secondaryButton("↓");
-        upInventory.addActionListener(event -> move(false, -1));
-        downInventory.addActionListener(event -> move(false, 1));
-        modelActions.add(upInventory);
-        modelActions.add(downInventory);
-        modelActions.add(editModel);
-        modelActions.add(newModel);
-        footer.add(modelActions, BorderLayout.EAST);
-        add(footer, BorderLayout.SOUTH);
-    }
-
-    /** Checks concurrent operations. / 检查并发操作。
-     * @return whether edits are blocked / 是否禁止编辑
-     */
     private boolean blocked() {
-        return view.busy || view.locked || view.closed;
+        return locked || closed || loading || transition || order.busy() || purposes.values().stream().anyMatch(CardOrderSession::busy);
     }
 
-    /** Changes the parent operation lock. / 改变父级操作锁。
-     * @param value lock state / 锁状态
-     */
     void setLocked(boolean value) {
-        if (view.locked != value) {
-            view.epoch++;
-            view.request++;
-            view.busy = false;
+        if (locked != value) {
+            epoch++;
+            loadRequest++;
+            loading = false;
         }
-        view.locked = value;
+        locked = value;
+        order.setLocked(value);
+        purposes.values().forEach(session -> session.setLocked(value));
         if (value) {
             inventory.cancelInteraction();
             selected.cancelInteraction();
         }
-        updateControls();
+        if (detail instanceof ModelDetailsPane pane) pane.setLocked(value);
+        controls();
     }
 
-    /** Ends only the exact current view request. / 仅结束精确当前视图请求。
-     * @param generation captured view generation / 捕获的视图代次
-     * @param identity captured request / 捕获的请求
-     * @return whether its result may update controls / 其结果是否可以更新控件 */
-    private boolean returned(long generation, long identity) {
-        if (view.closed || view.locked || generation != view.epoch || identity != view.request) return false;
-        view.busy = false;
-        return true;
-    }
-
-    /** Discards this view without cancelling admitted work. / 丢弃此视图，不取消已准入工作。 */
-    void close() {
-        view.closed = true;
-        view.epoch++;
-        view.request++;
-        view.busy = false;
-        models = List.of();
-        memberships.clear();
-        inventoryModel.clear();
-        purposeModel.clear();
-        updateControls();
-    }
-
-    /** Finds the selected model. / 查找所选模型。
-     * @return selected row or absent / 所选行或空
-     */
     AiModelInfo current() {
         return find(inventory.getSelectedValue());
     }
 
-    /** Resolves a stable identity in the inventory. / 在清单中解析稳定标识。
-     * @param id model identity / 模型标识
-     * @return matching row or absent / 匹配行或空
-     */
     private AiModelInfo find(String id) {
         return models.stream().filter(v -> v.profile().id().equals(id)).findFirst().orElse(null);
     }
 
-    /** Reloads saved data without discarding an open draft. / 重读保存数据，不丢弃打开的草稿。 */
     void refresh() {
-        if (blocked() || service == null)
-            return;
-        view.busy = true;
-        long generation = view.epoch, identity = ++view.request;
-        updateControls();
+        if (blocked() || service == null) return;
+        before(this::load);
+    }
+
+    private void load() {
+        if (locked || closed || loading) return;
+        loading = true;
+        long generation = epoch, request = ++loadRequest;
+        controls();
         DesktopTaskRunner.run(() -> {
             var rows = service.listAiConfigurations();
-            var roles = new EnumMap<AiPurposeType, List<AiPurposeAssignment>>(AiPurposeType.class);
+            var values = new EnumMap<AiPurposeType, List<String>>(AiPurposeType.class);
             for (var type : AiPurposeType.values())
-                roles.put(type, service.listAiPurpose(type));
-            return new ListSnapshot(rows, roles);
-        }, value -> {
-            if (!returned(generation, identity)) return;
-            models = value.models();
-            memberships = value.memberships();
+                values.put(type, service.listAiPurpose(type).stream().map(AiPurposeAssignment::profileId).toList());
+            return new Snapshot(rows, values);
+        }, snapshot -> {
+            if (closed || generation != epoch || request != loadRequest) return;
+            loading = false;
+            models = snapshot.models();
+            order.accept(models.stream().map(v -> v.profile().id()).toList());
+            snapshot.purposes().forEach((type, ids) -> purposes.get(type).accept(ids));
+            status.setText("");
             render();
+            if (detailId != null) showDetail(find(detailId));
         }, failure -> {
-            if (!returned(generation, identity)) return;
+            if (closed || generation != epoch || request != loadRequest) return;
+            loading = false;
             status.setText(messages.safe(failure));
-            updateControls();
+            controls();
         });
     }
 
-    /** Combined inventory read. / 合并清单读取。
-     * @param models all models / 全部模型
-     * @param memberships saved purpose lists / 已保存用途列表
-     */
-    private record ListSnapshot(List<AiModelInfo> models,
-                                Map<AiPurposeType, List<AiPurposeAssignment>> memberships) {
+    private record Snapshot(List<AiModelInfo> models, Map<AiPurposeType, List<String>> purposes) {
     }
 
-    /** Opens a selected purpose while retaining the original list. / 保留原列表并打开所选用途。
-     * @param value selected purpose / 所选用途
-     */
     void open(AiPurposeType value) {
-        if (blocked())
-            return;
-        if (purpose != null && !draft.equals(original)) {
-            status.setText(messages.text("ai.purpose.unsaved"));
-            return;
+        if (blocked() || detailId != null) return;
+        transition = true;
+        var saving = purpose == null ? CompletableFuture.completedFuture(true) : purposes.get(purpose).saveBeforeLeave();
+        saving.whenComplete((ok, failure) -> {
+            transition = false;
+            if (!closed && !locked && failure == null && Boolean.TRUE.equals(ok)) {
+                purpose = purpose == value ? null : value;
+                layoutColumns();
+                render();
+            }
+            controls();
+        });
+    }
+
+    private void choose() {
+        if (blocked() || purpose != null) return;
+        showDetail(current());
+    }
+
+    private void showDetail(AiModelInfo model) {
+        if (detail instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception ignored) {
+            }
         }
-        purpose = value;
-        original = List.copyOf(memberships.getOrDefault(value, List.of()));
-        draft = original;
-        title.setText(messages.text("ai.purpose." + value.name()));
+        detailId = model == null ? null : model.profile().id();
+        detail = model == null ? null : details.apply(model);
         layoutColumns();
-        render();
     }
 
-    /** Closes the editor and discards only its unsaved draft. / 关闭编辑器且仅丢弃其未保存草稿。 */
-    private void closeEditor() {
-        purpose = null;
-        draft = List.of();
-        original = List.of();
-        layoutColumns();
-        render();
+    void collapse() {
+        inventory.clearSelection();
+        showDetail(null);
     }
 
-    /** Splits the available width without replacing the inventory control. / 不替换清单控件而分配可用宽度。 */
     private void layoutColumns() {
-        int scroll = inventoryScroll.getVerticalScrollBar().getValue();
-        inventoryScroll.setMinimumSize(new Dimension(0, 0));
-        editor.setMinimumSize(new Dimension(0, 0));
-        inventoryScroll.setPreferredSize(new Dimension(0, 320));
-        editor.setPreferredSize(new Dimension(0, 320));
+        if (newModel == null) return;
         columns.removeAll();
+        leftTools.removeAll();
+        heading.remove(newModel);
+        leftTools.add(heading, BorderLayout.WEST);
+        boolean expanded = purpose != null || detailId != null;
+        if (expanded) leftTools.add(newModel, BorderLayout.EAST);
+        else {
+            heading.add(newModel);
+            leftTools.add(roles, BorderLayout.EAST);
+        }
         GridBagConstraints g = new GridBagConstraints();
         g.fill = GridBagConstraints.BOTH;
         g.weighty = 1;
-        g.weightx = 1;
-        columns.add(inventoryScroll, g);
+        g.weightx = detailId == null ? 1 : .4;
+        columns.add(left, g);
         if (purpose != null) {
+            editor.removeAll();
+            var top = components.transparent(new BorderLayout(0, 8));
+            top.add(roles);
+            var close = components.secondaryButton("×");
+            close.setToolTipText(messages.text("ai.purpose.collapse"));
+            close.getAccessibleContext().setAccessibleName(messages.text("ai.purpose.collapse"));
+            close.addActionListener(event -> open(purpose));
+            top.add(close, BorderLayout.EAST);
+            editor.add(top, BorderLayout.NORTH);
+            editor.add(purposeScroll);
+            var actions = components.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+            for (int delta : new int[]{-1, 1}) {
+                var button = components.secondaryButton(delta < 0 ? "↑" : "↓");
+                button.addActionListener(event -> move(true, delta));
+                actions.add(button);
+            }
+            editor.add(actions, BorderLayout.SOUTH);
             g.gridx = 1;
             g.weightx = 0;
             g.fill = GridBagConstraints.NONE;
-            g.insets = new Insets(0, 8, 0, 8);
+            g.insets = new Insets(0, 12, 0, 12);
             columns.add(arrows, g);
             g.gridx = 2;
-            g.weightx = 1;
             g.fill = GridBagConstraints.BOTH;
+            g.weightx = 1;
             g.insets = new Insets(0, 0, 0, 0);
             columns.add(editor, g);
+        } else if (detail != null) {
+            g.gridx = 1;
+            g.weightx = .6;
+            g.insets = new Insets(0, 24, 0, 0);
+            columns.add(detail, g);
         }
+        left.setMinimumSize(new Dimension(0, 0));
+        left.setPreferredSize(new Dimension(0, 360));
+        editor.setMinimumSize(new Dimension(0, 0));
+        editor.setPreferredSize(new Dimension(0, 360));
+        if (detail != null) {
+            detail.setMinimumSize(new Dimension(0, 0));
+            detail.setPreferredSize(new Dimension(0, 360));
+        }
+        roles.setVisible(detailId == null);
         columns.revalidate();
         columns.repaint();
-        long generation = view.epoch;
-        SwingUtilities.invokeLater(() -> {
-            if (!view.closed && generation == view.epoch) inventoryScroll.getVerticalScrollBar().setValue(scroll);
-        });
+        controls();
     }
 
-    /** Updates rows while preserving selections and scroll positions. / 更新行且保留选择和滚动位置。 */
     private void render() {
-        var state = restored == null ? capture() : restored;
-        restored = null;
-        inventoryModel.clear();
-        models.forEach(v -> inventoryModel.addElement(v.profile().id()));
-        purposeModel.clear();
-        draft.forEach(v -> purposeModel.addElement(v.profileId()));
-        inventory.setSelectedValue(state.selected(), false);
-        selected.setSelectedValue(state.selectedPurpose(), false);
-        for (var type : AiPurposeType.values())
-            gold.debug.windowstolinux.app.ui.language.LocaleBinding.bind(buttons.get(type),
-                gold.debug.windowstolinux.app.ui.language.LocalizedMessage.of("ai.purpose.count." + type.name(),
-                    "count", memberships.getOrDefault(type, List.of()).size()),
-                messages.catalog());
-        status.setText(messages.text(models.isEmpty() ? "ai.models.empty" : "ai.models.orderHint"));
-        updateControls();
-        long generation = view.epoch;
-        SwingUtilities.invokeLater(() -> {
-            if (view.closed || generation != view.epoch) return;
-            inventoryScroll.getVerticalScrollBar().setValue(state.scroll());
-            purposeScroll.getVerticalScrollBar().setValue(state.purposeScroll());
-        });
+        if (rendering || newModel == null || closed) return;
+        rendering = true;
+        try {
+            var selectedId = inventory.getSelectedValue();
+            var memberId = selected.getSelectedValue();
+            int scroll = inventoryScroll.getVerticalScrollBar().getValue();
+            inventoryModel.clear();
+            order.draft().forEach(inventoryModel::addElement);
+            purposeModel.clear();
+            if (purpose != null) purposes.get(purpose).draft().forEach(purposeModel::addElement);
+            inventory.setSelectedValue(selectedId, false);
+            selected.setSelectedValue(memberId, false);
+            inventoryScroll.getVerticalScrollBar().setValue(scroll);
+            localize();
+            controls();
+        } finally {
+            rendering = false;
+        }
     }
 
-    /** Refreshes display keys and renderers while keeping membership drafts and selection. / 刷新显示键和渲染器，保留成员草稿及选择。 */
     void localize() {
+        title.setText(messages.text("ai.models.all") + "  " + models.size());
         for (var type : AiPurposeType.values())
-            gold.debug.windowstolinux.app.ui.language.LocaleBinding.bind(buttons.get(type),
-                gold.debug.windowstolinux.app.ui.language.LocalizedMessage.of("ai.purpose.count." + type.name(),
-                    "count", memberships.getOrDefault(type, List.of()).size()),
-                messages.catalog());
-        if (purpose != null)
-            messages.bind(title, "ai.purpose." + purpose.name());
-        messages.bind(enabled, "ai.models.enabled");
+            buttons.get(type).setText(messages.text("ai.purpose.short." + type.name()) + "  " + purposes.get(type).draft().size());
+        if (detailId != null && !rendering) showDetail(find(detailId));
         repaint();
     }
 
-    /** Updates membership availability and current role enablement. / 更新成员操作及当前用途启用状态。 */
-    private void updateControls() {
+    private void controls() {
+        if (newModel == null) return;
+        boolean ready = !blocked() && order.loaded();
+        inventory.setEnabled(ready);
+        selected.setEnabled(ready);
+        newModel.setEnabled(ready);
+        buttons.values().forEach(button -> button.setEnabled(ready));
         var model = current();
-        boolean joined = model != null && draft.stream().anyMatch(v -> v.profileId().equals(model.profile().id()));
-        add.setEnabled(!blocked() && purpose != null && model != null && model.verified(purpose) && !joined);
-        remove.setEnabled(!blocked() && selected.getSelectedValue() != null);
-        var member = draft.stream().filter(v -> v.profileId().equals(selected.getSelectedValue())).findFirst();
-        enabled.setSelected(member.map(AiPurposeAssignment::enabled).orElse(false));
-        var chosen = find(selected.getSelectedValue());
-        enabled.setEnabled(!blocked() && member.isPresent() && chosen != null
-            && (member.get().enabled() || chosen.verified(purpose)));
-        buttons.values().forEach(v -> v.setEnabled(!blocked()));
-        inventory.setEnabled(!blocked());
-        selected.setEnabled(!blocked());
+        add.setEnabled(ready && purpose != null && model != null && model.verified(purpose)
+            && !purposes.get(purpose).draft().contains(model.profile().id()));
+        remove.setEnabled(ready && purpose != null && selected.getSelectedValue() != null);
     }
 
-    /** Appends an explicitly selected verified model. / 追加明确选择的已验证模型。 */
-    private void addMember() {
-        if (!add.isEnabled())
-            return;
-        var next = new ArrayList<>(draft);
-        next.add(new AiPurposeAssignment(current().profile().id(), true));
-        draft = List.copyOf(next);
-        render();
+    private void member(boolean joining) {
+        if (purpose == null || (joining ? !add.isEnabled() : !remove.isEnabled())) return;
+        var session = purposes.get(purpose);
+        var next = new ArrayList<>(session.draft());
+        if (joining) next.add(current().profile().id());
+        else next.remove(selected.getSelectedValue());
+        session.edit(next, false);
     }
 
-    /** Removes only the selected membership. / 仅移除所选用途成员。 */
-    private void removeMember() {
-        if (!remove.isEnabled())
-            return;
-        draft = draft.stream().filter(v -> !v.profileId().equals(selected.getSelectedValue())).toList();
-        render();
-    }
-
-    /** Changes only the selected purpose's enablement. / 仅改变所选用途的启用状态。 */
-    private void setEnabledMember() {
-        if (blocked() || purpose == null)
-            return;
-        String id = selected.getSelectedValue();
-        boolean active = enabled.isSelected();
-        draft = draft.stream().map(v -> v.profileId().equals(id) ? new AiPurposeAssignment(id, active) : v).toList();
-        render();
-    }
-
-    /** Commits an entire purpose draft, retaining it after failure. / 提交完整用途草稿，失败时保留。 */
-    private void save() {
-        if (blocked() || purpose == null)
-            return;
-        var role = purpose;
-        var values = List.copyOf(draft);
-        view.busy = true;
-        long generation = view.epoch, identity = ++view.request;
-        updateControls();
-        DesktopTaskRunner.run(() -> {
-            service.saveAiPurpose(role, values);
-            return true;
-        }, done -> {
-            if (!returned(generation, identity)) return;
-            memberships.put(role, values);
-            closeEditor();
-        }, failure -> {
-            if (!returned(generation, identity)) return;
-            status.setText(messages.safe(failure));
-            updateControls();
-        });
-    }
-
-    /** Changes one list order through its own persistence path. / 通过各自保存路径调整一个列表顺序。
-     * @param role whether ordering the purpose / 是否排序用途
-     * @param ids complete ordered identities / 完整有序标识
-     */
     private void reorder(boolean role, List<String> ids) {
-        if (blocked())
-            return;
-        if (role) {
-            var prior = draft;
-            draft = ids.stream()
-                .map(id -> prior.stream().filter(v -> v.profileId().equals(id)).findFirst().orElseThrow()).toList();
-            render();
-        } else {
-            view.busy = true;
-            long generation = view.epoch, identity = ++view.request;
-            updateControls();
-            DesktopTaskRunner.run(() -> {
-                service.reorderAiProviders(ids);
-                return true;
-            }, done -> {
-                if (!returned(generation, identity)) return;
-                var prior = models;
-                models = ids.stream()
-                    .map(id -> prior.stream().filter(v -> v.profile().id().equals(id)).findFirst().orElseThrow())
-                    .toList();
-                render();
-            }, failure -> {
-                if (!returned(generation, identity)) return;
-                status.setText(messages.safe(failure));
-                updateControls();
-            });
-        }
+        if (!blocked()) (role ? purposes.get(purpose) : order).edit(ids, true);
     }
 
-    /** Moves a selected row by one position. / 将所选行移动一个位置。
-     * @param role whether ordering the purpose / 是否排序用途
-     * @param delta direction / 方向
-     */
     private void move(boolean role, int delta) {
+        if (role && purpose == null || blocked()) return;
         var list = role ? selected : inventory;
+        var session = role ? purposes.get(purpose) : order;
+        var ids = new ArrayList<>(session.draft());
         int from = list.getSelectedIndex();
-        if (blocked() || from < 0 || from + delta < 0 || from + delta >= list.getModel().getSize())
-            return;
-        var ids = new ArrayList<String>();
-        for (int i = 0; i < list.getModel().getSize(); i++)
-            ids.add(list.getModel().getElementAt(i));
+        if (from < 0 || from + delta < 0 || from + delta >= ids.size()) return;
         Collections.swap(ids, from, from + delta);
         reorder(role, ids);
     }
 
-    /** Installs drag and keyboard ordering. / 安装拖动及键盘排序。
-     * @param list target list / 目标列表
-     * @param role whether editing purpose order / 是否编辑用途顺序
-     */
     private void installOrder(DesktopCardList<String> list, boolean role) {
-        list.reorder(ids -> reorder(role, ids), () -> !blocked());
+        list.reorder(ids -> reorder(role, ids), () -> !blocked() && (!role || purpose != null));
         for (int delta : new int[]{-1, 1}) {
             String key = delta < 0 ? "alt UP" : "alt DOWN";
             list.getInputMap().put(KeyStroke.getKeyStroke(key), key);
             list.getActionMap().put(key, new AbstractAction() {
-                /** Moves the selection. / 移动选择。
-                 * @param event keyboard event / 键盘事件
-                 */
                 @Override
                 public void actionPerformed(ActionEvent event) {
                     move(role, delta);
@@ -552,89 +393,102 @@ final class AiModelListPane extends JPanel {
         }
     }
 
-    /** Builds labels for inventory or purpose rows. / 构建清单或用途行标签。
-     * @param role whether rendering purpose membership / 是否绘制用途成员
-     * @return row renderer / 行渲染器
-     */
     private ListCellRenderer<? super String> renderer(boolean role) {
-        return (list, id, index, isSelected, focus) -> {
-            JLabel label = (JLabel) new DefaultListCellRenderer().getListCellRendererComponent(list, id, index,
-                isSelected, focus);
+        return (list, id, index, chosen, focus) -> {
             var model = find(id);
-            String suffix = "";
-            if (role) {
-                var member = draft.stream().filter(v -> v.profileId().equals(id)).findFirst().orElseThrow();
-                suffix = " · " + messages.text(member.enabled() ? "ai.models.enabled" : "ai.purpose.disabled");
-            } else if (purpose != null && draft.stream().anyMatch(v -> v.profileId().equals(id)))
-                suffix = " · " + messages.text("ai.purpose.joined");
-            if (model != null) {
-                label.setText("<html>" + escape((index + 1) + "  " + model.name() + " · " + model.profile().model() + suffix)
-                    + "<br>" + capabilityLabel(model, AiCapabilityType.TEXT) + " · " + capabilityLabel(model, AiCapabilityType.VISION)
-                    + "<br>" + capabilityLabel(model, AiCapabilityType.VOICE_FILE) + " · " + capabilityLabel(model, AiCapabilityType.VOICE_REALTIME)
-                    + "</html>");
-                label.setToolTipText(checkDetails(model));
-            }
-            label.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
-            return label;
+            var panel = new JPanel(new BorderLayout(14, 0));
+            panel.setOpaque(false);
+            boolean eligible = role || purpose == null || model != null && model.verified(purpose);
+            Color foreground = UIManager.getColor(eligible ? "Label.foreground" : "Label.disabledForeground");
+            String icon = !role || purpose == null ? "ai/bot" : switch (purpose) {
+                case DEPLOYMENT -> "ai/language";
+                case APPROVAL -> "security/shield";
+                case VISION -> "ai/vision";
+                case VOICE -> "ai/voice";
+            };
+            panel.setEnabled(eligible);
+            panel.add(new JLabel(DesktopIcons.icon(icon, 26, () -> foreground)), BorderLayout.WEST);
+            var text = new JPanel(new GridLayout(2, 1, 0, 4));
+            text.setOpaque(false);
+            var name = new JLabel(model == null ? id : model.name());
+            name.putClientProperty("html.disable", true);
+            name.setFont(name.getFont().deriveFont(Font.BOLD));
+            name.setForeground(foreground);
+            var description = new JLabel(model == null ? "" : model.profile().model());
+            description.putClientProperty("html.disable", true);
+            description.setForeground(eligible ? UIManager.getColor("Label.disabledForeground") : foreground);
+            text.add(name);
+            text.add(description);
+            panel.add(text);
+            return panel;
         };
     }
 
-    /** Builds one independently localized capability state. / 构造一个独立本地化能力状态。
-     * @param model actual inventory row / 实际清单行
-     * @param capability independently checked capability / 独立检查能力
-     * @return escaped label / 转义标签 */
-    private String capabilityLabel(AiModelInfo model, AiCapabilityType capability) {
-        return escape(messages.text("ai.capability." + capability.name().toLowerCase(Locale.ROOT)) + ": "
-            + messages.text("ai.check." + model.checks().get(capability).state().name()));
+    private void before(Runnable action) {
+        if (blocked()) return;
+        transition = true;
+        saveAll(false).whenComplete((ok, failure) -> {
+            transition = false;
+            controls();
+            if (!closed && !locked && failure == null && Boolean.TRUE.equals(ok)) action.run();
+        });
     }
 
-    /** Shows safe fixed reasons for all capabilities without assuming a chat address. / 展示全部能力的安全固定原因，不假设聊天地址存在。
-     * @param model actual configuration / 实际配置
-     * @return safe localized tooltip / 安全本地化提示 */
-    private String checkDetails(AiModelInfo model) {
-        var details = new StringBuilder("<html>");
-        for (var capability : AiCapabilityType.values()) {
-            details.append(capabilityLabel(model, capability));
-            var check = model.checks().get(capability);
-            if (!check.reason().isEmpty())
-                details.append(" · ").append(escape(messages.text("ai.check.reason." + check.reason())));
-            details.append("<br>");
-        }
-        return details.append("</html>").toString();
+    @Override
+    public boolean hasPendingEdits() {
+        return order.hasPendingEdits() || purposes.values().stream().anyMatch(CardOrderSession::hasPendingEdits);
     }
 
-    /** Escapes provider-controlled display values before Swing HTML rendering. / Swing HTML渲染前转义提供方可控显示值。
-     * @param value plain label / 纯标签
-     * @return escaped text / 转义文字 */
-    private static String escape(String value) {
-        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+    @Override
+    public CompletionStage<Boolean> saveBeforeLeave() {
+        return saveAll(true);
     }
 
-    /** Captures nonsecret editor state. / 捕获非秘密编辑状态。
-     * @return editor snapshot / 编辑快照
-     */
+    CompletionStage<Boolean> savePending() {
+        return saveAll(false);
+    }
+
+    private CompletionStage<Boolean> saveAll(boolean leave) {
+        CompletionStage<Boolean> result = leave ? order.saveBeforeLeave() : order.savePending();
+        for (var session : purposes.values())
+            result = result.thenCompose(ok -> ok
+                ? leave ? session.saveBeforeLeave() : session.savePending() : CompletableFuture.completedFuture(false));
+        return result;
+    }
+
     AiModelListState capture() {
-        if (restored != null)
-            return restored;
-        return new AiModelListState(Optional.ofNullable(purpose), draft, original,
-            Objects.toString(inventory.getSelectedValue(), ""), Objects.toString(selected.getSelectedValue(), ""),
-            inventoryScroll.getVerticalScrollBar().getValue(), purposeScroll.getVerticalScrollBar().getValue());
+        var session = purpose == null ? null : purposes.get(purpose);
+        return new AiModelListState(Optional.ofNullable(purpose), session == null ? List.of() : assignments(session.draft()),
+            session == null ? List.of() : assignments(session.confirmed()), Objects.toString(inventory.getSelectedValue(), ""),
+            Objects.toString(selected.getSelectedValue(), ""), inventoryScroll.getVerticalScrollBar().getValue(),
+            purposeScroll.getVerticalScrollBar().getValue());
     }
 
-    /** Restores editor state after theme or language rebuild. / 主题或语言重建后恢复编辑状态。
-     * @param state captured state / 捕获状态
-     */
-    void restore(AiModelListState state) {
-        restored = state;
-        purpose = state.purpose().orElse(null);
-        draft = state.draft();
-        original = state.original();
-        if (purpose != null)
-            title.setText(messages.text("ai.purpose." + purpose.name()));
+    void restore(AiModelListState value) {
+        purpose = value.purpose().orElse(null);
+        if (purpose != null) {
+            var session = purposes.get(purpose);
+            session.accept(value.original().stream().map(AiPurposeAssignment::profileId).toList());
+            session.edit(value.draft().stream().map(AiPurposeAssignment::profileId).toList(), false);
+        }
+        render();
+        inventory.setSelectedValue(value.selected(), false);
+        selected.setSelectedValue(value.selectedPurpose(), false);
+        inventoryScroll.getVerticalScrollBar().setValue(value.scroll());
+        purposeScroll.getVerticalScrollBar().setValue(value.purposeScroll());
         layoutColumns();
-        inventory.setSelectedValue(state.selected(), false);
-        selected.setSelectedValue(state.selectedPurpose(), false);
-        inventoryScroll.getVerticalScrollBar().setValue(state.scroll());
-        purposeScroll.getVerticalScrollBar().setValue(state.purposeScroll());
+    }
+
+    void close() {
+        closed = true;
+        epoch++;
+        inventory.cancelInteraction();
+        selected.cancelInteraction();
+        if (detail instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception ignored) {
+            }
+        }
     }
 }

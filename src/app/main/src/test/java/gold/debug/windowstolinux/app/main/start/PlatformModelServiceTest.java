@@ -100,7 +100,7 @@ class PlatformModelServiceTest {
             sql(runtime.persistence().database(), "DELETE FROM desktop_preference WHERE preference_key=?", "ai_model_output_limit_sample");
             answer(fixture);
             for (var capability : List.of(AiCapabilityType.TEXT, AiCapabilityType.VISION))
-                assertEquals(TaskResult.SUCCEEDED, done(service.verify("sample", capability, null, "")).outcome());
+                assertEquals(TaskResult.SUCCEEDED, done(service.verify("sample", capability)).outcome());
             assertTrue(service.outputLimit("sample").isEmpty());
             assertEquals(2, fixture.calls.get());
         }
@@ -109,7 +109,7 @@ class PlatformModelServiceTest {
     static TaskHandle<Void> saveAndVerify(PlatformModelService service, AiModelProfile profile, String name,
                                           char[] key, AiCapabilityType capability, int outputLimit) throws Exception {
         service.save(profile, name, key, outputLimit);
-        return service.verify(profile.id(), capability, null, "");
+        return service.verify(profile.id(), capability);
     }
 
     static void reconcile(PlatformModelService service, TaskHandle<?> handle) throws Exception {
@@ -152,7 +152,7 @@ class PlatformModelServiceTest {
                 assertEquals(text.revision(), both.revision());
                 assertTrue(both.textVerifiedAt().isPresent());
                 assertTrue(both.visionVerifiedAt().isPresent());
-                service.saveAiPurpose(AiPurposeType.VISION, List.of(new AiPurposeAssignment("sample", true)));
+                service.saveAiPurpose(AiPurposeType.VISION, List.of(new AiPurposeAssignment("sample")));
                 assertTrue(service.listAiPurpose(AiPurposeType.DEPLOYMENT).isEmpty());
                 assertEquals(2, fixture.calls.get());
             }
@@ -162,7 +162,7 @@ class PlatformModelServiceTest {
                 var service = runtime.models();
                 assertEquals(128, service.outputLimit("sample").orElseThrow());
                 assertTrue(service.listAiConfigurations().getFirst().visionVerifiedAt().isPresent());
-                assertEquals(List.of(new AiPurposeAssignment("sample", true)),
+                assertEquals(List.of(new AiPurposeAssignment("sample")),
                     service.listAiPurpose(AiPurposeType.VISION));
                 assertEquals(2, fixture.calls.get());
             }
@@ -180,7 +180,7 @@ class PlatformModelServiceTest {
                 AiCapabilityType.TEXT, 128)).outcome());
             assertArrayEquals(new char[firstKey.length], firstKey);
             var first = service.listAiConfigurations().getFirst();
-            var assignments = List.of(new AiPurposeAssignment("sample", false));
+            var assignments = List.of(new AiPurposeAssignment("sample"));
             service.saveAiPurpose(AiPurposeType.DEPLOYMENT, assignments);
             byte[] original;
             try (var stored = runtime.persistence().security().find(first.profile().credentialKey()).orElseThrow()) {
@@ -239,7 +239,7 @@ class PlatformModelServiceTest {
             assertTrue(failed.textVerifiedAt().isEmpty());
             assertEquals(256, service.outputLimit("sample").orElseThrow());
             try (var op = runtime.security().enterOperation(); var store = runtime.security().openCredentials()) {
-                char[] key = store.read(before.profile().credentialKey()).orElseThrow();
+                char[] key = store.read(failed.profile().credentialKey()).orElseThrow();
                 try {
                     assertArrayEquals("replacement-key".toCharArray(), key);
                 } finally {
@@ -366,7 +366,7 @@ class PlatformModelServiceTest {
             service.save(profile(fixture), "Failure", "original-key".toCharArray(), 128);
             sql(runtime.persistence().database(),
                 "ALTER TABLE ai_model ADD CONSTRAINT fixture_model_commit CHECK(text_state<>'AVAILABLE')");
-            var handle = service.verify("sample", AiCapabilityType.TEXT, null, "");
+            var handle = service.verify("sample", AiCapabilityType.TEXT);
             state(handle, TaskState.UNKNOWN);
             sql(runtime.persistence().database(), "ALTER TABLE ai_model DROP CONSTRAINT fixture_model_commit");
             reconcile(service, handle);

@@ -157,6 +157,7 @@ final class DesktopCardSelection extends MouseInputAdapter implements AutoClosea
     public void mouseReleased(MouseEvent event) {
         int row = pressedRow;
         Object model = pressedModel, value = pressedValue;
+        boolean clicked = !moved && pressedAt != null && pressedAt.distance(event.getPoint()) < UIScale.scale(5);
         boolean clear = deselect && !moved && row >= 0 && SwingUtilities.isLeftMouseButton(event)
             && (event.getModifiersEx() & MODIFIERS) == 0 && view.isEnabled() && DesktopCardSupport.isCardView(view)
             && DesktopCardSupport.rowAt(view, event.getPoint()) == row && model() == model
@@ -173,6 +174,10 @@ final class DesktopCardSelection extends MouseInputAdapter implements AutoClosea
                 if (view instanceof JList<?> list) list.clearSelection();
                 else ((JTable) view).clearSelection();
             }
+            if (clicked && row >= 0 && model() == model && view.isEnabled()
+                && DesktopCardSupport.rowAt(view, event.getPoint()) == row
+                && Objects.equals(value(row), value) && !Boolean.TRUE.equals(view.getClientProperty("desktop.cardDragActive"))
+                && view.getClientProperty("desktop.cardClick") instanceof Runnable action) action.run();
         } finally {
             cancel();
         }

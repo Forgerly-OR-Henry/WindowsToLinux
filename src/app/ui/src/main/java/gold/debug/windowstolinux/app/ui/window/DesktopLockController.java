@@ -46,6 +46,11 @@ final class DesktopLockController implements AutoCloseable {
     /** Guarded shutdown callback. / 受门禁保护的关闭回调。 */
     private Runnable exit;
 
+    private java.util.function.Supplier<java.util.concurrent.CompletionStage<Boolean>> beforeExit =
+        () -> java.util.concurrent.CompletableFuture.completedFuture(true);
+
+    private boolean exiting;
+
     /** Last privacy and admission state, disposal and reentrancy guards. / 上次隐私及准入状态、释放及重入保护。 */
     private boolean lastLocked, lastBlocked, closed, updating;
 
@@ -122,8 +127,17 @@ final class DesktopLockController implements AutoCloseable {
                     if (locked()) controls.blockedExit();
                     else JOptionPane.showMessageDialog(frame, messages.text("security.exit.tasks"));
                 } else {
-                    security.lock();
-                    exit.run();
+                    if (exiting) return;
+                    exiting = true;
+                    beforeExit.get().whenComplete((ok, failure) -> SwingUtilities.invokeLater(() -> {
+                        exiting = false;
+                        if (failure != null)
+                            JOptionPane.showMessageDialog(frame, messages.safe(new Exception(failure)));
+                        else if (Boolean.TRUE.equals(ok)) {
+                            security.lock();
+                            exit.run();
+                        }
+                    }));
                 }
             }
         });
@@ -180,6 +194,16 @@ final class DesktopLockController implements AutoCloseable {
      * @param action shutdown / 关闭 */
     void onExit(Runnable action) {
         exit = Objects.requireNonNull(action);
+    }
+
+    void beforeExit(java.util.function.Supplier<java.util.concurrent.CompletionStage<Boolean>> action) {
+        beforeExit = Objects.requireNonNull(action);
+    }
+
+    void requireUnlockForDrafts() {
+        controls.blockedExit();
+        JOptionPane.showMessageDialog(frame, messages.text("order.unlockBeforeExit"));
+        openUnlock();
     }
 
     /** Observes authorization after the input boundary. / 输入边界应用后观察授权。

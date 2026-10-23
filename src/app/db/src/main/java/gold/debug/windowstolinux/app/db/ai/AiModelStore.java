@@ -53,28 +53,24 @@ public final class AiModelStore {
                         .map(v -> v.checks().get(capability)).orElseGet(AiCapabilityCheck::unverified));
                 if (previous.isEmpty()) {
                     try (var insert = c.prepareStatement("INSERT INTO ai_model(model_id,credential_id,endpoint_url,"
-                        + "file_endpoint_url,realtime_endpoint_url,model_name,display_name,display_order) "
-                        + "VALUES(?,?,?,?,?,?,?,(SELECT COALESCE(MAX(display_order),-1)+1 FROM ai_model))")) {
+                        + "model_name,display_name,display_order) VALUES(?,?,?,?,?,"
+                        + "(SELECT COALESCE(MAX(display_order),-1)+1 FROM ai_model))")) {
                         insert.setString(1, profile.id());
                         insert.setString(2, profile.credentialKey());
                         insert.setString(3, profile.endpoint());
-                        insert.setString(4, profile.fileEndpoint());
-                        insert.setString(5, profile.realtimeEndpoint());
-                        insert.setString(6, profile.model());
-                        insert.setString(7, name.strip());
+                        insert.setString(4, profile.model());
+                        insert.setString(5, name.strip());
                         insert.executeUpdate();
                     }
                 } else {
                     try (var update = c.prepareStatement("UPDATE ai_model SET configuration_revision=?,credential_id=?,"
-                        + "endpoint_url=?,file_endpoint_url=?,realtime_endpoint_url=?,model_name=?,display_name=? WHERE model_id=?")) {
+                        + "endpoint_url=?,model_name=?,display_name=? WHERE model_id=?")) {
                         update.setLong(1, revision);
                         update.setString(2, profile.credentialKey());
                         update.setString(3, profile.endpoint());
-                        update.setString(4, profile.fileEndpoint());
-                        update.setString(5, profile.realtimeEndpoint());
-                        update.setString(6, profile.model());
-                        update.setString(7, name.strip());
-                        update.setString(8, profile.id());
+                        update.setString(4, profile.model());
+                        update.setString(5, name.strip());
+                        update.setString(6, profile.id());
                         update.executeUpdate();
                     }
                 }
@@ -93,14 +89,7 @@ public final class AiModelStore {
      * @return whether prior evidence remains applicable / 原证据是否仍适用 */
     private static boolean unaffected(StoredAiModelProfile old, StoredAiModelProfile current,
                                       AiCapabilityType capability) {
-        if (!old.model().equals(current.model()) || !old.credentialKey().equals(current.credentialKey())) return false;
-        return switch (capability) {
-            case TEXT, VISION, TOOL_CALLING ->
-                old.endpoint().equals(current.endpoint()) && old.reasoningEffort() == current.reasoningEffort()
-                    && old.protocol() == current.protocol();
-            case VOICE_FILE -> old.fileEndpoint().equals(current.fileEndpoint());
-            case VOICE_REALTIME -> old.realtimeEndpoint().equals(current.realtimeEndpoint());
-        };
+        return old.equals(current);
     }
 
     /** Saves independently verified text metadata. / 保存独立验证的文字元数据。
@@ -255,7 +244,7 @@ public final class AiModelStore {
                 var value = configuration(rows);
                 for (var purpose : AiPurposeType.values()) {
                     String prefix = AiPurposeStore.prefix(purpose);
-                    if (rows.getBoolean("is_" + prefix + "_enabled") && rows.getObject(prefix + "_call_order") != null
+                    if (rows.getObject(prefix + "_call_order") != null
                         && value.verified(purpose))
                         grouped.get(purpose).put(rows.getInt(prefix + "_call_order"), value);
                 }
@@ -285,7 +274,7 @@ public final class AiModelStore {
                         var configuration = inventory.get(assignment.profileId());
                         if (configuration == null)
                             throw new SQLException("Purpose route names a missing model");
-                        selected.add(new RoutingMember(configuration, assignment.enabled()));
+                        selected.add(new RoutingMember(configuration));
                     }
                     members.put(purpose, List.copyOf(selected));
                 }
@@ -295,15 +284,14 @@ public final class AiModelStore {
         return result[0];
     }
 
-    /** One ordered purpose member, including a disabled selection. / 一个有序用途成员，包括已禁用选择。
-     * @param configuration exact current model configuration / 精确当前模型配置
-     * @param enabled whether the assignment is enabled / 分配是否启用 */
-    public record RoutingMember(StoredAiModelInfo configuration, boolean enabled) {
+    /** One ordered purpose member; eligibility remains independently verified. / 一个有序用途成员，调用资格仍独立核验。
+     * @param configuration exact current model configuration / 精确当前模型配置 */
+    public record RoutingMember(StoredAiModelInfo configuration) {
     }
 
     /** One transaction-consistent AI routing view. / 一份事务一致的 AI 路由视图。
      * @param routes purpose-ordered model chains / 按用途排序的模型链
-     * @param members all ordered assignments including disabled members / 全部有序分配，包括已禁用成员
+     * @param members all ordered assignments including invalid members / 全部有序分配，包括失效成员
      */
     public record RoutingState(Map<AiPurposeType, List<StoredAiModelInfo>> routes,
                                Map<AiPurposeType, List<RoutingMember>> members) {
@@ -376,7 +364,7 @@ public final class AiModelStore {
                     String prefix = AiPurposeStore.prefix(purpose);
                     if (!rows.next() || !configuration(rows).profile().equals(expected.profile())
                         || rows.getLong("configuration_revision") != expected.revision()
-                        || !configuration(rows).verified(purpose) || !rows.getBoolean("is_" + prefix + "_enabled")
+                        || !configuration(rows).verified(purpose)
                         || rows.getObject(prefix + "_call_order") == null)
                         throw new SQLException("Captured model configuration is no longer available", "55000");
                 }
@@ -416,12 +404,19 @@ public final class AiModelStore {
      * @throws SQLException if validation or the scoped operation fails / 校验或限定操作失败时
      */
     public void reorder(List<String> ids) throws SQLException {
+        reorder(listNamed().stream().map(StoredAiModelProfile::id).toList(), ids);
+    }
+
+    /** Reorders only if the confirmed inventory still matches. / 仅在已确认清单仍匹配时排序。 */
+    public void reorder(List<String> expected, List<String> ids) throws SQLException {
+        var baseline = List.copyOf(expected);
         var order = List.copyOf(ids);
         connections.transaction(() -> {
             try (var c = connections.open(); var max = c.createStatement()) {
                 StoreConnections.lockPlatformState(c);
-                var saved = listNamed().stream().map(StoredAiModelProfile::id)
-                    .collect(java.util.stream.Collectors.toSet());
+                var current = listNamed().stream().map(StoredAiModelProfile::id).toList();
+                if (!current.equals(baseline)) throw new SQLException("Inventory order changed", "40001");
+                var saved = new HashSet<>(current);
                 if (order.size() != saved.size() || !saved.equals(new HashSet<>(order)))
                     throw new SQLException("inventory order changed");
                 long offset;
@@ -480,9 +475,7 @@ public final class AiModelStore {
         } catch (IllegalArgumentException invalid) {
             throw new SQLException("Invalid stored model reasoning effort", "55000");
         }
-        return new StoredAiModelProfile(rows.getString("model_id"), rows.getString("endpoint_url"),
-            rows.getString("model_name"), rows.getString("credential_id"), rows.getString("file_endpoint_url"),
-            rows.getString("realtime_endpoint_url"), effort, storedProtocol(rows.getString("model_id")));
+        return new StoredAiModelProfile(rows.getString("model_id"), rows.getString("endpoint_url"), rows.getString("model_name"), rows.getString("credential_id"), effort, storedProtocol(rows.getString("model_id")));
     }
 
     private ModelProtocol storedProtocol(String id) throws SQLException {

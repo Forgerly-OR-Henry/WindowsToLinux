@@ -92,8 +92,8 @@ public final class DeploymentAgentControllerRecoveryWorker extends DeploymentRun
                 runtime.persistence().aiProfiles().saveVerified(model, role, Instant.now(), AiCapabilityType.TEXT);
                 runtime.persistence().aiProfiles().saveVerified(model, role, Instant.now(), AiCapabilityType.TOOL_CALLING);
             }
-            runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT, List.of(new AiPurposeAssignment("language", true)));
-            runtime.persistence().aiProfiles().purposes().save(AiPurposeType.APPROVAL, List.of(new AiPurposeAssignment("approval", true)));
+            runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT, List.of(new AiPurposeAssignment("language")));
+            runtime.persistence().aiProfiles().purposes().save(AiPurposeType.APPROVAL, List.of(new AiPurposeAssignment("approval")));
         }
         var report = startControlled(runtime);
         assertTrue(report.problems().isEmpty() || report.problems().stream().allMatch(problem -> problem.eventCode().equals("MOD_RECOVERY_READY")), report.problems().toString());

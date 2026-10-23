@@ -142,8 +142,8 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
             runtime.persistence().aiProfiles().saveVerified(profile, role, Instant.now(), AiCapabilityType.TOOL_CALLING);
             runtime.persistence().aiProfiles().saveOutputLimit(role, 1600);
         }
-        runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT, List.of(new AiPurposeAssignment("language", true)));
-        runtime.persistence().aiProfiles().purposes().save(AiPurposeType.APPROVAL, List.of(new AiPurposeAssignment("approval", true)));
+        runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT, List.of(new AiPurposeAssignment("language")));
+        runtime.persistence().aiProfiles().purposes().save(AiPurposeType.APPROVAL, List.of(new AiPurposeAssignment("approval")));
     }
 
     void await(TaskHandle<?> handle, Peer peer, AtomicReference<Throwable> callbackFailure) throws Exception {

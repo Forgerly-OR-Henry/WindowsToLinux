@@ -47,8 +47,7 @@ class PlatformOutputTokenPolicyTest {
             initialize(runtime, false);
             model(runtime, fixture, "model", "/model", AiCapabilityType.TEXT, null);
             var original = runtime.persistence().aiProfiles().findNamed("model").orElseThrow();
-            runtime.persistence().aiProfiles().saveVerified(new StoredAiModelProfile(original.id(), original.endpoint(), original.model(), original.credentialKey(),
-                "", "", ModelReasoningLevel.DEFAULT, protocol), "model", Instant.now(), AiCapabilityType.TEXT);
+            runtime.persistence().aiProfiles().saveVerified(new StoredAiModelProfile(original.id(), original.endpoint(), original.model(), original.credentialKey(), ModelReasoningLevel.DEFAULT, protocol), "model", Instant.now(), AiCapabilityType.TEXT);
             route(runtime, AiPurposeType.DEPLOYMENT, "model");
             fixture.handler.set(exchange -> Fixture.reply(exchange, 200, switch (protocol) {
                 case OPENAI_CHAT_COMPLETIONS -> RESPONSE;

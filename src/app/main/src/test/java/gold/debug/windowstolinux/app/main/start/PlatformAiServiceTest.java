@@ -77,7 +77,7 @@ class PlatformAiServiceTest {
 
     static void route(PlatformRuntime runtime, AiPurposeType purpose, String... ids) throws Exception {
         runtime.persistence().aiProfiles().purposes().save(purpose,
-            Arrays.stream(ids).map(id -> new AiPurposeAssignment(id, true)).toList());
+            Arrays.stream(ids).map(id -> new AiPurposeAssignment(id)).toList());
     }
 
     static void recover(PlatformRuntime runtime, PlatformAiService ai, TaskHandle<?> handle, TaskContext context)
@@ -224,8 +224,8 @@ class PlatformAiServiceTest {
             initialize(runtime, false);
             model(runtime, fixture, "disabled", "/unused", AiCapabilityType.TEXT, 128);
             model(runtime, fixture, "enabled", "/chat", AiCapabilityType.TEXT, 128);
-            var assignments = List.of(new AiPurposeAssignment("disabled", false),
-                new AiPurposeAssignment("enabled", true));
+            var assignments = List.of(new AiPurposeAssignment("disabled"),
+                new AiPurposeAssignment("enabled"));
             runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT, assignments);
             fixture.handler.set(exchange -> Fixture.reply(exchange, 200, RESPONSE));
             var ai = runtime.capabilities().ai(OWNER, VERSION);
@@ -276,8 +276,7 @@ class PlatformAiServiceTest {
             model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, 128);
             var repo = runtime.persistence().aiProfiles();
             var original = repo.findNamed("text").orElseThrow();
-            var low = new StoredAiModelProfile(original.id(), original.endpoint(), original.model(), original.credentialKey(),
-                original.fileEndpoint(), original.realtimeEndpoint(), gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.LOW);
+            var low = new StoredAiModelProfile(original.id(), original.endpoint(), original.model(), original.credentialKey(), gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.LOW);
             repo.saveVerified(low, "text", Instant.now());
             route(runtime, AiPurposeType.DEPLOYMENT, "text");
             var ai = runtime.capabilities().ai(OWNER, VERSION);
@@ -307,12 +306,12 @@ class PlatformAiServiceTest {
             model(runtime, fixture, "first", "/chat", AiCapabilityType.TEXT, 128);
             model(runtime, fixture, "disabled", "/unused", AiCapabilityType.TEXT, 128);
             runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
-                List.of(new AiPurposeAssignment("first", true), new AiPurposeAssignment("disabled", false)));
+                List.of(new AiPurposeAssignment("first"), new AiPurposeAssignment("disabled")));
             var ai = runtime.capabilities().ai(OWNER, VERSION);
             completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 String before = ai.configurationRevision(AiPurpose.LANGUAGE, task);
                 runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
-                    List.of(new AiPurposeAssignment("disabled", false), new AiPurposeAssignment("first", true)));
+                    List.of(new AiPurposeAssignment("disabled"), new AiPurposeAssignment("first")));
                 assertNotEquals(before, ai.configurationRevision(AiPurpose.LANGUAGE, task));
                 assertEquals("AI_CONFIGURATION_CHANGED",
                     assertThrows(ApiException.class, () -> ai.call(message(AiPurpose.LANGUAGE), before, task))

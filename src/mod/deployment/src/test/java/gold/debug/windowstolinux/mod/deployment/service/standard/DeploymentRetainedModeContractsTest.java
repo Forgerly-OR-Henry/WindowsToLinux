@@ -74,7 +74,7 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
             server(runtime);
             model(runtime, "configured", "http://127.0.0.1:" + http.getAddress().getPort() + "/chat");
             runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
-                List.of(new AiPurposeAssignment("configured", true)));
+                List.of(new AiPurposeAssignment("configured")));
             assertEquals(List.of("configured"), runtime.persistence().aiProfiles().listConfigured().stream()
                 .map(value -> value.profile().id()).toList());
             var aiCalls = new AtomicInteger();

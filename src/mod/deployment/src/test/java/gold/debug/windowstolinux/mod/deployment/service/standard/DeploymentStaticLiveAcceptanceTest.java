@@ -8297,8 +8297,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                 .filter(value -> value.profile().id().equals(profileId)).findFirst()
                 .map(value -> value.profile().credentialKey())
                 .orElse("ai/live/" + purpose.name().toLowerCase(java.util.Locale.ROOT));
-            var profile = new gold.debug.windowstolinux.app.service.ai.AiModelProfile(profileId, endpoint, model,
-                credentialReference, null, null, selectedEffort);
+            var profile = new gold.debug.windowstolinux.app.service.ai.AiModelProfile(profileId, endpoint, null, null, selectedEffort);
             char[] credential = key.toCharArray();
             try {
                 runtime.models().save(profile, "User-selected live model: " + purpose, credential,
@@ -8314,10 +8313,10 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                     + " capability=" + capability + " providerUsage=UNKNOWN transportCallCount=UNKNOWN");
                 completed(verification, 3);
             }
-            runtime.models().saveAiPurpose(purpose, List.of(new gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment(profile.id(), true)));
+            runtime.models().saveAiPurpose(purpose, List.of(new gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment(profile.id())));
             if (mainOnlyDiagnostic) {
                 runtime.models().saveAiPurpose(gold.debug.windowstolinux.app.ai.model.AiPurposeType.APPROVAL,
-                    List.of(new gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment(profile.id(), true)));
+                    List.of(new gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment(profile.id())));
                 System.out.println("MAIN_AGENT_ONLY_DIAGNOSTIC_ROUTE approval=DORMANT_VERIFIED_PROFILE judgment=USER_AUTHORIZED_DIAGNOSTIC");
             }
             System.out.println("AI_LIVE_MODEL purpose=" + purpose + " endpoint=" + endpoint + " model=" + model

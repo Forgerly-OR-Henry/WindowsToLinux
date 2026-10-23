@@ -167,9 +167,9 @@ class PlatformNativeModelTest {
                     throw error;
                 }
             });
-            var profile = new AiModelProfile("native", fixture.uri("/v1/chat/completions"), "model", "ai/native", null, null, effort, protocol);
+            var profile = new AiModelProfile("native", fixture.uri("/v1/chat/completions"), "model", "ai/native", effort, protocol);
             service.save(profile, "Native", "fixture-key".toCharArray(), 256);
-            var result = service.verify("native", AiCapabilityType.TOOL_CALLING, null, "").completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
+            var result = service.verify("native", AiCapabilityType.TOOL_CALLING).completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
             assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.problem().toString());
             var saved = service.listAiConfigurations().getFirst();
             assertTrue(saved.verified(AiCapabilityType.TOOL_CALLING));

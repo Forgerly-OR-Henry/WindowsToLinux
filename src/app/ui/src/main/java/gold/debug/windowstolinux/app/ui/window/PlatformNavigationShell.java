@@ -454,6 +454,7 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
         heading.header.setVisible(selected == null || !selected.key.equals("shell.workspace"));
         heading.description.setText(messages.text(selected != null && selected.key.equals("shell.home")
             ? "home.description" : setting ? "shell.settings.description" : "shell.workspace.description"));
+        heading.description.setVisible(selected == null || !selected.key.equals("platform.models"));
         style(collapse, messages.text(collapsed ? "nav.expand" : "nav.collapse"), false, collapsed);
         collapse.setIcon(
             DesktopIcons.icon(collapsed ? "navigation/panel-left-open" : "navigation/panel-left-close", 19, collapse::getForeground));
@@ -555,6 +556,33 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
 
     /** Page selection container whose navigation is rendered by the sidebar. / 由侧栏呈现导航的页面选择容器。 */
     static final class PageDeck extends JTabbedPane {
+        private java.util.function.BiConsumer<Component, Runnable> departure;
+
+        private boolean leaving;
+
+        void beforeLeave(java.util.function.BiConsumer<Component, Runnable> action) {
+            departure = action;
+        }
+
+        @Override
+        public void setSelectedIndex(int index) {
+            if (departure == null || index == getSelectedIndex() || getSelectedComponent() == null) {
+                super.setSelectedIndex(index);
+                return;
+            }
+            if (leaving) return;
+            var target = index < 0 ? null : getComponentAt(index);
+            leaving = true;
+            departure.accept(getSelectedComponent(), () -> {
+                leaving = false;
+                if (target != null && indexOfComponent(target) >= 0) super.setSelectedIndex(indexOfComponent(target));
+            });
+        }
+
+        void cancelDeparture() {
+            leaving = false;
+        }
+
         /** Installs a page-only FlatLaf delegate after every theme update. / 每次主题更新安装仅呈现页面的 FlatLaf 委托。 */
         @Override
         public void updateUI() {

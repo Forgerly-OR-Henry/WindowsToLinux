@@ -35,7 +35,7 @@ class PlatformRetainedServiceContractsTest {
                 runtime.persistence().aiProfiles().reorder(List.of("a", "b"));
                 assertEquals(List.of("a", "b"), runtime.persistence().aiProfiles().listConfigured().stream()
                     .map(value -> value.profile().id()).toList());
-                assertEquals(List.of(new AiPurposeAssignment("b", true), new AiPurposeAssignment("a", true)),
+                assertEquals(List.of(new AiPurposeAssignment("b"), new AiPurposeAssignment("a")),
                     runtime.persistence().aiProfiles().purposes().list(AiPurposeType.DEPLOYMENT));
                 assertEquals(original, ai.configurationRevision(AiPurpose.LANGUAGE, task));
                 assertEquals("b", ai.call(message(AiPurpose.LANGUAGE), original, task).value().orElseThrow().modelId());

@@ -63,7 +63,7 @@ class VoiceServiceTest {
                 Arrays.fill(key, '\0');
             }
         }
-        var profile = new StoredAiModelProfile(id, "", "model-" + id, credential, file, realtime);
+        var profile = new StoredAiModelProfile(id, file.isEmpty() ? realtime : file, "model-" + id, credential);
         runtime.persistence().aiProfiles().saveNamed(profile);
         for (var capability : capabilities)
             runtime.persistence().aiProfiles().saveVerified(profile, id, Instant.now(), capability);
@@ -72,7 +72,7 @@ class VoiceServiceTest {
 
     static void route(PlatformRuntime runtime, String... ids) throws Exception {
         runtime.persistence().aiProfiles().purposes().save(AiPurposeType.VOICE,
-            Arrays.stream(ids).map(id -> new AiPurposeAssignment(id, true)).toList());
+            Arrays.stream(ids).map(id -> new AiPurposeAssignment(id)).toList());
     }
 
     @Test
@@ -108,8 +108,7 @@ class VoiceServiceTest {
             var events = new CopyOnWriteArrayList<VoiceEvent>();
             var result = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 try (var session = ai.openVoice(new VoiceOptions(Duration.ofSeconds(5), 65_536), events::add, task)) {
-                    runtime.persistence().aiProfiles().saveNamed(new StoredAiModelProfile("live", "", "changed",
-                        "ai/fixture/live", "", "ws://127.0.0.1:1/elsewhere"));
+                    runtime.persistence().aiProfiles().saveNamed(new StoredAiModelProfile("live", "ws://127.0.0.1:1/elsewhere", "changed", "ai/fixture/live"));
                     session.send(audio().pcm()).toCompletableFuture().get(2, TimeUnit.SECONDS);
                     return session.finish().toCompletableFuture().get(6, TimeUnit.SECONDS);
                 }
@@ -134,8 +133,7 @@ class VoiceServiceTest {
             var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 assertEquals("VOICE_MODE_UNAVAILABLE", assertThrows(ApiException.class, () -> ai.call(audio(), task)).problem().eventCode());
                 String revision = ai.configurationRevision(AiPurpose.VOICE, task);
-                runtime.persistence().aiProfiles().saveNamed(new StoredAiModelProfile("live", "", "changed",
-                    "ai/fixture/live", "", endpoint.ws()));
+                runtime.persistence().aiProfiles().saveNamed(new StoredAiModelProfile("live", endpoint.ws(), "changed", "ai/fixture/live"));
                 assertEquals("AI_CONFIGURATION_CHANGED", assertThrows(ApiException.class,
                     () -> ai.call(audio(), revision, task)).problem().eventCode());
                 return success();
@@ -236,6 +234,8 @@ class VoiceServiceTest {
     }
 
     static final class Endpoint implements AutoCloseable {
+        final AtomicReference<String> transcript = new AtomicReference<>("local speech");
+
         final HttpServer http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 
         final ServerSocket websocket = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"));
@@ -282,6 +282,7 @@ class VoiceServiceTest {
                     output.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "
                         + accept + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
                     output.flush();
+                    var message = new ByteArrayOutputStream();
                     for (; ; ) {
                         int first = input.readUnsignedByte(), second = input.readUnsignedByte(), length = second & 127;
                         if (length == 126) length = input.readUnsignedShort();
@@ -291,8 +292,14 @@ class VoiceServiceTest {
                         byte[] mask = input.readNBytes(4), body = input.readNBytes(length);
                         if (body.length != length) throw new EOFException();
                         for (int i = 0; i < body.length; i++) body[i] ^= mask[i % 4];
-                        if ((first & 15) == 8) break;
-                        var event = JSON.readTree(body);
+                        int opcode = first & 15;
+                        if (opcode == 8) break;
+                        if (opcode == 1) message.reset();
+                        else if (opcode != 0) throw new IOException("Unexpected fixture opcode");
+                        message.write(body);
+                        if (message.size() > 1_048_576) throw new IOException("Fixture message exceeds bound");
+                        if ((first & 128) == 0) continue;
+                        var event = JSON.readTree(message.toByteArray());
                         if (event.path("type").asText().equals("session.update")) {
                             socketModel.set(event.path("session").path("audio").path("input").path("transcription").path("model").asText());
                             var updated = JSON.createObjectNode().put("type", "session.updated");
@@ -302,7 +309,7 @@ class VoiceServiceTest {
                             commits.incrementAndGet();
                             send(output, "{\"type\":\"input_audio_buffer.committed\",\"item_id\":\"item-0\",\"previous_item_id\":null}");
                             send(output, "{\"type\":\"conversation.item.input_audio_transcription.delta\",\"item_id\":\"item-0\",\"content_index\":0,\"delta\":\"local\"}");
-                            send(output, "{\"type\":\"conversation.item.input_audio_transcription.completed\",\"item_id\":\"item-0\",\"content_index\":0,\"transcript\":\"local speech\"}");
+                            send(output, JSON.createObjectNode().put("type", "conversation.item.input_audio_transcription.completed").put("item_id", "item-0").put("content_index", 0).put("transcript", transcript.get()).toString());
                         }
                     }
                 } catch (EOFException | SocketException closed) {

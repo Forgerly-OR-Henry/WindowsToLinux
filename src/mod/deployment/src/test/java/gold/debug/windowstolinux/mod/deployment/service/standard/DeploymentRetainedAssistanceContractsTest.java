@@ -369,7 +369,7 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
             runtime.persistence().aiProfiles().saveOutputLimit(id, 1600);
         }
         runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
-            List.of(new AiPurposeAssignment("selected", true)));
+            List.of(new AiPurposeAssignment("selected")));
         assertEquals(2, runtime.persistence().aiProfiles().listConfigured().size());
     }
 
