@@ -39,6 +39,38 @@ class ModStoreWindowTest {
     }
 
     @Test
+    void groupedCardsKeepExactRootAcrossRefreshAndLeaveDropsOnlyUnsubmittedDependencyIntent() throws Exception {
+        try (var fixture = new ModStoreFixture(root)) {
+            var addon = fixture.publish("sample.group.addon", "1.0.0", Map.of(), Map.of(), Map.of());
+            var older = fixture.publish("sample.group.root", "1.9.0", Map.of(), Map.of(addon.owner(), "1.0.0"), Map.of());
+            var latest = fixture.publish(older.owner(), "1.10.0", Map.of(), Map.of(addon.owner(), "1.0.0"), Map.of());
+            try (var window = open(fixture, "en", ThemeMode.LIGHT, 100)) {
+                idle();
+                var list = (JList<?>) named(window.frame, "store.results");
+                assertEquals(2, onEdt(() -> list.getModel().getSize()));
+                assertNull(onEdt(list::getSelectedValue));
+                assertFalse(onEdt(() -> named(window.frame, "store.detailScroll").isShowing()));
+                selectMain(window, latest);
+                assertTrue(onEdt(() -> named(window.frame, "store.detailScroll").isShowing()));
+                assertEquals("1.10.0", onEdt(() -> ((JComboBox<?>) named(window.frame, "store.rootVersions")).getSelectedItem()));
+                combo(window.robot, (JComboBox<?>) named(window.frame, "store.rootVersions"), "1.9.0");
+                idle();
+                optional(window, older.owner(), addon.owner());
+                click(window.robot, (JComponent) named(window.frame, "store.retry"));
+                idle();
+                assertEquals("1.9.0", onEdt(() -> ((JComboBox<?>) named(window.frame, "store.rootVersions")).getSelectedItem()));
+                assertTrue(onEdt(() -> checkbox(window, older.owner(), addon.owner()).isSelected()));
+                click(window.robot, (JComponent) named(window.frame, "store.collapse"));
+                assertNull(onEdt(list::getSelectedValue));
+                assertFalse(onEdt(() -> named(window.frame, "store.detailScroll").isShowing()));
+                selectMain(window, latest);
+                assertFalse(onEdt(() -> checkbox(window, latest.owner(), addon.owner()).isSelected()));
+                noDownloads(fixture, older, latest, addon);
+            }
+        }
+    }
+
+    @Test
     void nativeSecondClickClearsPlanAndRefreshDoesNotRestoreSelectionOrApproval() throws Exception {
         try (var fixture = new ModStoreFixture(root)) {
             var main = fixture.publish("sample.deselect.root", "1.0.0", Map.of(), Map.of(), Map.of());
@@ -240,7 +272,11 @@ class ModStoreWindowTest {
             var addon = fixture.publish("sample.partial.addon", "1.0.0", Map.of(), Map.of(), Map.of());
             var main = fixture.publish("sample.partial.root", "1.0.0", Map.of(core.owner(), "1.0.0"), Map.of(addon.owner(), "1.0.0"), Map.of());
             fixture.failure(addon, 503);
-            try (var window = open(fixture, "en", ThemeMode.LIGHT, 100)) {
+            try (var window = open(fixture, "en", ThemeMode.DARK, 150)) {
+                onEdt(() -> {
+                    window.frame.setSize(1280, 720);
+                    return null;
+                });
                 idle();
                 filter(window, main.owner());
                 selectMain(window, main);
@@ -253,8 +289,8 @@ class ModStoreWindowTest {
                 assertState(actual, addon, State.FAILED);
                 assertState(actual, core, State.INSTALLED);
                 assertState(actual, main, State.INSTALLED);
-                assertTrue(onEdt(() -> descendants(window.frame).filter(JLabel.class::isInstance).map(JLabel.class::cast)
-                    .anyMatch(label -> label.getText().contains("Required packages are ready"))));
+                assertTrue(onEdt(() -> ((JLabel) named(window.frame, "store.resultSummary")).getText().contains("Required packages are ready")));
+                assertTaskResultsStayBounded(window);
                 fixture.failure(addon, 0);
                 click(window.robot, (JComponent) named(window.frame, "store.retry"));
                 idle();
@@ -442,6 +478,7 @@ class ModStoreWindowTest {
                 assertTrue(onEdt(() -> ((JTextArea) named(window.frame, "store.receiptDetails")).getText().contains(original.toString())));
                 assertTrue(onEdt(() -> ((JTable) named(window.frame, "store.packageResults")).getValueAt(0, 1).toString().contains("unconfirmed")));
                 assertFalse(onEdt(() -> named(window.frame, "store.install").isEnabled()));
+                assertTaskResultsStayBounded(window);
                 PlatformModInstallationTest.untrap(fixture.runtime());
                 trapped = false;
                 click(window.robot, (JComponent) named(window.frame, "store.check"));
@@ -450,8 +487,10 @@ class ModStoreWindowTest {
                 assertEquals(0, fixture.count("SELECT COUNT(*) FROM mod_operation WHERE operation_id='" + original + "'"));
                 assertEquals(identity, gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity.read(installed(fixture, main).getParent()));
                 assertState(fixture.service().lastResult().orElseThrow(), main, State.UNKNOWN);
-                assertTrue(onEdt(() -> descendants(window.frame).filter(JLabel.class::isInstance).map(JLabel.class::cast)
-                    .anyMatch(label -> label.getText().contains(original.toString()) && label.getText().contains("Batch completed"))));
+                assertTrue(onEdt(() -> {
+                    String summary = ((JLabel) named(window.frame, "store.resultSummary")).getText();
+                    return summary.contains(original.toString()) && summary.contains("Batch completed");
+                }));
                 assertInstalled(fixture, main);
             } finally {
                 if (trapped) PlatformModInstallationTest.untrap(fixture.runtime());
@@ -493,7 +532,7 @@ class ModStoreWindowTest {
     }
 
     @Test
-    void nativePersistedAppearanceKeepsDraftAcrossSupportedVariantsAndSmallWindowPlanControlsRemainReachable() throws Exception {
+    void nativePersistedAppearanceDiscardsLeftDetailDraftAndSmallWindowPlanControlsRemainReachable() throws Exception {
         float originalScale = com.formdev.flatlaf.util.UIScale.getZoomFactor();
         try (var fixture = new ModStoreFixture(root)) {
             var addon = fixture.publish("sample.appearance.addon", "1.0.0", Map.of(), Map.of(), Map.of());
@@ -517,7 +556,11 @@ class ModStoreWindowTest {
                             store(window);
                             assertSame(original, window.pane());
                             assertEquals(main.owner(), onEdt(() -> ((JTextField) named(window.frame, "store.search")).getText()));
-                            assertTrue(onEdt(() -> checkbox(window, main.owner(), addon.owner()).isSelected()));
+                            assertNull(onEdt(() -> ((JList<?>) named(window.frame, "store.results")).getSelectedValue()));
+                            assertEquals(0, onEdt(() -> ((JTable) named(window.frame, "store.plan")).getRowCount()));
+                            selectMain(window, main);
+                            assertFalse(onEdt(() -> checkbox(window, main.owner(), addon.owner()).isSelected()));
+                            optional(window, main.owner(), addon.owner());
                             String variant = theme + "-" + language + "-" + scale;
                             onEdt(() -> {
                                 window.frame.setSize(1120, 820);
@@ -610,6 +653,17 @@ class ModStoreWindowTest {
             store(window);
             return window;
         } catch (Exception | Error failure) {
+            onEdt(() -> {
+                var navigation = (JComponent) named(frame, "navigation.shell.mods");
+                var selected = ((JTabbedPane) named(frame, "platform.pages")).getSelectedComponent();
+                System.err.println("Store navigation failure: active=" + frame.isActive()
+                    + ", navigationEnabled=" + navigation.isEnabled() + ", navigationShowing=" + navigation.isShowing()
+                    + ", navigationBounds=" + SwingUtilities.convertRectangle(navigation.getParent(), navigation.getBounds(), frame)
+                    + ", root=" + (selected == null ? "null" : selected.getName())
+                    + ", glass=" + frame.getGlassPane().isVisible());
+                capture(frame, "store-navigation-failure.png");
+                return null;
+            });
             window.close();
             throw failure;
         }
@@ -617,8 +671,30 @@ class ModStoreWindowTest {
 
     static void store(WindowFixture window) throws Exception {
         click(window.robot, (JComponent) named(window.frame, "navigation.shell.mods"));
-        tab(window.robot, (JTabbedPane) named(window.frame, "mods.management"), window.pane());
+        await(() -> named(window.frame, "mods.management").isShowing());
+        if (!onEdt(() -> window.pane().isShowing())) {
+            var button = onEdt(() -> descendants(window.frame).filter(JComponent.class::isInstance).map(JComponent.class::cast)
+                .filter(value -> "modui.store".equals(value.getName()) && value.isShowing()).findFirst().orElseThrow());
+            click(window.robot, button);
+        }
         await(() -> window.pane().isShowing());
+    }
+
+    static void assertTaskResultsStayBounded(WindowFixture window) throws Exception {
+        var toggle = (JToggleButton) named(window.frame, "store.taskToggle");
+        var results = (JScrollPane) named(window.frame, "store.taskScroll");
+        var details = (JScrollPane) named(window.frame, "store.detailScroll");
+        assertFalse(onEdt(toggle::isSelected));
+        assertFalse(onEdt(results::isShowing));
+        assertTrue(onEdt(() -> details.getViewport().getHeight() > 0));
+        click(window.robot, toggle);
+        await(() -> results.isShowing() && results.getViewport().getHeight() > 0);
+        assertTrue(onEdt(() -> named(window.frame, "store.taskArea").getHeight() <= window.pane().getHeight() / 3));
+        assertTrue(onEdt(() -> details.getViewport().getHeight() > 0));
+        assertTrue(onEdt(() -> ((JTable) named(window.frame, "store.packageResults")).getRowCount() > 0));
+        assertFalse(onEdt(() -> ((JTextArea) named(window.frame, "store.receiptDetails")).getText().isBlank()));
+        click(window.robot, toggle);
+        assertFalse(onEdt(results::isShowing));
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -659,13 +735,18 @@ class ModStoreWindowTest {
         int index = onEdt(() -> {
             for (int row = 0; row < list.getModel().getSize(); row++) {
                 var release = (ModStoreGateway.Release) list.getModel().getElementAt(row);
-                if (key.owner().equals(release.owner()) && key.version().equals(release.version())) return row;
+                if (key.owner().equals(release.owner())) return row;
             }
             throw new AssertionError("Actual main release not displayed: " + key);
         });
         if (onEdt(list::getSelectedIndex) != index)
             clickArea(window.robot, list, onEdt(() -> list.getCellBounds(index, index)));
         idle();
+        var versions = (JComboBox<?>) named(window.frame, "store.rootVersions");
+        if (!key.version().equals(onEdt(versions::getSelectedItem))) {
+            combo(window.robot, versions, key.version());
+            idle();
+        }
         assertTrue(onEdt(() -> named(window.frame, "store.install").isEnabled()));
     }
 
@@ -686,8 +767,6 @@ class ModStoreWindowTest {
     }
 
     static void optional(WindowFixture window, String consumer, String dependency) throws Exception {
-        var tabs = (JTabbedPane) named(window.frame, "store.planTabs");
-        clickArea(window.robot, tabs, onEdt(() -> tabs.getBoundsAt(1)));
         click(window.robot, checkbox(window, consumer, dependency));
         idle();
     }
@@ -764,6 +843,15 @@ class ModStoreWindowTest {
     }
 
     static void clickArea(Robot robot, JComponent component, Rectangle area) throws Exception {
+        var owner = onEdt(() -> SwingUtilities.getWindowAncestor(component));
+        onEdt(() -> {
+            if (!owner.isActive()) {
+                owner.toFront();
+                owner.requestFocus();
+            }
+            return null;
+        });
+        await(owner::isActive);
         Point point = onEdt(() -> {
             assertTrue(component.isEnabled(), component.getName());
             reveal(component, area);

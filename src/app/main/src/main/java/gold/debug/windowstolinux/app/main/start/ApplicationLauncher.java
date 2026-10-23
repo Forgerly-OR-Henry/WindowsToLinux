@@ -49,13 +49,41 @@ public final class ApplicationLauncher {
             Thread.ofVirtual().name("platform-startup").start(() -> launch(copied));
             return;
         }
+        java.util.Optional<ApplicationRestartReceipt> acknowledgement;
+        try {
+            acknowledgement = ApplicationRestartReceipt.accept(arguments);
+        } catch (java.io.IOException failure) {
+            showStartupFailure(FailureReportStore.disabled(), MessageCatalog.forLanguageTag(Locale.getDefault().toLanguageTag()),
+                DesktopStartupException.create(DesktopSystemFailureType.STARTUP_LAYOUT_INVALID,
+                    "The internal restart acknowledgement is invalid", failure));
+            return;
+        }
+        boolean ready = false;
+        try {
+            ready = launchDesktop();
+        } finally {
+            if (acknowledgement.isPresent()) {
+                try {
+                    acknowledgement.get().signal(ready ? "READY" : "FAILED");
+                } catch (java.io.IOException failure) {
+                    showStartupFailure(FailureReportStore.disabled(), MessageCatalog.forLanguageTag(Locale.getDefault().toLanguageTag()),
+                        DesktopStartupException.create(DesktopSystemFailureType.UI_INITIALIZATION_FAILED,
+                            "The original restart acknowledgement could not be completed", failure));
+                }
+            }
+        }
+    }
+
+    /** Performs one normal fresh-process startup through all existing Mod and navigation results. / 经过全部现有 Mod 与导航结果执行一次正常的新进程启动。
+     * @return whether the actual startup completed / 实际启动是否完成 */
+    private static boolean launchDesktop() {
         var initialMessages = MessageCatalog.forLanguageTag(Locale.getDefault().toLanguageTag());
         PlatformRuntime.Startup startup;
         try {
             startup = readStartup();
         } catch (DesktopStartupException failure) {
             showStartupFailure(FailureReportStore.disabled(), initialMessages, failure);
-            return;
+            return false;
         }
         var layout = startup.layout();
         var config = startup.config();
@@ -74,7 +102,7 @@ public final class ApplicationLauncher {
             showStartupFailure(reports, initialMessages,
                 DesktopStartupException.create(DesktopSystemFailureType.DATA_DIRECTORY_UNAVAILABLE,
                     "The fixed application data directory or desktop is unavailable", failure));
-            return;
+            return false;
         }
         PlatformRuntime runtime;
         try {
@@ -100,7 +128,7 @@ public final class ApplicationLauncher {
             showStartupFailure(reports, initialMessages,
                 DesktopStartupException.create(DesktopSystemFailureType.DATABASE_INITIALIZATION_FAILED,
                     "Platform persistence failed its bootstrap or schema checks", failure));
-            return;
+            return false;
         }
         reports.attach(runtime.logs(), runtime.version());
         attachShutdown(runtime, reports);
@@ -133,6 +161,7 @@ public final class ApplicationLauncher {
                 created.finishStartupNavigation();
                 return null;
             });
+            return onEdt(created::isDisplayable);
         } catch (Exception failure) {
             if (frame != null) {
                 PlatformFrame created = frame;
@@ -153,6 +182,7 @@ public final class ApplicationLauncher {
             showStartupFailure(reports, initialMessages,
                 DesktopStartupException.create(DesktopSystemFailureType.UI_INITIALIZATION_FAILED,
                     "The platform desktop could not be initialized", failure));
+            return false;
         }
     }
 
@@ -206,6 +236,7 @@ public final class ApplicationLauncher {
             reports, runtime.startup().config());
         window.installUiDebug(runtime.startup().layout().mode() == RunModeResolver.RunMode.RUN_CLASS);
         window.onExit(runtime);
+        window.onRestart(new ApplicationRestart(runtime));
         window.rememberPage(new gold.debug.windowstolinux.app.service.setting.StartupPageService(runtime.persistence())::remember);
         var presenter = new gold.debug.windowstolinux.app.ui.task.TaskInteractionPresenter(window, messages);
         runtime.setInteractionPresenter(presenter);

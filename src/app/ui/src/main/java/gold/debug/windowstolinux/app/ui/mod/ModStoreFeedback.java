@@ -26,6 +26,9 @@ final class ModStoreFeedback extends JPanel {
     /** Actual dependency-readiness summary. / 实际依赖就绪摘要。 */
     private final JLabel summary = new JLabel();
 
+    /** Compact original summary and progress, outside the collapsible package facts. / 位于可折叠包事实外的原始摘要及进度。 */
+    private final JPanel heading = new JPanel(new BorderLayout(4, 4));
+
     /** Original facts model. / 原事实模型。 */
     private final ResultModel model;
 
@@ -43,6 +46,7 @@ final class ModStoreFeedback extends JPanel {
         model = new ResultModel();
         table = new JTable(model);
         setName("store.feedback");
+        summary.setName("store.resultSummary");
         progress.setName("store.progress");
         progress.setStringPainted(true);
         table.setName("store.packageResults");
@@ -57,13 +61,18 @@ final class ModStoreFeedback extends JPanel {
         receipt.setEditable(false);
         receipt.setLineWrap(true);
         receipt.setWrapStyleWord(true);
-        add(summary, BorderLayout.NORTH);
+        heading.setOpaque(false);
+        heading.add(summary);
+        heading.add(progress, BorderLayout.SOUTH);
         var facts = new JPanel(new BorderLayout(4, 4));
         facts.add(new JScrollPane(table), BorderLayout.NORTH);
         facts.add(new JScrollPane(receipt));
         add(facts);
-        add(progress, BorderLayout.SOUTH);
         clear();
+    }
+
+    JComponent heading() {
+        return heading;
     }
 
     /** Starts a visible batch without claiming completion. / 开始展示批次，不宣称完成。 */
@@ -74,6 +83,7 @@ final class ModStoreFeedback extends JPanel {
         progress.setVisible(true);
         progress.setValue(0);
         progress.setIndeterminate(true);
+        heading.setVisible(true);
         setVisible(true);
     }
 
@@ -100,6 +110,7 @@ final class ModStoreFeedback extends JPanel {
         progress.setVisible(false);
         messages.bind(summary, result.allSelectedReady() ? "store.result.ready"
             : result.requiredReady() ? "store.result.optionalPartial" : "store.result.requiredIncomplete");
+        heading.setVisible(true);
         setVisible(true);
     }
 
@@ -133,6 +144,7 @@ final class ModStoreFeedback extends JPanel {
         summary.setText("");
         progress.setVisible(false);
         receipt.setText("");
+        heading.setVisible(false);
         setVisible(false);
     }
 

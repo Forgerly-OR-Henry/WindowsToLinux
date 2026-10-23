@@ -1,6 +1,9 @@
 package gold.debug.windowstolinux.app.ui.mod;
 
 import java.awt.BorderLayout;
+import java.awt.Font;
+import java.awt.GridBagLayout;
+import java.awt.GridBagConstraints;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.swing.*;
@@ -13,6 +16,8 @@ import gold.debug.windowstolinux.app.service.mod.store.ModStoreService;
 import gold.debug.windowstolinux.app.service.mod.store.ModStoreSelection.ReleaseKey;
 import gold.debug.windowstolinux.app.ui.control.DesktopCardList;
 import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.control.DesktopIcons;
+import com.formdev.flatlaf.util.UIScale;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
 import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
@@ -35,7 +40,13 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
     private final DefaultListModel<ModStoreGateway.Release> rows = new DefaultListModel<>();
 
     /** Exact main-release selection. / 精确主发布选择。 */
-    private final DesktopCardList<ModStoreGateway.Release> list = new DesktopCardList<>(rows, 48);
+    private final DesktopCardList<ModStoreGateway.Release> list = new DesktopCardList<>(rows, 116);
+
+    private final DesktopPartFactory components;
+
+    private final ModCatalogSurface surface;
+
+    private String pendingOwner;
 
     /** Original page actions. / 原页面动作。 */
     private final Controls buttons;
@@ -48,6 +59,8 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
 
     /** Original batch facts. / 原批次事实。 */
     private final ModStoreFeedback feedback;
+
+    private final TaskArea taskArea;
 
     /** Revocable full-plan confirmation. / 可撤销完整计划确认。 */
     private final ModStoreConfirmation confirmation;
@@ -81,15 +94,15 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
     public ModStorePane(ModStoreService service, DesktopPartFactory components, PageMessagePresenter messages, Runnable installed) {
         super(new BorderLayout(12, 12));
         this.service = service;
+        this.components = components;
         this.messages = messages;
         this.installed = installed;
         buttons = new Controls(components, messages);
         confirmation = new ModStoreConfirmation(components, messages);
-        selectionView = new ModStoreSelectionPane(messages, true, this::change);
+        selectionView = new ModStoreSelectionPane(components, messages, true, this::change);
         feedback = new ModStoreFeedback(messages);
         setName("mods.store");
         components.stylePage(this);
-        setBorder(BorderFactory.createEmptyBorder(18, 22, 18, 22));
         search.setName("store.search");
         components.styleSearchField(search);
         status.putClientProperty("html.disable", true);
@@ -98,31 +111,108 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
         buttons.download.addActionListener(event -> confirm());
         buttons.cancel.addActionListener(event -> cancel());
         buttons.check.addActionListener(event -> checkOriginal());
-        var header = new JPanel(new BorderLayout(8, 8));
-        header.add(messages.bind(new JLabel(), "store.search"), BorderLayout.WEST);
-        header.add(search);
-        header.add(buttons.retry, BorderLayout.EAST);
-        add(header, BorderLayout.NORTH);
+        search.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent event) {
+                filterCurrent();
+            }
+
+            public void removeUpdate(javax.swing.event.DocumentEvent event) {
+                filterCurrent();
+            }
+
+            public void changedUpdate(javax.swing.event.DocumentEvent event) {
+                filterCurrent();
+            }
+        });
         list.setName("store.results");
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         list.setCellRenderer((view, value, index, selected, focused) -> {
-            var renderer = new DefaultListCellRenderer();
-            renderer.putClientProperty("html.disable", true);
-            return renderer.getListCellRendererComponent(view, value == null ? "" : value.title() + " · " + value.version()
-                + " · " + installation(value), index, selected, focused);
+            var release = selected && selection != null && catalog != null && value.owner().equals(selection.root().owner())
+                ? catalog.releases().stream().filter(candidate -> candidate.owner().equals(selection.root().owner())
+                && candidate.version().equals(selection.root().version())).findFirst().orElse(value) : value;
+            var renderer = new JPanel(new BorderLayout(UIScale.scale(12), 0));
+            renderer.setOpaque(false);
+            renderer.add(new JLabel(DesktopIcons.icon("mod/puzzle", 30, () -> UIManager.getColor("Component.accentColor"))), BorderLayout.WEST);
+            var text = new JPanel(new GridBagLayout());
+            text.setOpaque(false);
+            var name = new JLabel(release.title());
+            name.putClientProperty("html.disable", true);
+            name.setFont(name.getFont().deriveFont(Font.BOLD, UIScale.scale(16f)));
+            var description = new JLabel(release.owner());
+            description.putClientProperty("html.disable", true);
+            description.setFont(description.getFont().deriveFont(Font.PLAIN, UIScale.scale(14f)));
+            description.setForeground(UIManager.getColor("Label.disabledForeground"));
+            var state = new JLabel(release.version() + " · " + installation(release));
+            state.putClientProperty("html.disable", true);
+            state.setForeground(UIManager.getColor("Label.disabledForeground"));
+            var cell = new GridBagConstraints();
+            cell.gridx = 0;
+            cell.gridy = 0;
+            cell.weightx = 1;
+            cell.fill = GridBagConstraints.HORIZONTAL;
+            text.add(name, cell);
+            cell.gridy++;
+            cell.insets = UIScale.scale(new java.awt.Insets(3, 0, 0, 0));
+            text.add(description, cell);
+            cell.gridy++;
+            text.add(state, cell);
+            renderer.add(text);
+            return renderer;
         });
         components.cardList(list, false);
         list.addListSelectionListener(event -> selectRoot());
-        var split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, new JScrollPane(list), selectionView);
-        split.setResizeWeight(.3);
-        add(split);
-        var footer = new JPanel(new BorderLayout(4, 4));
-        footer.add(status, BorderLayout.NORTH);
-        footer.add(feedback);
-        footer.add(buttons.row, BorderLayout.SOUTH);
-        add(footer, BorderLayout.SOUTH);
-        components.scrollPage(this);
+        surface = new ModCatalogSurface(components, messages, list, search, buttons.retry, true);
+        surface.details(selectionView);
+        surface.footer(buttons.row);
+        surface.expanded(false);
+        add(surface);
+        taskArea = new TaskArea();
+        add(taskArea, BorderLayout.SOUTH);
         controls();
+    }
+
+    /** Binds the installed workspace switch without losing accepted task ownership. / 绑定已下载工作区切换，不丢失已接纳任务归属。 */
+    public void workspaceActions(Runnable showInstalled) {
+        surface.modeAction(() -> {
+            leaveDetails();
+            showInstalled.run();
+        });
+    }
+
+    /** Locates a requested owner in the actual catalog, never starts acquisition. / 在实际目录定位请求的所有者，不启动获取。 */
+    public void selectOwner(String owner) {
+        leaveDetails();
+        search.setText("");
+        pendingOwner = owner;
+        if (catalog != null && !querying) locateOwner();
+        else if (!locked && !closed) query();
+    }
+
+    /** Discards only this detail session's unsubmitted edits. / 仅放弃当前详情会话的未提交编辑。 */
+    public void leaveDetails() {
+        pendingOwner = null;
+        filtering = true;
+        list.clearSelection();
+        filtering = false;
+        clearSelectionDraft();
+    }
+
+    private void locateOwner() {
+        if (pendingOwner == null) return;
+        String owner = pendingOwner;
+        pendingOwner = null;
+        for (int index = 0; index < rows.size(); index++) {
+            if (rows.get(index).owner().equals(owner)) {
+                list.setSelectedIndex(index);
+                list.ensureIndexIsVisible(index);
+                return;
+            }
+        }
+        showStatus("modui.store.ownerUnavailable");
+    }
+
+    private void filterCurrent() {
+        if (catalog != null && !querying && !filtering && !locked && !closed && run == null && !checking) filter();
     }
 
     /** Returns only the exact physically verified registry flags for this catalog release. / 仅返回此目录发布精确物理核验登记标记。
@@ -139,7 +229,7 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
     public void query() {
         if (locked || closed || querying || run != null || checking) return;
         if (search.getText().length() > 256) {
-            messages.bind(status, "store.keywordLong");
+            showStatus("store.keywordLong");
             return;
         }
         confirmation.revoke();
@@ -156,7 +246,7 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
         long generation = epoch;
         querying = true;
         pendingQuery = false;
-        messages.bind(status, "store.searching");
+        showStatus("store.searching");
         controls();
         DesktopTaskRunner.run(() -> service.catalog(token::get), result -> {
             querying = false;
@@ -167,8 +257,9 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
             catalog = result;
             filter();
             service.lastResult().ifPresent(feedback::result);
-            messages.bind(status, rows.isEmpty() ? "store.empty" : service.canInstall() ? "store.ready" : "store.classMode");
+            showStatus(rows.isEmpty() ? "store.empty" : service.canInstall() ? "store.ready" : "store.classMode");
             if (selection != null) resolve();
+            locateOwner();
             controls();
         }, failure -> {
             querying = false;
@@ -178,12 +269,12 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
             }
             catalog = null;
             rows.clear();
-            selectionView.display(null, null);
+            clearSelectionDraft();
             var original = failure instanceof java.util.concurrent.ExecutionException wrapper && wrapper.getCause() instanceof Exception cause
                 ? cause : failure;
             if (original instanceof gold.debug.windowstolinux.appapi.task.result.ApiException api
                 && api.problem().eventCode().equals("MOD_STORE_UNAVAILABLE"))
-                messages.bind(status, "store.unavailable");
+                showStatus("store.unavailable");
             else problem(failure);
             controls();
         });
@@ -195,12 +286,11 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
         try {
             rows.clear();
             String keyword = search.getText().toLowerCase(Locale.ROOT);
-            catalog.releases().stream().filter(release -> (release.title() + " " + release.owner() + " " + release.version())
-                .toLowerCase(Locale.ROOT).contains(keyword)).forEach(rows::addElement);
+            ModStoreCatalogRows.owners(catalog.releases(), keyword).forEach(rows::addElement);
             if (selection != null)
                 for (int index = 0; index < rows.size(); index++) {
                     var release = rows.get(index);
-                    if (release.owner().equals(selection.root().owner()) && release.version().equals(selection.root().version()))
+                    if (release.owner().equals(selection.root().owner()))
                         list.setSelectedIndex(index);
                 }
         } finally {
@@ -208,27 +298,33 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
         }
         if (selection != null && list.getSelectedValue() == null)
             clearSelectionDraft();
+        surface.count(rows.size());
     }
 
     /** Starts a new explicit root draft with optional branches unselected. / 开始新的明确主项草稿，可选分支不选中。 */
     private void selectRoot() {
         if (filtering || locked || closed || querying || run != null || checking || catalog == null) return;
         var release = list.getSelectedValue();
-        if (release != null)
+        if (release != null) {
+            if (selection != null && selection.root().owner().equals(release.owner())) return;
+            surface.detailHeading(release.title(), release.owner(), this::leaveDetails);
+            surface.expanded(true);
+            selectionView.display(catalog, null);
             change(new ModStoreSelection(new ReleaseKey(release.owner(), release.version()), Set.of(), Map.of()));
-        else
+        } else
             clearSelectionDraft();
     }
 
     /** Revokes only the unsubmitted selection and its readers, retaining accepted batch facts. / 仅撤销未提交选择及其读取，保留已接纳批次事实。 */
     private void clearSelectionDraft() {
         revision++;
-        readToken.set(true);
+        if (!querying) readToken.set(true);
         confirmation.revoke();
         selection = null;
         plan = null;
         selectionView.display(null, null);
-        messages.bind(status, rows.isEmpty() ? "store.empty" : service.canInstall() ? "store.ready" : "store.classMode");
+        surface.expanded(false);
+        showStatus(rows.isEmpty() ? "store.empty" : service.canInstall() ? "store.ready" : "store.classMode");
         controls();
     }
 
@@ -237,6 +333,9 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
     private void change(ModStoreSelection value) {
         if (locked || closed || querying || run != null || checking || catalog == null) return;
         selection = value;
+        catalog.releases().stream().filter(release -> release.owner().equals(value.root().owner()) && release.version().equals(value.root().version()))
+            .findFirst().ifPresent(release -> surface.detailHeading(release.title(), release.owner(), this::leaveDetails));
+        list.repaint();
         revision++;
         confirmation.revoke();
         plan = null;
@@ -253,14 +352,14 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
         long generation = epoch, draft = revision, catalogRevision = catalog.revision();
         var requested = selection;
         resolving = true;
-        messages.bind(status, "store.resolving");
+        showStatus("store.resolving");
         controls();
         DesktopTaskRunner.run(() -> service.plan(catalogRevision, requested, token::get), result -> {
             if (!finishResolution(generation, draft)) return;
             plan = result;
             selection = result.selection();
             selectionView.display(catalog, result);
-            messages.bind(status, result.valid() ? service.canInstall() ? "store.planReady" : "store.classMode"
+            showStatus(result.valid() ? service.canInstall() ? "store.planReady" : "store.classMode"
                 : result.conflicts().stream().anyMatch(value -> value.code().equals("MOD_STORE_RESOLUTION_INCOMPLETE"))
                 ? "store.incomplete" : "store.conflict");
             controls();
@@ -296,7 +395,7 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
             return;
         long generation = epoch, draft = revision;
         var approved = plan;
-        var review = new ModStoreSelectionPane(messages, false, ignored -> {
+        var review = new ModStoreSelectionPane(components, messages, false, ignored -> {
         });
         review.display(catalog, approved);
         review.interactive(true);
@@ -313,7 +412,7 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
         run = accepted;
         plan = null;
         feedback.begin();
-        messages.bind(status, "store.downloading");
+        showStatus("store.downloading");
         controls();
         DesktopTaskRunner.run(() -> service.install(approved.revision(), accepted.cancel::get, value -> {
             var facts = service.packageResults(value.batchId());
@@ -325,7 +424,7 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
             run = null;
             if (present(generation)) {
                 feedback.result(result);
-                messages.bind(status, "store.outcome." + result.outcome().name().toLowerCase(Locale.ROOT));
+                showStatus("store.outcome." + result.outcome().name().toLowerCase(Locale.ROOT));
                 installed.run();
                 controls();
                 query();
@@ -345,7 +444,7 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
     private void cancel() {
         if (locked || closed || run == null) return;
         run.cancel.set(true);
-        messages.bind(status, "store.cancelling");
+        showStatus("store.cancelling");
         controls();
     }
 
@@ -378,6 +477,12 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
     private void problem(Exception failure) {
         LocaleBinding.unbind(status);
         status.setText(messages.safe(failure));
+        status.setVisible(true);
+    }
+
+    private void showStatus(String key) {
+        messages.bind(status, key);
+        status.setVisible(!key.equals("store.ready") && !key.equals("store.planReady"));
     }
 
     /** Checks whether an original callback still belongs to this visible lifetime. / 检查原回调是否仍属于此可见寿命。
@@ -396,9 +501,11 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
         selectionView.interactive(active && !querying && catalog != null);
         buttons.download.setEnabled(active && !querying && !resolving && plan != null && plan.valid() && service.canInstall());
         buttons.cancel.setEnabled(!locked && !closed && run != null && !run.cancel.get());
+        buttons.cancel.setVisible(run != null);
         buttons.check.setEnabled(active && !querying && !resolving && feedback.original().isPresent());
-        buttons.row.setWheelScrollingEnabled(!locked && !closed);
-        buttons.row.getHorizontalScrollBar().setEnabled(!locked && !closed);
+        buttons.check.setVisible(feedback.original().isPresent());
+        buttons.row.revalidate();
+        taskArea.refresh();
     }
 
     /** Revokes drafts and private view data at privacy boundaries without interrupting accepted installs. / 在隐私边界撤销草稿及私有视图数据，不中断已接纳安装。
@@ -418,9 +525,12 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
             rows.clear();
             filtering = false;
             selectionView.display(null, null);
+            surface.expanded(false);
+            surface.count(0);
             feedback.clear();
             LocaleBinding.unbind(status);
             status.setText("");
+            status.setVisible(false);
         }
         controls();
         if (!locked) query();
@@ -440,9 +550,12 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
         plan = null;
         rows.clear();
         selectionView.display(null, null);
+        surface.expanded(false);
+        surface.count(0);
         feedback.clear();
         LocaleBinding.unbind(status);
         status.setText("");
+        status.setVisible(false);
         controls();
     }
 
@@ -450,6 +563,65 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
     private static final class BatchRun {
         /** Cooperative request observed by the actual store service. / 实际商店服务观测的合作请求。 */
         private final AtomicBoolean cancel = new AtomicBoolean();
+    }
+
+    /** Keeps original task facts independent from selected Mod details and bounded on small windows. / 原任务事实独立于所选Mod详情，并在小窗口内限高。 */
+    private final class TaskArea extends JPanel {
+        private final JToggleButton reveal = new JToggleButton();
+
+        private final JScrollPane results;
+
+        private TaskArea() {
+            super(new BorderLayout(0, UIScale.scale(8)));
+            setName("store.taskArea");
+            setOpaque(false);
+            messages.bind(reveal, "modui.store.task");
+            reveal.setName("store.taskToggle");
+            var summary = components.transparent(new BorderLayout(0, UIScale.scale(4)));
+            summary.add(status, BorderLayout.NORTH);
+            summary.add(feedback.heading());
+            var header = components.transparent(new BorderLayout(UIScale.scale(12), 0));
+            header.add(summary);
+            var toggle = components.transparent(new GridBagLayout());
+            toggle.add(reveal);
+            header.add(toggle, BorderLayout.EAST);
+            add(header, BorderLayout.NORTH);
+            var facts = components.pagePanel();
+            facts.setLayout(new BorderLayout());
+            facts.add(feedback, BorderLayout.NORTH);
+            results = new JScrollPane(facts, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+            results.setName("store.taskScroll");
+            results.setBorder(BorderFactory.createEmptyBorder());
+            results.getVerticalScrollBar().putClientProperty("desktop.inventory.scrollbar", true);
+            results.getVerticalScrollBar().setUnitIncrement(UIScale.scale(20));
+            results.setVisible(false);
+            add(results);
+            reveal.addActionListener(event -> refresh());
+        }
+
+        private void refresh() {
+            reveal.setVisible(feedback.isVisible());
+            reveal.setEnabled(!locked && !closed);
+            results.setVisible(feedback.isVisible() && reveal.isSelected());
+            setVisible(status.isVisible() || feedback.heading().isVisible());
+            revalidate();
+            ModStorePane.this.revalidate();
+        }
+
+        @Override
+        public void updateUI() {
+            super.updateUI();
+            setBorder(new com.formdev.flatlaf.ui.FlatEmptyBorder(0, 22, 18, 22));
+        }
+
+        @Override
+        public java.awt.Dimension getPreferredSize() {
+            var size = super.getPreferredSize();
+            int available = ModStorePane.this.getHeight();
+            int limit = available > 0 ? available / 3 : UIScale.scale(200);
+            size.height = Math.min(size.height, limit);
+            return size;
+        }
     }
 
     /** Groups only stable page controls, independent from business state. / 仅聚合稳定页面控件，独立于业务状态。 */
@@ -466,8 +638,8 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
         /** Original uncertain-operation observation. / 原不确定操作观测。 */
         private final JButton check;
 
-        /** Complete original buttons with horizontal overflow at the current font scale. / 当前字体缩放下具有水平溢出滚动的完整原按钮。 */
-        private final JScrollPane row;
+        /** Complete original buttons wrapping at the current font scale. / 当前字体缩放下可换行的完整原按钮。 */
+        private final JPanel row;
 
         /** Creates stable explicitly named page controls. / 创建稳定且明确命名的页面控件。
          * @param components actual current controls / 实际当前控件
@@ -481,26 +653,10 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
             cancel.setName("store.cancel");
             check = messages.bind(components.secondaryButton(""), "store.check");
             check.setName("store.check");
-            var bar = new JToolBar();
-            bar.setFloatable(false);
-            bar.add(check);
-            bar.add(cancel);
-            bar.add(download);
-            row = new JScrollPane(bar, ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED) {
-                /** Reserves complete button and scrollbar heights from actual scaled widgets. / 根据实际缩放控件保留完整按钮及滚动条高度。
-                 * @return preferred size with actual viewport and outer borders / 包含实际视口及外边框的首选大小 */
-                @Override
-                public java.awt.Dimension getPreferredSize() {
-                    var size = super.getPreferredSize();
-                    var edge = getInsets();
-                    var viewportEdge = getViewportBorder() == null ? new java.awt.Insets(0, 0, 0, 0)
-                        : getViewportBorder().getBorderInsets(this);
-                    size.height = bar.getPreferredSize().height + getHorizontalScrollBar().getPreferredSize().height
-                        + edge.top + edge.bottom + viewportEdge.top + viewportEdge.bottom;
-                    return size;
-                }
-            };
-            row.setBorder(BorderFactory.createEmptyBorder());
+            row = components.transparent(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, UIScale.scale(8), UIScale.scale(4)));
+            row.add(check);
+            row.add(cancel);
+            row.add(download);
         }
     }
 }

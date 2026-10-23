@@ -14,6 +14,7 @@ import gold.debug.windowstolinux.app.service.mod.store.ModStoreSelection;
 import gold.debug.windowstolinux.app.service.mod.store.ModStoreSelection.OptionalKey;
 import gold.debug.windowstolinux.app.service.mod.store.ModStoreSelection.ReleaseKey;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 
 /** Edits user version pins and optional edges while presenting original service plans. / 编辑用户固定版本及可选边，同时展示原服务计划。 */
 final class ModStoreSelectionPane extends JPanel {
@@ -34,6 +35,17 @@ final class ModStoreSelectionPane extends JPanel {
 
     /** Exact catalog versions for the selected owner. / 所选所有者的精确目录版本。 */
     private final JComboBox<String> versions = new JComboBox<>();
+
+    /** Exact root version, independent from the inspected dependency. / 独立于所查看依赖的精确主版本。 */
+    private final JComboBox<String> rootVersions = new JComboBox<>();
+
+    private final JTextArea rootDetails = ModStoreSections.text("store.rootDetails", 3);
+
+    private final JTextArea source = ModStoreSections.text("store.sourceDetails", 4);
+
+    private final JLabel rootInstallation = new JLabel();
+
+    private final JComponent conflictBlock;
 
     /** Explicit removal of a dependency version pin. / 明确移除依赖固定版本。 */
     private final JButton unpin = new JButton();
@@ -69,8 +81,8 @@ final class ModStoreSelectionPane extends JPanel {
      * @param messages current messages / 当前消息
      * @param editable whether draft edits are permitted / 是否允许草稿编辑
      * @param changed immutable draft callback / 不可变草稿回调 */
-    ModStoreSelectionPane(PageMessagePresenter messages, boolean editable, Consumer<ModStoreSelection> changed) {
-        super(new BorderLayout(8, 8));
+    ModStoreSelectionPane(DesktopPartFactory components, PageMessagePresenter messages, boolean editable, Consumer<ModStoreSelection> changed) {
+        super(new BorderLayout());
         this.messages = messages;
         this.editable = editable;
         this.changed = changed;
@@ -83,7 +95,9 @@ final class ModStoreSelectionPane extends JPanel {
         table.setDefaultRenderer(Object.class, renderer);
         table.getSelectionModel().addListSelectionListener(event -> selected());
         table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-        var body = new JPanel(new BorderLayout(4, 4));
+        table.setPreferredScrollableViewportSize(new java.awt.Dimension(480, table.getRowHeight() * 5));
+        var body = new JPanel(new BorderLayout(4, 8));
+        body.setOpaque(false);
         body.add(new JScrollPane(table));
         var versionBar = new JPanel(new BorderLayout(4, 4));
         versionBar.add(messages.bind(new JLabel(), "store.chooseVersion"), BorderLayout.WEST);
@@ -94,8 +108,7 @@ final class ModStoreSelectionPane extends JPanel {
         unpin.setName("store.unpin");
         unpin.addActionListener(event -> removePin());
         versionBar.add(unpin, BorderLayout.EAST);
-        if (editable) body.add(versionBar, BorderLayout.SOUTH);
-        add(body, BorderLayout.NORTH);
+        versionBar.setOpaque(false);
         details.setEditable(false);
         details.setLineWrap(true);
         details.setWrapStyleWord(true);
@@ -104,15 +117,46 @@ final class ModStoreSelectionPane extends JPanel {
         conflicts.setLineWrap(true);
         conflicts.setWrapStyleWord(true);
         conflicts.setName(editable ? "store.conflicts" : "store.confirm.conflicts");
-        var tabs = new JTabbedPane();
-        tabs.setName(editable ? "store.planTabs" : "store.confirm.tabs");
+        details.setOpaque(false);
+        conflicts.setOpaque(false);
+        var content = ModStoreSections.column();
+        var info = new JPanel(new BorderLayout(0, 10));
+        info.setOpaque(false);
+        var rootVersion = new JPanel(new BorderLayout(12, 0));
+        rootVersion.setOpaque(false);
+        rootVersion.add(messages.bind(new JLabel(), "modui.store.version"), BorderLayout.WEST);
+        rootVersions.setName(editable ? "store.rootVersions" : "store.confirm.rootVersions");
+        rootVersions.addActionListener(event -> rootVersion());
+        rootVersion.add(rootVersions);
+        info.add(rootDetails, BorderLayout.NORTH);
+        if (editable) info.add(rootVersion);
+        info.add(rootInstallation, BorderLayout.SOUTH);
+        ModStoreSections.add(content, ModStoreSections.block(components, messages, "modui.store.info", info));
+        var sourcePanel = new JPanel(new BorderLayout(0, 8));
+        sourcePanel.setOpaque(false);
+        var expandSource = messages.bind(new JToggleButton(), "store.detailsTitle");
+        expandSource.setName(editable ? "store.sourceToggle" : "store.confirm.sourceToggle");
+        source.setVisible(false);
+        expandSource.addActionListener(event -> {
+            source.setVisible(expandSource.isSelected());
+            revalidate();
+        });
+        sourcePanel.add(expandSource, BorderLayout.NORTH);
+        sourcePanel.add(source);
+        ModStoreSections.add(content, ModStoreSections.block(components, messages, "modui.store.source", sourcePanel));
+        relations.setOpaque(false);
+        ModStoreSections.add(content, ModStoreSections.block(components, messages, "modui.store.dependencies", relations));
+        ModStoreSections.add(content, ModStoreSections.block(components, messages, "modui.store.acquisition", body));
         var metadata = new JPanel(new BorderLayout(4, 4));
+        metadata.setOpaque(false);
         metadata.add(installation, BorderLayout.NORTH);
-        metadata.add(new JScrollPane(details));
-        tabs.addTab(messages.text("store.detailsTitle"), messages.bind(metadata, "store.detailsTitle"));
-        tabs.addTab(messages.text("store.relations"), messages.bind(new JScrollPane(relations), "store.relations"));
-        tabs.addTab(messages.text("store.conflictsTitle"), messages.bind(new JScrollPane(conflicts), "store.conflictsTitle"));
-        add(tabs);
+        metadata.add(details);
+        if (editable) metadata.add(versionBar, BorderLayout.SOUTH);
+        ModStoreSections.add(content, ModStoreSections.block(components, messages, "modui.store.selected", metadata));
+        conflictBlock = ModStoreSections.block(components, messages, "store.conflictsTitle", conflicts);
+        ModStoreSections.add(content, conflictBlock);
+        add(content);
+        setOpaque(false);
         interactive(false);
     }
 
@@ -130,9 +174,15 @@ final class ModStoreSelectionPane extends JPanel {
         updating = true;
         try {
             model.display(catalog, plan);
+            rootVersions.removeAllItems();
+            rootDetails.setText("");
+            source.setText("");
+            gold.debug.windowstolinux.app.ui.language.LocaleBinding.unbind(rootInstallation);
+            rootInstallation.setText("");
             relations.removeAll();
             conflicts.setText("");
             if (plan != null) {
+                rootInfo();
                 var editableRelations = editorRelations();
                 editableRelations.forEach(this::relation);
                 selection.optionals().stream().filter(key -> editableRelations.stream().noneMatch(value -> value.optional() && value.key().equals(key)))
@@ -151,6 +201,7 @@ final class ModStoreSelectionPane extends JPanel {
                     if (model.owner(index).equals(previous)) row = index;
                 if (model.getRowCount() > 0) table.setRowSelectionInterval(row, row);
             }
+            conflictBlock.setVisible(!conflicts.getText().isEmpty());
         } finally {
             updating = false;
         }
@@ -158,6 +209,35 @@ final class ModStoreSelectionPane extends JPanel {
         interactive(active);
         relations.revalidate();
         relations.repaint();
+    }
+
+    /** Displays exact root metadata and versions without inspecting another owner. / 不切换查看对象地展示精确主项元数据及版本。 */
+    private void rootInfo() {
+        String owner = selection.root().owner();
+        var candidates = new TreeSet<SemanticVersion>(Comparator.reverseOrder());
+        catalog.releases().stream().filter(release -> release.owner().equals(owner)).forEach(release -> candidates.add(release.manifest().version()));
+        candidates.forEach(version -> rootVersions.addItem(version.toString()));
+        rootVersions.setSelectedItem(selection.root().version());
+        var text = new StringBuilder();
+        model.manifest(owner).ifPresent(manifest -> text.append(manifest.description().orElse(""))
+            .append("\n").append(messages.text("modui.store.api")).append("  ").append(manifest.platformApiRange())
+            .append("    ").append(messages.text("modui.store.java")).append(" ≥ ").append(manifest.minJavaVersion()));
+        rootDetails.setText(text.toString());
+        catalog.releases().stream().filter(release -> release.owner().equals(owner) && release.version().equals(selection.root().version()))
+            .findFirst().ifPresent(release -> source.setText(catalog.source() + "\n" + release.packageUri() + "\nSHA-256 " + release.sha256()));
+        String state = catalog.installed().stream().filter(value -> value.manifest().id().equals(owner)
+                && value.manifest().version().toString().equals(selection.root().version())).findFirst()
+            .map(value -> "store.installed." + (value.enabled() ? "enabled" : "disabled") + "." + (value.selected() ? "selected" : "unselected"))
+            .orElse("store.notInstalled");
+        messages.bind(rootInstallation, state);
+    }
+
+    private void rootVersion() {
+        if (updating || !editable || !active || selection == null || rootVersions.getSelectedItem() == null) return;
+        var root = new ReleaseKey(selection.root().owner(), rootVersions.getSelectedItem().toString());
+        if (root.equals(selection.root())) return;
+        selection = new ModStoreSelection(root, selection.optionals(), selection.pins());
+        changed.accept(selection);
     }
 
     /** Shows actual service relations, or exact declarations solely for editing an unresolved draft. / 展示实际服务关系，或仅供编辑未解析草稿的精确声明。
@@ -196,6 +276,8 @@ final class ModStoreSelectionPane extends JPanel {
         box.setName("store.optional." + key.consumer() + "." + key.dependency());
         box.addActionListener(event -> toggle(key, box.isSelected()));
         var row = new JPanel(new BorderLayout());
+        row.setOpaque(false);
+        box.setOpaque(false);
         row.add(box);
         relations.add(row);
     }
@@ -217,7 +299,10 @@ final class ModStoreSelectionPane extends JPanel {
     private void relation(ModStorePlan.Relation relation) {
         String label = relation.key().consumer() + "@" + relation.consumerVersion() + " → " + relation.key().dependency()
             + "  " + relation.range() + (plan.valid() ? "" : " · " + messages.text("store.declarationOnly"));
-        var box = new JCheckBox(label, relation.selected());
+        String title = model.manifest(relation.key().dependency()).map(value -> value.name())
+            .orElseGet(() -> catalog.releases().stream().filter(value -> value.owner().equals(relation.key().dependency()))
+                .findFirst().map(ModStoreGateway.Release::title).orElse(relation.key().dependency()));
+        var box = new JCheckBox(title + " · " + messages.text(relation.optional() ? "store.optional" : "store.required"), relation.selected());
         box.putClientProperty("html.disable", true);
         box.putClientProperty("store.optional", relation.optional());
         box.setName((relation.optional() ? "store.optional." : "store.required.") + relation.key().consumer() + "." + relation.key().dependency());
@@ -226,12 +311,24 @@ final class ModStoreSelectionPane extends JPanel {
             if (relation.optional()) toggle(relation.key(), box.isSelected());
         });
         var row = new JPanel(new BorderLayout(4, 4));
-        row.add(box, BorderLayout.NORTH);
+        row.setOpaque(false);
+        box.setOpaque(false);
+        row.add(new JLabel(gold.debug.windowstolinux.app.ui.control.DesktopIcons.icon("mod/puzzle", 20,
+            () -> UIManager.getColor("Component.focusColor"))), BorderLayout.WEST);
+        var labels = new JPanel(new BorderLayout(4, 4));
+        labels.setOpaque(false);
+        labels.add(box, BorderLayout.NORTH);
+        var constraint = new JLabel(label);
+        constraint.putClientProperty("html.disable", true);
+        constraint.setToolTipText(label);
+        constraint.setForeground(UIManager.getColor("Label.disabledForeground"));
+        labels.add(constraint);
         var purpose = new JLabel();
         purpose.putClientProperty("html.disable", true);
         if (relation.purpose().isEmpty()) messages.bind(purpose, "store.purposeMissing");
         else purpose.setText(relation.purpose());
-        row.add(purpose);
+        labels.add(purpose, BorderLayout.SOUTH);
+        row.add(labels);
         relations.add(row);
     }
 
@@ -308,11 +405,16 @@ final class ModStoreSelectionPane extends JPanel {
         active = value;
         table.setEnabled(value);
         versions.setEnabled(value && editable && versions.getItemCount() > 0);
+        rootVersions.setEnabled(value && editable && rootVersions.getItemCount() > 0);
         unpin.setEnabled(value && editable && selection != null && selection.pins().containsKey(selectedOwner()));
-        for (var row : relations.getComponents())
-            if (row instanceof JPanel panel)
-                for (var component : panel.getComponents())
-                    if (component instanceof JCheckBox box)
-                        box.setEnabled(value && editable && Boolean.TRUE.equals(box.getClientProperty("store.optional")));
+        relationControls(relations, value);
+    }
+
+    private void relationControls(java.awt.Container parent, boolean value) {
+        for (var component : parent.getComponents()) {
+            if (component instanceof JCheckBox box)
+                box.setEnabled(value && editable && Boolean.TRUE.equals(box.getClientProperty("store.optional")));
+            else if (component instanceof java.awt.Container container) relationControls(container, value);
+        }
     }
 }

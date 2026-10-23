@@ -55,6 +55,7 @@ class PlatformWindowStateMigrationTest {
         management.root = root;
         try {
             management.development(false);
+            management.select(PlatformModIntentsTest.P);
             var actions = new AtomicInteger();
             onEdt(() -> {
                 var selected = (JCheckBox) named(management.frame, "mods.enabled");
@@ -88,6 +89,7 @@ class PlatformWindowStateMigrationTest {
                 return null;
             });
             management.idle();
+            management.select(PlatformModIntentsTest.P);
             await(() -> named(management.frame, "mods.enabled").isEnabled());
             onEdt(() -> {
                 var selected = (JCheckBox) named(management.frame, "mods.enabled");

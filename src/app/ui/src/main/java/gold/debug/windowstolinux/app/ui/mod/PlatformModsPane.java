@@ -8,6 +8,10 @@ import java.util.concurrent.Callable;
 import java.util.function.Consumer;
 
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+
+import com.formdev.flatlaf.util.UIScale;
 
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.*;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.Choice;
@@ -17,6 +21,9 @@ import gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation
 import gold.debug.windowstolinux.app.service.mod.install.PlatformModReinstallation;
 import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import gold.debug.windowstolinux.app.ui.control.DesktopCardList;
+import gold.debug.windowstolinux.app.ui.control.DesktopIcons;
+import gold.debug.windowstolinux.app.ui.control.WrappingFlowLayout;
+import gold.debug.windowstolinux.app.ui.display.DesktopListCard;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
 import gold.debug.windowstolinux.app.ui.language.LocalizedMessage;
@@ -81,7 +88,37 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     private final DefaultListModel<ModView> rows = new DefaultListModel<>();
 
     /** Single selected Mod, independent of its version choice. / 独立于版本选择的单选 Mod。 */
-    private final DesktopCardList<ModView> inventory = new DesktopCardList<>(rows, 84);
+    private final DesktopCardList<ModView> inventory = new DesktopCardList<>(rows, 116);
+
+    private final JTextField search = new JTextField();
+
+    private final ModCatalogSurface surface;
+
+    private final ModSelectionDraft draft = new ModSelectionDraft();
+
+    private List<ModView> installed = List.of();
+
+    private List<PendingChange> pending = List.of();
+
+    private final JPanel detailBody = new JPanel();
+
+    private final JPanel dependencies = new JPanel();
+
+    private final JTextArea description = new JTextArea();
+
+    private final JTextArea savedFacts = new JTextArea();
+
+    private final JPanel feedback;
+
+    private Runnable showStore = () -> {
+    }, showOriginals = () -> {
+    }, restart = () -> {
+    };
+
+    private Consumer<String> showStoreMod = ignored -> {
+    };
+
+    private JDialog pendingDialog;
 
     /** Draft whole-Mod switch reviewed before saving. / 保存前需审阅的整个 Mod 开关草稿。 */
     private final JCheckBox enabled = new JCheckBox();
@@ -89,8 +126,8 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     /** Actual retained facts, never inferred from the draft switch. / 不从草稿开关推断的实际保留事实。 */
     private final JTextArea details = new JTextArea();
 
-    /** One radio group of installed releases. / 已安装发布的单一单选组。 */
-    private final JPanel versions = new JPanel();
+    /** Exact downloaded release, independent of the saved choice. / 独立于已存选择的精确已下载版本。 */
+    private final JComboBox<String> versions = new JComboBox<>();
 
     /** Original retry handles retained only for unfinished physical cleanup. / 仅为未完成物理清理保留的原重试句柄。 */
     private final Map<String, RetryReview> retained = new HashMap<>();
@@ -101,8 +138,8 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     /** Current privacy, lifetime and worker exclusion. / 当前隐私、寿命及工作线程互斥。 */
     private boolean locked = true, closed, busy;
 
-    /** Separates first-load convenience from an explicitly cleared selection. / 区分首次加载默认项与明确清空的选择。 */
-    private boolean initialized;
+    /** Keeps model replacement separate from explicit user selection and editing. / 区分模型替换与用户主动选择及编辑。 */
+    private boolean updating;
 
     /** Invalidates results and confirmations across lock changes. / 使跨锁定变化的结果及确认失效。 */
     private long epoch;
@@ -129,30 +166,36 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         this.navigation = navigation;
         setName("platform.mods");
         components.stylePage(this);
-        setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
         inventory.setName("mods.inventory");
         inventory.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        inventory.setFixedCellHeight(com.formdev.flatlaf.util.UIScale.scale(84));
-        inventory.setCellRenderer((list, value, index, selected, focus) -> {
-            String name = value.versions().isEmpty() ? value.owner() : value.versions().getFirst().manifest().name();
-            return components.inventoryCard(name, value.owner(), "", selected);
-        });
+        components.cardList(inventory, false);
+        inventory.setCellRenderer((list, value, index, selected, focus) -> renderCard(value, selected));
         inventory.addListSelectionListener(event -> {
-            if (!event.getValueIsAdjusting())
+            if (!updating && !event.getValueIsAdjusting())
                 render();
         });
         enabled.setName("mods.enabled");
         messages.bind(enabled, "mods.enabled");
-        enabled.addActionListener(event -> controls());
-        versions.setLayout(new BoxLayout(versions, BoxLayout.Y_AXIS));
+        enabled.setOpaque(false);
+        enabled.addActionListener(event -> edited());
+        versions.setName("mods.versions");
+        versions.setPrototypeDisplayValue("000.000.000");
+        versions.addActionListener(event -> {
+            if (!updating) {
+                selectedVersion = (String) versions.getSelectedItem();
+                edited();
+                renderDependencies();
+            }
+        });
         details.setName("mods.details");
-        details.setEditable(false);
-        details.setLineWrap(true);
-        details.setWrapStyleWord(true);
-        details.setRows(9);
-        var right = components.card(new BorderLayout(8, 8));
-        right.add(enabled, BorderLayout.NORTH);
-        var facts = components.transparent(new BorderLayout(8, 8));
+        savedFacts.setName("mods.savedFacts");
+        for (var area : List.of(details, savedFacts, description)) {
+            area.setEditable(false);
+            area.setLineWrap(true);
+            area.setWrapStyleWord(true);
+            area.setOpaque(false);
+            area.setBorder(BorderFactory.createEmptyBorder());
+        }
         pagePicker.setName("mods.pages");
         pagePicker.setRenderer((list, value, index, selected, focus) -> {
             var renderer = new DefaultListCellRenderer();
@@ -166,55 +209,87 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         });
         pagePicker.addActionListener(event -> pageControls());
         view = new ActionControls(showLogs);
-        var pageActions = new JPanel(new BorderLayout(6, 0));
-        pageActions.add(pagePicker, BorderLayout.NORTH);
-        var pageButtons = components.transparent(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        pageButtons.add(view.openPage);
-        pageActions.add(pageButtons, BorderLayout.SOUTH);
-        facts.add(pageActions, BorderLayout.NORTH);
-        facts.add(new JScrollPane(details), BorderLayout.CENTER);
-        var versionScroll = new JScrollPane(versions);
-        versionScroll.setBorder(BorderFactory.createTitledBorder(""));
-        LocaleBinding.border(versionScroll, LocalizedMessage.of("mods.versions"), messages.catalog());
-        versionScroll.setPreferredSize(new Dimension(420, 150));
-        facts.add(versionScroll, BorderLayout.SOUTH);
-        right.add(facts, BorderLayout.CENTER);
-        installInventoryLayout(right);
-        add(view.footer, BorderLayout.SOUTH);
-        navigationSubscription = navigation.onChange(this::renderPages);
-        controls();
-        components.scrollPage(this);
-    }
+        search.setName("mods.search");
+        search.getDocument().addDocumentListener(new DocumentListener() {
+            public void insertUpdate(DocumentEvent event) {
+                filter();
+            }
 
-    /** Keeps both the inventory and its details usable in narrow workspaces. / 在窄工作区保留可用的清单及详情。
-     * @param right existing detail card / 原详情卡片 */
-    private void installInventoryLayout(JPanel right) {
-        var list = new JScrollPane(inventory);
-        list.setMinimumSize(new Dimension(0, 120));
-        right.setMinimumSize(new Dimension(0, 0));
-        var split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, list, right);
-        split.setBorder(BorderFactory.createEmptyBorder());
-        split.setResizeWeight(0.28);
-        split.setDividerLocation(270);
-        split.setPreferredSize(new Dimension(600, 360));
-        split.addComponentListener(new java.awt.event.ComponentAdapter() {
-            /** Stacks the same views when two usable columns no longer fit. / 无法容纳两个可用列时纵排原视图。
-             * @param event current viewport size / 当前视口尺寸 */
-            @Override
-            public void componentResized(java.awt.event.ComponentEvent event) {
-                int orientation = split.getWidth() < 650 ? JSplitPane.VERTICAL_SPLIT : JSplitPane.HORIZONTAL_SPLIT;
-                if (split.getOrientation() != orientation) {
-                    split.setOrientation(orientation);
-                    split.setPreferredSize(new Dimension(600,
-                        orientation == JSplitPane.VERTICAL_SPLIT
-                            ? 160 + right.getPreferredSize().height
-                            : Math.max(360, right.getPreferredSize().height)));
-                    split.setDividerLocation(orientation == JSplitPane.VERTICAL_SPLIT ? 150 : 270);
-                    split.revalidate();
-                }
+            public void removeUpdate(DocumentEvent event) {
+                filter();
+            }
+
+            public void changedUpdate(DocumentEvent event) {
+                filter();
             }
         });
-        add(split);
+        surface = new ModCatalogSurface(components, messages, inventory, search, view.refresh, false);
+        surface.modeAction(() -> {
+            leaveDetails();
+            this.showStore.run();
+        });
+        detailBody.setOpaque(false);
+        detailBody.setLayout(new BoxLayout(detailBody, BoxLayout.Y_AXIS));
+        var status = components.transparent(new BorderLayout(0, UIScale.scale(8)));
+        description.putClientProperty("html.disable", true);
+        status.add(description, BorderLayout.NORTH);
+        status.add(savedFacts);
+        detailBody.add(section("modui.status", status));
+        var edit = components.transparent(new WrappingFlowLayout(new FlowLayout(FlowLayout.LEFT, UIScale.scale(8), UIScale.scale(4))));
+        var versionField = components.transparent(new FlowLayout(FlowLayout.LEFT, UIScale.scale(8), 0));
+        versionField.add(messages.bind(new JLabel(), "modui.downloadedVersion"));
+        versionField.add(versions);
+        edit.add(enabled);
+        edit.add(new JComponent() {
+            @Override
+            public Dimension getPreferredSize() {
+                return new Dimension(Math.max(0, edit.getWidth() - enabled.getPreferredSize().width
+                    - versionField.getPreferredSize().width - UIScale.scale(8) * 4), 1);
+            }
+        });
+        edit.add(versionField);
+        detailBody.add(section("modui.enableVersion", edit));
+        dependencies.setOpaque(false);
+        dependencies.setLayout(new BoxLayout(dependencies, BoxLayout.Y_AXIS));
+        detailBody.add(section("modui.dependencies", dependencies));
+        var pages = components.transparent(new BorderLayout(UIScale.scale(8), 0));
+        pages.add(pagePicker);
+        pages.add(view.openPage, BorderLayout.EAST);
+        detailBody.add(section("modui.pages", pages));
+        feedback = components.transparent(new BorderLayout(0, UIScale.scale(8)));
+        feedback.add(details, BorderLayout.CENTER);
+        feedback.add(view.progress, BorderLayout.NORTH);
+        feedback.add(view.status, BorderLayout.SOUTH);
+        detailBody.add(section("modui.operationState", feedback));
+        surface.details(detailBody);
+        surface.footer(view.footer);
+        add(surface);
+        navigationSubscription = navigation.onChange(this::renderPages);
+        controls();
+        render();
+    }
+
+    private JPanel section(String key, JComponent body) {
+        var card = components.card(new BorderLayout(0, UIScale.scale(12)));
+        var title = messages.bind(new ModTextLabel("", 18, true, false), key);
+        card.add(title, BorderLayout.NORTH);
+        card.add(body);
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return wrap(card);
+    }
+
+    private JPanel wrap(JPanel card) {
+        var wrapper = new JPanel(new BorderLayout()) {
+            @Override
+            public Dimension getMaximumSize() {
+                return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+            }
+        };
+        wrapper.setOpaque(false);
+        wrapper.setBorder(BorderFactory.createEmptyBorder(0, 0, UIScale.scale(14), 0));
+        wrapper.add(card);
+        wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return wrapper;
     }
 
     /** Adds installed-layout maintenance after actual installation services are composed. / 实际安装服务装配后加入安装布局维护。
@@ -250,8 +325,14 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         epoch++;
         if (confirmation != null)
             confirmation.dispose();
-        if (locked)
+        if (pendingDialog != null)
+            pendingDialog.dispose();
+        if (locked) {
+            installed = List.of();
+            pending = List.of();
             rows.clear();
+            draft.bind(null, null);
+        }
         LocaleBinding.unbind(view.status);
         view.status.setText("");
         render();
@@ -259,49 +340,106 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             refresh();
     }
 
-    /** Reloads durable facts in the background, preserving only the selected owner. / 后台重读持久事实，仅保留所选所有者。 */
+    /** Reloads durable facts while preserving this visible editor. / 后台重读持久事实并保留当前可见编辑。 */
     public void refresh() {
-        var current = inventory.getSelectedValue();
-        String owner = current == null ? null : current.owner();
-        run(service::list, values -> {
-            rows.clear();
-            for (var value : values) {
+        run(() -> new Snapshot(service.list(), service.pendingChanges()), snapshot -> {
+            installed = snapshot.mods();
+            pending = snapshot.changes();
+            for (var value : installed) {
                 if (value.operations().stream()
                     .noneMatch(o -> o.type().equals("MIGRATE") && o.state().equals("RUNNING")))
                     retained.remove(value.owner());
-                rows.addElement(value);
             }
-            for (int i = 0; i < rows.size(); i++)
-                if (rows.get(i).owner().equals(owner))
-                    inventory.setSelectedIndex(i);
-            if (!initialized && inventory.getSelectedIndex() < 0 && !rows.isEmpty())
-                inventory.setSelectedIndex(0);
-            initialized = true;
+            filter();
             if (rows.isEmpty() && view.status.getText().isBlank())
                 messages.bind(view.status, "mods.empty");
-            render();
         });
+    }
+
+    /** Wires navigation without handing business mutation authority to the shell. / 接入导航，不向外壳移交业务修改权限。
+     * @param showStore opens the existing store / 打开原商店
+     * @param showOriginals opens the original package manager / 打开原包管理
+     * @param showStoreMod opens one exact store owner / 打开指定商店所有者
+     * @param restart requests the host-owned restart / 请求宿主持有的重启 */
+    public void workspaceActions(Runnable showStore, Runnable showOriginals, Consumer<String> showStoreMod,
+                                 Runnable restart) {
+        this.showStore = Objects.requireNonNull(showStore);
+        this.showOriginals = Objects.requireNonNull(showOriginals);
+        this.showStoreMod = Objects.requireNonNull(showStoreMod);
+        this.restart = Objects.requireNonNull(restart);
+    }
+
+    /** Selects an already downloaded dependency by stable owner. / 按稳定所有者选择已下载依赖。
+     * @param owner exact installed identity / 精确已安装身份 */
+    public void selectOwner(String owner) {
+        if (locked || closed || busy) return;
+        search.setText("");
+        for (int index = 0; index < rows.size(); index++) {
+            if (rows.get(index).owner().equals(owner)) {
+                inventory.setSelectedIndex(index);
+                inventory.ensureIndexIsVisible(index);
+                return;
+            }
+        }
+    }
+
+    /** Leaving a detail discards only its unsaved controls. / 离开详情仅丢弃未保存控件草稿。 */
+    public void leaveDetails() {
+        if (confirmation != null) confirmation.dispose();
+        if (pendingDialog != null) pendingDialog.dispose();
+        inventory.clearSelection();
+        draft.bind(null, null);
+        render();
+    }
+
+    private void filter() {
+        var selected = inventory.getSelectedValue();
+        String owner = selected == null ? null : selected.owner();
+        String keyword = search.getText().strip().toLowerCase(Locale.ROOT);
+        updating = true;
+        try {
+            rows.clear();
+            for (var value : installed) {
+                String text = name(value) + " " + value.owner() + " "
+                    + String.join(" ", value.versions().stream().map(v -> v.manifest().version()).toList());
+                if (!text.toLowerCase(Locale.ROOT).contains(keyword)) continue;
+                rows.addElement(value);
+                if (value.owner().equals(owner)) inventory.setSelectedIndex(rows.size() - 1);
+            }
+        } finally {
+            updating = false;
+        }
+        surface.count(rows.size());
+        render();
     }
 
     /** Displays saved intention, actual state and all retained data separately. / 分开展示已存意图、实际状态及全部保留数据。 */
     private void render() {
         var value = inventory.getSelectedValue();
-        versions.removeAll();
+        draft.bind(value == null ? null : value.owner(), value == null ? null : value.choice());
+        updating = true;
+        versions.removeAllItems();
         details.setText("");
-        enabled.setSelected(value != null && value.choice().enabled());
-        selectedVersion = value == null ? null : value.choice().version().orElse(null);
+        savedFacts.setText("");
+        description.setText("");
+        enabled.setSelected(value != null && draft.choice().enabled());
+        selectedVersion = value == null ? null : draft.choice().version().orElse(null);
         if (value != null) {
             var text = new StringBuilder(messages.text("mods.saved",
                 Map.of("choice", messages.text(value.choice().enabled() ? "mods.on" : "mods.off"), "version",
                     value.choice().version().orElse("—"))));
             text.append('\n').append(messages.text("mods.actual",
                 Map.of("state", state(value.runtime()), "version", value.actual().orElse("—"))));
+            savedFacts.setText(text.toString());
+            text.setLength(0);
             if (maintenance.installation != null && !value.choice().enabled() && !value.stopAcknowledged())
                 text.append('\n').append(messages.text("mods.repairNotice"));
             value.failure().ifPresent(problem -> text.append('\n').append(messages.safe(problem)));
-            for (var data : value.data())
+            for (var data : value.data()) {
                 text.append('\n').append("Schema ").append(data.identity().schemaVersion()).append(" · ")
                     .append(state(data.state()));
+                if (data.state().equals("FAILED")) text.append(" · ").append(messages.text("mods.dataFailed"));
+            }
             for (var operation : value.operations())
                 text.append('\n')
                     .append(messages.text(operation.request().isPresent() ? "mods.pending" : "mods.operation",
@@ -309,34 +447,140 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                             state(operation.phase()))));
             details.setText(text.toString());
             details.setCaretPosition(0);
-            var group = new ButtonGroup();
             for (var release : value.versions()) {
                 var manifest = release.manifest();
-                var radio = new JRadioButton(manifest.version() + " · "
-                    + manifest.schemaVersion().map(s -> "Schema " + s).orElse(messages.text("mods.noData")) + " · "
-                    + messages.text("mods.programState", Map.of("state", state(release.state()))));
-                radio.setName("mods.version." + manifest.version());
-                radio.putClientProperty("html.disable", true);
-                radio.setSelected(manifest.version().toString().equals(selectedVersion));
-                radio.addActionListener(event -> {
-                    selectedVersion = manifest.version().toString();
-                    controls();
-                });
-                group.add(radio);
-                versions.add(radio);
-                var data = value.data().stream()
-                    .filter(d -> manifest.schemaVersion().equals(Optional.of(d.identity().schemaVersion())))
-                    .findFirst();
-                if (data.isPresent() && data.get().state().equals("FAILED")) {
-                    radio.setForeground(new Color(178, 45, 45));
-                    radio.setText(radio.getText() + " · " + messages.text("mods.dataFailed"));
-                }
+                versions.addItem(manifest.version());
+                text.append('\n').append(manifest.version()).append(" · ")
+                    .append(manifest.schemaVersion().map(s -> "Schema " + s).orElse(messages.text("mods.noData")))
+                    .append(" · ").append(messages.text("mods.programState", Map.of("state", state(release.state()))));
             }
+            details.setText(text.toString().strip());
+            versions.setSelectedItem(selectedVersion);
+            value.versions().stream().filter(v -> v.manifest().version().equals(selectedVersion)).findFirst()
+                .flatMap(v -> v.manifest().description()).ifPresent(description::setText);
+            surface.detailHeading(name(value), value.owner(), this::leaveDetails);
         }
-        versions.revalidate();
-        versions.repaint();
+        updating = false;
+        surface.expanded(value != null);
+        renderDependencies();
         renderPages();
         controls();
+        detailBody.revalidate();
+        detailBody.repaint();
+    }
+
+    private void edited() {
+        if (updating || inventory.getSelectedValue() == null) return;
+        draft.edit(new Choice(enabled.isSelected(), Optional.ofNullable(selectedVersion)));
+        controls();
+    }
+
+    private static String name(ModView value) {
+        return value.versions().isEmpty() ? value.owner() : value.versions().getFirst().manifest().name();
+    }
+
+    private JComponent renderCard(ModView value, boolean selected) {
+        var content = components.transparent(new BorderLayout(UIScale.scale(14), 0));
+        content.add(new JLabel(DesktopIcons.icon("mod/puzzle", 30,
+            () -> UIManager.getColor("Component.accentColor"))), BorderLayout.WEST);
+        var text = components.transparent(new GridBagLayout());
+        var title = new ModTextLabel(name(value), 16, true, false);
+        var subtitle = new ModTextLabel(value.owner() + "  ·  " + value.choice().version().orElse("—"), 13, false, true);
+        var cell = new GridBagConstraints();
+        cell.gridx = 0;
+        cell.gridy = 0;
+        cell.weightx = 1;
+        cell.fill = GridBagConstraints.HORIZONTAL;
+        cell.anchor = GridBagConstraints.WEST;
+        text.add(title, cell);
+        cell.gridy++;
+        cell.insets = UIScale.scale(new Insets(4, 0, 0, 0));
+        text.add(subtitle, cell);
+        content.add(text);
+        var states = components.transparent(new GridBagLayout());
+        var badges = new ArrayList<JLabel>();
+        badges.add(statusBadge(messages.text(value.choice().enabled() ? "mods.on" : "mods.off"),
+            value.choice().enabled() ? 1 : 0));
+        if (value.operations().stream().anyMatch(o -> o.request().isPresent()))
+            badges.add(statusBadge(messages.text("modui.pendingBadge"), 3));
+        badges.add(statusBadge(state(value.runtime()), value.runtime().equals("RUNNING") ? 2
+            : value.runtime().equals("FAILED") ? 4 : 0));
+        cell.gridy = 0;
+        for (var badge : badges) {
+            cell.insets = UIScale.scale(new Insets(cell.gridy == 0 ? 0 : 4, 0, 0, 0));
+            states.add(badge, cell);
+            cell.gridy++;
+        }
+        content.add(states, BorderLayout.EAST);
+        content.setToolTipText(name(value) + " · " + value.owner());
+        return DesktopListCard.row(content, selected, false);
+    }
+
+    private JLabel statusBadge(String text, int tone) {
+        var result = components.badge(text);
+        result.setFont(UIManager.getFont("Label.font").deriveFont(Font.BOLD, UIScale.scale(12f)));
+        result.setHorizontalAlignment(SwingConstants.CENTER);
+        result.setBorder(new com.formdev.flatlaf.ui.FlatEmptyBorder(3, 8, 3, 8));
+        boolean dark = com.formdev.flatlaf.FlatLaf.isLafDark();
+        if (tone == 0) {
+            result.setForeground(UIManager.getColor("Label.disabledForeground"));
+            result.setBackground(UIManager.getColor("Button.background"));
+        } else if (tone == 2) {
+            result.setForeground(new Color(dark ? 0x77D9A0 : 0x147A46));
+            result.setBackground(new Color(dark ? 0x214B36 : 0xDCF6E8));
+        } else if (tone == 3) {
+            result.setForeground(new Color(dark ? 0xF4C66D : 0x926000));
+            result.setBackground(new Color(dark ? 0x4D3D22 : 0xFFF0CC));
+        } else if (tone == 4) {
+            result.setForeground(new Color(dark ? 0xFF9999 : 0xB83232));
+            result.setBackground(new Color(dark ? 0x572E32 : 0xFFE4E4));
+        }
+        return result;
+    }
+
+    private void renderDependencies() {
+        dependencies.removeAll();
+        var value = inventory.getSelectedValue();
+        if (value != null) {
+            var release = value.versions().stream().filter(v -> v.manifest().version().equals(selectedVersion)).findFirst();
+            description.setText(release.flatMap(v -> v.manifest().description()).orElse(""));
+            var declared = release.map(v -> v.manifest().dependencies()).orElse(List.of());
+            for (var dependency : declared) {
+                var target = installed.stream().filter(v -> v.owner().equals(dependency.id()) && !v.versions().isEmpty()).findFirst();
+                var row = components.transparent(new BorderLayout(UIScale.scale(10), UIScale.scale(4)));
+                row.setBorder(BorderFactory.createEmptyBorder(UIScale.scale(8), 0, UIScale.scale(8), 0));
+                row.add(new JLabel(DesktopIcons.icon("mod/puzzle", 22,
+                    () -> UIManager.getColor("Component.accentColor"))), BorderLayout.WEST);
+                var copy = components.transparent(new GridLayout(0, 1, 0, UIScale.scale(4)));
+                copy.add(new ModTextLabel(target.map(PlatformModsPane::name).orElse(dependency.id()) + "  ·  "
+                    + messages.text(dependency.optional() ? "modui.optional" : "modui.required"), 14, true, false));
+                copy.add(new ModTextLabel(target.isPresent()
+                    ? messages.text("modui.dependencyVersion", Map.of("range", dependency.range(), "version",
+                    target.get().choice().version().orElse(target.get().versions().getFirst().manifest().version())))
+                    : messages.text("modui.dependencyMissing", Map.of("range", dependency.range())), 12, false, true));
+                row.add(copy);
+                var jump = messages.bind(components.secondaryButton(""), target.isPresent() ? "modui.viewDetails" : "modui.visitStore");
+                jump.setName("mods.dependency." + dependency.id());
+                jump.setEnabled(!locked && !closed && !busy);
+                jump.addActionListener(event -> {
+                    if (locked || closed || busy) return;
+                    if (target.isPresent()) selectOwner(dependency.id());
+                    else {
+                        leaveDetails();
+                        showStoreMod.accept(dependency.id());
+                    }
+                });
+                row.add(jump, BorderLayout.EAST);
+                dependencies.add(row);
+                if (declared.indexOf(dependency) < declared.size() - 1) dependencies.add(components.divider());
+            }
+            if (declared.isEmpty()) dependencies.add(messages.bind(new JLabel(), "modui.noDependencies"));
+        }
+        dependencies.revalidate();
+        dependencies.repaint();
+    }
+
+    private record Snapshot(List<ModView> mods, List<PendingChange> changes) {
     }
 
     /** Refreshes exact current-owner contributions while preserving the selected page identity. / 刷新当前所有者精确扩展并保留所选页面身份。 */
@@ -391,8 +635,11 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         view.logs.setEnabled(active);
         view.save.setEnabled(
             active && value != null && !maintaining && (!enabled.isSelected() || selectedVersion != null)
-                && (enabled.isSelected() != value.choice().enabled()
-                || !Optional.ofNullable(selectedVersion).equals(value.choice().version())));
+                && draft.changed());
+        search.setEnabled(active);
+        view.more.setEnabled(active);
+        view.changes.setEnabled(active && !pending.isEmpty());
+        view.saveRestart.setEnabled(active && (view.save.isEnabled() || !pending.isEmpty()));
         view.prepare.setVisible(value != null && value.choice().enabled() && value.actual().isEmpty()
             && Set.of("STOPPED", "FAILED").contains(value.runtime()) && value.operations().isEmpty()
             && value.versions().stream().anyMatch(v -> v.state().equals("READY")
@@ -436,10 +683,11 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         view.restoreProgram.setEnabled(active && value != null
             && value.operations().stream().anyMatch(o -> o.type().equals("REINSTALL") && o.state().equals("UNKNOWN")
             && Set.of("VALIDATED", "STAGED", "OLD_SAVED", "FILES_PUBLISHED").contains(o.phase())));
-        view.programActions.setVisible(maintenance.installation != null);
-        view.cleanupActions.setVisible(maintenance.installation != null && maintaining);
-        for (var child : versions.getComponents())
-            child.setEnabled(active && !maintaining);
+        versions.setEnabled(active && value != null && !maintaining && versions.getItemCount() > 0);
+        for (var child : dependencies.getComponents())
+            if (child instanceof JPanel row)
+                for (var field : row.getComponents())
+                    if (field instanceof JButton button) button.setEnabled(active);
         pageControls();
     }
 
@@ -505,15 +753,67 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     /** Reviews a draft or exact absent data target before confirmation. / 在确认前审阅草稿或精确缺失数据目标。
      * @param preparing whether explicitly preparing the unchanged selection / 是否明确准备未改变的选择 */
     private void reviewChoice(boolean preparing) {
+        reviewChoice(preparing, false);
+    }
+
+    private void reviewChoice(boolean preparing, boolean restartAfter) {
         var value = inventory.getSelectedValue();
         if (value == null) return;
+        String owner = value.owner();
+        long session = draft.session();
         var target = new Choice(enabled.isSelected(), Optional.ofNullable(selectedVersion));
         var source = target.enabled() ? source(value, selectedVersion, false) : Optional.<SchemaIdentity>empty();
-        if (source == null)
+        if (source == null || !draft.matches(owner, session))
             return;
         run(() -> preparing ? service.reviewPreparation(value.owner(), source) : service.review(value.owner(), target, source), review -> {
-            if (confirm((preparing ? messages.text("mods.confirmPreparation") + "\n" : "") + summary(review, source)))
-                run(() -> service.apply(review, true), ignored -> completed("mods.savedRestart"), true);
+            if (!draft.matches(owner, session)) return;
+            if (confirm((preparing ? messages.text("mods.confirmPreparation") + "\n" : "") + summary(review, source))
+                && draft.matches(owner, session)) {
+                run(() -> service.apply(review, true), ignored -> {
+                    if (!draft.matches(owner, session)) {
+                        refresh();
+                        return;
+                    }
+                    draft.accepted(owner, session, target);
+                    messages.bind(view.status, "mods.savedRestart");
+                    if (restartAfter) reviewRestart();
+                    else refresh();
+                }, true);
+            }
+        });
+    }
+
+    private void saveAndRestart() {
+        if (draft.changed()) reviewChoice(false, true);
+        else reviewRestart();
+    }
+
+    private void reviewRestart() {
+        var selected = inventory.getSelectedValue();
+        String owner = selected == null ? null : selected.owner();
+        long session = draft.session();
+        run(() -> new Snapshot(service.list(), service.pendingChanges()), snapshot -> {
+            installed = snapshot.mods();
+            pending = snapshot.changes();
+            filter();
+            var changes = pending;
+            controls();
+            if (changes.isEmpty() || !draft.matches(owner, session)) return;
+            var summary = new StringBuilder(messages.text("modui.restartConfirm"));
+            for (var change : changes)
+                summary.append("\n\n").append(change.name()).append(" · ").append(change.owner())
+                    .append('\n').append(changeText(change));
+            if (confirm(summary.toString()) && draft.matches(owner, session)) {
+                run(service::pendingChanges, actual -> {
+                    if (!draft.matches(owner, session)) return;
+                    if (actual.equals(changes)) restart.run();
+                    else {
+                        pending = actual;
+                        messages.bind(view.status, "modui.pendingChanged");
+                        controls();
+                    }
+                });
+            }
         });
     }
 
@@ -545,7 +845,125 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             .orElseThrow();
         run(() -> service.reviewCancellation(request), review -> {
             if (confirm(messages.text("mods.confirmCancel") + "\n" + summary(review, Optional.empty())))
-                run(() -> service.apply(review, true), ignored -> completed("mods.cancelled"), true);
+                run(() -> service.apply(review, true), ignored -> {
+                    var selected = inventory.getSelectedValue();
+                    if (selected != null && review.choices().containsKey(selected.owner()))
+                        draft.accepted(selected.owner(), draft.session(), review.choices().get(selected.owner()));
+                    completed("mods.cancelled");
+                }, true);
+        });
+    }
+
+    private void showChanges() {
+        run(service::pendingChanges, changes -> {
+            pending = changes;
+            controls();
+            var dialog = new JDialog(SwingUtilities.getWindowAncestor(this), messages.text("modui.pendingTitle"),
+                Dialog.ModalityType.APPLICATION_MODAL);
+            dialog.setName("mods.changes");
+            LocaleBinding.title(dialog, LocalizedMessage.of("modui.pendingTitle"), messages.catalog());
+            var body = components.pagePanel();
+            body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+            body.setBorder(BorderFactory.createEmptyBorder(UIScale.scale(16), UIScale.scale(18),
+                UIScale.scale(16), UIScale.scale(18)));
+            var caption = messages.bind(new ModTextLabel("", 14, true, false), "modui.pendingRestart");
+            caption.setAlignmentX(Component.LEFT_ALIGNMENT);
+            body.add(caption);
+            body.add(Box.createVerticalStrut(UIScale.scale(12)));
+            for (var change : changes) {
+                var content = components.transparent(new BorderLayout(UIScale.scale(12), UIScale.scale(8)));
+                content.add(new JLabel(DesktopIcons.icon("mod/puzzle", 30,
+                    () -> UIManager.getColor("Component.accentColor"))), BorderLayout.WEST);
+                var copy = components.transparent(new BorderLayout(0, UIScale.scale(8)));
+                var identity = components.transparent(new BorderLayout(0, UIScale.scale(3)));
+                var name = new ModTextLabel(change.name(), 16, true, false);
+                name.setToolTipText(change.name());
+                identity.add(name, BorderLayout.NORTH);
+                identity.add(new ModTextLabel(change.owner(), 14, false, true), BorderLayout.CENTER);
+                copy.add(identity, BorderLayout.NORTH);
+                var facts = new JTextArea(changeText(change));
+                facts.setName("mods.change." + change.owner());
+                facts.setEditable(false);
+                facts.setLineWrap(true);
+                facts.setWrapStyleWord(true);
+                facts.setOpaque(false);
+                copy.add(facts);
+                content.add(copy);
+                var undo = messages.bind(components.secondaryButton(""), "modui.undo");
+                undo.setName("mods.undo." + change.owner());
+                undo.addActionListener(event -> {
+                    if (locked || closed || busy) return;
+                    dialog.dispose();
+                    withdraw(change.requestId());
+                });
+                var undoHolder = components.transparent(new GridBagLayout());
+                undoHolder.add(undo);
+                content.add(undoHolder, BorderLayout.EAST);
+                var card = components.card(new BorderLayout());
+                card.add(content);
+                body.add(wrap(card));
+            }
+            if (changes.isEmpty()) body.add(messages.bind(new JLabel(), "modui.noChanges"));
+            var scroll = new JScrollPane(body, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+            scroll.setName("mods.changes.scroll");
+            scroll.setBorder(BorderFactory.createEmptyBorder());
+            scroll.getVerticalScrollBar().putClientProperty("desktop.inventory.scrollbar", true);
+            scroll.getVerticalScrollBar().setUnitIncrement(UIScale.scale(20));
+            var close = messages.bind(components.secondaryButton(""), "modui.close");
+            close.setName("mods.changes.close");
+            close.addActionListener(event -> dialog.dispose());
+            var actions = components.transparent(new FlowLayout(FlowLayout.RIGHT, UIScale.scale(12), UIScale.scale(12)));
+            actions.add(close);
+            dialog.add(scroll);
+            dialog.add(actions, BorderLayout.SOUTH);
+            dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+            dialog.setSize(UIScale.scale(700), UIScale.scale(440));
+            dialog.setLocationRelativeTo(this);
+            pendingDialog = dialog;
+            try {
+                dialog.setVisible(true);
+            } finally {
+                dialog.dispose();
+                if (pendingDialog == dialog) pendingDialog = null;
+            }
+        });
+    }
+
+    private String changeText(PendingChange change) {
+        var text = new StringBuilder();
+        if (change.before().enabled() != change.after().enabled()) text.append(messages.text("modui.changeEnabled",
+            Map.of("before", messages.text(change.before().enabled() ? "mods.on" : "mods.off"),
+                "after", messages.text(change.after().enabled() ? "mods.on" : "mods.off"))));
+        if (!change.before().version().equals(change.after().version())) {
+            if (!text.isEmpty()) text.append('\n');
+            text.append(messages.text("modui.changeVersion", Map.of("before", change.before().version().orElse("—"),
+                "after", change.after().version().orElse("—"))));
+        }
+        if (change.before().equals(change.after())) text.append(messages.text("modui.changePreparation"));
+        if (!change.preparation().isBlank()) {
+            String[] preparation = change.preparation().split(" · ", 2);
+            String mode = switch (preparation[0]) {
+                case "INITIALIZE" -> messages.text("modui.preparationInitialize");
+                case "MIGRATE" -> messages.text("modui.preparationMigrate");
+                case "REUSE" -> messages.text("modui.preparationReuse");
+                default -> state(preparation[0]);
+            };
+            text.append('\n').append(messages.text("modui.preparationState", Map.of("state", mode
+                + (preparation.length == 2 ? " · " + preparation[1] : ""))));
+        }
+        text.append('\n').append(messages.text("mods.affected", Map.of("owners", String.join(", ", change.affected()))));
+        return text.toString();
+    }
+
+    private void withdraw(UUID request) {
+        run(() -> service.reviewCancellation(request), review -> {
+            if (confirm(messages.text("mods.confirmCancel") + "\n" + summary(review, Optional.empty())))
+                run(() -> service.apply(review, true), ignored -> {
+                    var selected = inventory.getSelectedValue();
+                    if (selected != null && review.choices().containsKey(selected.owner()))
+                        draft.accepted(selected.owner(), draft.session(), review.choices().get(selected.owner()));
+                    completed("mods.cancelled");
+                }, true);
         });
     }
 
@@ -682,6 +1100,11 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         epoch++;
         if (confirmation != null)
             confirmation.dispose();
+        if (pendingDialog != null)
+            pendingDialog.dispose();
+        installed = List.of();
+        pending = List.of();
+        draft.bind(null, null);
         rows.clear();
         retained.clear();
         try {
@@ -927,7 +1350,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             });
         }
 
-        /** Selects the original unknown repair, without inferring its version from the current radio choice. / 选择原未知修复，不从当前单选推断其版本。
+        /** Selects the original unknown repair without inferring its version from the draft. / 选择原未知修复，不从当前草稿推断其版本。
          * @return original maintenance identity / 原维护身份 */
         private OperationView repairOperation() {
             return inventory.getSelectedValue().operations().stream()
@@ -956,9 +1379,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         /** Explicit same-release repair and original recovery actions. / 明确同版本修复及原恢复操作。 */
         private final JButton repair, reconcileRepair, restoreProgram;
 
-        /** Installed-only program and retained-operation rows. / 仅安装模式的程序及保留操作行。 */
-        private final JPanel programActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0)),
-            cleanupActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        private final JButton more, changes, saveRestart;
 
         /** Safe operation feedback outside the retained snapshot. / 保留快照之外的安全操作反馈。 */
         private final JLabel status = new JLabel();
@@ -977,9 +1398,9 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                 if (page != null)
                     navigation.open(page.key());
             });
-            var actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
             refresh = button("refresh", PlatformModsPane.this::refresh);
             save = button("save", () -> reviewChoice(false));
+            messages.bind(save, "modui.saveOnly");
             prepare = button("prepare", () -> reviewChoice(true));
             cancel = button("cancel", PlatformModsPane.this::cancelRequest);
             reconcile = button("reconcile", PlatformModsPane.this::reconcile);
@@ -994,24 +1415,67 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             LocaleBinding.tooltip(repair, LocalizedMessage.of("mods.repairNotice"), messages.catalog());
             reconcileRepair = button("reconcileRepair", maintenance::reconcileRepair);
             restoreProgram = button("restoreProgram", maintenance::restoreProgram);
-            for (var button : List.of(refresh, save, prepare, cancel, reconcile, retry, logs))
-                actions.add(button);
-            for (var button : List.of(repair, deleteVersion, deleteMod))
-                programActions.add(button);
-            for (var button : List.of(reconcileDeletion, reconcileRepair, restoreProgram))
-                cleanupActions.add(button);
-            var actionRows = new JPanel();
-            actionRows.setLayout(new BoxLayout(actionRows, BoxLayout.Y_AXIS));
-            actionRows.add(actions);
-            actionRows.add(programActions);
-            actionRows.add(cleanupActions);
-            footer = new JPanel(new BorderLayout(8, 8));
-            footer.add(actionRows);
+            more = messages.bind(components.secondaryButton(""), "modui.more");
+            more.setName("mods.more");
+            more.addActionListener(event -> moreActions());
+            changes = messages.bind(components.secondaryButton(""), "modui.changes");
+            changes.setName("mods.viewChanges");
+            changes.addActionListener(event -> {
+                if (!locked && !closed && !busy) showChanges();
+            });
+            saveRestart = messages.bind(components.primaryButton(""), "modui.saveRestart");
+            saveRestart.setName("mods.saveRestart");
+            saveRestart.addActionListener(event -> {
+                if (!locked && !closed && !busy) saveAndRestart();
+            });
+            footer = components.transparent(new WrappingFlowLayout(new FlowLayout(FlowLayout.RIGHT, UIScale.scale(8), UIScale.scale(4))));
+            footer.add(logs);
+            footer.add(more);
+            footer.add(new JComponent() {
+                @Override
+                public Dimension getPreferredSize() {
+                    int controlsWidth = List.of(logs, more, changes, save, saveRestart).stream()
+                        .mapToInt(button -> button.getPreferredSize().width).sum();
+                    return new Dimension(Math.max(0, footer.getWidth() - controlsWidth - UIScale.scale(8) * 7), 1);
+                }
+            });
+            for (var button : List.of(changes, save, saveRestart)) footer.add(button);
             status.setName("mods.status");
-            footer.add(status, BorderLayout.SOUTH);
+            status.putClientProperty("html.disable", true);
             progress.setIndeterminate(true);
             progress.setName("mods.progress");
-            footer.add(progress, BorderLayout.NORTH);
+        }
+
+        private void moreActions() {
+            if (locked || closed || busy) return;
+            var menu = new JPopupMenu();
+            var originals = messages.bind(new JMenuItem(), "modui.originals");
+            originals.setName("mods.originals");
+            originals.addActionListener(event -> {
+                menu.setVisible(false);
+                leaveDetails();
+                showOriginals.run();
+            });
+            menu.add(originals);
+            boolean first = true;
+            for (var button : List.of(prepare, cancel, reconcile, retry, repair, deleteVersion, deleteMod,
+                reconcileDeletion, reconcileRepair, restoreProgram)) {
+                if (!button.isVisible()) continue;
+                if (first) {
+                    menu.addSeparator();
+                    first = false;
+                }
+                var item = new JMenuItem(button.getText());
+                item.setName(button.getName());
+                item.setToolTipText(button.getToolTipText());
+                item.setEnabled(button.isEnabled());
+                item.addActionListener(event -> {
+                    menu.setVisible(false);
+                    button.doClick();
+                });
+                menu.add(item);
+            }
+            menu.show(more, 0, more.getHeight());
         }
     }
 }

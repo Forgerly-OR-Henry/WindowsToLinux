@@ -57,7 +57,7 @@ class PlatformModManagementTest {
             ((JList<?>) named(frame, "mods.inventory")).clearSelection();
             assertEquals("", ((JTextArea) named(frame, "mods.details")).getText());
             for (String name : List.of("mods.enabled", "mods.save", "mods.prepare", "mods.openPage", "mods.cancel", "mods.reconcile", "mods.retry"))
-                assertFalse(named(frame, name).isEnabled(), name);
+                assertFalse(actionEnabled(name), name);
             return null;
         });
         click("mods.refresh");
@@ -88,7 +88,7 @@ class PlatformModManagementTest {
         window();
         select(P);
         onEdt(() -> {
-            assertTrue(named(frame, "mods.prepare").isVisible());
+            assertTrue(actionVisible("mods.prepare"));
             assertFalse(named(frame, "mods.save").isEnabled());
             return null;
         });
@@ -121,13 +121,13 @@ class PlatformModManagementTest {
         assertEquals("WAIT_RESTART", text(runtime, "SELECT phase FROM mod_operation"));
         assertEquals("TRUE", text(runtime, "SELECT enabled FROM mod_registry"));
         assertTrue(fixture.actions().isEmpty());
-        assertFalse(onEdt(() -> named(frame, "mods.prepare").isVisible()));
+        assertFalse(onEdt(() -> actionVisible("mods.prepare")));
         click("mods.cancel");
         answer(dialog(), true);
         idle();
         assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
         assertEquals("TRUE", text(runtime, "SELECT enabled FROM mod_registry"));
-        assertTrue(onEdt(() -> named(frame, "mods.prepare").isVisible()));
+        assertTrue(onEdt(() -> actionVisible("mods.prepare")));
     }
 
     void window() throws Exception {
@@ -151,11 +151,47 @@ class PlatformModManagementTest {
     }
 
     void click(String name) throws Exception {
-        onEdt(() -> {
-            assertTrue(named(frame, name).isEnabled(), name);
-            return null;
+        if (name.startsWith("mods.version.")) {
+            onEdt(() -> {
+                ((JComboBox<?>) named(frame, "mods.versions")).setSelectedItem(name.substring("mods.version.".length()));
+                return null;
+            });
+            return;
+        }
+        var target = onEdt(() -> {
+            var button = action(name);
+            assertTrue(button.isEnabled(), name);
+            return button;
         });
-        SwingUtilities.invokeLater(() -> ((AbstractButton) named(frame, name)).doClick(0));
+        SwingUtilities.invokeLater(() -> target.doClick(0));
+    }
+
+    AbstractButton action(String name) {
+        var direct = descendants(frame).filter(c -> name.equals(c.getName()) && c instanceof AbstractButton).findFirst();
+        if (direct.isPresent()) return (AbstractButton) direct.get();
+        ((AbstractButton) named(frame, "mods.more")).doClick(0);
+        return (AbstractButton) Arrays.stream(Window.getWindows()).filter(Window::isShowing).flatMap(PlatformWindowTest::descendants)
+            .filter(c -> name.equals(c.getName()) && c instanceof AbstractButton && c.isShowing()).findFirst().orElseThrow();
+    }
+
+    boolean actionEnabled(String name) {
+        var direct = descendants(frame).filter(c -> name.equals(c.getName()) && c instanceof AbstractButton).findFirst();
+        if (direct.isPresent()) return direct.get().isEnabled();
+        if (!named(frame, "mods.more").isEnabled()) return false;
+        ((AbstractButton) named(frame, "mods.more")).doClick(0);
+        boolean enabled = Arrays.stream(Window.getWindows()).filter(Window::isShowing).flatMap(PlatformWindowTest::descendants)
+            .anyMatch(c -> name.equals(c.getName()) && c instanceof AbstractButton && c.isShowing() && c.isEnabled());
+        MenuSelectionManager.defaultManager().clearSelectedPath();
+        return enabled;
+    }
+
+    boolean actionVisible(String name) {
+        if (!named(frame, "mods.more").isEnabled()) return false;
+        ((AbstractButton) named(frame, "mods.more")).doClick(0);
+        boolean visible = Arrays.stream(Window.getWindows()).filter(Window::isShowing).flatMap(PlatformWindowTest::descendants)
+            .anyMatch(c -> name.equals(c.getName()) && c instanceof AbstractButton && c.isShowing());
+        MenuSelectionManager.defaultManager().clearSelectedPath();
+        return visible;
     }
 
     void idle() throws Exception {
@@ -190,7 +226,8 @@ class PlatformModManagementTest {
     }
 
     String details() throws Exception {
-        return onEdt(() -> ((JTextArea) named(frame, "mods.details")).getText());
+        return onEdt(() -> (((JTextArea) named(frame, "mods.savedFacts")).getText() + "\n"
+            + ((JTextArea) named(frame, "mods.details")).getText()).strip());
     }
 
     String confirmation(JDialog dialog) throws Exception {
@@ -220,6 +257,7 @@ class PlatformModManagementTest {
     @Test
     void realDefaultPageReviewsWithoutWritingThenSavesAndWithdrawsOriginalRequest() throws Exception {
         development(false);
+        select(P);
         assertTrue(details().contains("未运行"));
         click("mods.enabled");
         click("mods.save");
@@ -284,6 +322,7 @@ class PlatformModManagementTest {
     @Test
     void lockClearsVisibleFactsAndInvalidatesAlreadyOpenConfirmationEvenAfterUnlock() throws Exception {
         development(false);
+        select(P);
         click("mods.enabled");
         click("mods.save");
         var confirm = dialog();
@@ -307,6 +346,7 @@ class PlatformModManagementTest {
     @Test
     void changedDecisionDuringConfirmationIsRejectedAndReloadedWithoutQueuedRetry() throws Exception {
         development(false);
+        select(P);
         click("mods.enabled");
         click("mods.save");
         var confirm = dialog();
@@ -329,9 +369,10 @@ class PlatformModManagementTest {
         runtime = fixture.open(true);
         fixture.start(runtime);
         window();
+        select(P);
         assertTrue(onEdt(() -> ((JCheckBox) named(frame, "mods.enabled")).isSelected()));
-        assertTrue(
-            onEdt(() -> ((JRadioButton) named(frame, "mods.version." + VERSION)).getText().contains("数据库未迁移成功")));
+        assertEquals(VERSION, onEdt(() -> ((JComboBox<?>) named(frame, "mods.versions")).getSelectedItem()));
+        assertTrue(details().contains("数据库未迁移成功"));
         onEdt(() -> {
             capture(frame, "platform-mods-failed.png");
             return null;
@@ -345,7 +386,7 @@ class PlatformModManagementTest {
         assertEquals("TRUE", text(runtime, "SELECT enabled FROM mod_registry"));
         assertEquals("FAILED", text(runtime, "SELECT last_runtime_state FROM mod_registry"));
         assertEquals(List.of("schema:initialize", "schema:validate"), fixture.actions());
-        assertFalse(onEdt(() -> named(frame, "mods.retry").isVisible()));
+        assertFalse(onEdt(() -> actionVisible("mods.retry")));
         assertTrue(onEdt(() -> ((JLabel) named(frame, "mods.status")).getText().contains("下次正常启动")));
         onEdt(() -> {
             capture(frame, "platform-mods-data-ready.png");
@@ -363,8 +404,9 @@ class PlatformModManagementTest {
         runtime = fixture.open(true);
         fixture.start(runtime);
         window();
-        assertTrue(onEdt(() -> named(frame, "mods.reconcile").isVisible()));
-        assertFalse(onEdt(() -> named(frame, "mods.retry").isVisible()));
+        select(P);
+        assertTrue(onEdt(() -> actionVisible("mods.reconcile")));
+        assertFalse(onEdt(() -> actionVisible("mods.retry")));
         click("mods.reconcile");
         answer(dialog(), true);
         idle();
@@ -384,6 +426,7 @@ class PlatformModManagementTest {
         runtime = fixture.open(true);
         fixture.start(runtime);
         window();
+        select(P);
         initial.module("valid", false);
         sql(runtime.persistence().database(),
             "ALTER TABLE runtime_log ADD CONSTRAINT management_archive_failure CHECK(event_code<>'MOD_SCHEMA_INITIALIZED')");
@@ -392,14 +435,14 @@ class PlatformModManagementTest {
         answer(dialog(), true);
         idle();
         assertEquals("PREPARING", text(runtime, "SELECT state FROM mod_schema"));
-        assertEquals("继续原操作收尾", onEdt(() -> ((JButton) named(frame, "mods.retry")).getText()));
+        assertEquals("继续原操作收尾", onEdt(() -> action("mods.retry").getText()));
         sql(runtime.persistence().database(), "ALTER TABLE runtime_log DROP CONSTRAINT management_archive_failure");
         click("mods.retry");
         idle();
         assertEquals("READY", text(runtime, "SELECT state FROM mod_schema"));
         assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
         assertEquals(List.of("schema:initialize", "schema:validate"), fixture.actions());
-        assertFalse(onEdt(() -> named(frame, "mods.retry").isVisible()));
+        assertFalse(onEdt(() -> actionVisible("mods.retry")));
     }
 
     @Test
@@ -414,6 +457,7 @@ class PlatformModManagementTest {
         release(runtime, P, "2.10.0", Map.of(), "2", List.of());
         release(runtime, P, "3.0.0", Map.of(), "3", List.of(edge("1", "3"), edge("2", "3")));
         window();
+        select(P);
         click("mods.version.3.0.0");
         click("mods.save");
         var source = dialog();

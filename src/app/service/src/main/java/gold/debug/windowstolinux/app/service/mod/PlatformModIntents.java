@@ -79,26 +79,122 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param id Mod identity / Mod 身份
      * @param name display name / 展示名
      * @param version canonical version / 规范版本
-     * @param schemaVersion optional data version / 可选数据版本 */
-    public record ReleaseInfo(String id, String name, String version, Optional<String> schemaVersion) {
+     * @param schemaVersion optional data version / 可选数据版本
+     * @param description author-declared description / 作者声明说明
+     * @param dependencies exact release dependencies / 精确发布依赖 */
+    public record ReleaseInfo(String id, String name, String version, Optional<String> schemaVersion,
+                              Optional<String> description, List<DependencyInfo> dependencies) {
         /** Requires explicit release facts. / 要求明确发布事实。
          * @param id identity / 身份
          * @param name name / 名称
          * @param version version / 版本
-         * @param schemaVersion data version / 数据版本 */
+         * @param schemaVersion data version / 数据版本
+         * @param description author description / 作者说明
+         * @param dependencies release dependencies / 发布依赖 */
         public ReleaseInfo {
             Objects.requireNonNull(id);
             Objects.requireNonNull(name);
             Objects.requireNonNull(version);
             Objects.requireNonNull(schemaVersion);
+            Objects.requireNonNull(description);
+            dependencies = List.copyOf(dependencies);
         }
+    }
+
+    /** Read-only dependency metadata for the selected release. / 所选发布的只读依赖元数据。
+     * @param id stable declared provider / 稳定声明提供方
+     * @param range exact author-declared version constraint / 精确作者声明版本约束
+     * @param optional whether the base function works without the provider / 缺少提供方时基础功能是否可用 */
+    public record DependencyInfo(String id, String range, boolean optional) {
     }
 
     /** Converts validated declarations to host observations. / 将已验证声明转为宿主观察。
      * @param manifest original declaration / 原声明
      * @return immutable release facts / 不可变发布事实 */
     private static ReleaseInfo releaseInfo(ModManifest manifest) {
-        return new ReleaseInfo(manifest.id(), manifest.name(), manifest.version().toString(), manifest.schemaVersion());
+        return new ReleaseInfo(manifest.id(), manifest.name(), manifest.version().toString(), manifest.schemaVersion(),
+            manifest.description(), manifest.dependencies().stream()
+            .map(value -> new DependencyInfo(value.id(), value.versionRange().toString(), value.optional())).toList());
+    }
+
+    /** One Mod's saved, not-yet-executed change; cancellation still owns its complete request. / 单个Mod已保存未执行的修改，撤销仍归属于完整原请求。
+     * @param requestId exact original cancellation group / 精确原撤销组
+     * @param operationId original Mod operation / 原 Mod 操作
+     * @param owner stable identity / 稳定身份
+     * @param name validated display name / 已验证展示名
+     * @param before original saved choice before the pending chain / 待执行链之前的原保存选择
+     * @param after latest saved target / 最新保存目标
+     * @param preparation verified data preparation summary, empty for none / 已验证数据准备摘要，无准备时为空
+     * @param affected currently retained members of the same request / 同一请求当前保留成员 */
+    public record PendingChange(UUID requestId, UUID operationId, String owner, String name, Choice before,
+                                Choice after, String preparation, List<String> affected) {
+        public PendingChange {
+            Objects.requireNonNull(requestId);
+            Objects.requireNonNull(operationId);
+            Objects.requireNonNull(owner);
+            Objects.requireNonNull(name);
+            Objects.requireNonNull(before);
+            Objects.requireNonNull(after);
+            Objects.requireNonNull(preparation);
+            affected = List.copyOf(affected);
+        }
+    }
+
+    /** Returns only validated WAIT_RESTART intentions, without exposing durable JSON. / 仅返回经核验的待重启意图，不暴露持久JSON。
+     * @return one immutable row per Mod / 每Mod一条不可变记录
+     * @throws ApiException if locked, closed or retained state is invalid / 锁定、关闭或保留状态无效时 */
+    public synchronized List<PendingChange> pendingChanges() throws ApiException {
+        requireOpen();
+        try (var permission = security.enterOperation()) {
+            return locked(c -> {
+                var state = read(c);
+                var result = new ArrayList<PendingChange>();
+                for (var item : state.pending().values()) {
+                    var manifest = selected(state, item.owner(), item.target());
+                    String preparation = preparationSummary(state, item, manifest);
+                    var affected = state.pending().values().stream()
+                        .filter(value -> value.requestId().equals(item.requestId())).map(Pending::owner).sorted().toList();
+                    result.add(new PendingChange(item.requestId(), item.id(), item.owner(), manifest.name(), item.base(),
+                        item.target(), preparation, affected));
+                }
+                result.sort(Comparator.comparing(PendingChange::owner));
+                return List.copyOf(result);
+            });
+        } catch (SQLException failure) {
+            throw publicFailure(failure);
+        }
+    }
+
+    /** Recomputes retained preparation facts from the exact selected declaration and data identity. / 根据精确所选声明与数据身份重新核验保留准备事实。
+     * @param state serialized management facts / 串行管理事实
+     * @param item original pending intention / 原待执行意图
+     * @param manifest validated selected declaration / 已验证所选声明
+     * @return safe summary, empty for a switch without data work / 安全摘要，无数据工作时为空
+     * @throws SQLException if persisted preparation differs from the original facts / 持久准备与原事实不符时 */
+    private static String preparationSummary(Snapshot state, Pending item, ModManifest manifest) throws SQLException {
+        try {
+            var data = JSON.readTree(item.json()).required("data");
+            if (!data.isObject()) throw new IllegalArgumentException();
+            if (data.isEmpty()) {
+                if (item.target().enabled()) throw new IllegalArgumentException();
+                return "";
+            }
+            String mode = data.path("mode").textValue();
+            SchemaIdentity source = "MIGRATE".equals(mode)
+                ? new SchemaIdentity(item.owner(), data.path("source").textValue(),
+                UUID.fromString(data.path("generation").textValue())) : null;
+            var expected = JSON.readTree(SchemaPreparation.plan(state, manifest, source));
+            if (!expected.equals(data)) throw new IllegalArgumentException();
+            return switch (mode) {
+                case "NONE" -> "";
+                case "INITIALIZE", "REUSE" -> mode + " · " + data.path("target").textValue();
+                case "MIGRATE" ->
+                    mode + " · " + data.path("source").textValue() + " → " + data.path("target").textValue();
+                default -> throw new IllegalArgumentException();
+            };
+        } catch (java.io.IOException | RuntimeException | SQLException invalid) {
+            throw rejected("MOD_PENDING_INVALID", "The retained preparation cannot be validated");
+        }
     }
 
     /** Registered release displayed independently of selection and runtime. / 独立于选择和运行展示的登记发布。

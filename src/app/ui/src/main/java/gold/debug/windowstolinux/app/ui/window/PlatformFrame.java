@@ -107,7 +107,19 @@ public final class PlatformFrame extends JFrame {
     private gold.debug.windowstolinux.app.ui.mod.ModStorePane store;
 
     /** Permanent installed and original package tabs. / 常驻已安装及原包标签页。 */
-    private final JTabbedPane modManagement = new JTabbedPane();
+    private final JTabbedPane modManagement = new PlatformNavigationShell.PageDeck();
+
+    private JComponent originalsPage;
+
+    private AutoCloseable shutdown;
+
+    private RestartActions restart;
+
+    private boolean runtimeClosed;
+
+    private Runnable restartExit = () -> System.exit(0);
+
+    private JDialog restartProgress;
 
     /** Whether source-mode composition has been supplied. / 是否已提供来源模式装配。 */
     private boolean originalsConfigured;
@@ -295,6 +307,10 @@ public final class PlatformFrame extends JFrame {
             if (key == null && content.getSelectedComponent() == extensions) showHome();
         });
         content.addChangeListener(event -> {
+            if (content.getSelectedComponent() != modManagement) {
+                if (mods != null) mods.leaveDetails();
+                if (store != null) store.leaveDetails();
+            }
             if (pendingStartupPage != null && content.getSelectedComponent() != home) pendingStartupPage = null;
             if (navigation != null) navigation.selected(content.getSelectedComponent() == extensions
                 ? extensions.selectedPage(false).orElse(null) : null);
@@ -376,9 +392,14 @@ public final class PlatformFrame extends JFrame {
                 content.setSelectedComponent(settingsViews.logs);
         }, navigation);
         modManagement.setName("mods.management");
+        ((PlatformNavigationShell.PageDeck) modManagement).beforeLeave((current, next) -> {
+            if (current == mods) mods.leaveDetails();
+            if (current == store && store != null) store.leaveDetails();
+            next.run();
+        });
         modManagement.addTab(messages.text("mods.installed"), messages.bind(mods, "mods.installed"));
         content.addTab("Mod", modManagement);
-        shell.register(modManagement, "shell.mods", "mod/archive", 30, false);
+        shell.register(modManagement, "shell.mods", "mod/puzzle", 30, false);
         navigation.setLocked(!security.securityState().unlocked());
         mods.setLocked(!security.securityState().unlocked());
         appearance.modOrderService = service;
@@ -402,7 +423,8 @@ public final class PlatformFrame extends JFrame {
             var sourceNotice = appearance.components.card(new BorderLayout());
             sourceNotice.setName("mods.originals_class_mode");
             sourceNotice.add(messages.bind(notice, "originals.classMode"));
-            modManagement.addTab(messages.text("originals.title"), messages.bind(sourceNotice, "originals.title"));
+            originalsPage = originalSurface(sourceNotice);
+            modManagement.addTab(messages.text("originals.title"), messages.bind(originalsPage, "originals.title"));
             return;
         }
         originals = new gold.debug.windowstolinux.app.ui.mod.ModOriginalsPane(service.orElseThrow(),
@@ -411,9 +433,10 @@ public final class PlatformFrame extends JFrame {
                 content.setSelectedComponent(settingsViews.logs);
         });
         mods.installMaintenance(service.orElseThrow(), originals::refresh);
-        modManagement.addTab(messages.text("originals.title"), messages.bind(originals, "originals.title"));
+        originalsPage = originalSurface(originals);
+        modManagement.addTab(messages.text("originals.title"), messages.bind(originalsPage, "originals.title"));
         javax.swing.event.ChangeListener refresh = event -> {
-            if (content.getSelectedComponent() == modManagement && modManagement.getSelectedComponent() == originals)
+            if (content.getSelectedComponent() == modManagement && modManagement.getSelectedComponent() == originalsPage)
                 originals.refresh();
         };
         content.addChangeListener(refresh);
@@ -432,7 +455,28 @@ public final class PlatformFrame extends JFrame {
                 if (originals != null) originals.refresh();
             });
         modManagement.addTab(messages.text("store.title"), messages.bind(store, "store.title"));
+        mods.workspaceActions(() -> modManagement.setSelectedComponent(store), () -> {
+            if (originalsPage != null) modManagement.setSelectedComponent(originalsPage);
+        }, owner -> {
+            modManagement.setSelectedComponent(store);
+            store.selectOwner(owner);
+        }, this::restartApplication);
+        store.workspaceActions(() -> modManagement.setSelectedComponent(mods));
         store.setLocked(!security.securityState().unlocked());
+    }
+
+    private JComponent originalSurface(JComponent body) {
+        var result = appearance.components.transparent(new BorderLayout(0, 8));
+        result.setName(body.getName());
+        body.setName(body.getName() + ".content");
+        var back = messages.bind(appearance.components.secondaryButton(""), "modui.backInstalled");
+        back.setName("modui.backInstalled");
+        back.addActionListener(event -> modManagement.setSelectedComponent(mods));
+        var header = appearance.components.transparent(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT));
+        header.add(back);
+        result.add(header, BorderLayout.NORTH);
+        result.add(body, BorderLayout.CENTER);
+        return result;
     }
 
     /** Focuses the existing outer surface after an explicit page open, including author requests. / 明确打开页面后聚焦已有外层界面，包括作者请求。
@@ -587,6 +631,7 @@ public final class PlatformFrame extends JFrame {
      */
     public void onExit(AutoCloseable shutdown) {
         Objects.requireNonNull(shutdown);
+        this.shutdown = shutdown;
         lock.onExit(() -> {
             if (closing)
                 return;
@@ -624,6 +669,149 @@ public final class PlatformFrame extends JFrame {
                 }
             }.execute();
         });
+    }
+
+    /** Internal lifecycle adapter, without exposing process control to Mods. / 不向Mod暴露进程控制的内部生命周期适配。 */
+    public interface RestartActions extends AutoCloseable {
+        void prepare() throws Exception;
+
+        void start() throws Exception;
+
+        RestartStatus status() throws Exception;
+
+        boolean retryable();
+
+        void close() throws Exception;
+    }
+
+    public enum RestartStatus {WAITING, READY, FAILED}
+
+    public void onRestart(RestartActions actions) {
+        if (restart != null) throw new IllegalStateException("Restart must be composed once");
+        restart = Objects.requireNonNull(actions);
+    }
+
+    /** Saves already-reviewed lifecycle state and starts only after confirmed shutdown. / 仅在确认关闭后启动新实例。 */
+    public void restartApplication() {
+        if (closing || restart == null || shutdown == null || !security.securityState().unlocked()) return;
+        closing = true;
+        gold.debug.windowstolinux.app.ui.control.CardEditGate.save(this).whenComplete((saved, failure) ->
+            SwingUtilities.invokeLater(() -> {
+                if (failure != null || !Boolean.TRUE.equals(saved)) {
+                    closing = false;
+                    return;
+                }
+                var location = currentPage();
+                showRestartProgress();
+                new SwingWorker<Void, Void>() {
+                    protected Void doInBackground() throws Exception {
+                        restart.prepare();
+                        rememberPage.save(location);
+                        shutdown.close();
+                        runtimeClosed = true;
+                        restart.start();
+                        while (true) {
+                            var status = restart.status();
+                            if (status == RestartStatus.READY) return null;
+                            if (status == RestartStatus.FAILED)
+                                throw new IllegalStateException(messages.text("modui.restart.failed"));
+                            Thread.sleep(250);
+                        }
+                    }
+
+                    protected void done() {
+                        hideRestartProgress();
+                        try {
+                            get();
+                            restart.close();
+                            dispose();
+                            restartExit.run();
+                        } catch (Exception problem) {
+                            if (!runtimeClosed) {
+                                try {
+                                    restart.close();
+                                } catch (Exception cleanup) {
+                                    problem.addSuppressed(cleanup);
+                                }
+                                closing = false;
+                                JOptionPane.showMessageDialog(PlatformFrame.this, messages.safe(problem),
+                                    messages.text("modui.restart.title"), JOptionPane.ERROR_MESSAGE);
+                            } else restartFailure(problem);
+                        }
+                    }
+                }.execute();
+            }));
+    }
+
+    private void restartFailure(Exception problem) {
+        var retry = messages.text("modui.restart.retry");
+        var exit = messages.text("modui.restart.exit");
+        Object[] options = restart.retryable() ? new Object[]{retry, exit} : new Object[]{exit};
+        int answer = JOptionPane.showOptionDialog(this, messages.safe(problem), messages.text("modui.restart.title"),
+            JOptionPane.DEFAULT_OPTION, JOptionPane.ERROR_MESSAGE, null, options, options[0]);
+        if (restart.retryable() && answer == 0) {
+            showRestartProgress();
+            new SwingWorker<Void, Void>() {
+                protected Void doInBackground() throws Exception {
+                    restart.prepare();
+                    restart.start();
+                    while (true) {
+                        var state = restart.status();
+                        if (state == RestartStatus.READY) return null;
+                        if (state == RestartStatus.FAILED)
+                            throw new IllegalStateException(messages.text("modui.restart.failed"));
+                        Thread.sleep(250);
+                    }
+                }
+
+                protected void done() {
+                    hideRestartProgress();
+                    try {
+                        get();
+                        restart.close();
+                        dispose();
+                        restartExit.run();
+                    } catch (Exception failure) {
+                        restartFailure(failure);
+                    }
+                }
+            }.execute();
+        } else {
+            try {
+                restart.close();
+            } catch (Exception failure) {
+                reportsRecord(failure);
+            }
+            dispose();
+            restartExit.run();
+        }
+    }
+
+    private void reportsRecord(Exception failure) {
+        feedback.logIssue.setText(messages.safe(failure));
+    }
+
+    private void showRestartProgress() {
+        restartProgress = new JDialog(this, messages.text("modui.restart.title"), java.awt.Dialog.ModalityType.DOCUMENT_MODAL);
+        restartProgress.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        var body = appearance.components.transparent(new BorderLayout(12, 12));
+        body.setBorder(BorderFactory.createEmptyBorder(24, 28, 24, 28));
+        body.add(messages.bind(new JLabel(), "modui.restart.waiting"), BorderLayout.NORTH);
+        var progress = new JProgressBar();
+        progress.setIndeterminate(true);
+        body.add(progress, BorderLayout.CENTER);
+        restartProgress.add(body);
+        restartProgress.pack();
+        restartProgress.setLocationRelativeTo(this);
+        var dialog = restartProgress;
+        SwingUtilities.invokeLater(() -> {
+            if (restartProgress == dialog) dialog.setVisible(true);
+        });
+    }
+
+    private void hideRestartProgress() {
+        if (restartProgress != null) restartProgress.dispose();
+        restartProgress = null;
     }
 
     /** Installs the normal-close page writer without reading preferences on the EDT. / 安装正常关闭页面写入器，不在 EDT 读取偏好。

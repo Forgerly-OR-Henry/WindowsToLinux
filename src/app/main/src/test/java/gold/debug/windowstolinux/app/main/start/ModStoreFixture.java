@@ -165,8 +165,28 @@ public final class ModStoreFixture implements AutoCloseable {
      * @throws Exception if actual fixture writing fails / 实际夹具写入失败时 */
     public synchronized ReleaseKey publish(String owner, String version, Map<String, String> required, Map<String, String> optional,
                                            Map<String, String> purposes, int javaVersion, String apiRange) throws Exception {
+        return publish(owner, version, required, optional, purposes, javaVersion, apiRange, owner, "Actual controlled store fixture");
+    }
+
+    /** Publishes the same named manifest in both archive and HTTP catalog. / 在归档与HTTP目录中发布相同的具名清单。
+     * @param owner exact identity / 精确身份
+     * @param version exact release / 精确发布
+     * @param required required ranges / 必需范围
+     * @param optional optional ranges / 可选范围
+     * @param purposes declared purposes / 声明用途
+     * @param javaVersion Java requirement / Java要求
+     * @param apiRange host API requirement / 宿主API要求
+     * @param name actual display name / 实际展示名
+     * @param description actual description / 实际描述
+     * @return published release / 已发布版本
+     * @throws Exception if package publication fails / 包发布失败时 */
+    public synchronized ReleaseKey publish(String owner, String version, Map<String, String> required, Map<String, String> optional,
+                                           Map<String, String> purposes, int javaVersion, String apiRange,
+                                           String name, String description) throws Exception {
         var key = new ReleaseKey(owner, version);
         var manifest = manifest(owner, version, required, optional, javaVersion, apiRange);
+        manifest.put("name", name);
+        manifest.put("description", description);
         Path file = remote.resolve(owner + "-" + version + ".wtlmod");
         var entries = new LinkedHashMap<String, byte[]>();
         entries.put("mod.json", JSON.writeValueAsBytes(manifest));
