@@ -19,7 +19,7 @@ final class ModCatalogSurface extends JPanel {
 
     private final PageMessagePresenter messages;
 
-    private final JPanel left, right, heading, footerHost;
+    private final JPanel left, right, leftBody, rightBody, heading, footerHost;
 
     private final JPanel catalogHeader, titleLine, searchLine, caption;
 
@@ -53,8 +53,14 @@ final class ModCatalogSurface extends JPanel {
         this.search = search;
         setLayout(null);
         setOpaque(false);
-        left = components.transparent(new BorderLayout(0, UIScale.scale(8)));
-        right = components.transparent(new BorderLayout(0, UIScale.scale(12)));
+        left = components.outerCard(new BorderLayout(0, UIScale.scale(18)));
+        right = components.outerCard(new BorderLayout(0, UIScale.scale(18)));
+        left.setName(storeMode ? "store.inventoryCard" : "mods.inventoryCard");
+        right.setName(storeMode ? "store.detailCard" : "mods.detailCard");
+        leftBody = components.transparent(new BorderLayout(0, UIScale.scale(8)));
+        rightBody = components.transparent(new BorderLayout(0, UIScale.scale(12)));
+        left.add(leftBody, BorderLayout.CENTER);
+        right.add(rightBody, BorderLayout.CENTER);
         footerHost = components.transparent(new BorderLayout());
         heading = components.transparent(new BorderLayout(UIScale.scale(8), 0));
         catalogHeader = components.transparent(new BorderLayout(0, UIScale.scale(12)));
@@ -96,11 +102,12 @@ final class ModCatalogSurface extends JPanel {
         searchLine.add(search, BorderLayout.CENTER);
         searchLine.add(refresh, BorderLayout.EAST);
         catalogHeader.add(searchLine, BorderLayout.SOUTH);
-        left.add(catalogHeader, BorderLayout.NORTH);
+        leftBody.add(catalogHeader, BorderLayout.NORTH);
+        components.cardInventory(list);
         var listScroll = new JScrollPane(list);
         listScroll.setBorder(BorderFactory.createEmptyBorder());
         listScroll.setName(storeMode ? "store.inventoryScroll" : "mods.inventoryScroll");
-        left.add(listScroll, BorderLayout.CENTER);
+        leftBody.add(listScroll, BorderLayout.CENTER);
         var icon = new JLabel(DesktopIcons.icon("mod/puzzle", 32,
             () -> UIManager.getColor("Component.accentColor")));
         heading.add(icon, BorderLayout.WEST);
@@ -117,7 +124,7 @@ final class ModCatalogSurface extends JPanel {
         var collapseBox = components.transparent(new java.awt.GridBagLayout());
         collapseBox.add(collapse);
         heading.add(collapseBox, BorderLayout.EAST);
-        right.add(heading, BorderLayout.NORTH);
+        rightBody.add(heading, BorderLayout.NORTH);
         detailScroll = new JScrollPane();
         detailScroll.setName(storeMode ? "store.detailScroll" : "mods.detailScroll");
         detailScroll.setBorder(BorderFactory.createEmptyBorder());
@@ -125,10 +132,10 @@ final class ModCatalogSurface extends JPanel {
         detailScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
         detailScroll.getVerticalScrollBar().putClientProperty("desktop.inventory.scrollbar", true);
         detailScroll.getVerticalScrollBar().setUnitIncrement(UIScale.scale(20));
-        right.add(detailScroll, BorderLayout.CENTER);
+        components.cardScroll(detailScroll);
+        rightBody.add(detailScroll, BorderLayout.CENTER);
         add(left);
         add(right);
-        add(footerHost);
         expanded(false);
     }
 
@@ -163,12 +170,19 @@ final class ModCatalogSurface extends JPanel {
     void footer(JComponent footer) {
         footerHost.removeAll();
         footerHost.add(footer, BorderLayout.CENTER);
+        footerHost.setVisible(true);
         revalidate();
     }
 
     void expanded(boolean value) {
         expanded = value;
         right.setVisible(value);
+        var owner = value ? right : left;
+        if (footerHost.getParent() != owner) {
+            if (footerHost.getParent() != null) footerHost.getParent().remove(footerHost);
+            owner.add(footerHost, BorderLayout.SOUTH);
+        }
+        footerHost.setVisible(footerHost.getComponentCount() != 0);
         revalidate();
         repaint();
     }
@@ -184,25 +198,27 @@ final class ModCatalogSurface extends JPanel {
         int leftWidth = expanded ? Math.max(0, (int) Math.round((width - gap) * .4)) : width;
         if (expanded) {
             int maximum = Math.max(0, width - gap - UIScale.scale(280));
-            leftWidth = Math.min(maximum, Math.max(leftWidth, titleLine.getPreferredSize().width));
+            var cardInsets = left.getInsets();
+            leftWidth = Math.min(maximum, Math.max(leftWidth,
+                titleLine.getPreferredSize().width + cardInsets.left + cardInsets.right));
         }
         int rightX = x + leftWidth + gap;
         int rightWidth = Math.max(0, width - leftWidth - gap);
-        int footerWidth = expanded ? rightWidth : width;
+        left.setBounds(x, y, leftWidth, height);
+        right.setBounds(rightX, y, rightWidth, height);
+        var owner = expanded ? right : left;
+        var cardInsets = owner.getInsets();
+        int footerWidth = Math.max(0, owner.getWidth() - cardInsets.left - cardInsets.right);
         footerHost.setSize(footerWidth, Math.max(1, footerHost.getHeight()));
         footerHost.doLayout();
-        int footerHeight = footerHost.getComponentCount() == 0 ? 0 : Math.min(height, footerHost.getPreferredSize().height);
-        int bodyHeight = Math.max(0, height - footerHeight - (footerHeight == 0 ? 0 : gap));
-        left.setBounds(x, y, leftWidth, expanded ? height : bodyHeight);
         heading.setPreferredSize(new Dimension(0, catalogHeader.getPreferredSize().height));
-        right.setBounds(rightX, y, rightWidth, bodyHeight);
-        footerHost.setBounds(expanded ? rightX : x, y + height - footerHeight,
-            expanded ? rightWidth : width, footerHeight);
     }
 
     private void updateGaps() {
-        ((BorderLayout) left.getLayout()).setVgap(UIScale.scale(8));
-        ((BorderLayout) right.getLayout()).setVgap(UIScale.scale(12));
+        ((BorderLayout) left.getLayout()).setVgap(UIScale.scale(18));
+        ((BorderLayout) right.getLayout()).setVgap(UIScale.scale(18));
+        ((BorderLayout) leftBody.getLayout()).setVgap(UIScale.scale(8));
+        ((BorderLayout) rightBody.getLayout()).setVgap(UIScale.scale(12));
         ((BorderLayout) heading.getLayout()).setHgap(UIScale.scale(8));
         ((BorderLayout) catalogHeader.getLayout()).setVgap(UIScale.scale(12));
         ((BorderLayout) titleLine.getLayout()).setHgap(UIScale.scale(8));

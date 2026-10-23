@@ -241,6 +241,54 @@ public final class DesktopPartFactory {
         return DesktopThemeBindings.role(card, "card");
     }
 
+    /** Creates an explicitly opted-in outer card with scalable, retained padding. / 创建显式接入且内距可缩放并保留的外卡片。
+     * @param layout retained content layout / 保留的内容布局
+     * @return shared outer surface / 共用外层表面 */
+    public JPanel outerCard(LayoutManager layout) {
+        var card = card(layout);
+        card.setBorder(BorderFactory.createCompoundBorder(null,
+            new com.formdev.flatlaf.ui.FlatEmptyBorder(14, 16, 14, 16)));
+        return card;
+    }
+
+    /** Creates an inner content section whose outline uses the page surface. / 创建以页面底色描边的内层内容分区。
+     * @param layout retained content layout / 保留的内容布局
+     * @return rounded section with scalable padding / 带可缩放内距的圆角分区 */
+    public JPanel outlinedCard(LayoutManager layout) {
+        var card = (RoundedCard) outerCard(layout);
+        card.outlineColor(palette.pageBackground());
+        return DesktopThemeBindings.role(card, "outlined-card");
+    }
+
+    /** Opts one inventory into an outer card without altering its model or gestures. / 将单个清单接入外卡片，不改变模型或手势。
+     * @param inventory original object list or card table / 原对象清单或卡片表格 */
+    public void cardInventory(JComponent inventory) {
+        if (!(inventory instanceof javax.swing.JList<?>) && !(inventory instanceof javax.swing.JTable))
+            throw new IllegalArgumentException("An inventory must be a list or table");
+        DesktopThemeBindings.role(inventory, "card-inventory");
+        inventory.putClientProperty(gold.debug.windowstolinux.app.ui.display.DesktopListCard.OUTLINED, true);
+        inventory.setBackground(palette.cardBackground());
+        if (inventory.getParent() instanceof javax.swing.JViewport viewport
+            && viewport.getParent() instanceof JScrollPane scroll)
+            DesktopThemeBindings.scrollSurface(scroll, palette);
+        inventory.repaint();
+    }
+
+    /** Binds a detail viewport and its root content to the surrounding card. / 将详情视口及根内容绑定到所属卡片。
+     * @param scroll original scroll pane / 原滚动面板 */
+    public void cardScroll(JScrollPane scroll) {
+        DesktopThemeBindings.role(scroll, "card-scroll");
+        DesktopThemeBindings.cardScroll(scroll, palette);
+    }
+
+    /** Separates fields inside a card using exactly the page background. / 在卡片内部以页面底色分隔字段。
+     * @return locally themed field divider / 局部主题字段分隔线 */
+    public JSeparator cardDivider() {
+        var divider = new JSeparator();
+        divider.setForeground(palette.pageBackground());
+        return DesktopThemeBindings.role(divider, "card-divider");
+    }
+
     /** Separates related detail rows within one surface. / 在同一内容块内分隔关联的详情行。
      * @return theme-aware subtle line / 随主题更新的浅分隔线 */
     public JSeparator divider() {

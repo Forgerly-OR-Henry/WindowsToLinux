@@ -2,7 +2,6 @@ package gold.debug.windowstolinux.app.ui.control;
 
 import java.awt.Component;
 import java.awt.Container;
-import java.awt.Color;
 
 import javax.swing.JComponent;
 
@@ -43,11 +42,28 @@ final class DesktopThemeBindings {
      * @param palette current palette / 当前配色
      * @param primary primary action / 是否主要操作 */
     static void button(JComponent component, ThemePalette palette, boolean primary) {
-        component.setBackground(primary ? palette.accent() : palette.secondaryButtonBackground());
-        component.setForeground(primary ? Color.WHITE : palette.secondaryButtonForeground());
-        component.putClientProperty("FlatLaf.style", java.util.Map.of("arc", 8, "borderWidth", 0, "focusWidth", 1,
-            "hoverBackground", primary ? palette.accentDark() : palette.navigationActive(),
-            "pressedBackground", primary ? palette.accentDark() : palette.navigationActive()));
+        DesktopButtonStyle.action((javax.swing.JButton) component, palette, primary);
+    }
+
+    /** Keeps existing scroll models and view position while changing the local surface. / 更换局部表面时保留滚动模型及视图位置。 */
+    static void cardScroll(javax.swing.JScrollPane scroll, ThemePalette palette) {
+        scroll.putClientProperty(gold.debug.windowstolinux.app.ui.display.DesktopScrollPaneUi.CARD_SURFACE, true);
+        scrollSurface(scroll, palette);
+        scroll.setBorder(javax.swing.BorderFactory.createEmptyBorder());
+        if (scroll.getViewport() != null
+            && scroll.getViewport().getView() instanceof javax.swing.JPanel content) {
+            content.setBackground(palette.cardBackground());
+            if (!"outlined-card".equals(content.getClientProperty(ROLE))) role(content, "card");
+        }
+    }
+
+    /** Reapplies local colors after Swing has updated child UI delegates. / Swing 更新子控件绘制器后重新应用局部颜色。 */
+    static void scrollSurface(javax.swing.JScrollPane scroll, ThemePalette palette) {
+        scroll.setBackground(palette.cardBackground());
+        if (scroll.getViewport() != null)
+            scroll.getViewport().setBackground(palette.cardBackground());
+        for (var bar : new javax.swing.JScrollBar[]{scroll.getVerticalScrollBar(), scroll.getHorizontalScrollBar()})
+            if (bar != null) bar.setBackground(palette.cardBackground());
     }
 
     /** Refreshes only factory-declared palette roles, without comparing old colors. / 仅刷新工厂声明的配色角色，不比较旧颜色。
@@ -59,10 +75,16 @@ final class DesktopThemeBindings {
         if (root instanceof JComponent component && component.getClientProperty(ROLE) instanceof String role) {
             switch (role) {
                 case "page" -> component.setBackground(palette.pageBackground());
-                case "card", "output" -> {
+                case "card", "output", "card-inventory", "outlined-card" -> {
                     component.setBackground(palette.cardBackground());
                     component.setForeground(palette.sidebarForeground());
+                    if (role.equals("outlined-card"))
+                        ((RoundedCard) component).outlineColor(palette.pageBackground());
+                    if (role.equals("card-inventory") && component.getParent() instanceof javax.swing.JViewport viewport
+                        && viewport.getParent() instanceof javax.swing.JScrollPane scroll)
+                        scrollSurface(scroll, palette);
                 }
+                case "card-scroll" -> cardScroll((javax.swing.JScrollPane) component, palette);
                 case "primary" -> {
                     button(component, palette, true);
                 }
@@ -77,6 +99,7 @@ final class DesktopThemeBindings {
                 case "detail" -> component.setForeground(palette.subduedText());
                 case "number" -> component.setForeground(palette.accent());
                 case "divider" -> component.setForeground(palette.cardBorder());
+                case "card-divider" -> component.setForeground(palette.pageBackground());
                 case "scroll" -> {
                     component.setBorder(javax.swing.BorderFactory.createEmptyBorder());
                     if (component instanceof javax.swing.JScrollPane scroll)

@@ -27,6 +27,8 @@ class ModCatalogSurfaceTest {
                             fixture.surface().expanded(details);
                             layout(fixture.surface());
                             var scroll = find(fixture.surface(), "store.inventoryScroll", JScrollPane.class);
+                            var inventoryCard = find(fixture.surface(), "store.inventoryCard", JPanel.class);
+                            var detailCard = find(fixture.surface(), "store.detailCard", JPanel.class);
                             var bar = scroll.getVerticalScrollBar();
                             var modes = find(fixture.surface(), "modui.modes", JPanel.class);
                             assertTrue(bar.isVisible());
@@ -34,6 +36,16 @@ class ModCatalogSurfaceTest {
                             assertEquals(UIScale.scale(12), bar.getWidth());
                             assertEquals(edge(fixture.surface(), bar), edge(fixture.surface(), fixture.refresh()));
                             assertEquals(edge(fixture.surface(), modes), edge(fixture.surface(), fixture.refresh()));
+                            assertEquals(edge(fixture.surface(), inventoryCard) - inventoryCard.getInsets().right,
+                                edge(fixture.surface(), fixture.refresh()));
+                            assertEquals(UIScale.scale(14), inventoryCard.getInsets().top);
+                            assertEquals(UIScale.scale(16), inventoryCard.getInsets().right);
+                            assertTrue(SwingUtilities.isDescendingFrom(fixture.actions(), details ? detailCard : inventoryCard));
+                            var palette = theme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light();
+                            assertEquals(palette.cardBackground(), inventoryCard.getBackground());
+                            assertEquals(palette.cardBackground(), detailCard.getBackground());
+                            assertEquals(palette.cardBackground(), fixture.list().getBackground());
+                            assertEquals(palette.cardBackground(), scroll.getViewport().getBackground());
                             assertEquals(UIScale.scale(12), bar.getX() - scroll.getViewport().getX() - scroll.getViewport().getWidth());
                             var fixedSearch = SwingUtilities.convertPoint(fixture.search(), 0, 0, fixture.surface());
                             scroll.getVerticalScrollBar().setValue(UIScale.scale(100));
@@ -75,11 +87,19 @@ class ModCatalogSurfaceTest {
             var detailBottom = SwingUtilities.convertPoint(details, 0, details.getHeight(), fixture.surface());
             var actionTop = SwingUtilities.convertPoint(fixture.actions(), 0, 0, fixture.surface());
             assertTrue(detailBottom.y + UIScale.scale(18) <= actionTop.y);
-            assertEquals(fixture.surface().getWidth() - fixture.surface().getInsets().right, edge(fixture.surface(), fixture.actions()));
+            var detailCard = find(fixture.surface(), "store.detailCard", JPanel.class);
+            assertEquals(edge(fixture.surface(), detailCard) - detailCard.getInsets().right,
+                edge(fixture.surface(), fixture.actions()));
+            var actionBottom = SwingUtilities.convertPoint(fixture.actions(), 0, fixture.actions().getHeight(), detailCard);
+            assertEquals(detailCard.getHeight() - detailCard.getInsets().bottom, actionBottom.y);
+            int fixedActionY = actionTop.y;
+            details.getVerticalScrollBar().setValue(UIScale.scale(80));
+            layout(fixture.surface());
+            assertEquals(fixedActionY, SwingUtilities.convertPoint(fixture.actions(), 0, 0, fixture.surface()).y);
             fixture.surface().expanded(false);
             layout(fixture.surface());
             assertEquals(wideHeight, fixture.actions().getHeight());
-            assertFalse(details.getParent().isVisible());
+            assertFalse(detailCard.isVisible());
         });
     }
 
@@ -107,8 +127,11 @@ class ModCatalogSurfaceTest {
                 assertEquals(0, fixture.list().getSelectedIndex());
                 assertEquals(listenerCount, store.getActionListeners().length);
                 var scroll = find(surface, "store.inventoryScroll", JScrollPane.class);
+                var inventoryCard = find(surface, "store.inventoryCard", JPanel.class);
                 assertEquals(UIScale.scale(12), scroll.getViewportBorder().getBorderInsets(scroll).right);
                 assertEquals(UIScale.scale(12), scroll.getVerticalScrollBar().getWidth());
+                assertEquals(UIScale.scale(16), inventoryCard.getInsets().right);
+                assertEquals(UIScale.scale(14), inventoryCard.getInsets().top);
                 assertTrue(find(surface, "modui.store", JToggleButton.class).isSelected());
             }
             assertLiteral(surface);

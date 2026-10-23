@@ -40,8 +40,9 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
         public void doLayout() {
             if (purpose != null) {
                 var grid = (GridBagLayout) getLayout();
-                int available = Math.max(1, getWidth() - arrows.getPreferredSize().width - 24);
-                int right = Math.max(available / 2, roles.getPreferredSize().width);
+                int available = Math.max(1, getWidth() - arrows.getPreferredSize().width - UIScale.scale(24));
+                var inset = editor.getInsets();
+                int right = Math.max(available / 2, roles.getPreferredSize().width + inset.left + inset.right);
                 var leftConstraints = grid.getConstraints(left);
                 leftConstraints.weightx = Math.max(0, available - right);
                 grid.setConstraints(left, leftConstraints);
@@ -51,10 +52,11 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
             }
             super.doLayout();
         }
-    }, left = new JPanel(new BorderLayout(0, 14)),
-        leftTools = new JPanel(new BorderLayout(8, 0)), editor = new JPanel(new BorderLayout(0, 14)),
+    }, leftTools = new JPanel(new BorderLayout(8, 0)),
         roles = new JPanel(new GridLayout(1, 4, 6, 0)), arrows = new JPanel(new GridLayout(2, 1, 0, 10)),
         heading = new JPanel(new GridBagLayout());
+
+    private final JPanel left, editor;
 
     private final JLabel title = new JLabel(), count = new JLabel(), status = new JLabel();
 
@@ -91,6 +93,10 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
         this.messages = messages;
         this.edit = edit;
         this.details = details;
+        left = c.outerCard(new BorderLayout(0, 14));
+        left.setName("ai.inventory.surface");
+        editor = c.outerCard(new BorderLayout(0, 14));
+        editor.setName("ai.purpose.surface");
         for (var panel : List.of(this, columns, left, leftTools, editor, roles, arrows, heading))
             panel.setOpaque(false);
         order = new CardOrderSession<>(this, messages, (expected, requested) -> {
@@ -119,6 +125,8 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
         selected.setCellRenderer(renderer(true));
         c.cardList(inventory, true);
         c.cardList(selected, true);
+        c.cardInventory(inventory);
+        c.cardInventory(selected);
         inventoryScroll.setBorder(BorderFactory.createEmptyBorder());
         purposeScroll.setBorder(BorderFactory.createEmptyBorder());
         installOrder(inventory, false);

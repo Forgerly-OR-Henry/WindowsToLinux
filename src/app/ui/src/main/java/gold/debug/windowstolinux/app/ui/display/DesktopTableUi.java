@@ -61,8 +61,7 @@ public final class DesktopTableUi extends FlatTableUI {
             var renderer = original == null ? table.getDefaultRenderer(table.getColumnClass(column)) : original;
             Component content = renderer.getTableCellRendererComponent(table, value, selected, focused, row, column);
             if (!DesktopCardSupport.isCardView(table)) return content;
-            var card = DesktopListCard.row(content, selected, DesktopListCard.isDraggable(table));
-            card.putClientProperty(DesktopListCard.OWNER, table);
+            var card = DesktopListCard.row(content, selected, DesktopListCard.isDraggable(table), table);
             card.setSize(table.getCellRect(row, column, false).getSize());
             return card;
         }

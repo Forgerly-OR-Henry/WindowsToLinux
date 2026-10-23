@@ -18,6 +18,9 @@ public final class DesktopListCard extends JPanel {
 
     public static final String DRAGGABLE = "desktop.inventory.draggable";
 
+    /** Explicitly opts a list into the inner-card outline. / 显式启用清单的内层卡片轮廓。 */
+    public static final String OUTLINED = "desktop.inventory.outlined";
+
     private static final String GRIP = "desktop.inventory.grip";
 
     /** Original selection state for this renderer invocation. / 本次渲染的原选择状态。 */
@@ -78,6 +81,13 @@ public final class DesktopListCard extends JPanel {
         row.putClientProperty(ROW, card);
         row.add(card);
         if (content instanceof JComponent component) row.setToolTipText(component.getToolTipText());
+        return row;
+    }
+
+    /** Retains the same owning inventory for regular and drag-preview rendering. / 普通渲染和拖动预览保留同一所属清单。 */
+    public static JComponent row(Component content, boolean selected, boolean draggable, JComponent owner) {
+        var row = row(content, selected, draggable);
+        row.putClientProperty(OWNER, owner);
         return row;
     }
 
@@ -159,6 +169,17 @@ public final class DesktopListCard extends JPanel {
             g.setColor(UIManager.getColor(selected && available ? "List.selectionBackground"
                 : available ? "List.cardBackground" : "Button.disabledBackground"));
             g.fill(outline());
+            if (getParent() instanceof JComponent row
+                && row.getClientProperty(OWNER) instanceof JComponent owner
+                && Boolean.TRUE.equals(owner.getClientProperty(OUTLINED))) {
+                float width = UIScale.scale(1f);
+                float inset = width / 2;
+                float arc = UIScale.scale(24f);
+                g.setStroke(new BasicStroke(width));
+                g.setColor(UIManager.getColor("Panel.background"));
+                g.draw(new RoundRectangle2D.Float(inset, inset, getWidth() - width,
+                    getHeight() - width, arc - width, arc - width));
+            }
             if (selected) {
                 g.clip(outline());
                 g.setColor(UIManager.getColor("Component.focusColor"));

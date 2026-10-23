@@ -270,7 +270,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     }
 
     private JPanel section(String key, JComponent body) {
-        var card = components.card(new BorderLayout(0, UIScale.scale(12)));
+        var card = components.outlinedCard(new BorderLayout(0, UIScale.scale(12)));
         var title = messages.bind(new ModTextLabel("", 18, true, false), key);
         card.add(title, BorderLayout.NORTH);
         card.add(body);
@@ -572,7 +572,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                 });
                 row.add(jump, BorderLayout.EAST);
                 dependencies.add(row);
-                if (declared.indexOf(dependency) < declared.size() - 1) dependencies.add(components.divider());
+                if (declared.indexOf(dependency) < declared.size() - 1) dependencies.add(components.cardDivider());
             }
             if (declared.isEmpty()) dependencies.add(messages.bind(new JLabel(), "modui.noDependencies"));
         }

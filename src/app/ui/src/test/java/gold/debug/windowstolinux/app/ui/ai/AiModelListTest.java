@@ -88,6 +88,8 @@ class AiModelListTest {
                         return sizes;
                     });
                     var robot = new Robot();
+                    robot.setAutoDelay(40);
+                    robot.waitForIdle();
                     click(robot, inventory, 0);
                     assertNotNull(edt(() -> field(pane.get(), "detailId", String.class)));
                     assertNull(edt(() -> find(pane.get(), "ai.open.DEPLOYMENT", JButton.class)));

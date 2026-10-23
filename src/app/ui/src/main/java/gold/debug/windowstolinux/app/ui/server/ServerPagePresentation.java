@@ -73,6 +73,9 @@ final class ServerPagePresentation extends JPanel {
     /** Independent viewports keep the inventory header fixed. / 独立视口保持清单标题固定。 */
     private final JScrollPane detailScroll;
 
+    /** Outer detail surface owns padding outside its original viewport. / 详情外表面在原视口外统一管理内边距。 */
+    private final JPanel detailRegion;
+
     /** Selection changes resize this workspace without rebuilding controls. / 选择变化仅调整工作区尺寸，不重建控件。 */
     private final JPanel workspace;
 
@@ -103,7 +106,7 @@ final class ServerPagePresentation extends JPanel {
     ServerPagePresentation(DesktopPartFactory components, PageMessagePresenter messages, JTable table,
                            JTextField search, Supplier<List<ServerSummary>> profiles, JComboBox<TaskSnapshot> checks,
                            JTextArea output, Controls buttons) {
-        super(new BorderLayout());
+        super(new BorderLayout(0, com.formdev.flatlaf.util.UIScale.scale(12)));
         setOpaque(false);
         this.components = components;
         this.messages = messages;
@@ -119,8 +122,13 @@ final class ServerPagePresentation extends JPanel {
             JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         detailScroll.setName("servers.details.scroll");
         detailScroll.setBorder(BorderFactory.createEmptyBorder());
+        components.cardScroll(detailScroll);
         detailScroll.getVerticalScrollBar().setUnitIncrement(com.formdev.flatlaf.util.UIScale.scale(20));
         detailScroll.setVisible(false);
+        detailRegion = components.outerCard(new BorderLayout());
+        detailRegion.setName("servers.details.outer");
+        detailRegion.add(detailScroll, BorderLayout.CENTER);
+        detailRegion.setVisible(false);
         workspace = components.transparent(new BorderLayout());
         workspace.setName("servers.workspace");
         workspace.setLayout(new java.awt.LayoutManager() {
@@ -152,14 +160,14 @@ final class ServerPagePresentation extends JPanel {
             /** Keeps inventory and detail widths at the selected ratio. / 将清单与详情宽度保持在选定比例。
              * @param parent original workspace / 原工作区 */
             public void layoutContainer(Container parent) {
-                int gap = detailScroll.isVisible() ? com.formdev.flatlaf.util.UIScale.scale(16) : 0;
-                int left = detailScroll.isVisible() ? (int) ((parent.getWidth() - gap) * .4) : parent.getWidth();
+                int gap = detailRegion.isVisible() ? com.formdev.flatlaf.util.UIScale.scale(16) : 0;
+                int left = detailRegion.isVisible() ? (int) ((parent.getWidth() - gap) * .4) : parent.getWidth();
                 inventory.setBounds(0, 0, left, parent.getHeight());
-                detailScroll.setBounds(left + gap, 0, parent.getWidth() - left - gap, parent.getHeight());
+                detailRegion.setBounds(left + gap, 0, parent.getWidth() - left - gap, parent.getHeight());
             }
         });
         workspace.add(inventory);
-        workspace.add(detailScroll);
+        workspace.add(detailRegion);
         add(workspace, BorderLayout.CENTER);
         taskRegion = tasks(checks);
         taskRegion.setVisible(false);
@@ -173,7 +181,8 @@ final class ServerPagePresentation extends JPanel {
         var edit = buttons.edit();
         var rescue = buttons.rescue();
         var more = buttons.more();
-        var actions = components.transparent(new BorderLayout(12, 0));
+        var actions = components.outlinedCard(new BorderLayout(12, 0));
+        actions.setName("servers.details.actions");
         var secondaryActions = components.transparent(new FlowLayout(FlowLayout.LEFT, 8, 4));
         extensionMenu = new ServerExtensionMenu(more, buttons.delete());
         var checkGroup = components.transparent(new BorderLayout(0, 4));
@@ -230,7 +239,7 @@ final class ServerPagePresentation extends JPanel {
     private JComponent inventory(JTextField query) {
         var add = buttons.add();
         var refresh = buttons.refresh();
-        var inventory = components.transparent(new BorderLayout(0, 12));
+        var inventory = components.outerCard(new BorderLayout(0, 12));
         inventory.setName("servers.inventory");
         var heading = components.transparent(new BorderLayout(0, 8));
         var titleRow = components.transparent(new BorderLayout(8, 0));
@@ -267,7 +276,7 @@ final class ServerPagePresentation extends JPanel {
     private JComponent tasks(JComboBox<TaskSnapshot> checks) {
         var cancel = buttons.cancel();
         var reconcile = buttons.reconcile();
-        var tasks = components.transparent(new BorderLayout(8, 8));
+        var tasks = components.outerCard(new BorderLayout(8, 8));
         tasks.setName("servers.tasks");
         messages.bind(tasksTitle, "server.pending");
         tasksTitle.setFont(tasksTitle.getFont().deriveFont(Font.BOLD, com.formdev.flatlaf.util.UIScale.scale(18f)));
@@ -306,9 +315,11 @@ final class ServerPagePresentation extends JPanel {
         taskEvidence.add(taskTarget, BorderLayout.NORTH);
         taskOutput.setName("servers.taskOutput");
         taskOutput.setRows(2);
+        taskOutput.setOpaque(false);
         taskOutput.setLineWrap(true);
         taskOutput.setWrapStyleWord(true);
         taskOutputScroll.setBorder(BorderFactory.createEmptyBorder());
+        components.cardScroll(taskOutputScroll);
         taskEvidence.add(taskOutputScroll, BorderLayout.CENTER);
         taskBody.add(taskEvidence, BorderLayout.CENTER);
         tasks.add(taskBody, BorderLayout.CENTER);
@@ -323,7 +334,8 @@ final class ServerPagePresentation extends JPanel {
     /** Builds the actual output surface and captured rescue action. / 构建实际输出表面及捕获目标救援动作。
      * @return owned presentation region / 所属展示区域 */
     private JComponent records() {
-        var recordPane = components.transparent(new BorderLayout(0, 12));
+        var recordPane = components.outlinedCard(new BorderLayout(0, 12));
+        recordPane.setName("servers.records");
         var recordHeading = components.transparent(new BorderLayout(0, 6));
         messages.bind(recordTitle, "server.records");
         recordTitle.setFont(recordTitle.getFont().deriveFont(Font.BOLD, com.formdev.flatlaf.util.UIScale.scale(18f)));
@@ -341,15 +353,18 @@ final class ServerPagePresentation extends JPanel {
         output.setBorder(BorderFactory.createEmptyBorder());
         output.setLineWrap(true);
         output.setWrapStyleWord(true);
-        var logSurface = components.outputCard("", "", output);
-        logSurface.remove(0);
-        ((BorderLayout) logSurface.getLayout()).setVgap(com.formdev.flatlaf.util.UIScale.scale(8));
-        logSurface.setBorder(new com.formdev.flatlaf.ui.FlatEmptyBorder(18, 20, 18, 20));
+        output.setOpaque(false);
+        var logSurface = components.transparent(new BorderLayout(0, com.formdev.flatlaf.util.UIScale.scale(8)));
+        var outputScroll = new JScrollPane(output);
+        outputScroll.setBorder(BorderFactory.createEmptyBorder());
+        components.cardScroll(outputScroll);
+        outputScroll.getVerticalScrollBar().setUnitIncrement(com.formdev.flatlaf.util.UIScale.scale(16));
+        logSurface.add(outputScroll, BorderLayout.CENTER);
         var state = components.transparent(new BorderLayout(0, 8));
         state.add(recordState);
-        state.add(components.divider(), BorderLayout.SOUTH);
+        state.add(components.cardDivider(), BorderLayout.SOUTH);
         var time = components.transparent(new BorderLayout(0, 8));
-        time.add(components.divider(), BorderLayout.NORTH);
+        time.add(components.cardDivider(), BorderLayout.NORTH);
         time.add(recordTime);
         logSurface.add(state, BorderLayout.NORTH);
         logSurface.add(time, BorderLayout.SOUTH);
@@ -376,11 +391,12 @@ final class ServerPagePresentation extends JPanel {
             return serverCard(profiles.get().get(model), selected);
         });
         components.cardList(table, true);
+        components.cardInventory(table);
         var inventoryScroll = new JScrollPane(table);
         inventoryScroll.setName("servers.inventory.scroll");
         inventoryScroll.setPreferredSize(new Dimension(400, com.formdev.flatlaf.util.UIScale.scale(470)));
         inventoryScroll.setBorder(BorderFactory.createEmptyBorder());
-        components.stylePage(table);
+        components.cardScroll(inventoryScroll);
         var content = components.transparent(new BorderLayout(0, 8));
         empty.setName("servers.empty");
         content.add(empty, BorderLayout.NORTH);
@@ -461,6 +477,7 @@ final class ServerPagePresentation extends JPanel {
         boolean expanded = summary != null;
         if (detailScroll.isVisible() != expanded) {
             detailScroll.setVisible(expanded);
+            detailRegion.setVisible(expanded);
             workspace.revalidate();
             workspace.repaint();
         }

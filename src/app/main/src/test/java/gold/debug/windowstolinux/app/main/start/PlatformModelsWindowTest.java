@@ -129,12 +129,14 @@ class PlatformModelsWindowTest {
                 named(frame, "platform.sidebar").getBackground());
             assertNotEquals(named(frame, "platform.sidebar").getBackground(), named(frame, "platform.models").getBackground());
             assertInventoryHeadingCentered(frame);
+            assertCardSurfaces(frame, state, theme);
             if (state.equals("detail")) assertCapabilityColumnsAligned(frame);
             capture(frame, "ai-" + state + "-" + theme + "-" + scale + "-normal.png");
             var minimum = frame.getMinimumSize();
             frame.setSize(minimum);
             frame.validate();
             assertInventoryHeadingCentered(frame);
+            assertCardSurfaces(frame, state, theme);
             if (state.equals("detail")) assertCapabilityColumnsAligned(frame);
             if (state.equals("purpose"))
                 for (var type : AiPurposeType.values()) {
@@ -155,6 +157,31 @@ class PlatformModelsWindowTest {
         var buttonBounds = SwingUtilities.convertRectangle(button.getParent(), button.getBounds(), frame);
         assertTrue(Math.abs(titleBounds.getCenterY() - buttonBounds.getCenterY()) <= 1,
             () -> "Inventory title and action centers differ: " + titleBounds + " / " + buttonBounds);
+    }
+
+    private static void assertCardSurfaces(PlatformFrame frame, String state, ThemeMode theme) {
+        var palette = theme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light();
+        var inventory = (JList<?>) named(frame, "ai.inventory");
+        var outer = (JComponent) named(frame, "ai.inventory.surface");
+        assertEquals(palette.cardBackground(), outer.getBackground());
+        assertEquals(UIScale.scale(16), outer.getInsets().left);
+        assertEquals(UIScale.scale(14), outer.getInsets().top);
+        assertEquals(palette.cardBackground(), inventory.getBackground());
+        var scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, inventory);
+        assertEquals(palette.cardBackground(), scroll.getViewport().getBackground());
+        var bar = scroll.getVerticalScrollBar();
+        var add = named(frame, "ai.models.add");
+        if (!state.equals("full"))
+            assertEquals(SwingUtilities.convertPoint(bar, bar.getWidth(), 0, frame).x,
+                SwingUtilities.convertPoint(add, add.getWidth(), 0, frame).x);
+        if (state.equals("detail")) {
+            assertEquals(palette.cardBackground(), named(frame, "models.details.surface").getBackground());
+            for (String section : List.of("configuration", "capabilities", "tasks"))
+                assertEquals(palette.cardBackground(), named(frame, "models." + section + ".surface").getBackground());
+            descendants((Container) named(frame, "models.capabilities"))
+                .filter(JSeparator.class::isInstance).forEach(line -> assertEquals(palette.pageBackground(), line.getForeground()));
+        } else if (state.equals("purpose"))
+            assertEquals(palette.cardBackground(), named(frame, "ai.purpose.surface").getBackground());
     }
 
     private static void assertCapabilityColumnsAligned(PlatformFrame frame) {
@@ -286,6 +313,7 @@ class PlatformModelsWindowTest {
             return pointOnList;
         });
         var robot = new Robot();
+        robot.setAutoDelay(40);
         robot.mouseMove(point.x, point.y);
         robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
         robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);

@@ -34,8 +34,8 @@ final class ServerDetailsPane extends JPanel implements Scrollable {
                       JComponent inventoryHeader, JComponent actions, JComponent records, Runnable collapse) {
         super(new BorderLayout(0, UIScale.scale(20)));
         this.messages = messages;
-        components.stylePage(this);
-        setBorder(new FlatEmptyBorder(0, 24, 16, 24));
+        setOpaque(false);
+        setBorder(BorderFactory.createEmptyBorder());
         setName("servers.details");
         var upper = components.transparent(new BorderLayout(0, UIScale.scale(22)));
         var heading = new JPanel(new BorderLayout(UIScale.scale(16), 0)) {
@@ -76,7 +76,7 @@ final class ServerDetailsPane extends JPanel implements Scrollable {
         collapseGroup.add(collapseButton);
         heading.add(collapseGroup, BorderLayout.EAST);
         upper.add(heading, BorderLayout.NORTH);
-        var fields = components.card(new GridLayout(1, 4, UIScale.scale(16), UIScale.scale(12)));
+        var fields = components.outlinedCard(new GridLayout(1, 4, UIScale.scale(16), UIScale.scale(12)));
         fields.setName("servers.details.fields");
         var dividers = new JSeparator[values.length - 1];
         for (int i = 0; i < values.length; i++) {
@@ -92,7 +92,7 @@ final class ServerDetailsPane extends JPanel implements Scrollable {
             content.add(values[i]);
             field.add(content);
             if (i + 1 < values.length) {
-                var divider = components.divider();
+                var divider = components.cardDivider();
                 divider.setName("servers.details.divider." + i);
                 divider.setOrientation(SwingConstants.VERTICAL);
                 dividers[i] = divider;

@@ -19,8 +19,10 @@ final class ModStoreSections {
         return panel;
     }
 
-    static JPanel block(DesktopPartFactory components, PageMessagePresenter messages, String key, JComponent content) {
-        var panel = components.card(new BorderLayout(0, UIScale.scale(12)));
+    static JPanel block(DesktopPartFactory components, PageMessagePresenter messages, String key, JComponent content,
+                        boolean outlined) {
+        var layout = new BorderLayout(0, UIScale.scale(12));
+        var panel = outlined ? components.outlinedCard(layout) : components.card(layout);
         var title = messages.bind(new ModTextLabel("", 18, true, false), key);
         panel.add(title, BorderLayout.NORTH);
         panel.add(content);

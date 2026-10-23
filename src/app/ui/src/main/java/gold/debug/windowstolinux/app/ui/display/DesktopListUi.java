@@ -99,9 +99,7 @@ public final class DesktopListUi extends FlatListUI {
             var content = original.getListCellRendererComponent(list, value, index, selected, focused);
             if (index < 0 || !DesktopCardSupport.isCardList(list))
                 return content;
-            var row = DesktopListCard.row(content, selected, DesktopListCard.isDraggable(list));
-            row.putClientProperty(DesktopListCard.OWNER, list);
-            return row;
+            return DesktopListCard.row(content, selected, DesktopListCard.isDraggable(list), list);
         }
     }
 }

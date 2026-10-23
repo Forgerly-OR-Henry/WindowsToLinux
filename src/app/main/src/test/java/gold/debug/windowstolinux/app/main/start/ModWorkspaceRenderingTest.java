@@ -247,6 +247,16 @@ class ModWorkspaceRenderingTest {
             var refresh = (JComponent) named(page, prefix.equals("mods") ? "mods.refresh" : "store.retry");
             var modes = (JComponent) named(page, "modui.modes");
             var detail = (JScrollPane) named(page, prefix + ".detailScroll");
+            var inventoryCard = (JComponent) named(page, prefix + ".inventoryCard");
+            var detailCard = (JComponent) named(page, prefix + ".detailCard");
+            assertEquals(UIManager.getColor("List.cardBackground"), inventoryCard.getBackground());
+            assertEquals(UIScale.scale(14), inventoryCard.getInsets().top);
+            assertEquals(UIScale.scale(16), inventoryCard.getInsets().right);
+            assertEquals(inventoryCard.getBackground(), scroll.getViewport().getBackground());
+            if (expanded) {
+                assertEquals(inventoryCard.getBackground(), detailCard.getBackground());
+                assertEquals(detailCard.getBackground(), detail.getViewport().getBackground());
+            }
             assertEquals(expanded, detail.isShowing());
             assertTrue(scroll.getViewport().getHeight() >= UIScale.scale(120), "Retained task feedback must leave a usable catalog viewport");
             if (expanded)

@@ -42,7 +42,8 @@ public final class DesktopCardList<E> extends JList<E> {
 
             public Component render(E value, int row, boolean selected) {
                 var content = getCellRenderer().getListCellRendererComponent(DesktopCardList.this, value, row, selected, false);
-                return DesktopListCard.row(content, selected, DesktopListCard.isDraggable(DesktopCardList.this));
+                return DesktopListCard.row(content, selected, DesktopListCard.isDraggable(DesktopCardList.this),
+                    DesktopCardList.this);
             }
 
             public boolean selected(int row) {

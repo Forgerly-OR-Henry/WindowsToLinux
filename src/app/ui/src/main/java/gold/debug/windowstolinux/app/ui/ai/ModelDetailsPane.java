@@ -49,6 +49,9 @@ final class ModelDetailsPane extends JPanel implements AutoCloseable {
         this.refresh = refresh;
         setName("models.details");
         setOpaque(false);
+        var surface = c.outerCard(new BorderLayout(0, 14));
+        surface.setName("models.details.surface");
+        add(surface);
         var top = c.transparent(new BorderLayout(8, 0));
         var name = new JLabel(model.name());
         name.setName("models.details.title");
@@ -62,11 +65,12 @@ final class ModelDetailsPane extends JPanel implements AutoCloseable {
         close.setName("models.collapse");
         close.addActionListener(event -> collapse.run());
         top.add(close, BorderLayout.EAST);
-        add(top, BorderLayout.NORTH);
+        surface.add(top, BorderLayout.NORTH);
         var body = c.pagePanel();
         body.setOpaque(false);
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-        var config = c.card(new BorderLayout(0, 14));
+        var config = c.outlinedCard(new BorderLayout(0, 14));
+        config.setName("models.configuration.surface");
         var configTitle = c.transparent(new BorderLayout());
         configTitle.add(sectionTitle("ai.models.configuration"));
         edit = c.secondaryButton(messages.text("ai.models.edit"));
@@ -106,13 +110,14 @@ final class ModelDetailsPane extends JPanel implements AutoCloseable {
                 field.gridy++;
                 field.gridwidth = 2;
                 field.insets = new Insets(0, 0, 0, 0);
-                properties.add(c.divider(), field);
+                properties.add(c.cardDivider(), field);
             }
         }
         config.add(properties);
         body.add(config);
         body.add(Box.createVerticalStrut(18));
-        var checks = c.card(new BorderLayout(0, 14));
+        var checks = c.outlinedCard(new BorderLayout(0, 14));
+        checks.setName("models.capabilities.surface");
         checks.add(sectionTitle("ai.models.capabilities"), BorderLayout.NORTH);
         var rows = c.transparent(new GridBagLayout());
         rows.setName("models.capabilities");
@@ -159,13 +164,14 @@ final class ModelDetailsPane extends JPanel implements AutoCloseable {
                 cell.gridwidth = 3;
                 cell.weightx = 1;
                 cell.insets = new Insets(0, 0, 0, 0);
-                rows.add(c.divider(), cell);
+                rows.add(c.cardDivider(), cell);
             }
         }
         checks.add(rows);
         body.add(checks);
         body.add(Box.createVerticalStrut(18));
-        var taskCard = c.card(new BorderLayout(0, 12));
+        var taskCard = c.outlinedCard(new BorderLayout(0, 12));
+        taskCard.setName("models.tasks.surface");
         taskCard.add(sectionTitle("ai.models.checkTasks"), BorderLayout.NORTH);
         tasks.setName("models.checks");
         tasks.setRenderer((list, task, index, selected, focused) -> {
@@ -194,9 +200,10 @@ final class ModelDetailsPane extends JPanel implements AutoCloseable {
         body.add(Box.createVerticalGlue());
         var scroll = new JScrollPane(body, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.setBorder(BorderFactory.createEmptyBorder());
+        c.cardScroll(scroll);
         scroll.getVerticalScrollBar().setUnitIncrement(24);
-        add(scroll);
-        add(status, BorderLayout.SOUTH);
+        surface.add(scroll);
+        surface.add(status, BorderLayout.SOUTH);
         timer = new javax.swing.Timer(500, event -> observe());
         timer.start();
         observe();

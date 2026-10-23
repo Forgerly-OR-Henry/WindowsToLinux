@@ -58,6 +58,12 @@ public final class DesktopScrollBarUi extends FlatScrollBarUI {
 
     @Override
     protected void paintTrack(Graphics graphics, JComponent component, Rectangle bounds) {
+        if (cardSurface()) {
+            graphics.setColor(UIManager.getColor("List.cardBackground"));
+            graphics.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
+            if (card() && fullTrack()) paintCardThumb(graphics, component, bounds);
+            return;
+        }
         if (!card()) {
             super.paintTrack(graphics, component, bounds);
             return;
@@ -65,6 +71,14 @@ public final class DesktopScrollBarUi extends FlatScrollBarUI {
         graphics.setColor(getTrackColor(component, hoverTrack, false));
         paintTrackOrThumb(graphics, component, bounds, cardInsets(), 999);
         if (fullTrack()) paintCardThumb(graphics, component, bounds);
+    }
+
+    /** Resolves only the owning pane's explicit local surface. / 只读取所属滚动区显式声明的局部表面。 */
+    private boolean cardSurface() {
+        if (!(scrollbar.getParent() instanceof JScrollPane scroll)) return false;
+        if (Boolean.TRUE.equals(scroll.getClientProperty(DesktopScrollPaneUi.CARD_SURFACE))) return true;
+        return scroll.getViewport() != null && scroll.getViewport().getView() instanceof JComponent view
+            && Boolean.TRUE.equals(view.getClientProperty(DesktopListCard.OUTLINED));
     }
 
     @Override

@@ -14,6 +14,11 @@ import com.formdev.flatlaf.ui.FlatScrollPaneUI;
 
 /** Applies the card viewport convention to host and Mod Swing lists alike. / 为宿主及 Mod 的 Swing 清单统一应用卡片视口规范。 */
 public final class DesktopScrollPaneUi extends FlatScrollPaneUI {
+    /** Explicit detail-scroll opt-in; ordinary panes retain their original surface. / 详情滚动区显式接入，普通滚动面板保留原表面。 */
+    public static final String CARD_SURFACE = "desktop.card.contentSurface";
+
+    private final java.util.Map<JComponent, java.awt.Color> surfaceBackgrounds = new java.util.IdentityHashMap<>();
+
     private JViewport observedViewport;
 
     private Component observedView;
@@ -44,7 +49,7 @@ public final class DesktopScrollPaneUi extends FlatScrollPaneUI {
 
     private final PropertyChangeListener viewProperties = event -> {
         switch (event.getPropertyName()) {
-            case "name", "List.isFileList", DesktopCardSupport.CARDS -> reconcile();
+            case "name", "List.isFileList", DesktopCardSupport.CARDS, DesktopListCard.OUTLINED -> reconcile();
             default -> {
             }
         }
@@ -55,6 +60,7 @@ public final class DesktopScrollPaneUi extends FlatScrollPaneUI {
         switch (event.getPropertyName()) {
             case "viewport" -> observeViewport();
             case "verticalScrollBar" -> reconcile();
+            case "horizontalScrollBar", CARD_SURFACE -> reconcile();
             case "componentOrientation" -> {
                 if (styled) cardViewportBorder = border();
                 reconcile();
@@ -120,6 +126,7 @@ public final class DesktopScrollPaneUi extends FlatScrollPaneUI {
         if (changing || scrollpane == null) return;
         changing = true;
         try {
+            refreshSurface();
             if (!DesktopCardSupport.isCardView(observedView)) {
                 restore();
                 return;
@@ -145,6 +152,33 @@ public final class DesktopScrollPaneUi extends FlatScrollPaneUI {
         } finally {
             changing = false;
         }
+    }
+
+    /** Changes only colors; range models, viewport position and list geometry remain untouched. / 仅改颜色，保留范围模型、视口位置及清单几何。 */
+    private void refreshSurface() {
+        boolean inventory = observedView instanceof JComponent view
+            && Boolean.TRUE.equals(view.getClientProperty(DesktopListCard.OUTLINED));
+        if (!inventory && !Boolean.TRUE.equals(scrollpane.getClientProperty(CARD_SURFACE))) {
+            restoreSurface();
+            return;
+        }
+        var background = UIManager.getColor("List.cardBackground");
+        surface(scrollpane, background);
+        surface(observedViewport, background);
+        surface(scrollpane.getVerticalScrollBar(), background);
+        surface(scrollpane.getHorizontalScrollBar(), background);
+        if (inventory) surface((JComponent) observedView, background);
+    }
+
+    private void surface(JComponent component, java.awt.Color background) {
+        if (component == null) return;
+        surfaceBackgrounds.putIfAbsent(component, component.getBackground());
+        component.setBackground(background);
+    }
+
+    private void restoreSurface() {
+        surfaceBackgrounds.forEach(JComponent::setBackground);
+        surfaceBackgrounds.clear();
     }
 
     private void unmark() {
@@ -178,6 +212,7 @@ public final class DesktopScrollPaneUi extends FlatScrollPaneUI {
         changing = true;
         try {
             restore();
+            restoreSurface();
         } finally {
             changing = false;
         }

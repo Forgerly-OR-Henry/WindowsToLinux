@@ -1,6 +1,8 @@
 package gold.debug.windowstolinux.app.main.start;
 
 import java.awt.*;
+import java.awt.event.InputEvent;
+import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.nio.file.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -67,6 +69,7 @@ class PlatformServersPresentationTest {
                             assertEquals(named(pane, "servers.workspace").getWidth(), named(pane, "servers.inventory").getWidth());
                             assertInventoryAlignment(pane);
                             capture(pane, "servers-" + theme + "-" + scale + "-initial");
+                            assertPointerSelection(pane);
                             return null;
                         });
                         for (boolean minimum : new boolean[]{false, true}) {
@@ -107,6 +110,7 @@ class PlatformServersPresentationTest {
                                 for (int i = 0; i < 3; i++) {
                                     var divider = (JSeparator) named(pane, "servers.details.divider." + i);
                                     assertEquals(SwingConstants.VERTICAL, divider.getOrientation());
+                                    assertEquals(UIManager.getColor("Panel.background"), divider.getForeground());
                                     if (divider.isVisible()) assertTrue(divider.getHeight() > divider.getWidth());
                                 }
                                 boolean singleRow = named(pane, "servers.details.cell.0").getY()
@@ -151,6 +155,9 @@ class PlatformServersPresentationTest {
                                 SwingUtilities.updateComponentTreeUI(pane);
                                 new DesktopPartFactory(mode == ThemeMode.LIGHT ? ThemePalette.light() : ThemePalette.dark()).refreshTheme(pane);
                                 pane.localize();
+                                layout(pane);
+                                layout(pane);
+                                assertCardSurfaces(pane);
                                 assertSame(model, table.getModel());
                                 assertEquals(0, table.getSelectedRow());
                                 assertEquals(1, table.getRowCount());
@@ -217,10 +224,12 @@ class PlatformServersPresentationTest {
     }
 
     private static void assertInventoryAlignment(JComponent pane) {
+        assertCardSurfaces(pane);
         assertEquals(UIManager.getColor("TextField.searchBackground"), named(pane, "servers.search").getBackground());
         assertEquals(UIManager.getFont("Label.font").getFamily(), named(pane, "servers.output").getFont().getFamily());
         assertEquals(com.formdev.flatlaf.util.UIScale.scale(12), named(pane, "servers.output").getFont().getSize());
         var table = (JTable) named(pane, "servers.table");
+        assertEquals(Boolean.TRUE, table.getClientProperty(DesktopListCard.OUTLINED));
         for (int row = 0; row < table.getRowCount(); row++) {
             var card = (JComponent) table.prepareRenderer(table.getCellRenderer(row, 0), row, 0);
             card.setSize(table.getColumnModel().getColumn(0).getWidth(), table.getRowHeight());
@@ -247,6 +256,79 @@ class PlatformServersPresentationTest {
             var button = named(pane, action);
             assertEquals(right, SwingUtilities.convertPoint(button, button.getWidth(), 0, pane).x, action);
         }
+    }
+
+    private static void assertCardSurfaces(JComponent pane) {
+        var cardColor = UIManager.getColor("List.cardBackground");
+        var pageColor = UIManager.getColor("Panel.background");
+        assertEquals(pageColor, pane.getBackground());
+        var inventory = (JComponent) named(pane, "servers.inventory");
+        assertEquals(com.formdev.flatlaf.util.UIScale.scale(new Insets(14, 16, 14, 16)), inventory.getInsets());
+        assertSurface(inventory, cardColor, cardColor);
+        var table = (JTable) named(pane, "servers.table");
+        var scroll = (JScrollPane) named(pane, "servers.inventory.scroll");
+        assertSame(table, scroll.getViewport().getView());
+        assertEquals(cardColor, table.getBackground());
+        assertEquals(cardColor, scroll.getViewport().getBackground());
+        assertEquals(cardColor, scroll.getVerticalScrollBar().getBackground());
+        var detail = (JComponent) named(pane, "servers.details.outer");
+        assertEquals(named(pane, "servers.details.scroll").isVisible(), detail.isVisible());
+        assertEquals(com.formdev.flatlaf.util.UIScale.scale(new Insets(14, 16, 14, 16)), detail.getInsets());
+        if (detail.isVisible()) {
+            assertSurface(detail, cardColor, cardColor);
+            var detailScroll = (JScrollPane) named(pane, "servers.details.scroll");
+            assertSame(detail, detailScroll.getParent());
+            assertEquals(cardColor, detailScroll.getViewport().getBackground());
+            assertEquals(cardColor, detailScroll.getViewport().getView().getBackground());
+            assertEquals(com.formdev.flatlaf.util.UIScale.scale(16), detailScroll.getX());
+            assertEquals(com.formdev.flatlaf.util.UIScale.scale(14), detailScroll.getY());
+            for (String name : new String[]{"servers.details.fields", "servers.details.actions", "servers.records"})
+                assertSurface((JComponent) named(pane, name), cardColor, pageColor);
+        }
+    }
+
+    private static void assertSurface(JComponent surface, Color fill, Color edge) {
+        assertEquals(fill, surface.getBackground(), surface.getName());
+        assertTrue(surface.getWidth() > 0 && surface.getHeight() > 0, surface.getName());
+        var image = new BufferedImage(surface.getWidth(), surface.getHeight(), BufferedImage.TYPE_INT_RGB);
+        var graphics = image.createGraphics();
+        graphics.setColor(UIManager.getColor("Panel.background"));
+        graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+        surface.paint(graphics);
+        graphics.dispose();
+        int center = surface.getWidth() / 2;
+        assertEquals(edge, new Color(image.getRGB(center, 0)), surface.getName() + " top contour");
+        assertEquals(fill, new Color(image.getRGB(center, com.formdev.flatlaf.util.UIScale.scale(4))),
+            surface.getName() + " inner surface");
+    }
+
+    private static void assertPointerSelection(JComponent pane) {
+        var table = (JTable) named(pane, "servers.table");
+        var renderer = table.prepareRenderer(table.getCellRenderer(0, 0), 0, 0);
+        var handle = DesktopListCard.handleBounds(renderer, table.getColumnModel().getColumn(0).getWidth(),
+            table.getRowHeight());
+        assertFalse(handle.isEmpty());
+        click(table, new Point(handle.x + handle.width / 2, handle.y + handle.height / 2));
+        assertEquals(-1, table.getSelectedRow(), "The outlined handle still only starts ordering");
+        click(table, new Point(table.getWidth() / 2, table.getRowHeight() - 1));
+        assertEquals(-1, table.getSelectedRow(), "The outer card must not make list gaps selectable");
+        click(table, new Point(table.getWidth() / 2, table.getRowHeight() / 2));
+        assertEquals("生产服务器", ((JLabel) named(pane, "servers.details.title")).getText());
+        assertEquals(0, table.getSelectedRow());
+        click(table, new Point(table.getWidth() / 2, table.getRowHeight() / 2));
+        assertEquals(-1, table.getSelectedRow(), "Clicking the selected outlined card collapses details");
+        layout(pane);
+        layout(pane);
+        assertFalse(named(pane, "servers.details.outer").isVisible());
+        assertEquals(named(pane, "servers.workspace").getWidth(), named(pane, "servers.inventory").getWidth());
+    }
+
+    private static void click(JTable table, Point point) {
+        long when = System.currentTimeMillis();
+        table.dispatchEvent(new MouseEvent(table, MouseEvent.MOUSE_PRESSED, when, InputEvent.BUTTON1_DOWN_MASK,
+            point.x, point.y, 1, false, MouseEvent.BUTTON1));
+        table.dispatchEvent(new MouseEvent(table, MouseEvent.MOUSE_RELEASED, when + 1, 0,
+            point.x, point.y, 1, false, MouseEvent.BUTTON1));
     }
 
     private static int centerY(Component component, Component root) {

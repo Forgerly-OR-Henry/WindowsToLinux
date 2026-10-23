@@ -45,7 +45,7 @@ public final class DesktopCardTableOrder<E> implements AutoCloseable {
             public Component render(E value, int row, boolean selected) {
                 var content = table.getCellRenderer(row, 0).getTableCellRendererComponent(table,
                     table.getValueAt(row, 0), selected, false, row, 0);
-                return DesktopListCard.row(content, selected, DesktopListCard.isDraggable(table));
+                return DesktopListCard.row(content, selected, DesktopListCard.isDraggable(table), table);
             }
 
             public boolean selected(int row) {
