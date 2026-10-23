@@ -27,7 +27,7 @@ class DesktopNeutralPaletteTest {
                         boolean dark = theme == ThemeMode.DARK;
                         var palette = dark ? ThemePalette.dark() : ThemePalette.light();
                         var factory = new DesktopPartFactory(palette);
-                        Color page = gray(dark ? 35 : 235);
+                        Color page = gray(dark ? 30 : 240);
                         Color card = gray(dark ? 20 : 250);
                         Color control = gray(dark ? 50 : 220);
                         Color searchColor = dark ? control : card;
@@ -114,7 +114,7 @@ class DesktopNeutralPaletteTest {
                     factory.palette(theme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light());
                     factory.refreshTheme(page);
                     boolean dark = theme == ThemeMode.DARK;
-                    assertEquals(gray(dark ? 35 : 235), page.getBackground());
+                    assertEquals(gray(dark ? 30 : 240), page.getBackground());
                     assertEquals(gray(dark ? 20 : 250), card.getBackground());
                     assertEquals(gray(dark ? 50 : 220), action.getBackground());
                     assertEquals(gray(dark ? 50 : 220), combo.getBackground());
