@@ -110,7 +110,7 @@ class PlatformModFlowTest {
         return ApplicationLauncher.startMods(runtime,
             new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS, workspace,
                 runtime.persistence().database().root()),
-            workspace.toString(), pages(!runtime.security().securityState().unlocked()));
+            pages(!runtime.security().securityState().unlocked()));
     }
 
     void enable(String... owners) throws Exception {
@@ -136,20 +136,36 @@ class PlatformModFlowTest {
     }
 
     @Test
-    void optedInDiscoveryEnablesNewModsAndRequiresTheExplicitWorkspace() throws Exception {
+    void optedInDiscoveryEnablesNewModsFromDetectedWorkspace() throws Exception {
         module(P, Map.of(), false);
         try (var runtime = open(false)) {
-            var layout = new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS, workspace,
-                runtime.persistence().database().root());
-            assertFalse(ApplicationLauncher.startMods(runtime, layout, null, pages(true)).problems().isEmpty());
-            assertFalse(ApplicationLauncher.startMods(runtime, layout, root.toString(), pages(true)).problems().isEmpty());
-            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_registry"));
             var report = start(runtime);
             assertEquals(Set.of(P), report.running());
             assertTrue(report.problems().isEmpty(), report.problems().toString());
             assertEquals("TRUE", text(runtime, "SELECT enabled FROM mod_registry"));
             assertEquals(List.of(P + ":construct", P + ":start"), actions());
             assertFalse(start(runtime).problems().isEmpty());
+        }
+    }
+
+    @Test
+    void rejectsInvalidWorkspaceAndMismatchedDataDirectoryBeforeDiscovery() throws Exception {
+        module(P, Map.of(), false);
+        try (var runtime = open(false)) {
+            var invalidRoot = new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS, root,
+                runtime.persistence().database().root());
+            var otherData = Files.createDirectories(root.resolve("other-data"));
+            var invalidData = new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS, workspace,
+                otherData);
+            for (var layout : List.of(invalidRoot, invalidData)) {
+                var report = ApplicationLauncher.startMods(runtime, layout, pages(true));
+                assertTrue(report.running().isEmpty());
+                assertEquals(List.of("MOD_WORKSPACE_UNAVAILABLE"),
+                    report.problems().stream().map(problem -> problem.eventCode()).toList());
+            }
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_registry"));
+            assertFalse(Files.exists(trace));
+            assertEquals(Set.of(P), start(runtime).running());
         }
     }
 
@@ -380,7 +396,7 @@ class PlatformModFlowTest {
             var report = ApplicationLauncher.startMods(runtime,
                 new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS, workspace,
                     runtime.persistence().database().root()),
-                workspace.toString(), frame.pages());
+                frame.pages());
             PlatformWindowTest.onEdt(() -> {
                 frame.showModStartup(report.running().size(), report.problems());
                 assertFalse(

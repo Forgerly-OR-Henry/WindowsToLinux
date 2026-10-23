@@ -86,7 +86,7 @@ class PlatformInstalledModGraphTest {
             new RunModeResolver.RuntimeLayout(
                 app ? RunModeResolver.RunMode.RUN_APP : RunModeResolver.RunMode.RUN_JAR, home,
                 runtime.persistence().database().root()),
-            null, fixture.pages(!runtime.security().securityState().unlocked()));
+            fixture.pages(!runtime.security().securityState().unlocked()));
     }
 
     void installAndEnable(String... owners) throws Exception {

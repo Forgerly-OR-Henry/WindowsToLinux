@@ -48,23 +48,22 @@ class ApplicationRestartTest {
         Path classes = Files.createDirectories(home.resolve("src/app/main/target/classes"));
         Path library = Files.createDirectories(root.resolve("依赖 with spaces"));
         var classMode = ApplicationRestartLaunch.fromEvidence(layout(RunModeResolver.RunMode.RUN_CLASS, home),
-            javaHome, Optional.empty(), classes, classes + File.pathSeparator + library, root, home.toString());
+            javaHome, Optional.empty(), classes, classes + File.pathSeparator + library, root);
         assertTrue(classMode.javaLauncher());
-        assertEquals(List.of("-Dwtl.workspace=" + home.toRealPath(), "-cp",
+        assertEquals(List.of("-cp",
             classes.toRealPath() + File.pathSeparator + library.toRealPath(), AppMain.class.getName()), classMode.arguments());
         assertEquals(home.toRealPath(), classMode.directory());
         var emptyEntry = ApplicationRestartLaunch.fromEvidence(layout(RunModeResolver.RunMode.RUN_CLASS, home),
-            javaHome, Optional.empty(), classes, classes + File.pathSeparator, root, home.toString());
-        assertEquals(classes.toRealPath() + File.pathSeparator + root.toRealPath(), emptyEntry.arguments().get(2));
+            javaHome, Optional.empty(), classes, classes + File.pathSeparator, root);
+        assertEquals(classes.toRealPath() + File.pathSeparator + root.toRealPath(), emptyEntry.arguments().get(1));
 
         Path release = Files.createDirectories(root.resolve("JAR 程序"));
         Path mainJar = Files.writeString(release.resolve("main.jar"), "descriptor fixture");
         var jarMode = ApplicationRestartLaunch.fromEvidence(layout(RunModeResolver.RunMode.RUN_JAR, release),
-            javaHome, Optional.empty(), mainJar, mainJar.toString(), root, "unused-secret-workspace");
+            javaHome, Optional.empty(), mainJar, mainJar.toString(), root);
         assertEquals(List.of("-cp", mainJar.toRealPath().toString(), AppMain.class.getName()), jarMode.arguments());
-        assertFalse(jarMode.arguments().toString().contains("unused-secret"));
         var wildcard = ApplicationRestartLaunch.fromEvidence(layout(RunModeResolver.RunMode.RUN_JAR, release),
-            javaHome, Optional.empty(), mainJar, release + File.separator + "*", root, null);
+            javaHome, Optional.empty(), mainJar, release + File.separator + "*", root);
         assertEquals(release.toRealPath() + File.separator + "*", wildcard.arguments().get(1));
 
         Path image = Files.createDirectories(root.resolve("APP 程序"));
@@ -73,30 +72,30 @@ class ApplicationRestartTest {
         Path imageJar = Files.writeString(image.resolve("app/main.jar"), "descriptor fixture");
         Path exe = Files.writeString(image.resolve("WindowsToLinux.exe"), "descriptor fixture");
         var appMode = ApplicationRestartLaunch.fromEvidence(layout(RunModeResolver.RunMode.RUN_APP, image),
-            javaHome, Optional.of(exe), imageJar, "not-copied", root, "not-copied");
+            javaHome, Optional.of(exe), imageJar, "not-copied", root);
         assertFalse(appMode.javaLauncher());
         assertEquals(exe.toRealPath(), appMode.executable());
         assertEquals(List.of(), appMode.arguments());
     }
 
     @Test
-    void refusesMissingMainMismatchedWorkspaceAndUnrelatedExecutable() throws Exception {
+    void refusesMissingMainMismatchedCodeSourceAndUnrelatedExecutable() throws Exception {
         Path home = workspace();
         Path classes = Files.createDirectories(home.resolve("src/app/main/target/classes"));
         Path other = Files.createDirectories(root.resolve("other"));
         var layout = layout(RunModeResolver.RunMode.RUN_CLASS, home);
         Path javaHome = javaHome();
         assertThrows(IOException.class, () -> ApplicationRestartLaunch.fromEvidence(layout, javaHome,
-            Optional.empty(), classes, other.toString(), root, home.toString()));
+            Optional.empty(), classes, other.toString(), root));
         assertThrows(IOException.class, () -> ApplicationRestartLaunch.fromEvidence(layout, javaHome,
-            Optional.empty(), classes, classes.toString(), root, other.toString()));
+            Optional.empty(), other, other.toString(), root));
         Path image = Files.createDirectories(root.resolve("image/app"));
         Files.createDirectories(image.getParent().resolve("runtime"));
         Path main = Files.writeString(image.resolve("main.jar"), "fixture");
         Path unrelated = Files.writeString(root.resolve("unrelated.exe"), "fixture");
         assertThrows(IOException.class, () -> ApplicationRestartLaunch.fromEvidence(
             layout(RunModeResolver.RunMode.RUN_APP, image.getParent()), javaHome, Optional.of(unrelated), main,
-            main.toString(), root, null));
+            main.toString(), root));
     }
 
     @Test
@@ -393,7 +392,7 @@ class ApplicationRestartTest {
         }
         var description = ApplicationRestartLaunch.fromEvidence(layout(RunModeResolver.RunMode.RUN_CLASS, home),
             Path.of(System.getProperty("java.home")), Optional.empty(), main,
-            String.join(File.pathSeparator, entries), root, home.toString());
+            String.join(File.pathSeparator, entries), root);
         return new Fixture(home, home.resolve("src/app/db/data"), description);
     }
 
@@ -453,7 +452,7 @@ class ApplicationRestartTest {
          * @param arguments original non-secret restart inputs / 原非秘密重启输入
          * @throws Exception if bootstrap or normal close fails / 引导或正常关闭失败时 */
         public static void main(String[] arguments) throws Exception {
-            Path home = Path.of(System.getProperty("wtl.workspace"));
+            Path home = RunModeResolver.resolve().applicationHome();
             Path data = home.resolve("src/app/db/data");
             System.out.println("FIXTURE_DATA " + data + " exists=" + Files.exists(data)
                 + " symbolic=" + Files.isSymbolicLink(data) + " directory=" + Files.isDirectory(data, java.nio.file.LinkOption.NOFOLLOW_LINKS)

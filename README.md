@@ -66,7 +66,7 @@ mvn.cmd -B -ntp clean verify -Pidea-check '-Dmanaged.test.bash=E:/Program/Git/bi
 
 1. 用 JDK 21 打开根 `pom.xml` 并完成 Maven 导入。
 2. 创建 Application 配置，主类为 `gold.debug.windowstolinux.app.main.AppMain`，模块为 `windowstolinux-app-main`。
-3. Config 模块资源目录中的 [config.yaml](src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml) 默认在 CLASS 关闭 Mod，仅运行主 APP；填写说明见 [Config.md](docs/reference/Config.md)。需要开发 Mod 时把 class.mod.auto-load 改为 true，重新构建并重启，VM 参数添加 `-Dwtl.workspace=<本仓库绝对路径>`；含空格时给整项加双引号。该值用于核验开发 Mod 来源，必须与实际 APP、DB 模块工作区一致。自动加载开关仅允许 class 区填写，JAR/APP 固定执行 Mod 加载流程。
+3. Config 模块资源目录中的 [config.yaml](src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml) 默认在 CLASS 关闭 Mod，仅运行主 APP；填写说明见 [Config.md](docs/reference/Config.md)。需要开发 Mod 时把 class.mod.auto-load 改为 true，重新构建并重启；IDEA 无需添加 `-Dwtl.workspace` VM 参数。平台根据 AppMain 与 DB 的实际代码来源验证工作区，自动发现该工作区中与 `src/app` 并列的 `src/mod`，不从启动目录或其他工作区搜索。自动加载开关仅允许 class 区填写，JAR/APP 固定执行 Mod 加载流程。
 4. 只启动主 APP 时，启动前运行 Maven `-pl src/app/main -am process-classes`；开启 Mod 调试时还须构建 `src/mod` 中本次参与集成的项目及其依赖，也可在根执行 `process-classes` 生成默认集成区的有效描述。`src/moddev` 不随根构建或运行发现参与。使用此 Maven 前置任务时，可以关闭该运行配置的 IDEA Build 前置任务。
 
 CLASS 数据根默认 `src/app/db/data/`，通过 Config 模块的 classpath YAML 及已验证路径锚点解析；YAML 随 Config JAR 发布，程序根不用放配置文件。程序根来自已验证工作区，不由任意启动目录或数据目录覆盖参数决定。CLASS/JAR 混合来源会被拒绝；JAR 与 APP 的正式布局见 [APP.md](docs/reference/APP.md)。

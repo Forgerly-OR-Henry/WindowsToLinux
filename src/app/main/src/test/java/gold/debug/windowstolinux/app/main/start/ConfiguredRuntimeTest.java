@@ -74,7 +74,7 @@ class ConfiguredRuntimeTest {
             assertEquals(45, runtime.transfers().read().connectSeconds());
             assertFalse(runtime.fileSettings().enabled());
             var before = Files.readString(root.resolve("src/mod/broken/mod.json"));
-            var report = ApplicationLauncher.startMods(runtime, layout(), null, null);
+            var report = ApplicationLauncher.startMods(runtime, layout(), null);
             assertTrue(report.running().isEmpty());
             assertTrue(report.problems().isEmpty());
             assertTrue(runtime.modContexts().isEmpty());

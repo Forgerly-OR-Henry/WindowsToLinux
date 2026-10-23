@@ -145,7 +145,7 @@ app.mainclass=example.Main
 
 当前源码已提供 `.mvn/wtlmod-author-parent/pom.xml` 的 CLASS 构建接线，版本暂随现有工程为 `0.1.0-SNAPSHOT`。Mod 主模块通过相对路径继承该独立 POM，并显式声明平台 API 的 provided 依赖；配套模块保持普通 Maven 配置。`initialize` 的 `development-inputs` 目标使用 Maven 原会话捕获解析结果并撤销旧描述，`process-classes` 的 exec 子进程调用 `ModPackageTool describe`。真实 reactor 已验证可直接使用 app/mod 的编译输出，不要求预先打包或安装工具 JAR；工具不进入业务 Mod 运行依赖。当前仅 describe 已实现，下面 pack/verify、SDK 分发与 package 绑定仍是 S7 目标。
 
-`wtl.workspace` 构建默认采用 Maven 明确的多模块根，也可用同名属性指定；CLASS 开启 Mod 自动加载时必须明确提供该 VM 参数；关闭时不读取它。CLASS 的父 POM、主/从模块 POM、Maven 配置和资源过滤文件均须位于该工作区，额外维护的构建配置可用 `wtl.buildInputs` 逗号列表声明。`wtl.authorArtifacts` 使用完整 `groupId:artifactId:jar:version` 坐标；CLASS 配套必须是同 groupId、当前 reactor 中无独立 mod.json 的普通模块，不接受 classifier 猜测输出。provided/test 依赖不进入私有库，API 非 provided、H2/宿主运行依赖、其他 Mod 运行依赖及未声明配套均失败。需执行 `process-classes`；仅 compile 或编译失败时不会留下可用的旧开发描述。
+`wtl.workspace` 是构建属性，默认采用 Maven 明确的多模块根，也可用同名 Maven 属性指定。CLASS 运行时无需该 VM 参数：开启 Mod 自动加载后，使用平台根据 AppMain 与 DB 实际代码来源验证得到的工作区根，发现与 `src/app` 并列的 `src/mod`；关闭时不进行 Mod 来源发现。CLASS 的父 POM、主/从模块 POM、Maven 配置和资源过滤文件均须位于该工作区，额外维护的构建配置可用 `wtl.buildInputs` 逗号列表声明。`wtl.authorArtifacts` 使用完整 `groupId:artifactId:jar:version` 坐标；CLASS 配套必须是同 groupId、当前 reactor 中无独立 mod.json 的普通模块，不接受 classifier 猜测输出。provided/test 依赖不进入私有库，API 非 provided、H2/宿主运行依赖、其他 Mod 运行依赖及未声明配套均失败。需执行 `process-classes`；仅 compile 或编译失败时不会留下可用的旧开发描述。
 
 作者使用独立 `wtlmod-author-parent` POM（同 groupId、同工程开发版本），包含 JDK 21 编译、资源处理、开发描述生成和 package 绑定；该 POM 不继承整个 APP reactor、不作为业务 Mod 运行依赖。作者通过 Maven provided 依赖平台 API，自行声明第三方依赖；同作者配套 JAR 在构建属性 `wtl.authorArtifacts` 中以完整 Maven 坐标列举，其余有效 runtime 依赖进入 lib。平台 API、H2、宿主依赖和 provided 的其他 Mod 不打入包，冲突在构建时失败。
 

@@ -200,7 +200,7 @@ class PlatformModRecoveryGraphTest {
                 .startMods(
                     runtime, new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS,
                         fixture.workspace, runtime.persistence().database().root()),
-                    fixture.workspace.toString(), pages);
+                    pages);
             assertEquals(Set.of(F), report.running()); // G requires P, which is isolated in recovery.
             assertEquals(Set.of(P, C, F), runtime.modContexts().keySet());
             assertEquals(List.of(F), pages.contributions().stream().map(value -> value.key().ownerId()).toList());

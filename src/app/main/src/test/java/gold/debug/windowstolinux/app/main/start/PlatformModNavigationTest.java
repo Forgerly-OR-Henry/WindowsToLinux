@@ -114,7 +114,7 @@ class PlatformModNavigationTest {
             return value;
         });
         ApplicationLauncher.startMods(runtime, new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS,
-                fixture.workspace, runtime.persistence().database().root()), fixture.workspace.toString(),
+                fixture.workspace, runtime.persistence().database().root()),
             frame.pages());
         ApplicationLauncher.installModManagement(runtime, frame);
         idle();

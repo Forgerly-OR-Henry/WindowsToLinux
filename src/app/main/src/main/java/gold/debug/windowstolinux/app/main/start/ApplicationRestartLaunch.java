@@ -36,8 +36,7 @@ record ApplicationRestartLaunch(Path executable, List<String> arguments, Path di
         return fromEvidence(layout, Path.of(System.getProperty("java.home")),
             ProcessHandle.current().info().command().map(Path::of),
             Path.of(AppMain.class.getProtectionDomain().getCodeSource().getLocation().toURI()),
-            System.getProperty("java.class.path", ""), Path.of("").toAbsolutePath(),
-            System.getProperty("wtl.workspace"));
+            System.getProperty("java.class.path", ""), Path.of("").toAbsolutePath());
     }
 
     /** Resolves the three admitted modes from explicit deterministic evidence. / 按明确确定性证据解析三种已准入模式。
@@ -47,12 +46,11 @@ record ApplicationRestartLaunch(Path executable, List<String> arguments, Path di
      * @param source actual main code source / 实际主入口代码来源
      * @param classpath actual runtime classpath / 实际运行类路径
      * @param workingDirectory original classpath base / 原类路径基准
-     * @param workspace explicit CLASS workspace, possibly absent / 明确 CLASS 工作区，可以缺省
      * @return validated immutable description / 已验证不可变描述
      * @throws IOException if an input is missing or inconsistent / 输入缺失或不一致时 */
     static ApplicationRestartLaunch fromEvidence(RunModeResolver.RuntimeLayout layout, Path javaHome,
                                                  Optional<Path> command, Path source, String classpath,
-                                                 Path workingDirectory, String workspace) throws IOException {
+                                                 Path workingDirectory) throws IOException {
         Path home = layout.applicationHome().toRealPath();
         Path main = source.toRealPath();
         if (layout.mode() == RunModeResolver.RunMode.RUN_APP) {
@@ -97,12 +95,6 @@ record ApplicationRestartLaunch(Path executable, List<String> arguments, Path di
         if (!includesMain)
             throw invalid("The actual classpath does not contain the running main entry");
         var arguments = new ArrayList<String>();
-        if (layout.mode() == RunModeResolver.RunMode.RUN_CLASS && workspace != null && !workspace.isBlank()) {
-            Path declared = Path.of(workspace).toRealPath();
-            if (!declared.equals(home))
-                throw invalid("Development workspace differs from the running program");
-            arguments.add("-Dwtl.workspace=" + declared);
-        }
         arguments.add("-cp");
         arguments.add(String.join(File.pathSeparator, entries));
         arguments.add(AppMain.class.getName());

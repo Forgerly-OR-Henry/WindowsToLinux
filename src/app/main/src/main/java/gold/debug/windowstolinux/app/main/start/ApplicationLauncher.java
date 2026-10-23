@@ -150,7 +150,7 @@ public final class ApplicationLauncher {
                 created.setVisible(true);
                 return null;
             });
-            var modReport = startMods(runtime, layout, System.getProperty("wtl.workspace"), created.pages());
+            var modReport = startMods(runtime, layout, created.pages());
             installModManagement(runtime, created);
             onEdt(() -> {
                 if (created.isDisplayable())
@@ -344,11 +344,10 @@ public final class ApplicationLauncher {
     /** Applies default startup to the verified source-mode-specific program root. / 对已验证的对应来源模式程序根应用默认启动。
      * @param runtime original platform runtime / 原平台运行时
      * @param layout verified executable and data anchors / 已验证程序及数据锚点
-     * @param declared literal wtl.workspace value / 原样 wtl.workspace 值
      * @param pages actual desktop page registry / 实际桌面页面登记
      * @return safe startup facts without making the platform shell unavailable / 安全启动事实，不使平台外壳不可用 */
     static gold.debug.windowstolinux.app.main.mod.PlatformModFlow.Report startMods(PlatformRuntime runtime,
-                                                                                   RunModeResolver.RuntimeLayout layout, String declared,
+                                                                                   RunModeResolver.RuntimeLayout layout,
                                                                                    gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) {
         if (!runtime.startup().config().modLoad())
             return new gold.debug.windowstolinux.app.main.mod.PlatformModFlow.Report(java.util.Set.of(), java.util.List.of());
@@ -357,13 +356,8 @@ public final class ApplicationLauncher {
                 throw new java.io.IOException("Layout does not match the running platform database");
             if (layout.mode() != RunModeResolver.RunMode.RUN_CLASS)
                 return runtime.startInstalledMods(layout.applicationHome(), pages);
-            if (declared == null || declared.isBlank())
-                throw new java.io.IOException("Explicit CLASS workspace is missing");
             Path root = gold.debug.windowstolinux.app.mod.dev.DevelopmentInfo
-                .workspace(Path.of(declared));
-            if (!root.equals(layout.applicationHome().toRealPath())
-                || !runtime.persistence().database().root().equals(layout.dataDirectory().toRealPath()))
-                throw new java.io.IOException("Explicit workspace does not match the running platform");
+                .workspace(layout.applicationHome());
             return runtime.startDevelopmentMods(root, pages);
         } catch (Exception | LinkageError | AssertionError failure) {
             var problem = failure instanceof gold.debug.windowstolinux.appapi.task.result.ApiException api
