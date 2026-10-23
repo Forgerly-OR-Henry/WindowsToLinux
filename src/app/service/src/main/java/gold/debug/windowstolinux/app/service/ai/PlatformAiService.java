@@ -48,7 +48,7 @@ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Routes generic model calls through frozen purpose selections and original task credentials. / 经冻结用途选择及原任务凭据路由通用模型调用。 */
 public final class PlatformAiService implements AiService, AutoCloseable {
-    private final NativeModelContinuations continuations = new NativeModelContinuations();
+    private final NativeModelContinuations continuations;
 
     /** Configured model connection timeout in seconds. / 已配置的模型连接超时秒数。 */
     private final int connectSeconds;
@@ -104,6 +104,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
     public PlatformAiService(PlatformDatabase database, PlatformTaskRuntime tasks, DesktopSecurityService security,
                              AiModelStore profiles, String owner, String version, AppConfig.Ai settings) {
         this.settings = Objects.requireNonNull(settings);
+        this.continuations = new NativeModelContinuations(settings.nativeState());
         this.connectSeconds = settings.connectSeconds();
         this.tasks = Objects.requireNonNull(tasks);
         this.security = Objects.requireNonNull(security);

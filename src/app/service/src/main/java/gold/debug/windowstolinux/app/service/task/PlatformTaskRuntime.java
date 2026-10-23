@@ -1521,6 +1521,34 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             }
         }
 
+        @Override
+        public boolean resourcesReleasedExceptCheckpoints(TaskContext task, Set<String> keys) throws ApiException {
+            return observeExceptCheckpoints(task, keys, null);
+        }
+
+        @Override
+        public boolean resourcesReleasedExceptCheckpoints(TaskContext task, Set<String> keys, Set<String> exactAuthorKeys) throws ApiException {
+            if (exactAuthorKeys == null)
+                throw TaskConclusion.error(ProblemCode.INVALID_INPUT, "TASK_CHECKPOINT_EXCLUSIONS", "Complete author checkpoint set is required");
+            return observeExceptCheckpoints(task, keys, exactAuthorKeys);
+        }
+
+        private boolean observeExceptCheckpoints(TaskContext task, Set<String> keys, Set<String> authorKeys) throws ApiException {
+            if (javax.swing.SwingUtilities.isEventDispatchThread())
+                throw TaskConclusion.error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER", "Service calls require a worker");
+            synchronized (PlatformTaskRuntime.this) {
+                requireRecoveryCheckpoint(task, null);
+                try {
+                    return authorKeys == null ? resourceObservation.releasedExceptCheckpoints(task.id(), owner, version, keys)
+                        : resourceObservation.releasedExceptCheckpoints(task.id(), owner, version, keys, authorKeys);
+                } catch (TaskAuthorCheckpoint.RejectedException rejected) {
+                    throw TaskConclusion.error(ProblemCode.INVALID_INPUT, "TASK_CHECKPOINT_EXCLUSIONS", "Checkpoint exclusions are invalid");
+                } catch (SQLException failure) {
+                    throw TaskConclusion.error(ProblemCode.IO_FAILURE, "TASK_RESOURCE_OBSERVATION", "Task resource release could not be confirmed");
+                }
+            }
+        }
+
         /** Creates a bounded author fact as the task's first external-effect boundary. / 将有界作者依据作为任务首个外部效果边界创建。
          * @param task original executing task / 原执行任务
          * @param key stable owner-local key / 稳定所有者内部键

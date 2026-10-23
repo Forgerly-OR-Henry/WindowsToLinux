@@ -15,6 +15,8 @@ import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
 import gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
+import gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest;
+import gold.debug.windowstolinux.appapi.ui.extension.UiExtensionService;
 
 /** Owns staged page contributions and EDT-confined author view lifetimes. / 持有暂存页面扩展及限定在 EDT 的作者视图生命周期。 */
 public final class ModPageRegistry {
@@ -23,6 +25,9 @@ public final class ModPageRegistry {
 
     /** Current environment copied to new and already open pages. / 传递到新页面及已打开页面的当前环境。 */
     private UiEnvironment environment;
+
+    /** Shared extension ownership, following the same activation lifetime. / 遵循同一启用寿命的共享扩展归属。 */
+    private final UiExtensionRegistry extensions;
 
     /** Current startup scopes, including unpublished and failed-cleanup scopes. / 当前启动作用域，包含未发布及清理失败的作用域。 */
     private final Map<String, PageScope> scopes = new LinkedHashMap<>();
@@ -104,6 +109,13 @@ public final class ModPageRegistry {
     public ModPageRegistry(PageHost host, UiEnvironment environment) {
         this.host = Objects.requireNonNull(host);
         this.environment = Objects.requireNonNull(environment);
+        extensions = new UiExtensionRegistry(environment);
+    }
+
+    /** Returns the host-only extension composition. / 返回仅宿主使用的扩展装配。
+     * @return central extension registry / 集中扩展登记器 */
+    public UiExtensionRegistry extensions() {
+        return extensions;
     }
 
     /**
@@ -114,11 +126,21 @@ public final class ModPageRegistry {
      * @throws ApiException if that owner still holds another scope / 该所有者仍持有其他作用域时
      */
     public PageScope begin(String ownerId, boolean recoveryOnly) throws ApiException {
+        return begin(ownerId, recoveryOnly, UiExtensionValues.PLATFORM);
+    }
+
+    /** Binds page and extension registration to an actual injected owner policy. / 将页面及扩展登记绑定到实际注入的所属者策略。
+     * @param ownerId actual owner / 实际所属者
+     * @param recoveryOnly restricted recovery lifetime / 受限恢复寿命
+     * @param access actual type and dependency policy / 实际类型及依赖策略
+     * @return original scope / 原作用域
+     * @throws ApiException if the owner remains retained / 所属者仍被保留时 */
+    public PageScope begin(String ownerId, boolean recoveryOnly, UiExtensionAccess access) throws ApiException {
         Objects.requireNonNull(ownerId);
         return onEdt(() -> {
             if (ownerId.isBlank() || scopes.containsKey(ownerId))
                 throw failure(ProblemCode.BUSY, "PAGE_SCOPE_EXISTS", "The Mod still owns a page scope");
-            var scope = new PageScope(ownerId, recoveryOnly);
+            var scope = new PageScope(ownerId, recoveryOnly, extensions.begin(ownerId, recoveryOnly, access));
             scopes.put(ownerId, scope);
             return scope;
         });
@@ -241,6 +263,7 @@ public final class ModPageRegistry {
         Objects.requireNonNull(next);
         onEdt(() -> {
             environment = next;
+            extensions.environment(next);
             host.environment(next);
             if (previewHost != null)
                 previewHost.environment(next);
@@ -255,8 +278,12 @@ public final class ModPageRegistry {
                 for (var entry : List.copyOf(scope.entries.values()))
                     if (entry.page != null && !entry.pageClosed)
                         try {
-                            entry.page.environmentChanged(next);
-                        } catch (RuntimeException | Error problem) {
+                            if (entry.preview) extensions.isolated(() -> {
+                                entry.page.environmentChanged(next);
+                                return null;
+                            });
+                            else entry.page.environmentChanged(next);
+                        } catch (Exception | Error problem) {
                             rethrowFatal(problem);
                             if (failure == null)
                                 failure = failure(ProblemCode.CONTRACT_VIOLATION, "PAGE_ENVIRONMENT_FAILED",
@@ -393,6 +420,9 @@ public final class ModPageRegistry {
         /** Whether normal UI publication is forbidden. / 是否禁止普通界面发布。 */
         private final boolean recoveryOnly;
 
+        /** Original owner-bound extensions. / 原所属者绑定扩展。 */
+        private final UiExtensionRegistry.Binding extensionBinding;
+
         /** Author factories and any retained open view state. / 作者工厂及保留的打开视图状态。 */
         private final Map<String, PageEntry> entries = new LinkedHashMap<>();
 
@@ -409,10 +439,12 @@ public final class ModPageRegistry {
          * Creates an unpublished caller scope. / 创建未发布的调用方作用域。
          * @param owner exact owner identity / 精确所有者身份
          * @param recoveryOnly whether publication is forbidden / 是否禁止发布
+         * @param extensionBinding original owned extension registry / 原所属扩展登记
          */
-        private PageScope(String owner, boolean recoveryOnly) {
+        private PageScope(String owner, boolean recoveryOnly, UiExtensionRegistry.Binding extensionBinding) {
             this.owner = owner;
             this.recoveryOnly = recoveryOnly;
+            this.extensionBinding = extensionBinding;
         }
 
         /**
@@ -424,6 +456,7 @@ public final class ModPageRegistry {
                 if (stopping)
                     throw failure(ProblemCode.UNAVAILABLE, "PAGE_SCOPE_STOPPING", "Page scope is stopping");
                 committed = true;
+                if (!recoveryOnly) extensionBinding.publish();
                 changed();
                 return null;
             });
@@ -494,6 +527,45 @@ public final class ModPageRegistry {
             open(localPageId, false);
         }
 
+        /** Returns actual owner-bound extensions. / 返回实际所属者绑定扩展。
+         * @return original extensions / 原扩展 */
+        @Override
+        public UiExtensionService extensions() {
+            return extensionBinding;
+        }
+
+        /** Delivers one detached request after creating or focusing the original view. / 创建或聚焦原视图后交付一次分离请求。
+         * @param localPageId original owned page / 原所属页面
+         * @param request explicit transient navigation / 明确临时导航
+         * @throws ApiException if owner, payload or navigation is unavailable / 所属者、载荷或导航不可用时 */
+        @Override
+        public void open(String localPageId, UiNavigationRequest<?> request) throws ApiException {
+            onEdt(() -> {
+                var detached = UiExtensionValues.navigation(Objects.requireNonNull(request), extensionBinding.access);
+                open(localPageId);
+                try {
+                    entries.get(localPageId).page.navigate(detached);
+                } catch (ApiException rejected) {
+                    throw rejected;
+                } catch (Exception | Error failure) {
+                    rethrowFatal(failure);
+                    throw failure(ProblemCode.CONTRACT_VIOLATION, "PAGE_NAVIGATION_FAILED", "Contextual navigation failed");
+                }
+                return null;
+            });
+        }
+
+        /** Seals callbacks before the original owner stop callback. / 原所属者停止回调前封闭界面回调。
+         * @throws ApiException if dispatch fails / 调度失败时 */
+        public void seal() throws ApiException {
+            onEdt(() -> {
+                stopping = true;
+                extensionBinding.seal();
+                changed();
+                return null;
+            });
+        }
+
         /** Navigates only after normal publication and original scope/lock checks. / 仅在普通发布及原作用域、锁定核验后导航。
          * @param target fixed host destination / 固定宿主目的地
          * @throws ApiException if original scope or host destination is unavailable / 原作用域或宿主目的地不可用时 */
@@ -551,6 +623,7 @@ public final class ModPageRegistry {
                 if (closed)
                     return null;
                 stopping = true;
+                extensionBinding.seal();
                 changed();
                 ApiException first = null;
                 var pending = new ArrayList<>(entries.values());
@@ -566,6 +639,7 @@ public final class ModPageRegistry {
                     }
                 if (first != null)
                     throw first;
+                extensionBinding.close();
                 closed = true;
                 scopes.remove(owner, this);
                 return null;
@@ -592,6 +666,9 @@ public final class ModPageRegistry {
 
         /** Retained author instance, including failed creation cleanup. / 保留的作者实例，包含创建失败后的清理状态。 */
         private ModPage page;
+
+        /** Original mounted author root for extension cleanup. / 用于扩展清理的原挂载作者根。 */
+        private JComponent component;
 
         /** Whether a host mount may need removal. / 是否可能需要移除宿主挂载。 */
         private boolean mounted;
@@ -648,9 +725,9 @@ public final class ModPageRegistry {
                 return;
             }
             try {
-                page = Objects.requireNonNull(factory.create());
+                page = Objects.requireNonNull(preview ? extensions.isolated(factory::create) : factory.create());
                 if (navigationId != null) page.restoreNavigation(navigationId);
-                var component = Objects.requireNonNull(page.create(environment));
+                component = Objects.requireNonNull(preview ? extensions.isolated(() -> page.create(environment)) : page.create(environment));
                 if (page == null || scope.entries.get(spec.id()) != this || scope.stopping)
                     throw new IllegalStateException("Page registration was revoked during creation");
                 if (component.getParent() != null)
@@ -681,7 +758,12 @@ public final class ModPageRegistry {
             cleanupPending = true;
             try {
                 if (page != null && !pageClosed) {
-                    page.close();
+                    if (component != null) extensions.closeWithin(component);
+                    if (preview) extensions.isolated(() -> {
+                        page.close();
+                        return null;
+                    });
+                    else page.close();
                     pageClosed = true;
                 }
                 if (mounted) {
@@ -689,6 +771,7 @@ public final class ModPageRegistry {
                     mounted = false;
                 }
                 page = null;
+                component = null;
                 pageClosed = false;
                 cleanupPending = false;
             } catch (Exception | Error closing) {

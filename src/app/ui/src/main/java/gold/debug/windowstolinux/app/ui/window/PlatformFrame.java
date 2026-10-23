@@ -243,8 +243,7 @@ public final class PlatformFrame extends JFrame {
         });
         shell.appearance(palette);
         shell.collapse(config.ui().navigationCollapsed(), false);
-        setSize(1120, 760);
-        setMinimumSize(new java.awt.Dimension(800, 560));
+        DesktopWindowGeometry.install(this);
         setLocationRelativeTo(null);
     }
 

@@ -11,7 +11,7 @@ import java.util.Optional;
  * @param ssh connection and recovery timings / SSH与救援时序
  * @param ai model request budgets / 模型调用预算
  * @param emergencyRecords retained records per emergency category / 每类应急日志保留数量
- * @param modLoad whether Mod composition is allowed / 是否装配Mod
+ * @param modLoad whether startup automatically discovers and loads Mods / 启动时是否自动发现和加载 Mod
  * @param storeUrl optional store service root / 可选商店服务根 */
 public record AppConfig(String dataDirectory, Ui ui, Defaults defaults, Ssh ssh, Ai ai,
                         int emergencyRecords, boolean modLoad, Optional<URI> storeUrl) {
@@ -22,7 +22,7 @@ public record AppConfig(String dataDirectory, Ui ui, Defaults defaults, Ssh ssh,
      * @param ssh SSH timing configuration / SSH 时序配置
      * @param ai model request budgets / 模型请求预算
      * @param emergencyRecords retention per category / 每类保留数量
-     * @param modLoad Mod composition switch / Mod 装配开关
+     * @param modLoad automatic Mod discovery and loading switch / Mod 自动发现和加载开关
      * @param storeUrl optional store root / 可选商店根地址
      */
     public AppConfig {
@@ -38,7 +38,8 @@ public record AppConfig(String dataDirectory, Ui ui, Defaults defaults, Ssh ssh,
      * @return baseline configuration / 默认配置 */
     public static AppConfig defaultsConfig() {
         return new AppConfig("data", new Ui(false, false), new Defaults("system", "SYSTEM", 30, 300, true),
-            new Ssh(30, 2, 10, 15), new Ai(10, 32768, true, 8192, new Budget(60), new Budget(30), new Budget(20)),
+            new Ssh(30, 2, 10, 15), new Ai(30, 32768, true, 8192,
+            new NativeState(4096, 64L * 1024 * 1024, 1024 * 1024), new Budget(60), new Budget(30), new Budget(20)),
             100, true, Optional.empty());
     }
 
@@ -71,6 +72,14 @@ public record AppConfig(String dataDirectory, Ui ui, Defaults defaults, Ssh ssh,
     public record Budget(int timeoutSeconds) {
     }
 
+    /** Task-owned native provider payload limits; public handles retain their 1 MiB bound. */
+    public record NativeState(int maxStates, long maxTotalBytes, int maxValueBytes) {
+        public NativeState {
+            if (maxStates < 1 || maxValueBytes < 1 || maxValueBytes > 1024 * 1024 || maxTotalBytes < maxValueBytes)
+                throw new IllegalArgumentException("Invalid native provider state limits");
+        }
+    }
+
     /** Independent transport and operation budgets. / 独立传输与用途预算。
      * @param connectSeconds HTTP connect cap / HTTP连接上限
      * @param recommendedMaxOutputTokens default output budget / 默认推荐输出额度
@@ -80,11 +89,13 @@ public record AppConfig(String dataDirectory, Ui ui, Defaults defaults, Ssh ssh,
      * @param deletion deletion review timeout / 删除审核超时
      * @param file file judgement timeout / 文件判断超时 */
     public record Ai(int connectSeconds, int recommendedMaxOutputTokens, boolean allowOutputTokenOverride,
-                     int verificationMaxOutputTokens, Budget recovery, Budget deletion, Budget file) {
+                     int verificationMaxOutputTokens, NativeState nativeState, Budget recovery, Budget deletion,
+                     Budget file) {
         public Ai {
             if (connectSeconds < 1 || recommendedMaxOutputTokens < 1 || verificationMaxOutputTokens < 1)
                 throw new IllegalArgumentException("AI transport and output budgets must be positive");
             Objects.requireNonNull(recovery);
+            Objects.requireNonNull(nativeState);
             Objects.requireNonNull(deletion);
             Objects.requireNonNull(file);
         }

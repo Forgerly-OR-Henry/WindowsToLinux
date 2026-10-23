@@ -359,6 +359,17 @@ public final class PlatformModContext implements ContextLease {
             return delegate.resourcesReleased(task);
         }
 
+        @Override
+        public boolean resourcesReleasedExceptCheckpoints(TaskContext task, java.util.Set<String> keys) throws ApiException {
+            return delegate.resourcesReleasedExceptCheckpoints(task, keys);
+        }
+
+        @Override
+        public boolean resourcesReleasedExceptCheckpoints(TaskContext task, java.util.Set<String> keys,
+                                                          java.util.Set<String> exactAuthorKeys) throws ApiException {
+            return delegate.resourcesReleasedExceptCheckpoints(task, keys, exactAuthorKeys);
+        }
+
         /** Delegates original checkpoint creation unchanged. / 原样委托原检查点创建。
          * @param task original context / 原上下文
          * @param key original key / 原键

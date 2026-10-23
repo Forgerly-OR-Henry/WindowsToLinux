@@ -72,6 +72,24 @@ public interface TaskService {
      */
     boolean resourcesReleased(TaskContext task) throws ApiException;
 
+    /** Observes explicit resources while excluding only exact root-owned author checkpoints in the current recovery.
+     * / 在当前原根恢复中，仅排除精确所属作者检查点后观察显式资源。
+     * @param task authentic original reconciling context / 真实原核对上下文
+     * @param keys one to sixteen distinct canonical author checkpoint keys / 一到十六项不同的规范作者检查点键
+     * @return true only when every excluded checkpoint is authentic and no other explicit lease remains / 仅排除项全真实且无其他显式占用时为真
+     * @throws ApiException if scope, checkpoint identity or durable observation is unavailable / 作用域、检查点身份或持久观测不可用时 */
+    boolean resourcesReleasedExceptCheckpoints(TaskContext task, java.util.Set<String> keys) throws ApiException;
+
+    /** Also requires the complete original author-checkpoint set, including released rows, in the same observation.
+     * / 在同次观测中额外要求原作者检查点完整集合匹配，包括已释放行。
+     * @param task authentic original root reconciliation / 真实原根核对
+     * @param keys exact checkpoints excluded only from the explicit-resource predicate / 仅从显式资源判据排除的精确检查点
+     * @param exactAuthorKeys complete expected set of one to sixteen canonical author keys, containing keys / 包含排除项的一到十六项完整规范作者键集合
+     * @return true only for the exact complete author set and no other explicit resources / 仅作者集合完整精确匹配且无其他显式资源时为真
+     * @throws ApiException if authentication, input or complete persisted observation fails / 鉴权、输入或完整持久观测失败时 */
+    boolean resourcesReleasedExceptCheckpoints(TaskContext task, java.util.Set<String> keys,
+                                               java.util.Set<String> exactAuthorKeys) throws ApiException;
+
     /** Atomically retains one checkpoint of at most 12,000 UTF-8 bytes for the authenticated root or provider in its current synchronous call. / 为已认证根所有者或当前同步调用提供方原子保留一项最多 12,000 UTF-8 字节的检查点。
      * @param task authentic executing original task / 真实执行中的原任务
      * @param key stable owner-local checkpoint key / 稳定的所有者内部检查点键
@@ -86,6 +104,25 @@ public interface TaskService {
      * @return original row, including released evidence before task archival / 原行，包括任务归档前已释放的依据
      * @throws ApiException if the caller or persisted identity cannot be verified / 无法核实调用者或持久身份时 */
     Optional<TaskCheckpoint> findCheckpoint(TaskContext task, String key) throws ApiException;
+
+    /** Creates bounded recovery progress only in the authenticated original root's current explicit reconciliation.
+     * This is new recovery evidence, not an execution checkpoint or authority to replay an effect.
+     * / 仅在已认证原根所有者当前显式核对中创建有界恢复进度；它不是原执行检查点或重放权限。
+     * @param task authentic original reconciling context / 真实原核对上下文
+     * @param key stable owner-local single-use key / 稳定且仅可创建一次的所属键
+     * @param initial non-secret object of at most 12,000 UTF-8 bytes / 最多12000 UTF-8字节的非秘密对象
+     * @return handle confined to this reconciliation / 仅限本次核对的句柄
+     * @throws ApiException if scope, key or persistence cannot be confirmed / 作用域、键或持久化无法确认时 */
+    TaskCheckpoint beginRecoveryCheckpoint(TaskContext task, String key, String initial) throws ApiException;
+
+    /** Finds recovery progress in its distinct host namespace, including released evidence before archival.
+     * Every handle operation requires the same active reconciliation; author rows are never imported.
+     * / 在独立宿主命名空间查找恢复进度，包括归档前已释放依据；每次句柄操作均要求同次核对，不导入作者行。
+     * @param task authentic original reconciling context / 真实原核对上下文
+     * @param key stable owner-local key / 稳定的所属键
+     * @return original recovery row or absence / 原恢复行或不存在
+     * @throws ApiException if the caller, scope or stored identity differs / 调用方、作用域或存储身份不符时 */
+    Optional<TaskCheckpoint> findRecoveryCheckpoint(TaskContext task, String key) throws ApiException;
 
     /**
      * Registers manual reconciliation for retained tasks of the given type. / 为指定类型保留任务登记人工核对逻辑。

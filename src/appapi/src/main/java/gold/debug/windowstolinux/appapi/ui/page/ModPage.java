@@ -32,6 +32,13 @@ public interface ModPage extends AutoCloseable {
     default void restoreNavigation(String id) {
     }
 
+    /** Receives one explicit transient request after creation on the EDT. / 在 EDT 创建后接收一次明确临时请求。
+     * @param request detached request, never startup persistence / 分离请求，不参与启动持久化
+     * @throws Exception if the destination is unsupported or unavailable / 目的地不支持或不可用时 */
+    default void navigate(UiNavigationRequest<?> request) throws Exception {
+        throw new UnsupportedOperationException("This page does not accept contextual navigation");
+    }
+
     /**
      * Releases the owned resource; failure keeps occupancy and permits retry. / 释放所属资源；失败时保留占用并允许重试。
      * @throws Exception if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时

@@ -6,6 +6,7 @@ import java.util.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
 import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
@@ -33,6 +34,9 @@ public final class TaskCapabilityScope implements AutoCloseable {
     /** Host-chosen operation resource prefix. / 宿主选择的操作资源前缀。 */
     private final String resourcePrefix;
 
+    /** Optional host proof identifying vanished process-local work. / 可选宿主依据，标识已消失的进程内工作。 */
+    private final Optional<ResourceRecovery> recovery;
+
     /** Physically completed operations awaiting durable release. / 等待持久释放的物理已完成操作。 */
     private final Map<UUID, PendingRelease> pending = new HashMap<>();
 
@@ -53,12 +57,26 @@ public final class TaskCapabilityScope implements AutoCloseable {
      */
     public TaskCapabilityScope(PlatformDatabase database, PlatformTaskRuntime tasks, String owner, String version,
                                Optional<SchemaIdentity> schema, String resourcePrefix) {
+        this(database, tasks, owner, version, schema, resourcePrefix, Optional.empty());
+    }
+
+    /** Binds an optional process identity before retaining any capability call. / 保留能力调用前绑定可选进程身份。
+     * @param database current engine / 当前引擎
+     * @param tasks task authority / 任务授权方
+     * @param owner exact owner / 精确所有者
+     * @param version original version / 原版本
+     * @param schema optional generation / 可选代次
+     * @param resourcePrefix host identity prefix / 宿主身份前缀
+     * @param recovery host recovery proof / 宿主恢复依据 */
+    public TaskCapabilityScope(PlatformDatabase database, PlatformTaskRuntime tasks, String owner, String version,
+                               Optional<SchemaIdentity> schema, String resourcePrefix, Optional<ResourceRecovery> recovery) {
         this.tasks = Objects.requireNonNull(tasks);
         ledger = new TaskLedger(database);
         this.owner = Objects.requireNonNull(owner);
         this.version = Objects.requireNonNull(version);
         this.schema = Objects.requireNonNull(schema);
         this.resourcePrefix = Objects.requireNonNull(resourcePrefix);
+        this.recovery = Objects.requireNonNull(recovery);
         if (schema.isPresent() && !owner.equals(schema.orElseThrow().ownerId()))
             throw new IllegalArgumentException("Capability schema belongs to another Mod");
     }
@@ -86,7 +104,8 @@ public final class TaskCapabilityScope implements AutoCloseable {
         }
         ResourceLease lease;
         try {
-            lease = tasks.retain(task, new TaskResource("CUSTOM", resourcePrefix + UUID.randomUUID(), owner, false));
+            lease = tasks.retain(task, new TaskResource("CUSTOM", resourcePrefix + UUID.randomUUID(), owner, false),
+                recovery.orElse(null), false);
         } catch (ApiException | RuntimeException failure) {
             synchronized (this) {
                 active--;

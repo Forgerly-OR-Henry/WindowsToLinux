@@ -24,6 +24,9 @@ public final class TaskAuthorCheckpoint {
     /** Fixed host-controlled envelope, never supplied by a Mod. / 固定宿主控制封套，绝不由 Mod 指定。 */
     private static final String PROTOCOL = "author-checkpoint.v1";
 
+    /** Fixed purpose for facts first created during explicit recovery. / 显式恢复中新建依据的固定用途。 */
+    private static final String RECOVERY_PROTOCOL = "recovery-checkpoint.v1";
+
     /** Bounded author JSON before it enters the platform ledger. / 进入平台账本前有界的作者 JSON。 */
     private static final int MAX_PAYLOAD_BYTES = 12000;
 
@@ -38,7 +41,23 @@ public final class TaskAuthorCheckpoint {
     /** Binds the original exclusive platform generation. / 绑定原独占平台代次。
      * @param database actual platform engine / 实际平台引擎 */
     public TaskAuthorCheckpoint(PlatformDatabase database) {
+        this(database, false);
+    }
+
+    /** Whether this store accepts only root-owned recovery facts. / 是否仅接纳根所有者恢复依据。 */
+    private final boolean recovery;
+
+    private TaskAuthorCheckpoint(PlatformDatabase database, boolean recovery) {
         this.database = Objects.requireNonNull(database);
+        this.recovery = recovery;
+    }
+
+    /** Selects a fixed recovery purpose without caller-selected protocol or namespace.
+     * / 选择固定恢复用途，不接收调用方自选的协议或命名空间。
+     * @param database original platform engine / 原平台引擎
+     * @return root-only recovery store / 仅根所有者可用的恢复存储 */
+    public static TaskAuthorCheckpoint recovery(PlatformDatabase database) {
+        return new TaskAuthorCheckpoint(database, true);
     }
 
     /** Persisted exact author row. / 已持久化的精确作者行。
@@ -84,22 +103,26 @@ public final class TaskAuthorCheckpoint {
     public Optional<Entry> find(UUID task, String owner, String version, String key) throws SQLException {
         validateKey(key);
         try (var connection = database.openConnection()) {
-            requireTask(connection, task, owner, version);
-            try (var query = connection.prepareStatement(
-                "SELECT lease_id,owner_id,access_mode,recovery_json,released_at FROM platform_task_resource WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=?")) {
-                query.setObject(1, task);
-                query.setString(2, resourceId(owner, key));
-                try (var rows = query.executeQuery()) {
-                    if (!rows.next())
-                        return Optional.empty();
-                    if (!owner.equals(rows.getString(2)) || !"SHARED".equals(rows.getString(3)))
-                        throw new SQLException("Author checkpoint ownership differs");
-                    var value = decode(rows.getString(4), task, owner, version, key, rows.getObject(5) != null);
-                    var entry = new Entry(rows.getObject(1, UUID.class), value);
-                    if (rows.next())
-                        throw new SQLException("Author checkpoint identity is duplicated");
-                    return Optional.of(entry);
-                }
+            return find(connection, task, owner, version, key);
+        }
+    }
+
+    /** Reads with the caller's existing platform transaction. / 使用调用方的现有平台事务读取。 */
+    Optional<Entry> find(Connection connection, UUID task, String owner, String version, String key) throws SQLException {
+        validateKey(key);
+        requireTask(connection, task, owner, version);
+        try (var query = connection.prepareStatement(
+            "SELECT lease_id,owner_id,access_mode,recovery_json,released_at FROM platform_task_resource WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=?")) {
+            query.setObject(1, task);
+            query.setString(2, resourceId(owner, key));
+            try (var rows = query.executeQuery()) {
+                if (!rows.next()) return Optional.empty();
+                if (!owner.equals(rows.getString(2)) || !"SHARED".equals(rows.getString(3)))
+                    throw new SQLException("Author checkpoint ownership differs");
+                var value = decode(rows.getString(4), task, owner, version, key, rows.getObject(5) != null);
+                var entry = new Entry(rows.getObject(1, UUID.class), value);
+                if (rows.next()) throw new SQLException("Author checkpoint identity is duplicated");
+                return Optional.of(entry);
             }
         }
     }
@@ -173,12 +196,12 @@ public final class TaskAuthorCheckpoint {
         new TaskLedger(database).release(task, lease);
     }
 
-    /** Uses only one fixed namespace for author facts. / 作者依据只使用一个固定命名空间。
+    /** Uses the host-selected fixed purpose namespace. / 使用宿主所选用途的固定命名空间。
      * @param owner bound owner / 绑定所有者
      * @param key validated stable key / 已验证稳定键
      * @return exact task resource identity / 精确任务资源身份 */
-    private static String resourceId(String owner, String key) {
-        return owner + "/checkpoint/" + key;
+    private String resourceId(String owner, String key) {
+        return owner + (recovery ? "/recovery-checkpoint/" : "/checkpoint/") + key;
     }
 
     /** Validates the key without exposing a host protocol name. / 校验键且不暴露宿主协议名。
@@ -212,9 +235,9 @@ public final class TaskAuthorCheckpoint {
      * @param revision monotone revision / 单调修订
      * @param payload author value / 作者值
      * @return exact host envelope / 精确宿主封套 */
-    private static ResourceRecovery facts(UUID task, String owner, String version, String key, long revision,
-                                          String payload) {
-        return new ResourceRecovery(PROTOCOL, Map.of("taskId", task.toString(), "ownerId", owner, "ownerVersion",
+    private ResourceRecovery facts(UUID task, String owner, String version, String key, long revision,
+                                   String payload) {
+        return new ResourceRecovery(recovery ? RECOVERY_PROTOCOL : PROTOCOL, Map.of("taskId", task.toString(), "ownerId", owner, "ownerVersion",
             version, "key", key, "revision", Long.toString(revision), "payload", payload));
     }
 
@@ -227,12 +250,12 @@ public final class TaskAuthorCheckpoint {
      * @param released actual release column / 实际释放列
      * @return validated public snapshot / 已核验的公开快照
      * @throws SQLException if any fact differs / 任一依据不符时 */
-    private static TaskCheckpoint.Snapshot decode(String value, UUID task, String owner, String version, String key,
-                                                  boolean released) throws SQLException {
+    private TaskCheckpoint.Snapshot decode(String value, UUID task, String owner, String version, String key,
+                                           boolean released) throws SQLException {
         try {
             var decoded = ResourceRecovery.decode(value);
             var fields = decoded.fields();
-            if (!decoded.protocol().equals(PROTOCOL)
+            if (!decoded.protocol().equals(recovery ? RECOVERY_PROTOCOL : PROTOCOL)
                 || !fields.keySet()
                 .equals(Set.of("taskId", "ownerId", "ownerVersion", "key", "revision", "payload"))
                 || !fields.get("taskId").equals(task.toString()) || !fields.get("ownerId").equals(owner)
@@ -255,7 +278,7 @@ public final class TaskAuthorCheckpoint {
      * @param owner bound owner / 绑定所有者
      * @param version bound release / 绑定发布
      * @throws SQLException if identity differs / 身份不符时 */
-    private static void requireTask(Connection connection, UUID task, String owner, String version)
+    private void requireTask(Connection connection, UUID task, String owner, String version)
         throws SQLException {
         try (var query = connection
             .prepareStatement("SELECT owner_id,owner_version,recovery_json FROM platform_task WHERE task_id=?")) {
@@ -263,9 +286,10 @@ public final class TaskAuthorCheckpoint {
             try (var rows = query.executeQuery()) {
                 if (!rows.next()) throw new SQLException("Original checkpoint task is absent");
                 if (owner.equals(rows.getString(1)) && version.equals(rows.getString(2))) return;
+                if (recovery) throw new SQLException("Recovery checkpoint root identity differs");
                 try {
                     var document = JSON.readTree(rows.getString(3));
-                    if (!Set.of(2, 3).contains(document.path("formatVersion").asInt()))
+                    if (document.path("formatVersion").asInt() != 3)
                         throw new IllegalArgumentException();
                     var original = TaskRecoveryGraph.decode(document.path("graph")).release(owner);
                     if (!original.version().equals(version)) throw new IllegalArgumentException();

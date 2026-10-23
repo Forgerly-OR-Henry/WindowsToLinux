@@ -110,6 +110,14 @@ class ModRuntimeSessionTest {
                 throw new AssertionError("Lifecycle must not open business pages");
             }
 
+            public void open(String id, gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<?> request) {
+                throw new AssertionError("Lifecycle must not open contextual pages");
+            }
+
+            public gold.debug.windowstolinux.appapi.ui.extension.UiExtensionService extensions() {
+                throw new AssertionError("This lifecycle fixture does not use extensions");
+            }
+
             public void openPlatform(gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind target) {
                 throw new AssertionError("Lifecycle must not open platform pages");
             }

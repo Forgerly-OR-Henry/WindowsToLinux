@@ -5,6 +5,8 @@ import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
 import gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
+import gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest;
+import gold.debug.windowstolinux.appapi.ui.extension.UiExtensionService;
 
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 
@@ -35,6 +37,16 @@ public interface UiService {
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
     void open(String localPageId) throws ApiException;
+
+    /** Opens the owned page and delivers one detached transient request after creation. / 打开所属页面并在创建后交付一次分离临时请求。
+     * @param localPageId exact owned page / 精确所属页面
+     * @param request explicit transient navigation / 明确临时导航
+     * @throws ApiException if lifetime, payload or navigation is unavailable / 寿命、载荷或导航不可用时 */
+    void open(String localPageId, UiNavigationRequest<?> request) throws ApiException;
+
+    /** Returns extensions bound to this actual activation. / 返回绑定当前真实启用的界面扩展。
+     * @return owned extension capability / 所属扩展能力 */
+    UiExtensionService extensions();
 
     /** Opens an existing fixed platform destination under this published normal owner; navigation grants no data or action authority. / 在所属已发布普通所有者下打开已有固定平台目的地；导航不授予数据或动作权限。
      * @param target fixed host destination / 固定宿主目的地

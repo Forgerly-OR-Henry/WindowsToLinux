@@ -1,41 +1,45 @@
-common:
-  database:
-    data-directory: data
-  ui:
-    navigation-collapsed: false
-    advanced-expanded: false
-  defaults:
-    locale: system
-    theme: SYSTEM
-    connect-seconds: 30
-    idle-seconds: 300
-    delete-ai-explanation: true
-  ssh:
-    heartbeat-seconds: 30
-    recovery:
-      observation-seconds: 2
-      probe-interval-seconds: 10
-      probe-timeout-seconds: 15
-  ai:
-    connect-seconds: 10
-    recommended-max-output-tokens: 32768
-    allow-output-token-override: true
-    verification-max-output-tokens: 8192
-    recovery:
-      timeout-seconds: 60
-    deletion:
-      timeout-seconds: 30
-    file:
-      timeout-seconds: 20
-  logs:
-    emergency-records: 100
-  mod:
-    store:
-      base-url: ""
-class:
-  database:
-    data-directory: src/app/db/data
-  mod:
-    auto-load: false
-jar: {}
-app: {}
+common: # 所有运行模式的基础配置；应用启动读取快照，模式分组按字段覆盖
+  database: # 平台数据库目录；相对路径基于工作目录
+    data-directory: data # 数据文件目录，不含数据库凭据
+  ui: # 启动时的界面默认展开状态
+    navigation-collapsed: false # 是否默认收起导航区
+    advanced-expanded: false # 是否默认展开高级设置
+  defaults: # 新连接及界面的默认值；不改已有持久配置
+    locale: system # 界面语言；system 表示跟随系统
+    theme: SYSTEM # 界面主题；SYSTEM 表示跟随系统
+    connect-seconds: 30 # 新 SSH 连接的连接期限，单位：秒
+    idle-seconds: 300 # 新 SSH 连接的空闲期限，单位：秒
+    delete-ai-explanation: true # 删除操作是否默认显示 AI 解释
+  ssh: # 平台 SSH 保活与恢复探测
+    heartbeat-seconds: 30 # 已连接会话保活间隔，单位：秒
+    recovery: # 连接恢复观察及探测策略
+      observation-seconds: 2 # 恢复状态观察窗口，单位：秒
+      probe-interval-seconds: 10 # 恢复探测间隔，单位：秒
+      probe-timeout-seconds: 15 # 单次恢复探测期限，单位：秒
+  ai: # 公共平台模型资源策略；由 AppConfig 传入真实服务实例
+    connect-seconds: 30 # 模型 HTTP 连接期限，单位：秒
+    recommended-max-output-tokens: 32768 # 未显式覆盖时的推荐输出预算，单位：token
+    allow-output-token-override: true # 是否允许请求按公共策略显式覆盖输出预算
+    verification-max-output-tokens: 8192 # 模型配置验证请求的输出预算，单位：token
+    native-state: # 原任务全部用途共用的有限留存资源；耗尽后原用途会话关闭，不逐出旧句柄
+      max-states: 4096 # 每原任务全部用途共用的 native state 数量上限，单位：条
+      max-total-bytes: 67108864 # 每原任务留存 provider payload 的 UTF-8 总量，单位：字节
+      max-value-bytes: 1048576 # 单个 provider payload，单位：UTF-8 字节；不得超过公共句柄的 1 MiB
+    recovery: # 平台恢复用途的模型调用策略
+      timeout-seconds: 60 # 单次恢复解释请求期限，单位：秒
+    deletion: # 平台删除用途的模型调用策略
+      timeout-seconds: 30 # 单次删除解释请求期限，单位：秒
+    file: # 平台文件用途的模型调用策略
+      timeout-seconds: 20 # 单次文件解释请求期限，单位：秒
+  logs: # 平台日志故障兜底
+    emergency-records: 100 # 紧急日志内存留存上限，单位：条
+  mod: # 公共 Mod 管理默认配置
+    store: # Mod 商店地址；不包含访问凭据
+      base-url: "" # 商店基础 HTTP(S) 地址；空字符串表示未配置
+class: # 类目录开发运行模式，仅覆盖以下字段，其余继承 common
+  database: # 开发运行模式的数据目录覆盖
+    data-directory: src/app/db/data # 开发数据文件目录，相对工作目录
+  mod: # 开发运行模式的 Mod 加载策略覆盖
+    auto-load: false # 是否启动时自动加载 Mod
+jar: {} # JAR 运行模式无额外覆盖，全部继承 common
+app: {} # 应用包运行模式无额外覆盖，全部继承 common
