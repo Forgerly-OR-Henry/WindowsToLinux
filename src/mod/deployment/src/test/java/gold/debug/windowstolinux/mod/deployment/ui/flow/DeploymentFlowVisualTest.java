@@ -125,6 +125,9 @@ class DeploymentFlowVisualTest extends DeploymentRuntimeFixture {
                             } finally {
                                 graphics.dispose();
                             }
+                            var logWindow = control(content.get(), "deployment.flow.logWindow", JComponent.class);
+                            var logPixel = SwingUtilities.convertPoint(logWindow, logWindow.getWidth() - 8, logWindow.getHeight() / 2, content.get());
+                            assertEquals(UIManager.getColor("Panel.background").getRGB(), image.getRGB(logPixel.x, logPixel.y));
                             try {
                                 assertTrue(ImageIO.write(image, "png", output.resolve("flow-" + theme + "-" + zoom + "-" + (minimum ? "minimum" : "normal") + ".png").toFile()));
                             } catch (java.io.IOException failure) {

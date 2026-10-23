@@ -87,6 +87,14 @@ public final class DeploymentApplicationsPage implements ModPage {
     /** Original durable action snapshots and failures. / 原持久动作快照及失败。 */
     private final JTextArea tasks = new JTextArea(5, 60);
 
+    private final JPanel logBody = new JPanel(new BorderLayout(0, DeploymentPageStyle.scale(12)));
+
+    private final List<String> taskMessages = new ArrayList<>();
+
+    private String taskSnapshots = "";
+
+    private JDialog logsWindow;
+
     /** EDT-owned interactive action controls. / EDT所属交互动作控件。 */
     private final List<JButton> controls = new ArrayList<>();
 
@@ -182,6 +190,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         inventoryBody.add(discoverEntry, BorderLayout.SOUTH);
 
         var row = new JPanel(new FlowLayout(FlowLayout.LEADING, 8, 4));
+        button(row, "logs", this::openLogs);
         button(row, "inspect", this::inspect);
         for (var action : DeploymentLifecycleAction.values())
             if (!action.autostart()) button(row, action.name().toLowerCase(Locale.ROOT), () -> lifecycle(action));
@@ -267,17 +276,19 @@ public final class DeploymentApplicationsPage implements ModPage {
         detailScroll = DeploymentPageStyle.scroll(sections);
         detailScroll.setName("applications.detailScroll");
         detailBody.add(detailScroll, BorderLayout.CENTER);
-        detailBody.add(DeploymentPageStyle.section("style.actions", row), BorderLayout.SOUTH);
         var right = new JPanel(new BorderLayout(0, DeploymentPageStyle.scale(14)));
         right.add(DeploymentPageStyle.outer(detailBody), BorderLayout.CENTER);
-        var lower = new JPanel(new BorderLayout());
-        lower.add(DeploymentPageStyle.scroll(tasks), BorderLayout.CENTER);
-        var cancelRow = new JPanel(new FlowLayout(FlowLayout.TRAILING, 0, 4));
-        button(cancelRow, "cancel", this::cancel);
-        lower.add(cancelRow, BorderLayout.SOUTH);
-        var taskCard = DeploymentPageStyle.card("style.results", lower);
-        taskCard.setPreferredSize(new Dimension(DeploymentPageStyle.scale(500), DeploymentPageStyle.scale(180)));
-        right.add(taskCard, BorderLayout.SOUTH);
+        var actionsCard = DeploymentPageStyle.card("style.actions", row);
+        actionsCard.setName("applications.actionBar");
+        right.add(actionsCard, BorderLayout.SOUTH);
+        var taskScroll = new JScrollPane(tasks, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+            ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        taskScroll.setBorder(BorderFactory.createEmptyBorder());
+        logBody.add(taskScroll, BorderLayout.CENTER);
+        var logActions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 8, 0));
+        button(logActions, "refreshLogs", this::refreshTasks);
+        button(logActions, "cancel", this::cancel);
+        logBody.add(logActions, BorderLayout.SOUTH);
         var applicationViews = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, DeploymentPageStyle.outer(inventoryBody), right);
         applicationViews.setResizeWeight(0.34);
         applicationViews.setPreferredSize(new java.awt.Dimension(600, 260));
@@ -360,6 +371,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         generation.incrementAndGet();
         more.setVisible(false);
         if (discoveryWindow != null) discoveryWindow.dispose();
+        if (locked && logsWindow != null) logsWindow.setVisible(false);
         if (reattachmentConfirmation != null)
             reattachmentConfirmation.dispose();
         localize();
@@ -374,10 +386,12 @@ public final class DeploymentApplicationsPage implements ModPage {
         generation.incrementAndGet();
         more.setVisible(false);
         if (discoveryWindow != null) discoveryWindow.dispose();
+        if (logsWindow != null) logsWindow.dispose();
         if (reattachmentConfirmation != null)
             reattachmentConfirmation.dispose();
         delivery.clear();
         delivery.enabled(false);
+        availability();
         actions.shutdown();
     }
 
@@ -408,18 +422,63 @@ public final class DeploymentApplicationsPage implements ModPage {
                         targets.stream().filter(value -> value.ref().equals(old.ref())).findFirst().orElse(null));
             });
         });
+        refreshTasks();
+    }
+
+    /** Refreshes retained management tasks without replacing the active action or application selection. / 刷新留存管理任务，不替换活动动作或应用选择。 */
+    private void refreshTasks() {
+        if (closed || locked) return;
+        long view = generation.get();
         actions.execute(() -> {
             try {
                 var snapshots = service.tasks();
                 SwingUtilities.invokeLater(() -> {
-                    if (!closed)
-                        tasks.setText(snapshots.stream()
+                    if (!closed && view == generation.get()) {
+                        taskSnapshots = snapshots.stream()
                             .map(value -> value.progressText() + " · " + value.state() + " · " + value.id())
-                            .collect(java.util.stream.Collectors.joining("\n")));
+                            .collect(java.util.stream.Collectors.joining("\n"));
+                        renderTaskLogs();
+                    }
                 });
             } catch (Exception failure) {
                 showFailure();
             }
+        });
+    }
+
+    /** Opens one modeless owned task view; closing it never cancels original work. / 打开所属非模态任务窗口，关闭窗口不取消原任务。 */
+    private void openLogs() {
+        if (closed || locked) return;
+        if (logsWindow == null || !logsWindow.isDisplayable()) {
+            logsWindow = new JDialog(SwingUtilities.getWindowAncestor(root), text("style.results"),
+                java.awt.Dialog.ModalityType.MODELESS);
+            logsWindow.setName("applications.logs.window");
+            logsWindow.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+            logsWindow.setContentPane(DeploymentPageStyle.logSurface(logBody));
+            SwingUtilities.updateComponentTreeUI(logsWindow);
+            DeploymentPageStyle.refresh((JComponent) logsWindow.getContentPane(), messages);
+            var screen = logsWindow.getGraphicsConfiguration().getBounds();
+            logsWindow.setSize(Math.min(DeploymentPageStyle.scale(780), screen.width - 60),
+                Math.min(DeploymentPageStyle.scale(480), screen.height - 80));
+            logsWindow.setLocationRelativeTo(root);
+        }
+        logsWindow.setVisible(true);
+        logsWindow.toFront();
+        availability();
+        refreshTasks();
+    }
+
+    private void appendTaskMessage(String value) {
+        taskMessages.add(value);
+        renderTaskLogs();
+    }
+
+    private void renderTaskLogs() {
+        String feedback = String.join("\n", taskMessages);
+        tasks.setText(taskSnapshots + (taskSnapshots.isBlank() || feedback.isBlank() ? "" : "\n") + feedback);
+        String latest = taskMessages.isEmpty() ? taskSnapshots.lines().findFirst().orElse(null) : taskMessages.getLast();
+        keys.forEach((button, key) -> {
+            if (key.equals("logs")) button.setToolTipText(latest == null ? null : text("logs") + ": " + latest);
         });
     }
 
@@ -442,7 +501,7 @@ public final class DeploymentApplicationsPage implements ModPage {
             return;
         if (selected.managed().isPresent())
             run(() -> service.lifecycle(selected.managed().orElseThrow(), action), value -> {
-                details.append("\n" + value.before() + " → " + value.after());
+                feedback(value.before() + " → " + value.after());
                 refresh();
             });
         else if (!action.autostart())
@@ -475,7 +534,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         if (original == null || candidate == null || server == null || !server.ref().equals(original.server())
             || !candidate.kind().equals(original.target().kind())
             || !candidate.identity().equals(original.target().identity())) {
-            details.setText(text("reattachSelection"));
+            feedback(text("reattachSelection"));
             return;
         }
         run(() -> service.reviewReattachment(original, candidate), review -> {
@@ -504,7 +563,7 @@ public final class DeploymentApplicationsPage implements ModPage {
                 || !candidate.equals(discovered.getSelectedItem()) || !server.equals(servers.getSelectedItem()))
                 return;
             run(() -> service.reattach(review), value -> {
-                details.setText(text("adopted") + value);
+                feedback(text("adopted") + value);
                 refresh();
             });
         });
@@ -554,7 +613,7 @@ public final class DeploymentApplicationsPage implements ModPage {
                     value.createdAt() + " · " + value.identity().sha256()))
                 .toArray(HistoryChoice[]::new);
             if (choices.length == 0) {
-                details.append("\n" + text("noHistory"));
+                feedback(text("noHistory"));
                 return;
             }
             var choice = (HistoryChoice) JOptionPane.showInputDialog(root, text("chooseHistory"), text("history"),
@@ -582,7 +641,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         var row = (DeploymentExternalApplications.Discovered) discovered.getSelectedItem();
         if (server != null && row != null)
             run(() -> service.adopt(server.ref(), row), value -> {
-                details.setText(text("adopted") + value);
+                feedback(text("adopted") + value);
                 refresh();
             });
     }
@@ -734,6 +793,7 @@ public final class DeploymentApplicationsPage implements ModPage {
 
     /** Requests cooperative cancellation on the actual original accepted handle. / 在实际原已接纳句柄上请求协作取消。 */
     private void cancel() {
+        if (closed || locked) return;
         var handle = current;
         if (handle == null)
             return;
@@ -770,23 +830,28 @@ public final class DeploymentApplicationsPage implements ModPage {
             try {
                 var handle = submission.submit();
                 current = handle;
+                SwingUtilities.invokeLater(this::availability);
                 handle.completion().whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
                     if (current == handle)
                         current = null;
                     busy = false;
+                    boolean action = handle.snapshot().type().equals(DeploymentApplicationsService.ACTION_TASK);
+                    String summary = error != null || result == null ? text("failed") + " · " + handle.id()
+                        : result.outcome() + " · " + result.problem().map(Problem::eventCode).orElse("") + " · " + handle.id();
+                    if (!closed && action) appendTaskMessage(summary);
                     if (closed || view != generation.get()) {
                         availability();
                         return;
                     }
                     availability();
                     if (error != null || result == null) {
-                        feedback(text("failed"));
+                        feedback(summary, !action);
                         return;
                     }
                     if (result.outcome() == TaskResult.SUCCEEDED && result.value().isPresent())
                         completed.accept(result.value().orElseThrow());
                     else
-                        feedback(result.outcome() + " · " + result.problem().map(Problem::eventCode).orElse(""));
+                        feedback(summary, !action);
                 }));
             } catch (Exception failure) {
                 SwingUtilities.invokeLater(() -> {
@@ -832,6 +897,11 @@ public final class DeploymentApplicationsPage implements ModPage {
         DeploymentPageStyle.refresh(root, messages);
         DeploymentPageStyle.refresh(more, messages);
         DeploymentPageStyle.refresh(discovery, messages);
+        if (logsWindow != null && logsWindow.isDisplayable()) {
+            logsWindow.setTitle(text("style.results"));
+            SwingUtilities.updateComponentTreeUI(logsWindow);
+            DeploymentPageStyle.refresh((JComponent) logsWindow.getContentPane(), messages);
+        }
         categories.setToolTipText(text("categoryFilter"));
         serverFilter.setToolTipText(text("serverFilter"));
         categories.getAccessibleContext().setAccessibleName(text("categoryFilter"));
@@ -858,6 +928,7 @@ public final class DeploymentApplicationsPage implements ModPage {
             if (key.equals("reattachConfirm"))
                 button.setEnabled(!closed && !locked && !busy && selected != null && selected.external().isPresent());
             if (key.equals("cancel")) button.setEnabled(!closed && !locked && current != null);
+            if (key.equals("logs") || key.equals("refreshLogs")) button.setEnabled(!closed && !locked);
             for (var action : DeploymentLifecycleAction.values())
                 if (key.equals(action.name().toLowerCase(Locale.ROOT))) {
                     boolean supported = selected != null && (selected.usage().map(value -> value.actions().contains(action)).orElse(false)
@@ -890,13 +961,18 @@ public final class DeploymentApplicationsPage implements ModPage {
     private void showFailure() {
         SwingUtilities.invokeLater(() -> {
             if (!closed)
-                tasks.append("\n" + text("failed"));
+                appendTaskMessage(text("failed"));
         });
     }
 
     /** Preserves action failures in the page and an open discovery view. / 在页面及打开的发现窗口保留动作失败。 */
     private void feedback(String value) {
+        feedback(value, true);
+    }
+
+    private void feedback(String value, boolean retainInLogs) {
         details.append((details.getText().isBlank() ? "" : "\n") + value);
+        if (retainInLogs) appendTaskMessage(value);
         if (discoveryWindow != null && discoveryWindow.isVisible())
             discoveryIssues.append((discoveryIssues.getText().isBlank() ? "" : "\n") + value);
     }

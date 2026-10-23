@@ -148,7 +148,9 @@ public final class DeploymentFlowPage implements ModPage {
         var right = new JPanel(new BorderLayout(0, 12));
         right.setOpaque(false);
         right.add(heading("style.results", "log"), BorderLayout.NORTH);
-        right.add(results, BorderLayout.CENTER);
+        var logWindow = DeploymentPageStyle.logSurface(results);
+        logWindow.setName("deployment.flow.logWindow");
+        right.add(logWindow, BorderLayout.CENTER);
         var taskFooter = new JPanel(new BorderLayout(8, 6));
         taskFooter.setOpaque(false);
         var reload = new JButton(text("refresh"));

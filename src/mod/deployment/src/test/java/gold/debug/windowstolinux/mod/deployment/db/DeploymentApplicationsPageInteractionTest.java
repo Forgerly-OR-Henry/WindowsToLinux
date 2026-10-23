@@ -3,16 +3,25 @@ package gold.debug.windowstolinux.mod.deployment.db;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.net.URI;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.api.DeploymentLifecycleAction;
 import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentApplicationsService;
@@ -22,6 +31,93 @@ import org.junit.jupiter.api.Test;
 
 /** Actual Swing clicks use real owned inventory tasks and the concrete desktop action boundary. / 实际Swing点击使用真实所属清单任务与具体桌面动作边界。 */
 class DeploymentApplicationsPageInteractionTest extends DeploymentAutostartFixture {
+    @Test
+    void modelessLogWindowClosesWithoutCancellingAndCancelTargetsTheAcceptedOriginalHandle() throws Exception {
+        enable();
+        var release = new CountDownLatch(1);
+        var entered = new CountDownLatch(1);
+        var accepted = new AtomicReference<TaskHandle<?>>();
+        var executing = new AtomicReference<TaskContext>();
+        try (var runtime = open()) {
+            start(runtime, true);
+            usageServer(runtime);
+            seedUsage(runtime, usageGraph("demo", false, true), 1);
+            var actual = context(runtime);
+            var controlledTasks = (TaskService) Proxy.newProxyInstance(TaskService.class.getClassLoader(),
+                new Class<?>[]{TaskService.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("submit") && args[0] instanceof TaskRequest request
+                        && request.type().equals(DeploymentApplicationsService.ACTION_TASK)) {
+                        var handle = actual.tasks().submit(request, task -> {
+                            executing.set(task);
+                            entered.countDown();
+                            assertTrue(release.await(20, TimeUnit.SECONDS));
+                            assertTrue(task.cancelToken().requested(), "Only the explicit cancel click may request cancellation");
+                            return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
+                        });
+                        accepted.set(handle);
+                        return handle;
+                    }
+                    try {
+                        return method.invoke(actual.tasks(), args);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
+            var controlled = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
+                new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("tasks")) return controlledTasks;
+                    try {
+                        return method.invoke(actual, args);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
+            var mounted = mount(new DeploymentApplicationsService(controlled), new DesktopEffects());
+            try {
+                var component = mounted.root();
+                var inventory = (JList<?>) named(component, "applications.inventory");
+                waitEdt(() -> inventory.isEnabled() && inventory.getSelectedValue() != null);
+                SwingUtilities.invokeAndWait(() -> ((JButton) named(component, "applications.stop")).doClick());
+                assertTrue(entered.await(10, TimeUnit.SECONDS));
+                SwingUtilities.invokeAndWait(() -> ((JButton) named(component, "applications.logs")).doClick());
+                waitEdt(() -> named(component, "applications.cancel").isEnabled());
+                SwingUtilities.invokeAndWait(() -> {
+                    assertTrue(named(component, "applications.refreshLogs").isEnabled());
+                    var dialog = logsWindow();
+                    dialog.dispatchEvent(new java.awt.event.WindowEvent(dialog, java.awt.event.WindowEvent.WINDOW_CLOSING));
+                    assertFalse(dialog.isDisplayable());
+                });
+                assertFalse(executing.get().cancelToken().requested());
+                assertFalse(accepted.get().completion().toCompletableFuture().isDone());
+                SwingUtilities.invokeAndWait(() -> {
+                    ((JButton) named(component, "applications.logs")).doClick();
+                    ((JButton) named(component, "applications.cancel")).doClick();
+                });
+                waitEdt(() -> executing.get().cancelToken().requested());
+                release.countDown();
+                assertEquals(TaskResult.CANCELLED, accepted.get().completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
+                waitEdt(() -> inventory.isEnabled() && !named(component, "applications.cancel").isEnabled());
+                SwingUtilities.invokeAndWait(() -> {
+                    var output = (JTextArea) named(component, "applications.tasks");
+                    assertTrue(output.getText().contains("CANCELLED"));
+                    assertTrue(output.getText().contains(accepted.get().id().toString()));
+                    inventory.clearSelection();
+                    ((JButton) named(component, "applications.refreshLogs")).doClick();
+                    assertTrue(output.getText().contains("CANCELLED"));
+                    assertTrue(((JButton) named(component, "applications.logs")).getToolTipText().contains("CANCELLED"));
+                    mounted.page().close();
+                    assertFalse(logsWindowPresent());
+                });
+                assertEquals(0, peer.effects.get());
+            } finally {
+                release.countDown();
+                SwingUtilities.invokeAndWait(mounted.page()::close);
+            }
+            waitEdt(() -> noResources(runtime));
+            assertNoActiveResources(runtime);
+        }
+    }
+
     @Test
     void clearedApplicationSelectionSurvivesRefreshAndLeavesIndependentTaskOutputIntact() throws Exception {
         enable();
@@ -35,9 +131,15 @@ class DeploymentApplicationsPageInteractionTest extends DeploymentAutostartFixtu
                 var component = mounted.root();
                 var inventory = (JList<?>) named(component, "applications.inventory");
                 var commands = (JComboBox<?>) named(component, "delivery.commands");
-                var taskOutput = (JTextArea) named(component, "applications.tasks");
                 waitEdt(() -> inventory.isEnabled() && inventory.getSelectedValue() != null && commands.getItemCount() == 3);
+                SwingUtilities.invokeAndWait(() -> ((JButton) named(component, "applications.logs")).doClick());
+                var taskOutput = (JTextArea) named(component, "applications.tasks");
                 SwingUtilities.invokeAndWait(() -> {
+                    var dialog = logsWindow();
+                    assertEquals(Dialog.ModalityType.MODELESS, dialog.getModalityType());
+                    assertFalse(named(component, "applications.cancel").isEnabled());
+                    assertTrue(named(component, "applications.refreshLogs").isEnabled());
+                    assertEquals(UIManager.getColor("Panel.background"), taskOutput.getBackground());
                     String originalTasks = taskOutput.getText();
                     inventory.clearSelection();
                     assertEquals(originalTasks, taskOutput.getText());
@@ -57,6 +159,25 @@ class DeploymentApplicationsPageInteractionTest extends DeploymentAutostartFixtu
                     assertSame(taskOutput, named(component, "applications.tasks"));
                     assertTrue(effects.copies.isEmpty());
                     assertTrue(effects.opens.isEmpty());
+                    var dialog = logsWindow();
+                    dialog.dispatchEvent(new java.awt.event.WindowEvent(dialog, java.awt.event.WindowEvent.WINDOW_CLOSING));
+                    assertFalse(dialog.isDisplayable());
+                    assertNull(inventory.getSelectedValue());
+                    ((JButton) named(component, "applications.logs")).doClick();
+                    assertSame(taskOutput, named(component, "applications.tasks"));
+                    var reopened = logsWindow();
+                    mounted.page().environmentChanged(new UiEnvironment(Locale.ENGLISH, "LIGHT", true));
+                    assertFalse(reopened.isVisible());
+                    assertFalse(named(component, "applications.logs").isEnabled());
+                    assertFalse(named(component, "applications.cancel").isEnabled());
+                    mounted.page().environmentChanged(new UiEnvironment(Locale.ENGLISH, "LIGHT", false));
+                    assertFalse(reopened.isVisible());
+                    ((JButton) named(component, "applications.logs")).doClick();
+                    assertNull(inventory.getSelectedValue());
+                    assertSame(taskOutput, named(component, "applications.tasks"));
+                    mounted.page().close();
+                    assertFalse(reopened.isDisplayable());
+                    assertFalse(named(component, "applications.logs").isEnabled());
                 });
                 assertEquals(0, peer.effects.get());
             } finally {
@@ -248,7 +369,8 @@ class DeploymentApplicationsPageInteractionTest extends DeploymentAutostartFixtu
         var local = find(root, name);
         if (local != null) return local;
         for (var window : Window.getWindows())
-            if (window.isDisplayable() && "applications.discovery.window".equals(window.getName())) {
+            if (window.isDisplayable() && ("applications.discovery.window".equals(window.getName())
+                || "applications.logs.window".equals(window.getName()))) {
                 var found = find(window, name);
                 if (found != null) return found;
             }
@@ -268,6 +390,17 @@ class DeploymentApplicationsPageInteractionTest extends DeploymentAutostartFixtu
             }
         }
         return null;
+    }
+
+    private static JDialog logsWindow() {
+        return Arrays.stream(Window.getWindows())
+            .filter(window -> window.isDisplayable() && "applications.logs.window".equals(window.getName()))
+            .map(JDialog.class::cast).findFirst().orElseThrow();
+    }
+
+    private static boolean logsWindowPresent() {
+        return Arrays.stream(Window.getWindows())
+            .anyMatch(window -> window.isDisplayable() && "applications.logs.window".equals(window.getName()));
     }
 
     private static void waitEdt(BooleanSupplier condition) throws Exception {

@@ -34,6 +34,7 @@ class DeploymentApplicationsVisualTest extends DeploymentAutostartFixture {
         var view = new AtomicReference<DeploymentApplicationsPage>();
         var window = new AtomicReference<JFrame>();
         var content = new AtomicReference<JComponent>();
+        var logOutput = new AtomicReference<JTextArea>();
         Path output = Path.of(System.getProperty("deployment.ui.screenshots", "target/deployment-ui-screenshots"));
         Files.createDirectories(output);
         try (var runtime = open()) {
@@ -76,30 +77,36 @@ class DeploymentApplicationsVisualTest extends DeploymentAutostartFixture {
                             assertEquals(UIManager.getColor("Table.background"), named(content.get(), "applications.inventory").getBackground());
                             assertEquals(0, ((JScrollPane) named(content.get(), "applications.detailScroll")).getViewport().getViewPosition().y);
                             assertTrue(named(content.get(), "applications.inspect").isEnabled());
-                            for (String name : new String[]{"applications.refresh", "applications.discover", "applications.inspect", "applications.more"}) {
+                            for (String name : new String[]{"applications.refresh", "applications.discover", "applications.logs", "applications.inspect", "applications.more"}) {
                                 var button = named(content.get(), name);
                                 assertTrue(button.getWidth() >= button.getPreferredSize().width,
                                     name + " must keep its full natural width");
                                 assertTrue(button.getX() >= 0 && button.getX() + button.getWidth() <= button.getParent().getWidth(),
                                     name + " must stay inside its parent");
                             }
-                            assertTrue(named(content.get(), "applications.tasks").getHeight() > 0);
+                            var actions = named(content.get(), "applications.actionBar");
+                            assertEquals(actions.getParent().getHeight(), actions.getY() + actions.getHeight());
+                            assertFalse(SwingUtilities.isDescendingFrom(actions, named(content.get(), "applications.detailScroll")));
                             assertFalse(hasNestedScroll((Container) named(content.get(), "delivery.panel")));
-                            var image = new BufferedImage(content.get().getWidth(), content.get().getHeight(), BufferedImage.TYPE_INT_RGB);
-                            var graphics = image.createGraphics();
-                            try {
-                                graphics.setColor(UIManager.getColor("Panel.background"));
-                                graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
-                                content.get().printAll(graphics);
-                            } finally {
-                                graphics.dispose();
-                            }
-                            var file = output.resolve("applications-" + theme + "-" + zoom + "-" + (minimum ? "minimum" : "normal") + ".png");
-                            try {
-                                assertTrue(ImageIO.write(image, "png", file.toFile()));
-                            } catch (java.io.IOException failure) {
-                                throw new IllegalStateException(failure);
-                            }
+                            String suffix = theme + "-" + zoom + "-" + (minimum ? "minimum" : "normal") + ".png";
+                            writeImage(content.get(), output.resolve("applications-" + suffix));
+                            var inventory = (JList<?>) named(content.get(), "applications.inventory");
+                            Object selected = inventory.getSelectedValue();
+                            ((JButton) named(content.get(), "applications.logs")).doClick();
+                            var dialog = logsWindow();
+                            dialog.validate();
+                            layout(dialog.getContentPane());
+                            var text = (JTextArea) named(dialog.getContentPane(), "applications.tasks");
+                            if (logOutput.get() == null) logOutput.set(text);
+                            else assertSame(logOutput.get(), text);
+                            assertEquals(UIManager.getColor("Panel.background"), text.getBackground());
+                            assertFalse(named(dialog.getContentPane(), "applications.cancel").isEnabled());
+                            assertEquals(java.awt.Dialog.ModalityType.MODELESS, dialog.getModalityType());
+                            assertSame(selected, inventory.getSelectedValue());
+                            writeImage((JComponent) dialog.getContentPane(), output.resolve("applications-logs-" + suffix));
+                            dialog.dispatchEvent(new java.awt.event.WindowEvent(dialog, java.awt.event.WindowEvent.WINDOW_CLOSING));
+                            assertFalse(dialog.isDisplayable());
+                            assertSame(selected, inventory.getSelectedValue());
                         });
                     }
             var scrolledTo = new AtomicReference<Integer>();
@@ -151,6 +158,29 @@ class DeploymentApplicationsVisualTest extends DeploymentAutostartFixture {
             if (child instanceof Container nested && hasNestedScroll(nested)) return true;
         }
         return false;
+    }
+
+    private static JDialog logsWindow() {
+        return java.util.Arrays.stream(java.awt.Window.getWindows())
+            .filter(window -> window.isDisplayable() && "applications.logs.window".equals(window.getName()))
+            .map(JDialog.class::cast).findFirst().orElseThrow();
+    }
+
+    private static void writeImage(JComponent component, Path file) {
+        var image = new BufferedImage(component.getWidth(), component.getHeight(), BufferedImage.TYPE_INT_RGB);
+        var graphics = image.createGraphics();
+        try {
+            graphics.setColor(UIManager.getColor("Panel.background"));
+            graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+            component.printAll(graphics);
+        } finally {
+            graphics.dispose();
+        }
+        try {
+            assertTrue(ImageIO.write(image, "png", file.toFile()));
+        } catch (java.io.IOException failure) {
+            throw new IllegalStateException(failure);
+        }
     }
 
     private static Component named(Container parent, String name) {

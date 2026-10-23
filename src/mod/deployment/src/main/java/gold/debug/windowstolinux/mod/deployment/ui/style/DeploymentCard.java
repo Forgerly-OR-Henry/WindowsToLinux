@@ -39,7 +39,8 @@ final class DeploymentCard extends JPanel {
         try {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
-            String color = Boolean.TRUE.equals(getClientProperty("deployment.style.inventory"))
+            String color = Boolean.TRUE.equals(getClientProperty("deployment.style.window"))
+                ? "Panel.background" : Boolean.TRUE.equals(getClientProperty("deployment.style.inventory"))
                 ? Boolean.TRUE.equals(getClientProperty("deployment.style.selected"))
                 ? "List.selectionBackground" : "Table.background"
                 : "Table.background";

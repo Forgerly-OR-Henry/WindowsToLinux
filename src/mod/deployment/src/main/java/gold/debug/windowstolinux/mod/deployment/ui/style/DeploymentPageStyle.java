@@ -51,6 +51,26 @@ public final class DeploymentPageStyle {
         return section;
     }
 
+    /** Frames task feedback on the page-gray surface. / 用页面灰底框出任务反馈窗口。
+     * @param content original task feedback / 原任务反馈
+     * @return gray outlined log surface / 灰底浅框日志区域 */
+    public static JPanel logSurface(JComponent content) {
+        var window = section(null, content);
+        window.putClientProperty("deployment.style.window", true);
+        return window;
+    }
+
+    private static boolean inLogWindow(JComponent component) {
+        for (Component ancestor = component; ancestor instanceof JComponent surface; ancestor = ancestor.getParent())
+            if (Boolean.TRUE.equals(surface.getClientProperty("deployment.style.window")))
+                return true;
+        return false;
+    }
+
+    private static Color surfaceColor(JComponent component) {
+        return UIManager.getColor(inLogWindow(component) ? "Panel.background" : "Table.background");
+    }
+
     /** Creates an independently scrolling content region. / 创建独立滚动区。
      * @param view original content / 原内容
      * @return unframed scrolling container / 无额外边框滚动容器 */
@@ -206,7 +226,7 @@ public final class DeploymentPageStyle {
         if (root instanceof DeploymentCard)
             root.setBorder(BorderFactory.createEmptyBorder(scale(14), scale(16), scale(14), scale(16)));
         if (root instanceof JTextArea area && !area.isEditable()) {
-            area.setBackground(UIManager.getColor("Table.background"));
+            area.setBackground(surfaceColor(area));
             if (Boolean.TRUE.equals(area.getClientProperty("deployment.style.log")))
                 area.setFont(UIManager.getFont("Label.font").deriveFont((float) scale(12)));
         }
@@ -247,10 +267,10 @@ public final class DeploymentPageStyle {
             scroll.setBorder(BorderFactory.createEmptyBorder());
             scroll.getVerticalScrollBar().setUnitIncrement(scale(18));
             scroll.setOpaque(false);
-            scroll.putClientProperty("desktop.card.contentSurface", true);
-            scroll.getViewport().setBackground(UIManager.getColor("Table.background"));
-            scroll.getVerticalScrollBar().setBackground(UIManager.getColor("Table.background"));
-            scroll.getHorizontalScrollBar().setBackground(UIManager.getColor("Table.background"));
+            scroll.putClientProperty("desktop.card.contentSurface", !inLogWindow(scroll));
+            scroll.getViewport().setBackground(surfaceColor(scroll));
+            scroll.getVerticalScrollBar().setBackground(surfaceColor(scroll));
+            scroll.getHorizontalScrollBar().setBackground(surfaceColor(scroll));
             if (scroll.getViewport().getView() instanceof JList<?> list)
                 list.setBackground(UIManager.getColor("Table.background"));
         }
