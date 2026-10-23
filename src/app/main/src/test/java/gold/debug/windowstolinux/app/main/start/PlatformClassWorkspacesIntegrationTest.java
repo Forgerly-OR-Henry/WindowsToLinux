@@ -79,7 +79,8 @@ class PlatformClassWorkspacesIntegrationTest {
                     window.setVisible(true);
                     return null;
                 });
-                var report = ApplicationLauncher.startMods(runtime, layout, window.pages());
+                var report = ApplicationLauncher.startMods(runtime, layout, window.pages(), workspaceRoot -> {
+                });
                 assertTrue(report.problems().isEmpty(), report.problems().toString());
                 assertEquals(Set.of(DEPLOYMENT, FILES, GIT), report.running());
                 ApplicationLauncher.installModManagement(runtime, window);

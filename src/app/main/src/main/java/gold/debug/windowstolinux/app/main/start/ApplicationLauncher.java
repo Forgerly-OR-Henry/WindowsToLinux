@@ -150,7 +150,9 @@ public final class ApplicationLauncher {
                 created.setVisible(true);
                 return null;
             });
-            var modReport = startMods(runtime, layout, created.pages());
+            var modReport = startMods(runtime, layout, created.pages(),
+                root -> DevelopmentModBuild.rebuild(root, () -> !created.isDisplayable()));
+            if (!onEdt(created::isDisplayable)) return false;
             installModManagement(runtime, created);
             onEdt(() -> {
                 if (created.isDisplayable())
@@ -349,6 +351,19 @@ public final class ApplicationLauncher {
     static gold.debug.windowstolinux.app.main.mod.PlatformModFlow.Report startMods(PlatformRuntime runtime,
                                                                                    RunModeResolver.RuntimeLayout layout,
                                                                                    gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) {
+        return startMods(runtime, layout, pages, DevelopmentModBuild::rebuild);
+    }
+
+    /** Rebuilds CLASS sources before admitting any author code. / 在准入任何作者代码前重新构建 CLASS 来源。
+     * @param runtime original platform runtime / 原平台运行时
+     * @param layout verified executable and data anchors / 已验证程序及数据锚点
+     * @param pages actual desktop page registry / 实际桌面页面登记
+     * @param compiler development build operation / 开发构建操作
+     * @return actual load results or the retained build failure / 实际加载结果或保留的构建失败 */
+    static gold.debug.windowstolinux.app.main.mod.PlatformModFlow.Report startMods(PlatformRuntime runtime,
+                                                                                   RunModeResolver.RuntimeLayout layout,
+                                                                                   gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages,
+                                                                                   DevelopmentModBuild.Compiler compiler) {
         if (!runtime.startup().config().modLoad())
             return new gold.debug.windowstolinux.app.main.mod.PlatformModFlow.Report(java.util.Set.of(), java.util.List.of());
         try {
@@ -358,6 +373,7 @@ public final class ApplicationLauncher {
                 return runtime.startInstalledMods(layout.applicationHome(), pages);
             Path root = gold.debug.windowstolinux.app.mod.dev.DevelopmentInfo
                 .workspace(layout.applicationHome());
+            compiler.rebuild(root);
             return runtime.startDevelopmentMods(root, pages);
         } catch (Exception | LinkageError | AssertionError failure) {
             var problem = failure instanceof gold.debug.windowstolinux.appapi.task.result.ApiException api

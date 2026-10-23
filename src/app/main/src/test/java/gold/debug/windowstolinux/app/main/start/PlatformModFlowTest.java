@@ -110,7 +110,8 @@ class PlatformModFlowTest {
         return ApplicationLauncher.startMods(runtime,
             new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS, workspace,
                 runtime.persistence().database().root()),
-            pages(!runtime.security().securityState().unlocked()));
+            pages(!runtime.security().securityState().unlocked()), workspaceRoot -> {
+            });
     }
 
     void enable(String... owners) throws Exception {
@@ -396,7 +397,8 @@ class PlatformModFlowTest {
             var report = ApplicationLauncher.startMods(runtime,
                 new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS, workspace,
                     runtime.persistence().database().root()),
-                frame.pages());
+                frame.pages(), workspaceRoot -> {
+                });
             PlatformWindowTest.onEdt(() -> {
                 frame.showModStartup(report.running().size(), report.problems());
                 assertFalse(

@@ -45,7 +45,7 @@ class PlatformModIntentsTest {
     static String manifest(String owner, String version, Map<String, String> dependencies, String schema,
                            List<Map<String, String>> migrations) throws Exception {
         var node = JSON.createObjectNode().put("formatVersion", 1).put("id", owner).put("name", "Fixture")
-            .put("version", version).put("platformApiRange", "[1.0.0-dev.1,1.0.0)").put("minJavaVersion", 21)
+            .put("version", version).put("platformApiRange", "1.0.0").put("minJavaVersion", 21)
             .put("mainJar", "main/fixture.jar").put("entryClass", owner + ".Mod");
         node.set("dependencies", JSON.valueToTree(new TreeMap<>(dependencies).entrySet().stream()
             .map(e -> Map.of("id", e.getKey(), "versionRange", e.getValue())).toList()));
