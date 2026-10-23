@@ -98,10 +98,20 @@ class PlatformServersPresentationTest {
                                 var authState = (JLabel) named(pane, "servers.auth.state");
                                 assertEquals("检查通过", authState.getText());
                                 assertTrue(authState.getForeground().getGreen() > authState.getForeground().getRed());
-                                for (int i = 0; i < 4; i++)
-                                    assertTrue(named(pane, "servers.details.field." + i).getWidth() > 0);
-                                assertEquals(3, java.util.Arrays.stream(((Container) named(pane, "servers.details.fields")).getComponents())
-                                    .filter(component -> component instanceof JSeparator).count());
+                                for (int i = 0; i < 4; i++) {
+                                    var value = named(pane, "servers.details.field." + i);
+                                    var caption = named(pane, "servers.details.caption." + i);
+                                    assertTrue(value.getWidth() > 0);
+                                    assertTrue(caption.getY() + caption.getHeight() <= value.getY());
+                                }
+                                for (int i = 0; i < 3; i++) {
+                                    var divider = (JSeparator) named(pane, "servers.details.divider." + i);
+                                    assertEquals(SwingConstants.VERTICAL, divider.getOrientation());
+                                    if (divider.isVisible()) assertTrue(divider.getHeight() > divider.getWidth());
+                                }
+                                boolean singleRow = named(pane, "servers.details.cell.0").getY()
+                                    == named(pane, "servers.details.cell.2").getY();
+                                assertEquals(singleRow, named(pane, "servers.details.divider.1").isVisible());
                                 for (String action : new String[]{"servers.add", "servers.edit", "servers.check", "servers.more"}) {
                                     var button = named(pane, action);
                                     assertTrue(button.getWidth() > 0 && button.getHeight() > 0, action);

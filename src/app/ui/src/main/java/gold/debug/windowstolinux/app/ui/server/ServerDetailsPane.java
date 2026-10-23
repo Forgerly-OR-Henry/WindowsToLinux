@@ -76,36 +76,52 @@ final class ServerDetailsPane extends JPanel implements Scrollable {
         collapseGroup.add(collapseButton);
         heading.add(collapseGroup, BorderLayout.EAST);
         upper.add(heading, BorderLayout.NORTH);
-        var fields = components.card(new GridBagLayout());
+        var fields = components.card(new GridLayout(1, 4, UIScale.scale(16), UIScale.scale(12)));
         fields.setName("servers.details.fields");
-        var field = new GridBagConstraints();
-        field.fill = GridBagConstraints.HORIZONTAL;
+        var dividers = new JSeparator[values.length - 1];
         for (int i = 0; i < values.length; i++) {
-            field.gridx = 0;
-            field.gridy = i * 2;
-            field.gridwidth = 1;
-            field.weightx = 0;
-            field.insets = UIScale.scale(new Insets(6, 0, 6, 16));
+            var field = components.transparent(new BorderLayout(UIScale.scale(16), 0));
+            field.setName("servers.details.cell." + i);
+            var content = components.transparent(new BorderLayout(0, UIScale.scale(8)));
             String key = new String[]{"field.host", "field.sshPort", "field.sshUser", "server.credentials"}[i];
-            var caption = messages.bind(new JLabel(), key);
-            caption.setForeground(UIManager.getColor("Label.disabledForeground"));
-            fields.add(caption, field);
-            field.gridx = 1;
-            field.weightx = 1;
-            field.insets = UIScale.scale(new Insets(6, 0, 6, 0));
+            var caption = messages.bind(components.description(""), key);
+            caption.setName("servers.details.caption." + i);
+            content.add(caption, BorderLayout.NORTH);
             values[i].putClientProperty("html.disable", true);
             values[i].setName("servers.details.field." + i);
-            values[i].setMinimumSize(new Dimension(0, values[i].getPreferredSize().height));
-            fields.add(values[i], field);
+            content.add(values[i]);
+            field.add(content);
             if (i + 1 < values.length) {
-                field.gridx = 0;
-                field.gridy++;
-                field.gridwidth = 2;
-                field.insets = new Insets(0, 0, 0, 0);
-                fields.add(components.divider(), field);
+                var divider = components.divider();
+                divider.setName("servers.details.divider." + i);
+                divider.setOrientation(SwingConstants.VERTICAL);
+                dividers[i] = divider;
+                field.add(divider, BorderLayout.EAST);
             }
+            fields.add(field);
         }
-        upper.add(fields, BorderLayout.CENTER);
+        var responsive = new JPanel(new BorderLayout()) {
+            /** Preserves stacked field content and separates adjacent columns. / 保留字段内上下布局，以竖线分隔相邻列。 */
+            @Override
+            public void doLayout() {
+                boolean narrow = getWidth() < UIScale.scale(560);
+                var grid = (GridLayout) fields.getLayout();
+                grid.setRows(narrow ? 2 : 1);
+                grid.setColumns(narrow ? 2 : 4);
+                for (int i = 0; i < dividers.length; i++) dividers[i].setVisible((i + 1) % grid.getColumns() != 0);
+                super.doLayout();
+            }
+
+            /** Reserves the original one-row or two-row metadata height. / 保留原有单行或双行字段区域高度。 */
+            @Override
+            public Dimension getPreferredSize() {
+                boolean narrow = getWidth() > 0 && getWidth() < UIScale.scale(560);
+                return new Dimension(0, UIScale.scale(narrow ? 144 : 84));
+            }
+        };
+        responsive.setOpaque(false);
+        responsive.add(fields);
+        upper.add(responsive, BorderLayout.CENTER);
         upper.add(actions, BorderLayout.SOUTH);
         add(upper, BorderLayout.NORTH);
         var resultRegion = components.transparent(new BorderLayout());
