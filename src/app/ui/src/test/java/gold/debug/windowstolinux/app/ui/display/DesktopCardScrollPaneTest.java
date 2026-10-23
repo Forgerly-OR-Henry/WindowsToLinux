@@ -18,7 +18,7 @@ class DesktopCardScrollPaneTest {
             for (var theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK}) {
                 for (int scale : new int[]{100, 150}) {
                     DesktopThemeService.install(theme, scale);
-                    int neutral = theme == ThemeMode.DARK ? 50 : 210;
+                    int neutral = theme == ThemeMode.DARK ? 50 : 220;
                     assertEquals(new Color(neutral, neutral, neutral), UIManager.getColor("ScrollBar.thumb"));
                     for (int rows : new int[]{0, 1, 20}) {
                         var scroll = new JScrollPane(list(rows));

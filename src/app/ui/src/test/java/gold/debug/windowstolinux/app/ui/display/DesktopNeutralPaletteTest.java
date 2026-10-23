@@ -27,9 +27,9 @@ class DesktopNeutralPaletteTest {
                         boolean dark = theme == ThemeMode.DARK;
                         var palette = dark ? ThemePalette.dark() : ThemePalette.light();
                         var factory = new DesktopPartFactory(palette);
-                        Color page = gray(dark ? 30 : 230);
-                        Color card = gray(dark ? 10 : 250);
-                        Color control = gray(dark ? 50 : 210);
+                        Color page = gray(dark ? 35 : 235);
+                        Color card = gray(dark ? 20 : 250);
+                        Color control = gray(dark ? 50 : 220);
                         Color searchColor = dark ? control : card;
                         assertEquals(page, palette.sidebarBackground());
                         var board = factory.pagePanel();
@@ -114,10 +114,10 @@ class DesktopNeutralPaletteTest {
                     factory.palette(theme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light());
                     factory.refreshTheme(page);
                     boolean dark = theme == ThemeMode.DARK;
-                    assertEquals(gray(dark ? 30 : 230), page.getBackground());
-                    assertEquals(gray(dark ? 10 : 250), card.getBackground());
-                    assertEquals(gray(dark ? 50 : 210), action.getBackground());
-                    assertEquals(gray(dark ? 50 : 210), combo.getBackground());
+                    assertEquals(gray(dark ? 35 : 235), page.getBackground());
+                    assertEquals(gray(dark ? 20 : 250), card.getBackground());
+                    assertEquals(gray(dark ? 50 : 220), action.getBackground());
+                    assertEquals(gray(dark ? 50 : 220), combo.getBackground());
                     assertEquals(gray(dark ? 50 : 250), search.getBackground());
                     assertEquals(UIManager.getColor("TextField.foreground"), search.getForeground());
                     assertEquals(UIManager.getColor("TextField.caretForeground"), search.getCaretColor());

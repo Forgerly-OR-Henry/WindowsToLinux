@@ -73,7 +73,7 @@ class DeploymentCardPaletteTest {
                             board.getComponent(index).setBounds(10, rowHeight * index + 10, width - 20, rowHeight - 12);
                         layout(board);
 
-                        Color surface = gray(theme == ThemeMode.DARK ? 10 : 250);
+                        Color surface = gray(theme == ThemeMode.DARK ? 20 : 250);
                         Color selectedSurface = UIManager.getColor("List.selectionBackground");
                         assertEquals(surface, UIManager.getColor("Table.background"));
                         assertSurface(detail, surface);
