@@ -34,7 +34,7 @@ public record ThemePalette(Color pageBackground, Color cardBackground, Color car
      */
     public static ThemePalette light() {
         return new ThemePalette(new Color(235, 235, 235), new Color(250, 250, 250), new Color(218, 220, 224),
-            new Color(235, 235, 235), new Color(48, 50, 56), new Color(212, 226, 255), new Color(53, 116, 240),
+            new Color(250, 250, 250), new Color(48, 50, 56), new Color(212, 226, 255), new Color(53, 116, 240),
             new Color(42, 93, 192), new Color(108, 112, 126), new Color(220, 220, 220), new Color(48, 50, 56),
             new Color(229, 237, 252), new Color(187, 190, 197));
     }
@@ -47,7 +47,7 @@ public record ThemePalette(Color pageBackground, Color cardBackground, Color car
      */
     public static ThemePalette dark() {
         return new ThemePalette(new Color(35, 35, 35), new Color(20, 20, 20), new Color(67, 69, 74),
-            new Color(35, 35, 35), new Color(223, 225, 229), new Color(46, 67, 110), new Color(53, 116, 240),
+            new Color(20, 20, 20), new Color(223, 225, 229), new Color(46, 67, 110), new Color(53, 116, 240),
             new Color(84, 138, 247), new Color(157, 160, 168), new Color(50, 50, 50), new Color(223, 225, 229),
             new Color(49, 59, 79), new Color(90, 93, 99));
     }

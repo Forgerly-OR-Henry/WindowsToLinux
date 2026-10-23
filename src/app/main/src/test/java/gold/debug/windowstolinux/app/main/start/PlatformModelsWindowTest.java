@@ -124,6 +124,10 @@ class PlatformModelsWindowTest {
         onEdt(() -> {
             frame.setSize(1600, 900);
             frame.validate();
+            int navigationGray = theme == ThemeMode.DARK ? 20 : 250;
+            assertEquals(new Color(navigationGray, navigationGray, navigationGray),
+                named(frame, "platform.sidebar").getBackground());
+            assertNotEquals(named(frame, "platform.sidebar").getBackground(), named(frame, "platform.models").getBackground());
             assertInventoryHeadingCentered(frame);
             if (state.equals("detail")) assertCapabilityColumnsAligned(frame);
             capture(frame, "ai-" + state + "-" + theme + "-" + scale + "-normal.png");

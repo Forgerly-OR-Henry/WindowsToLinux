@@ -31,7 +31,7 @@ class DesktopNeutralPaletteTest {
                         Color card = gray(dark ? 20 : 250);
                         Color control = gray(dark ? 50 : 220);
                         Color searchColor = dark ? control : card;
-                        assertEquals(page, palette.sidebarBackground());
+                        assertEquals(card, palette.sidebarBackground());
                         var board = factory.pagePanel();
                         board.setLayout(null);
                         int width = com.formdev.flatlaf.util.UIScale.scale(500);
