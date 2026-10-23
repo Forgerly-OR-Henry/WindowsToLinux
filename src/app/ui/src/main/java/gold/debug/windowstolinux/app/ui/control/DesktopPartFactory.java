@@ -14,6 +14,7 @@ import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSeparator;
 import javax.swing.JTextArea;
 
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
@@ -231,6 +232,14 @@ public final class DesktopPartFactory {
         JPanel card = new RoundedCard(layout, palette.cardBackground());
         card.setBorder(BorderFactory.createEmptyBorder(14, 16, 14, 16));
         return DesktopThemeBindings.role(card, "card");
+    }
+
+    /** Separates related detail rows within one surface. / 在同一内容块内分隔关联的详情行。
+     * @return theme-aware subtle line / 随主题更新的浅分隔线 */
+    public JSeparator divider() {
+        var divider = new JSeparator();
+        divider.setForeground(palette.cardBorder());
+        return DesktopThemeBindings.role(divider, "divider");
     }
 
     /**

@@ -76,37 +76,36 @@ final class ServerDetailsPane extends JPanel implements Scrollable {
         collapseGroup.add(collapseButton);
         heading.add(collapseGroup, BorderLayout.EAST);
         upper.add(heading, BorderLayout.NORTH);
-        var fields = components.card(new GridLayout(1, 4, UIScale.scale(16), UIScale.scale(12)));
+        var fields = components.card(new GridBagLayout());
+        fields.setName("servers.details.fields");
+        var field = new GridBagConstraints();
+        field.fill = GridBagConstraints.HORIZONTAL;
         for (int i = 0; i < values.length; i++) {
-            var field = components.transparent(new BorderLayout(0, UIScale.scale(8)));
+            field.gridx = 0;
+            field.gridy = i * 2;
+            field.gridwidth = 1;
+            field.weightx = 0;
+            field.insets = UIScale.scale(new Insets(6, 0, 6, 16));
             String key = new String[]{"field.host", "field.sshPort", "field.sshUser", "server.credentials"}[i];
-            field.add(messages.bind(components.description(""), key), BorderLayout.NORTH);
+            var caption = messages.bind(new JLabel(), key);
+            caption.setForeground(UIManager.getColor("Label.disabledForeground"));
+            fields.add(caption, field);
+            field.gridx = 1;
+            field.weightx = 1;
+            field.insets = UIScale.scale(new Insets(6, 0, 6, 0));
             values[i].putClientProperty("html.disable", true);
             values[i].setName("servers.details.field." + i);
-            field.add(values[i]);
-            fields.add(field);
+            values[i].setMinimumSize(new Dimension(0, values[i].getPreferredSize().height));
+            fields.add(values[i], field);
+            if (i + 1 < values.length) {
+                field.gridx = 0;
+                field.gridy++;
+                field.gridwidth = 2;
+                field.insets = new Insets(0, 0, 0, 0);
+                fields.add(components.divider(), field);
+            }
         }
-        var responsive = new JPanel(new BorderLayout()) {
-            /** Fits fields into two rows when the details region narrows. / 详情区域较窄时将字段排列为两行。 */
-            @Override
-            public void doLayout() {
-                var grid = (GridLayout) fields.getLayout();
-                grid.setRows(getWidth() < UIScale.scale(560) ? 2 : 1);
-                grid.setColumns(getWidth() < UIScale.scale(560) ? 2 : 4);
-                super.doLayout();
-            }
-
-            /** Reserves the height required by the current field arrangement. / 预留当前字段排列所需高度。
-             * @return scaled metadata region / 缩放后的元数据区域 */
-            @Override
-            public Dimension getPreferredSize() {
-                boolean narrow = getWidth() > 0 && getWidth() < UIScale.scale(560);
-                return new Dimension(0, UIScale.scale(narrow ? 144 : 84));
-            }
-        };
-        responsive.setOpaque(false);
-        responsive.add(fields);
-        upper.add(responsive, BorderLayout.CENTER);
+        upper.add(fields, BorderLayout.CENTER);
         upper.add(actions, BorderLayout.SOUTH);
         add(upper, BorderLayout.NORTH);
         var resultRegion = components.transparent(new BorderLayout());

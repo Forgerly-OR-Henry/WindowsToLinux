@@ -348,8 +348,14 @@ final class ServerPagePresentation extends JPanel {
         logSurface.remove(0);
         ((BorderLayout) logSurface.getLayout()).setVgap(com.formdev.flatlaf.util.UIScale.scale(8));
         logSurface.setBorder(new com.formdev.flatlaf.ui.FlatEmptyBorder(18, 20, 18, 20));
-        logSurface.add(recordState, BorderLayout.NORTH);
-        logSurface.add(recordTime, BorderLayout.SOUTH);
+        var state = components.transparent(new BorderLayout(0, 8));
+        state.add(recordState);
+        state.add(components.divider(), BorderLayout.SOUTH);
+        var time = components.transparent(new BorderLayout(0, 8));
+        time.add(components.divider(), BorderLayout.NORTH);
+        time.add(recordTime);
+        logSurface.add(state, BorderLayout.NORTH);
+        logSurface.add(time, BorderLayout.SOUTH);
         recordPane.add(logSurface, BorderLayout.CENTER);
 
         return recordPane;

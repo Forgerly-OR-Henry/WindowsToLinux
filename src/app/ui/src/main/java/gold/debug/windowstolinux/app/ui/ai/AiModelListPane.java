@@ -8,6 +8,7 @@ import java.util.concurrent.*;
 import java.util.function.*;
 import javax.swing.*;
 
+import com.formdev.flatlaf.util.UIScale;
 import gold.debug.windowstolinux.app.ai.model.*;
 import gold.debug.windowstolinux.app.service.ai.*;
 import gold.debug.windowstolinux.app.ui.control.*;
@@ -28,8 +29,8 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
 
     private final DefaultListModel<String> inventoryModel = new DefaultListModel<>(), purposeModel = new DefaultListModel<>();
 
-    private final DesktopCardList<String> inventory = new DesktopCardList<>(inventoryModel, 92),
-        selected = new DesktopCardList<>(purposeModel, 92);
+    private final DesktopCardList<String> inventory = new DesktopCardList<>(inventoryModel, 116),
+        selected = new DesktopCardList<>(purposeModel, 116);
 
     private final JScrollPane inventoryScroll = new JScrollPane(inventory), purposeScroll = new JScrollPane(selected);
 
@@ -53,9 +54,9 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
     }, left = new JPanel(new BorderLayout(0, 14)),
         leftTools = new JPanel(new BorderLayout(8, 0)), editor = new JPanel(new BorderLayout(0, 14)),
         roles = new JPanel(new GridLayout(1, 4, 6, 0)), arrows = new JPanel(new GridLayout(2, 1, 0, 10)),
-        heading = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        heading = new JPanel(new GridBagLayout());
 
-    private final JLabel title = new JLabel(), status = new JLabel();
+    private final JLabel title = new JLabel(), count = new JLabel(), status = new JLabel();
 
     private final JButton add = new JButton("→"), remove = new JButton("←"), newModel;
 
@@ -136,7 +137,12 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
         newModel.setMargin(new Insets(8, 14, 8, 14));
         newModel.setName("ai.models.add");
         newModel.addActionListener(event -> before(() -> edit.accept(null)));
-        heading.add(title);
+        title.setName("ai.inventory.title");
+        count.setName("ai.inventory.count");
+        var titleSlot = new GridBagConstraints();
+        titleSlot.insets = UIScale.scale(new Insets(0, 0, 0, 8));
+        heading.add(title, titleSlot);
+        heading.add(count, titleSlot);
         left.add(leftTools, BorderLayout.NORTH);
         left.add(inventoryScroll);
         var orderButtons = c.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0));
@@ -356,7 +362,9 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
     }
 
     void localize() {
-        title.setText(messages.text("ai.models.all") + "  " + models.size());
+        title.setText(messages.text("ai.models.all"));
+        title.setFont(UIManager.getFont("Label.font").deriveFont(Font.BOLD, UIScale.scale(20f)));
+        count.setText(Integer.toString(models.size()));
         for (var type : AiPurposeType.values())
             buttons.get(type).setText(messages.text("ai.purpose.short." + type.name()) + "  " + purposes.get(type).draft().size());
         if (detailId != null && !rendering) showDetail(find(detailId));
@@ -421,7 +429,7 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
     private ListCellRenderer<? super String> renderer(boolean role) {
         return (list, id, index, chosen, focus) -> {
             var model = find(id);
-            var panel = new JPanel(new BorderLayout(14, 0));
+            var panel = new JPanel(new BorderLayout(12, 0));
             panel.setOpaque(false);
             boolean eligible = role || purpose == null || model != null && model.verified(purpose);
             Color foreground = UIManager.getColor(eligible ? "Label.foreground" : "Label.disabledForeground");
@@ -434,17 +442,25 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
             panel.setEnabled(eligible);
             panel.add(new JLabel(DesktopIcons.icon(icon, 30,
                 () -> UIManager.getColor(eligible ? "Component.focusColor" : "Label.disabledForeground"))), BorderLayout.WEST);
-            var text = new JPanel(new GridLayout(2, 1, 0, 4));
+            var text = new JPanel(new GridBagLayout());
             text.setOpaque(false);
             var name = new JLabel(model == null ? id : model.name());
             name.putClientProperty("html.disable", true);
-            name.setFont(name.getFont().deriveFont(Font.BOLD));
+            name.setFont(name.getFont().deriveFont(Font.BOLD, UIScale.scale(16f)));
             name.setForeground(foreground);
             var description = new JLabel(model == null ? "" : model.profile().model());
             description.putClientProperty("html.disable", true);
+            description.setFont(UIManager.getFont("Label.font").deriveFont(Font.PLAIN, UIScale.scale(14f)));
             description.setForeground(eligible ? UIManager.getColor("Label.disabledForeground") : foreground);
-            text.add(name);
-            text.add(description);
+            var line = new GridBagConstraints();
+            line.gridx = 0;
+            line.gridy = 0;
+            line.weightx = 1;
+            line.fill = GridBagConstraints.HORIZONTAL;
+            text.add(name, line);
+            line.gridy = 1;
+            line.insets = UIScale.scale(new Insets(4, 0, 0, 0));
+            text.add(description, line);
             panel.add(text);
             return panel;
         };

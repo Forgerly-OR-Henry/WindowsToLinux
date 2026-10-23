@@ -100,6 +100,8 @@ class PlatformServersPresentationTest {
                                 assertTrue(authState.getForeground().getGreen() > authState.getForeground().getRed());
                                 for (int i = 0; i < 4; i++)
                                     assertTrue(named(pane, "servers.details.field." + i).getWidth() > 0);
+                                assertEquals(3, java.util.Arrays.stream(((Container) named(pane, "servers.details.fields")).getComponents())
+                                    .filter(component -> component instanceof JSeparator).count());
                                 for (String action : new String[]{"servers.add", "servers.edit", "servers.check", "servers.more"}) {
                                     var button = named(pane, action);
                                     assertTrue(button.getWidth() > 0 && button.getHeight() > 0, action);

@@ -76,6 +76,7 @@ final class DesktopThemeBindings {
                 case "title" -> component.setForeground(palette.sidebarForeground());
                 case "detail" -> component.setForeground(palette.subduedText());
                 case "number" -> component.setForeground(palette.accent());
+                case "divider" -> component.setForeground(palette.cardBorder());
                 case "scroll" -> {
                     component.setBorder(javax.swing.BorderFactory.createEmptyBorder());
                     if (component instanceof javax.swing.JScrollPane scroll)

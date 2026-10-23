@@ -62,6 +62,12 @@ class PlatformModelsWindowTest {
                 : id.equals("general") ? List.of(AiCapabilityType.TEXT, AiCapabilityType.TOOL_CALLING, AiCapabilityType.VISION)
                 : List.of(AiCapabilityType.TEXT, AiCapabilityType.VISION))
                 runtime.persistence().aiProfiles().recordVerification(info.profile().stored(), info.revision(), capability, Instant.now());
+            if (id.equals("general")) {
+                runtime.persistence().aiProfiles().recordVerification(info.profile().stored(), info.revision(), AiCapabilityType.TOOL_CALLING,
+                    new AiCapabilityCheck(AiCapabilityStatus.FAILED, "MODEL_PROBE_ANSWER", Optional.of(Instant.now())));
+                runtime.persistence().aiProfiles().recordVerification(info.profile().stored(), info.revision(), AiCapabilityType.VOICE_FILE,
+                    new AiCapabilityCheck(AiCapabilityStatus.UNSUPPORTED, "MODEL_PROBE_UNSUPPORTED", Optional.of(Instant.now())));
+            }
         }
         service.saveAiPurpose(AiPurposeType.DEPLOYMENT, List.of(new AiPurposeAssignment("general")));
         service.saveAiPurpose(AiPurposeType.VISION, List.of(new AiPurposeAssignment("vision"), new AiPurposeAssignment("general")));
@@ -118,10 +124,14 @@ class PlatformModelsWindowTest {
         onEdt(() -> {
             frame.setSize(1600, 900);
             frame.validate();
+            assertInventoryHeadingCentered(frame);
+            if (state.equals("detail")) assertCapabilityColumnsAligned(frame);
             capture(frame, "ai-" + state + "-" + theme + "-" + scale + "-normal.png");
             var minimum = frame.getMinimumSize();
             frame.setSize(minimum);
             frame.validate();
+            assertInventoryHeadingCentered(frame);
+            if (state.equals("detail")) assertCapabilityColumnsAligned(frame);
             if (state.equals("purpose"))
                 for (var type : AiPurposeType.values()) {
                     var button = (JButton) named(frame, "ai.open." + type.name());
@@ -132,6 +142,34 @@ class PlatformModelsWindowTest {
             frame.validate();
             return null;
         });
+    }
+
+    private static void assertInventoryHeadingCentered(PlatformFrame frame) {
+        var title = (JLabel) named(frame, "ai.inventory.title");
+        var button = (JButton) named(frame, "ai.models.add");
+        var titleBounds = SwingUtilities.convertRectangle(title.getParent(), title.getBounds(), frame);
+        var buttonBounds = SwingUtilities.convertRectangle(button.getParent(), button.getBounds(), frame);
+        assertTrue(Math.abs(titleBounds.getCenterY() - buttonBounds.getCenterY()) <= 1,
+            () -> "Inventory title and action centers differ: " + titleBounds + " / " + buttonBounds);
+    }
+
+    private static void assertCapabilityColumnsAligned(PlatformFrame frame) {
+        int stateX = -1, buttonX = -1;
+        for (var type : AiCapabilityType.values()) {
+            var name = named(frame, "models.capability." + type.name());
+            var state = (JLabel) named(frame, "models.state." + type.name());
+            var button = named(frame, "models.verify." + type.name());
+            assertNotNull(state.getIcon());
+            if (stateX < 0) {
+                stateX = state.getX();
+                buttonX = button.getX();
+            }
+            assertEquals(stateX, state.getX());
+            assertEquals(buttonX, button.getX());
+            assertTrue(name.getX() + name.getWidth() <= state.getX());
+            assertTrue(state.getX() + state.getWidth() <= button.getX());
+        }
+        assertEquals(4, descendants((Container) named(frame, "models.capabilities")).filter(c -> c instanceof JSeparator).count());
     }
 
     @Test
