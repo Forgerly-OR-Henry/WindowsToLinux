@@ -140,6 +140,7 @@ final class DesktopControlDefaults {
             UIManager.put(surface + ".selectionInactiveForeground", color(palette.sidebarForeground()));
         }
         UIManager.put("List.cardBackground", color(palette.cardBackground()));
+        UIManager.put("List.cardOutline", color(palette.emphasisBackground()));
         UIManager.put("List.background", color(palette.pageBackground()));
         UIManager.put("Label.foreground", color(palette.sidebarForeground()));
         UIManager.put("Component.borderColor", color(palette.inputBorder()));
@@ -150,7 +151,7 @@ final class DesktopControlDefaults {
             UIManager.put(type + ".disabledBackground", disabledBackground);
             UIManager.put(type + ".inactiveBackground", disabledBackground);
         }
-        UIManager.put("TextField.searchBackground", color(dark ? palette.secondaryButtonBackground() : palette.cardBackground()));
+        UIManager.put("TextField.searchBackground", inputBackground);
         UIManager.put("ComboBox.buttonBackground", inputBackground);
         UIManager.put("ComboBox.buttonFocusedBackground", inputBackground);
         UIManager.put("ComboBox.buttonArrowColor", color(palette.subduedText()));
@@ -163,7 +164,7 @@ final class DesktopControlDefaults {
         UIManager.put("ComboBox.disabledForeground", disabledForeground);
         UIManager.put("ScrollBar.background", color(palette.pageBackground()));
         UIManager.put("ScrollBar.track", color(palette.pageBackground()));
-        UIManager.put("ScrollBar.thumb", buttonBackground);
+        UIManager.put("ScrollBar.thumb", color(palette.emphasisBackground()));
         UIManager.put("ScrollBar.hoverThumbColor", buttonHover);
         UIManager.put("ScrollBar.pressedThumbColor", buttonPressed);
     }

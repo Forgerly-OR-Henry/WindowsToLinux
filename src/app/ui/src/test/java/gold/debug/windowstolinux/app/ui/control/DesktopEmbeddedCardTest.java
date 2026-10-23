@@ -31,7 +31,7 @@ class DesktopEmbeddedCardTest {
     private static final Color OUTSIDE = new Color(190, 40, 170);
 
     @Test
-    void innerOutlineUsesPageColorAndSurvivesOpaqueChildrenAtBothZoomLevels() throws Exception {
+    void innerOutlineUsesEmphasisColorAndSurvivesOpaqueChildrenAtBothZoomLevels() throws Exception {
         appearances((palette, factory) -> {
             var card = factory.outlinedCard(new BorderLayout());
             card.setBorder(null);
@@ -40,7 +40,7 @@ class DesktopEmbeddedCardTest {
             card.add(child);
             var image = paint(card, 200, 100);
             assertEquals(OUTSIDE.getRGB(), image.getRGB(0, 0));
-            assertEquals(palette.pageBackground().getRGB(), image.getRGB(image.getWidth() / 2, 0));
+            assertEquals(palette.emphasisBackground().getRGB(), image.getRGB(image.getWidth() / 2, 0));
             assertEquals(palette.cardBackground().getRGB(), image.getRGB(image.getWidth() / 2, image.getHeight() / 2));
             var ordinaryCard = factory.card(new BorderLayout());
             assertEquals(new java.awt.Insets(14, 16, 14, 16), ordinaryCard.getInsets(),
@@ -66,7 +66,7 @@ class DesktopEmbeddedCardTest {
             assertEquals(originalHandle, DesktopListCard.handleBounds(row, UIScale.scale(360), UIScale.scale(116)));
             var rowImage = paint(row, 360, 116);
             int x = rowImage.getWidth() / 2, top = UIScale.scale(9);
-            assertEquals(palette.pageBackground().getRGB(), rowImage.getRGB(x, top));
+            assertEquals(palette.emphasisBackground().getRGB(), rowImage.getRGB(x, top));
             assertEquals(palette.cardBackground().getRGB(), rowImage.getRGB(x, top + UIScale.scale(3)));
             var selected = paint(rendered(list, true), 360, 116);
             assertEquals(palette.accent().getRGB(), selected.getRGB(UIScale.scale(1), selected.getHeight() / 2),
@@ -82,6 +82,11 @@ class DesktopEmbeddedCardTest {
             var barImage = render(bar);
             assertEquals(palette.cardBackground().getRGB(), barImage.getRGB(UIScale.scale(1), barImage.getHeight() / 2),
                 "The scrollbar hit area and track must blend with the surrounding card");
+            bar.setValues(0, 100, 0, 100);
+            var fullTrack = render(bar);
+            assertEquals(palette.emphasisBackground().getRGB(),
+                fullTrack.getRGB(fullTrack.getWidth() - UIScale.scale(3), fullTrack.getHeight() / 2),
+                "The visible scrollbar thumb uses the same emphasis tier as inner-card outlines");
             assertEquals(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, scroll.getVerticalScrollBarPolicy());
             assertEquals(palette.pageBackground(), new JList<>().getBackground(),
                 "Unrelated inventories must retain their default surface");
@@ -133,9 +138,11 @@ class DesktopEmbeddedCardTest {
                 assertEquals(nextPalette.cardBackground(), scroll.getVerticalScrollBar().getBackground());
                 assertEquals(nextPalette.cardBackground(), detailScroll.getViewport().getBackground());
                 assertEquals(nextPalette.cardBackground(), details.getBackground());
+                assertEquals(nextPalette.pageBackground(), input.getBackground(),
+                    "Ordinary inputs blend with the page tier rather than the emphasized outline tier");
                 details.setSize(UIScale.scale(200), UIScale.scale(100));
                 layout(details);
-                assertEquals(nextPalette.pageBackground().getRGB(), render(details)
+                assertEquals(nextPalette.emphasisBackground().getRGB(), render(details)
                     .getRGB(UIScale.scale(100), 0));
                 assertSame(details, detailScroll.getViewport().getView());
             }

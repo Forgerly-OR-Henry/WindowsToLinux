@@ -261,7 +261,13 @@ class PlatformServersPresentationTest {
     private static void assertCardSurfaces(JComponent pane) {
         var cardColor = UIManager.getColor("List.cardBackground");
         var pageColor = UIManager.getColor("Panel.background");
+        var outlineColor = UIManager.getColor("List.cardOutline");
         assertEquals(pageColor, pane.getBackground());
+        assertEquals(pageColor, named(pane, "servers.search").getBackground());
+        for (String action : new String[]{"servers.refresh", "servers.edit", "servers.more"})
+            assertEquals(pageColor, named(pane, action).getBackground(), action);
+        assertEquals(UIManager.getColor("ScrollBar.thumb"), outlineColor,
+            "Inner-card contours and scrollbar thumbs share the emphasis tier");
         var inventory = (JComponent) named(pane, "servers.inventory");
         assertEquals(com.formdev.flatlaf.util.UIScale.scale(new Insets(14, 16, 14, 16)), inventory.getInsets());
         assertSurface(inventory, cardColor, cardColor);
@@ -283,7 +289,7 @@ class PlatformServersPresentationTest {
             assertEquals(com.formdev.flatlaf.util.UIScale.scale(16), detailScroll.getX());
             assertEquals(com.formdev.flatlaf.util.UIScale.scale(14), detailScroll.getY());
             for (String name : new String[]{"servers.details.fields", "servers.details.actions", "servers.records"})
-                assertSurface((JComponent) named(pane, name), cardColor, pageColor);
+                assertSurface((JComponent) named(pane, name), cardColor, outlineColor);
         }
     }
 

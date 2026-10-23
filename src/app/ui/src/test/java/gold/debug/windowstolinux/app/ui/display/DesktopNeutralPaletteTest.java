@@ -29,9 +29,11 @@ class DesktopNeutralPaletteTest {
                         var factory = new DesktopPartFactory(palette);
                         Color page = gray(dark ? 30 : 240);
                         Color card = gray(dark ? 20 : 250);
-                        Color control = gray(dark ? 50 : 220);
-                        Color searchColor = dark ? control : card;
+                        Color control = page;
+                        Color emphasis = gray(dark ? 50 : 220);
                         assertEquals(card, palette.sidebarBackground());
+                        assertEquals(control, palette.secondaryButtonBackground());
+                        assertEquals(emphasis, palette.emphasisBackground());
                         var board = factory.pagePanel();
                         board.setLayout(null);
                         int width = com.formdev.flatlaf.util.UIScale.scale(500);
@@ -48,7 +50,7 @@ class DesktopNeutralPaletteTest {
                         JComponent[] controls = {factory.card(null), factory.secondaryButton("普通按钮"),
                             search, new JTextField(), new JComboBox<>(new String[]{"选项"}),
                             disabled, disabledInput, factory.primaryButton("主要操作")};
-                        Color[] expected = {card, control, searchColor, control, control, control, control, palette.accent()};
+                        Color[] expected = {card, control, control, control, control, control, control, palette.accent()};
                         String[] names = {"卡片 / 详情", "次要按钮", "搜索框", "普通输入框", "下拉框", "禁用按钮", "禁用输入框", "蓝色主按钮"};
                         for (int index = 0; index < controls.length; index++) {
                             var label = new JLabel(names[index]);
@@ -73,6 +75,8 @@ class DesktopNeutralPaletteTest {
                         assertSurface(tableHeader, page);
                         for (String key : new String[]{"Panel.background", "ScrollBar.track", "TitlePane.background", "TitlePane.inactiveBackground"})
                             assertEquals(page, UIManager.getColor(key), key);
+                        for (String key : new String[]{"List.cardOutline", "ScrollBar.thumb"})
+                            assertEquals(emphasis, UIManager.getColor(key), key);
                         var path = Path.of("target", "ui-gray", "controls-" + theme + "-" + zoom + ".png");
                         Files.createDirectories(path.getParent());
                         ImageIO.write(render(board), "png", path.toFile());
@@ -86,7 +90,7 @@ class DesktopNeutralPaletteTest {
     }
 
     @Test
-    void liveThemeRefreshKeepsDraftsSelectionAndActionsWithSearchException() throws Exception {
+    void liveThemeRefreshKeepsDraftsSelectionAndActionsWithUnifiedControlSurface() throws Exception {
         SwingUtilities.invokeAndWait(() -> {
             try {
                 DesktopThemeService.install(ThemeMode.LIGHT, 100);
@@ -116,9 +120,11 @@ class DesktopNeutralPaletteTest {
                     boolean dark = theme == ThemeMode.DARK;
                     assertEquals(gray(dark ? 30 : 240), page.getBackground());
                     assertEquals(gray(dark ? 20 : 250), card.getBackground());
-                    assertEquals(gray(dark ? 50 : 220), action.getBackground());
-                    assertEquals(gray(dark ? 50 : 220), combo.getBackground());
-                    assertEquals(gray(dark ? 50 : 250), search.getBackground());
+                    assertEquals(gray(dark ? 30 : 240), action.getBackground());
+                    assertEquals(gray(dark ? 30 : 240), combo.getBackground());
+                    assertEquals(gray(dark ? 30 : 240), search.getBackground());
+                    assertEquals(gray(dark ? 50 : 220), UIManager.getColor("List.cardOutline"));
+                    assertEquals(gray(dark ? 50 : 220), UIManager.getColor("ScrollBar.thumb"));
                     assertEquals(UIManager.getColor("TextField.foreground"), search.getForeground());
                     assertEquals(UIManager.getColor("TextField.caretForeground"), search.getCaretColor());
                     assertSame(document, search.getDocument());

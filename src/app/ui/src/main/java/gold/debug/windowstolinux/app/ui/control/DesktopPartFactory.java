@@ -251,12 +251,12 @@ public final class DesktopPartFactory {
         return card;
     }
 
-    /** Creates an inner content section whose outline uses the page surface. / 创建以页面底色描边的内层内容分区。
+    /** Creates an inner content section with a neutral emphasis outline. / 创建以中性强调色描边的内层内容分区。
      * @param layout retained content layout / 保留的内容布局
      * @return rounded section with scalable padding / 带可缩放内距的圆角分区 */
     public JPanel outlinedCard(LayoutManager layout) {
         var card = (RoundedCard) outerCard(layout);
-        card.outlineColor(palette.pageBackground());
+        card.outlineColor(palette.emphasisBackground());
         return DesktopThemeBindings.role(card, "outlined-card");
     }
 

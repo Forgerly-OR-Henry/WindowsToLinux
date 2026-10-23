@@ -176,7 +176,7 @@ public final class DesktopListCard extends JPanel {
                 float inset = width / 2;
                 float arc = UIScale.scale(24f);
                 g.setStroke(new BasicStroke(width));
-                g.setColor(UIManager.getColor("Panel.background"));
+                g.setColor(UIManager.getColor("List.cardOutline"));
                 g.draw(new RoundRectangle2D.Float(inset, inset, getWidth() - width,
                     getHeight() - width, arc - width, arc - width));
             }

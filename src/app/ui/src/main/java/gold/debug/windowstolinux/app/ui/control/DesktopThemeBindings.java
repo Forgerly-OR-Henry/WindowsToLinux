@@ -79,7 +79,7 @@ final class DesktopThemeBindings {
                     component.setBackground(palette.cardBackground());
                     component.setForeground(palette.sidebarForeground());
                     if (role.equals("outlined-card"))
-                        ((RoundedCard) component).outlineColor(palette.pageBackground());
+                        ((RoundedCard) component).outlineColor(palette.emphasisBackground());
                     if (role.equals("card-inventory") && component.getParent() instanceof javax.swing.JViewport viewport
                         && viewport.getParent() instanceof javax.swing.JScrollPane scroll)
                         scrollSurface(scroll, palette);
