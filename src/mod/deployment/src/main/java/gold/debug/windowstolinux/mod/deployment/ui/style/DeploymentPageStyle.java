@@ -363,8 +363,8 @@ public final class DeploymentPageStyle {
             try {
                 g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 String color = Boolean.TRUE.equals(getClientProperty("deployment.style.inventory"))
-                    ? Boolean.TRUE.equals(getClientProperty("deployment.style.selected")) ? "List.selectionBackground" : "Panel.background"
-                    : "List.background";
+                    ? Boolean.TRUE.equals(getClientProperty("deployment.style.selected")) ? "List.selectionBackground" : "Table.background"
+                    : "Table.background";
                 g.setColor(UIManager.getColor(color));
                 g.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 12, 12);
             } finally {

@@ -32,11 +32,15 @@
 
 | 位置 | 表面角色 | 深／浅灰阶 |
 | --- | --- | --- |
-| 普通输入框、下拉框、数字输入及禁用背景 | 中性控件 | 50／210 |
+| 普通输入框、下拉框、数字输入、禁用背景及滚动条滑块 | 中性控件 | 50／210 |
 | 菜单弹层、提示框、树及普通表格内容 | 内容块 | 10／250 |
 | 工具栏、菜单栏、表头及滚动条轨道 | 页面 | 30／230 |
 
 Swing 自绘标题栏同样使用页面档；操作系统原生窗框由系统绘制。
+
+滚动条滑块的静止颜色与次要按钮一致，轨道使用页面档。悬停和按下时采用共用控件的交互色，不复用文字色或输入框边线色。
+
+Mod 自有内容卡片同样使用内容档；读取标准 Swing 配色时可使用 `Table.background`。`Panel.background` 和卡片清单的 `List.background` 是页面底色，不能用作未选卡片或详情块的表面。
 
 主题表面颜色由 [ThemePalette](../../src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/display/ThemePalette.java) 提供，共用控件颜色由 [DesktopControlDefaults](../../src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/display/DesktopControlDefaults.java) 设置。搜索框通过 [DesktopPartFactory](../../src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/control/DesktopPartFactory.java) 声明专用表面角色；主题切换重新读取颜色，不替换输入文档、数据模型或操作监听器。
 

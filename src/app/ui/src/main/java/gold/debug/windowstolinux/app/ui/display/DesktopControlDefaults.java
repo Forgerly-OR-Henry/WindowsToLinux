@@ -163,9 +163,9 @@ final class DesktopControlDefaults {
         UIManager.put("ComboBox.disabledForeground", disabledForeground);
         UIManager.put("ScrollBar.background", color(palette.pageBackground()));
         UIManager.put("ScrollBar.track", color(palette.pageBackground()));
-        UIManager.put("ScrollBar.thumb", color(palette.inputBorder()));
-        UIManager.put("ScrollBar.hoverThumbColor", color(palette.subduedText()));
-        UIManager.put("ScrollBar.pressedThumbColor", color(palette.accent()));
+        UIManager.put("ScrollBar.thumb", buttonBackground);
+        UIManager.put("ScrollBar.hoverThumbColor", buttonHover);
+        UIManager.put("ScrollBar.pressedThumbColor", buttonPressed);
     }
 
     /** Marks palette colors as replaceable by live Swing theme updates. / 将配色标记为可由 Swing 实时主题更新替换。
