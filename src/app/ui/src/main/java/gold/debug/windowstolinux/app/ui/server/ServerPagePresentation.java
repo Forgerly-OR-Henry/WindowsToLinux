@@ -245,14 +245,11 @@ final class ServerPagePresentation extends JPanel {
         inventoryHeader.add(titleRow, BorderLayout.NORTH);
         var search = components.transparent(new BorderLayout(8, 0));
         search.add(query, BorderLayout.CENTER);
-        query.setBackground(Color.WHITE);
-        query.setForeground(new Color(0x1B1F27));
-        query.setCaretColor(new Color(0x1B1F27));
-        query.putClientProperty("FlatLaf.style", "placeholderForeground: #666B76");
+        components.styleSearchField(query);
         query.putClientProperty("JTextField.placeholderText", messages.text("server.search"));
         query.putClientProperty("JTextField.leadingIcon",
             gold.debug.windowstolinux.app.ui.control.DesktopIcons.icon("action/search", 16,
-                () -> new Color(0x666B76)));
+                () -> UIManager.getColor("Label.disabledForeground")));
         search.add(refresh, BorderLayout.EAST);
         inventoryHeader.add(search, BorderLayout.CENTER);
         heading.add(inventoryHeader, BorderLayout.CENTER);

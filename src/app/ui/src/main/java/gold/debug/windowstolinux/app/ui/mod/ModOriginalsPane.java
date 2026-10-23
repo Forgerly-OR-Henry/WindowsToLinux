@@ -95,6 +95,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         setName("platform.originals");
         components.stylePage(this);
         setBorder(BorderFactory.createEmptyBorder(18, 22, 18, 22));
+        components.styleSearchField(search);
         prepareSearch();
         prepareInventory();
         components.cardList(inventory, false);

@@ -16,6 +16,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
 import javax.swing.JTextArea;
+import javax.swing.JTextField;
 
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 
@@ -124,6 +125,12 @@ public final class DesktopPartFactory {
     public void stylePage(JComponent page) {
         DesktopThemeBindings.role(page, "page");
         page.setBackground(palette.pageBackground());
+    }
+
+    /** Keeps search surfaces distinct in light mode and follows live theme changes. / 浅色搜索框突出显示，并跟随实时主题更新。
+     * @param field existing search input / 已有搜索输入框 */
+    public void styleSearchField(JTextField field) {
+        field.putClientProperty("FlatLaf.style", "background: $TextField.searchBackground; focusedBackground: $TextField.searchBackground");
     }
 
     /** Keeps complete page controls reachable when the viewport is shorter than their natural height. / 视口较矮时仍可访问全部页面控件。

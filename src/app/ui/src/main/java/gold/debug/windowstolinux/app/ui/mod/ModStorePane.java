@@ -91,6 +91,7 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
         components.stylePage(this);
         setBorder(BorderFactory.createEmptyBorder(18, 22, 18, 22));
         search.setName("store.search");
+        components.styleSearchField(search);
         status.putClientProperty("html.disable", true);
         search.addActionListener(event -> query());
         buttons.retry.addActionListener(event -> query());

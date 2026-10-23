@@ -156,7 +156,7 @@ class PlatformServersPresentationTest {
                                 assertEquals(1, table.getRowCount());
                                 assertEquals("long-hostname", search.getText());
                                 assertEquals(listeners, document.getDocumentListeners().length);
-                                assertEquals(Color.WHITE, search.getBackground());
+                                assertEquals(UIManager.getColor("TextField.searchBackground"), search.getBackground());
                                 assertEquals(com.formdev.flatlaf.util.UIScale.scale(20), pane.getInsets().left);
                                 assertTrue(((JLabel) named(pane, "servers.details.title")).getText().startsWith("演示服务器"));
                             }
@@ -217,7 +217,7 @@ class PlatformServersPresentationTest {
     }
 
     private static void assertInventoryAlignment(JComponent pane) {
-        assertEquals(Color.WHITE, named(pane, "servers.search").getBackground());
+        assertEquals(UIManager.getColor("TextField.searchBackground"), named(pane, "servers.search").getBackground());
         assertEquals(UIManager.getFont("Label.font").getFamily(), named(pane, "servers.output").getFont().getFamily());
         assertEquals(com.formdev.flatlaf.util.UIScale.scale(12), named(pane, "servers.output").getFont().getSize());
         var table = (JTable) named(pane, "servers.table");

@@ -102,24 +102,34 @@ final class DesktopControlDefaults {
         var buttonForeground = color(palette.secondaryButtonForeground());
         var buttonHover = color(dark ? new Color(66, 77, 95) : new Color(214, 224, 242));
         var buttonPressed = color(palette.navigationActive());
-        var inputBackground = color(dark ? new Color(48, 50, 55) : new Color(244, 245, 248));
-        var disabledBackground = color(dark ? new Color(38, 45, 56) : new Color(239, 241, 245));
+        var inputBackground = buttonBackground;
+        var disabledBackground = buttonBackground;
         var disabledForeground = color(dark ? new Color(125, 134, 149) : new Color(143, 149, 159));
-        for (String type : List.of("Button", "Button.default")) {
+        for (String type : List.of("Button", "Button.default", "ToggleButton")) {
             UIManager.put(type + ".background", buttonBackground);
             UIManager.put(type + ".foreground", buttonForeground);
             UIManager.put(type + ".focusedBackground", buttonBackground);
             UIManager.put(type + ".hoverBackground", buttonHover);
             UIManager.put(type + ".pressedBackground", buttonPressed);
         }
-        UIManager.put("Button.disabledBackground", disabledBackground);
-        UIManager.put("Button.disabledSelectedBackground", disabledBackground);
-        UIManager.put("Button.disabledText", disabledForeground);
-        UIManager.put("Button.disabledSelectedForeground", disabledForeground);
+        for (String type : List.of("Button", "ToggleButton")) {
+            UIManager.put(type + ".disabledBackground", disabledBackground);
+            UIManager.put(type + ".disabledSelectedBackground", disabledBackground);
+            UIManager.put(type + ".disabledText", disabledForeground);
+            UIManager.put(type + ".disabledSelectedForeground", disabledForeground);
+        }
         UIManager.put("CheckBox.icon.background", buttonBackground);
         UIManager.put("RadioButton.icon.background", buttonBackground);
-        for (String surface : List.of("Panel", "Viewport", "ScrollPane", "TabbedPane"))
+        for (String surface : List.of("Panel", "Viewport", "ScrollPane", "TabbedPane", "ToolBar", "MenuBar",
+            "SplitPane", "TableHeader", "TitlePane"))
             UIManager.put(surface + ".background", color(palette.pageBackground()));
+        UIManager.put("TitlePane.inactiveBackground", color(palette.pageBackground()));
+        for (String surface : List.of("Tree", "PopupMenu", "Menu", "MenuItem", "CheckBoxMenuItem", "RadioButtonMenuItem", "ToolTip")) {
+            UIManager.put(surface + ".background", color(palette.cardBackground()));
+            UIManager.put(surface + ".foreground", color(palette.sidebarForeground()));
+        }
+        UIManager.put("Tree.textBackground", color(palette.cardBackground()));
+        UIManager.put("Tree.textForeground", color(palette.sidebarForeground()));
         for (String surface : List.of("List", "Table")) {
             UIManager.put(surface + ".background", color(palette.cardBackground()));
             UIManager.put(surface + ".foreground", color(palette.sidebarForeground()));
@@ -134,10 +144,13 @@ final class DesktopControlDefaults {
         UIManager.put("Label.foreground", color(palette.sidebarForeground()));
         UIManager.put("Component.borderColor", color(palette.inputBorder()));
         UIManager.put("Component.focusColor", color(palette.accent()));
-        for (String type : List.of("TextField", "PasswordField", "FormattedTextField", "TextArea", "ComboBox", "Spinner")) {
+        for (String type : List.of("TextField", "PasswordField", "FormattedTextField", "TextArea", "TextPane", "EditorPane", "ComboBox", "Spinner")) {
             UIManager.put(type + ".background", inputBackground);
             UIManager.put(type + ".foreground", color(palette.sidebarForeground()));
+            UIManager.put(type + ".disabledBackground", disabledBackground);
+            UIManager.put(type + ".inactiveBackground", disabledBackground);
         }
+        UIManager.put("TextField.searchBackground", color(dark ? palette.secondaryButtonBackground() : palette.cardBackground()));
         UIManager.put("ComboBox.buttonBackground", inputBackground);
         UIManager.put("ComboBox.buttonFocusedBackground", inputBackground);
         UIManager.put("ComboBox.buttonArrowColor", color(palette.subduedText()));
@@ -148,8 +161,6 @@ final class DesktopControlDefaults {
         UIManager.put("ComboBox.selectionForeground", color(palette.sidebarForeground()));
         UIManager.put("ComboBox.disabledBackground", disabledBackground);
         UIManager.put("ComboBox.disabledForeground", disabledForeground);
-        UIManager.put("PopupMenu.background", color(palette.cardBackground()));
-        UIManager.put("PopupMenu.foreground", color(palette.sidebarForeground()));
         UIManager.put("ScrollBar.background", color(palette.pageBackground()));
         UIManager.put("ScrollBar.track", color(palette.pageBackground()));
         UIManager.put("ScrollBar.thumb", color(palette.inputBorder()));
