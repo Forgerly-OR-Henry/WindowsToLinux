@@ -1,0 +1,148 @@
+diff --git a/test/multi-language/success-file-transfer/web/src/server/server.ts b/test/multi-language/success-file-transfer/web/src/server/server.ts
+--- a/test/multi-language/success-file-transfer/web/src/server/server.ts
++++ b/test/multi-language/success-file-transfer/web/src/server/server.ts
+@@ -205,6 +205,11 @@
+                 protocolFailure();
+                 return;
+               }
++              if (!req.readableEnded) {
++                req.unpipe(proxy);
++                req.resume();
++                proxy.destroy();
++              }
+               res.writeHead(response.statusCode || 502, {
+                 "Content-Type": "application/json; charset=utf-8",
+                 "Content-Length": body.length,
+@@ -254,7 +259,7 @@
+       if (!res.headersSent) {
+         res.writeHead(502, { "Content-Type": "application/json" });
+         res.end(JSON.stringify({ error: "后端服务不可用" }));
+-      } else res.destroy();
++      } else if (!res.writableEnded) res.destroy();
+     });
+     req.on("aborted", () => {
+       observeUpload?.("REQUEST_ABORTED");
+diff --git a/test/multi-language/success-file-transfer/web/test/upload-proxy.mjs b/test/multi-language/success-file-transfer/web/test/upload-proxy.mjs
+--- a/test/multi-language/success-file-transfer/web/test/upload-proxy.mjs
++++ b/test/multi-language/success-file-transfer/web/test/upload-proxy.mjs
+@@ -3,6 +3,7 @@
+ import { once } from "node:events";
+ import fs from "node:fs/promises";
+ import http from "node:http";
++import net from "node:net";
+ import { stripTypeScriptTypes } from "node:module";
+ import os from "node:os";
+ import path from "node:path";
+@@ -160,12 +161,13 @@
+   const origin = process.env.UPLOAD_TEST_GO_ORIGIN; const id = process.env.UPLOAD_TEST_GO_ID;
+   if (!origin || !id) { t.skip("Run through the focused Go cancellation test with its real Store and Routes"); return; }
+   assert.match(id, /^[0-9a-f]{32}$/);
+-  const proxy = await gateway(origin); let request; let timer;
++  const proxy = await gateway(origin); let request;
++  const cancelReady = once(process.stdin, "data");
+   try {
+     await new Promise((resolve, reject) => {
+       request = proxy.request(`${proxy.url}/api/uploads/${id}/chunks/0`, { method: "PUT", agent: false, headers: { "Content-Length": 1 << 20 } });
+       request.on("error", () => {}); request.once("close", resolve);
+-      request.write(Buffer.alloc(32768, 0x5a), () => { timer = setTimeout(() => request.destroy(), 80); });
++      request.write(Buffer.alloc(32768, 0x5a), () => { cancelReady.then(() => request.destroy(), reject); });
+       const deadline = setTimeout(() => reject(new Error("LOCAL_CLIENT_CANCEL_DEADLINE")), 3000);
+       request.once("close", () => clearTimeout(deadline));
+     });
+@@ -178,7 +180,55 @@
+       proxyRequests: proxy.proxies.length, proxyDestroyCalls: proxy.proxies[0].destroyCalls, unpipeDataListenerCounts: proxy.unpipeDataListenerCounts,
+       events: proxy.records.map((entry) => ({ event: entry.event, bytes: entry.requestBodyBytes, first: entry.firstObservedTerminationEvent })) }));
+   } finally {
+-    clearTimeout(timer); if (request && !request.destroyed) request.destroy(); await proxy.close();
++    if (request && !request.destroyed) request.destroy(); await proxy.close();
+     t.diagnostic("LOCAL_UPLOAD_NODE_CANCEL_LISTENER_CLOSED=true TEMP_REMOVED=true DATA_OBSERVERS_REMOVED=true");
+   }
+ });
++
++test("early rejection drains request before next keepalive request", { timeout: 7000 }, async (t) => {
++  const id = "0123456789abcdef0123456789abcdef";
++  const seen = [];
++  const upstream = http.createServer((req,res) => {
++    seen.push(req.url);
++    res.writeHead(409, {"X-Sample-Protocol":"2", "Content-Type":"application/json", "Connection":"close"});
++    res.end(JSON.stringify({error:"cancelled"}));
++  });
++  upstream.listen(0,"127.0.0.1"); await once(upstream,"listening");
++  let proxy, client;
++  const responses=[]; let pending=Buffer.alloc(0);
++  try {
++    proxy=await gateway(`http://127.0.0.1:${upstream.address().port}`);
++    client=net.connect(new URL(proxy.url).port,"127.0.0.1");
++    client.on("error",()=>{});
++    client.on("data",chunk=>{
++      pending=Buffer.concat([pending,chunk]);
++      while(true) {
++        const split=pending.indexOf("\r\n\r\n"); if(split<0) return;
++        const head=pending.subarray(0,split).toString();
++        const length=Number(/Content-Length: (\d+)/i.exec(head)?.[1]);
++        if(!Number.isSafeInteger(length)) throw new Error("EXPECTED_CONTENT_LENGTH");
++        if(pending.length<split+4+length) return;
++        responses.push({status:Number(/^HTTP\/1\.1 (\d+)/.exec(head)[1]),body:pending.subarray(split+4,split+4+length).toString()});
++        pending=pending.subarray(split+4+length);
++      }
++    });
++    await once(client,"connect");
++    client.write(`PUT /api/uploads/${id}/chunks/1 HTTP/1.1\r\nHost: localhost\r\nContent-Length: 1048576\r\nConnection: keep-alive\r\n\r\n`);
++    client.write(Buffer.alloc(5792,0x5a));
++    await waitFor(()=>responses.length===1);
++    assert.equal(responses[0].status,409);
++    assert.equal(proxy.requests[0].complete,false);
++    client.write(Buffer.alloc(1048576-5792,0x5a));
++    client.write(`POST /api/uploads/${id}/complete HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n`);
++    await waitFor(()=>responses.length===2);
++    assert.equal(responses[1].status,409);
++    assert.equal(proxy.requests[0].complete,true);
++    assert.equal(seen.length,2);
++    t.diagnostic("EARLY_409_NEXT_REQUEST_VERIFIED=true");
++  } finally {
++    t.diagnostic(JSON.stringify({responses,seen,requests:proxy?.requests.map(req=>({url:req.url,complete:req.complete,paused:req.isPaused(),readableLength:req.readableLength})),records:proxy?.records}));
++    client?.destroy(); await proxy?.close();
++    const stopped=new Promise(resolve=>upstream.close(resolve)); upstream.closeAllConnections(); await stopped;
++    t.diagnostic("LOCAL_LISTENERS_CLOSED=true TEMP_REMOVED=true");
++  }
++});
+diff --git a/test/multi-language/success-file-transfer/backend/internal/files/upload_test.go b/test/multi-language/success-file-transfer/backend/internal/files/upload_test.go
+--- a/test/multi-language/success-file-transfer/backend/internal/files/upload_test.go
++++ b/test/multi-language/success-file-transfer/backend/internal/files/upload_test.go
+@@ -317,10 +317,33 @@
+ 	}
+ 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+ 	defer cancel()
+-	cmd := exec.CommandContext(ctx, node, "--test", "--test-name-pattern=upload cancellation reaches actual Go handler", script)
++	cmd := exec.CommandContext(ctx, node, "--test", "--test-isolation=none", "--test-name-pattern=upload cancellation reaches actual Go handler", script)
+ 	cmd.Env = append(os.Environ(), "UPLOAD_TEST_GO_ORIGIN="+server.URL, "UPLOAD_TEST_GO_ID="+id)
+-	output, err := cmd.CombinedOutput()
+-	t.Logf("NODE_GO_CANCEL_CHILD_OUTPUT\n%s", output)
++	input, err := cmd.StdinPipe()
++	if err != nil {
++		t.Fatal(err)
++	}
++	var output bytes.Buffer
++	cmd.Stdout, cmd.Stderr = &output, &output
++	if err = cmd.Start(); err != nil {
++		t.Fatal(err)
++	}
++	waited := false
++	t.Cleanup(func() {
++		cancel()
++		input.Close()
++		if !waited {
++			cmd.Wait()
++		}
++	})
++	uploadWait(t, capture, "STAGING_FIRST_WRITE_END")
++	if _, err = input.Write([]byte("cancel\n")); err != nil {
++		t.Fatal(err)
++	}
++	input.Close()
++	err = cmd.Wait()
++	waited = true
++	t.Logf("NODE_GO_CANCEL_CHILD_OUTPUT\n%s", output.Bytes())
+ 	if err != nil {
+ 		t.Fatal("Node cancellation child failed", err)
+ 	}

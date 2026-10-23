@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "scope": "Three-path cancellation increment only; apply after frozen source09, not a standalone diff from mixed current HEAD",
+  "patch": "docs/test/multi-language/patches/ASSISTED-RESUME-CANCELLATION-20261024.patch",
+  "patchSha256": "aad54bb78a399fe440c131f4c162e834ba79c894cf04118e9183db92e997425e",
+  "patchBytes": 7570,
+  "baseDeliveryCommit": "f41dd1f14b717eb55b9842b5818715a1a0b6f24f",
+  "baseExecutionSource09Sha256": "d0d152963e3c3d20bc715b6dce254755fd81bbc7158e9c601fd406737235e8e0",
+  "fixedExecutionSource10Sha256": "c06fe01b9bd3ef5cadc692a1203e0fca321b572c0bb202000eb9f143c45685f1",
+  "files": [
+    {
+      "path": "test/multi-language/success-file-transfer/web/src/server/server.ts",
+      "beforeSha256": "bff2de363e8621868be8995bfa759993859a8c5167ade0618ba94ed8b4eb6cf1",
+      "afterSha256": "433dc8d07a9a9b0ac421fc43beac02b27c6b0ddb088fbbd3b344f17c7ba306e4",
+      "beforeBytes": 14639,
+      "afterBytes": 14817
+    },
+    {
+      "path": "test/multi-language/success-file-transfer/web/test/upload-proxy.mjs",
+      "beforeSha256": "b2d321212c250a82372181c3138157d5129db344ee8d8b129177af684a7734ce",
+      "afterSha256": "3ba9ae7f0e72c10ff03d00593ad32f16dd753e750d1707ea2797849bdf48085d",
+      "beforeBytes": 12877,
+      "afterBytes": 15505
+    },
+    {
+      "path": "test/multi-language/success-file-transfer/backend/internal/files/upload_test.go",
+      "beforeSha256": "0011c4c26d35df989dfc40e8b92f7cdb12fdd09f95a938ed81c66977bd0f0699",
+      "afterSha256": "0fff1203aee3986e761b4e3d4039c5724b212490d88138de011c06bb1a0f375f",
+      "beforeBytes": 11353,
+      "afterBytes": 11814
+    }
+  ],
+  "verification": {
+    "gitApplyCheckAndApply": [
+      {
+        "argv": [
+          "git",
+          "-c",
+          "core.autocrlf=false",
+          "-c",
+          "core.eol=lf",
+          "apply",
+          "--check",
+          "I:\\Program\\WindowsToLinux\\docs\\test\\multi-language\\patches\\ASSISTED-RESUME-CANCELLATION-20261024.patch"
+        ],
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "argv": [
+          "git",
+          "-c",
+          "core.autocrlf=false",
+          "-c",
+          "core.eol=lf",
+          "apply",
+          "I:\\Program\\WindowsToLinux\\docs\\test\\multi-language\\patches\\ASSISTED-RESUME-CANCELLATION-20261024.patch"
+        ],
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    ],
+    "allThreePatchedBytesMatch": true,
+    "fullSuite": false,
+    "remoteAcceptance": "RUN02_FAILED_AFTER_FIRST_OF_FIVE_DOWNLOADS_SECOND_UPLOAD_POST_EOF",
+    "localFixDoesNotProveAllEofResolved": true
+  },
+  "boundary": "No credentials/runtime database/config/model/approval changes. Main tree and f24 have verified fix; unrelated uncommitted and staged changes excluded."
+}
