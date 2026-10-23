@@ -11,7 +11,12 @@ import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.appapi.task.action.AuthorizationMode;
+import gold.debug.windowstolinux.appapi.task.action.CommandReviewMode;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.WorkflowGrant;
+import gold.debug.windowstolinux.appapi.task.action.WorkflowPolicyState;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
@@ -115,61 +120,34 @@ public final class PlatformAuthorizationService implements AutoCloseable {
                 throw failure(ProblemCode.ACCESS_DENIED, "AUTHORIZATION_TARGET",
                     "Operation targets differ from the launched workflow");
             var key = new SemanticKey(intent.type(), semantics);
-            boolean approved = forceHuman ? human.approve() : scope.lease != null && !scope.reviewOnly && !required || scope.mode == AuthorizationMode.FULL
+            // Reviewed workflows do not delegate unrelated business confirmations.
+            boolean approved = scope.reviewMode != null ? human.approve() : forceHuman ? human.approve()
+                : scope.mode == AuthorizationMode.FULL
                 || scope.mode == AuthorizationMode.GENERAL && scope.approved.contains(key) || human.approve();
             scope.validate(task, owner, version);
-            if (approved && !forceHuman && (scope.lease == null || scope.reviewOnly || required) && scope.mode == AuthorizationMode.GENERAL)
+            if (approved && scope.reviewMode == null && !forceHuman && scope.mode == AuthorizationMode.GENERAL)
                 scope.approved.add(key);
             return new Permit(task, scope, approved);
         }
     }
 
-    /** Establishes one actual root delegation only after the captured mode's initial handoff decision. / 仅在捕获模式的初始交接确认后建立一个真实根委托。
-     * @param owner bound root / 绑定根
-     * @param version exact root release / 精确根发布
-     * @param intent complete frozen workflow / 完整冻结流程
-     * @param mode business-frozen authorization mode / 业务冻结授权模式
-     * @param task original ordinary context / 原普通上下文
-     * @param reviewOnly whether only question repetition is granted / 是否仅授予问题重复规则
-     * @param human real handoff presenter / 真实交接呈现器
-     * @return original host delegation, empty after explicit refusal / 原宿主委托，明确拒绝后为空
-     * @throws ApiException if admission, handoff or cleanup fails / 准入、交接或清理失败时 */
-    Optional<WorkflowGrant> delegate(String owner, String version, ActionIntent intent, AuthorizationMode mode, TaskContext task, boolean reviewOnly, HumanReview human) throws ApiException {
-        return openWorkflow(owner, version, intent, mode, task, reviewOnly, false, human);
-    }
-
-    /** Opens fresh recovery authority only after original expired occupancy has been confirmed released. / 仅确认原过期占用释放后开启新恢复权限。
-     * @param owner exact root / 精确根
-     * @param version exact release / 精确发布
-     * @param intent frozen original workflow / 冻结原流程
-     * @param mode frozen business mode / 冻结业务模式
-     * @param task actual original recovery / 实际原恢复
-     * @param reviewOnly question-only scope / 仅问题作用域
-     * @param human actual fresh handoff / 实际新交接
-     * @return new scope or explicit refusal / 新作用域或明确拒绝
-     * @throws ApiException if original recovery or cleanup is unavailable / 原恢复或清理不可用时 */
-    Optional<WorkflowGrant> recover(String owner, String version, ActionIntent intent, AuthorizationMode mode, TaskContext task, boolean reviewOnly, HumanReview human) throws ApiException {
-        return openWorkflow(owner, version, intent, mode, task, reviewOnly, true, human);
-    }
-
-    /** Shares scope construction without relaxing either callback-kind boundary. / 共享作用域构造，不放宽任一回调种类边界。
-     * @param owner original root / 原根
-     * @param version original release / 原发布
-     * @param intent complete exact workflow / 完整精确流程
-     * @param mode frozen mode / 冻结模式
-     * @param task actual context / 实际上下文
-     * @param reviewOnly question-only repetition / 仅问题重复
-     * @param recovering explicit original recovery / 明确原恢复
-     * @param human actual presenter / 实际呈现器
-     * @return fresh host scope or refusal / 新宿主作用域或拒绝
-     * @throws ApiException if admission, decision or cleanup fails / 准入、确认或清理失败时 */
-    private Optional<WorkflowGrant> openWorkflow(String owner, String version, ActionIntent intent, AuthorizationMode mode, TaskContext task, boolean reviewOnly, boolean recovering, HumanReview human) throws ApiException {
+    /** Admits fresh task-local authority after exact root and server checks. / 精确核验原根及服务器后接纳新任务内权限。
+     * @param owner exact workflow owner / 精确流程所有者
+     * @param version owner release / 所有者发布版本
+     * @param intent frozen workflow intent / 冻结流程意图
+     * @param mode captured review policy / 已捕获审核策略
+     * @param rememberAuthorization whether to retain actual human approvals / 是否保留实际人工批准
+     * @param task original root task / 原根任务
+     * @param recovering whether this is original reconciliation / 是否为原任务核对
+     * @param human real startup confirmation callback / 真实启动确认回调
+     * @return owned workflow grant or human refusal / 所属流程许可或人工拒绝
+     * @throws ApiException if identity, admission or cleanup fails / 身份、准入或清理失败时 */
+    Optional<WorkflowGrant> openReviewed(String owner, String version, ActionIntent intent, CommandReviewMode mode,
+                                         boolean rememberAuthorization, TaskContext task, boolean recovering, HumanReview human) throws ApiException {
         worker();
         requireOpen();
         if (mode == null)
-            throw failure(ProblemCode.INVALID_INPUT, "WORKFLOW_AUTHORIZATION_MODE", "Workflow authorization mode is required");
-        if (reviewOnly && mode == AuthorizationMode.FULL)
-            throw failure(ProblemCode.INVALID_INPUT, "WORKFLOW_REVIEW_MODE", "Question-only workflow requires ONCE or GENERAL");
+            throw failure(ProblemCode.INVALID_INPUT, "WORKFLOW_REVIEW_MODE", "Review mode is required");
         var servers = PlatformWorkflowAdmission.servers(persistence, tasks, task, owner, version, recovering);
         if (!servers.equals(Set.copyOf(intent.serverIds())))
             throw failure(ProblemCode.ACCESS_DENIED, "WORKFLOW_SERVER_SET", "Delegation must cover the complete original server set");
@@ -193,13 +171,13 @@ public final class PlatformAuthorizationService implements AutoCloseable {
                 throw failure(ProblemCode.BUSY, "WORKFLOW_SCOPE_EXISTS", "Original task already owns a workflow");
             var lease = tasks.retain(task, new gold.debug.windowstolinux.app.db.task.TaskResource("CUSTOM", "workflow-delegation-" + UUID.randomUUID(), owner, false),
                 new gold.debug.windowstolinux.app.db.task.ResourceRecovery("workflow.v1", Map.of("taskId", task.id().toString(), "owner", owner, "version", version, "bootId", persistence.database().bootId().toString())), true);
-            scope = new Scope(task, owner, version, mode, Set.of(), servers, lease, reviewOnly, recovering);
+            scope = new Scope(task, owner, version, mode, rememberAuthorization, servers, lease, recovering, intent);
             scopes.put(task, scope);
             delegated.add(task);
         }
         try {
             synchronized (scope) {
-                boolean approved = reviewOnly || mode == AuthorizationMode.FULL || human.approve();
+                boolean approved = mode != CommandReviewMode.FULL_CONTROL || human.approve();
                 PlatformWorkflowAdmission.servers(persistence, tasks, task, owner, version, recovering);
                 if (approved) {
                     scope.ready = true;
@@ -217,6 +195,138 @@ public final class PlatformAuthorizationService implements AutoCloseable {
             }
             throw failure;
         }
+    }
+
+    /** Updates the original live scope without closing or reopening its delegation. / 不关闭或重新开启委托，仅更新原活动作用域。 */
+    Optional<WorkflowPolicyState> updateReviewed(String owner, String version, WorkflowGrant grant,
+                                                 long expectedRevision, CommandReviewMode mode, TaskContext task,
+                                                 PolicyReview human) throws ApiException {
+        worker();
+        tasks.requireExecuting(task, owner, version);
+        if (mode == null || expectedRevision < 0)
+            throw failure(ProblemCode.INVALID_INPUT, "WORKFLOW_POLICY_INVALID", "Policy and nonnegative revision are required");
+        Scope scope;
+        synchronized (this) {
+            requireOpen();
+            scope = scopes.get(task);
+        }
+        if (scope == null || scope != grant || scope.reviewMode == null)
+            throw failure(ProblemCode.ACCESS_DENIED, "WORKFLOW_POLICY_SCOPE", "Exact original reviewed workflow grant is required");
+        synchronized (scope) {
+            scope.validate(task, owner, version);
+            if (scope.policyRevision != expectedRevision)
+                throw failure(ProblemCode.BUSY, "WORKFLOW_POLICY_REVISION", "Workflow policy revision changed");
+            if (scope.reviewMode == mode) return Optional.of(new WorkflowPolicyState(mode, scope.policyRevision));
+            if (scope.policyRevision == Long.MAX_VALUE)
+                throw failure(ProblemCode.BUSY, "WORKFLOW_POLICY_REVISION", "Workflow policy revision is exhausted");
+            if (mode == CommandReviewMode.FULL_CONTROL) {
+                var original = scope.workflowIntent;
+                var change = new ActionIntent("deployment.workflow.policy-update", original.serverIds(),
+                    original.target(), Long.toString(expectedRevision), original.exactAction(),
+                    "Change this active workflow approval policy to FULL_CONTROL");
+                if (!human.approve(change)) return Optional.empty();
+                scope.validate(task, owner, version);
+            }
+            scope.reviewMode = mode;
+            scope.policyRevision++;
+            scope.remembered.clear();
+            scope.approved.clear();
+            return Optional.of(new WorkflowPolicyState(mode, scope.policyRevision));
+        }
+    }
+
+    /** Applies current policy after an independent review; remembered bounds waive human questions only. / 独立审核后应用当前策略；记忆参数仅免人工问题。
+     * @param owner exact workflow owner / 精确流程所有者
+     * @param version owner release / 所有者发布版本
+     * @param intent unchanged reviewed action / 未改变的经审核动作
+     * @param command actual command request or non-command absence / 实际命令请求或非命令缺省
+     * @param requiresUserConfirmation whether review found an unresolved tradeoff / 审核是否发现未决取舍
+     * @param task original accepted task / 原接纳任务
+     * @param human actual human decision callback / 实际人工决定回调
+     * @return single-use permit bound to the original action / 绑定原动作的单次许可
+     * @throws ApiException if scope, targets or request identity differ / 作用域、目标或请求身份不一致时 */
+    Permit reviewAction(String owner, String version, ActionIntent intent, Optional<CommandRequest> command,
+                        boolean requiresUserConfirmation, TaskContext task, HumanReview human) throws ApiException {
+        worker();
+        tasks.requireExecuting(task, owner, version);
+        Scope scope;
+        synchronized (this) {
+            requireOpen();
+            scope = scopes.get(task);
+        }
+        if (scope == null || scope.reviewMode == null)
+            throw failure(ProblemCode.ACCESS_DENIED, "REVIEWED_SCOPE_REQUIRED", "Original reviewed workflow is required");
+        synchronized (scope) {
+            scope.validate(task, owner, version);
+            var semantics = intent.semantics().orElseThrow(() -> failure(ProblemCode.ACCESS_DENIED,
+                "REVIEWED_ACTION_SEMANTICS", "Reviewed action requires exact resource meaning"));
+            var servers = semantics.targets().stream().map(ActionTarget::serverId).collect(java.util.stream.Collectors.toSet());
+            if (!servers.equals(Set.copyOf(intent.serverIds())) || !scope.servers.containsAll(servers))
+                throw failure(ProblemCode.ACCESS_DENIED, "AUTHORIZATION_TARGET", "Reviewed action differs from admitted servers");
+            if (intent.type().equals("platform.ssh.execute") != command.isPresent())
+                throw failure(ProblemCode.ACCESS_DENIED, "REVIEWED_COMMAND_REQUIRED", "Actual command binding is required");
+            String payload;
+            java.time.Duration timeout = java.time.Duration.ZERO;
+            long output = 0;
+            if (command.isPresent()) {
+                var request = command.orElseThrow();
+                if (intent.serverIds().size() != 1 || !RemoteActions.command(new ServerId(intent.serverIds().getFirst()),
+                    intent.revision(), request).withSemantics(semantics).equals(intent))
+                    throw failure(ProblemCode.ACCESS_DENIED, "REVIEWED_COMMAND_CHANGED", "Exact command and intent differ");
+                byte[] input = request.stdin();
+                try {
+                    payload = hash(request.script().getBytes(java.nio.charset.StandardCharsets.UTF_8)) + ":" + input.length + ":" + hash(input);
+                } finally {
+                    Arrays.fill(input, (byte) 0);
+                }
+                timeout = request.timeout();
+                output = request.outputLimitBytes();
+            } else payload = hash(intent.exactAction().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            var key = new ReviewedKey(intent.type(), Set.copyOf(intent.serverIds()), intent.target(), intent.revision(),
+                intent.effectSummary(), semantics, payload);
+            final var requestedTimeout = timeout;
+            final long requestedOutput = output;
+            boolean needsHuman = scope.reviewMode == CommandReviewMode.MANUAL_REVIEW
+                || scope.reviewMode == CommandReviewMode.AUTOMATIC && requiresUserConfirmation;
+            boolean remembered = scope.rememberAuthorization && scope.remembered.stream().anyMatch(value ->
+                value.key().equals(key) && requestedTimeout.compareTo(value.timeout()) <= 0 && requestedOutput <= value.output());
+            boolean humanApproved = needsHuman && !remembered && human.approve();
+            scope.validate(task, owner, version);
+            boolean approved = !needsHuman || remembered || humanApproved;
+            if (humanApproved && scope.rememberAuthorization)
+                scope.remembered.add(new RememberedAction(key, timeout, output));
+            return new Permit(task, scope, approved);
+        }
+    }
+
+    /** Hashes request identity without retaining its bytes. / 散列请求身份，不保留其字节。
+     * @param bytes identity input / 身份输入
+     * @return lowercase SHA-256 digest / 小写 SHA-256 摘要 */
+    private static String hash(byte[] bytes) {
+        try {
+            return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (java.security.NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException(unavailable);
+        }
+    }
+
+    /** Captures the exact independently reviewed effect identity. / 捕获独立审核的精确副作用身份。
+     * @param type action type / 动作类型
+     * @param servers captured server identities / 已捕获服务器身份
+     * @param target exact target / 精确目标
+     * @param revision original business revision / 原业务修订
+     * @param effectSummary unchanged effect description / 未改变的副作用描述
+     * @param semantics fixed operation meaning / 固定操作含义
+     * @param payload request or action digest identity / 请求或动作摘要身份 */
+    private record ReviewedKey(String type, Set<String> servers, String target, String revision,
+                               String effectSummary, ActionSemantics semantics, String payload) {
+    }
+
+    /** Retains a real human approval with its original resource limits. / 保留实际人工批准及其原资源上限。
+     * @param key exact effect identity / 精确副作用身份
+     * @param timeout approved timeout bound / 已批准超时上限
+     * @param output approved output bound / 已批准输出上限 */
+    private record RememberedAction(ReviewedKey key, java.time.Duration timeout, long output) {
     }
 
     /** Cleans expired delegation occupancy only during authentic original-root reconciliation. / 仅真实原根核对期间清理已过期委托占用。
@@ -252,6 +362,8 @@ public final class PlatformAuthorizationService implements AutoCloseable {
         if (permit.scope != null)
             synchronized (permit.scope) {
                 permit.scope.validate(task, permit.scope.owner, permit.scope.version);
+                if (permit.policyRevision != permit.scope.policyRevision)
+                    throw failure(ProblemCode.ACCESS_DENIED, "WORKFLOW_POLICY_CHANGED", "Approval belongs to an earlier workflow policy");
             }
     }
 
@@ -357,7 +469,17 @@ public final class PlatformAuthorizationService implements AutoCloseable {
         private final ResourceLease lease;
 
         /** Reuses only genuine questions, never ordinary delegated effects. / 仅复用真实问题，不授予普通委托副作用。 */
-        private final boolean reviewOnly;
+        private CommandReviewMode reviewMode;
+
+        private long policyRevision;
+
+        private final ActionIntent workflowIntent;
+
+        /** Retains only genuine human approvals within this task scope. / 仅在本任务作用域内保留实际人工批准。 */
+        private final boolean rememberAuthorization;
+
+        /** Exact reviewed effects and bounds actually approved by a human. / 人工实际批准的精确经审核副作用及上限。 */
+        private final Set<RememberedAction> remembered = new HashSet<>();
 
         /** True only for a new explicitly requested original recovery scope. / 仅明确请求的新原恢复作用域时为真。 */
         private final boolean recovering;
@@ -382,30 +504,42 @@ public final class PlatformAuthorizationService implements AutoCloseable {
          * @param targets resolved targets / 已解析目标 */
         private Scope(TaskContext task, String owner, String version, AuthorizationMode mode,
                       Set<ActionTarget> targets) {
-            this(task, owner, version, mode, targets, Set.of(), null, false, false);
-        }
-
-        /** Copies exact scope facts and retains only the actual host lease. / 复制精确作用域依据并仅持有实际宿主占用。
-         * @param task original context / 原上下文
-         * @param owner bound root / 绑定根
-         * @param version exact root release / 精确根发布
-         * @param mode frozen mode / 冻结模式
-         * @param targets existing launcher targets / 既有启动器目标
-         * @param servers complete delegated servers / 完整委托服务器
-         * @param lease actual delegated lease or null for the launcher / 实际委托占用，启动器时为空
-         * @param reviewOnly whether this grants question repetition only / 是否仅授予问题重复规则
-         * @param recovering whether fresh recovery authority is required / 是否要求新恢复权限 */
-        private Scope(TaskContext task, String owner, String version, AuthorizationMode mode, Set<ActionTarget> targets, Set<String> servers, ResourceLease lease, boolean reviewOnly, boolean recovering) {
             this.task = task;
             this.owner = owner;
             this.version = version;
             this.mode = mode;
             this.targets = Set.copyOf(targets);
+            this.servers = Set.of();
+            this.lease = null;
+            this.reviewMode = null;
+            this.workflowIntent = null;
+            this.rememberAuthorization = false;
+            this.recovering = false;
+            ready = true;
+        }
+
+        /** Captures one reviewed workflow's original admission and decision policy. / 捕获经审核流程的原准入及决定策略。
+         * @param task authentic original task / 真实原任务
+         * @param owner exact owner / 精确所有者
+         * @param version owner release / 所有者发布版本
+         * @param mode captured review mode / 已捕获审核模式
+         * @param rememberAuthorization whether real approvals may be retained / 是否可保留实际批准
+         * @param servers admitted server set / 已准入服务器集合
+         * @param lease original scope occupancy / 原作用域占用
+         * @param recovering original recovery admission / 原恢复准入 */
+        private Scope(TaskContext task, String owner, String version, CommandReviewMode mode, boolean rememberAuthorization,
+                      Set<String> servers, ResourceLease lease, boolean recovering, ActionIntent workflowIntent) {
+            this.task = task;
+            this.owner = owner;
+            this.version = version;
+            this.mode = null;
+            this.targets = Set.of();
             this.servers = Set.copyOf(servers);
             this.lease = lease;
-            this.reviewOnly = reviewOnly;
+            this.reviewMode = mode;
+            this.workflowIntent = workflowIntent;
+            this.rememberAuthorization = rememberAuthorization;
             this.recovering = recovering;
-            ready = lease == null;
         }
 
         /** Checks current physical callback ownership before every permission use. / 每次权限使用前核对当前实际回调归属。
@@ -434,6 +568,7 @@ public final class PlatformAuthorizationService implements AutoCloseable {
             if (released) return;
             ended = true;
             approved.clear();
+            remembered.clear();
             if (lease != null) {
                 try {
                     lease.close();
@@ -470,6 +605,8 @@ public final class PlatformAuthorizationService implements AutoCloseable {
         /** Whether approval was established. / 是否已建立批准。 */
         private final boolean approved;
 
+        private final long policyRevision;
+
         /** Retains the actual decision identities. / 保留实际决定身份。
          * @param task original task / 原任务
          * @param scope optional original scope / 可选原作用域
@@ -478,6 +615,7 @@ public final class PlatformAuthorizationService implements AutoCloseable {
             this.task = task;
             this.scope = scope;
             this.approved = approved;
+            this.policyRevision = scope == null ? -1 : scope.policyRevision;
         }
 
         /** Returns the actual policy decision. / 返回实际策略决定。
@@ -494,6 +632,10 @@ public final class PlatformAuthorizationService implements AutoCloseable {
          * @return explicit human approval / 明确人工批准
          * @throws ApiException if review fails / 审核失败时 */
         boolean approve() throws ApiException;
+    }
+
+    interface PolicyReview {
+        boolean approve(ActionIntent intent) throws ApiException;
     }
 
     /** Rejects new use after host shutdown. / 宿主关闭后拒绝新使用。 */

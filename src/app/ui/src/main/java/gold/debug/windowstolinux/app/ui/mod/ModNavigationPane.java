@@ -10,6 +10,8 @@ import javax.swing.*;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.PagePin;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.ui.control.DesktopIcons;
+import gold.debug.windowstolinux.app.ui.control.DesktopButtonStyle;
+import gold.debug.windowstolinux.app.ui.control.DesktopNavigationButton;
 import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
@@ -60,15 +62,14 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
     private long epoch;
 
     /** Current sidebar presentation, independent of pin preferences. / 独立于固定偏好的侧栏展示。 */
-    private boolean collapsed;
+    private double folded;
 
     /** Applies sidebar presentation without changing saved pins. / 应用侧栏展示而不修改已存固定项。
-     * @param value whether labels are collapsed / 是否折叠文字 */
-    public void setCollapsed(boolean value) {
-        collapsed = value;
-        setOpaque(false);
-        entries.setOpaque(false);
-        render();
+     * @param progress expanded-to-collapsed progress / 展开至折叠进度 */
+    public void presentation(double progress) {
+        folded = Math.max(0, Math.min(1, progress));
+        for (var component : entries.getComponents())
+            ((DesktopNavigationButton) component).presentation(folded);
     }
 
     /** Builds navigation without reading storage or constructing author views. / 构造导航，不读取存储或构造作者视图。
@@ -85,6 +86,8 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
         this.components = components;
         this.messages = messages;
         setName("mods.navigation");
+        setOpaque(false);
+        entries.setOpaque(false);
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         entries.setLayout(new BoxLayout(entries, BoxLayout.Y_AXIS));
         add(entries);
@@ -239,7 +242,8 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
                 if (page.isEmpty())
                     continue;
                 var entry = page.get();
-                var button = components.secondaryButton(collapsed ? "" : entry.spec().defaultTitle());
+                var button = components.navigationButton(entry.spec().defaultTitle());
+                button.presentation(folded);
                 button.setIcon(DesktopIcons.icon("navigation/panels-top-left", 19, button::getForeground));
                 button.putClientProperty("JComponent.minimumWidth", 0);
                 button.setMinimumSize(new java.awt.Dimension(0, com.formdev.flatlaf.util.UIScale.scale(38)));
@@ -247,8 +251,8 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
                     new java.awt.Dimension(Integer.MAX_VALUE, com.formdev.flatlaf.util.UIScale.scale(38)));
                 button.setPreferredSize(new java.awt.Dimension(com.formdev.flatlaf.util.UIScale.scale(140),
                     com.formdev.flatlaf.util.UIScale.scale(38)));
-                button.setMargin(new java.awt.Insets(8, collapsed ? 3 : 10, 8, collapsed ? 3 : 10));
-                button.setHorizontalAlignment(collapsed ? SwingConstants.CENTER : SwingConstants.LEFT);
+                button.setMargin(new java.awt.Insets(8, 10, 8, 10));
+                button.setHorizontalAlignment(SwingConstants.LEFT);
                 button.getAccessibleContext().setAccessibleName(entry.spec().defaultTitle());
                 button.putClientProperty("html.disable", true);
                 button.putClientProperty("mod.pageKey", entry.key());
@@ -259,11 +263,10 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
                 button.putClientProperty("JButton.buttonType", null);
                 boolean active = entry.key().equals(selected);
                 var background = UIManager.getColor(active ? "List.selectionBackground" : "Panel.background");
-                button.setBackground(background);
-                if (active) button.setForeground(UIManager.getColor("List.selectionForeground"));
-                button.putClientProperty("FlatLaf.style", java.util.Map.of("arc", 8,
-                    "hoverBackground", active ? background : UIManager.getColor("Button.background"),
-                    "pressedBackground", UIManager.getColor("List.selectionBackground")));
+                DesktopButtonStyle.navigation(button, background,
+                    UIManager.getColor(active ? "List.selectionForeground" : "Label.foreground"),
+                    active ? background.darker() : UIManager.getColor("Button.background"),
+                    active ? background.darker().darker() : UIManager.getColor("List.selectionBackground"));
                 button.setEnabled(!closed);
                 button.addActionListener(event -> open(entry.key()));
                 entries.add(button);

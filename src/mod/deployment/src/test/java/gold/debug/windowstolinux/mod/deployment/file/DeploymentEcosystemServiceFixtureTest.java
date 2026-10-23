@@ -8,7 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

@@ -8,7 +8,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentConfigException;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.error.DeploymentConfigException;
 
 /**
  * Immutable, digest-addressed normal configuration for one released application version.

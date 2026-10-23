@@ -3,9 +3,6 @@ package gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain;
 import java.util.Objects;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainVersion;
-
 /**
  * Preserves a source declaration even when it has no supported build candidate. / 即使没有构建候选也保留源码声明。
  *

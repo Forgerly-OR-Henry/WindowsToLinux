@@ -26,6 +26,24 @@ class DeploymentWorkflowEvidenceRegressionTest {
     private final ServerId server = new ServerId("fixture-server");
 
     @Test
+    void failedHostCloseRetainsReadOnlyPolicyUntilTheOriginalCloseIsConfirmed() throws Exception {
+        var attempts = new AtomicInteger();
+        var permission = open(() -> {
+            if (attempts.incrementAndGet() == 1)
+                throw new ApiException(new Problem(ProblemCode.UNKNOWN, "FIXTURE_HOST_CLOSE_UNCONFIRMED", "Host close is unconfirmed", java.util.Map.of(), Optional.empty()));
+        });
+        assertThrows(ApiException.class, permission::close);
+        var retained = DeploymentApprovalPolicies.controller(task).orElseThrow();
+        assertFalse(retained.state().editable());
+        assertEquals(Optional.of("DEPLOYMENT_APPROVAL_POLICY_SCOPE_CLOSE_UNCONFIRMED"), retained.state().problem());
+        assertThrows(ApiException.class, () -> DeploymentApprovalPolicies.boundary(task, "AUTOMATIC"));
+        assertThrows(IllegalArgumentException.class, () -> DeploymentWorkflowAuthorization.reviewFacts(permission, task, server));
+        permission.close();
+        assertEquals(2, attempts.get());
+        assertTrue(DeploymentApprovalPolicies.controller(task).isEmpty());
+    }
+
+    @Test
     void preservesTheActualHandoffAndClosesItsOriginalHandleOnce() throws Exception {
         var closed = new AtomicInteger();
         try (var permission = open(() -> closed.incrementAndGet())) {
@@ -240,7 +258,7 @@ class DeploymentWorkflowEvidenceRegressionTest {
     @Test
     void buildPreservesTheWholeExecutableBodyCollectorSourceAndAuthorityUnderThePinnedIsolationContract() throws Exception {
         var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
-        var workspace = new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace("fixture-build", "a".repeat(64), layout);
+        var workspace = new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace("fixture-build", "b".repeat(64), layout);
         var prepareMaven = gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem.java.MavenBuildWriter.class.getDeclaredMethod("prepareMaven");
         prepareMaven.setAccessible(true);
         String fragment = (String) prepareMaven.invoke(null);
@@ -258,7 +276,30 @@ class DeploymentWorkflowEvidenceRegressionTest {
             bytes, java.time.Duration.ofSeconds(75), 65536)) {
             scope.workflowOpened(permission);
             scope.sourceCaptured(server, source, task);
-            scope.archiveCaptured(source, archive(source, source.snapshot().id(), "a".repeat(64), ""), List.of(), task);
+            var captured = archive(source, source.snapshot().id(), "a".repeat(64), "");
+            scope.archiveCaptured(source, captured, List.of(), task);
+            var reviewedRequest = new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentRequest(
+                server,
+                new gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts(
+                    source.snapshot().directory(), workspace.applicationId(),
+                    gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind.SPRING_BOOT,
+                    gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType.MAVEN,
+                    List.of(), List.of(), List.of()), source, captured,
+                gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot.create(
+                    workspace.applicationId(), 1, "fixture-build", java.time.Instant.EPOCH, List.of()),
+                List.of(), new gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings(List.of(), Optional.of(List.of())),
+                new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition.SpringBoot("21",
+                    new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck.Http(
+                        java.net.URI.create("http://127.0.0.1:46140/"), 200, 10)),
+                Optional.empty(), gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().limits(),
+                new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.DeploymentReviewConsent(
+                    workspace.applicationId(), server.id(), source.snapshot().sha256(), captured.sha256(), java.time.Instant.EPOCH),
+                false, true, layout);
+            var reviewed = new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan(reviewedRequest,
+                List.of(gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.DeploymentPlanAction.VERIFY_SOURCE_IDENTITY,
+                    gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.DeploymentPlanAction.CHECK_HEALTH,
+                    gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.DeploymentPlanAction.ROLLBACK_ON_FAILURE));
+            scope.bindPreparation(reviewed, task);
             var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, "frozen", request)
                 .withSemantics(new ActionSemantics("deployment.build.run.v1", Set.of(new ActionTarget(server.id(), "deployment-build", workspace.candidateRoot()))));
             var facts = new java.util.LinkedHashMap<String, Object>(DeploymentCommandEvidence.facts(intent, request, layout));
@@ -406,18 +447,23 @@ class DeploymentWorkflowEvidenceRegressionTest {
             assertEquals(CommandReviewMode.AUTOMATIC, args[1]);
             return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(original), Optional.empty());
         });
-        var context = stub(ModContext.class, (proxy, method, args) -> {
-            assertEquals("interaction", method.getName());
-            return interaction;
+        var tasks = gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture.approvalCheckpoints(task);
+        var context = stub(ModContext.class, (proxy, method, args) -> switch (method.getName()) {
+            case "interaction" -> interaction;
+            case "tasks" -> tasks;
+            case "identity" ->
+                new gold.debug.windowstolinux.appapi.mod.model.ModIdentity("fixture", "1.0.0", Optional.of("1"));
+            default -> throw new AssertionError("No execution capability in evidence fixture: " + method.getName());
         });
         return DeploymentWorkflowAuthorization.open(context, task, server, "model-revision", "AUTOMATIC", true,
             "selected source and deployment prerequisites");
     }
 
     private static TaskContext task(UUID id) {
-        return stub(TaskContext.class, (proxy, method, args) -> {
-            assertEquals("id", method.getName());
-            return id;
+        return stub(TaskContext.class, (proxy, method, args) -> switch (method.getName()) {
+            case "id" -> id;
+            case "cancelToken" -> (gold.debug.windowstolinux.appapi.task.run.CancelToken) () -> false;
+            default -> throw new AssertionError("No task execution in evidence fixture: " + method.getName());
         });
     }
 

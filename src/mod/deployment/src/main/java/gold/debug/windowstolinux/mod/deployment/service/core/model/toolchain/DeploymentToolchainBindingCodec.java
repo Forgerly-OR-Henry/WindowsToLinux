@@ -7,9 +7,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainVersion;
-
 /**
  * Versioned, deterministic release binding without a configuration parser dependency. / 无配置解析依赖的确定性版本化发布绑定。
  */

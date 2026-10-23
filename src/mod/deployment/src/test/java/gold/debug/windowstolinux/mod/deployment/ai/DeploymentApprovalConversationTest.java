@@ -786,7 +786,8 @@ class DeploymentApprovalConversationTest {
             });
         var conversation = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApprovalConversation(context, fixture.task, server, "fixture-fingerprint", "a".repeat(64), "fixture-route");
         var ai = new DeploymentAiJson(context, conversation);
-        String installer = DeploymentHelperInstallerScript.renderTracked(fixture.task.id(), UUID.randomUUID(), "c".repeat(64), "d".repeat(64))
+        String installer = DeploymentHelperInstallerScript.renderTracked(fixture.task.id(), UUID.randomUUID(), "c".repeat(64),
+            gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.digest(DeploymentHelperInstallerScript.render()))
             + "# 完整 UTF-8 安装证据\n";
         var current = installationFacts("deployment.helper.install.tracked.v1", installer);
         reply(fixture, "deny-installation", "DENY");
@@ -854,12 +855,15 @@ class DeploymentApprovalConversationTest {
         assertEquals(" > \"$helper_tmp\"\nprintf '%s' ", executable.at("/segments/2/text").asText(),
             "The middle literal wrapper writes the helper source and introduces the complete entry source");
         var installationEffects = List.of(
-            "/usr/bin/install -o root -g root -m 755 \"$helper_tmp\" " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.PATH),
-            "/usr/bin/install -o root -g root -m 755 \"$entry_tmp\" " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.BUILD_ENTRY_PATH),
-            "printf '%s  %s\n' " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.EXPECTED_SHA256)
-                + " " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.PATH) + " | /usr/bin/sha256sum --check --status",
-            "printf '%s  %s\n' " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.buildEntrySha256())
-                + " " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.BUILD_ENTRY_PATH) + " | /usr/bin/sha256sum --check --status",
+            "installer_verify_executable \"$helper_tmp\" " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.EXPECTED_SHA256),
+            "installer_verify_executable \"$entry_tmp\" " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.buildEntrySha256()),
+            "/usr/bin/sync -f \"$helper_tmp\"\n/usr/bin/sync -f \"$entry_tmp\"",
+            "/usr/bin/mv -fT -- \"$helper_tmp\" " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.PATH),
+            "/usr/bin/mv -fT -- \"$entry_tmp\" " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.BUILD_ENTRY_PATH),
+            "installer_verify_executable " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.PATH)
+                + " " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.EXPECTED_SHA256),
+            "installer_verify_executable " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.BUILD_ENTRY_PATH)
+                + " " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.buildEntrySha256()),
             "systemctl daemon-reload\nsystemctl enable windowstolinux-workspace-recovery.service",
             "helper_probe=\"$(" + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.PATH) + " probe)\"");
         int previous = -1;

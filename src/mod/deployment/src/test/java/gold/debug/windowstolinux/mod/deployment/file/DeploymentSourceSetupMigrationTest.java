@@ -14,18 +14,28 @@ import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskWork;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.file.git.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRef;
+import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRemote;
+import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRequest;
+import gold.debug.windowstolinux.mod.deployment.file.git.GitRuntimeTestBridge;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.DeploymentAdmissionStatus;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeReport;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.project.component.PartIsolationSpec;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.PartAnalysisRequest;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.part.PartIsolationSpec;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.DeploymentStandardAnalyzer;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.part.PartAnalysisRequest;
 import org.junit.jupiter.api.Test;
 
 /** Retains source-preparation contracts on authentic Mod tasks and separately identified source/archive bytes. / 在真实Mod任务及分别标识的源码/归档字节上保留来源准备合同。 */
 class DeploymentSourceSetupMigrationTest extends DeploymentRuntimeFixture {
     private static final Path GIT = Path.of("E:/Program/Git/cmd/git.exe");
+
+    @Override
+    protected boolean gitEnabled() {
+        return true;
+    }
 
     @Override
     protected Path selectedSourceDirectory() {
@@ -50,7 +60,7 @@ class DeploymentSourceSetupMigrationTest extends DeploymentRuntimeFixture {
                 var remote = DeploymentGitRemote.parse(repository.toUri().toString());
                 var request = new DeploymentGitRequest(remote, new DeploymentGitRef.Commit(commit), Set.of(),
                     2 * 1024 * 1024, true);
-                try (var prepared = new DeploymentGitSetup(context, GIT).prepare(request, 2 * 1024 * 1024, 100, task, gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture.begin(context, task, request))) {
+                try (var prepared = GitRuntimeTestBridge.preparation(runtime, context, GIT).prepare(request, 2 * 1024 * 1024, 100, task, gold.debug.windowstolinux.mod.deployment.service.core.source.DeploymentGitJournalFixture.begin(context, task, request))) {
                     assertEquals(commit, prepared.commit());
                     assertEquals(repository.toUri(), prepared.remote().location());
                     byte[] archive = Files.readAllBytes(prepared.archive().path());

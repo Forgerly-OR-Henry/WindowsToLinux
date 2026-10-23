@@ -3,21 +3,21 @@ SELECT deployment_unit_id,
        systemd_unit_name,
        release_root_path,
        ownership_manifest_sha256,
-       current_release_sha256,
-       runtime_payload,
-       runtime_state,
-       autostart_state,
-       is_ownership_verified,
-       observation_evidence,
        has_display_override,
        display_name,
        application_category,
        access_url,
+       current_release_sha256,
+       runtime_payload,
        current_release_published_at,
+       runtime_state,
+       autostart_state,
+       is_ownership_verified,
+       observation_evidence,
        observed_at
 FROM deployment_unit
 WHERE 1 = 0;
-SELECT application_id, server_profile_id, health_component_id, health_check_payload, updated_at, graph_ready
+SELECT application_id, health_component_id, health_check_payload, server_profile_id, graph_ready, updated_at
 FROM managed_application
 WHERE 1 = 0;
 SELECT application_id,
@@ -39,14 +39,14 @@ SELECT external_application_id,
        bound_host,
        bound_ssh_port,
        bound_username,
-       runtime_state,
-       can_start,
-       can_stop,
        detected_name,
        has_display_override,
        display_name,
        application_category,
        access_url,
+       can_start,
+       can_stop,
+       runtime_state,
        adopted_at,
        observed_at
 FROM external_application
@@ -54,13 +54,13 @@ WHERE 1 = 0;
 SELECT deployment_unit_id, configuration_revision, configuration_sha256, schema_version, created_at
 FROM deployment_unit_configuration_snapshot
 WHERE 1 = 0;
-SELECT deployment_unit_id, configuration_revision, configuration_key, value_type, value_text, configuration_scope
+SELECT deployment_unit_id, configuration_revision, configuration_key, configuration_scope, value_type, value_text
 FROM deployment_unit_configuration_entry
 WHERE 1 = 0;
 SELECT deployment_unit_id, release_sha256, configuration_revision, configuration_sha256, is_secret_binding_complete
 FROM deployment_unit_release_binding
 WHERE 1 = 0;
-SELECT secret_id, secret_revision, credential_id, created_at, purpose
+SELECT secret_id, secret_revision, credential_id, purpose, created_at
 FROM secret_revision
 WHERE 1 = 0;
 SELECT deployment_unit_id, release_sha256, secret_id, secret_revision
@@ -95,16 +95,16 @@ SELECT project_id,
 FROM deployment_project
 WHERE 1 = 0;
 SELECT execution_id,
-       platform_task_id,
        project_id,
+       platform_task_id,
        application_id,
        server_profile_id,
        mode,
-       phase,
-       outcome,
        reviewed_revision,
        request_payload,
        recovery_payload,
+       phase,
+       outcome,
        result_payload,
        business_committed,
        cleanup_complete,
@@ -114,11 +114,12 @@ FROM deployment_execution
 WHERE 1 = 0;
 SELECT application_id,
        release_id,
-       release_sha256,
        execution_id,
-       state,
+       origin_payload,
+       release_sha256,
        runtime_payload,
        health_payload,
+       state,
        created_at
 FROM deployment_release
 WHERE 1 = 0;
@@ -129,11 +130,11 @@ SELECT handoff_id,
        source_server_id,
        target_server_id,
        revision_sha256,
-       state,
        maintenance_token,
        candidate_id,
        request_payload,
        recovery_payload,
+       state,
        result_payload,
        updated_at
 FROM deployment_handoff
@@ -142,19 +143,19 @@ SELECT preference_key, preference_value
 FROM preference
 WHERE 1 = 0;
 SELECT log_id,
-       recorded_at,
        owner_id,
        category,
-       level,
-       event_code,
-       message,
-       details,
        subject_mod_id,
        mod_version,
        task_id,
        operation_id,
+       level,
+       event_code,
+       message,
+       details,
        outcome,
-       truncated
+       truncated,
+       recorded_at
 FROM deployment_log
 WHERE 1 = 0;
 SELECT operation_id,
@@ -162,6 +163,19 @@ SELECT operation_id,
        owner_mod_id,
        owner_mod_version,
        application_id,
-       server_profile_id, action, current_release_sha256, target_release_sha256, phase, component_state, updated_at
+       server_profile_id, action, current_release_sha256, target_release_sha256, component_state, phase, updated_at
 FROM deployment_management_operation
-WHERE 1=0;
+WHERE 1 = 0;
+
+SELECT operation_id,
+       platform_task_id,
+       server_profile_id,
+       mode,
+       outcome,
+       application_id,
+       release_id,
+       release_sha256,
+       settlement_payload,
+       settled_at
+FROM deployment_operation_receipt
+WHERE 1 = 0;

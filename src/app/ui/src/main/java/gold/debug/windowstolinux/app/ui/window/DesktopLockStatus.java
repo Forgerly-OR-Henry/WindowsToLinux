@@ -22,7 +22,7 @@ final class DesktopLockStatus extends JPanel {
         }
     };
 
-    /** Original lock or unlock button preserving keyboard feedback. / 保留键盘反馈的原锁定或解锁按钮。 */
+    /** Original lock or unlock button preserving keyboard operation. / 保留键盘操作的原锁定或解锁按钮。 */
     private final JButton action = new JButton() {
         /** Keeps the action surface and icon continuous while its caption fades. / 文字淡出时操作底色和图标保持连续。
          * @param graphics paint context / 绘制上下文 */
@@ -41,9 +41,6 @@ final class DesktopLockStatus extends JPanel {
     /** Complete localized state and action captions. / 完整本地化状态及操作文案。 */
     private String stateText, actionText;
 
-    /** Measured action width before caption collapse. / 文案折叠前测得的操作宽度。 */
-    private int expandedActionWidth;
-
     /** Creates sidebar security captions and the original toggle action. / 创建侧栏安全文案及原切换操作。
      * @param messages localized safe messages / 本地化安全消息
      * @param toggle existing lock or unlock action / 既有锁定或解锁操作
@@ -56,13 +53,12 @@ final class DesktopLockStatus extends JPanel {
         setAlignmentX(Component.LEFT_ALIGNMENT);
         sizing();
         status.setName("security.state");
-        status.setBorder(BorderFactory.createEmptyBorder(0, 3, 0, 0));
         status.setFont(status.getFont().deriveFont(11f));
         action.setName("security.lock");
         action.putClientProperty("desktop.navigation", true);
         action.putClientProperty("JComponent.minimumWidth", 0);
         action.putClientProperty("JButton.buttonType", null);
-        action.putClientProperty("FlatLaf.style", "borderWidth: 0; focusWidth: 1; arc: 8");
+        action.putClientProperty("FlatLaf.style", "borderWidth: 0; focusWidth: 0; arc: 14");
         action.setBorderPainted(false);
         action.setContentAreaFilled(false);
         action.setMargin(new Insets(5, 5, 5, 5));
@@ -82,7 +78,8 @@ final class DesktopLockStatus extends JPanel {
         appearance = current;
         sizing();
         status.setFont(status.getFont().deriveFont(UIScale.scale(11f)));
-        status.setBorder(BorderFactory.createEmptyBorder(0, UIScale.scale(3), 0, 0));
+        status.setBorder(BorderFactory.createEmptyBorder(0,
+            UIScale.scale(11) + (UIScale.scale(19) - UIScale.scale(14)) / 2, 0, 0));
         stateText = messages.text(!configured ? "security.state.unconfigured"
             : locked ? "security.state.locked" : "security.state.unlocked");
         status.setForeground(UIManager.getColor("Label.disabledForeground"));
@@ -94,7 +91,6 @@ final class DesktopLockStatus extends JPanel {
         actionText = messages.text(locked ? "security.unlock" : "shell.lock");
         action.setText(actionText);
         action.setIcon(DesktopIcons.icon(locked ? "lock/unlocked" : "lock/locked", 16, action::getForeground));
-        expandedActionWidth = action.getPreferredSize().width;
         action.setToolTipText(locked ? actionText : messages.text("security.lock"));
         action.getAccessibleContext().setAccessibleName(actionText);
         action.setEnabled(configured);
@@ -112,30 +108,44 @@ final class DesktopLockStatus extends JPanel {
         repaint();
     }
 
-    /** Grows vertical room along the same arc as the controls. / 沿控件的同一弧线增加纵向空间。 */
-    private void sizing() {
-        int height = (int) Math.round(UIScale.scale(40) + UIScale.scale(36) * Math.sin(folded * Math.PI / 2));
-        setMaximumSize(new Dimension(Integer.MAX_VALUE, height));
-        setPreferredSize(new Dimension(UIScale.scale(148), height));
+    /** Aligns the state icon with the settings gear using its actual leading insets. / 按设置齿轮的实际左侧留白对齐状态图标。
+     * @param settings original settings button / 原设置按钮 */
+    void alignWith(JButton settings) {
+        int inset = (int) Math.round(settings.getInsets().left + UIScale.scale(10 - settings.getMargin().left)
+            + (settings.getIcon().getIconWidth() - UIScale.scale(14)) / 2d);
+        if (status.getInsets().left != inset) status.setBorder(BorderFactory.createEmptyBorder(0, inset, 0, 0));
     }
 
-    /** Moves upright controls along a quarter-turn into action above status. / 控件保持正向，沿四分之一转位变成操作在上、状态在下。 */
+    /** Reserves the arc above the bottom-anchored state. / 在底部固定的状态上方预留圆弧空间。 */
+    private void sizing() {
+        int height = (int) Math.round(UIScale.scale(46) * (1 + Math.sin(folded * Math.PI / 2)));
+        setMaximumSize(new Dimension(Integer.MAX_VALUE, height));
+        setPreferredSize(new Dimension(PlatformNavigationShell.SIDEBAR_WIDTH - 16, height));
+    }
+
+    /** Follows a quarter ellipse from equal halves to evenly spaced rows. / 沿四分之一椭圆从等宽两半转为等距纵向行。 */
     @Override
     public void doLayout() {
         int width = getWidth(), height = getHeight();
-        double shrink = 1 - Math.pow(1 - folded, 2), angle = folded * Math.PI / 2;
-        int actionWidth = Math.min(width, (int) Math.round(expandedActionWidth * (1 - shrink) + UIScale.scale(36) * shrink));
-        int statusWidth = Math.min(width, (int) Math.round(Math.max(UIScale.scale(20), width - expandedActionWidth - UIScale.scale(4))
-            * (1 - shrink) + UIScale.scale(20) * shrink));
-        int actionHeight = UIScale.scale(36);
-        int statusHeight = UIScale.scale(24);
-        action.setBounds((int) Math.round((width - actionWidth) * (1 + Math.cos(angle)) / 2),
-            (int) Math.round((height - actionHeight) * (1 - Math.sin(angle)) / 2), actionWidth, actionHeight);
-        status.setBounds((int) Math.round((width - statusWidth) * (1 - Math.cos(angle)) / 2),
-            (int) Math.round((height - statusHeight) * (1 + Math.sin(angle)) / 2), statusWidth, statusHeight);
+        double shrink = 1 - Math.pow(1 - folded, 3), angle = folded * Math.PI / 2;
+        double expandedHalfWidth = (width + PlatformNavigationShell.sidebarTravel() * folded) / 2;
+        double controlWidth = expandedHalfWidth * (1 - shrink) + 38 * shrink;
+        int actionWidth = Math.min(width, (int) Math.floor(controlWidth));
+        int statusWidth = Math.min(width, (int) Math.ceil(controlWidth));
+        int actionHeight = UIScale.scale(38);
+        int statusHeight = actionHeight;
+        double offsetX = expandedHalfWidth * Math.cos(angle), offsetY = UIScale.scale(46) * Math.sin(angle);
+        double iconCenter = status.getInsets().left + UIScale.scale(14) / 2d;
+        double centerX = iconCenter * (1 - Math.cos(angle)) + statusWidth * Math.cos(angle) / 2;
+        centerX = Math.max(statusWidth / 2d, Math.min(centerX, width - actionWidth / 2d - offsetX));
+        double centerY = height - statusHeight / 2d;
+        int stateX = (int) Math.round(centerX - statusWidth / 2d), stateY = (int) Math.round(centerY - statusHeight / 2d);
+        status.setBounds(stateX, stateY, statusWidth, statusHeight);
+        action.setBounds(Math.min(width - actionWidth, (int) Math.round(stateX + statusWidth / 2d + offsetX - actionWidth / 2d)),
+            (int) Math.round(stateY + statusHeight / 2d - offsetY - actionHeight / 2d), actionWidth, actionHeight);
     }
 
-    /** Paints stable icons and fading full captions without changing models or localized text. / 绘制稳定图标和渐隐完整文案，不更改模型或本地化文字。
+    /** Centers action content within its expanded budget and fades it without changing caption models. / 操作内容按展开宽度居中并渐隐，不更改文案模型。
      * @param graphics paint context / 绘制上下文
      * @param control original Swing control / 原 Swing 控件
      * @param icon retained icon / 保留图标
@@ -150,23 +160,31 @@ final class DesktopLockStatus extends JPanel {
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             if (button) paintActionSurface(g);
             g.setFont(control.getFont());
-            var metrics = g.getFontMetrics();
+            var metrics = control.getFontMetrics(control.getFont());
             int width = control.getWidth(), height = control.getHeight(), gap = UIScale.scale(4);
-            int expandedX = button ? Math.max(UIScale.scale(5), (width - icon.getIconWidth() - gap - metrics.stringWidth(text)) / 2)
-                : UIScale.scale(3);
-            int iconX = (int) Math.round(expandedX * (1 - folded) + (width - icon.getIconWidth()) * folded / 2);
+            var iconBounds = new Rectangle();
+            var textBounds = new Rectangle();
+            String caption = button ? SwingUtilities.layoutCompoundLabel(control, metrics, text, icon,
+                SwingConstants.CENTER, SwingConstants.CENTER, SwingConstants.CENTER, SwingConstants.RIGHT,
+                new Rectangle(UIScale.scale(5), 0, Math.max(0, (PlatformNavigationShell.SIDEBAR_WIDTH - 16) / 2 - UIScale.scale(10)), height),
+                iconBounds, textBounds, gap) : text;
+            // Compensates the lock SVG's transparent leading edge when captions are visible. / 文案可见时补偿锁图标透明边缘造成的视觉偏移。
+            int expandedX = button ? iconBounds.x - UIScale.scale(1) : status.getInsets().left;
+            int iconX = button ? (int) Math.round(expandedX * (1 - folded) + (width - icon.getIconWidth()) * folded / 2)
+                : expandedX - status.getX();
             float enabled = control.isEnabled() ? 1f : .55f;
             g.setComposite(AlphaComposite.SrcOver.derive(enabled));
             icon.paintIcon(control, g, iconX, (height - icon.getIconHeight()) / 2);
-            g.setComposite(AlphaComposite.SrcOver.derive((float) Math.pow(1 - folded, 2) * enabled));
+            g.setComposite(AlphaComposite.SrcOver.derive((float) (1 - folded) * enabled));
             g.setColor(foreground);
-            g.drawString(text, iconX + icon.getIconWidth() + gap, (height - metrics.getHeight()) / 2 + metrics.getAscent());
+            g.drawString(caption, iconX + (button ? textBounds.x - iconBounds.x : icon.getIconWidth() + gap),
+                (height - metrics.getHeight()) / 2 + metrics.getAscent());
         } finally {
             g.dispose();
         }
     }
 
-    /** Keeps hover, pressed, disabled and keyboard feedback on the original action model. / 在原操作模型上保留悬停、按下、禁用和键盘反馈。
+    /** Keeps filled hover, pressed and disabled feedback on the original action model. / 在原操作模型上保留填充悬停、按下和禁用反馈。
      * @param graphics paint context / 绘制上下文 */
     private void paintActionSurface(Graphics2D graphics) {
         Color background = action.isEnabled() ? action.getBackground() : UIManager.getColor("Button.disabledBackground");
@@ -176,12 +194,7 @@ final class DesktopLockStatus extends JPanel {
             Color feedback = UIManager.getColor(key);
             if (feedback != null) background = feedback;
         }
-        int width = action.getWidth(), height = action.getHeight(), inset = UIScale.scale(2), arc = UIScale.scale(8);
-        if (action.isFocusOwner()) {
-            Color focus = UIManager.getColor("Component.focusColor");
-            graphics.setColor(new Color(focus.getRed(), focus.getGreen(), focus.getBlue(), 65));
-            graphics.fillRoundRect(0, 0, width, height, arc, arc);
-        }
+        int width = action.getWidth(), height = action.getHeight(), inset = UIScale.scale(1), arc = UIScale.scale(14);
         graphics.setColor(background);
         graphics.fillRoundRect(inset, inset, Math.max(0, width - inset * 2), Math.max(0, height - inset * 2), arc, arc);
     }

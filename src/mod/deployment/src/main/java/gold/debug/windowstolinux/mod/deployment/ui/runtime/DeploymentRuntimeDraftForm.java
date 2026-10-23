@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.ui.runtime;
 
-import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
-
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
 import javax.swing.*;
 
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStaticRuntimeResolver;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentStandardRuntimeResolver;
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
 
 /** Retains explicit non-secret pre-start inputs; source suggestions only fill untouched values. / 保留明确非秘密启动前输入，来源建议仅补未编辑值。 */
 public final class DeploymentRuntimeDraftForm {
@@ -28,7 +28,7 @@ public final class DeploymentRuntimeDraftForm {
     public DeploymentRuntimeDraftForm(Function<String, String> text) {
         this.text = text;
         panel.setName("deployment.runtimeDraft");
-        for (String key : gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow.SourceOptions.RUNTIME_FIELDS) {
+        for (String key : gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs.SourceOptions.RUNTIME_FIELDS) {
             var field = descriptor(key);
             var input = DeploymentReviewInputs.create(field);
             var label = DeploymentReviewInputs.label(key, text);
@@ -73,12 +73,12 @@ public final class DeploymentRuntimeDraftForm {
     /** Retains actual supported choices instead of treating a label as a runtime value. / 保留实际受支持选项，不把标签当运行值。
      * @param key original field identity / 原字段身份
      * @return exact editable contract / 精确可编辑合同 */
-    private static gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField descriptor(String key) {
+    private static gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentReviewField descriptor(String key) {
         var choices = switch (key) {
             case "healthMode" -> java.util.List.of("HTTP", "TCP", "UDP", "PROCESS", "COMMAND");
             case "containerEngine" -> java.util.List.of("PODMAN", "DOCKER");
             default -> java.util.List.<String>of();
         };
-        return DeploymentStaticRuntimeResolver.field("draft", key, "", choices);
+        return DeploymentStandardRuntimeResolver.field("draft", key, "", choices);
     }
 }

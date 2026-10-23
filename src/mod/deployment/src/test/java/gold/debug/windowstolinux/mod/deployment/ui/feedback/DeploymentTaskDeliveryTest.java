@@ -8,7 +8,6 @@ import java.net.URI;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
-
 import javax.swing.*;
 
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
@@ -18,7 +17,11 @@ import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.api.*;
+import gold.debug.windowstolinux.mod.deployment.api.ApplicationAutostartState;
+import gold.debug.windowstolinux.mod.deployment.api.ApplicationRunState;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationId;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationUsage;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentLifecycleAction;
 import gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

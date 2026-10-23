@@ -34,7 +34,14 @@ public final class DeploymentWorkflowAuthorization {
      * @throws DeploymentAiJson.CapabilityOutcomeException if original handoff is refused / 原交接被拒绝时 */
     public static WorkflowGrant open(ModContext context, TaskContext task, ServerId server, String revision,
                                      String approval, boolean rememberAuthorization, String frozenRequest) throws ApiException, DeploymentAiJson.CapabilityOutcomeException {
-        return scope(context, task, server, revision, approval, rememberAuthorization, frozenRequest, false);
+        return scope(context, task, server, revision, approval, rememberAuthorization, frozenRequest, false, 0);
+    }
+
+    /** Carries only confirmed goal policy; every child still obtains a fresh real host handoff. */
+    public static WorkflowGrant open(ModContext context, TaskContext task, ServerId server, String revision,
+                                     String approval, boolean rememberAuthorization, String frozenRequest, long policyRevision)
+        throws ApiException, DeploymentAiJson.CapabilityOutcomeException {
+        return scope(context, task, server, revision, approval, rememberAuthorization, frozenRequest, false, policyRevision);
     }
 
     /** Requests a fresh scope only during explicit original recovery, without restoring old permission. / 仅在明确原恢复请求新作用域，不恢复旧权限。
@@ -50,7 +57,7 @@ public final class DeploymentWorkflowAuthorization {
      * @throws DeploymentAiJson.CapabilityOutcomeException if the fresh handoff is refused / 新交权被拒绝时 */
     public static WorkflowGrant recover(ModContext context, TaskContext task, ServerId server, String revision,
                                         String approval, boolean rememberAuthorization, String frozenRequest) throws ApiException, DeploymentAiJson.CapabilityOutcomeException {
-        return scope(context, task, server, revision, approval, rememberAuthorization, frozenRequest, true);
+        return scope(context, task, server, revision, approval, rememberAuthorization, frozenRequest, true, 0);
     }
 
     /** Shares exact original intent construction while letting only the host admit ordinary or recovery work. / 共用精确原意图构造，仅由宿主接纳普通或恢复工作。
@@ -66,8 +73,11 @@ public final class DeploymentWorkflowAuthorization {
      * @throws ApiException if actual host admission rejects / 实际宿主准入拒绝时
      * @throws DeploymentAiJson.CapabilityOutcomeException if handoff is refused / 交权被拒绝时 */
     private static WorkflowGrant scope(ModContext context, TaskContext task, ServerId server, String revision,
-                                       String approval, boolean rememberAuthorization, String frozenRequest, boolean recovery) throws ApiException, DeploymentAiJson.CapabilityOutcomeException {
+                                       String approval, boolean rememberAuthorization, String frozenRequest, boolean recovery, long policyRevision) throws ApiException, DeploymentAiJson.CapabilityOutcomeException {
         DeploymentAuthorizationPolicy.requireAllowed(approval, rememberAuthorization);
+        var confirmed = DeploymentApprovalPolicies.original(context, task, approval, policyRevision);
+        DeploymentApprovalPolicies.requireRemember(context, task, rememberAuthorization);
+        approval = confirmed.mode();
         var intent = new ActionIntent("deployment.workflow.authority", List.of(server.id()), task.id().toString(), revision,
             "task=" + task.id() + "\napproval=" + approval + "\nrememberAuthorization=" + rememberAuthorization + "\nrequest=" + frozenRequest,
             approval.equals("FULL_CONTROL") ? "Allow the independently reviewed workflow to run without further command questions, including unresolved choices about existing resources; cancel to keep control of those choices"
@@ -77,7 +87,14 @@ public final class DeploymentWorkflowAuthorization {
             rememberAuthorization, recovery, task);
         if (result.outcome() != TaskResult.SUCCEEDED)
             throw new DeploymentAiJson.CapabilityOutcomeException(result.outcome(), result.problem());
-        return new ReviewedWorkflow(result.value().orElseThrow(() -> new IllegalStateException("Host workflow grant is absent")), task, intent, approval, rememberAuthorization, frozenRequest, recovery);
+        var original = result.value().orElseThrow(() -> new IllegalStateException("Host workflow grant is absent"));
+        try {
+            var policy = DeploymentApprovalPolicies.open(context, task, original, confirmed, rememberAuthorization, recovery);
+            return new ReviewedWorkflow(original, task, intent, rememberAuthorization, frozenRequest, recovery, policy);
+        } catch (ApiException | RuntimeException failed) {
+            original.close();
+            throw failed;
+        }
     }
 
     /** Exposes only the original active host handoff's nonsecret scope, never a command grant. */
@@ -101,27 +118,27 @@ public final class DeploymentWorkflowAuthorization {
 
         private final ActionIntent intent;
 
-        private final String policy;
-
         private final boolean remember;
 
         private final String request;
 
         private final boolean recovery;
 
+        private final DeploymentApprovalPolicies.Controller policyState;
+
         private boolean active = true;
 
         private boolean closed;
 
-        private ReviewedWorkflow(WorkflowGrant original, TaskContext task, ActionIntent intent, String policy,
-                                 boolean remember, String request, boolean recovery) {
+        private ReviewedWorkflow(WorkflowGrant original, TaskContext task, ActionIntent intent,
+                                 boolean remember, String request, boolean recovery, DeploymentApprovalPolicies.Controller policyState) {
             this.original = original;
             this.task = task;
             this.intent = intent;
-            this.policy = policy;
             this.remember = remember;
             this.request = request;
             this.recovery = recovery;
+            this.policyState = policyState;
         }
 
         private synchronized java.util.Map<String, Object> facts(TaskContext supplied, ActionIntent command) {
@@ -133,17 +150,29 @@ public final class DeploymentWorkflowAuthorization {
         private synchronized java.util.Map<String, Object> facts(TaskContext supplied, List<String> servers) {
             if (!active || supplied != task || !servers.equals(intent.serverIds()))
                 throw new IllegalArgumentException("Workflow evidence is closed or belongs to another task/server");
-            return java.util.Map.of("task", task.id().toString(), "serverTargets", intent.serverIds(),
-                "modelRevision", intent.revision(), "approvalPolicy", policy, "rememberAuthorization", remember,
-                "frozenWorkflowRequest", request, "recovery", recovery, "hostHandoffOpened", true,
-                "meaning", "Original active host workflow handoff only, not per-command permission, ownership or a safety verdict. modelRevision identifies the frozen AI configuration, not a deployment plan, source or candidate; it must not be compared to businessRevision or resource digests as the same object.");
+            return java.util.Map.ofEntries(java.util.Map.entry("task", task.id().toString()), java.util.Map.entry("serverTargets", intent.serverIds()),
+                java.util.Map.entry("modelRevision", intent.revision()), java.util.Map.entry("approvalPolicy", policyState.confirmed().mode()),
+                java.util.Map.entry("approvalPolicyRevision", policyState.confirmed().revision()), java.util.Map.entry("rememberAuthorization", remember),
+                java.util.Map.entry("frozenWorkflowRequest", request), java.util.Map.entry("recovery", recovery), java.util.Map.entry("hostHandoffOpened", true),
+                java.util.Map.entry("meaning", "Original active host workflow handoff only, not per-command permission, ownership or a safety verdict. modelRevision identifies the frozen AI configuration, not a deployment plan, source or candidate; it must not be compared to businessRevision or resource digests as the same object."));
         }
 
         @Override
         public synchronized void close() throws ApiException {
             active = false;
             if (!closed) {
-                original.close();
+                try {
+                    original.close();
+                } catch (ApiException | RuntimeException unconfirmed) {
+                    policyState.hostCloseFailed();
+                    throw unconfirmed;
+                }
+                try {
+                    policyState.close();
+                } catch (ApiException | RuntimeException unconfirmed) {
+                    policyState.hostCloseFailed();
+                    throw unconfirmed;
+                }
                 closed = true;
             }
         }

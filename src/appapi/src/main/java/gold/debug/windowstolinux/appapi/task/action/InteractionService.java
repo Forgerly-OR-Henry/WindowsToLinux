@@ -9,41 +9,50 @@ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
  */
 public interface InteractionService {
 
-    /** Delegates one complete workflow under the business-frozen authorization mode, without granting individual effects. / 按业务冻结的授权模式委托一个完整流程，不直接授权单个副作用。
-     * @param frozenWorkflowIntent complete original workflow and server scope / 完整原流程及服务器范围
-     * @param authorizationMode business-selected mode frozen for this task / 本任务冻结的业务所选模式
-     * @param task authentic original executing root task / 真实原执行根任务
-     * @return host-issued original delegation or explicit refusal / 宿主签发的原委托或明确拒绝
-     * @throws ApiException if this implementation lacks host delegation or identity cannot be verified / 实现没有宿主委托能力或无法核验身份时 */
-    default OperationResult<WorkflowGrant> delegateWorkflow(ActionIntent frozenWorkflowIntent, AuthorizationMode authorizationMode, TaskContext task) throws ApiException {
+    /** Changes only a live original grant at the owning worker's settled boundary. / 仅在所属工作线程的结清边界变更活动原许可。
+     * Already presented questions and dispatched effects retain their original policy. / 已呈现的问题和已发送的副作用保留原策略。
+     * @param grant exact original host grant, never a wrapper or copied identity / 精确原宿主许可，不接受包装或复制身份
+     * @param expectedRevision last confirmed scope-local policy revision / 最近确认的作用域内策略修订
+     * @param mode requested human decision policy / 请求的人工决定策略
+     * @param task authentic original executing task / 真实原执行任务
+     * @return confirmed policy or explicit refusal; uncertain outcomes must stop later effects / 已确认策略或明确拒绝，未知结果须阻止后续副作用
+     * @throws ApiException if scope, revision or authority cannot be verified / 无法核验作用域、修订或权限时 */
+    default OperationResult<WorkflowPolicyState> updateReviewedWorkflowPolicy(WorkflowGrant grant, long expectedRevision,
+                                                                              CommandReviewMode mode, TaskContext task) throws ApiException {
         throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
-            gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNAVAILABLE, "WORKFLOW_DELEGATION_UNAVAILABLE",
-            "Host workflow delegation is unavailable", java.util.Map.of(), java.util.Optional.empty()));
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNAVAILABLE, "WORKFLOW_POLICY_UPDATE_UNAVAILABLE",
+            "Host workflow policy update is unavailable", java.util.Map.of(), java.util.Optional.empty()));
     }
 
-    /** Opens question-only repetition for an original workflow without delegating ordinary effects. / 为原流程开启仅问题的重复规则，不委托普通副作用。
-     * @param frozenWorkflowIntent complete original workflow and server scope / 完整原流程及服务器范围
-     * @param authorizationMode frozen ONCE or GENERAL mode / 冻结的 ONCE 或 GENERAL 模式
-     * @param task authentic original executing root / 真实原执行根
-     * @return host-owned question scope without an initial handoff question / 没有初始交接问题的宿主所属问题作用域
-     * @throws ApiException if unavailable, foreign or FULL is requested / 不可用、属于他方或请求 FULL 时 */
-    default OperationResult<WorkflowGrant> reviewedWorkflow(ActionIntent frozenWorkflowIntent, AuthorizationMode authorizationMode, TaskContext task) throws ApiException {
+    /** Opens a task-local reviewed workflow; FULL_CONTROL requires an actual startup confirmation. / 开启任务内审核流程；全控须真实启动确认。
+     * @param intent complete frozen workflow / 完整冻结流程
+     * @param mode selected human decision policy / 人工确认策略
+     * @param rememberAuthorization remember only actual human approval in this workflow / 仅记住本流程真实人工批准
+     * @param recovery fresh original reconciliation scope / 新原任务核对作用域
+     * @param task authentic original root / 真实原根
+     * @return host-owned scope or explicit refusal / 宿主作用域或明确拒绝
+     * @throws ApiException if unavailable or admission fails / 不可用或准入失败时 */
+    default OperationResult<WorkflowGrant> openReviewedWorkflow(ActionIntent intent, CommandReviewMode mode,
+                                                                boolean rememberAuthorization, boolean recovery, TaskContext task) throws ApiException {
         throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
             gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNAVAILABLE, "WORKFLOW_REVIEW_SCOPE_UNAVAILABLE",
-            "Host workflow review scope is unavailable", java.util.Map.of(), java.util.Optional.empty()));
+            "Host reviewed workflow is unavailable", java.util.Map.of(), java.util.Optional.empty()));
     }
 
-    /** Opens a fresh explicitly requested scope only during original-root reconciliation, never reviving prior authority. / 仅原根核对期间开启明确请求的新作用域，不复活旧权限。
-     * @param frozenWorkflowIntent complete original workflow and server scope / 完整原流程及服务器范围
-     * @param authorizationMode explicit frozen business authorization mode / 明确冻结的业务授权模式
-     * @param reviewOnly whether only ONCE/GENERAL question repetition is requested / 是否仅请求 ONCE/GENERAL 问题重复规则
-     * @param task authentic original root recovery context / 真实原根恢复上下文
-     * @return new opaque host scope after exact previous occupancy cleanup; no permission to replay unknown effects / 精确清理旧占用后的新不透明宿主作用域；不授予重放未知效果的权限
-     * @throws ApiException if recovery, original facts or cleanup cannot be confirmed / 无法确认恢复、原依据或清理时 */
-    default OperationResult<WorkflowGrant> recoverWorkflow(ActionIntent frozenWorkflowIntent, AuthorizationMode authorizationMode, boolean reviewOnly, TaskContext task) throws ApiException {
+    /** Authorizes an independently approved exact action; no reusable authority comes from automatic approval. / 授权独立审核通过的精确动作；自动通过不产生可复用权限。
+     * @param intent unchanged original action / 未改变原动作
+     * @param command actual SSH request, absent for non-command effects / 实际SSH请求，非命令为空
+     * @param requiresUserConfirmation reviewer identified a real unresolved user tradeoff / 审核发现实际未决取舍
+     * @param reason plain presentation of changes, impact and recommendation / 修改、影响和推荐方案的纯文本
+     * @param task authentic original task / 真实原任务
+     * @return single-use exact grant or refusal / 精确单次许可或拒绝
+     * @throws ApiException if binding, scope or decision fails / 绑定、作用域或确认失败时 */
+    default OperationResult<ApprovalGrant> approveReviewedAction(ActionIntent intent,
+                                                                 java.util.Optional<gold.debug.windowstolinux.appapi.linux.command.CommandRequest> command,
+                                                                 boolean requiresUserConfirmation, String reason, TaskContext task) throws ApiException {
         throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
-            gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNAVAILABLE, "WORKFLOW_RECOVERY_SCOPE_UNAVAILABLE",
-            "Host recovery workflow scope is unavailable", java.util.Map.of(), java.util.Optional.empty()));
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNAVAILABLE, "REVIEWED_ACTION_UNAVAILABLE",
+            "Host reviewed action authorization is unavailable", java.util.Map.of(), java.util.Optional.empty()));
     }
 
     /** Revokes and cleans only original workflow occupancy during authentic root reconciliation, without creating new permission. / 仅在真实原根核对期间撤销并清理原流程占用，不创建新权限。

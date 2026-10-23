@@ -25,7 +25,9 @@ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.DeploymentStandardEntryFixture;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -149,8 +151,8 @@ class DeploymentPreviousRunningPublishTest extends DeploymentPublishAcceptanceFi
                     throw failure.getCause();
                 }
             });
-        return new DeploymentStaticWorkflow(bound, new DeploymentRefFlow(bound)).submit(new ServerId("server"),
-            new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(count), false,
+        return new DeploymentStandardEntryFixture(bound, new DeploymentRefFlow(bound)).submit(new ServerId("server"),
+            new DeploymentStandardInputs.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(count), false,
             "MANUAL_REVIEW");
     }
 

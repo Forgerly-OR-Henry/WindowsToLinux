@@ -15,6 +15,8 @@ import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
 import org.junit.jupiter.api.Test;
 
 /** Exercises actual serialized CLASS/H2 admission against retained original evidence. / 针对留存原依据验证真实串行CLASS/H2准入。 */
@@ -120,7 +122,7 @@ class DeploymentAgentTargetAdmissionTest extends DeploymentRuntimeFixture {
     }
 
     private static DeploymentAgentActionLog.Identity identity(String profile) {
-        return new DeploymentAgentActionLog.Identity(profile, "a".repeat(64), "b".repeat(64), "MANUAL_REVIEW", "GENERAL");
+        return new DeploymentAgentActionLog.Identity(profile, "a".repeat(64), "b".repeat(64), "MANUAL_REVIEW", true);
     }
 
     private static OperationResult<Void> success() {
@@ -128,7 +130,7 @@ class DeploymentAgentTargetAdmissionTest extends DeploymentRuntimeFixture {
     }
 
     private static String target(String profile, String host, int port) {
-        return DeploymentAgentWorkflow.physicalTarget(new ServerInfo(new ServerId(profile), profile, host, port, "different-account",
+        return DeploymentAgentInputs.physicalTarget(new ServerInfo(new ServerId(profile), profile, host, port, "different-account",
             Optional.of("SHA256:original-fingerprint"), Optional.of(Instant.EPOCH)));
     }
 }

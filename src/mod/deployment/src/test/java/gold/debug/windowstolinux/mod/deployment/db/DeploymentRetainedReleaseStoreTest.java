@@ -10,7 +10,13 @@ import java.util.concurrent.atomic.AtomicReference;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionCodec;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionFixture;
+import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishStore;
+import gold.debug.windowstolinux.mod.deployment.db.release.DeploymentReleaseRecord;
+import gold.debug.windowstolinux.mod.deployment.db.release.DeploymentReleaseStore;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentApplicationGraph;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck;
 import org.junit.jupiter.api.Test;
 
 /** Verifies whole-graph retained compare-and-set, preserved originals and rollback. / 验证整图保留比较更新、原数据保留与回滚。 */
@@ -55,17 +61,17 @@ class DeploymentRetainedReleaseStoreTest extends DeploymentExecutionFixture {
             run(runtime, task -> {
                 var repository = releases(runtime);
                 assertEquals(2, repository.list(task, "application").size());
-                assertThrows(SQLException.class, () -> repository.activateRetained(task, "f".repeat(64), first.get(),
+                assertThrows(SQLException.class, () -> new DeploymentPublishStore(runtime.modContexts().get(OWNER).context().db()).activateRetained(task, "f".repeat(64), first.get(),
                     publications(graph("application"), 1, List.of()), OBSERVED.plusSeconds(30)));
                 verify(runtime, task, changedGraph(), publications(changedGraph(), 2, List.of()));
-                repository.activateRetained(task, second.get().identity().sha256(), first.get(),
+                new DeploymentPublishStore(runtime.modContexts().get(OWNER).context().db()).activateRetained(task, second.get().identity().sha256(), first.get(),
                     publications(graph("application"), 1, List.of()), OBSERVED.plusSeconds(30));
                 var active = repository.find(task, "application", first.get().identity().id()).orElseThrow();
                 assertEquals(first.get(), active);
                 assertEquals(DeploymentReleaseRecord.DeploymentReleaseState.RETIRED,
                     repository.find(task, "application", second.get().identity().id()).orElseThrow().state());
                 verify(runtime, task, graph("application"), publications(graph("application"), 1, List.of()));
-                repository.activateRetained(task, second.get().identity().sha256(), first.get(),
+                new DeploymentPublishStore(runtime.modContexts().get(OWNER).context().db()).activateRetained(task, second.get().identity().sha256(), first.get(),
                     publications(graph("application"), 1, List.of()), OBSERVED.plusSeconds(31));
                 assertEquals(first.get(), repository.find(task, "application", first.get().identity().id()).orElseThrow());
                 assertEquals(2, count(runtime, task, "SELECT COUNT(*) FROM deployment_release"));
@@ -94,7 +100,7 @@ class DeploymentRetainedReleaseStoreTest extends DeploymentExecutionFixture {
             run(runtime, task -> {
                 sql(runtime, task, "ALTER TABLE deployment_release ADD CONSTRAINT retained_failure CHECK(release_id<>'"
                     + first.get().identity().id() + "' OR state='RETIRED')");
-                assertThrows(SQLException.class, () -> releases(runtime).activateRetained(task,
+                assertThrows(SQLException.class, () -> new DeploymentPublishStore(runtime.modContexts().get(OWNER).context().db()).activateRetained(task,
                     second.get().identity().sha256(), first.get(), publications(graph("application"), 1, List.of()),
                     OBSERVED.plusSeconds(30)));
                 verify(runtime, task, changedGraph(), publications(changedGraph(), 2, List.of()));

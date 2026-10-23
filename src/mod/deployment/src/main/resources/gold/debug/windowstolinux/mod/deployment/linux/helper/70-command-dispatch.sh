@@ -114,7 +114,7 @@ case "$verb" in
     snapshot-discard-attempt) discard_original_snapshot_attempt "$@" ;;
     publish-deployment) publish_deployment "$@" ;;
     prepare-toolchains)
-        case "${1:-}" in prepare | bind | verify | prepare-tracked | bind-tracked | observe-tracked | cleanup-tracked) prepare_official_toolchains "$@" ;; *) reject toolchain-verb ;; esac
+        case "${1:-}" in prepare | bind | verify | prepare-tracked | bind-tracked | observe-tracked | cleanup-tracked | prepare-diagnosed | diagnose-only) prepare_official_toolchains "$@" ;; *) reject toolchain-verb ;; esac
         ;;
     retain) retain_releases "$@" ;;
     rollback-deployment) rollback_deployment "$@" ;;

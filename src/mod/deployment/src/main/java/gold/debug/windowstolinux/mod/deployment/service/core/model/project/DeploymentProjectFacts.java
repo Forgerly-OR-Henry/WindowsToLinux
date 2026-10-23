@@ -4,11 +4,11 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
 
 /**
  * Immutable deterministic facts for one user-selected typed deployment project type; no project code was executed.
@@ -53,7 +53,7 @@ public record DeploymentProjectFacts(Path sourceRoot, String applicationId, Depl
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public DeploymentProjectFacts {
-        buildDirectory = gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentCommand
+        buildDirectory = gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentCommand
             .relative(buildDirectory, true);
         sourceRoot = Objects.requireNonNull(sourceRoot, "sourceRoot").toAbsolutePath().normalize();
         applicationId = Objects.requireNonNull(applicationId, "applicationId").trim();

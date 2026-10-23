@@ -13,8 +13,8 @@ import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentRefKey;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
+import gold.debug.windowstolinux.mod.deployment.db.reference.DeploymentRefKey;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.DeploymentSecretRef;
 
 /** Bounded original-task facts for one newly created credential and immutable business revision. / 一项新建凭据与不可变业务修订的有界原任务依据。 */
 final class DeploymentSecretProvisionActionLog {
@@ -400,7 +400,7 @@ final class DeploymentSecretProvisionActionLog {
 
     /** Provides the exact reference key for this durable original ID. / 为原持久 ID 提供精确引用键。
      * @return original reference intent / 原引用意图 */
-    gold.debug.windowstolinux.mod.deployment.db.DeploymentRefIntent intent() {
+    gold.debug.windowstolinux.mod.deployment.db.reference.DeploymentRefIntent intent() {
         return DeploymentRefKey.secretRevision(facts.server(),
             new SecretId(facts.credentialId().orElseThrow(), facts.purpose()), facts.revision());
     }

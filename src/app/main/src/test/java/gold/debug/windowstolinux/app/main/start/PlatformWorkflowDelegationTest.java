@@ -20,7 +20,7 @@ import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.action.AuthorizationMode;
+import gold.debug.windowstolinux.appapi.task.action.CommandReviewMode;
 import gold.debug.windowstolinux.appapi.task.action.WorkflowGrant;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
@@ -55,8 +55,8 @@ class PlatformWorkflowDelegationTest {
     }
 
     @ParameterizedTest
-    @EnumSource(AuthorizationMode.class)
-    void questionOnlyScopeDoesNotHandoffOrAutomaticallyDelegateOrdinaryEffects(AuthorizationMode mode) throws Exception {
+    @EnumSource(CommandReviewMode.class)
+    void questionOnlyScopeDoesNotHandoffOrAutomaticallyDelegateOrdinaryEffects(CommandReviewMode mode) throws Exception {
         try (var remote = new Remote(root.resolve("ssh"));
              var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
@@ -64,32 +64,28 @@ class PlatformWorkflowDelegationTest {
             runtime.setInteractionPresenter(reviews);
             try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
-                    if (mode == AuthorizationMode.FULL) {
-                        assertThrows(ApiException.class, () -> capabilities.interaction().reviewedWorkflow(handoff("server"), mode, task));
-                        return success(null);
-                    }
-                    try (var workflow = capabilities.interaction().reviewedWorkflow(handoff("server"), mode, task).value().orElseThrow();
+                    try (var workflow = capabilities.interaction().openReviewedWorkflow(handoff("server"), mode, true, false, task).value().orElseThrow();
                          var session = capabilities.linux().connect(SERVER, task);
                          var command = command("builtin printf 'question-only'")) {
                         for (int i = 0; i < 2; i++) {
                             var grant = capabilities.interaction().approve(action(command, "same.operation", "/srv/parent"), task).value().orElseThrow();
                             assertEquals(TaskResult.SUCCEEDED, session.execute(command, grant).outcome());
                         }
-                        assertEquals(mode == AuthorizationMode.ONCE ? 2 : 1, questions(reviews));
-                        assertEquals(0, handoffs(reviews));
+                        assertEquals(2, questions(reviews), "Generic business confirmations are not delegated or remembered by reviewed command policy");
+                        assertEquals(mode == CommandReviewMode.FULL_CONTROL ? 1 : 0, handoffs(reviews));
                     }
                     return success(null);
                 });
                 assertEquals(TaskResult.SUCCEEDED, result(handle).outcome());
-                assertEquals(mode == AuthorizationMode.FULL ? 0 : 2, remote.commands.get());
-                assertEquals(0, handoffs(reviews));
+                assertEquals(2, remote.commands.get());
+                assertEquals(mode == CommandReviewMode.FULL_CONTROL ? 1 : 0, handoffs(reviews));
             }
         }
     }
 
     @ParameterizedTest
-    @EnumSource(AuthorizationMode.class)
-    void actualRootHandoffAndRequiredQuestionsUseOnlyTheirFrozenBusinessMode(AuthorizationMode mode) throws Exception {
+    @EnumSource(CommandReviewMode.class)
+    void actualRootHandoffAndRequiredQuestionsUseOnlyTheirFrozenBusinessMode(CommandReviewMode mode) throws Exception {
         try (var remote = new Remote(root.resolve("ssh"));
              var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
@@ -97,37 +93,37 @@ class PlatformWorkflowDelegationTest {
             runtime.setInteractionPresenter(reviews);
             try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
-                    try (var workflow = capabilities.interaction().delegateWorkflow(handoff("server"), mode, task).value().orElseThrow();
+                    try (var workflow = capabilities.interaction().openReviewedWorkflow(handoff("server"), mode, true, false, task).value().orElseThrow();
                          var session = capabilities.linux().connect(SERVER, task)) {
-                        assertEquals(mode == AuthorizationMode.FULL ? 0 : 1, handoffs(reviews));
-                        runtime.persistence().preferences().save("platform_authorization_mode", mode == AuthorizationMode.FULL ? "ONCE" : "FULL");
-                        assertThrows(ApiException.class, () -> capabilities.interaction().delegateWorkflow(handoff("server"), AuthorizationMode.FULL, task));
+                        assertEquals(mode == CommandReviewMode.FULL_CONTROL ? 1 : 0, handoffs(reviews));
+                        runtime.persistence().preferences().save("platform_authorization_mode", mode == CommandReviewMode.FULL_CONTROL ? "ONCE" : "FULL");
+                        assertThrows(ApiException.class, () -> capabilities.interaction().openReviewedWorkflow(handoff("server"), CommandReviewMode.FULL_CONTROL, true, false, task));
                         try (var command = command("builtin printf 'delegated'")) {
                             var actual = action(command, "delete.same-level", "/srv/owned-parent");
                             for (int i = 0; i < 2; i++) {
                                 var grant = capabilities.interaction().approve(actual, task).value().orElseThrow();
                                 assertEquals(TaskResult.SUCCEEDED, session.execute(command, grant).outcome());
                             }
-                            assertEquals(0, questions(reviews));
+                            assertEquals(2, questions(reviews));
                             for (int i = 0; i < 2; i++) {
                                 var grant = capabilities.interaction().approveRequired(actual, task).value().orElseThrow();
                                 assertEquals(TaskResult.SUCCEEDED, session.execute(command, grant).outcome());
                             }
-                            assertEquals(mode == AuthorizationMode.ONCE ? 2 : mode == AuthorizationMode.GENERAL ? 1 : 0, questions(reviews));
+                            assertEquals(4, questions(reviews));
                             for (var changed : List.of(action(command, "delete.other-kind", "/srv/owned-parent"),
                                 action(command, "delete.same-level", "/srv/other-parent"))) {
                                 var grant = capabilities.interaction().approveRequired(changed, task).value().orElseThrow();
                                 assertEquals(TaskResult.SUCCEEDED, session.execute(command, grant).outcome());
                             }
-                            assertEquals(mode == AuthorizationMode.ONCE ? 4 : mode == AuthorizationMode.GENERAL ? 3 : 0, questions(reviews));
+                            assertEquals(6, questions(reviews));
                             var unclassified = RemoteActions.command(SERVER, "original-1", command);
                             var grant = capabilities.interaction().approve(unclassified, task).value().orElseThrow();
                             assertEquals(TaskResult.SUCCEEDED, session.execute(command, grant).outcome());
-                            assertEquals(mode == AuthorizationMode.ONCE ? 5 : mode == AuthorizationMode.GENERAL ? 4 : 1, questions(reviews));
+                            assertEquals(7, questions(reviews));
                         }
                     }
                     assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id LIKE 'workflow-delegation-%' AND released_at IS NULL"));
-                    assertThrows(ApiException.class, () -> capabilities.interaction().delegateWorkflow(handoff("server"), mode, task));
+                    assertThrows(ApiException.class, () -> capabilities.interaction().openReviewedWorkflow(handoff("server"), mode, true, false, task));
                     return success(null);
                 });
                 assertEquals(TaskResult.SUCCEEDED, result(handle).outcome());
@@ -137,8 +133,8 @@ class PlatformWorkflowDelegationTest {
     }
 
     @ParameterizedTest
-    @EnumSource(AuthorizationMode.class)
-    void ordinaryRootWithoutHandoffStillRequiresRealHumanApproval(AuthorizationMode mode) throws Exception {
+    @EnumSource(CommandReviewMode.class)
+    void ordinaryRootWithoutHandoffStillRequiresRealHumanApproval(CommandReviewMode mode) throws Exception {
         try (var remote = new Remote(root.resolve("ssh"));
              var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
@@ -164,8 +160,8 @@ class PlatformWorkflowDelegationTest {
     }
 
     @ParameterizedTest
-    @EnumSource(AuthorizationMode.class)
-    void forgedChangedExpiredAndForeignAuthorityCannotDispatch(AuthorizationMode mode) throws Exception {
+    @EnumSource(CommandReviewMode.class)
+    void forgedChangedExpiredAndForeignAuthorityCannotDispatch(CommandReviewMode mode) throws Exception {
         try (var remote = new Remote(root.resolve("ssh"));
              var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
@@ -176,9 +172,9 @@ class PlatformWorkflowDelegationTest {
                  var foreign = runtime.capabilities().remoteCapabilities("foreign.mod", VERSION);
                  var old = runtime.capabilities().remoteCapabilities(OWNER, "old-release")) {
                 var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
-                    assertThrows(ApiException.class, () -> foreign.interaction().delegateWorkflow(handoff("server"), mode, task));
-                    assertThrows(ApiException.class, () -> old.interaction().delegateWorkflow(handoff("server"), mode, task));
-                    var workflow = capabilities.interaction().delegateWorkflow(handoff("server"), mode, task).value().orElseThrow();
+                    assertThrows(ApiException.class, () -> foreign.interaction().openReviewedWorkflow(handoff("server"), mode, true, false, task));
+                    assertThrows(ApiException.class, () -> old.interaction().openReviewedWorkflow(handoff("server"), mode, true, false, task));
+                    var workflow = capabilities.interaction().openReviewedWorkflow(handoff("server"), mode, true, false, task).value().orElseThrow();
                     try (var session = capabilities.linux().connect(SERVER, task); var command = command("builtin printf 'original'")) {
                         var grant = capabilities.interaction().approve(action(command, "exact.command", "/srv/app"), task).value().orElseThrow();
                         assertThrows(ApiException.class, () -> session.execute(command, new ApprovalGrant(grant.id())));
@@ -188,7 +184,7 @@ class PlatformWorkflowDelegationTest {
                         previousGrant.set(grant);
                         workflow.close();
                         assertThrows(ApiException.class, () -> session.execute(command, grant));
-                        assertThrows(ApiException.class, () -> capabilities.interaction().delegateWorkflow(handoff("server"), mode, task));
+                        assertThrows(ApiException.class, () -> capabilities.interaction().openReviewedWorkflow(handoff("server"), mode, true, false, task));
                         assertEquals(0, remote.commands.get());
                     } finally {
                         workflow.close();
@@ -209,6 +205,39 @@ class PlatformWorkflowDelegationTest {
     }
 
     @Test
+    void rememberedHumanAuthorityRequiresExactPayloadResourcesAndNonIncreasingBudgets() throws Exception {
+        try (var remote = new Remote(root.resolve("ssh")); var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
+            remote.configure(runtime);
+            var reviews = new Reviews();
+            runtime.setInteractionPresenter(reviews);
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
+                var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
+                    try (var workflow = capabilities.interaction().openReviewedWorkflow(handoff("server"), CommandReviewMode.AUTOMATIC, true, false, task).value().orElseThrow();
+                         var session = capabilities.linux().connect(SERVER, task)) {
+                        for (int step = 0; step < 9; step++) {
+                            byte[] input = new byte[]{(byte) (step == 4 ? 2 : 1)};
+                            try (var command = new CommandRequest(step == 5 ? "builtin printf changed" : "builtin printf original", input,
+                                java.time.Duration.ofSeconds(step == 2 ? 3 : step == 3 ? 10 : 5), step == 2 ? 4096 : step == 3 ? 16384 : 8192)) {
+                                var actual = action(command, step == 6 ? "other.operation" : "same.operation", step == 7 ? "/srv/other" : "/srv/original");
+                                if (step == 8)
+                                    actual = RemoteActions.command(SERVER, "changed-revision", command).withSemantics(actual.semantics().orElseThrow());
+                                var grant = capabilities.interaction().approveReviewedAction(actual, Optional.of(command), true,
+                                    "Changes the exact selected resource; confirm this operation", task).value().orElseThrow();
+                                assertEquals(TaskResult.SUCCEEDED, session.execute(command, grant).outcome());
+                                assertEquals(step < 3 ? 1 : step - 1, questions(reviews), "Only exact parameter bounds may waive a human question");
+                            }
+                        }
+                        assertEquals(0, handoffs(reviews));
+                    }
+                    return success(null);
+                });
+                assertEquals(TaskResult.SUCCEEDED, result(handle).outcome());
+                assertEquals(9, remote.commands.get());
+            }
+        }
+    }
+
+    @Test
     void missingExtraAndIncompleteOriginalServerSetsNeverCreateDelegation() throws Exception {
         try (var remote = new Remote(root.resolve("ssh"));
              var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
@@ -220,14 +249,14 @@ class PlatformWorkflowDelegationTest {
             try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server", "second"), task -> {
                     for (var wrong : List.of(handoff(), handoff("server"), handoff("server", "second", "missing")))
-                        assertThrows(ApiException.class, () -> capabilities.interaction().delegateWorkflow(wrong, AuthorizationMode.FULL, task));
+                        assertThrows(ApiException.class, () -> capabilities.interaction().openReviewedWorkflow(wrong, CommandReviewMode.FULL_CONTROL, true, false, task));
                     assertEquals(0, handoffs(reviews));
                     assertEquals(0, remote.commands.get());
                     return success(null);
                 });
                 assertEquals(TaskResult.SUCCEEDED, result(handle).outcome());
                 var empty = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
-                    assertThrows(ApiException.class, () -> capabilities.interaction().delegateWorkflow(handoff(), AuthorizationMode.FULL, task));
+                    assertThrows(ApiException.class, () -> capabilities.interaction().openReviewedWorkflow(handoff(), CommandReviewMode.FULL_CONTROL, true, false, task));
                     return success(null);
                 });
                 assertEquals(TaskResult.SUCCEEDED, result(empty).outcome());
@@ -245,7 +274,7 @@ class PlatformWorkflowDelegationTest {
             runtime.setInteractionPresenter(reviews);
             try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
-                    var refused = capabilities.interaction().delegateWorkflow(handoff("server"), AuthorizationMode.GENERAL, task);
+                    var refused = capabilities.interaction().openReviewedWorkflow(handoff("server"), CommandReviewMode.FULL_CONTROL, true, false, task);
                     assertEquals(TaskResult.CANCELLED, refused.outcome());
                     assertTrue(refused.value().isEmpty());
                     assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id LIKE 'workflow-delegation-%' AND released_at IS NULL"));
@@ -269,7 +298,7 @@ class PlatformWorkflowDelegationTest {
             try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var binding = runtime.tasks().bind(OWNER, VERSION, false);
                 var handle = binding.submit(request("server"), task -> {
-                    retained.set(capabilities.interaction().delegateWorkflow(handoff("server"), AuthorizationMode.FULL, task).value().orElseThrow());
+                    retained.set(capabilities.interaction().openReviewedWorkflow(handoff("server"), CommandReviewMode.FULL_CONTROL, true, false, task).value().orElseThrow());
                     assertEquals(ProblemCode.ACCESS_DENIED,
                         assertThrows(ApiException.class, () -> capabilities.interaction().closeWorkflowResources(task)).problem().code());
                     sql(runtime.persistence().database(), "ALTER TABLE platform_task_resource ADD CONSTRAINT workflow_release_fault CHECK(resource_id NOT LIKE 'workflow-delegation-%' OR released_at IS NULL)");
@@ -284,7 +313,7 @@ class PlatformWorkflowDelegationTest {
                 assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id LIKE 'workflow-delegation-%' AND released_at IS NULL"));
                 sql(runtime.persistence().database(), "ALTER TABLE platform_task_resource DROP CONSTRAINT workflow_release_fault");
                 try (var recovery = binding.registerRecovery("fixture", (previous, task) -> {
-                    assertThrows(ApiException.class, () -> capabilities.interaction().delegateWorkflow(handoff("server"), AuthorizationMode.FULL, task));
+                    assertThrows(ApiException.class, () -> capabilities.interaction().openReviewedWorkflow(handoff("server"), CommandReviewMode.FULL_CONTROL, true, false, task));
                     capabilities.interaction().closeWorkflowResources(task);
                     retained.get().close();
                     assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id LIKE 'workflow-delegation-%' AND released_at IS NULL"));
@@ -320,7 +349,7 @@ class PlatformWorkflowDelegationTest {
                 try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                     var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
                         originalGraph.set(new gold.debug.windowstolinux.app.db.task.TaskLedger(runtime.persistence().database()).queries().recoveryGraph(task.id()).orElseThrow());
-                        try (var workflow = capabilities.interaction().delegateWorkflow(handoff("server"), AuthorizationMode.FULL, task).value().orElseThrow()) {
+                        try (var workflow = capabilities.interaction().openReviewedWorkflow(handoff("server"), CommandReviewMode.FULL_CONTROL, true, false, task).value().orElseThrow()) {
                             return success(null);
                         }
                     });
@@ -361,8 +390,8 @@ class PlatformWorkflowDelegationTest {
                 runtime.setInteractionPresenter(reviews);
                 try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION);
                      var recovery = runtime.tasks().bind(OWNER, VERSION, true).registerRecovery("fixture", (previous, task) -> {
-                         assertThrows(ApiException.class, () -> capabilities.interaction().delegateWorkflow(handoff("server"), AuthorizationMode.FULL, task));
-                         assertThrows(ApiException.class, () -> capabilities.interaction().reviewedWorkflow(handoff("server"), AuthorizationMode.GENERAL, task));
+                         assertThrows(ApiException.class, () -> capabilities.interaction().openReviewedWorkflow(handoff("server"), CommandReviewMode.FULL_CONTROL, true, false, task));
+                         assertThrows(ApiException.class, () -> capabilities.interaction().openReviewedWorkflow(handoff("server"), CommandReviewMode.AUTOMATIC, true, false, task));
                          capabilities.closeTaskResources(task);
                          assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id LIKE 'workflow-delegation-%' AND released_at IS NULL"));
                          return success(null);

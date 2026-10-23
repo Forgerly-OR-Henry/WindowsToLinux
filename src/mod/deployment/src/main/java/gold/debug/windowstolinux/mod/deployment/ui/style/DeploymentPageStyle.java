@@ -2,13 +2,144 @@ package gold.debug.windowstolinux.mod.deployment.ui.style;
 
 import java.awt.*;
 import java.util.ResourceBundle;
-
 import javax.swing.*;
 
 /** Mod-local presentation using Swing theme values, without host implementation access. / 仅使用 Swing 主题值的 Mod 本地展示，不访问宿主实现。 */
 public final class DeploymentPageStyle {
     /** Prevents helper instances. / 禁止工具实例。 */
     private DeploymentPageStyle() {
+    }
+
+    /** Scales logical dimensions using the host's public Swing defaults. / 按宿主公开 Swing 默认值缩放逻辑尺寸。
+     * @param value logical dimension / 逻辑尺寸
+     * @return scaled dimension / 缩放后尺寸 */
+    public static int scale(int value) {
+        return Math.round(value * scaleFactor());
+    }
+
+    /** Retains fractional strokes without rounding them through font sizes. / 保留分数像素描边，不经字体取整反推比例。 */
+    static float scaleFactor() {
+        return UIManager.get("Component.uiScale") instanceof Number factor ? factor.floatValue() : 1f;
+    }
+
+    /** Builds a heading whose size survives live environment changes. / 创建随环境更新字号的标题。
+     * @param key optional catalog key / 可选语言键
+     * @param size logical text size / 逻辑字号
+     * @return owned heading / 所属标题 */
+    public static JLabel title(String key, int size) {
+        var label = new JLabel();
+        if (key != null) label.putClientProperty("deployment.style.title", key);
+        label.putClientProperty("deployment.style.fontSize", size);
+        label.setFont(UIManager.getFont("Label.font").deriveFont(Font.BOLD, (float) scale(size)));
+        return label;
+    }
+
+    /** Wraps one workspace region without an extra title. / 包装单个工作区，不重复标题。
+     * @param content original region / 原区域
+     * @return rounded outer surface / 圆角外表面 */
+    public static JPanel outer(JComponent content) {
+        return card(null, content);
+    }
+
+    /** Wraps a detail section using the neutral emphasis outline. / 用中性强调轮廓包装详情分区。
+     * @param key optional localized heading / 可选本地化标题
+     * @param content original section / 原分区
+     * @return outlined content surface / 带浅框内容表面 */
+    public static JPanel section(String key, JComponent content) {
+        var section = card(key, content);
+        section.putClientProperty("deployment.style.outlined", true);
+        return section;
+    }
+
+    /** Creates an independently scrolling content region. / 创建独立滚动区。
+     * @param view original content / 原内容
+     * @return unframed scrolling container / 无额外边框滚动容器 */
+    public static JScrollPane scroll(JComponent view) {
+        var scroll = new JScrollPane(view, view instanceof JList<?> ? ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS
+            : ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.putClientProperty("desktop.card.contentSurface", true);
+        scroll.setOpaque(false);
+        scroll.getViewport().setBackground(UIManager.getColor("Table.background"));
+        scroll.getVerticalScrollBar().setUnitIncrement(scale(18));
+        return scroll;
+    }
+
+    /** Draws Mod-owned line icons without importing host implementation types. / 绘制 Mod 线图标，不引用宿主实现类型。
+     * @param kind app, folder, server, log, shield or settings / 应用、目录、服务器、日志、盾牌或设置
+     * @param logicalSize logical icon size / 逻辑图标尺寸
+     * @return live themed icon / 随主题变化的图标 */
+    public static Icon icon(String kind, int logicalSize) {
+        return new Icon() {
+            public int getIconWidth() {
+                return scale(logicalSize);
+            }
+
+            public int getIconHeight() {
+                return scale(logicalSize);
+            }
+
+            public void paintIcon(Component component, Graphics graphics, int x, int y) {
+                var g = (Graphics2D) graphics.create();
+                try {
+                    g.translate(x, y);
+                    g.scale(getIconWidth() / 32d, getIconHeight() / 32d);
+                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g.setColor(component.isEnabled() ? UIManager.getColor("Component.focusColor")
+                        : UIManager.getColor("Label.disabledForeground"));
+                    g.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                    if ("folder".equals(kind)) {
+                        g.drawRoundRect(3, 9, 26, 20, 4, 4);
+                        g.drawLine(4, 9, 4, 5);
+                        g.drawLine(4, 5, 13, 5);
+                        g.drawLine(13, 5, 17, 9);
+                    } else if ("server".equals(kind)) {
+                        g.drawRoundRect(4, 3, 24, 11, 4, 4);
+                        g.drawRoundRect(4, 18, 24, 11, 4, 4);
+                        g.fillOval(8, 7, 3, 3);
+                        g.fillOval(8, 22, 3, 3);
+                        g.drawLine(17, 8, 24, 8);
+                        g.drawLine(17, 23, 24, 23);
+                    } else if ("shield".equals(kind)) {
+                        var shield = new java.awt.geom.Path2D.Float();
+                        shield.moveTo(16, 3);
+                        shield.lineTo(28, 8);
+                        shield.lineTo(27, 17);
+                        shield.curveTo(26, 23, 22, 28, 16, 30);
+                        shield.curveTo(10, 28, 6, 23, 5, 17);
+                        shield.lineTo(4, 8);
+                        shield.closePath();
+                        g.draw(shield);
+                        g.drawLine(10, 16, 14, 20);
+                        g.drawLine(14, 20, 22, 12);
+                    } else if ("settings".equals(kind)) {
+                        g.drawOval(7, 7, 18, 18);
+                        g.drawOval(12, 12, 8, 8);
+                        for (int index = 0; index < 8; index++) {
+                            double angle = Math.PI * index / 4;
+                            g.drawLine((int) Math.round(16 + Math.cos(angle) * 10), (int) Math.round(16 + Math.sin(angle) * 10),
+                                (int) Math.round(16 + Math.cos(angle) * 14), (int) Math.round(16 + Math.sin(angle) * 14));
+                        }
+                    } else if ("log".equals(kind)) {
+                        g.drawRoundRect(5, 3, 22, 26, 4, 4);
+                        for (int row = 9; row < 26; row += 7) {
+                            g.drawLine(10, row, 12, row);
+                            g.drawLine(17, row, 23, row);
+                        }
+                    } else {
+                        g.drawRoundRect(3, 3, 26, 26, 5, 5);
+                        g.drawLine(3, 11, 29, 11);
+                        g.drawLine(10, 11, 10, 29);
+                        g.fillOval(7, 6, 2, 2);
+                        g.fillOval(12, 6, 2, 2);
+                        g.drawLine(15, 18, 24, 18);
+                        g.drawLine(15, 23, 21, 23);
+                    }
+                } finally {
+                    g.dispose();
+                }
+            }
+        };
     }
 
     /** Keeps complete forms reachable in small windows without replacing their controls. / 不替换控件，确保小窗口仍可访问完整表单。
@@ -35,11 +166,12 @@ public final class DeploymentPageStyle {
      * @param content original controls / 原控件
      * @return owned visual wrapper / 所属展示容器 */
     public static JPanel card(String key, JComponent content) {
-        var card = new Card(new BorderLayout(0, 12));
+        var card = new DeploymentCard(new BorderLayout(0, 12));
         if (key != null) {
             var heading = new JLabel();
             heading.putClientProperty("deployment.style.title", key);
-            heading.setFont(heading.getFont().deriveFont(Font.BOLD, heading.getFont().getSize2D() * 14f / 13f));
+            heading.putClientProperty("deployment.style.fontSize", 18);
+            heading.setFont(heading.getFont().deriveFont(Font.BOLD, (float) scale(18)));
             card.add(heading, BorderLayout.NORTH);
         }
         card.add(content, BorderLayout.CENTER);
@@ -69,28 +201,73 @@ public final class DeploymentPageStyle {
         root.setAlignmentX(Component.LEFT_ALIGNMENT);
         if (root instanceof JLabel label && label.getClientProperty("deployment.style.title") instanceof String key)
             label.setText(messages.getString(key));
+        if (root.getClientProperty("deployment.style.fontSize") instanceof Number size)
+            root.setFont(UIManager.getFont("Label.font").deriveFont(Font.BOLD, (float) scale(size.intValue())));
+        if (root instanceof DeploymentCard)
+            root.setBorder(BorderFactory.createEmptyBorder(scale(14), scale(16), scale(14), scale(16)));
+        if (root instanceof JTextArea area && !area.isEditable()) {
+            area.setBackground(UIManager.getColor("Table.background"));
+            if (Boolean.TRUE.equals(area.getClientProperty("deployment.style.log")))
+                area.setFont(UIManager.getFont("Label.font").deriveFont((float) scale(12)));
+        }
         if (root instanceof JButton button) {
             button.putClientProperty("JButton.buttonType", null);
-            button.setMargin(new Insets(7, 13, 7, 13));
+            button.setMargin(new Insets(scale(8), scale(14), scale(8), scale(14)));
             if (Boolean.TRUE.equals(button.getClientProperty("deployment.style.primary"))) {
-                button.setBackground(UIManager.getColor("Component.focusColor"));
-                button.setForeground(Color.WHITE);
+                var accent = UIManager.getColor("Component.focusColor");
+                Color foreground = Color.WHITE;
+                if (accent == null) {
+                    accent = UIManager.getColor("Button.background");
+                    foreground = UIManager.getColor("Button.foreground");
+                }
+                Color hover = shade(accent, 0.92f), pressed = shade(accent, 0.82f);
+                button.setBackground(accent);
+                button.setForeground(foreground);
+                button.putClientProperty("FlatLaf.style", java.util.Map.ofEntries(
+                    java.util.Map.entry("arc", 14), java.util.Map.entry("borderWidth", 0),
+                    java.util.Map.entry("focusWidth", 0), java.util.Map.entry("background", accent),
+                    java.util.Map.entry("foreground", foreground), java.util.Map.entry("focusedBackground", accent),
+                    java.util.Map.entry("hoverBackground", hover), java.util.Map.entry("pressedBackground", pressed),
+                    java.util.Map.entry("default.background", accent), java.util.Map.entry("default.foreground", foreground),
+                    java.util.Map.entry("default.focusedBackground", accent), java.util.Map.entry("default.hoverBackground", hover),
+                    java.util.Map.entry("default.pressedBackground", pressed)));
+            } else {
+                button.setBackground(UIManager.getColor("Panel.background"));
+                button.setForeground(UIManager.getColor("Button.foreground"));
+                button.putClientProperty("FlatLaf.style", java.util.Map.of("arc", 14, "borderWidth", 0,
+                    "focusWidth", 0, "background", UIManager.getColor("Panel.background")));
             }
         }
-        if (root instanceof JPanel panel && !(panel instanceof Card)) {
+        if (root instanceof JPanel panel && !(panel instanceof DeploymentCard)) {
             panel.setOpaque(false);
             if (panel.getLayout() instanceof FlowLayout flow && !(flow instanceof Actions))
                 panel.setLayout(new Actions(flow));
         }
         if (root instanceof JScrollPane scroll) {
             scroll.setBorder(BorderFactory.createEmptyBorder());
-            scroll.getVerticalScrollBar().setUnitIncrement(18);
+            scroll.getVerticalScrollBar().setUnitIncrement(scale(18));
+            scroll.setOpaque(false);
+            scroll.putClientProperty("desktop.card.contentSurface", true);
+            scroll.getViewport().setBackground(UIManager.getColor("Table.background"));
+            scroll.getVerticalScrollBar().setBackground(UIManager.getColor("Table.background"));
+            scroll.getHorizontalScrollBar().setBackground(UIManager.getColor("Table.background"));
+            if (scroll.getViewport().getView() instanceof JList<?> list)
+                list.setBackground(UIManager.getColor("Table.background"));
         }
         for (var child : root.getComponents())
             if (child instanceof JComponent component)
                 refresh(component, messages);
         root.revalidate();
         root.repaint();
+    }
+
+    /** Darkens an action color while retaining its hue and alpha. / 保留色相与透明度，降低操作颜色亮度。
+     * @param color current action color / 当前操作颜色
+     * @param factor retained channel intensity / 保留的通道强度
+     * @return visible hover or pressed shade / 可见的悬停或按下颜色 */
+    private static Color shade(Color color, float factor) {
+        return new Color(Math.round(color.getRed() * factor), Math.round(color.getGreen() * factor),
+            Math.round(color.getBlue() * factor), color.getAlpha());
     }
 
     /** Creates the two responsive primary selection cards. / 创建两个响应式主要选择卡片。
@@ -338,39 +515,4 @@ public final class DeploymentPageStyle {
         }
     }
 
-    /** Rounded surface resolving live host Swing colors at paint time. / 绘制时解析实时宿主 Swing 配色的圆角界面。 */
-    private static final class Card extends JPanel {
-        /** Creates a padded presentation surface. / 创建带内边距的展示界面。
-         * @param layout content layout / 内容布局 */
-        private Card(LayoutManager layout) {
-            super(layout);
-            setOpaque(false);
-            setBorder(BorderFactory.createEmptyBorder(14, 16, 14, 16));
-        }
-
-        /** Prevents vertical forms from stretching input cards. / 阻止纵向表单拉伸输入卡片。
-         * @return natural height with flexible width / 自然高度与弹性宽度 */
-        @Override
-        public Dimension getMaximumSize() {
-            return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
-        }
-
-        /** Paints the surface without altering child state. / 绘制界面而不改变子控件状态。
-         * @param graphics current context / 当前上下文 */
-        @Override
-        protected void paintComponent(Graphics graphics) {
-            var g = (Graphics2D) graphics.create();
-            try {
-                g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                String color = Boolean.TRUE.equals(getClientProperty("deployment.style.inventory"))
-                    ? Boolean.TRUE.equals(getClientProperty("deployment.style.selected")) ? "List.selectionBackground" : "Table.background"
-                    : "Table.background";
-                g.setColor(UIManager.getColor(color));
-                g.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 12, 12);
-            } finally {
-                g.dispose();
-            }
-            super.paintComponent(graphics);
-        }
-    }
 }

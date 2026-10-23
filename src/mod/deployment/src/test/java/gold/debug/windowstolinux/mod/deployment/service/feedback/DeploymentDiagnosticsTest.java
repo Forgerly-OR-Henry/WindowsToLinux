@@ -8,10 +8,119 @@ import java.util.*;
 import gold.debug.windowstolinux.appapi.ai.model.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.task.log.*;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.junit.jupiter.api.Test;
 
 class DeploymentDiagnosticsTest {
+    @Test
+    void candidateTransferFailureKeepsOnlySafeOriginalMetadataAndActualTaskIdentity() {
+        UUID taskId = UUID.randomUUID(), transferId = UUID.randomUUID();
+        var saved = new ArrayList<LogEvent>();
+        var context = transferDiagnosticContext(saved, null, null);
+        var task = transferDiagnosticTask(taskId);
+        for (var outcome : List.of(TaskResult.FAILED, TaskResult.UNKNOWN, TaskResult.CANCELLED)) {
+            var problem = new Problem(ProblemCode.IO_FAILURE, "SFTP_NOT_VERIFIED", "secret-message-fixture",
+                Map.of("transferId", transferId.toString(), "phase", "published-verification", "providerType", "SftpException", "status", "4",
+                    "path", "/secret-path-fixture", "command", "secret-command-fixture", "stdin", "secret-stdin-fixture",
+                    "headers", "secret-header-fixture", "rawOutput", "secret-output-fixture"), Optional.of(UUID.randomUUID()));
+            var result = new OperationResult<Void>(outcome, Optional.empty(), Optional.of(problem));
+            DeploymentDiagnostics.candidateTransferFailure(context, task, result);
+            assertSame(problem, result.problem().orElseThrow());
+            assertEquals(outcome, result.outcome());
+            var event = saved.getLast();
+            assertEquals("DEPLOYMENT_CANDIDATE_TRANSFER_FAILURE", event.eventCode());
+            assertEquals(Optional.of(taskId), event.taskId());
+            assertEquals(Optional.of(taskId), event.operationId());
+            assertEquals("outcome=" + outcome + " problemCode=IO_FAILURE problemEvent=SFTP_NOT_VERIFIED transferId="
+                + transferId + " phase=published-verification providerType=SftpException status=4", event.message());
+            assertFalse(event.toString().contains("secret-"));
+            assertEquals(outcome == TaskResult.UNKNOWN ? Optional.empty() : Optional.of(outcome), event.outcome());
+            assertEquals(outcome == TaskResult.UNKNOWN ? Optional.of("{\"observedOutcome\":\"UNKNOWN\"}") : Optional.empty(), event.details());
+        }
+        assertEquals(3, saved.size());
+        DeploymentDiagnostics.candidateTransferFailure(context, task,
+            new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty()));
+        DeploymentDiagnostics.candidateTransferFailure(context, task,
+            new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
+                ProblemCode.IO_FAILURE, "DEPLOYMENT_BUILD_FAILED", "secret-message-fixture", Map.of(), Optional.empty()))));
+        assertEquals(3, saved.size(), "Unrelated graph failures and successful effects are not SFTP failures");
+    }
+
+    @Test
+    void candidateTransferFailureDropsMalformedMetadataWithoutLosingTheKnownFailure() {
+        var saved = new ArrayList<LogEvent>();
+        var context = transferDiagnosticContext(saved, null, null);
+        var task = transferDiagnosticTask(UUID.randomUUID());
+        var safe = Map.of("transferId", "11111111-1111-4111-8111-111111111111", "phase", "upload",
+            "providerType", "IOException", "status", "none");
+        var invalid = List.of(Map.entry("transferId", "1-1-1-1-1"),
+            Map.entry("transferId", "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"), Map.entry("phase", "/secret-path-fixture"),
+            Map.entry("providerType", "org.vendor.SecretException"), Map.entry("providerType", "IOException\nsecret-fixture"),
+            Map.entry("providerType", "X".repeat(81)), Map.entry("status", "004"), Map.entry("status", "-1"),
+            Map.entry("status", "2147483648"), Map.entry("status", "Bearer secret-fixture"));
+        for (var mutation : invalid) {
+            var facts = new HashMap<>(safe);
+            facts.put(mutation.getKey(), mutation.getValue());
+            DeploymentDiagnostics.candidateTransferFailure(context, task,
+                new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
+                    ProblemCode.IO_FAILURE, "SFTP_NOT_VERIFIED", "secret-message-fixture", facts, Optional.empty()))));
+            var message = saved.getLast().message();
+            assertTrue(message.contains("outcome=FAILED problemCode=IO_FAILURE problemEvent=SFTP_NOT_VERIFIED"));
+            assertFalse(message.contains(mutation.getKey() + "="));
+            for (var field : safe.entrySet())
+                if (!field.getKey().equals(mutation.getKey())) assertTrue(message.contains(field.getKey() + "=" + field.getValue()));
+        }
+        assertEquals(invalid.size(), saved.size());
+        DeploymentDiagnostics.candidateTransferFailure(context, task,
+            new OperationResult<Void>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(
+                ProblemCode.UNKNOWN, "SFTP_NOT_VERIFIED\nsecret-fixture", "secret-message-fixture", safe, Optional.empty()))));
+        assertEquals(invalid.size(), saved.size(), "An arbitrary event body cannot become diagnostic metadata");
+    }
+
+    @Test
+    void candidateTransferDiagnosticLoggerFailuresNeverReplaceTheOriginalResult() {
+        UUID taskId = UUID.randomUUID();
+        var task = transferDiagnosticTask(taskId);
+        var problem = new Problem(ProblemCode.IO_FAILURE, "SFTP_NOT_VERIFIED", "secret-message-fixture", Map.of(), Optional.empty());
+        var result = new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(problem));
+        for (String method : List.of("register", "write")) {
+            for (Exception unavailable : List.of(new ApiException(new Problem(ProblemCode.IO_FAILURE,
+                "FIXTURE_LOG_UNAVAILABLE", "secret-logger-fixture", Map.of(), Optional.empty())),
+                new IllegalStateException("secret-logger-fixture"))) {
+                var saved = new ArrayList<LogEvent>();
+                assertDoesNotThrow(() -> DeploymentDiagnostics.candidateTransferFailure(
+                    transferDiagnosticContext(saved, method, unavailable), task, result));
+                assertTrue(saved.isEmpty());
+                assertSame(problem, result.problem().orElseThrow());
+                assertEquals(TaskResult.FAILED, result.outcome());
+            }
+        }
+    }
+
+    private static ModContext transferDiagnosticContext(List<LogEvent> saved, String failingMethod, Exception unavailable) {
+        var logs = (LogService) Proxy.newProxyInstance(LogService.class.getClassLoader(), new Class<?>[]{LogService.class},
+            (proxy, method, args) -> {
+                if (method.getName().equals(failingMethod)) throw unavailable;
+                return switch (method.getName()) {
+                    case "register" -> new LogTarget(UUID.randomUUID());
+                    case "write" -> { saved.add((LogEvent) args[1]); yield null; }
+                    default -> throw new AssertionError("Unexpected logging capability");
+                };
+            });
+        return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
+            (proxy, method, args) -> { assertEquals("logs", method.getName()); return logs; });
+    }
+
+    private static TaskContext transferDiagnosticTask(UUID taskId) {
+        return (TaskContext) Proxy.newProxyInstance(TaskContext.class.getClassLoader(), new Class<?>[]{TaskContext.class},
+            (proxy, method, args) -> { assertEquals("id", method.getName()); return taskId; });
+    }
+
     @Test
     void diagnosticsKeepActualIdentityAndValidationMetadataButExcludeBodiesAndCredentials() throws Exception {
         var saved = new ArrayList<LogEvent>();

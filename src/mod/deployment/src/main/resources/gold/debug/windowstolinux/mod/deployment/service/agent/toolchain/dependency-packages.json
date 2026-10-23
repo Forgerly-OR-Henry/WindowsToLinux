@@ -36,6 +36,21 @@
       "libreadline-dev",
       "libgdbm-dev"
     ],
+    "HELPER_RUNTIME": [
+      "python3",
+      "curl",
+      "tar",
+      "gzip",
+      "coreutils",
+      "util-linux",
+      "findutils",
+      "gawk",
+      "e2fsprogs",
+      "acl",
+      "sudo",
+      "iproute2",
+      "sqlite3"
+    ],
     "NATIVE_BUILD": [
       "cmake",
       "ninja-build",
@@ -85,6 +100,21 @@
       "libyaml-devel",
       "readline-devel",
       "gdbm-devel"
+    ],
+    "HELPER_RUNTIME": [
+      "python3",
+      "curl",
+      "tar",
+      "gzip",
+      "coreutils",
+      "util-linux",
+      "findutils",
+      "gawk",
+      "e2fsprogs",
+      "acl",
+      "sudo",
+      "iproute",
+      "sqlite"
     ],
     "NATIVE_BUILD": [
       "cmake",

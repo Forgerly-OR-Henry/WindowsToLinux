@@ -187,15 +187,17 @@ public final class DeploymentAgentHistoryReader {
                     return detail.events();
                 }
             });
+        var lastPolicy = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPolicyHistory
+            .confirmed(detail.events(), detail.snapshot().identity().approvalMode());
         var reviewed = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope(context,
-            context.interaction(), task, detail.snapshot().identity().approvalMode(), detail.snapshot().identity().rememberAuthorization(), () -> revision,
+            context.interaction(), task, lastPolicy.mode(), detail.snapshot().identity().rememberAuthorization(), () -> revision,
             null, gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE, () -> approval,
             gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE, approval.commandProtocol());
         var identity = detail.snapshot().identity();
         try (var permission = recovery ? gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.recover(
-            context, task, server, revision, identity.approvalMode(), identity.rememberAuthorization(), "inspect-original=" + detail.entry().id())
+            context, task, server, revision, lastPolicy.mode(), identity.rememberAuthorization(), "inspect-original=" + detail.entry().id())
             : gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.open(
-            context, task, server, revision, identity.approvalMode(), identity.rememberAuthorization(), "inspect-original=" + detail.entry().id());
+            context, task, server, revision, lastPolicy.mode(), identity.rememberAuthorization(), "inspect-original=" + detail.entry().id(), lastPolicy.revision());
              var session = context.linux().connect(server, task)) {
             if (!detail.snapshot().identity().targetDigest().equals(DeploymentAgentInputs.targetDigest(server, session)))
                 throw new SQLException("Original inspection fingerprint changed");

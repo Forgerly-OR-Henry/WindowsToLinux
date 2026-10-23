@@ -18,9 +18,11 @@ import gold.debug.windowstolinux.appapi.task.model.TaskState;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectPart;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
+import gold.debug.windowstolinux.mod.deployment.DeploymentStandardEntryFixture;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.part.DiscoveredProjectPart;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentPreparedDatabase;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
 import org.junit.jupiter.api.Test;
 
 /** Rejects actual reviewed overlapping graph ports before original remote admission. / 原远端准入前拒绝实际审阅的整图端口重叠。 */
@@ -61,8 +63,8 @@ class DeploymentConflictingPortPublishTest extends DeploymentPublishAcceptanceFi
                     }
                 });
             var defaults = reviewer(2);
-            var conflict = new DeploymentStaticWorkflow.Reviewer() {
-                public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerId server, String sha,
+            var conflict = new DeploymentStandardInputs.Reviewer() {
+                public OperationResult<DeploymentStandardInputs.Selection> select(ServerId server, String sha,
                                                                                   List<DiscoveredProjectPart> components, TaskContext task) throws Exception {
                     assertTrue(taskId.compareAndSet(null, task.id()));
                     assertEquals(new ServerId("server"), server);
@@ -70,19 +72,19 @@ class DeploymentConflictingPortPublishTest extends DeploymentPublishAcceptanceFi
                     return defaults.select(server, sha, components, task);
                 }
 
-                public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerId server,
-                                                                                             String sha, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) throws Exception {
+                public OperationResult<Map<String, DeploymentStandardInputs.Answers>> review(ServerId server,
+                                                                                             String sha, List<DeploymentStandardInputs.Prompt> prompts, TaskContext task) throws Exception {
                     assertEquals(taskId.get(), task.id());
                     assertEquals(2, prompts.size());
                     reviewed.incrementAndGet();
                     assertTrue(scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + task.id()
                         + "' AND resource_kind='FILE' AND released_at IS NULL") > 0);
                     var answers = defaults.review(server, sha, prompts, task).value().orElseThrow();
-                    var colliding = new LinkedHashMap<String, DeploymentStaticWorkflow.Answers>();
+                    var colliding = new LinkedHashMap<String, DeploymentStandardInputs.Answers>();
                     answers.forEach((id, answer) -> {
                         var values = new LinkedHashMap<>(answer.values());
                         values.put("port", "8080");
-                        colliding.put(id, new DeploymentStaticWorkflow.Answers(values, answer.files(), answer.limits(),
+                        colliding.put(id, new DeploymentStandardInputs.Answers(values, answer.files(), answer.limits(),
                             answer.containerRisk(), answer.adapterRisk()));
                     });
                     assertEquals(2, colliding.size());
@@ -91,14 +93,14 @@ class DeploymentConflictingPortPublishTest extends DeploymentPublishAcceptanceFi
                 }
 
                 public OperationResult<Boolean> confirm(ServerId server, String sha, Map<String, String> archives,
-                                                        Map<String, DeploymentStaticWorkflow.Answers> answers,
+                                                        Map<String, DeploymentStandardInputs.Answers> answers,
                                                         Map<String, DeploymentPreparedDatabase> databases,
-                                                        Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
+                                                        Optional<DeploymentStandardInputs.GitReview> git, TaskContext task) {
                     throw new AssertionError("Rejected graph cannot reach final publication confirmation");
                 }
             };
-            var handle = new DeploymentStaticWorkflow(bound, new DeploymentRefFlow(bound)).submit(
-                new ServerId("server"), new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536),
+            var handle = new DeploymentStandardEntryFixture(bound, new DeploymentRefFlow(bound)).submit(
+                new ServerId("server"), new DeploymentStandardInputs.Draft("", 65536, 100, 65536),
                 Optional.empty(), conflict, false, "MANUAL_REVIEW");
             var result = handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
             assertEquals(TaskResult.FAILED, result.outcome(), result.toString());

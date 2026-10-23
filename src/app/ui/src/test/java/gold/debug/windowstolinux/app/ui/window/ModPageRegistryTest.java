@@ -23,6 +23,58 @@ import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 
 class ModPageRegistryTest {
+    @Test
+    void contextualNavigationRunsAfterCreationOnceAndNormalFocusRetainsDrafts() throws Exception {
+        var host = new Host();
+        var registry = new ModPageRegistry(host, INITIAL);
+        var scope = registry.begin("example.navigation", false);
+        var received = new ArrayList<gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<?>>();
+        var page = new Page() {
+            @Override
+            public void navigate(gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<?> request) {
+                assertTrue(SwingUtilities.isEventDispatchThread());
+                assertEquals(1, creates);
+                received.add(request);
+            }
+        };
+        scope.register(spec("workspace", false), () -> page);
+        var request = new gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<>("remote-root",
+            gold.debug.windowstolinux.appapi.server.model.ServerId.class,
+            Optional.of(new gold.debug.windowstolinux.appapi.server.model.ServerId("a")));
+        assertThrows(ApiException.class, () -> scope.open("workspace", request));
+        scope.commit();
+        scope.open("workspace", request);
+        assertEquals(1, received.size());
+        assertNotSame(request, received.getFirst());
+        scope.open("workspace");
+        registry.environment(new UiEnvironment(Locale.CHINESE, "dark", false));
+        assertEquals(1, received.size());
+        assertEquals(1, page.creates);
+        registry.environment(new UiEnvironment(Locale.CHINESE, "dark", true));
+        assertThrows(ApiException.class, () -> scope.open("workspace", request));
+        scope.close();
+    }
+
+    @Test
+    void unsupportedNavigationKeepsTheCreatedViewAndLiveResourcesForNormalFocus() throws Exception {
+        var host = new Host();
+        var registry = new ModPageRegistry(host, INITIAL);
+        var scope = registry.begin("example.navigation", false);
+        var page = new Page();
+        scope.register(spec("workspace", false), () -> page);
+        scope.commit();
+        var request = new gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<>("unsupported", String.class, Optional.of("value"));
+        assertThrows(ApiException.class, () -> scope.open("workspace", request));
+        assertEquals(1, page.creates);
+        assertEquals(0, page.closes);
+        scope.open("workspace");
+        assertEquals(1, page.creates);
+        scope.seal();
+        assertThrows(ApiException.class, () -> scope.open("workspace", request));
+        scope.close();
+        assertEquals(1, page.closes);
+    }
+
     static final UiEnvironment INITIAL = new UiEnvironment(Locale.ENGLISH, "light", false);
 
     PageSpec spec(String id, boolean settings) {
@@ -434,7 +486,9 @@ class ModPageRegistryTest {
                 var settingTabs = components(pane.get().settingsComponent(), JTabbedPane.class);
                 assertEquals(2, settingTabs.size());
                 assertEquals("Owner example.owner", settingTabs.getFirst().getTitleAt(0));
-                components(pane.get(), JButton.class).getFirst().doClick();
+                var close = components(pane.get().headingComponent(), JButton.class).stream()
+                    .filter(button -> "mods.workspace.close".equals(button.getName())).findFirst().orElseThrow();
+                close.doClick();
                 assertTrue(pane.get().selectedPage(false).isEmpty());
             });
             assertNull(closeFailure.get());
@@ -618,6 +672,58 @@ class ModPageRegistryTest {
         } finally {
             page.closeFailures = 0;
             owner.close();
+        }
+    }
+
+    @Test
+    void isolatedPreviewCallbacksCannotRegisterOrMountOrdinaryExtensions() throws Exception {
+        var registry = new ModPageRegistry(new Host(), INITIAL);
+        registry.installPreviews(new Host());
+        try (var owner = registry.begin("example.owner", false)) {
+            var point = owner.extensions().provide("body", String.class,
+                gold.debug.windowstolinux.appapi.ui.extension.UiExtensionKind.COMPONENT);
+            var checks = new AtomicInteger();
+            Runnable isolated = () -> {
+                assertThrows(ApiException.class, () -> owner.extensions().provide("forbidden", String.class,
+                    gold.debug.windowstolinux.appapi.ui.extension.UiExtensionKind.ACTION));
+                assertThrows(ApiException.class, () -> point.mount(new gold.debug.windowstolinux.appapi.ui.extension.UiExtensionHost() {
+                    public JComponent anchor() {
+                        return new JPanel();
+                    }
+
+                    public void setContents(List<JComponent> contents) {
+                        fail("Preview must not mount contents");
+                    }
+                }, Optional.empty()));
+                checks.incrementAndGet();
+            };
+            owner.registerPreview(spec("preview", true), () -> {
+                isolated.run();
+                return new Page() {
+                    @Override
+                    public JComponent create(UiEnvironment environment) {
+                        isolated.run();
+                        return super.create(environment);
+                    }
+
+                    @Override
+                    public void environmentChanged(UiEnvironment environment) {
+                        isolated.run();
+                    }
+
+                    @Override
+                    public void close() {
+                        isolated.run();
+                    }
+                };
+            });
+            owner.commit();
+            registry.openPreview(new PageKey("example.owner", "preview"));
+            registry.environment(INITIAL);
+            registry.closePreviews();
+            assertEquals(4, checks.get());
+            owner.extensions().provide("allowed", String.class,
+                gold.debug.windowstolinux.appapi.ui.extension.UiExtensionKind.ACTION).close();
         }
     }
 

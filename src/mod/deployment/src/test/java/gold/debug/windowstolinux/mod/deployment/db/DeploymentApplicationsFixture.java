@@ -32,16 +32,24 @@ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.task.run.TaskWork;
-import gold.debug.windowstolinux.mod.deployment.service.core.*;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionIdentity;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentApplicationReader;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentExternalApplications;
 import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit;
-import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentApplicationGraph;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitIdentity;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitRuntimeConfig;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentEndpoint;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentWorkload;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishPlan;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishResult;
 import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.command.Command;
 
 /** Actual CLASS application tasks, complete H2 publication seeds and a framed SSH scanner peer. / 实际CLASS应用任务、完整H2发布种子与分帧SSH扫描对等端。 */
-abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
-    final ScannerPeer peer = new ScannerPeer();
+public abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
+    public final ScannerPeer peer = new ScannerPeer();
 
     @Override
     protected PlatformInteractionService.Prompts interactionPrompts() {
@@ -71,7 +79,7 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
         };
     }
 
-    LoopbackSshServer ssh() throws Exception {
+    public LoopbackSshServer ssh() throws Exception {
         return new LoopbackSshServer(root, server -> {
             server.setPasswordAuthenticator(
                 (user, password, session) -> user.equals("tester") && password.equals("fixture-secret"));
@@ -79,18 +87,18 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
         });
     }
 
-    void server(PlatformRuntime runtime, int port, String username) throws Exception {
+    public void server(PlatformRuntime runtime, int port, String username) throws Exception {
         runtime.servers().saveServerProfile(
             gold.debug.windowstolinux.app.service.server.ServerProfile
                 .fromStored(new StoredServerProfile("server", "127.0.0.1", port, username, "fixture-secret")),
             "fixture-secret".toCharArray());
     }
 
-    ModContext context(PlatformRuntime runtime) {
+    public ModContext context(PlatformRuntime runtime) {
         return runtime.modContexts().get(OWNER).context();
     }
 
-    <T> OperationResult<T> await(TaskHandle<T> handle) throws Exception {
+    public <T> OperationResult<T> await(TaskHandle<T> handle) throws Exception {
         awaitState(handle);
         assertEquals(TaskState.ENDED, handle.snapshot().state(), handle.snapshot().toString());
         assertEquals(OWNER, handle.snapshot().ownerId());
@@ -100,7 +108,7 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
         return handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS);
     }
 
-    void awaitState(TaskHandle<?> handle) throws Exception {
+    public void awaitState(TaskHandle<?> handle) throws Exception {
         long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(40);
         while (handle.snapshot().state() != TaskState.ENDED && handle.snapshot().state() != TaskState.UNKNOWN
             && System.nanoTime() < end)
@@ -111,17 +119,17 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
             throw new AssertionError("Actual scanner peer failed", peer.failure.get());
     }
 
-    <T> TaskHandle<T> rootTask(PlatformRuntime runtime, TaskWork<T> work) throws ApiException {
+    public <T> TaskHandle<T> rootTask(PlatformRuntime runtime, TaskWork<T> work) throws ApiException {
         return context(runtime).tasks().submit(
             new TaskRequest("applications-test", "Actual CLASS application acceptance", List.of("server"), true),
             work);
     }
 
-    void assertNoActiveResources(PlatformRuntime runtime) throws Exception {
+    public void assertNoActiveResources(PlatformRuntime runtime) throws Exception {
         assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
     }
 
-    String seedManaged(PlatformRuntime runtime, String application, boolean website, int revision) throws Exception {
+    public String seedManaged(PlatformRuntime runtime, String application, boolean website, int revision) throws Exception {
         var observed = new AtomicReference<String>();
         var handle = rootTask(runtime, task -> {
             var original = graph(application);
@@ -148,7 +156,7 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
             }
             var graph = new DeploymentApplicationGraph(application, original.healthComponentId(),
                 original.healthCheck(), components);
-            var publication = new DeploymentPublish(graph, publications(graph, revision, List.of()));
+            var publication = new DeploymentPublishResult(graph, publications(graph, revision, List.of()));
             UUID id = UUID.randomUUID();
             var plan = new DeploymentPublishPlan(id, Optional.empty(), application, new ServerId("server"),
                 DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "a".repeat(64),
@@ -172,7 +180,7 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
     }
 
     /** Executes fixture-only database faults separately from author service capabilities. / 独立于作者服务能力执行夹具数据库故障。 */
-    void schemaFault(PlatformRuntime runtime, String sql) throws Exception {
+    public void schemaFault(PlatformRuntime runtime, String sql) throws Exception {
         try (var access = scope(runtime, false);
              var connection = access.openConnection();
              var statement = connection.createStatement()) {
@@ -180,22 +188,22 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
         }
     }
 
-    final class ScannerPeer {
-        final AtomicInteger reads = new AtomicInteger(), effects = new AtomicInteger();
+    public final class ScannerPeer {
+        public final AtomicInteger reads = new AtomicInteger(), effects = new AtomicInteger();
 
         final AtomicReference<Throwable> failure = new AtomicReference<>();
 
-        final AtomicBoolean loseStartAck = new AtomicBoolean();
+        public final AtomicBoolean loseStartAck = new AtomicBoolean();
 
-        volatile String fingerprint = "a".repeat(64), state = "STOPPED";
+        public volatile String fingerprint = "a".repeat(64), state = "STOPPED";
 
-        volatile String expectedArgumentFingerprint = "a".repeat(64);
+        public volatile String expectedArgumentFingerprint = "a".repeat(64);
 
-        volatile boolean managed;
+        public volatile boolean managed;
 
-        volatile boolean canStart = true, canStop = true;
+        public volatile boolean canStart = true, canStop = true;
 
-        volatile List<String> scanIssues = List.of();
+        public volatile List<String> scanIssues = List.of();
 
         volatile boolean failScan;
 

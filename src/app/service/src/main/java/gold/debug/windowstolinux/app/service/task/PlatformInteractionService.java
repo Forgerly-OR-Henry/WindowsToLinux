@@ -2,6 +2,8 @@ package gold.debug.windowstolinux.app.service.task;
 
 import java.util.*;
 
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
@@ -17,8 +19,9 @@ import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
 import gold.debug.windowstolinux.appapi.task.action.InteractionService;
-import gold.debug.windowstolinux.appapi.task.action.AuthorizationMode;
+import gold.debug.windowstolinux.appapi.task.action.CommandReviewMode;
 import gold.debug.windowstolinux.appapi.task.action.WorkflowGrant;
+import gold.debug.windowstolinux.appapi.task.action.WorkflowPolicyState;
 import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
@@ -117,63 +120,64 @@ public final class PlatformInteractionService implements InteractionService, Aut
         return approve(intent, task, Map.of(), "");
     }
 
-    /** Delegates the complete original root workflow under its business-frozen mode. / 按业务冻结模式委托完整原根流程。
-     * @param frozenWorkflowIntent exact original handoff / 精确原交接
-     * @param authorizationMode business-frozen mode / 业务冻结模式
-     * @param task authentic ordinary root / 真实普通根
-     * @return host delegation or explicit cancellation / 宿主委托或明确取消
-     * @throws ApiException if root admission, handoff or release cannot be verified / 无法核验根准入、交接或释放时 */
+    /** Opens only a fresh authentic reviewed scope; full control asks once at startup. / 仅开启新真实审核作用域；全控启动询问一次。
+     * @param intent frozen workflow intent / 冻结流程意图
+     * @param mode captured review policy / 已捕获审核策略
+     * @param rememberAuthorization whether to remember real human approval / 是否记住实际人工批准
+     * @param recovery original reconciliation admission / 原核对准入
+     * @param task authentic original task / 真实原任务
+     * @return task-owned scope or refusal / 任务所属作用域或拒绝
+     * @throws ApiException if ownership, startup or cleanup fails / 归属、启动或清理失败时 */
     @Override
-    public OperationResult<WorkflowGrant> delegateWorkflow(ActionIntent frozenWorkflowIntent, AuthorizationMode authorizationMode, TaskContext task) throws ApiException {
+    public OperationResult<WorkflowGrant> openReviewedWorkflow(ActionIntent intent, CommandReviewMode mode,
+                                                               boolean rememberAuthorization, boolean recovery, TaskContext task) throws ApiException {
         worker();
-        validate(frozenWorkflowIntent, task);
+        validate(intent, task);
         try {
             var cancellation = cancelToken(task);
-            var grant = authorization.delegate(owner, version, frozenWorkflowIntent, authorizationMode, task, false,
-                () -> security.human(() -> prompts.approve(frozenWorkflowIntent, tasks.requireExecuting(task, owner, version), cancellation), cancellation));
+            var grant = authorization.openReviewed(owner, version, intent, mode, rememberAuthorization, task, recovery,
+                () -> security.human(() -> prompts.approve(intent, tasks.requireExecuting(task, owner, version), cancellation), cancellation));
             return grant.isPresent() ? new OperationResult<>(TaskResult.SUCCEEDED, grant, Optional.empty()) : cancelled();
         } catch (java.util.concurrent.CancellationException cancelled) {
             return cancelled();
         } catch (RuntimeException failure) {
-            throw error(ProblemCode.UNAVAILABLE, "WORKFLOW_HANDOFF_UNAVAILABLE", "Workflow handoff did not complete");
+            throw error(ProblemCode.UNAVAILABLE, "WORKFLOW_HANDOFF_UNAVAILABLE", "Reviewed workflow startup did not complete");
         }
     }
 
-    /** Opens only original question repetition without asking for workflow handoff. / 仅开启原问题重复规则，不询问流程交接。
-     * @param frozenWorkflowIntent complete original workflow / 完整原流程
-     * @param authorizationMode frozen ONCE or GENERAL mode / 冻结的 ONCE 或 GENERAL 模式
-     * @param task authentic ordinary root / 真实普通根
-     * @return real close-only question scope / 真实仅关闭的问题作用域
-     * @throws ApiException if admission or policy is invalid / 准入或策略无效时 */
     @Override
-    public OperationResult<WorkflowGrant> reviewedWorkflow(ActionIntent frozenWorkflowIntent, AuthorizationMode authorizationMode, TaskContext task) throws ApiException {
+    public OperationResult<WorkflowPolicyState> updateReviewedWorkflowPolicy(WorkflowGrant grant, long expectedRevision,
+                                                                             CommandReviewMode mode, TaskContext task) throws ApiException {
         worker();
-        validate(frozenWorkflowIntent, task);
-        var grant = authorization.delegate(owner, version, frozenWorkflowIntent, authorizationMode, task, true, () -> false);
-        return new OperationResult<>(TaskResult.SUCCEEDED, grant, Optional.empty());
-    }
-
-    /** Opens new original-root recovery authority after expired occupancy cleanup, without reviving old grants. / 过期占用清理后开启新原根恢复权限，不复活旧许可。
-     * @param frozenWorkflowIntent exact original workflow / 精确原流程
-     * @param authorizationMode frozen business mode / 冻结业务模式
-     * @param reviewOnly whether only questions are scoped / 是否仅为问题建立作用域
-     * @param task authentic original reconciliation / 真实原核对
-     * @return fresh opaque scope or explicit refusal / 新不透明作用域或明确拒绝
-     * @throws ApiException if original recovery, handoff or cleanup fails / 原恢复、交接或清理失败时 */
-    @Override
-    public OperationResult<WorkflowGrant> recoverWorkflow(ActionIntent frozenWorkflowIntent, AuthorizationMode authorizationMode, boolean reviewOnly, TaskContext task) throws ApiException {
-        worker();
-        validate(frozenWorkflowIntent, task);
+        requireOpen();
+        tasks.requireExecuting(task, owner, version);
         try {
             var cancellation = cancelToken(task);
-            var grant = authorization.recover(owner, version, frozenWorkflowIntent, authorizationMode, task, reviewOnly,
-                () -> security.human(() -> prompts.approve(frozenWorkflowIntent, tasks.requireExecuting(task, owner, version), cancellation), cancellation));
-            return grant.isPresent() ? new OperationResult<>(TaskResult.SUCCEEDED, grant, Optional.empty()) : cancelled();
+            var state = authorization.updateReviewed(owner, version, grant, expectedRevision, mode, task,
+                intent -> security.human(() -> prompts.approve(intent,
+                    tasks.requireExecuting(task, owner, version), cancellation), cancellation));
+            return state.isPresent() ? new OperationResult<>(TaskResult.SUCCEEDED, state, Optional.empty()) : cancelled();
         } catch (java.util.concurrent.CancellationException cancelled) {
             return cancelled();
         } catch (RuntimeException failure) {
-            throw error(ProblemCode.UNAVAILABLE, "WORKFLOW_RECOVERY_HANDOFF", "Fresh recovery handoff did not complete");
+            throw error(ProblemCode.UNAVAILABLE, "WORKFLOW_POLICY_UPDATE_UNAVAILABLE", "Workflow policy update did not complete");
         }
+    }
+
+    /** Presents independent findings without changing the exact grant identity. / 呈现独立审核意见，不改变精确许可身份。
+     * @param intent unchanged reviewed action / 未改变的经审核动作
+     * @param command actual command request or non-command absence / 实际命令请求或非命令缺省
+     * @param requiresUserConfirmation review identified an unresolved tradeoff / 审核发现未决取舍
+     * @param reason bounded presentation of the review / 有界审核说明
+     * @param task authentic original task / 真实原任务
+     * @return exact single-use grant or refusal / 精确单次许可或拒绝
+     * @throws ApiException if identity, decision or cleanup fails / 身份、决定或清理失败时 */
+    @Override
+    public OperationResult<ApprovalGrant> approveReviewedAction(ActionIntent intent, Optional<CommandRequest> command,
+                                                                boolean requiresUserConfirmation, String reason, TaskContext task) throws ApiException {
+        if (reason == null || reason.isBlank() || reason.length() > 2000 || reason.indexOf('\0') >= 0)
+            throw error(ProblemCode.INVALID_INPUT, "REVIEW_REASON_INVALID", "Review explanation is invalid");
+        return approve(intent, task, Map.of(), reason, false, command, requiresUserConfirmation);
     }
 
     /** Releases expired workflow occupancy only for original root recovery, without rebuilding permission. / 仅为原根恢复释放过期流程占用，不重建权限。
@@ -233,6 +237,22 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * @return original single-use grant / 原单次许可
      * @throws ApiException if authority or cleanup fails / 权限或清理失败时 */
     private OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task, Map<DeleteEffect, ActionIntent> deletionChoices, String explanation, boolean required) throws ApiException {
+        return approve(intent, task, deletionChoices, explanation, required, null, false);
+    }
+
+    /** Applies captured review policy while keeping the submitted action identity unchanged. / 保持提交动作身份不变并应用已捕获审核策略。
+     * @param intent original exact action / 原精确动作
+     * @param task authentic original task / 真实原任务
+     * @param deletionChoices explicit deletion alternatives / 明确的删除选项
+     * @param explanation bounded independent review explanation / 有界独立审核说明
+     * @param required whether this is a business-required decision / 是否为业务要求的决定
+     * @param reviewedCommand independently reviewed command, null for ordinary approval / 独立审核命令，普通审批时为 null
+     * @param requiresUserConfirmation whether review requires a human choice / 审核是否要求人工取舍
+     * @return task-owned exact grant or refusal / 任务所属精确许可或拒绝
+     * @throws ApiException if validation, review or release fails / 校验、审核或释放失败时 */
+    private OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task,
+                                                   Map<DeleteEffect, ActionIntent> deletionChoices, String explanation, boolean required,
+                                                   Optional<CommandRequest> reviewedCommand, boolean requiresUserConfirmation) throws ApiException {
         worker();
         validate(intent, task);
         boolean ordinaryDelete = !deletionChoices.isEmpty();
@@ -252,16 +272,22 @@ public final class PlatformInteractionService implements InteractionService, Aut
             final PlatformAuthorizationService.Permit permit;
             try {
                 var cancellation = cancelToken(task);
-                permit = authorization.review(owner, version, intent, task, () -> security.human(() -> {
+                var human = (PlatformAuthorizationService.HumanReview) () -> security.human(() -> {
                     var snapshot = tasks.requireExecuting(task, owner, version);
-                    if (!ordinaryDelete) return prompts.approve(intent, snapshot, cancellation);
+                    if (!ordinaryDelete) {
+                        var displayed = reviewedCommand == null ? intent : new ActionIntent(intent.type(), intent.serverIds(),
+                            intent.target(), intent.revision(), intent.exactAction(), explanation, intent.semantics());
+                        return prompts.approve(displayed, snapshot, cancellation);
+                    }
                     DeleteEffect effect = prompts.delete(deletionChoices, explanation, snapshot, cancellation);
                     if (effect == null) return false;
                     var choice = deletionChoices.get(effect);
                     if (choice == null) throw new IllegalArgumentException("Deletion effect was not offered");
                     selected[0] = choice;
                     return true;
-                }, cancellation), ordinaryDelete, required);
+                }, cancellation);
+                permit = reviewedCommand == null ? authorization.review(owner, version, intent, task, human, ordinaryDelete, required)
+                    : authorization.reviewAction(owner, version, intent, reviewedCommand, requiresUserConfirmation, task, human);
             } catch (java.util.concurrent.CancellationException cancelled) {
                 return cancelled();
             } catch (RuntimeException failure) {

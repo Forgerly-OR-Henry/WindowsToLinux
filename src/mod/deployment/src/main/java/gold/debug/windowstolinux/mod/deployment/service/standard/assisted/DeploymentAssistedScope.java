@@ -84,6 +84,21 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     public gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentPreparationObserver preparationObserver() {
         return new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentPreparationObserver() {
             @Override
+            public void diagnosticRequested(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.Request request,
+                                            TaskContext supplied) throws ApiException {
+                sameTask(supplied);
+                verify();
+                if (!request.taskId().equals(supplied.id().toString()))
+                    throw new IllegalArgumentException("Diagnostic task differs");
+                try (var evidence = original.tasks().beginCheckpoint(supplied,
+                    gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.checkpointKey(request.operationId()),
+                    new String(request.bytes(), java.nio.charset.StandardCharsets.UTF_8))) {
+                    if (!evidence.snapshot().payload().equals(new String(request.bytes(), java.nio.charset.StandardCharsets.UTF_8)))
+                        throw new IllegalArgumentException("Diagnostic request was not durably retained");
+                }
+            }
+
+            @Override
             public void toolsPrepared(ServerId server,
                                       gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
                                       TaskContext supplied) throws ApiException {
@@ -190,7 +205,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         hostPrerequisites.remove(request.facts().applicationId());
         if (!result.missingHostPrerequisite()
             || gold.debug.windowstolinux.mod.deployment.service.deploy.support.DeploymentHostMatcher.evaluatePlatform(host).support()
-                != gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION)
+            != gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION)
             return;
         var observation = new LinkedHashMap<String, Object>(association);
         observation.put("reviewedPlanSha256", expected);
@@ -249,8 +264,8 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     }
 
     public synchronized void toolchainsPrepared(ServerId server,
-                                                 gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
-                                                 TaskContext supplied) throws ApiException {
+                                                gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
+                                                TaskContext supplied) throws ApiException {
         sameTask(supplied);
         verify();
         if (workflow == null || tools.selections().isEmpty()) return;
@@ -291,6 +306,15 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                                 TaskContext supplied) throws ApiException {
         var facts = new LinkedHashMap<String, Object>(effectFacts(intent, supplied));
+        if (intent.semantics().filter(value -> value.operation().startsWith(
+            gold.debug.windowstolinux.mod.deployment.linux.cleanup.DeploymentCandidateCompensationProgram.OPERATION_PREFIX)).isPresent())
+            facts.put("originalCandidateCompensation",
+                gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.cleanup.DeploymentCandidateCompensation
+                    .reviewFacts(original, supplied, intent, request,
+                        gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied)));
+        if (intent.semantics().filter(value -> value.operation().equals("deployment.helper.install.status.v1")).isPresent())
+            facts.put("originalHelperInstallationStatus", DeploymentAssistedHelperStatusReview.facts(original.tasks(), supplied, intent, request,
+                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied)));
         if (intent.semantics().filter(value -> Set.of("deployment.publication.config.v1", "deployment.publication.secret.v1")
             .contains(value.operation())).isPresent())
             facts.put("configurationStagingImplementation", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle
@@ -506,7 +530,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     }
 
     private void validateWorkflow(Map<String, Object> evidence) {
-        if (!revision.equals(evidence.get("modelRevision")) || !approvalMode.equals(evidence.get("approvalPolicy"))
+        if (!revision.equals(evidence.get("modelRevision")) || !approvalMode().equals(evidence.get("approvalPolicy"))
             || !Boolean.valueOf(rememberAuthorization).equals(evidence.get("rememberAuthorization")))
             throw new IllegalArgumentException("Workflow evidence differs from the frozen assisted route");
     }
@@ -547,7 +571,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     /** Returns the selected policy without changing it. / 返回所选策略，不改变其值。
      * @return original exact policy / 原精确策略 */
     public String approvalMode() {
-        return approvalMode;
+        return gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.current(task, approvalMode);
     }
 
     /** Returns the captured original question repetition. / 返回已抓取原问题重复规则。

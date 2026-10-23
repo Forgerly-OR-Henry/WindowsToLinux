@@ -7,10 +7,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRuntimeDefinition;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
 
 /**
  * Source-backed, reviewable runtime values inferred without running project content.

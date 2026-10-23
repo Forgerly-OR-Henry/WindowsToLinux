@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.file.git;
 
-import java.net.URI;
 import java.io.IOException;
+import java.net.URI;
 import java.util.*;
 
 import com.fasterxml.jackson.core.StreamReadFeature;

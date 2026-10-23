@@ -33,15 +33,16 @@ import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectPart;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentBuildLimits;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.part.DiscoveredProjectPart;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentPreparedDatabase;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /** Shares actual source-backed publication input, never lifecycle assertions. / 共用真实来源发布输入，不替代生命周期断言。 */
-abstract class DeploymentPublishAcceptanceFixture extends DeploymentRuntimeFixture {
+public abstract class DeploymentPublishAcceptanceFixture extends DeploymentRuntimeFixture {
     protected String technicalVersion = "1.24";
 
     protected boolean allowCorrection;
@@ -85,22 +86,22 @@ abstract class DeploymentPublishAcceptanceFixture extends DeploymentRuntimeFixtu
         };
     }
 
-    protected DeploymentStaticWorkflow.Reviewer reviewer(int count) {
-        return new DeploymentStaticWorkflow.Reviewer() {
-            public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerId server, String sha,
+    protected DeploymentStandardInputs.Reviewer reviewer(int count) {
+        return new DeploymentStandardInputs.Reviewer() {
+            public OperationResult<DeploymentStandardInputs.Selection> select(ServerId server, String sha,
                                                                               List<DiscoveredProjectPart> components, TaskContext task) {
                 assertEquals(count, components.size());
-                var choices = new LinkedHashMap<String, DeploymentStaticWorkflow.Choice>();
+                var choices = new LinkedHashMap<String, DeploymentStandardInputs.Choice>();
                 components.forEach(component -> choices.put(component.id(),
-                    new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE, Set.of())));
-                return success(new DeploymentStaticWorkflow.Selection(
+                    new DeploymentStandardInputs.Choice(DeploymentProjectKind.GO_SERVICE, Set.of())));
+                return success(new DeploymentStandardInputs.Selection(
                     count == 1 ? components.getFirst().id() : "running-application", choices,
                     count == 1 ? Optional.empty() : Optional.of(components.getFirst().id())));
             }
 
-            public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerId server, String sha,
-                                                                                         List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
-                var answers = new LinkedHashMap<String, DeploymentStaticWorkflow.Answers>();
+            public OperationResult<Map<String, DeploymentStandardInputs.Answers>> review(ServerId server, String sha,
+                                                                                         List<DeploymentStandardInputs.Prompt> prompts, TaskContext task) {
+                var answers = new LinkedHashMap<String, DeploymentStandardInputs.Answers>();
                 int port = 8080;
                 for (var prompt : prompts) {
                     var values = new LinkedHashMap<>(prompt.defaults());
@@ -111,26 +112,26 @@ abstract class DeploymentPublishAcceptanceFixture extends DeploymentRuntimeFixtu
                     values.put("port", Integer.toString(port++));
                     values.put("healthMode", "TCP");
                     values.put("exposure", "INTERNAL");
-                    answers.put(prompt.componentId(), new DeploymentStaticWorkflow.Answers(values, List.of(),
+                    answers.put(prompt.componentId(), new DeploymentStandardInputs.Answers(values, List.of(),
                         new DeploymentBuildLimits(600, 32, 512, 65536, 128L * 1024 * 1024, false), false, true));
                 }
                 return success(answers);
             }
 
-            public OperationResult<DeploymentStaticWorkflow.Answers> reviewBuildCorrection(ServerId server, String sha,
-                                                                                           DeploymentStaticWorkflow.Prompt prompt, DeploymentStaticWorkflow.Answers original,
+            public OperationResult<DeploymentStandardInputs.Answers> reviewBuildCorrection(ServerId server, String sha,
+                                                                                           DeploymentStandardInputs.Prompt prompt, DeploymentStandardInputs.Answers original,
                                                                                            TaskContext task) {
                 assertTrue(allowCorrection, "Unknown health cannot reopen technical inputs");
                 corrections++;
                 var values = new LinkedHashMap<>(original.values());
                 values.put("version", "1.25");
-                return success(new DeploymentStaticWorkflow.Answers(values, original.files(), original.limits(),
+                return success(new DeploymentStandardInputs.Answers(values, original.files(), original.limits(),
                     original.containerRisk(), original.adapterRisk()));
             }
 
             public OperationResult<Boolean> confirm(ServerId server, String sha, Map<String, String> archives,
-                                                    Map<String, DeploymentStaticWorkflow.Answers> answers,
-                                                    Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStaticWorkflow.GitReview> git,
+                                                    Map<String, DeploymentStandardInputs.Answers> answers,
+                                                    Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStandardInputs.GitReview> git,
                                                     TaskContext task) {
                 assertEquals(count, archives.size());
                 return success(true);

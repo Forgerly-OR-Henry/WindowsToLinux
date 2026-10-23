@@ -1,0 +1,352 @@
+package gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.main.start.LoopbackSshServer;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
+import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionIdentity;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore;
+import gold.debug.windowstolinux.mod.deployment.db.reference.DeploymentRefIntent;
+import gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitIdentity;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStandardAssembly;
+import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStandardPublishRecovery;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.cleanup.DeploymentPublishCleanupActionLog;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.policy.DeploymentPublishPolicyContext;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.policy.DeploymentPublishPolicyFacts;
+import gold.debug.windowstolinux.mod.deployment.service.standard.staticmode.DeploymentStaticWorkflow;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+/** Exercises original H2 checkpoint reconciliation with a controlled fixed remote peer. / 用受控固定远端对等端验证原H2检查点核对。 */
+class DeploymentStandardPublishRecoveryTest extends DeploymentRuntimeFixture {
+    /** Exact original controlled server. / 精确原受控服务器。 */
+    private static final ServerId SERVER = new ServerId("server-publication");
+
+    /** First candidate-cleanup approval is refused before dispatch. / 第一次候选清理授权在发送前拒绝。 */
+    private final AtomicInteger cleanupReviews = new AtomicInteger();
+
+    /** Starts actual CLASS/H2 task admission with a deterministic host approval. / 以确定性宿主审批启动真实CLASS/H2任务准入。
+     * @return actual runtime / 真实运行时
+     * @throws Exception if platform startup fails / 平台启动失败时 */
+    @Override
+    protected PlatformRuntime open() throws Exception {
+        var runtime = PlatformRuntime.open(root.resolve("data"), PROTECTION);
+        if (runtime.security().securityState().configured())
+            runtime.security().unlock(PASSWORD.toCharArray());
+        else
+            runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
+        runtime.setInteractionPresenter(new PlatformInteractionService.Prompts() {
+            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerId server,
+                                                           TaskSnapshot task, CancelToken cancellation) {
+                throw new AssertionError();
+            }
+
+            public TransferStallChoice transferStalled(TransferStall stall, ServerId server, TaskSnapshot task,
+                                                       CancelToken cancellation) {
+                throw new AssertionError();
+            }
+
+            public String transferProgress(TransferProgress progress) {
+                throw new AssertionError();
+            }
+
+            public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancellation) {
+                assertEquals(List.of(SERVER.id()), intent.serverIds());
+                if (intent.semantics().filter(value -> value.operation().equals("deployment.publication.candidate-cleanup.v1")).isPresent())
+                    return cleanupReviews.incrementAndGet() != 1;
+                return true;
+            }
+
+            public char[] text(String title, String prompt, boolean secret, TaskSnapshot task,
+                               CancelToken cancellation) {
+                throw new AssertionError();
+            }
+        });
+        runtime.setSourcePicker((title, task, cancellation) -> {
+            throw new AssertionError("No source selection expected");
+        });
+        runtime.started();
+        return runtime;
+    }
+
+    /** A definite review refusal restores the prior checkpoint; the next explicit reconciliation may request approval again. / 明确审核拒绝恢复先前检查点；下次显式核对可重新请求授权。 */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void preDispatchRefusalCanBeReviewedAgainWithoutReplayingAnUnknownEffect(boolean knownFailure) throws Exception {
+        enable();
+        try (var ssh = new LoopbackSshServer(java.nio.file.Files.createDirectory(root.resolve("publication-ssh")), ignored -> {
+        });
+             var runtime = open()) {
+            start(runtime, true);
+            runtime.servers().saveServerProfile(
+                ServerProfile.fromStored(
+                    new StoredServerProfile(SERVER.id(), "127.0.0.1", ssh.server().getPort(), "root", "fixture-password")),
+                "fixture-password".toCharArray());
+            var real = runtime.modContexts().get(OWNER).context();
+            runtime.tasks().revokeOwnerServices(OWNER, VERSION);
+            var tasks = runtime.tasks().bind(OWNER, VERSION, false);
+            var wire = new AtomicReference<RemoteFacts>();
+            var fixedTarget = new AtomicReference<RemoteTarget>();
+            var referenceId = new AtomicReference<UUID>();
+            var recoveryCalls = new AtomicInteger();
+            var candidate = new AtomicBoolean(true);
+            var buildActive = new AtomicBoolean(knownFailure);
+            var sent = new AtomicInteger();
+            var helperProbes = new AtomicInteger();
+            var observed = new AtomicReference<Throwable>();
+            RemoteSession remote = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
+                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("close"))
+                        return null;
+                    if (method.getName().equals("facts")) return Objects.requireNonNull(wire.get());
+                    assertEquals("execute", method.getName());
+                    String script = ((CommandRequest) args[0]).script();
+                    if (script.contains(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.PATH))
+                        script = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedBody(script);
+                    if (script.contains("managed-helper' probe")) {
+                        helperProbes.incrementAndGet();
+                        return reply("HELPER=1\nPROTOCOL=" + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.PROTOCOL_VERSION
+                            + "\nSHA256=" + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+                    }
+                    sent.incrementAndGet();
+                    if (script.contains("publication-original-status"))
+                        return reply(status(candidate.get()).replace("BUILD_ACTIVE=no", "BUILD_ACTIVE=" + (buildActive.get() ? "yes" : "no")));
+                    assertTrue(script.contains("candidate-cleanup-task"), script);
+                    candidate.set(false);
+                    return reply("CANDIDATE_CLEANED=1\n");
+                });
+            var bound = withRemote(real, remote, tasks, wire, fixedTarget);
+            var capture = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
+                new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("tasks")) return tasks;
+                    try {
+                        return method.invoke(real, arguments);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
+            var repository = new DeploymentExecutionStore(real.db());
+            var recovery = new DeploymentStandardPublishRecovery(bound);
+            try (var registration = tasks.registerRecovery("publication-recovery-probe", (previous, task) -> {
+                assertEquals(previous.id(), task.id());
+                var record = repository.findForTask(task).orElseThrow();
+                var result = recovery.reconcile(task, record).orElseThrow();
+                int attempt = recoveryCalls.incrementAndGet();
+                if (knownFailure && attempt == 1) {
+                    assertEquals(TaskResult.UNKNOWN, result.outcome(), result.toString());
+                    assertEquals("DEPLOYMENT_ORIGINAL_BUILD_STILL_ACTIVE", result.problem().orElseThrow().eventCode());
+                    assertEquals(1, helperProbes.get());
+                    assertEquals(1, sent.get());
+                    assertEquals(0, cleanupReviews.get());
+                    assertTrue(candidate.get());
+                    assertFalse(tasks.resourcesReleased(task));
+                    return new OperationResult<Void>(result.outcome(), Optional.empty(), result.problem());
+                }
+                assertEquals(TaskResult.FAILED, result.outcome(), result.toString());
+                if (knownFailure)
+                    assertEquals("TEST_REVIEW_FAILED_BEFORE_PUBLICATION", result.problem().orElseThrow().eventCode());
+                int priorObservation = knownFailure ? 1 : 0;
+                if (attempt == 1 + priorObservation) {
+                    assertEquals(attempt, helperProbes.get(), "Recovery first verifies the current helper through the product");
+                    assertEquals(1, cleanupReviews.get());
+                    assertEquals(1 + priorObservation, sent.get(), "Only read-only status was dispatched before review refusal");
+                    assertEquals("MAINTENANCE_ENDED", new com.fasterxml.jackson.databind.ObjectMapper()
+                        .readTree(tasks.findCheckpoint(task, DeploymentPublishCleanupActionLog.KEY).orElseThrow().snapshot().payload())
+                        .path("phase").asText());
+                    assertTrue(candidate.get());
+                    assertFalse(tasks.resourcesReleased(task), "Unfinished cleanup retains the genuine original resources");
+                } else {
+                    assertEquals(attempt, helperProbes.get(), "Each recovery verifies the helper independently of original business sends");
+                    assertEquals(2 + priorObservation, attempt);
+                    assertEquals(2, cleanupReviews.get());
+                    assertEquals(4 + priorObservation, sent.get(), "Only status reads and one cleanup use the original task");
+                    assertFalse(candidate.get());
+                    assertTrue(tasks.findCheckpoint(task, DeploymentPublishCleanupActionLog.KEY).orElseThrow().snapshot().released());
+                    if (!knownFailure)
+                        repository.recordUncommittedOutcome(task, record.identity().executionId(), TaskResult.FAILED,
+                            result.problem().orElseThrow(), Instant.parse("2026-01-01T00:00:02Z"));
+                    real.servers().resolve(referenceId.get(), ResourceRefResult.NOT_REFERENCED, task);
+                    assertTrue(tasks.resourcesReleased(task));
+                    repository.finishCleanup(task, record.identity().executionId(), Instant.parse("2026-01-01T00:00:03Z"));
+                }
+                return new OperationResult<Void>(result.outcome(), Optional.empty(), result.problem());
+            })) {
+                var handle = tasks.submit(new TaskRequest("publication-recovery-probe", "Recover original candidate",
+                    List.of(SERVER.id()), true), task -> {
+                    try {
+                        var preferences = new DeploymentPreferenceStore(real.db());
+                        preferences.save(task, new DeploymentPreferenceStore.Selection("STATIC", "MANUAL_REVIEW", false));
+                        var policy = preferences.read(task);
+                        assertEquals("STATIC", policy.mode());
+                        var guarded = DeploymentPublishPolicyContext.begin(capture, task, SERVER, DeploymentStaticWorkflow.support(),
+                            policy.approval(), policy.rememberAuthorization(), "Original candidate cleanup fixture", new DeploymentStandardAssembly());
+                        try {
+                            try (var actual = guarded.linux().connect(SERVER, task)) {
+                                wire.set(actual.facts());
+                            }
+                            fixedTarget.set(DeploymentPublishPolicyFacts.find(capture, task).orElseThrow().facts().fixedTarget());
+                        } finally {
+                            guarded.finish(TaskResult.UNKNOWN);
+                        }
+                        var identity = new DeploymentExecutionIdentity(UUID.randomUUID(), task.id(),
+                            Optional.empty(), "demo", SERVER,
+                            DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "f".repeat(64));
+                        var intent = DeploymentRefIntent.server(SERVER, "application:demo");
+                        repository.begin(task, identity, "deployment-publication", List.of(intent),
+                            Optional.empty(), Instant.parse("2026-01-01T00:00:00Z"));
+                        var reference = real.servers().reserve(SERVER, intent.businessKey(), task);
+                        referenceId.set(reference.id());
+                        repository.recordReference(task, identity.executionId(), intent, reference.id(),
+                            Instant.parse("2026-01-01T00:00:00.500Z"));
+                        repository.startEffects(task, identity.executionId(),
+                            Instant.parse("2026-01-01T00:00:01Z"));
+                        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64));
+                        DeploymentPublishCleanupActionLog.begin(bound, task, unit, "a".repeat(64), "f".repeat(64),
+                            new DeploymentRuntimeDefinition.GoService("1.24", "demo", "main.go",
+                                new DeploymentHealthCheck.Tcp(8080, 10, 2)));
+                        if (knownFailure)
+                            repository.recordUncommittedOutcome(task, identity.executionId(), TaskResult.FAILED,
+                                new Problem(ProblemCode.INVALID_INPUT, "TEST_REVIEW_FAILED_BEFORE_PUBLICATION",
+                                    "Independent review failed before publication", Map.of(), Optional.empty()),
+                                Instant.parse("2026-01-01T00:00:01.500Z"));
+                        return new OperationResult<Void>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(
+                            ProblemCode.UNKNOWN, "TEST_CANDIDATE_CLEANUP_INTERRUPTED", "Original candidate awaits explicit reconciliation",
+                            Map.of(), Optional.empty())));
+                    } catch (Throwable failure) {
+                        observed.set(failure);
+                        throw failure;
+                    }
+                });
+                long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+                while (handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < until)
+                    Thread.sleep(20);
+                assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
+                assertNull(observed.get(), () -> String.valueOf(observed.get()));
+                if (knownFailure) {
+                    var active = reconcileReady(runtime, handle);
+                    assertEquals(TaskState.UNKNOWN, active.state(), active.toString());
+                    assertFalse(handle.completion().toCompletableFuture().isDone());
+                    buildActive.set(false);
+                }
+                var refused = reconcileReady(runtime, handle);
+                assertEquals(handle.id(), refused.id());
+                // The FAILED result is known while the original resources still await cleanup.
+                assertEquals(TaskState.FINISHING, refused.state(), refused.toString());
+                assertFalse(handle.completion().toCompletableFuture().isDone());
+                var reconciled = reconcileReady(runtime, handle);
+                assertEquals(handle.id(), reconciled.id());
+                assertEquals(TaskState.ENDED, reconciled.state(), reconciled.toString());
+                assertEquals(Optional.of(TaskResult.FAILED), reconciled.outcome());
+                OperationResult<Void> result;
+                try {
+                    result = handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
+                } catch (java.util.concurrent.TimeoutException unfinished) {
+                    throw new AssertionError("Recovery probe unfinished: " + handle.snapshot(),
+                        observed.get() == null ? unfinished : observed.get());
+                }
+                assertEquals(TaskResult.FAILED, result.outcome());
+                assertNull(observed.get(), () -> String.valueOf(observed.get()));
+                assertEquals(0, scalar(runtime,
+                    "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + handle.id() + "' AND released_at IS NULL"));
+            }
+        }
+    }
+
+    /** Replaces only the borrowed remote peer, preserving real task, H2, source and review capabilities. / 仅替换借用远端对等端，保留真实任务、H2、来源和审核能力。
+     * @param real original activation / 原启用
+     * @param remote controlled peer / 受控对等端
+     * @param tasks authentic replacement owner service / 真实替换所属服务
+     * @param wire actual original authenticated session facts / 实际原认证会话事实
+     * @param fixedTarget previously captured original endpoint / 此前捕获的原端点
+     * @return delegated activation / 委托启用 */
+    private static ModContext withRemote(ModContext real, RemoteSession remote, TaskService tasks,
+                                         AtomicReference<RemoteFacts> wire, AtomicReference<RemoteTarget> fixedTarget) {
+        LinuxService linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
+            new Class<?>[]{LinuxService.class}, (proxy, method, args) -> {
+                if (method.getName().equals("pendingTransfers"))
+                    return real.linux().pendingTransfers((TaskContext) args[0]);
+                assertEquals("connect", method.getName());
+                var task = (TaskContext) args[1];
+                var expected = Objects.requireNonNull(fixedTarget.get(), "Actual original policy and authenticated wire must precede recovery");
+                assertEquals(expected.taskId(), task.id());
+                if (args[0] instanceof RemoteTarget target) assertEquals(expected, target);
+                else assertEquals(SERVER, args[0]);
+                var current = real.servers().get(SERVER, task);
+                assertEquals(expected.host(), current.host());
+                assertEquals(expected.port(), current.port());
+                assertEquals(expected.username(), current.username());
+                assertEquals(Optional.of(wire.get().fingerprint()), expected.fingerprint());
+                return remote;
+            });
+        return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
+            (proxy, method, args) -> {
+                if (method.getName().equals("linux"))
+                    return linux;
+                if (method.getName().equals("tasks")) return tasks;
+                try {
+                    return method.invoke(real, args);
+                } catch (InvocationTargetException failure) {
+                    throw failure.getCause();
+                }
+            });
+    }
+
+    /** Fixed complete read-only response. / 固定完整只读响应。
+     * @param owned whether the original candidate still exists / 原候选是否仍存在
+     * @return exact response / 精确响应 */
+    private static String status(boolean owned) {
+        return "PUBLICATION_STATUS=1\nCURRENT=none\nCURRENT_KIND=none\nCURRENT_MODE=none\n"
+            + "SNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\n"
+            + "MAINTENANCE=none\nCANDIDATE=" + (owned ? "owned" : "absent")
+            + "\nBUILD_ACTIVE=no\nUNIT_PRESENT=no\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=0\n";
+    }
+
+    /** Complete controlled process receipt. / 完整受控进程回执。
+     * @param output exact helper output / 精确helper输出
+     * @return successful remote observation / 成功远端观测 */
+    private static OperationResult<CommandResult> reply(String output) {
+        return new OperationResult<>(TaskResult.SUCCEEDED,
+            Optional.of(new CommandResult(Optional.of(0), output, "", false)), Optional.empty());
+    }
+}

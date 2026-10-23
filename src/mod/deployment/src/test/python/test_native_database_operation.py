@@ -20,7 +20,7 @@ if sys.platform == 'win32':
 
 FRAGMENTS = (
     pathlib.Path(__file__).resolve().parents[2]
-    / 'main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/database'
+    / 'main/resources/gold/debug/windowstolinux/mod/deployment/linux/helper/database'
 )
 SOURCE = ''.join((FRAGMENTS / part).read_text(encoding='utf-8') for part in
                  ('10-native-instances.sh', '20-native-targets.sh', '21-native-operations.sh'))

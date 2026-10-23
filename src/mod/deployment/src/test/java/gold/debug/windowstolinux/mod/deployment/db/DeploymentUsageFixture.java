@@ -10,22 +10,32 @@ import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
-import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.service.core.*;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionIdentity;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore;
 import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentApplicationGraph;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitIdentity;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitRuntimeConfig;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentCommand;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentEndpoint;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentWorker;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentWorkload;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishPlan;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishResult;
 
 /** Real original H2 publication identities and reviewed public usage fixtures. / 实际原H2发布身份与已审阅公开用法夹具。 */
-abstract class DeploymentUsageFixture extends DeploymentApplicationsFixture {
-    static final String STARTUP = "STARTUP_ARGUMENT_SENTINEL", CLIENT = "CLIENT_ARGUMENT_SENTINEL", WORKER = "WORKER_ARGUMENT_SENTINEL";
+public abstract class DeploymentUsageFixture extends DeploymentApplicationsFixture {
+    public static final String STARTUP = "STARTUP_ARGUMENT_SENTINEL", CLIENT = "CLIENT_ARGUMENT_SENTINEL", WORKER = "WORKER_ARGUMENT_SENTINEL";
 
-    void usageServer(PlatformRuntime runtime) throws Exception {
+    public void usageServer(PlatformRuntime runtime) throws Exception {
         runtime.servers().saveServerProfile(ServerProfile.fromStored(new StoredServerProfile("server", "2001:db8::1", 22,
             "tester", "fixture-secret")), "fixture-secret".toCharArray());
     }
 
-    DeploymentApplicationGraph usageGraph(String application, boolean onDemandOnly, boolean reviewed) {
+    public DeploymentApplicationGraph usageGraph(String application, boolean onDemandOnly, boolean reviewed) {
         var parts = new ArrayList<DeploymentApplicationGraph.Part>();
         for (String id : onDemandOnly ? List.of("job") : List.of("service", "client", "job")) {
             var original = component(id, "server", List.of());
@@ -49,11 +59,11 @@ abstract class DeploymentUsageFixture extends DeploymentApplicationsFixture {
         return new DeploymentApplicationGraph(application, onDemandOnly ? "job" : "service", new DeploymentHealthCheck.Process(20, 2), parts);
     }
 
-    TaskHandle<Void> seedUsage(PlatformRuntime runtime, DeploymentApplicationGraph graph, int revision) throws Exception {
+    public TaskHandle<Void> seedUsage(PlatformRuntime runtime, DeploymentApplicationGraph graph, int revision) throws Exception {
         return seedUsage(runtime, graph, revision, true);
     }
 
-    TaskHandle<Void> seedUsage(PlatformRuntime runtime, DeploymentApplicationGraph graph, int revision, boolean cleanup) throws Exception {
+    public TaskHandle<Void> seedUsage(PlatformRuntime runtime, DeploymentApplicationGraph graph, int revision, boolean cleanup) throws Exception {
         var handle = rootTask(runtime, task -> {
             publishUsage(runtime, graph, revision, cleanup, task);
             return success();
@@ -69,9 +79,9 @@ abstract class DeploymentUsageFixture extends DeploymentApplicationsFixture {
      * @param cleanup whether original business cleanup is confirmed / 是否确认原业务收尾
      * @param task authentic accepted task, never a replacement context / 真实接纳任务，绝不是替代上下文
      * @throws Exception if original commit cannot be confirmed / 无法确认原提交时 */
-    void publishUsage(PlatformRuntime runtime, DeploymentApplicationGraph graph, int revision, boolean cleanup,
-                      TaskContext task) throws Exception {
-        var publication = new DeploymentPublish(graph, publications(graph, revision, List.of()));
+    public void publishUsage(PlatformRuntime runtime, DeploymentApplicationGraph graph, int revision, boolean cleanup,
+                             TaskContext task) throws Exception {
+        var publication = new DeploymentPublishResult(graph, publications(graph, revision, List.of()));
         var plan = new DeploymentPublishPlan(UUID.randomUUID(), Optional.empty(), graph.applicationId(), new ServerId("server"),
             DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "a".repeat(64),
             DeploymentOriginalPublishCommit.references(new ServerId("server"), publication, Map.of()), Instant.now());

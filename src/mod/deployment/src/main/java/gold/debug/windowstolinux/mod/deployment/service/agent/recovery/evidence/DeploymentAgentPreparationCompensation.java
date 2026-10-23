@@ -22,7 +22,7 @@ public final class DeploymentAgentPreparationCompensation {
         .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     private static final Set<String> BEFORE = Set.of("REMEMBER_AUTHORIZATION", "REMOTE_TARGET", "REMOTE_LAYOUT", "SOURCE",
-        "SUCCESSOR_BINDING", "TARGET_PROFILE", "AGENT_QUERY", "AGENT_ASSESSMENT", "AGENT_OBSERVATION", "DECISION", "PLAN", "PLAN_APPLICATION", "STATE");
+        "SUCCESSOR_BINDING", "TARGET_PROFILE", "AGENT_QUERY", "AGENT_ASSESSMENT", "AGENT_OBSERVATION", "DECISION", "PLAN", "PLAN_APPLICATION", "STATE", "WORKSPACE_QUOTA");
 
     private DeploymentAgentPreparationCompensation() {
     }
@@ -62,7 +62,7 @@ public final class DeploymentAgentPreparationCompensation {
                 || !application.detail().matches("[a-z0-9][a-z0-9-]{0,62}") || !profile.action().isEmpty() || !digest(profile.detail())
                 || !endpoint.action().isEmpty() || !digest(endpoint.detail())
                 || !policy.action().equals("rememberAuthorization.v1") || !policy.detail().equals(Boolean.toString(saved.identity().rememberAuthorization()))
-                || !prepare.action().equals(hash(task + ":" + prepare.detail() + ":" + source.detail())))
+                || !prepare.action().equals(DeploymentAgentPreparationBinding.preparationAction(task, saved.identity(), source, plan, prepare, layout.digest(), events)))
                 return Optional.empty();
             for (var original : List.of(source, plan, application, profile, endpoint, policy, header))
                 if (original.id() >= prepare.id()) return Optional.empty();

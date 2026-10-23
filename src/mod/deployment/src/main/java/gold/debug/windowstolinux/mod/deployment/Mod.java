@@ -5,28 +5,29 @@ import java.util.List;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.mod.*;
-import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
 import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
 import gold.debug.windowstolinux.appapi.task.log.LogCategory;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
 import gold.debug.windowstolinux.mod.deployment.api.DeploymentApi;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader;
+import gold.debug.windowstolinux.mod.deployment.db.schema.DeploymentSchemaIdentity;
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentPageService;
 import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentWorkflow;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApiProvider;
-import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApplicationsService;
-import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService;
-import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticTaskRecovery;
-import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentStandardPublishRecovery;
-import gold.debug.windowstolinux.mod.deployment.ui.DeploymentAgentPage;
-import gold.debug.windowstolinux.mod.deployment.ui.DeploymentApplicationsPage;
-import gold.debug.windowstolinux.mod.deployment.ui.DeploymentStaticPage;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentApiProvider;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentApplicationsService;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.source.DeploymentGitSourceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStandardAssembly;
+import gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedWorkflow;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.DeploymentStandardPageService;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.DeploymentStandardAnalyzer;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.DeploymentStandardPlanner;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.recovery.DeploymentStandardTaskRecovery;
+import gold.debug.windowstolinux.mod.deployment.service.standard.staticmode.DeploymentStaticWorkflow;
+import gold.debug.windowstolinux.mod.deployment.ui.application.DeploymentApplicationsPage;
+import gold.debug.windowstolinux.mod.deployment.ui.flow.DeploymentFlowPage;
 
 /** Owns official deployment initialization and its platform-bound lifecycle. / 持有官方部署初始化及绑定平台的生命周期。 */
 public final class Mod implements ModEntrypoint {
@@ -56,7 +57,7 @@ public final class Mod implements ModEntrypoint {
     private DeploymentStaticWorkflow staticWorkflow;
 
     /** Mod-level page query and running-task state. / Mod 级页面查询及运行任务状态。 */
-    private DeploymentStaticPageService pageService;
+    private DeploymentStandardPageService pageService;
 
     /** Autonomous original-task workflow and recovery. / 自主原任务流程及恢复。 */
     private DeploymentAgentWorkflow agentWorkflow;
@@ -74,13 +75,16 @@ public final class Mod implements ModEntrypoint {
     public void start(ModContext context) throws Exception {
         if (this.context != null || !registrations.isEmpty())
             throw new IllegalStateException("Deployment context is already bound or retained");
-        DeploymentSchema.requireIdentity(context.db().identity());
+        DeploymentConfigLoader.current();
+        DeploymentSchemaIdentity.requireIdentity(context.db().identity());
         context.logs().register(new LogCategory("deployment", "Deployment", Optional.of("deployment_log")));
-        var flow = new DeploymentRefFlow(context, new DeploymentStandardPublishRecovery(context));
+        var assembly = new DeploymentStandardAssembly();
+        var flow = new DeploymentRefFlow(context, assembly.publication(context));
         var gitFlow = new DeploymentGitSourceFlow(context);
         var secretFlow = new DeploymentSecretProvisionFlow(context);
-        var workflow = new DeploymentStaticWorkflow(context, flow);
-        var pageTasks = new DeploymentStaticPageService(context, workflow);
+        var workflow = new DeploymentStaticWorkflow(context, flow, assembly);
+        var assisted = new DeploymentAssistedWorkflow(context, flow, assembly);
+        var pageTasks = new DeploymentStandardPageService(context, workflow, assisted);
         var autonomous = new DeploymentAgentWorkflow(context);
         var autonomousPageTasks = new DeploymentAgentPageService(context, autonomous);
         var applicationTasks = new DeploymentApplicationsService(context);
@@ -88,19 +92,19 @@ public final class Mod implements ModEntrypoint {
         var deploymentApi = new DeploymentApiProvider(context);
         try {
             registrations.add(context.tasks().registerRecovery(DeploymentRefFlow.TASK_TYPE,
-                new DeploymentStaticTaskRecovery(context, flow)));
+                new DeploymentStandardTaskRecovery(context, flow, assembly)));
             registrations.add(context.tasks().registerRecovery(DeploymentGitSourceFlow.TASK_TYPE, gitFlow));
             registrations.add(context.tasks().registerRecovery(DeploymentSecretProvisionFlow.TASK_TYPE, secretFlow));
             registrations
-                .add(context.tasks().registerRecovery(DeploymentStaticPageService.SERVER_LIST_TASK, pageTasks));
+                .add(context.tasks().registerRecovery(DeploymentStandardPageService.SERVER_LIST_TASK, pageTasks));
             registrations
-                .add(context.tasks().registerRecovery(DeploymentStaticPageService.SECRET_LIST_TASK, pageTasks));
+                .add(context.tasks().registerRecovery(DeploymentStandardPageService.SECRET_LIST_TASK, pageTasks));
             registrations.add(context.tasks().registerRecovery(
-                gold.debug.windowstolinux.mod.deployment.service.core.DeploymentSourceSelectionService.PICKER_TASK,
+                gold.debug.windowstolinux.mod.deployment.service.core.source.DeploymentSourceSelectionService.PICKER_TASK,
                 pageTasks.sources().selection()));
             for (var type : List.of(
-                gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticSourceService.PROJECT_LIST_TASK,
-                gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticSourceService.PROJECT_SAVE_TASK))
+                gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStandardSourceService.PROJECT_LIST_TASK,
+                gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStandardSourceService.PROJECT_SAVE_TASK))
                 registrations.add(context.tasks().registerRecovery(type, pageTasks.sources()));
             registrations.add(context.tasks().registerRecovery(
                 gold.debug.windowstolinux.mod.deployment.service.environment.DeploymentEnvironmentWorkflow.TASK_TYPE,
@@ -115,19 +119,17 @@ public final class Mod implements ModEntrypoint {
             registrations.add(context.services().register(DeploymentApi.class, deploymentApi));
             if (context.launchMode() == ModLaunchMode.NORMAL) {
                 for (var kind : java.util.List.of(
-                    gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind.GO_SERVICE,
-                    gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind.NODE_SERVICE))
+                    gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind.GO_SERVICE,
+                    gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind.NODE_SERVICE))
                     registrations.add(context.ui().registerPreview(
                         new PageSpec("runtime-preview-" + kind.name().toLowerCase(java.util.Locale.ROOT),
                             "deployment.preview.runtime", "Runtime review: " + kind.name(), true),
-                        () -> new gold.debug.windowstolinux.mod.deployment.ui.DeploymentRuntimePreview(kind)));
+                        () -> new gold.debug.windowstolinux.mod.deployment.ui.standard.DeploymentStandardRuntimePreview(kind)));
 
                 registrations.add(context.ui().register(new PageSpec("workspace", "deployment.workspace.title",
                     "Deployment", false), () -> new gold.debug.windowstolinux.mod.deployment.ui.DeploymentWorkspace(
-                    () -> new DeploymentStaticPage(pageTasks), () -> new DeploymentAgentPage(autonomousPageTasks),
-                    () -> new DeploymentApplicationsPage(applicationTasks),
-                    () -> new gold.debug.windowstolinux.mod.deployment.ui.environment.DeploymentEnvironmentPage(pageTasks, environmentTasks),
-                    pageTasks::preferences)));
+                    () -> new DeploymentFlowPage(pageTasks, autonomousPageTasks),
+                    () -> new DeploymentApplicationsPage(applicationTasks))));
             }
         } catch (Exception failure) {
             closeRegistrations(failure);

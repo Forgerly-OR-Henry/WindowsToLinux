@@ -1,0 +1,213 @@
+{
+  "agent-main": {
+    "calls": 2,
+    "chosen": [
+      "ReadSource",
+      "Identify"
+    ],
+    "correctionBytes": 0,
+    "dynamicBytes": 556,
+    "factsSha256": [
+      "87dc27b284d46c3f3aa5da5e49f8aa5708001e410a2df39fe9a8d470dc334b25",
+      "427ea0c6252621e3c5203b67483988d6f7c6d0c33d72df7b1b272a2d22b82442"
+    ],
+    "feedbackBytes": 68,
+    "fixedBytes": 14748,
+    "maximumOutputs": [
+      8192,
+      8192
+    ],
+    "outputBytes": 250,
+    "requestBytes": 15372,
+    "toolCatalogBytes": 0
+  },
+  "agent-publication": {
+    "calls": 3,
+    "chosen": [
+      "command",
+      "verify",
+      "finish"
+    ],
+    "correctionBytes": 0,
+    "dynamicBytes": 954,
+    "factsSha256": [
+      "7d0e664aa06ab7a7eb4b330f529da5dc7635ad35120bfdaa5d01cff314d30e56",
+      "6b8ec904cf2aed8e82e4db4ba69a56015466c186f3b59997c98749ed14bdb2b5",
+      "09ef3f1634b2366dca94146720ecae75653972366199c0c6e3d445d4257a3e91"
+    ],
+    "feedbackBytes": 221,
+    "fixedBytes": 10776,
+    "maximumOutputs": [
+      8192,
+      8192,
+      8192
+    ],
+    "outputBytes": 466,
+    "requestBytes": 12725,
+    "toolCatalogBytes": 774
+  },
+  "assisted-identification": {
+    "calls": 2,
+    "chosen": [],
+    "correctionBytes": 0,
+    "dynamicBytes": 370,
+    "factsSha256": [
+      "ee7523fccfe4542a8642b98bfa9d5c95e5567fac48f24fe674b30e695db2f06d",
+      "ee7523fccfe4542a8642b98bfa9d5c95e5567fac48f24fe674b30e695db2f06d"
+    ],
+    "feedbackBytes": 104,
+    "fixedBytes": 5948,
+    "maximumOutputs": [
+      8192,
+      8192
+    ],
+    "outputBytes": 130,
+    "requestBytes": 6422,
+    "toolCatalogBytes": 0
+  },
+  "assisted-calibration": {
+    "calls": 2,
+    "chosen": [],
+    "correctionBytes": 0,
+    "dynamicBytes": 370,
+    "factsSha256": [
+      "ee7523fccfe4542a8642b98bfa9d5c95e5567fac48f24fe674b30e695db2f06d",
+      "ee7523fccfe4542a8642b98bfa9d5c95e5567fac48f24fe674b30e695db2f06d"
+    ],
+    "feedbackBytes": 104,
+    "fixedBytes": 6628,
+    "maximumOutputs": [
+      8192,
+      8192
+    ],
+    "outputBytes": 130,
+    "requestBytes": 7102,
+    "toolCatalogBytes": 0
+  },
+  "assisted-analysis": {
+    "calls": 1,
+    "chosen": [],
+    "correctionBytes": 0,
+    "dynamicBytes": 185,
+    "factsSha256": [
+      "ee7523fccfe4542a8642b98bfa9d5c95e5567fac48f24fe674b30e695db2f06d"
+    ],
+    "feedbackBytes": 52,
+    "fixedBytes": 2202,
+    "maximumOutputs": [
+      8192
+    ],
+    "outputBytes": 82,
+    "requestBytes": 2439,
+    "toolCatalogBytes": 0
+  },
+  "assisted-advice": {
+    "calls": 1,
+    "chosen": [],
+    "correctionBytes": 0,
+    "dynamicBytes": 185,
+    "factsSha256": [
+      "ee7523fccfe4542a8642b98bfa9d5c95e5567fac48f24fe674b30e695db2f06d"
+    ],
+    "feedbackBytes": 52,
+    "fixedBytes": 454,
+    "maximumOutputs": [
+      8192
+    ],
+    "outputBytes": 82,
+    "requestBytes": 691,
+    "toolCatalogBytes": 0
+  },
+  "assisted-publication": {
+    "calls": 2,
+    "chosen": [
+      "inspect-host",
+      "supplement"
+    ],
+    "correctionBytes": 0,
+    "dynamicBytes": 574,
+    "factsSha256": [
+      "87dc27b284d46c3f3aa5da5e49f8aa5708001e410a2df39fe9a8d470dc334b25",
+      "f3a5f6905bb953becac8d147a9770dd32a83d8183ee467c2f42cb7079eeef7e1"
+    ],
+    "feedbackBytes": 76,
+    "fixedBytes": 6012,
+    "maximumOutputs": [
+      8192,
+      8192
+    ],
+    "outputBytes": 74,
+    "requestBytes": 7328,
+    "toolCatalogBytes": 666
+  },
+  "command-approval": {
+    "calls": 1,
+    "chosen": [],
+    "correctionBytes": 0,
+    "dynamicBytes": 185,
+    "factsSha256": [
+      "ee7523fccfe4542a8642b98bfa9d5c95e5567fac48f24fe674b30e695db2f06d"
+    ],
+    "feedbackBytes": 52,
+    "fixedBytes": 12803,
+    "maximumOutputs": [
+      65536
+    ],
+    "outputBytes": 82,
+    "requestBytes": 13040,
+    "toolCatalogBytes": 0
+  },
+  "agent-review": {
+    "calls": 1,
+    "chosen": [],
+    "correctionBytes": 0,
+    "dynamicBytes": 185,
+    "factsSha256": [
+      "ee7523fccfe4542a8642b98bfa9d5c95e5567fac48f24fe674b30e695db2f06d"
+    ],
+    "feedbackBytes": 52,
+    "fixedBytes": 7900,
+    "maximumOutputs": [
+      8192
+    ],
+    "outputBytes": 82,
+    "requestBytes": 8137,
+    "toolCatalogBytes": 0
+  },
+  "assisted-review": {
+    "calls": 1,
+    "chosen": [],
+    "correctionBytes": 0,
+    "dynamicBytes": 185,
+    "factsSha256": [
+      "ee7523fccfe4542a8642b98bfa9d5c95e5567fac48f24fe674b30e695db2f06d"
+    ],
+    "feedbackBytes": 52,
+    "fixedBytes": 7822,
+    "maximumOutputs": [
+      8192
+    ],
+    "outputBytes": 82,
+    "requestBytes": 8059,
+    "toolCatalogBytes": 0
+  },
+  "format-correction": {
+    "calls": 2,
+    "chosen": [],
+    "correctionBytes": 279,
+    "dynamicBytes": 370,
+    "factsSha256": [
+      "ee7523fccfe4542a8642b98bfa9d5c95e5567fac48f24fe674b30e695db2f06d",
+      "ee7523fccfe4542a8642b98bfa9d5c95e5567fac48f24fe674b30e695db2f06d"
+    ],
+    "feedbackBytes": 104,
+    "fixedBytes": 1030,
+    "maximumOutputs": [
+      8192,
+      8192
+    ],
+    "outputBytes": 85,
+    "requestBytes": 1783,
+    "toolCatalogBytes": 0
+  }
+}

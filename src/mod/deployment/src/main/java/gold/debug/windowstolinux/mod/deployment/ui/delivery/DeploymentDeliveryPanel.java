@@ -7,7 +7,6 @@ import java.awt.datatransfer.StringSelection;
 import java.net.URI;
 import java.util.Locale;
 import java.util.ResourceBundle;
-
 import javax.swing.*;
 
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
@@ -38,7 +37,7 @@ public final class DeploymentDeliveryPanel extends JPanel {
     private final JComboBox<CommandChoice> commands = new JComboBox<>();
 
     /** Original application and declaration details. / 原应用及声明详情。 */
-    private final JTextArea facts = new JTextArea(4, 36);
+    private final JTextArea facts = new JTextArea(0, 36);
 
     /** Explicit endpoint copy action. / 明确端点复制动作。 */
     private final JButton copyEndpoint = new JButton();
@@ -100,18 +99,26 @@ public final class DeploymentDeliveryPanel extends JPanel {
         facts.setEditable(false);
         facts.setLineWrap(true);
         facts.setWrapStyleWord(true);
+        facts.setOpaque(false);
+        ((javax.swing.text.DefaultCaret) facts.getCaret()).setUpdatePolicy(javax.swing.text.DefaultCaret.NEVER_UPDATE);
+        facts.setBorder(BorderFactory.createEmptyBorder());
         var rows = new JPanel();
         rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
-        var endpointRow = new JPanel();
-        endpointRow.add(endpoints);
-        endpointRow.add(copyEndpoint);
-        endpointRow.add(open);
+        var endpointRow = new JPanel(new BorderLayout(6, 0));
+        var endpointActions = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.TRAILING, 6, 0));
+        endpointActions.add(copyEndpoint);
+        endpointActions.add(open);
+        endpointRow.add(endpoints, BorderLayout.CENTER);
+        endpointRow.add(endpointActions, BorderLayout.EAST);
         rows.add(endpointRow);
-        var commandRow = new JPanel();
-        commandRow.add(commands);
-        commandRow.add(copyCommand);
+        rows.add(Box.createVerticalStrut(6));
+        var commandRow = new JPanel(new BorderLayout(6, 0));
+        commandRow.add(commands, BorderLayout.CENTER);
+        commandRow.add(copyCommand, BorderLayout.EAST);
         rows.add(commandRow);
-        add(new JScrollPane(facts), BorderLayout.CENTER);
+        endpoints.setMinimumSize(new java.awt.Dimension(0, endpoints.getPreferredSize().height));
+        commands.setMinimumSize(new java.awt.Dimension(0, commands.getPreferredSize().height));
+        add(facts, BorderLayout.CENTER);
         add(rows, BorderLayout.SOUTH);
         add(status, BorderLayout.NORTH);
         endpoints.addActionListener(ignored -> availability());
@@ -213,6 +220,7 @@ public final class DeploymentDeliveryPanel extends JPanel {
                 value.append(" · ").append(messages.getString("workers")).append(String.join(", ", component.workers()));
         }
         facts.setText(value.toString());
+        revalidate();
     }
 
     /** Updates all actionable selectors from exact original facts. / 按精确原事实更新全部可操作选择器。 */

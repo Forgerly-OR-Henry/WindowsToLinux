@@ -195,9 +195,9 @@ class DeploymentAgentToolchainFailureEvidenceTest {
     @Test
     void currentSpaceDiagnosticRetainsOnlyActualNumericShortfallWithoutPermission() throws Exception {
         long gib = 1024L * 1024 * 1024;
-        for (String stage : List.of("VOLUME", "PROMOTION")) {
-            var fields = Map.of("operation", OPERATION, "phase", "HOST_SPACE_REQUIRED", "stage", stage,
-                "availableBytes", 2 * gib, "requiredBytes", stage.equals("VOLUME") ? 9 * gib : 3 * gib, "reserveBytes", gib);
+        for (var policy : List.of(Map.entry("VOLUME", 9 * gib), Map.entry("VOLUME", gib + 64L * 1024 * 1024), Map.entry("PROMOTION", 3 * gib))) {
+            var fields = Map.of("operation", OPERATION, "phase", "HOST_SPACE_REQUIRED", "stage", policy.getKey(),
+                "availableBytes", Math.min(2 * gib, policy.getValue() - 1), "requiredBytes", policy.getValue(), "reserveBytes", gib);
             String diagnostic = new ObjectMapper().writeValueAsString(fields);
             var actual = new OperationResult<>(TaskResult.FAILED,
                 Optional.of(new CommandResult(Optional.of(65), "TOOLCHAIN_FAILURE=isolation:HOST_SPACE_REQUIRED\nTOOLCHAIN_DIAGNOSTIC=" + diagnostic + "\n", "", false)),
@@ -220,6 +220,8 @@ class DeploymentAgentToolchainFailureEvidenceTest {
         for (var change : List.of(Map.<String, Object>entry("operation", "b".repeat(32)), Map.<String, Object>entry("stage", "private-body"),
             Map.<String, Object>entry("availableBytes", true), Map.<String, Object>entry("availableBytes", -1L),
             Map.<String, Object>entry("availableBytes", 9 * gib), Map.<String, Object>entry("requiredBytes", 8 * gib),
+            Map.<String, Object>entry("requiredBytes", gib + 64L * 1024 * 1024 - 1),
+            Map.<String, Object>entry("requiredBytes", gib + 64L * 1024 * 1024 + 1),
             Map.<String, Object>entry("reserveBytes", 0L), Map.<String, Object>entry("path", "/private/body"))) {
             var invalid = new LinkedHashMap<>(fields);
             invalid.put(change.getKey(), change.getValue());

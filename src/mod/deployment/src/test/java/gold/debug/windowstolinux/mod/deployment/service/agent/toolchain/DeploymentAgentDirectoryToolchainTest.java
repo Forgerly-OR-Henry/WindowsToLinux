@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.mod.deployment.service.agent.toolchain;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
@@ -15,12 +16,16 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.Dep
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class DeploymentAgentDirectoryToolchainTest {
     private static final ObjectMapper JSON = new ObjectMapper();
+
     private static final ServerId SERVER = new ServerId("controlled-server");
+
     private static final String OPERATION = "a".repeat(32);
+
     private static final DeploymentRemoteLayout LAYOUT = new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths(
         "/srv/wtl/helper", "/srv/wtl/apps", "/srv/wtl/state", "/srv/wtl/config", "/srv/wtl/data"));
 
@@ -59,7 +64,8 @@ class DeploymentAgentDirectoryToolchainTest {
             assertEquals(LAYOUT.canonical(), facts.at("/originalRemoteLayout/canonical").asText());
             assertEquals(LAYOUT.digest(), facts.at("/originalRemoteLayout/sha256").asText());
             assertFalse(facts.has("permission"));
-            if (phase.equals("resolve")) assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainInputEvidence.select(current));
+            if (phase.equals("resolve"))
+                assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainInputEvidence.select(current));
             current.put("completeExecutableInput", body + "\n# altered");
             assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainInputEvidence.select(current, LAYOUT));
         }

@@ -30,9 +30,16 @@ public final class DeploymentAssistedPreparationReview {
             || !semantics.targets().equals(Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains())))
             || !RemoteActions.command(server, intent.revision(), request).withSemantics(semantics).equals(intent))
             throw new IllegalArgumentException("Preparation request or target changed");
-        var arguments = DeploymentToolchainPreparationEvidence.decode(
-                DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout), layout)
-            .orElseThrow(() -> new IllegalArgumentException("Complete preparation arguments required"));
+        String invocation = DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout);
+        var legacy = DeploymentToolchainPreparationEvidence.decode(invocation, layout);
+        gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.Request diagnosticRequest = null;
+        if (legacy.isEmpty()) {
+            diagnosticRequest = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.decode(request.stdin());
+            gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.reviewFacts("prepare-diagnosed",
+                invocation, request.stdin(), server.id(), semantics.targets(), layout);
+            if (!diagnosticRequest.planRevision().equals(intent.revision())) throw new IllegalArgumentException("Diagnostic plan changed");
+        }
+        var arguments = legacy.isPresent() ? legacy.orElseThrow() : diagnosticRequest.preparationArguments();
         var ecosystem = DeploymentToolchainType.valueOf(arguments.get("ecosystem").toString());
         if (ecosystem == DeploymentToolchainType.C || ecosystem == DeploymentToolchainType.CPP
             || DeploymentToolchainCatalog.defaults().branches(ecosystem).stream()
@@ -43,7 +50,7 @@ public final class DeploymentAssistedPreparationReview {
             throw new IllegalArgumentException("Java selection is outside the managed layout");
         byte[] input = request.stdin();
         try {
-            if (input.length != 0 || !request.timeout().equals(java.time.Duration.ofSeconds(((Number) arguments.get("preparationTimeoutSeconds")).longValue() + 15))
+            if (diagnosticRequest == null && input.length != 0 || !request.timeout().equals(java.time.Duration.ofSeconds(((Number) arguments.get("preparationTimeoutSeconds")).longValue() + 15))
                 || request.outputLimitBytes() != 65536)
                 throw new IllegalArgumentException("Preparation input or limits changed");
         } finally {
@@ -57,6 +64,9 @@ public final class DeploymentAssistedPreparationReview {
         facts.put("remoteLayoutSha256", layout.digest());
         facts.put("server", server.id());
         facts.put("arguments", arguments);
+        if (diagnosticRequest != null) facts.put("diagnostic", Map.of("operationId", diagnosticRequest.operationId().toString(),
+            "requestSha256", diagnosticRequest.sha256(), "target", diagnosticRequest.target(),
+            "meaning", "Original-operation attachment with actual command exit, stage and separately redacted stdout/stderr tails of at most 16 KiB each. Reading it requires a new independent approval and grant. Preparation success protocol is unchanged."));
         facts.put("meaning", "Complete guarded request and literal arguments matched the independently source-bound SYSTEM helper contract for this layout. No project-supplied code, URLs or scripts select the preparation implementation. Not live installation evidence, a safety verdict or permission; original workflow authority and each selected effect still require independent review.");
         return Map.copyOf(facts);
     }

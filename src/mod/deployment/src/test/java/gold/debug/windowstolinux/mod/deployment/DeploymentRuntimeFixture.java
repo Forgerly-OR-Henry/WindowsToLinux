@@ -3,15 +3,8 @@ package gold.debug.windowstolinux.mod.deployment;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.*;
-
-import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.result.ApiException;
-import gold.debug.windowstolinux.appapi.task.model.TaskState;
-
-import java.util.concurrent.TimeUnit;
 import java.util.*;
-
+import java.util.concurrent.TimeUnit;
 import javax.swing.JComponent;
 
 import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
@@ -28,7 +21,11 @@ import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
@@ -38,7 +35,7 @@ import org.junit.jupiter.api.io.TempDir;
 public class DeploymentRuntimeFixture {
     protected static final String OWNER = DeploymentSchema.OWNER;
 
-    protected static final String VERSION = "1.1.0-dev.3";
+    protected static final String VERSION = "1.0.0";
 
     protected static final String PASSWORD = "deployment-isolated-password";
 
@@ -161,7 +158,8 @@ public class DeploymentRuntimeFixture {
     protected void enable() throws Exception {
         try (var runtime = open()) {
             var catalog = new gold.debug.windowstolinux.app.service.mod.PlatformModCatalog(runtime.persistence().database());
-            assertTrue(catalog.refresh(workspace()).rejections().isEmpty());
+            var refreshed = catalog.refresh(workspace());
+            assertTrue(refreshed.rejections().isEmpty(), refreshed.rejections().toString());
             start(runtime, false);
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM mod_schema"));
             assertEquals(1, scalar(runtime,
@@ -171,7 +169,7 @@ public class DeploymentRuntimeFixture {
                 intents.review(OWNER, new PlatformModIntents.Choice(true, Optional.of(VERSION)), Optional.empty()),
                 false);
             if (gitEnabled()) intents.apply(intents.review("gold.debug.windowstolinux.mod.git",
-                new PlatformModIntents.Choice(true, Optional.of("1.0.0-dev.1")), Optional.empty()), false);
+                new PlatformModIntents.Choice(true, Optional.of("1.0.0")), Optional.empty()), false);
         }
     }
 

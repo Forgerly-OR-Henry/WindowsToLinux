@@ -4,9 +4,9 @@
 
 - 更新日期：2026-10-05（可选依赖、独立 Git／Files、部署迁移、双审批与授权策略、商店依赖下载及开发 V1 基准同步）。
 - 状态：本文维护当前平台公开合同和官方 Mod 规格。1.3 S0～S6 已完成本机适用验收与收尾，见 [1.3 开发文档](../development/PHASE-1.3.md)；1.2 文件、语音及命名调整见 [1.2 开发文档](../development/PHASE-1.2.md)。1.1 的 S1～S5 本机适用合同已有对应验证记录；该期 S6 备份、S7 正式 APP/JAR/SDK 发行及真实远端验收仍暂缓，见 [1.1 开发进度](../development/PHASE-1.1.md)。运行行为与现行界面见 [Runtime.md](Runtime.md) 和 [产品手册](PRODUCT-MANUAL.md)。
-- 当前官方部署实现已复用公开 Task/File/AI/SSH/Interaction 能力接入三种模式；模式编排、公共整图发布与正式记录仍在部署 Mod 内，不向 SDK 增加业务引擎类型。原任务恢复只读原候选状态，模型拒绝、审批漂移与不明副作用分别按原合同保留或结清，不能据一次页面操作自动重发。S5 本机适用功能已验证；正式 SDK 发行属于暂缓的 S7。
+- 当前官方部署实现已复用公开 Task/File/AI/SSH/Interaction 能力接入三种模式；模式编排、公共整图发布与正式记录仍在部署 Mod 内，不向 SDK 增加业务引擎类型。原任务恢复核对原候选状态；打包helper身份不匹配时，可在原策略检查点独立追加安装意图，经完整命令审批、留痕安装及精确回执核验后继续原状态核对。恢复不新建任务或检查点，未知安装只查原回执、不重复安装，也不重放构建或发布。模型拒绝、审批漂移与不明副作用分别按原合同保留或结清。S5 本机适用功能已验证；正式 SDK 发行属于暂缓的 S7。
 - 本文面向官方与第三方 Mod 作者，作为社区共同使用的开发与包格式规范，独立放在 `docs/`，不归入开发分期目录。本文说明开发分工、跨 Mod 协作、AI 使用、打包和调试；详细源码目录与命名由 File.md 统一维护。已确定要求与实现状态分开记录；[完整 API](#public-api-spec)和示例提供类型一致的目标声明，示例不替代实际源码与验证边界，正式 SDK 发行仍暂缓。
-- 职责：描述 Mod 的格式、行为、数据和公开能力。1.1 迁移及后置事项见 [1.1 开发文档](../development/PHASE-1.1.md#implementation)，最新实施与验收见 [1.3 开发文档](../development/PHASE-1.3.md)。本文不把接口示例当作已发行 SDK。
+- 职责：描述 Mod 的格式、行为、数据和公开能力。1.1 迁移及后置事项见 [1.1 开发文档](../development/PHASE-1.1.md#implementation)，最新实施与验收见 [1.3 开发文档](../development/PHASE-1.3.md)。本文不把接口示例当作已发行 SDK。数据库字段组织规则统一见 [File.md](File.md#database-structure)。
 - [开发总纲](../development/DEVELOPMENT.md) · [1.1 工程主文档](../development/PHASE-1.1.md) · [1.2 APP 调整](../development/PHASE-1.2.md) · [1.3 当前开发](../development/PHASE-1.3.md) · [当前源码结构](File.md#current-source-tree) · [已确认的源码结构](File.md#mod-source-layout) · [作者开发约定](#source-development) · [数据库与 Schema 版本](#mod-database) · [用户操作与生命周期](#mod-lifecycle) · [版本切回](#version-switching) · [包与加载规格](#package-loader-spec) · [完整 API](#public-api-spec) · [部署 API](#deployment-api-spec)
 
 <a id="confirmed-format"></a>
@@ -89,6 +89,10 @@ Mod 发布版本采用语义化版本的 `主版本.次版本.修订号`：兼�
 | 同 ID、不同版本         | 按多版本安装规则处理；Mod 是否启用由开关控制，使用哪个版本由单选控制，同一 Mod 同时最多运行一个版本。 |
 
 上述内容固定规则适用于发行包，CLASS 开发模式仍允许修改源码、重新编译并重启调试。内容摘要用于一致性与安装损坏校验，不证明作者身份；重装也不能绕过同版本内容冲突检查。
+
+运行与原任务恢复以 **Mod ID 和精确版本号** 判断程序身份，不再以代码指纹判断是否是原版本。同一版尚未完整通过测试时保持版本号不变，允许修复、重新编译后继续核对原任务；完整测试通过后才按上述规则更新版本号。Schema 版本及数据代次、依赖关系、平台 API、文件路径与归属仍须核对；下载包、解压结果、素材和远端发布内容的完整性摘要不受此规则影响。既有存储中的代码摘要仅作为历史凭据保留，不改写原任务事实，也不作为恢复的身份条件。
+
+**后续功能，已记录但本次不实现：** 允许 Mod 在配置文件中声明可恢复的旧版本范围。未来使用相同 ID 的新版本恢复旧任务时，只有声明兼容对应旧版本才能接纳；依赖和数据代次等其他恢复条件仍须满足。当前没有实现此配置声明，版本号不同仍拒绝恢复。后续实施须另行明确范围；本条不代表已交付能力。
 
 <a id="manifest-contract"></a>
 
@@ -222,7 +226,7 @@ Mod 入口、服务注册和界面在 APP 主进程运行；作者可按需启�
 
 #### 商店客户端目录协议
 
-1.3 S5 客户端按以下合同实施；本节固定目录/包传输协议，不表示正式服务已上线。配置基根及传输边界统一见 [Config.md](Config.md#mod-关闭与商店边界)，客户端从基根内的 `catalog.json` 获取完整目录，搜索只筛选这份目录的展示结果，不能用搜索结果替代传递依赖的候选全集。
+1.3 S5 客户端按以下合同实施；本节固定目录/包传输协议，不表示正式服务已上线。配置基根及传输边界统一见 [Config.md](Config.md#mod-自动加载与商店边界)，客户端从基根内的 `catalog.json` 获取完整目录，搜索只筛选这份目录的展示结果，不能用搜索结果替代传递依赖的候选全集。
 
 目录为严格 UTF-8 JSON，不允许 BOM、非法编码、尾随值、重复或未知字段；顶层只有整数 `formatVersion: 1` 和 `releases` 数组。单次目录最大 8 MiB、1000 个精确发布，同一 ID/版本不得重复。每条发布包含以下字段：
 
@@ -353,9 +357,9 @@ Mod 管理界面提供独立的“原始包”页面，管理 `mod-zip/` 中的�
 
 <a id="platform-database-tables"></a>
 
-#### 新增平台表（职责与关键字段已认可）
+#### 平台状态与登记表
 
-以下十一张状态与登记表放在平台 Schema，由平台负责访问和生命周期；在原九张登记表基础上，完整规格补入 app_state 和 mod_server_reference。日志类别登记和 `_log` 表统一见[日志方案](#database-log-management)，完整列约束和索引见[内部 DDL](../development/PHASE-1.1.md#platform-state-ddl)。这些都是目标表，不是当前 SQLite 的实际表。现有业务表的归属见[数据所有权](#data-ownership)。
+以下状态与登记表属于平台 Schema，由平台负责访问和生命周期；本表说明职责与关键字段，不是完整数据库目录。日志类别登记和 `_log` 表见[日志方案](#database-log-management)，当前完整列、约束和索引以[平台建表 SQL](../../src/app/db/src/main/resources/gold/debug/windowstolinux/app/db/schema/platform-v1.sql)为准；当时设计见[1.1 DDL 记录](../development/PHASE-1.1.md#platform-state-ddl)。业务数据归属见[数据所有权](#data-ownership)，字段列序规则见 [File.md](File.md#database-structure)。
 
 | 表名                       | 用途                                                       | 主要字段                                                               |
 | -------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -682,7 +686,7 @@ JAR/APP 已下载页的“删除整个 Mod”与“删除所选版本”分开�
 
 当前持久后端 `PlatformModIntents` 已由 Runtime 工厂提供：在解锁后的后台线程审阅目标及连带范围，提交时重新比较目录、意图修订、运行事实和数据代次；拒绝请求不写意图。接纳后的 WAIT_RESTART 请求保存原/目标选择、请求组、影响范围及数据准备依据；兼容切换不关闭依赖者开关，但同样封闭其新任务。撤销整组未执行请求按当前依赖重新校验，不回滚其他独立请求；摘要写入、旧操作移除和选择恢复在同一平台事务提交。数据库失败时整个请求不确认，原审阅不自动重放，需重新读取已存事实。已有 READY 数据直接复用；首次初始化只登记目标；已有数据需明确确认精确来源代次及唯一声明路径。
 
-安装版已通过 `PlatformModPrograms` 复用 CLASS 的生命周期、Schema 准备与维护流程。只读取已登记 READY 发布的固定 `mod/<ID>/<version>`，按原清单和完整内容摘要复核全部文件及代码；原包不必仍在场，未登记目录不接管，所选版本损坏不自动换版。运行时打开前捕获已关闭的精确修订；下一次默认启动在无保留工作且修订未变时确认停用，使从未开启的安装也可维护。本次新安装、快照之后的选择变更或旧 UNKNOWN 均不能借此确认。此闭环为本机隔离安装验证，S7 发行打包仍暂缓。
+安装版已通过 `PlatformModPrograms` 复用 CLASS 的生命周期、Schema 准备与维护流程。只读取已登记 READY 发布的固定 `mod/<ID>/<version>`，按原清单核对 ID/版本、受管路径、包布局和代码契约，不重新摘要代码；原包不必仍在场，未登记目录不接管，所选版本损坏不自动换版。运行时打开前捕获已关闭的精确修订；下一次默认启动在无保留工作且修订未变时确认停用，使从未开启的安装也可维护。本次新安装、快照之后的选择变更或旧 UNKNOWN 均不能借此确认。此闭环为本机隔离安装验证，S7 发行打包仍暂缓。
 
 `ModRestartLedger` 处理无数据或精确 READY 复用的已准备请求：新 boot 核验原修订、旧运行已关闭和原占用已释放后进入 APPLYING；实际会话的本次 RUNNING/已关闭 FAILED 才能分别形成成功/失败摘要。关闭意图必须本次从未加载且无残留，停用确认与固定 ID 摘要、执行行移除原子提交。归档失败保留原操作，重试只核对实际状态与补归档；执行行已移除不因日志被保留策略清除而重建旧摘要。跨启动中断的 APPLYING 保持 UNKNOWN，不能再当未执行请求取消或自动重跑。默认 CLASS 协调已将真实生命周期与该账本连接；首次初始化、已确认跨版本迁移和归档已接通；明确失败重试后端已接通；已下载页已接选择、核对与重试；原包界面及安装事务已接通，安装版单版本删除已接通，整个 Mod 删除和同版本重装/明确恢复已接通，安装版已接共用实际启动图；安装事务及归档后端见包校验节，不能把已准备意图的执行视为完整管理功能验收。
 
@@ -821,7 +825,7 @@ JAR/APP 已下载页的“删除整个 Mod”与“删除所选版本”分开�
 | 秘密引用及加密存储                                                     | APP 保护；所属插件标识其用途和归属 | 插件业务数据不得内嵌明文 API key、SSH 私钥或主密码；归档密码与 APP 主密码保持独立语义。                      |
 | 官网投稿包与投稿邮箱                                                   | 网站收集端                         | 与 APP 本地服务器/AI 数据分开；邮箱可见性、保存期限及审核上架规则见 [官网服务规范](APP.md#website-service)。 |
 
-个性化设置按所属功能保存：平台 `desktop_preference` 保留连接超时和传输无进展阈值等平台通用设置；各 Mod 的业务偏好移入所属 Mod 的 Schema，由该 Mod 管理。部署模式、AI 审批和授权重复策略均归部署 Mod，分别保存而不相互覆盖；APP 不提供统一的部署授权偏好，未来不同 Agent 也须独立持有两策略。即使设置入口由平台统一展示，也不改变数据归属；各 Mod 的具体偏好表名与字段由其数据设计定义。
+个性化设置按所属功能保存：平台 `desktop_preference` 保留连接超时和传输无进展阈值等平台通用设置；各 Mod 的业务偏好移入所属 Mod 的 Schema，由该 Mod 管理。部署模式、AI 审批和记忆授权勾选均归部署 Mod，分别保存而不相互覆盖；APP 不提供统一的部署授权偏好，未来不同 Agent 也须独立保存业务确认规则。即使设置入口由平台统一展示，也不改变数据归属；各 Mod 的具体偏好表名与字段由其数据设计定义。
 
 历史 [SQLite 建表脚本](../../history-src/src/app/db/src/main/resources/schema/desktop.sql)中的 19 张表曾按下列归属适配；当前平台直接使用 H2 建库基准，不迁移旧 SQLite 数据：
 
@@ -861,6 +865,12 @@ JAR/APP 已下载页的“删除整个 Mod”与“删除所选版本”分开�
 加载框架选型与适配验证见 [1.1 开发文档](../development/PHASE-1.1.md#loader-verification)。
 
 <a id="api-stop-contract"></a>
+
+<a id="sdk-type-names"></a>
+
+当前 SDK 使用 ServerId / SecretId 选择资源，ServerRef / SecretRef 表示业务引用；身份组合仍使用 Identity。任务业务结果使用 TaskResult，资源释放和清理状态继续独立。官方部署公开应用标识改为 DeploymentApplicationId。以上类型保留原字段、枚举值及授权约束。
+
+公开类型改名没有旧类型兼容壳。使用旧版类型编译的 CLASS/JAR Mod 及跨 Mod 调用方需要同步源码并重新编译；不需要因类名变化修改 Schema 或已有业务记录。逐项对应见[类名调整清单](../development/CLASS-RENAMES.md)。
 
 ### 6.2 公开接口与停止协议
 
@@ -954,7 +964,7 @@ Runtime 工厂只在实际 JAR/APP 布局提供此能力，CLASS 仍只使用源
 }
 ```
 
-字段全部必填；路径数组可为空，未知键、重复键及 `null` 拒绝。`buildInputs` 列出决定本次编译的工作区根/父/模块 POM 和维护的构建配置文件。`inputDigest` 使用内容摘要算法 v1 的长度前缀与文件摘要格式，输入集合为 manifestPath、buildInputs 和 libraries 的去重普通文件，路径键使用绝对路径的 `/` 表达，前缀为 `WTLMOD-DEVELOPMENT-1\n`；生成器及运行时读取同一显式文件集合，不在运行时重新解析 Maven 或通过目录时间推测新旧。描述同时写入 `target/classes/META-INF/wtlmod-development-input.sha256`，运行时比对两处及当前输入摘要。编译输出缺失或输入改变时要求先编译，不降级加载旧包。
+字段全部必填；路径数组可为空，未知键、重复键及 `null` 拒绝。`buildInputs` 列出决定本次编译的工作区根/父/模块 POM 和维护的构建配置文件。`inputDigest` 使用内容摘要算法 v1 的长度前缀与文件摘要格式，输入集合为 manifestPath、buildInputs 和 libraries 的去重普通文件，路径键使用绝对路径的 `/` 表达，前缀为 `WTLMOD-DEVELOPMENT-1\n`；生成器在构建时生成该凭据；运行时检查声明的路径及依赖结构，不重新计算输入或代码指纹，也不重新解析 Maven 或通过目录时间推测新旧。描述同时写入 `target/classes/META-INF/wtlmod-development-input.sha256`，运行时仅检查两份构建凭据配对。编译输出、入口或配对凭据缺失时要求先编译；同 ID、同版本修复的编译代码按版本身份规则接纳。
 
 描述生成工具的主输出允许位于已验证工作区的 `src/mod` 或 `src/moddev`；作者从模块输出必须属于同一区域中声明的 Maven 依赖模块，输入必须包含所在区域的聚合 POM。运行发现只接受 `src/mod`，不因生成了 ModDev 描述而加载开发项目。第三方库允许位于 Maven 本地仓库，但必须由构建解析出的精确依赖清单提供，不能遍历任意外部目录。资源已处理进各 `target/classes`，不另扫 `src/main/resources`。工作区根由启动参数 `-Dwtl.workspace=<绝对路径>` 明确给出，验证根 POM、`src/app` 与 `src/mod`；不从当前工作目录向上猜测。移动项目后按新路径重新生成描述与输入标记，旧路径输出拒绝。JAR/APP 忽略该参数并只加载安装根。
 
@@ -1243,7 +1253,7 @@ public interface ProcessService {
 
 `beginCheckpoint` 允许原任务根所有者，以及真实同步服务委托中的精确提供方，在原执行作用域用未使用过的稳定键登记 UTF-8 最多 12,000 字节、无秘密的 JSON 作者事实。提供方检查点按原任务、所有者和版本隔离，不能读写根或其他提供方事实。平台将固定 `author-checkpoint.v1` 封套作为 CUSTOM 显式资源保存，不解释 Git 业务状态。`findCheckpoint` 仅读取同一原任务及原所有者命名空间的既有键，释放后的行在归档前仍可读。`advance` 要求精确旧修订和完整旧载荷匹配，提交不确定时保留 UNKNOWN 与原占用。恢复不能新建检查点、脱离原作用域或凭 UUID 接管其他任务；作者须先保存最终事实，再释放该检查点，最后由平台归档原任务。
 
-新任务格式 3 记录根及其必需闭包，实际首次调用可选提供方前原子追加 `OPTIONAL_USED` 边、精确程序/代次和贯穿整任务的 MOD/SCHEMA 占用，再登记原调用 `service.v2`。调用返回仅释放调用组。恢复核对原实际使用图，不按当前选择补图、换版本或重发业务；旧格式 2 按原全部必需图解释，格式 1 缺失证明保持未知。精确事务和恢复分组合同见 [S2 原任务图](../development/PHASE-1.3.md)。
+新任务格式 3 记录根及其必需闭包，实际首次调用可选提供方前原子追加 `OPTIONAL_USED` 边、精确程序/代次和贯穿整任务的 MOD/SCHEMA 占用，再登记原调用 `service.v2`。调用返回仅释放调用组。恢复核对原实际使用图，不按当前选择补图、换版本或重发业务；旧任务格式2拒绝读取；当前宿主格式1不包含Mod恢复图。精确事务和恢复分组合同见 [S2 原任务图](../development/PHASE-1.3.md)。
 
 当前平台任务收尾已将固定 `archive_log_id` 的 `platform_task` 摘要、已释放资源行及原执行行移除放在同一 H2 事务。摘要仅保存有界脱敏诊断，不保存业务返回值；作者先提交正式业务结果，再返回已知结论。摘要或执行清理失败时保留原结论与 FINISHING，明确核对仅补平台归档，不重复调用业务或 TaskRecovery；跨启动已持久的完整收尾凭据可补归档，不恢复旧 Future。只有平台元数据待收尾的情况适用此路径，UNKNOWN 和实际残留资源仍须原恢复实现核对。正常结束的句柄保持终态及原返回值，显式核对后的 value 仍按上述契约为空；日志按类别保留 100 条、手动清到 10 条后，不由旧任务重建摘要。
 
@@ -1257,25 +1267,17 @@ public interface ProcessService {
 
 #### 部署审批与授权及宿主边界
 
-2026-10-05 用户明确两策略的先后关系与归属：审批策略决定哪些实际动作需要人工授权，授权策略决定同类型、同已核实范围的问题是否再次询问。部署模式、审批和授权重复策略由 Deployment Mod 独立保存，不在 APP 保存全局业务偏好；未来其他 Agent 同样独立。持久偏好不等于具体操作权限，旧平台偏好行不再参与决定，也不改写用户旧数据。
+部署 Mod 独立保存三种审批模式及记忆布尔值，默认 AUTOMATIC / true，无旧字符串策略映射。三档均对每条实际命令进行相同静态检查和独立 AI 审核；静态部署没有 AI。审批 JSON 严格为 decision、requiresUserConfirmation、reason，不再输出风险等级。人工逐条确认；自动没有实际未授权取舍则执行，存在必须改变已有数据/服务/配置的取舍时解释影响与建议并询问；全控启动真实确认后不再弹命令授权问题。安装、root、系统路径和 systemd 本身不是问题触发条件。
 
-三种审批策略均先静态检查，再逐条独立 AI 审核实际远端命令、完整可执行输入及源码补丁。静态拒绝根目录、系统关键目录本身或其整体清空；具体普通目录删除进入 AI 判断。固定工具同样适用，阶段同意不能替代实际命令审核。静态部署保持零 AI。
+`InteractionService.openReviewedWorkflow(intent, CommandReviewMode, rememberAuthorization, recovery, task)` 由宿主验证原 TaskContext、根所有者/版本及完整原服务器准入，保存 CUSTOM 租约。普通执行和原根核对有独立准入检查；核对先清理原过期占用，不能复活旧授权或重放 UNKNOWN。`WorkflowGrant` 是不透明的仅关闭对象；关闭先撤权并清记忆，再释放租约，释放不明保持 UNKNOWN。`closeWorkflowResources` 仅为真实原根核对清理，不创建权限。
 
-| 审批策略 | 可选授权策略 | 人工问题规则 |
-| --- | --- | --- |
-| 人工审核 | 逐条、通用 | 每个实际动作要求人工授权；逐条每次询问，通用同类同范围首次询问后复用，不增加整流程交权提示 |
-| 自动审批 | 逐条、通用、完全授权 | 普通动作执行；逐条/通用仅高危需人工，拒绝且未取消原任务时尝试不同低风险方案；完全授权遇高危不执行、不询问，直接尝试低风险方案 |
-| 完全控制 | 通用、完全授权 | 静态及 AI 通过后执行；通用在开始时询问一次完整流程交权，完全授权省略该提示 |
+`InteractionService.updateReviewedWorkflowPolicy(originalGrant, expectedRevision, targetMode, originalTask)` 仅由原工作线程在已结清动作、进入下一审批点前调用；其他实现默认明确返回 UNAVAILABLE。宿主校验原许可对象、任务、所有者及期望修订，成功返回 `WorkflowPolicyState(mode, revision)`；新作用域从0开始，真正变更加1，同模式不变。修订不符拒绝，不重开作用域。当前人工窗口继续原策略，变更后旧修订未消费许可及记忆缓存失效；已执行动作不撤回。进入 FULL_CONTROL 须原宿主交权确认，拒绝返回取消且保持原策略。
 
-自动审批的逐条/通用在开始时也只询问一次完整流程交权，这个问题与后续高危问题分别计数。七种合法组合在部署 UI 与持久读取共同验证；不合法选项灰显且拒绝鼠标、键盘和程序选择。切档使未保存草稿无效时选择通用，已存非法值拒绝读取而不自动修复。保存失败恢复原三值。
+部署 UI 只向原任务排队，显示待生效；原 worker 在下一边界更新宿主并将确认策略与部署持久修订记录到现有 `deployment-approval-policy` 检查点。部署修订可跨目标子任务延续，与每个新宿主作用域的从0修订分别校验；历史动作保留当时策略。最后确认后才保存默认偏好，偏好失败不回滚当前策略。REQUESTED/APPLYING 或结果不明使后续动作停止，恢复不重放更新、不用全局偏好替代；旧任务无该检查点时只读恢复，不凭空建立历史策略。检查点沿用既有表，无新增数据库表。
 
-通用授权只缓存原流程内明确的人工作答，不缓存 AI 审批；同一已核实候选内同级普通目录删除可复用人工问题，每个精确请求仍独立 AI。模糊、复合或动态目标无法证明同范围时保留精确绑定，不以标签或字符串相似扩大授权。被拒高危命令不重发或重复索求，低风险替代重新审查；无可行替代时明确停止。已知未发送拒绝与实际 UNKNOWN 分开，后者仍只核对原效果，不自动重放。
+`approveReviewedAction` 接收未改变的原意图和实际 CommandRequest，宿主重新生成 RemoteActions 并逐字段匹配，按当前已确认策略修订决定人工问题。真实人工批准且勾选记忆时，保存任务内服务器、资源、操作、修订、effectSummary、脚本/输入摘要及输入长度；非命令绑定完整 exactAction 摘要。复用要求这些键完全相同，期限/输出上限不增加，不能通过 Shell 相似性扩大参数。AI 自动通过不插入授权。复用仍先经过新的静态和独立 AI 审核。每个 ApprovalGrant 仍绑定原任务和精确请求，宿主对象身份只消费一次；展示模型理由不修改存入许可的原 intent。
 
-`InteractionService.delegateWorkflow(intent, mode, task)` 从业务捕获的明确授权策略建立宿主所属的原根流程作用域；`reviewedWorkflow` 仅为人工模式建立问题重复作用域，只许 ONCE/GENERAL 且没有交权提示。宿主验证实际原 TaskContext、根所有者/版本及完整原服务器准入，保存真实 CUSTOM 显式租约；不接受复制 UUID、公开 AiResponse 或作者布尔值充当权限。`WorkflowGrant` 是不透明的仅关闭对象，关闭先撤权再释放真实占用，未确认释放保留 UNKNOWN。原 scope 和具体许可不跨任务、版本、启动或流程结束复用。
-
-中断核对使用独立 `recoverWorkflow` 接口，仅在宿主实际执行原任务的核对回调时接纳；先精确清理原过期租约，再依据原业务记录的审批与授权策略建立新的作用域，必要时重新询问交权。独立 `closeWorkflowResources` 只允许真实原根核对回调撤权并清理原租约，不建立权限；因此业务日志尚未创建时仍能清理占用，但缺失业务依据仍保留 UNKNOWN。旧权限、旧人工回答和旧许可不会恢复，原 UNKNOWN 命令也不能重发。Agent 在原准入事务的 `AUTHORIZATION_POLICY` 事件中保存授权策略，读取时严格要求唯一且有效；此记录沿现有 V1 事件表保存，不新增数据库迁移代次。
-
-`approveRequired` 对审批策略要求的问题应用本作用域授权重复规则，普通 `approve` 对合法委托的已分类普通动作取得真实单次许可。未分类动作仍要求明确人工，普通无作用域任务不自动取得委托权限。每个 `ApprovalGrant` 继续绑定精确实际请求与原任务，真实宿主对象身份只消费一次；目标、输入、修订或命令变化后重新签发。
+Agent 通过唯一 `REMEMBER_AUTHORIZATION` / `rememberAuthorization.v1` 事件保存严格 true/false；发布策略使用严格布尔 rememberAuthorization 字段。缺失、重复或旧字符串字段拒绝，不加入兼容分支；版本保持1.0.0，数据库事件表代次不变。普通 approve/approveRequired 在审核作用域内仍保留其他业务的人工确认，不扩大秘密、文件冲突、数据库初始化或主机信任权限。被拒动作可尝试不同且重新审核的替代；没有可行方案就停止，UNKNOWN只核对原效果。
 
 内部宿主 `WorkflowLaunchButton` 仍在用户点击时捕获实际表单与完整目标；`PlatformAuthorizationService.Launch` 显式接收本流程的授权模式，不读取全局偏好。作者在 `RemoteActions` 产生的精确意图上附加经业务校验的 `ActionSemantics/ActionTarget`，证明实际请求及范围；宿主按原服务器准入核验并重建精确请求绑定。该通用机制不保存部署策略，也不代替首次主机信任、秘密输入、文件冲突或其他业务选择。文件普通删除的独立明确确认合同保持。
 
@@ -1285,7 +1287,7 @@ public interface ProcessService {
 
 Mod 新任务准入在同一平台事务内核对本次启动的运行版本、启用及选择意图、READY 数据代次和完整服务器集合，再写入任务。服务器连接配置变更与该准入共用平台状态锁；只要相关任务尚未结束，包括尚未取得运行资源的 `QUEUED` 和待核对的 `UNKNOWN`，便拒绝修改主机、端口、账户或凭据引用。显示名称可以单独修改；首次认证后的端点绑定信任仍可按原规则保存。此门禁不代替长期业务引用保护，也不把锁定桌面解释为取消已接纳任务。
 
-新接纳的 Mod 任务在同一事务内保存原运行图：原所有者及必需闭包的精确版本、登记代码摘要和可选 Schema 代次，发生在任务行提交及作者回调之前。既有 `platform_task.recovery_json` 格式 3 同时记录 REQUIRED/OPTIONAL_USED 边；首次调用可选提供方前才原子固定其必需闭包和实际使用边，不把声明伪装成实际调用。排队及跨启动读取不重新查询当前单选。缺少提供方就绪数据或代码摘要时拒绝准入。格式 2 按原完整必需图解释，格式 1 的宿主及较早任务明确没有完整原 Mod 图，不从当前配置补造；损坏、重复键、尾随内容、身份错配或超过 1,048,576 字符的准入记录不进入任务执行。原图自动加载及 RECOVERY 会话先核对作者业务和物理资源，再由宿主收尾原调用组，详见 [Runtime 原恢复合同](Runtime.md)。
+新接纳的 Mod 任务在同一事务内保存原运行图：原所有者及必需闭包的精确版本、登记代码摘要和可选 Schema 代次，发生在任务行提交及作者回调之前。既有 `platform_task.recovery_json` 格式 3 同时记录 REQUIRED/OPTIONAL_USED 边；首次调用可选提供方前才原子固定其必需闭包和实际使用边，不把声明伪装成实际调用。排队及跨启动读取不重新查询当前单选。缺少提供方就绪数据或代码摘要时拒绝准入。旧任务格式2拒绝读取，当前宿主格式1明确没有Mod恢复图，不从当前配置补造；损坏、重复键、尾随内容、身份错配或超过 1,048,576 字符的准入记录不进入任务执行。原图自动加载及 RECOVERY 会话先核对作者业务和物理资源，再由宿主收尾原调用组，详见 [Runtime 原恢复合同](Runtime.md)。
 
 上述三种原元数据格式均可带宿主所属的可选布尔 `cancelRequested`。原任务取消与原事务一起持久化，不改变图和占用；重启后的恢复上下文保留已知取消意图。UNKNOWN 仍需原操作核对，取消请求不能直接把它改成 CANCELLED。可选图扩展保留该字段，其他未知字段、错误类型及不合法 JSON 仍拒绝。
 
@@ -1293,7 +1295,7 @@ Mod 新任务准入在同一平台事务内核对本次启动的运行版本、�
 
 ### 8.3 ui：作者提供 Swing 页面
 
-本节描述现行唯一根工作区 API 与挂载行为。[1.3 前置开发](../development/PHASE-1.3.md#mod-workspace)落实每个 Mod 一个自动主导航入口，内部功能页由作者组织；旧固定偏好按所有者归并。
+本节描述现行唯一根工作区、临时导航和界面扩展 API。[1.3 前置开发](../development/PHASE-1.3.md#mod-workspace)落实每个 Mod 一个自动主导航入口，内部功能页由作者组织。
 
 ```java
 package gold.debug.windowstolinux.appapi.ui;
@@ -1304,12 +1306,16 @@ import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
 import gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
+import gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest;
+import gold.debug.windowstolinux.appapi.ui.extension.UiExtensionService;
 
 public interface UiService {
     PageRegistration register(PageSpec spec, PageFactory factory) throws ApiException;
     PageRegistration registerPreview(PageSpec spec, PageFactory factory) throws ApiException;
     void open(String localPageId) throws ApiException;
+    void open(String localPageId, UiNavigationRequest<?> request) throws ApiException;
     void openPlatform(PlatformPageKind target) throws ApiException;
+    UiExtensionService extensions();
     UiEnvironment environment();
 }
 ```
@@ -1323,16 +1329,21 @@ package gold.debug.windowstolinux.appapi.ui.page;
 
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import java.util.Locale;
+import java.util.Optional;
 import javax.swing.JComponent;
 
 public enum PlatformPageKind { SERVERS, AI_MODELS, TASKS }
 public record UiEnvironment(Locale locale, String themeId, boolean locked) {}
 public record PageSpec(String id, String titleKey, String defaultTitle, boolean settingsPage) {}
+public record UiNavigationRequest<C>(String destination, Class<C> contextType, Optional<C> context) {}
 public interface ModPage extends AutoCloseable {
     JComponent create(UiEnvironment environment) throws Exception;
     void environmentChanged(UiEnvironment environment);
     default String navigationId() { return ""; }
     default void restoreNavigation(String id) {}
+    default void navigate(UiNavigationRequest<?> request) throws Exception {
+        throw new UnsupportedOperationException("Page does not accept contextual navigation");
+    }
     @Override void close() throws Exception;
 }
 public interface PageFactory { ModPage create() throws Exception; }
@@ -1344,19 +1355,108 @@ public interface PageRegistration extends AutoCloseable {
 
 作者控制根 `JComponent` 内的布局、组件、绘制、表格、表单及内部页面切换。`UiService.register(PageSpec, PageFactory)` 中 `settingsPage=false` 表示所属 Mod 唯一根工作区，第二个普通根登记明确拒绝；撤销原根登记后可登记新的根。`settingsPage=true` 挂载到 APP 设置中的该 Mod 分区，不生成普通主导航入口，也不授予平台设置权限。`registerPreview` 保留 CLASS 隔离预览，既不占根登记，也不出现在普通导航。
 
-当前未公开发布阶段的 API、APP、官方 Mod 和作者父工程统一使用 `1.0.0`，官方 Mod 的 `platformApiRange` 明确声明为 `1.0.0`。阶段验收状态见 1.3 执行计划，正式 SDK 发行仍后置。开发阶段的部署 Schema 统一为 1；helper 保持原协议，软件、Schema 和 helper 版本不根据文档期数修改。CLASS 源码允许原版本下重新编译调试，发行包仍遵守同版本内容不可变规则。
+当前工程、平台 API 和官方 Mod 统一保持 1.0（规范配置值 `1.0.0`），官方 Mod 使用精确的 `platformApiRange: 1.0.0`，Git 可选依赖同为 `1.0.0`。未正式发布前只维护当前源码和格式，不为旧开发版增加兼容分支。Schema 的结构标识与 helper 线协议独立于软件发行版本；保留实际数据完整性、归属和协议校验。CLASS 源码允许当前版本下重新编译调试，发行包仍遵守同版本内容不可变规则。
 
 登记与成功发布只提供元数据，不创建视图；Mod 成功启用并发布根后，APP 自动生成其唯一入口，无界面服务 Mod 没有空入口。根 ID 在所属 Mod 内唯一，宿主键为 Mod ID＋根 ID。首次进入在 EDT 创建并缓存实例，切换只隐藏，返回复用输入、选择和浏览状态；明确关闭后释放视图，重开才创建新实例。撤销、停用及正常退出按原作用域释放，清理失败保留原实例和占用供重试。主题、语言和锁定通知覆盖所有保留实例，作者向内部页转发环境并负责其资源。
 
-APP 拥有左侧主导航、紧凑根标题/关闭入口与全局底部诊断反馈；作者拥有根内导航、业务标题和状态。当前主窗默认 1120×760、最小 800×560，仅作兼容性基线，具体比例可继续调整。明确关闭先确认，默认取消；确认关闭会丢弃未保存界面输入，已接受后台任务继续按自身生命周期执行。平台撤销、停用及退出沿原清理合同。作者弹窗使用实际页面所在窗口为 owner，纳入锁定和关闭，不创建脱离管理的常驻顶层窗口。
+APP 拥有左侧主导航、紧凑根标题/关闭入口与全局底部诊断反馈；作者拥有根内导航、业务标题和状态。主窗应用内容区默认 1600×900、最小 1280×720，系统标题栏及边框另算；普通窗口拖动保持 16:9，最大化使用系统工作区。展开主侧栏固定宽 160，顶部固定高 60，底部单行状态栏固定高 30，不随窗口大小或界面缩放改变；折叠侧栏仍保留原动画及按 UI 缩放的图标宽度。默认展开时作者根区域恰为 1440×810，缩放窗口时跟随剩余空间变化，不另锁比例。APP 紧凑根标题及关闭按钮挂载到顶部预留区域，不重复占用作者根区域。明确关闭先确认，默认取消；确认关闭会丢弃未保存界面输入，已接受后台任务继续按自身生命周期执行。平台撤销、停用及退出沿原清理合同。作者弹窗使用实际页面所在窗口为 owner，纳入锁定和关闭，不创建脱离管理的常驻顶层窗口。
 
 锁定允许宿主根导航及作者内部标签切换，业务输入/动作仍由原输入边界和能力授权限制；作者 `UiService.open` 仍需解锁。APP 的 Mod 已下载页保留当前根与设置扩展的明确打开、启停、版本及权限管理，不提供手动固定/取消固定。P0 不提供单独隐藏根入口；可调整顺序或折叠主导航，撤销/实际停用后入口消失，重发布后按原顺序显示，关闭视图不移除入口。
 
-排序偏好复用 H2 `desktop_preference` 的 `mod_navigation_pins`，格式仍为 `{"formatVersion":1,"pages":[{"ownerId":"…","pageId":"…"}]}`。当前已发布所有者的旧页面项按最早位置归并为一个当前根，重复旧项合并，新根追加；暂未发布所有者的原项保留至以后归并。解锁后经原准入事务原子保存，锁定只使用发布元数据和缓存；全 Mod 待核对删除仍冻结其原导航身份，完整删除沿原事务清理其偏好。损坏、重复身份、未知字段或超限均报告并保留原值，不截断。上限仍为 1,024 项、JSON 文本 1,048,576 字符、Mod ID 512 字符及页面 ID 1,024 字符，均按 Java `String.length` 计数。
+排序偏好复用 H2 `desktop_preference` 的 `mod_navigation_pins`，格式仍为 `{"formatVersion":1,"pages":[{"ownerId":"…","pageId":"…"}]}`。保存的根必须与当前发布的所有者和页面身份精确一致，每个所有者只允许一个根；新根追加，暂未发布所有者的原项保留。旧开发版身份不改写为新根。解锁后经原准入事务原子保存，锁定只使用发布元数据和缓存；全 Mod 待核对删除仍冻结其原导航身份，完整删除沿原事务清理其偏好。损坏、重复身份、未知字段或超限均报告并保留原值，不截断。上限仍为 1,024 项、JSON 文本 1,048,576 字符、Mod ID 512 字符及页面 ID 1,024 字符，均按 Java `String.length` 计数。
 
 恢复上次页面仍使用 `desktop_preference.ui_last_page` 原格式，根身份位于 `ownerId` / `pageId`，内部选择位于 `detailId`。作者可实现 `ModPage.navigationId()` 和 `restoreNavigation(id)`；两个回调均在 EDT 执行，恢复在新视图 `create` 前应用。标识只能为空或匹配 `[a-z][a-z0-9_.-]{0,127}` 的非秘密稳定值，不能包含草稿、路径或凭据；未知内部标识按作者默认选择处理。普通切换不会调用恢复，也不会重置保留实例。捕获失败会阻止本次正常退出并显示错误，允许修复后重试，不能静默丢弃原偏好。
 
-官方部署仅登记 `workspace` 根，标准/辅助部署、自主部署、应用管理在内部三个标签按首次选择创建并保留；设置及预览不会增加部署普通入口。内部标识为 `static-deployment` / `agent-deployment` / `applications`，旧独立页面启动身份转到新根后仍恢复对应标签；首次恢复只创建选中的内部页面。具体 P0 接入和有效验证见 [1.3 前置开发](../development/PHASE-1.3.md#mod-workspace)。
+官方部署仅登记 `workspace` 根，标准/辅助部署、自主部署、应用管理在内部三个标签按首次选择创建并保留；设置及预览不会增加部署普通入口。内部标识为 `static-deployment` / `agent-deployment` / `applications`；首次恢复只创建选中的内部页面。具体 P0 接入和有效验证见 [1.3 前置开发](../development/PHASE-1.3.md#mod-workspace)。
+
+`open(localPageId, request)` 只打开调用者自己的已登记页面。宿主先复制并校验请求，再创建或复用视图、聚焦，最后在 EDT 交付一次 `ModPage.navigate`；默认实现明确拒绝。普通 `open`、主导航切换和环境更新不重新交付。`destination` 是匹配 `[a-z][a-z0-9_.-]{0,127}` 的内部功能标识，`contextType` 是明确的共享公开类型，`Optional.empty()` 表示无目标。临时上下文不进入 `navigationId`、`detailId` 或启动偏好；页面拒绝请求时保留已有视图。导航本身不授予任务、文件或服务器权限。
+
+#### 8.3.1 通用界面扩展点
+
+APP 或 Mod 提供扩展位置，其他 Mod 在该位置注册动作或组件。宿主将提供方身份绑定到原启用，作者只能选择本地位置 ID，不能冒充 `platform` 或其他 Mod。公开合同位于 `appapi.ui.extension`，官方 Mod 不依赖 APP 实现模块。
+
+| 合同 | 责任 |
+| --- | --- |
+| `UiExtensionPoint<C>` | 稳定 `providerId + id`、上下文 `Class<C>` 和 `ACTION` / `COMPONENT` 接受类型。 |
+| `UiExtensionService` | `provide(id, type, kind)`、`registerAction(point, spec, action)`、`registerComponent(point, spec, factory)`。 |
+| `UiExtensionPointRegistration<C>` | 返回实际 `point()`；通过 `mount(host, Optional<C>)` 挂载页面；`close()` 撤销位置并清理所有挂载。 |
+| `UiExtensionHost` | 返回所属页面中的 `anchor()`；创建/更新动作控件；`setContents` 安装稳定排序的受管子项。动作可呈现为按钮或菜单项，组件布局由提供方决定。 |
+| `UiExtensionMount<C>` | `update(context, enabled)` 更新目标及提供方可用性；`close()` 只撤销本次页面挂载。 |
+| `UiExtensionSpec` | 贡献者内唯一 `id` 和整数 `order`；同一 ID 不能同时登记动作和组件。 |
+| `UiAction<C>` | `presentation(context, environment)` 返回 `UiActionPresentation(text, visible, enabled)`；`invoke(context)` 接收点击时复制的当前目标。 |
+| `UiComponentFactory<C>` / `UiComponent<C>` | 每次实际挂载创建新的生命周期对象及独立 `JComponent`；接收 `contextChanged`、`environmentChanged`，由 `close()` 释放监听器和实际资源。 |
+| `UiExtensionRegistration` | 主动 `close()`；查询 `state()` 与安全 `problem()`。状态为 `WAITING`、`MOUNTED`、`FAILED`、`CLOSED`。清理失败仍为失败和待清理，不能报告已关闭。 |
+
+本地位置和贡献 ID 使用与内部导航相同的稳定标识规则。内容按 `order`、贡献者身份、本地 ID 排序。登记早于页面创建或提供方发布时保持等待，不主动打开页面、不调用组件工厂；页面关闭释放挂载，登记仍可在再次打开时挂载新实例。任一方停止立即封闭交互，再清理其所属内容；清理失败保留原句柄和类加载器占用，可再次 `close()`，不能提前卸载。
+
+所有创建、更新、点击及清理回调均在 EDT。它们只做短界面操作；网络、文件和数据库工作通过既有任务入口异步提交。主题、语言、缩放和上下文更新不重建组件，作者不能在这些回调中重置未提交输入或反复增加监听器。宿主门禁拦截组件原生输入，并在动作点击前重新核验锁定、双方发布状态、依赖和当前可用性；作者自己的业务回调仍须遵守任务授权。
+
+跨 Mod 必须在清单中直接声明对提供方的兼容依赖，包括可选依赖；实际提供方不存在时保持等待，存在时复核运行版本。自定义上下文必须是提供方导出包中的公开值类型，双方使用同一个实际 `Class`，同名副本不匹配。上下文复用跨 Mod 服务的公开类型检查与有界值复制，只传递非秘密标识或快照；禁止私有控件、服务、流、连接、Future 等活动资源。RECOVERY 不登记普通扩展；隔离预览的创建、环境和关闭回调不能登记或挂载普通扩展。
+
+创建或更新失败只封闭对应内容并记录诊断；提供方布局失败封闭该挂载。业务点击拒绝也提供诊断，但不销毁原页面或其他扩展，后续条件满足时仍可点击。`anchor()` 必须是所属页面树中的稳定组件，以便宿主在作者页面关闭前撤销对应挂载；提供方只布置传入的受管子项，不自行重新父化作者原始组件。
+
+#### 8.3.2 作者接入示例
+
+服务器“更多”的正式扩展位置为 `PlatformUiExtensions.SERVER_MORE`（`platform / servers.more`），接受 `ACTION`，上下文为 `ServerId`。以下为文件管理 Mod 当前使用的动作形状；根页面实现 `navigate` 接收 `remote-root`：
+
+```java
+var shortcut = context.ui().extensions().registerAction(
+    PlatformUiExtensions.SERVER_MORE, new UiExtensionSpec("server-files", 100),
+    new UiAction<ServerId>() {
+        public UiActionPresentation presentation(Optional<ServerId> server, UiEnvironment environment) {
+            return new UiActionPresentation("文件管理", true, server.isPresent() && !environment.locked());
+        }
+        public void invoke(Optional<ServerId> server) throws Exception {
+            context.ui().open("workspace", new UiNavigationRequest<>("remote-root", ServerId.class, server));
+        }
+    });
+// Mod 停止时 shortcut.close()；实际文件管理文案根据当前环境本地化。
+```
+
+提供方可在 Mod 启动时声明一个组件位置，并在自己的 `ModPage.create` 中挂载：
+
+```java
+var details = context.ui().extensions().provide("details", ServerId.class, UiExtensionKind.COMPONENT);
+// details.point() 的 providerId 来自宿主。Mod.stop 关闭 details；页面持有并关闭 mount。
+JPanel area = new JPanel();
+UiExtensionMount<ServerId> mount = details.mount(new UiExtensionHost() {
+    public JComponent anchor() { return area; }
+    public void setContents(List<JComponent> contents) {
+        area.removeAll();
+        contents.forEach(area::add);
+        area.revalidate();
+        area.repaint();
+    }
+}, Optional.empty());
+// 页面选中目标后 mount.update(Optional.of(serverId), true)；无选择或忙碌时 enabled=false。
+```
+
+消费方通过提供方公开常量或同一共享类型构造精确 `UiExtensionPoint`，在清单声明提供方依赖后登记独立组件工厂：
+
+```java
+var target = new UiExtensionPoint<>("example.provider", "details", ServerId.class, UiExtensionKind.COMPONENT);
+var contribution = context.ui().extensions().registerComponent(target, new UiExtensionSpec("memo", 100),
+    () -> new UiComponent<ServerId>() {
+        private final JPanel panel = new JPanel();
+        private final JLabel targetLabel = new JLabel();
+        private final JTextField draft = new JTextField(20);
+        public JComponent create(Optional<ServerId> server, UiEnvironment environment) {
+            panel.add(targetLabel);
+            panel.add(draft);
+            contextChanged(server);
+            return panel;
+        }
+        public void contextChanged(Optional<ServerId> server) {
+            targetLabel.setText(server.map(ServerId::id).orElse("未选择服务器"));
+        }
+        public void environmentChanged(UiEnvironment environment) { panel.repaint(); }
+        public void close() { panel.removeAll(); }
+    });
+```
+
+示例使用 JDK Swing、`java.util.Optional/List`、公开 `server.model.ServerId`、`ui.page` 和 `ui.extension` 类型。实际组件须在 `close` 释放自己增加的外部监听器和资源；关闭失败保留责任供重试。此示例不额外开放正式 APP 页面区域。
+
+服务器菜单先显示已登记且可见的 Mod 动作，再以分隔线连接原删除入口；无选择、原页面忙碌或锁定时禁用。文件管理快捷入口复用原根工作区，新建时使用左栏，已打开时使用当前活动栏，直接通过 `FilesService.browse` 读取目标 Linux `/`，不询问初始目录。活动栏有路径草稿时确认，取消不读取；忙碌时明确拒绝且不排队。仅读取成功替换活动栏，失败保留原目录，另一栏、剪贴板和已接纳任务保留；原请求代次拦截过时结果。原导航及手动选择服务器/目录流程保留。SSH Mod 尚未提供对应页面，本次没有 SSH 快捷占位或终端实现。
 
 ### 8.4 db：作者自主 JDBC 与数据生命周期
 
@@ -1416,7 +1516,7 @@ public interface ModDatabase {
 
 迁移图要求所选来源到目标存在唯一完整路径，多条路径拒绝歧义；不自动选择最短路径。多步迁移在操作专属临时 Schema 中逐步输出，第一步读保留源，后一步读前一步输出，最后一步写正式目标；中间 Schema 不登记成用户可选版本。先由首条迁移建立其中间结构，目标结构由最后一条迁移建立；空安装调用当前 `initialize`。每步关闭连接后记录结果，全部完成后用当前 `validate` 验证正式目标；目标达到 READY 前不运行业务。临时身份、授权及中间 Schema 在明确完成或已核实失败后清理，未知时保留定位依据。DDL 自提交的结果通过实际结构、平台记录和作者验证共同核对。[H2 命令](https://h2database.com/html/commands.html)、[JDBC Connection](https://docs.oracle.com/en/java/javase/21/docs/api/java.sql/java/sql/Connection.html)
 
-官方 deployment 当前源码清单使用 Schema 1，开发阶段只维护 `schema-v1.sql` 和 `validation-v1.sql`，将当前完整业务结构、管理账本及自启动作直接纳入 V1，不保留迭代迁移类或清单迁移边。`DeploymentSchema` 除表列及发布摘要关系外，还按原配置值规则重建每个配置快照并复核其规范 SHA-256。既有开发数据不自动迁移、覆盖或重置；验证使用隔离新库，旧数据目录及冻结历史保留。平台通用迁移接口仍为正式发布后的结构升级保留。配置仓库只经原任务打开所属 ModDatabase；同一修订和同一发布绑定不可覆盖，存储时间保持 UTC 毫秒。事务提交确认、回滚或提交后连接释放不确定时报告公开 UNKNOWN，后续业务恢复须读取原修订/发布绑定，不能据异常直接重放写入。
+官方 deployment 处于开发阶段，发布版本保持 `1.0.0`，数据 Schema 保持 `1`，直接维护 `schema-v1.sql` 和 `validation-v1.sql` 的最新版完整定义，包含业务结构、管理账本及原生工具任务，不声明或实现开发迭代的数据库迁移链。本次开发库重建覆盖整个共享H2，由用户明确授权丢弃旧开发数据，再经平台登记和初始化入口建立空V1；正常重启保留新数据。列序强制遵守[数据库结构规范](File.md#database-structure)，新增列必须进入所属业务组，无法可靠保证列序时受控重建表，核验原数据及全部约束。`DeploymentSchema` 除表列及发布摘要关系外，还按原配置值规则重建每个配置快照并复核其规范 SHA-256。正常运行不自动迁移、覆盖或重置开发库；结构不匹配明确拒绝，调查数据目录及冻结历史保留。平台通用迁移接口仍为正式发布后的结构升级保留。配置仓库只经原任务打开所属 ModDatabase；同一修订和同一发布绑定不可覆盖，存储时间保持 UTC 毫秒。事务提交确认、回滚或提交后连接释放不确定时报告公开 UNKNOWN，后续业务恢复须读取原修订/发布绑定，不能据异常直接重放写入。
 
 ### 8.5 server 与 secret：共享配置引用
 
@@ -1827,7 +1927,7 @@ public interface VoiceSession extends AutoCloseable {
 
 可恢复的模型决策可先调用 `configurationRevision` 冻结不透明修订，再使用带 `expectedRevision` 的 `call`。宿主捕获所有用途的全部已配置成员、顺序、启用/禁用状态、模型修订、精确凭据引用，并将启动快照的推荐额度及覆写开关纳入修订；旧模型编辑器额度不参与摘要，也不改变验证修订。每个候选发送前重新核对完整冻结修订，配置漂移返回 `AI_CONFIGURATION_CHANGED` 并拒绝本次后续发送，不在网络调用期间持有平台事务锁。既有不带修订的调用仍保留开始时的成员快照。当前宿主适配按一次调用开始时取得的用途成员顺序执行，在取用凭据时重新核验模型修订、能力及用途启用状态。文字/视觉调用只在收到明确非成功 HTTP 响应后尝试下一成员；成功响应格式不合法直接报告失败，发送后的取消、超时、断连或正文超限保持 UNKNOWN，不继续尝试其他模型。文件语音与实时语音按各自能力选定首个匹配成员，调用过程中不换模型。所有文字/视觉候选共用请求总时限，实际客户端终止后才释放连接占用；释放登记失败由原任务显式核对。
 
-单次消息数量为 1～1024，完整响应正文最多 8 MiB；图片检查声明的 MIME、签名和字节容量，不在平台中解码像素。APP 推荐额度是请求预算，不表示模型真实能力上限；提供方拒绝时沿用既有错误处理，不自动降额重试。`AiResponse.effectiveMaxOutputTokens` 回传宿主实际发送的正数额度，未测量夹具可为空；失败诊断的 `effectiveMaxOutputTokens` 携带已解析额度。日志应区分申请值与实际值，无法取得实际值时记为未知。公开用量来自提供方报告，缺失字段保留为空。平台不记录 API Key、请求消息或提供者原始错误正文；JDK HTTP 请求头会持有凭据 String，临时 char[] 和所属请求/响应 byte[] 按实际使用寿命清理，不承诺清除 JDK 内部副本。
+单次消息数量为 1～1024，完整响应正文最多 8 MiB；图片检查声明的 MIME、签名和字节容量，不在平台中解码像素。APP 推荐额度是请求预算，不表示模型真实能力上限；提供方拒绝时沿用既有错误处理，不自动降额重试。`AiResponse.effectiveMaxOutputTokens` 回传宿主实际发送的正数额度，未测量夹具可为空；失败诊断的 `effectiveMaxOutputTokens` 携带已解析额度。日志应区分申请值与实际值，无法取得实际值时记为未知。部署调用的 `requestedMaximumOutputTokens` 记录申请值，原 `maximumOutputTokens` 记录实际值。公开用量来自提供方报告，缺失字段保留为空。平台不记录 API Key、请求消息或提供者原始错误正文；JDK HTTP 请求头会持有凭据 String，临时 char[] 和所属请求/响应 byte[] 按实际使用寿命清理，不承诺清除 JDK 内部副本。
 
 作者可省略额度或明确申请本次覆写，不读取 APP 配置模块：
 
@@ -2201,13 +2301,13 @@ Windows 文件身份由 `app/windows` 使用既有 JNA 读取卷号与原生文�
 
 默认静态页面在 NORMAL 模式惰性登记，可在本地目录和 Git 仓库之间选择；Git 输入要求明确逻辑项目名、无凭据 URL、默认分支或指定分支/标签/完整提交、原生 Git 可执行文件绝对路径，本地 `file:` 仓库还须明确允许。页面只收集输入，物理取材在原后台任务内进行；同一固定提交与冻结清单供分析及各组件归档使用，最终确认展示原 URL、所选引用和固定提交，并告知确认后保存本次来源项目。关闭或锁定会撤销未答审阅，最终确认后的原发布任务继续由平台持有；RECOVERY 模式不显示页面。页面短任务使用 `ServerService.listConfigured` 只读发现已保存的非秘密服务器摘要，游标绑定原查询任务且与已准入服务器列表区分；发现不授予连接、`get` 或引用预留权限，选定目标仍由新的 `deployment-publication` 原任务准入。秘密修订列表在独立无服务器占用的短任务中只读本 Mod 的业务标识、正修订号和原用途，不向页面交付不透明平台凭据 ID；新秘密在发布任务开始前经独立 `deployment-secret-revision` 原任务完成，发布审阅只选择已保存的精确引用。源码子树逐组件归档为去前缀 tar，保留原快照清单和各自 tar 摘要，规划时与实际组件来源根精确绑定。源码数据库声明先在原冻结素材中补全并校验；SQLite 首次初始化须另行确认组件、数据库、路径、seed、SQL 与整份冻结清单摘要，随后按该组件的实际检查摘要生成 `DatabaseSchemaReview`。单/多组件以最终受管身份生成配置和 SQLite 资源，连同原计划进入正式发布；本机 CLASS/H2 及受控 helper 证明配置和资源已持久合并，不代表真实目标机 SQLite 文件已初始化。普通数据库绑定输入不等于结构批准；服务器型数据库先完成全图本机预检，再在同一原任务内核对库存及实例、独立批准安装或替换、准备目标与冻结 SQL；受保护凭据、结构审阅、配置和绑定合入原单/多组件发布。
 
-原生数据库协议 12 在原 `deployment-publication` 任务中先持久化整图数据库索引，再按每个组件/数据库子项记录 UUID、动作、实际目标摘要、完整请求帧 SHA、原服务器及业务目标。串行下一项只可覆盖已精确持久的终态；原 helper 在修改前持久 STARTED，可信退出后才写 SUCCEEDED/FAILED。`status` 仅读原回执；缺失、冲突、未终结均为 UNKNOWN，恢复不重发数据库动作。静态流程先核全部冻结 SQL 的 realpath、大小、UTF-8 与内容摘要；已有匹配实例仍调用 `start` 识别先前替换留下的人工恢复状态，缺失或版本不合时须分别审阅安装或备份/停机/替换，恢复确认后重新检查同一实例身份、版本、指纹与运行态。应用库准备和初始化使用短期可清零密码或精确受保护修订；新目标生成密码先在原任务保护保存，以保留未知创建后的精确凭据，已有目标认证通过后才保存新输入修订。正式数据库绑定仅随已核实发布结果保存。`DeploymentStaticTaskRecovery` 在正式 execution 尚未开始时也先核原回执，再结清 Git、Source 和静态标记；已知失败可能留有数据库效果，不推断已回滚。本机 CLASS/H2 真实静态 Workflow 已验证安装、替换与前次待恢复分支，跨 JVM loopback SSH 单独验证精确回执恢复；真实 Workflow 的启动 UNKNOWN 会保留原静态标记、冻结来源与子项日志；独立跨 JVM 正式注册恢复核对缺失、冲突和精确回执，未重发变更。两项分别验证入口留存与恢复机制，没有串成同一条用例。实际 Swing owner 模态已验证安装、替换与人工恢复交互；真实目标机安装与数据库内容仍未验收。
+原生数据库协议 12 在原 `deployment-publication` 任务中先持久化整图数据库索引，再按每个组件/数据库子项记录 UUID、动作、实际目标摘要、完整请求帧 SHA、原服务器及业务目标。串行下一项只可覆盖已精确持久的终态；原 helper 在修改前持久 STARTED，可信退出后才写 SUCCEEDED/FAILED。`status` 仅读原回执；缺失、冲突、未终结均为 UNKNOWN，恢复不重发数据库动作。静态流程先核全部冻结 SQL 的 realpath、大小、UTF-8 与内容摘要；已有匹配实例仍调用 `start` 识别先前替换留下的人工恢复状态，缺失或版本不合时须分别审阅安装或备份/停机/替换，恢复确认后重新检查同一实例身份、版本、指纹与运行态。应用库准备和初始化使用短期可清零密码或精确受保护修订；新目标生成密码先在原任务保护保存，以保留未知创建后的精确凭据，已有目标认证通过后才保存新输入修订。正式数据库绑定仅随已核实发布结果保存。`DeploymentStandardTaskRecovery` 在正式 execution 尚未开始时也先核原回执，再结清 Git、Source 和静态标记；已知失败可能留有数据库效果，不推断已回滚。本机 CLASS/H2 真实静态 Workflow 已验证安装、替换与前次待恢复分支，跨 JVM loopback SSH 单独验证精确回执恢复；真实 Workflow 的启动 UNKNOWN 会保留原静态标记、冻结来源与子项日志；独立跨 JVM 正式注册恢复核对缺失、冲突和精确回执，未重发变更。两项分别验证入口留存与恢复机制，没有串成同一条用例。实际 Swing owner 模态已验证安装、替换与人工恢复交互；真实目标机安装与数据库内容仍未验收。
 
 首次服务器缺固定 helper 时，默认静态页面现于最终来源、归档及运行审阅后、正式单/多发布前，在**同一个** `deployment-publication` 原任务内准备安装；无数据库的首次发布也走此共用入口。`DeploymentHelperBootstrapJournal` 先固定原任务、服务器、操作 UUID、未改安装主体及完整发送脚本摘要；精确宿主审批与发送前取消仍属未发送结果。`DeploymentHelperInstallerScript` 在包管理前于已核验的 root 目录以排他创建写入 STARTED，完成安装、固定 helper 字节与安全核验后先原子保存 SUCCEEDED 再回包。已观察到有界普通进程失败可按原结果记 FAILED，并提示人工核对可能已有的安装效果；超时、信号、回包丢失或回执未确认保留 DISPATCHED/UNKNOWN，不重装。只读 status 脚本仅依赖原有 Bash 与基础工具，不调用此次才安装的 Python/helper，不创建目录；恢复核对原任务、操作、服务器、安装主体、固定包身份及原回执，再探测实际 helper，资源全部结清后才释放静态准备标记。缺失、冲突和 STARTED 均不能凭“helper 已存在”推断本次安装成功。已知安装效果后若后续审阅或发布准备失败，错误保留原服务器与操作身份供人工核对；本机 CLASS/H2 真实静态发布及跨 JVM 正式 Mod 注册恢复使用受控会话或 loopback SSH 验证，不代表目标 Linux 包安装已实测。服务器型数据库在同一原任务内的实例、凭据及初始化接线见前述原生准备流程。
 
-官方 deployment 现已将旧标准静态分析的完整 10 语言生态、14 种可部署类型与只识别预览、多构建架构、数据库审阅和多组件冲突规则迁入 `service.standard.analyze`；所需纯值归 `service.core.model`，复用已有相同身份类型。`Mod.standardAnalyzer()` 供原已准入任务借用仍开放的 `DeploymentSourceMaterial`：调用方须明确传入已审阅逻辑项目名，本地取材可采用原选定目录名，Git 工作区的通用显示名不能代替已审阅项目名。分析只读取平台冻结目录；项目元数据名称优先，缺失时才按原各生态规则使用逻辑根名称，组件子目录用自身名称，整图继续使用明确 applicationId。结果保留原类型化 `REJECTED`、`REQUIRES_INPUT`、`READY_FOR_PLANNING` 和预览状态，并附原快照 UUID/摘要；其中 Path 仅为当次观察元数据，不是后续可重获的源码授权。遍历和组件边界检查原任务协作取消并返回 `CANCELLED`，不强杀。素材由调用方在分析及后续执行全部结束后关闭；纯分析不建立新的恢复账本。
+官方 deployment 现已将旧标准静态分析的完整 10 语言生态、14 种可部署类型与只识别预览、多构建架构、数据库审阅和多组件冲突规则迁入 `service.deploy.analyze`；所需纯值归 `service.core.model`，复用已有相同身份类型。`Mod.standardAnalyzer()` 供原已准入任务借用仍开放的 `DeploymentSourceMaterial`：调用方须明确传入已审阅逻辑项目名，本地取材可采用原选定目录名，Git 工作区的通用显示名不能代替已审阅项目名。分析只读取平台冻结目录；项目元数据名称优先，缺失时才按原各生态规则使用逻辑根名称，组件子目录用自身名称，整图继续使用明确 applicationId。结果保留原类型化 `REJECTED`、`REQUIRES_INPUT`、`READY_FOR_PLANNING` 和预览状态，并附原快照 UUID/摘要；其中 Path 仅为当次观察元数据，不是后续可重获的源码授权。遍历和组件边界检查原任务协作取消并返回 `CANCELLED`，不强杀。素材由调用方在分析及后续执行全部结束后关闭；纯分析不建立新的恢复账本。
 
-`DeploymentStaticReviewBuilder` 已将原冻结素材上的单组件或整图确定性评估、显式审阅答案与原 `TaskContext` 接成可调用的请求和计划组装。静态运行解析使用当前正常配置默认值、缺项、健康、风险、配置及数据库审阅规则；同一原任务先核对开放快照 UUID、清单摘要、归档来源与物理源码根，再读取固定声明。服务器经任务绑定能力查询，配置、秘密修订和文件/数据库资源按原审阅内容映射；已独立确认的 SQLite 配置与资源按最终组件身份合并，冲突拒绝，不用运行表单的数据库模式伪造结构批准。无审阅确认、缺项、风险未接受或来源关闭均拒绝，平台取消与 UNKNOWN 不降级，结构化配置错误保留原事件码。确认事实由调用方实际审阅后提供，组装不会代用户确认；该入口已由默认页面在同一个原任务内复用，不创建新的来源授权。
+`DeploymentStandardReviewBuilder` 已将原冻结素材上的单组件或整图确定性评估、显式审阅答案与原 `TaskContext` 接成可调用的请求和计划组装。静态运行解析使用当前正常配置默认值、缺项、健康、风险、配置及数据库审阅规则；同一原任务先核对开放快照 UUID、清单摘要、归档来源与物理源码根，再读取固定声明。服务器经任务绑定能力查询，配置、秘密修订和文件/数据库资源按原审阅内容映射；已独立确认的 SQLite 配置与资源按最终组件身份合并，冲突拒绝，不用运行表单的数据库模式伪造结构批准。无审阅确认、缺项、风险未接受或来源关闭均拒绝，平台取消与 UNKNOWN 不降级，结构化配置错误保留原事件码。确认事实由调用方实际审阅后提供，组装不会代用户确认；该入口已由默认页面在同一个原任务内复用，不创建新的来源授权。
 
 `Mod.standardPlanner()` 已接入确定性单/多组件规划及固定构建渲染。完整审阅请求保留原 `ServerId.id()` 字符串，不把旧服务器名称正则当平台身份，也不把来源 Path 当作授权；请求须核对同一仍开放的源码快照 UUID、源码清单 SHA-256、实际生成归档的来源关联与压缩字节 SHA-256。配置快照、秘密修订、文件/数据库绑定、运行与健康、访问 URL、构建限制和明确风险决定共同进入 `deployment-reviewed-plan-v1` 执行前摘要；可变长字段以长度/计数分界。该身份与远端 `reviewed-release-v5` 内容身份及本机完整发布清单身份均不同；当前 v5 的输入为归档 tar 字节 SHA-256，保持原摘要域及其语义。当前容器卷名以 `bindingId()` 映射受管文件绑定，校验路径、访问模式、文件类型及存储路径冲突。规划保留固定顺序、组件构建波次、健康检查与回滚动作；渲染器按精确项目类型与构建工具注册，生成有界固定脚本。原任务取消返回 `CANCELLED`，原素材关闭且未取消返回来源不可用；调用方仍须持有原素材至后续执行结束。单组件及最多 16 组件的可调用发布入口现已接入；默认页面及完整 S5 本机适用合同已验证，实际目标机未验收。
 
@@ -2217,7 +2317,7 @@ Windows 文件身份由 `app/windows` 使用既有 JNA 读取卷号与原生文�
 
 构建只从已审阅配置快照的 `BUILD` 项派生非秘密环境值；`RUNTIME` 值不进入脚本。按同一目录最多准备两个兼容候选，核验实际版本、分支和绑定摘要；仅已确认成功返回原归档与真实工具身份，不使用 `legacy` 工具占位。固定候选、预检、工具与构建命令绑定原任务、精确目标、审阅摘要和宿主授权。除独立 30 秒 helper probe 外，候选与构建命令共享累计远端执行预算，人工审批等待不计入执行耗时；SFTP 使用平台无进展期限，不占构建预算，也不被强加同一总期限。已知发送前拒绝或取消保留原结果；候选创建、上传或核对结果未知、版本/绑定/回执冲突、截断或缺退出均不自动重发、覆盖或清理可能已有的远端候选。已知编译失败公开固定大小、已遮蔽的头尾诊断，确认兼容失败才尝试第二候选，耗尽后报告不兼容。受管 helper 的远端原输出上限仍可达已审阅的 128 MiB，`linux` 固定 Python 流式适配器扫描全流，向平台只返回小于 8 MiB 的短回执，不更改 helper 包 SHA 或新增远端日志文件。本机真实 CLASS/H2/Source/Interaction、受控会话及原候选/构建任务持久恢复的适用证据已在 S3 验收；当前 helper 行为也由真实 Bash 与明确的本机 OS/API 适配验证。实际 Linux 的权限、包安装、容器引擎和系统服务行为仍须独立验证，详见 [1.3 本地验收](../development/PHASE-1.3.md#local-acceptance)。
 
-`DeploymentStandardPublishRunner` 与 `DeploymentMultiPartPublishRunner` 各自在一个 `deployment-publication` 原任务中准备已审阅素材、归档和计划，后者对全部组件先完成候选预检及总容量判定，再借同一会话构建全部候选、封存配置与秘密、保存全部旧版快照、逆序停止旧运行、拓扑发布和逐项健康、整图复查及独立整应用健康。远端发布内容身份采用原 `reviewed-release-v5` 算法，并以 `reviewed-release-tools-v1` 绑定本次真实安装工具；重审时间或快照 UUID 不改变相同内容的远端版本。整图根检查点索引唯一原组件，一组件一短检查点保存候选、旧版 token/先前运行身份及阶段；执行版本11中的当前模板格式2保存完整非秘密整图。已知失败才用原 token 逆序回滚；远端副作用未知不自动重放。恢复由用户显式对原任务发起，经当前协议 14 只读观察原 owner、root、task、candidate、current、old digest、maintenance 和运行设施；只有全图完整吻合才推进原业务提交及清理；无法完整证明的状态保持 UNKNOWN。半图仅核对原已发送组件，确知后回滚与清理为失败，不补发布未发送组件。原远端授权仍须精确审批，旧 SSH 连接由宿主在恢复回调前释放，本机 Source 仅以原任务清理能力释放，不从路径重建授权。秘密明文仅在 `SecretService.use` 回调内短暂使用，自有副本结束时清零。本机 CLASS/H2 跨 JVM 和受控 loopback SSH 验证原任务边界，不等于断电时刻或真实目标机验收。默认页面和 S5 本机适用合同已按有效实际结果合集验证；真实远端与正式发行仍暂缓。
+`DeploymentStandardSinglePublishRunner` 与 `DeploymentStandardGraphPublishRunner` 各自在一个 `deployment-publication` 原任务中准备已审阅素材、归档和计划，后者对全部组件先完成候选预检及总容量判定，再借同一会话构建全部候选、封存配置与秘密、保存全部旧版快照、逆序停止旧运行、拓扑发布和逐项健康、整图复查及独立整应用健康。远端发布内容身份采用原 `reviewed-release-v5` 算法，并以 `reviewed-release-tools-v1` 绑定本次真实安装工具；重审时间或快照 UUID 不改变相同内容的远端版本。整图根检查点索引唯一原组件，一组件一短检查点保存候选、旧版 token/先前运行身份及阶段；执行版本11中的当前模板格式2保存完整非秘密整图。已知失败才用原 token 逆序回滚；远端副作用未知不自动重放。恢复由用户显式对原任务发起，经当前 helper 协议 16 只读观察原 owner、root、task、candidate、current、old digest、maintenance 和运行设施；只有全图完整吻合才推进原业务提交及清理；无法完整证明的状态保持 UNKNOWN。半图仅核对原已发送组件，确知后回滚与清理为失败，不补发布未发送组件。原远端授权仍须精确审批，旧 SSH 连接由宿主在恢复回调前释放，本机 Source 仅以原任务清理能力释放，不从路径重建授权。秘密明文仅在 `SecretService.use` 回调内短暂使用，自有副本结束时清零。本机 CLASS/H2 跨 JVM 和受控 loopback SSH 验证原任务边界，不等于断电时刻或真实目标机验收。默认页面和 S5 本机适用合同已按有效实际结果合集验证；真实远端与正式发行仍暂缓。
 
 ### 8.9 mod：入口、上下文和跨 Mod 服务
 
@@ -2536,6 +2636,16 @@ public interface DeploymentApi {
 
 首版 handoff 不跨不同平台任务复用。调用方在自己的根任务 callback 内用自身 `TaskService.beginCheckpoint` 持有根检查点，贯穿 review、采集/准备及明确收尾的连续 service calls，仅在交接 `FINISHED` 且自身下载、归档等资源已确认关闭后关闭检查点；`UNKNOWN` 保留检查点和原任务，恢复 callback 查找原检查点并用同一原任务调用 `reconcile`/收尾，关闭自身实际资源及根检查点后返回本次已核实结果；宿主随后按原依赖作用域结清确属原任务的已释放资源。首次 `prepareRestore` 若因原依赖资源未释放而没有返回 handoff，调用方在自己的原恢复 callback 中先用可靠保存的同一完整 request 查询原准备：已有准备副作用或终态的意图只返回原 handoff 与阶段，不重新读取已消费的本地文件或重发准备；UNKNOWN 返回的值用于后续原任务核对。明确放弃准备时调用原 `discard`，提供方精确核对属于原 attempted 文件的宿主传输检查点，申请自身的原传输丢弃审批，仅清理原暂存后再丢弃候选；已有最终文件不由传输丢弃修改，仍有暂存时缺失原源文件或摘要不符继续 UNKNOWN。当前平台生产恢复入口已接入原 service dependency 的确证收尾，跨 Mod 首次丢值及原资源释放已通过本机 CLASS/H2 与受控传输验证：原准备已完成或未完成的两分支均保留原任务，只核对原交接、不重新准备，并在确认原资源收尾后释放；这不代表真实远端验收；调用方不获取私有宿主清理权限。调用方自行可靠保存完整 request，根检查点最多保存 12,000 UTF-8 字节的无秘密身份和引用，不把 16 MiB runtime 封套塞入检查点。提供方只持久记录自己的 handoff 事实，各次同步调用关闭自己的 SSH 等实际资源；它不伪装根所有者，不替调用方关闭检查点，也不在跨调用间转授资源句柄。此检查点责任由调用契约要求，`inspect` 并不证明检查点实际存在。备份迁移任务同时声明源/目标服务器，并按“采集 → 源恢复 → 目标候选 → 健康与切换 → 归档/结果保存 → 清理”推进；迁移成功不自动删除或停止源应用。标准、辅助、自主部署生成的受管应用使用同一公开协作契约。
 
+### 8.13 官方部署执行与作者观察边界
+
+官方deployment执行信封统一版本11。请求自首次写入起包含全部字段，读取缺字段或旧版4～10/未来版本时拒绝，不补缺省身份、不重建任务、不重放原效果、不自动清理未知资源；原记录保持。构建、发布纠正仍需原证明和完整审阅，合计至多两次，其他协议继续各自当前格式。
+
+宿主安装/重装审阅的`packageInfo()`和原包清单的`packageInfo`只提供不可变展示信息，完整Inspection由服务私有持有。管理清单使用`ReleaseInfo`，日志使用`CategoryInfo`/`RecordInfo`；这些值不授予业务权利。官方源码分析要求明确审阅逻辑名称，运行配置要求完整身份策略及工作负载，Git准备必须使用原任务记账入口。
+
+受管助手只解释当前完整运行身份和工作负载，不接纳旧 Gradle 简写或缺参数的运行记录，不从旧 systemd unit 推导用户或重放旧生命周期。语言运行版本必须关联已核验工具链；旧助手内容摘要需要通过现有审阅安装流程替换，helper 协议为当前 16。远端应用 SQLite、原生构建和已登记的系统/容器适配不变。
+
+三种部署模式及其执行门禁统一见 [Runtime.md](Runtime.md#当前三种部署模式)和[原生工具合同](Runtime.md#agent-tools)；资源归属见 [File.md](File.md#46-模型说明与工具目录的资源归属)，资源加载行为见 [Runtime.md](Runtime.md#skill-resources)。这些业务机制不扩展第三方 Mod 的公开 API。
+
 ## 9. 技术依据
 
 迁移与停止协议遵循 H2 嵌入式 I/O 与关闭约束，不能用强制中断数据库线程实现取消，见 [H2 连接模式](https://h2database.com/html/features.html#connection_modes)。
@@ -2544,19 +2654,3 @@ public interface DeploymentApi {
 - [Spring Boot 对嵌套 JAR 的说明](https://docs.spring.io/spring-boot/specification/executable-jar/nested-jars.html)：Java 没有通用的标准嵌套 JAR 加载机制；专用加载器与解包加载属于不同实现选择。
 - [H2 连接模式](https://h2database.com/html/features.html#connection_modes)：嵌入式、服务器和混合模式的差异，及单个 JVM/类加载器统一打开嵌入式数据库的约束。
 - [H2 Schema 命令](https://h2database.com/html/commands.html#create_schema)：Schema 的所有权、创建和删除权限，以及部分结构变更提交当前事务的行为。
-
-
-## 类名更新与重新编译（2026-10-03）
-
-当前 SDK 使用 ServerId / SecretId 选择资源，ServerRef / SecretRef 表示业务引用；身份组合仍使用 Identity。任务业务结果使用 TaskResult，资源释放和清理状态继续独立。官方部署公开应用标识改为 DeploymentApplicationId。以上类型保留原字段、枚举值及授权约束。
-
-本次公开类型改名没有旧类型兼容壳。使用旧版类型编译的 CLASS/JAR Mod 及跨 Mod 调用方需要同步源码并重新编译；不需要因类名变化修改 Schema 或已有业务记录。逐项对应见[类名调整清单](../development/CLASS-RENAMES.md)。
-
-
-### 当前执行与作者观察边界
-
-官方deployment执行信封统一版本11。请求自首次写入起包含全部字段，读取缺字段或旧版4～10/未来版本时拒绝，不补缺省身份、不重建任务、不重放原效果、不自动清理未知资源；原记录保持。构建、发布纠正仍需原证明和完整审阅，合计至多两次，其他协议继续各自当前格式。
-
-宿主安装/重装审阅的`packageInfo()`和原包清单的`packageInfo`只提供不可变展示信息，完整Inspection由服务私有持有。管理清单使用`ReleaseInfo`，日志使用`CategoryInfo`/`RecordInfo`；这些值不授予业务权利。官方源码分析要求明确审阅逻辑名称，运行配置要求完整身份策略及工作负载，Git准备必须使用原任务记账入口。
-
-受管助手只解释当前完整运行身份和工作负载，不接纳旧 Gradle 简写或缺参数的运行记录，不从旧 systemd unit 推导用户或重放旧生命周期。语言运行版本必须关联已核验工具链；旧助手内容摘要需要通过现有审阅安装流程替换，协议版本仍为当前14。远端应用 SQLite、原生构建和已登记的系统/容器适配不变。

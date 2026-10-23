@@ -6061,6 +6061,141 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
 
             public char[] text(String title, String prompt, boolean secret, TaskSnapshot task,
                                CancelToken cancel) {
+                if (!secret && title.equals(gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.cleanup
+                    .DeploymentCandidateCompensation.TITLE)) {
+                    assertEquals(System.getProperty("managed.live.originalTask"), task.id().toString());
+                    assertEquals(Path.of(System.getProperty("managed.live.originalState")).toAbsolutePath().normalize(),
+                        root.toAbsolutePath().normalize());
+                    assertFalse(cancel.requested());
+                    if (!Boolean.getBoolean("managed.live.candidateCompensation")) return new char[0];
+                    try {
+                        Path selected = Path.of(System.getProperty("managed.live.candidateCompensationBindingFile")).toRealPath();
+                        assertTrue(selected.startsWith(workspace().resolve(".ai-workspace/evidence").toRealPath()));
+                        byte[] original = Files.readAllBytes(selected);
+                        assertEquals(System.getProperty("managed.live.candidateCompensationBindingSha256"),
+                            java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(original)));
+                        var value = (com.fasterxml.jackson.databind.node.ObjectNode) new com.fasterxml.jackson.databind.ObjectMapper().readTree(original);
+                        assertEquals("00000000-0000-0000-0000-000000000000", value.path("operationId").asText());
+                        var operationLine = java.util.regex.Pattern.compile("(?m)^Operation=([0-9a-f-]{36})$").matcher(prompt);
+                        assertTrue(operationLine.find());
+                        String operation = java.util.UUID.fromString(operationLine.group(1)).toString();
+                        assertFalse(operationLine.find());
+                        var observationLine = java.util.regex.Pattern.compile("(?m)^ObservationSHA256=([0-9a-f]{64})$").matcher(prompt);
+                        assertTrue(observationLine.find());
+                        String observation = observationLine.group(1);
+                        assertFalse(observationLine.find());
+                        value.put("operationId", operation);
+                        var expected = gold.debug.windowstolinux.mod.deployment.linux.cleanup
+                            .DeploymentCandidateCompensationProgram.decodeBinding(value);
+                        assertEquals(task.id(), expected.taskId());
+                        assertEquals(System.getProperty("managed.live.originalApplication"), expected.applicationId());
+                        assertEquals(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle
+                            .helperSha256(expected.layout()), expected.helperSha256());
+                        var responseLine = java.util.regex.Pattern.compile("(?m)^ObserverResponse=(\\{[^\\r\\n]+})$").matcher(prompt);
+                        assertTrue(responseLine.find());
+                        String observerResponse = responseLine.group(1);
+                        assertFalse(responseLine.find());
+                        long originalCreatedAt = Long.parseLong(System.getProperty("managed.live.originalExecutionCreatedAtEpochMillis"));
+                        var observed = gold.debug.windowstolinux.mod.deployment.linux.cleanup.DeploymentCandidateCompensationProgram.parse(
+                            new gold.debug.windowstolinux.mod.deployment.linux.cleanup.DeploymentCandidateCompensationProgram.Request(
+                                gold.debug.windowstolinux.mod.deployment.linux.cleanup.DeploymentCandidateCompensationProgram.Mode.OBSERVE,
+                                expected, "", originalCreatedAt), observerResponse + "\n");
+                        assertTrue(observed.ready());
+                        assertEquals(observation, observed.observationSha256());
+                        var legacyLine = java.util.regex.Pattern.compile("(?m)^LegacyObservationSource=(\\{[^\\r\\n]*})$").matcher(prompt);
+                        assertTrue(legacyLine.find());
+                        String legacyReference = legacyLine.group(1);
+                        assertFalse(legacyLine.find());
+                        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                        Path legacyInput = Path.of(System.getProperty("managed.live.candidateCompensationLegacySourceInput")).toRealPath();
+                        assertTrue(legacyInput.startsWith(workspace().resolve(".ai-workspace/evidence").toRealPath()));
+                        byte[] legacyRaw = Files.readAllBytes(legacyInput);
+                        assertEquals(System.getProperty("managed.live.candidateCompensationLegacySourceInputSha256"),
+                            java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(legacyRaw)));
+                        var legacy = mapper.readTree(legacyRaw);
+                        assertEquals("READ_ONLY_ORIGINAL_OBSERVATION_SOURCE_INPUT", legacy.path("kind").asText());
+                        assertEquals(task.id().toString(), legacy.path("taskId").asText());
+                        assertTrue(legacy.path("released").asBoolean());
+                        assertEquals(legacy.path("reference"), mapper.readTree(legacyReference));
+                        var oldBindingNode = value.deepCopy().put("operationId", legacy.path("reference").path("operationId").asText());
+                        var oldBinding = gold.debug.windowstolinux.mod.deployment.linux.cleanup.DeploymentCandidateCompensationProgram.decodeBinding(oldBindingNode);
+                        assertEquals(java.util.UUID.nameUUIDFromBytes(("candidate-compensation-observation-v1:" + oldBinding.sha256())
+                            .getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString(), operation);
+                        var frozenSources = mapper.readTree(Files.readAllBytes(legacyInput.getParent().resolve("manifest.json")));
+                        Path executionManifest = legacyInput.getParent().getParent().resolve("execution-source-02.json");
+                        assertEquals(frozenSources.path("executionManifestSha256").asText(),
+                            java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(executionManifest))));
+                        var executionSources = mapper.readTree(Files.readAllBytes(executionManifest)).path("files");
+                        for (var source : frozenSources.path("files")) {
+                            String sourceHash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                                .digest(Files.readAllBytes(legacyInput.getParent().resolve(source.path("preservedFile").asText()))));
+                            assertEquals(source.path("sha256").asText(), sourceHash);
+                            var matchingSources = java.util.stream.StreamSupport.stream(executionSources.spliterator(), false)
+                                .filter(entry -> entry.path("path").asText().equals(source.path("path").asText())).toList();
+                            assertEquals(1, matchingSources.size());
+                            assertEquals(matchingSources.getFirst().path("sha256").asText(), sourceHash);
+                            String requirementKey = switch (source.path("preservedFile").asText()) {
+                                case "DeploymentCandidateCompensation.java" -> "compensationSha256";
+                                case "DeploymentCandidateCompensationProgram.java" -> "programSha256";
+                                case "candidate_compensation.py" -> "pythonSha256";
+                                default -> throw new AssertionError("Unexpected legacy writer source");
+                            };
+                            assertEquals(legacy.path("reference").path("expectedLegacyWriterSources").path(requirementKey).asText(), sourceHash);
+                        }
+                        assertEquals(gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.cleanup
+                            .DeploymentCandidateCompensation.prompt(expected, observation, observerResponse, legacyReference), prompt);
+                        System.out.println("PRODUCT_CANDIDATE_COMPENSATION_USER_AUTHORIZED task=" + task.id()
+                            + " operation=" + operation + " bindingSha256=" + expected.sha256());
+                        return (gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.cleanup
+                            .DeploymentCandidateCompensation.CONFIRMATION + operation).toCharArray();
+                    } catch (Exception unavailable) {
+                        throw new AssertionError("Original candidate compensation input is unconfirmed", unavailable);
+                    }
+                }
+                if (!secret && title.equals(gold.debug.windowstolinux.mod.deployment.service.standard.shared.recovery
+                    .DeploymentStandardPreparationDiagnosticRecovery.CONCLUSION_TITLE)
+                    && System.getProperty("managed.live.originalToolchainOperation") != null) {
+                    assertEquals(System.getProperty("managed.live.originalTask"), task.id().toString());
+                    assertEquals(Path.of(System.getProperty("managed.live.originalState")).toAbsolutePath().normalize(),
+                        root.toAbsolutePath().normalize());
+                    assertFalse(cancel.requested());
+                    if (!Boolean.getBoolean("managed.live.concludeOriginalToolchainPreparation")) return new char[0];
+                    try {
+                        Path selected = Path.of(System.getProperty("managed.live.originalToolchainRequestFile")).toRealPath();
+                        assertTrue(selected.startsWith(workspace().resolve(".ai-workspace/evidence").toRealPath()));
+                        var expected = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.decode(Files.readAllBytes(selected));
+                        assertEquals(task.id().toString(), expected.taskId());
+                        assertEquals(System.getProperty("managed.live.originalToolchainOperation"), expected.operationId().toString());
+                        assertEquals(System.getProperty("managed.live.originalToolchainRequestSha256"), expected.sha256());
+                        assertEquals(gold.debug.windowstolinux.mod.deployment.service.standard.shared.recovery
+                            .DeploymentStandardPreparationDiagnosticRecovery.conclusionPrompt(expected), prompt);
+                        System.out.println("PRODUCT_ORIGINAL_DIAGNOSTIC_CONCLUSION_USER_AUTHORIZED task=" + task.id()
+                            + " operation=" + expected.operationId() + " requestSha256=" + expected.sha256());
+                        return gold.debug.windowstolinux.mod.deployment.service.standard.shared.recovery
+                            .DeploymentStandardPreparationDiagnosticRecovery.CONCLUSION_CONFIRMATION.toCharArray();
+                    } catch (Exception unavailable) {
+                        throw new AssertionError("Original diagnostic conclusion input is unconfirmed", unavailable);
+                    }
+                }
+                if (!secret && title.equals(gold.debug.windowstolinux.mod.deployment.service.standard.shared.recovery
+                    .DeploymentStandardPreparationDiagnosticRecovery.SELECTION_TITLE)
+                    && System.getProperty("managed.live.originalToolchainOperation") != null) {
+                    assertEquals(System.getProperty("managed.live.originalTask"), task.id().toString());
+                    assertEquals(Path.of(System.getProperty("managed.live.originalState")).toAbsolutePath().normalize(),
+                        root.toAbsolutePath().normalize());
+                    assertFalse(cancel.requested());
+                    String operation = java.util.UUID.fromString(System.getProperty("managed.live.originalToolchainOperation")).toString();
+                    System.out.println("PRODUCT_ORIGINAL_TOOLCHAIN_SELECTOR task=" + task.id() + " operation=" + operation);
+                    return operation.toCharArray();
+                }
+                if (!secret && title.equals("仅停止原应用并结清") && Boolean.getBoolean("managed.live.cleanupOriginalLifecycle")
+                    && task.id().toString().equals(System.getProperty("managed.live.originalTask"))
+                    && prompt.contains("应用：" + System.getProperty("managed.live.originalApplication"))
+                    && prompt.contains("指纹：" + System.getProperty("managed.ssh.fingerprint"))) {
+                    assertFalse(cancel.requested());
+                    System.out.println("AI_LIVE_ORIGINAL_CLEANUP_USER_AUTHORIZED task=" + task.id());
+                    return ("STOP " + task.id()).toCharArray();
+                }
                 if (!secret && title.equals("AI 校准后仍无法确定项目识别")) {
                     assertTrue(aiEnabled);
                     assertFalse(cancel.requested());
@@ -7602,6 +7737,103 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
     }
 
     @Test
+    void diagnosesCsvToolchainPreparationThroughProduct() throws Exception {
+        connectionOnly = false;
+        aiEnabled = true;
+        agentMode = false;
+        root = workspace().resolve("src/app/db/data").toRealPath()
+            .resolve("assisted-diagnostic-live-csv-" + Long.toUnsignedString(System.nanoTime(), 36));
+        System.out.println("CSV_DIAGNOSTIC_STATE " + root);
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            completed(runtime.servers().check(saveServer(runtime)), 2);
+            configureLiveModel(runtime);
+            var original = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
+            var handle = original.tasks().submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
+                "deployment-publication", "CSV PHP 8.3 toolchain preparation diagnostic", List.of(SERVER), true), task -> {
+                var setup = gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStandardSetupActionLog
+                    .begin(original.tasks(), task, new ServerId(SERVER));
+                var assembly = new DeploymentStandardAssembly();
+                var guarded = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.policy.DeploymentPublishPolicyContext.begin(
+                    original, task, new ServerId(SERVER), assembly.mode("ASSISTED"), "AUTOMATIC", true,
+                    "Prepare CSV Inspector's declared PHP 8.3 toolchain, including required managed helper verification/upgrade and exact original installer receipt reconciliation, then capture the original protected toolchain diagnostic. No publication or business operations.", assembly);
+                TaskResult outcome = TaskResult.UNKNOWN;
+                try (var session = guarded.linux().connect(new ServerId(SERVER), task)) {
+                    var bootstrap = new gold.debug.windowstolinux.mod.deployment.service.core.setup.DeploymentProtocolBootstrap(
+                        guarded.tasks(), task, new ServerId(SERVER), session, guarded.interaction()).ensure();
+                    outcome = bootstrap.outcome();
+                    if (outcome != TaskResult.SUCCEEDED)
+                        return new OperationResult<Void>(outcome, Optional.empty(), bootstrap.problem());
+                    int seconds = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().timeoutSeconds();
+                    var channel = new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildCommandChannel(
+                        session, guarded.interaction(), new ServerId(SERVER), task,
+                        inputDigest("CSV_TOOLCHAIN_DIAGNOSTIC:PHP:8.3:" + task.id()),
+                        new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget(seconds),
+                        gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard.NONE,
+                        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(),
+                        ((gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope)
+                            guarded.assistedCapabilities()).preparationObserver());
+                    outcome = TaskResult.UNKNOWN;
+                    var prepared = channel.prepare(gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType.PHP,
+                        "8.3", "-", seconds, "-");
+                    outcome = prepared.outcome();
+                    if (outcome == TaskResult.SUCCEEDED) {
+                        if (prepared.value().isEmpty() || prepared.value().orElseThrow().truncated()
+                            || prepared.value().orElseThrow().exitCode().isEmpty()) outcome = TaskResult.UNKNOWN;
+                        else if (prepared.value().orElseThrow().exitCode().orElseThrow() != 0)
+                            outcome = TaskResult.FAILED;
+                    }
+                    var request = channel.lastPreparationDiagnosticRequest().orElseThrow();
+                    OperationResult<String> diagnostic;
+                    try {
+                        diagnostic = channel.toolchainDiagnostic(request);
+                    } catch (ApiException unavailable) {
+                        diagnostic = new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(unavailable.problem()));
+                    }
+                    Path evidence = Path.of(System.getProperty("managed.live.deliveryDirectory")).toRealPath();
+                    assertTrue(evidence.startsWith(workspace().resolve(".ai-workspace/evidence").toRealPath()));
+                    var report = new LinkedHashMap<String, Object>();
+                    report.put("task", task.id().toString());
+                    report.put("stateDirectory", root.toString());
+                    report.put("request", new String(request.bytes(), java.nio.charset.StandardCharsets.UTF_8));
+                    report.put("requestSha256", request.sha256());
+                    report.put("preparationOutcome", outcome.name());
+                    report.put("preparationTransportOutcome", prepared.outcome().name());
+                    prepared.value().ifPresent(value -> report.put("preparationCommand", Map.of(
+                        "exitCode", value.exitCode().map(Object::toString).orElse("UNKNOWN"),
+                        "stdout", value.stdout(), "stderr", value.stderr(), "truncated", value.truncated())));
+                    prepared.problem().ifPresent(value -> report.put("preparationProblem", Map.of(
+                        "code", value.code().name(), "eventCode", value.eventCode(), "message", value.message(), "context", value.context())));
+                    report.put("diagnosticOutcome", diagnostic.outcome().name());
+                    report.put("diagnosticAttachment", diagnostic.value().orElse(null));
+                    diagnostic.problem().ifPresent(value -> report.put("diagnosticProblem", Map.of(
+                        "code", value.code().name(), "eventCode", value.eventCode(), "message", value.message(), "context", value.context())));
+                    Files.writeString(evidence.resolve("csv-preparation-" + task.id() + ".json"),
+                        JSON.writerWithDefaultPrettyPrinter().writeValueAsString(report), java.nio.file.StandardOpenOption.CREATE_NEW);
+                    System.out.println("CSV_PREPARATION_OBSERVED task=" + task.id() + " operation=" + request.operationId()
+                        + " preparation=" + prepared + " diagnostic=" + diagnostic);
+                    assertEquals(TaskResult.SUCCEEDED, diagnostic.outcome(), "The diagnostic read has its own independent result");
+                    assertTrue(diagnostic.value().filter(value -> !value.isBlank()).isPresent(), "A successful diagnostic must contain the validated original attachment");
+                    return new OperationResult<Void>(outcome, Optional.empty(), prepared.problem());
+                } finally {
+                    guarded.finish(outcome);
+                    if (outcome != TaskResult.UNKNOWN) {
+                        guarded.file().closeTaskResources(task);
+                        setup.close();
+                    }
+                }
+            });
+            System.out.println("CSV_PREPARATION_TASK " + handle.id());
+            try {
+                completed(handle, Integer.getInteger("managed.live.deploymentWaitMinutes", 90));
+            } finally {
+                printOriginalDiagnostics(runtime, handle.id());
+            }
+        }
+    }
+
+    @Test
     void observesTargetReadOnly() throws Exception {
         connectionOnly = false;
         String observed = System.getProperty("managed.live.observedApplication", "*");
@@ -7875,8 +8107,15 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         agentMode = stateName.startsWith("agent-live-") || originalMainOnly;
         assertTrue(!originalTaskOnly || agentMode, "Exact original-task recovery requires Agent state");
         assertFalse(originalTaskOnly && preparationOnly, "Choose one explicit original recovery scope");
-        assertTrue(stateName.startsWith("static-live-") || stateName.startsWith("assisted-live-") || agentMode);
-        aiEnabled = stateName.startsWith("assisted-live-") || agentMode;
+        boolean assistedDiagnostic = stateName.startsWith("assisted-diagnostic-live-csv-");
+        boolean diagnosticSelected = System.getProperty("managed.live.originalToolchainOperation") != null;
+        boolean concludeOriginalDiagnostic = Boolean.getBoolean("managed.live.concludeOriginalToolchainPreparation");
+        assertFalse(concludeOriginalDiagnostic && !diagnosticSelected, "Conclusion requires an explicit original operation");
+        boolean diagnosticObservationOnly = diagnosticSelected && !concludeOriginalDiagnostic;
+        assertFalse(diagnosticSelected && !assistedDiagnostic, "Diagnostic recovery is confined to its original fixture state");
+        boolean diagnosticObservationCompleted = false;
+        assertTrue(stateName.startsWith("static-live-") || stateName.startsWith("assisted-live-") || assistedDiagnostic || agentMode);
+        aiEnabled = stateName.startsWith("assisted-live-") || assistedDiagnostic || agentMode;
         assertFalse(originalMainOnly && Boolean.getBoolean("managed.live.configureAgentRecoveryModel"),
             "Original main-only recovery must use its saved independent approval route without new probes");
         try (var runtime = open()) {
@@ -7939,7 +8178,17 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             }
             System.out.println("STATIC_LIVE_RECONCILED " + observed);
             if (!originalTaskOnly) printOriginalDiagnostics(runtime, original);
+            if (diagnosticObservationOnly) {
+                assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN, observed.state(), observed::toString);
+                diagnosticObservationCompleted = true;
+                System.out.println("PRODUCT_ORIGINAL_DIAGNOSTIC_OBSERVATION task=" + original + " originalState=UNKNOWN originalConclusionUnchanged=true");
+                return;
+            }
             assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, observed.state(), observed::toString);
+            if (concludeOriginalDiagnostic)
+                assertEquals(Optional.of(TaskResult.FAILED), observed.outcome(), "Known preparation effects do not turn an interrupted diagnostic flow into first-run success");
+            if (Boolean.getBoolean("managed.live.cleanupOriginalLifecycle"))
+                assertEquals(Optional.of(TaskResult.FAILED), observed.outcome(), "Cleanup never turns the original unconfirmed RESTART into success");
             if (originalTaskOnly) {
                 System.out.println("AGENT_LIVE_EXACT_ORIGINAL_RECONCILED task=" + original + " outcome=" + observed.outcome());
                 return;
@@ -7953,6 +8202,37 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                 assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, query.state(), query::toString);
             }
             runtime.modRecovery().release();
+        } catch (ApiException blockedClose) {
+            if (!diagnosticObservationOnly || !diagnosticObservationCompleted
+                || !blockedClose.problem().eventCode().equals("MOD_STOP_BLOCKED")
+                || !OWNER.equals(blockedClose.problem().context().get("ownerId"))) throw blockedClose;
+            System.out.println("PRODUCT_ORIGINAL_DIAGNOSTIC_CLOSE_BLOCKED originalState=UNKNOWN resourcesRetained=true");
+            return;
+        } catch (java.sql.SQLException blockedClose) {
+            var frames = blockedClose.getStackTrace();
+            if (!diagnosticObservationOnly || !diagnosticObservationCompleted
+                || !"Original Mod recovery still owns resources".equals(blockedClose.getMessage())
+                || frames.length == 0
+                || !frames[0].getClassName().equals("gold.debug.windowstolinux.app.main.mod.PlatformModRecovery")
+                || !frames[0].getMethodName().equals("close")) throw blockedClose;
+            System.out.println("PRODUCT_ORIGINAL_DIAGNOSTIC_CLOSE_BLOCKED originalState=UNKNOWN resourcesRetained=true reason=ORIGINAL_MOD_RECOVERY");
+            return;
+        }
+        if (Boolean.getBoolean("managed.live.cleanupOriginalLifecycle")) {
+            try (var runtime = open()) {
+                start(runtime, true);
+                var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
+                var applications = new DeploymentApplicationsService(context);
+                var entries = completed(applications.list(), 2).stream()
+                    .filter(value -> value.application().id().equals(System.getProperty("managed.live.originalApplication"))).toList();
+                assertEquals(1, entries.size());
+                var selected = completed(applications.inspect(entries.getFirst().application()), 5);
+                assertEquals(ApplicationRunState.STOPPED, selected.state());
+                assertEquals(ApplicationAutostartState.DISABLED, selected.autostart());
+                System.out.println("AI_LIVE_ORIGINAL_CLEANUP_RESTART_VERIFIED application=" + selected.application().id()
+                    + " state=" + selected.state() + " autostart=" + selected.autostart());
+            }
+            return;
         }
         if (preparationOnly) {
             try (var runtime = open()) {
@@ -8297,7 +8577,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                 .filter(value -> value.profile().id().equals(profileId)).findFirst()
                 .map(value -> value.profile().credentialKey())
                 .orElse("ai/live/" + purpose.name().toLowerCase(java.util.Locale.ROOT));
-            var profile = new gold.debug.windowstolinux.app.service.ai.AiModelProfile(profileId, endpoint, null, null, selectedEffort);
+            var profile = new gold.debug.windowstolinux.app.service.ai.AiModelProfile(profileId, endpoint, model, credentialReference, selectedEffort);
             char[] credential = key.toCharArray();
             try {
                 runtime.models().save(profile, "User-selected live model: " + purpose, credential,
@@ -8308,7 +8588,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             }
             for (var capability : List.of(gold.debug.windowstolinux.app.ai.model.AiCapabilityType.TEXT,
                 gold.debug.windowstolinux.app.ai.model.AiCapabilityType.TOOL_CALLING)) {
-                var verification = runtime.models().verify(profile.id(), capability, null, null);
+                var verification = runtime.models().verify(profile.id(), capability);
                 System.out.println("AI_LIVE_CAPABILITY_PROBE task=" + verification.id() + " purpose=" + purpose
                     + " capability=" + capability + " providerUsage=UNKNOWN transportCallCount=UNKNOWN");
                 completed(verification, 3);
@@ -8720,11 +9000,18 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                         }
                     }
                 } catch (Exception | AssertionError closingFailure) {
-                    if (isolation == null || acceptanceFailure == null) {
-                        acceptanceFailure = closingFailure;
-                        throw closingFailure;
+                    if (selectedMode == Mode.ASSISTED) {
+                        if (closingFailure instanceof Exception exception)
+                            finishAssistedAcceptance(acceptanceFailure, exception);
+                        else
+                            finishAssistedAcceptance(acceptanceFailure, (AssertionError) closingFailure);
+                    } else {
+                        if (isolation == null || acceptanceFailure == null) {
+                            acceptanceFailure = closingFailure;
+                            throw closingFailure;
+                        }
+                        acceptanceFailure.addSuppressed(closingFailure);
                     }
-                    acceptanceFailure.addSuppressed(closingFailure);
                 } finally {
                     if (isolation != null && agentWorkflow != null && agentWorkflow.isolationAdmission().isPresent()) {
                         try {
@@ -8757,6 +9044,13 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                     System.out.println("MAIN_AGENT_ONLY_DEPLOYMENT_ONLY_COMPLETE application=" + id + " management=STOPPED_DISABLED APP0=true");
             }
         }
+    }
+
+    /** Keeps the in-flight ASSISTED failure primary when management also fails. */
+    static <T extends Throwable> void finishAssistedAcceptance(Throwable acceptanceFailure, T closingFailure) throws T {
+        if (closingFailure == null) return;
+        if (acceptanceFailure == null) throw closingFailure;
+        if (acceptanceFailure != closingFailure) acceptanceFailure.addSuppressed(closingFailure);
     }
 
     private void verifyRetainedIsolation(ModContext context,
@@ -9314,7 +9608,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                 assertTrue(browserApi(web, "/api/tasks/" + created.path("id").asLong() + "?projectId=1", "/api/tasks")
                     .toString().contains("静态真机持久化"));
         } else if (project.equals("file-transfer")) {
-            if (agentMode && !mainOnlyDiagnostic) {
+            if ((aiEnabled || agentMode) && !mainOnlyDiagnostic) {
                 fileTransferV2(web, applications, app, context);
             } else {
                 var folder = post(web + "/api/folders", Map.of("name", "静态跨语言文件验证"));
@@ -9533,7 +9827,9 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
 
     private static void fileTransferChunk(String upload, int index, byte[] bytes) throws Exception {
         byte[] chunk = Arrays.copyOfRange(bytes, index * 1024 * 1024, (index + 1) * 1024 * 1024);
-        var result = JSON.readTree(http(upload + "/chunks/" + index, "PUT", chunk, "application/octet-stream"));
+        String uploadId = upload.substring(upload.lastIndexOf('/') + 1);
+        var trace = uploadId.matches("[0-9a-f]{32}") ? new FileTransferChunkTrace(uploadId, index, chunk.length) : null;
+        var result = JSON.readTree(http(upload + "/chunks/" + index, "PUT", chunk, "application/octet-stream", 0, trace));
         assertEquals(index, result.path("number").asInt());
         assertEquals(byteSha256(chunk), result.path("sha256").asText());
     }
@@ -9543,9 +9839,20 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
     }
 
     private static void assertFileTransferDownload(String web, String version, long bytes, String sha) throws Exception {
-        byte[] downloaded = http(web + "/api/versions/" + version + "/download", "GET", null, "application/octet-stream");
-        assertEquals(bytes, downloaded.length);
-        assertEquals(sha, byteSha256(downloaded));
+        long started = System.nanoTime();
+        System.out.println("FILE_TRANSFER_DOWNLOAD_BEGIN version=" + version + " expectedBytes=" + bytes);
+        try {
+            byte[] downloaded = http(web + "/api/versions/" + version + "/download", "GET", null, "application/octet-stream");
+            System.out.println("FILE_TRANSFER_DOWNLOAD_BODY_RETURNED version=" + version + " receivedBytes=" + downloaded.length
+                + " elapsedMillis=" + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+            assertEquals(bytes, downloaded.length);
+            assertEquals(sha, byteSha256(downloaded));
+            System.out.println("FILE_TRANSFER_DOWNLOAD_VERIFIED version=" + version + " bytes=" + downloaded.length);
+        } catch (Exception | AssertionError failure) {
+            System.out.println("FILE_TRANSFER_DOWNLOAD_FAILED version=" + version + " exceptionType=" + failure.getClass().getSimpleName()
+                + " elapsedMillis=" + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+            throw failure;
+        }
     }
 
     private void restart(DeploymentApplicationsService applications, DeploymentApplicationId app) throws Exception {
@@ -9631,28 +9938,76 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
     }
 
     private static byte[] http(String url, String method, byte[] body, String type, int expectedStatus) throws Exception {
+        return http(url, method, body, type, expectedStatus, null);
+    }
+
+    private record FileTransferChunkTrace(String uploadId, int chunkIndex, int declaredBodyBytes) {
+        void emit(String stage, long started, long phaseStarted, String details) {
+            long now = System.nanoTime();
+            System.out.println("FILE_TRANSFER_CHUNK_HTTP utc=" + java.time.Instant.now()
+                + " uploadId=" + uploadId + " chunkIndex=" + chunkIndex + " declaredBodyBytes=" + declaredBodyBytes
+                + " stage=" + stage + " totalElapsedMillis=" + TimeUnit.NANOSECONDS.toMillis(now - started)
+                + " phaseElapsedMillis=" + TimeUnit.NANOSECONDS.toMillis(now - phaseStarted) + details);
+        }
+    }
+
+    private static byte[] http(String url, String method, byte[] body, String type, int expectedStatus,
+                               FileTransferChunkTrace trace) throws Exception {
         var connection = (java.net.HttpURLConnection) java.net.URI.create(url).toURL().openConnection(java.net.Proxy.NO_PROXY);
         connection.setConnectTimeout(10000);
         connection.setReadTimeout(20000);
         connection.setRequestMethod(method);
+        long started = trace == null ? 0 : System.nanoTime();
+        long phaseStarted = started;
+        String phase = "OUTPUT_OPEN";
         try {
             if (body != null) {
                 connection.setDoOutput(true);
                 connection.setRequestProperty("Content-Type", type);
                 connection.setFixedLengthStreamingMode(body.length);
+                if (trace != null) trace.emit("OUTPUT_OPEN_BEGIN", started, phaseStarted, "");
                 try (var output = connection.getOutputStream()) {
+                    if (trace != null) {
+                        long opened = System.nanoTime();
+                        long openElapsed = TimeUnit.NANOSECONDS.toMillis(opened - phaseStarted);
+                        phase = "BODY_WRITE";
+                        phaseStarted = opened;
+                        trace.emit("BODY_WRITE_BEGIN", started, phaseStarted, " outputOpenElapsedMillis=" + openElapsed);
+                    }
                     output.write(body);
+                    if (trace != null) {
+                        trace.emit("BODY_WRITE_RETURNED", started, phaseStarted, " serverReceipt=UNPROVED");
+                        phase = "BODY_STREAM_CLOSE";
+                        phaseStarted = System.nanoTime();
+                    }
                 }
+                if (trace != null) trace.emit("BODY_STREAM_CLOSED", started, phaseStarted, "");
+            }
+            if (trace != null) {
+                phase = "RESPONSE_WAIT";
+                phaseStarted = System.nanoTime();
+                trace.emit("RESPONSE_WAIT_BEGIN", started, phaseStarted, "");
             }
             int status = connection.getResponseCode();
+            if (trace != null) {
+                trace.emit("RESPONSE_HEADERS_RECEIVED", started, phaseStarted, " status=" + status);
+                phase = "RESPONSE_BODY_READ";
+                phaseStarted = System.nanoTime();
+            }
             byte[] response;
             try (var input = status < 400 ? connection.getInputStream() : connection.getErrorStream()) {
                 response = input == null ? new byte[0] : input.readAllBytes();
             }
+            if (trace != null)
+                trace.emit("RESPONSE_BODY_READ", started, phaseStarted, " responseBytes=" + response.length);
             assertTrue(expectedStatus == 0 ? status >= 200 && status < 300 : status == expectedStatus,
                 () -> url + " status=" + status + " expected=" + (expectedStatus == 0 ? "2xx" : expectedStatus)
                     + " body=" + new String(response, java.nio.charset.StandardCharsets.UTF_8));
             return response;
+        } catch (java.io.IOException failure) {
+            if (trace != null) trace.emit("IO_EXCEPTION", started, phaseStarted,
+                " phase=" + phase + " exceptionType=" + failure.getClass().getSimpleName());
+            throw failure;
         } finally {
             connection.disconnect();
         }

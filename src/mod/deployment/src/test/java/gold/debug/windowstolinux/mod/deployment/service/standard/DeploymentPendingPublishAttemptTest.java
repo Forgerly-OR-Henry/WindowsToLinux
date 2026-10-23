@@ -25,8 +25,10 @@ import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentStandardPublishRecovery;
+import gold.debug.windowstolinux.mod.deployment.DeploymentStandardEntryFixture;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.recovery.DeploymentStandardTaskRecovery;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
@@ -92,20 +94,24 @@ class DeploymentPendingPublishAttemptTest extends DeploymentPublishAcceptanceFix
                     assertEquals("a".repeat(64), expected);
                     String response;
                     if (request.purpose() == AiPurpose.APPROVAL)
-                        response = "{\"decision\":\"APPROVE\",\"risk\":\"NORMAL\",\"reason\":\"Exact fixed action\"}";
+                        response = "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Exact fixed action\"}";
                     else {
                         assertEquals(AiPurpose.LANGUAGE, request.purpose());
                         language.incrementAndGet();
                         try {
                             var facts = new ObjectMapper().readTree(request.messages().getLast().text());
-                            if (Set.of("BUILD", "ROLLBACK_VERIFIED").contains(facts.path("phase").asText())) {
+                            if (facts.has("projectTypes"))
+                                response = DeploymentAssistedGoModelFixture.sourceScan(facts, count);
+                            else if (facts.has("tools"))
+                                response = DeploymentAssistedGoModelFixture.publicationTool(facts);
+                            else if (Set.of("BUILD", "ROLLBACK_VERIFIED").contains(facts.path("phase").asText())) {
                                 assertEquals("ROLLBACK_VERIFIED", facts.path("phase").asText());
                                 assertTrue(facts.path("fields").isEmpty());
                                 diagnosis.incrementAndGet();
                                 response = "{\"decision\":\"RETRY\",\"reason\":\"Original human correction only\",\"suggestions\":{}}";
                             } else
                                 response = "{\"action\":\"ADVISE\",\"sourceRevision\":\"" + facts.path("sourceRevision").asText() + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Retain human inputs\",\"unresolved\":[]}}";
-                        } catch (java.io.IOException failure) {
+                        } catch (Exception failure) {
                             throw new AssertionError(failure);
                         }
                     }
@@ -113,6 +119,24 @@ class DeploymentPendingPublishAttemptTest extends DeploymentPublishAcceptanceFix
                 }
             };
             LinuxService linux = new LinuxService() {
+                public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected, TaskContext task) throws ApiException {
+                    assertEquals(new ServerId("server"), expected.server());
+                    assertEquals(task.id(), expected.taskId());
+                    var server = original.servers().get(expected.server(), task);
+                    assertEquals(server.host(), expected.host());
+                    assertEquals(server.port(), expected.port());
+                    assertEquals(server.username(), expected.username());
+                    var session = peer.session(task);
+                    if (expected.fingerprint().isPresent()
+                        && !expected.fingerprint().orElseThrow().equals(session.facts().fingerprint())) {
+                        session.close();
+                        throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+                            gold.debug.windowstolinux.appapi.task.result.ProblemCode.ACCESS_DENIED,
+                            "DEPLOYMENT_TEST_WIRE_CHANGED", "Original controlled wire differs", Map.of(), Optional.of(task.id())));
+                    }
+                    return session;
+                }
+
                 public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
                     return peer.session(task);
                 }
@@ -132,12 +156,13 @@ class DeploymentPendingPublishAttemptTest extends DeploymentPublishAcceptanceFix
                 }
             });
             var flow = new DeploymentRefFlow(bound, new DeploymentStandardPublishRecovery(bound));
-            try (var registration = tasks.registerRecovery(DeploymentRefFlow.TASK_TYPE, new DeploymentStaticTaskRecovery(bound, flow))) {
-                var handle = new DeploymentStaticWorkflow(bound, flow).submit(new ServerId("server"), new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(count), true, "MANUAL_REVIEW");
+            try (var registration = tasks.registerRecovery(DeploymentRefFlow.TASK_TYPE, new DeploymentStandardTaskRecovery(bound, flow, new DeploymentStandardAssembly()))) {
+                var handle = new DeploymentStandardEntryFixture(bound, flow).submit(new ServerId("server"), new DeploymentStandardInputs.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(count), true, "MANUAL_REVIEW");
                 long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
                 while (handle.snapshot().state() != TaskState.UNKNOWN && handle.snapshot().state() != TaskState.ENDED && System.nanoTime() < until)
                     Thread.sleep(20);
-                assertEquals(TaskState.UNKNOWN, handle.snapshot().state(), handle.snapshot().toString());
+                assertEquals(TaskState.UNKNOWN, handle.snapshot().state(), () -> handle.snapshot() + " result="
+                    + handle.completion().toCompletableFuture().getNow(null));
                 assertEquals(1, installed.get());
                 assertEquals(1, diagnosis.get());
                 assertEquals(1, corrections);

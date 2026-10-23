@@ -8,8 +8,8 @@ import sys
 import tempfile
 import unittest
 
-LINUX = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/mod/deployment/linux'
-FRAGMENTS = LINUX / 'execution/protocol/helper/fragments'
+LINUX = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/mod/deployment/linux/helper'
+FRAGMENTS = LINUX
 
 
 def invoke(directory, body, fragments=(), arguments=(), postcondition='', publication_adapters=False):

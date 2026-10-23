@@ -36,11 +36,25 @@ import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.task.run.TaskWork;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
-import gold.debug.windowstolinux.mod.deployment.service.core.*;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionIdentity;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentConfigStore;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentSecretStore;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentApplicationReader;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigInput;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit;
-import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApplicationReader;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentApplicationGraph;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitRuntimeConfig;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.database.DeploymentDatabaseBinding;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.database.DeploymentDatabaseConnection;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentWorkload;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.DeploymentSecretRef;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.DeploymentSecretRevision;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishPlan;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishResult;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.command.Command;
@@ -527,7 +541,10 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                         "First prepare must reach actual SFTP writes before losing its return value");
                     if (!prepared)
                         assertFalse(interrupt.get(), "The original write acknowledgement fault was triggered");
-                    assertEquals(prepared ? "SERVICE_RELEASE_PERSISTENCE" : "SERVICE_RELEASE_PENDING",
+                    long callbackDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(40);
+                    while (caller.callerClass.getField("firstPrepareError").get(null) == null && System.nanoTime() < callbackDeadline)
+                        Thread.sleep(20);
+                    assertEquals(prepared ? "SERVICE_RELEASE_PERSISTENCE" : "TASK_EFFECT_UNCERTAIN",
                         caller.callerClass.getField("firstPrepareError").get(null),
                         failure(runtime, caller, handle));
                     if (prepared) {
@@ -745,7 +762,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                         assertEquals(TaskResult.SUCCEEDED,
                             handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
                         assertEquals(beforePrepare.get(), peer.commands.get(),
-                            "Target input authorization must precede a new SSH connection or helper request");
+                            "Target input rememberAuthorization must precede a new SSH connection or helper request");
                         assertEquals(0, writes.get());
                         assertEquals(0, peer.restoreEffects.get());
                         assertTrue(peer.candidates.isEmpty());
@@ -874,7 +891,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
 
     /** Uses a newly reviewed publication for positive collection and restoration contracts. / 为正向采集及恢复契约使用新审阅发布。 */
     @Override
-    DeploymentApplicationGraph graph(String id) {
+    public DeploymentApplicationGraph graph(String id) {
         var original = super.graph(id);
         var parts = original.components().stream().map(part -> {
             var old = part.runtime().workload();
@@ -930,7 +947,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 secrets.add(revision);
                 references.put(revision, actual);
             }
-            var proposal = new DeploymentPublish(graph, publications(graph, 1, secrets));
+            var proposal = new DeploymentPublishResult(graph, publications(graph, 1, secrets));
             var plan = new DeploymentPublishPlan(UUID.randomUUID(), Optional.empty(), "demo",
                 new ServerId("server"), DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, "a".repeat(64),
                 DeploymentOriginalPublishCommit.references(new ServerId("server"), proposal, references),
@@ -995,7 +1012,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     var recovery = new com.fasterxml.jackson.databind.ObjectMapper().readTree(rows.getString(6));
                     detail.append(" release=").append(recovery.path("release")).append(" protocol=")
                         .append(recovery.path("protocol"));
-                    if (recovery.path("protocol").asText().equals("service.v1")) {
+                    if (recovery.path("protocol").asText().equals("service.v2")) {
                         var identity = recovery.path("fields");
                         for (String field : List.of("bootId", "callId", "providerId", "providerVersion",
                             "schemaVersion", "schemaGeneration"))
@@ -1073,8 +1090,10 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
         volatile boolean restoreCleanupUncertain;
 
         String response(String script) throws Exception {
+            if (script.contains(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.PATH))
+                script = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedBody(script);
             commands.incrementAndGet();
-            if (script.contains("sha256sum --check --status"))
+            if (script.contains("managed-helper' probe"))
                 return "HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
                     + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
             var arguments = new ArrayList<String>();

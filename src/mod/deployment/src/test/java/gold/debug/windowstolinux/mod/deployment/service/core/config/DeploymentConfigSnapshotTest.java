@@ -6,8 +6,8 @@ import java.time.Instant;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentConfigException;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.error.DeploymentConfigException;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.DeploymentSecretRef;
 import org.junit.jupiter.api.Test;
 
 class DeploymentConfigSnapshotTest {

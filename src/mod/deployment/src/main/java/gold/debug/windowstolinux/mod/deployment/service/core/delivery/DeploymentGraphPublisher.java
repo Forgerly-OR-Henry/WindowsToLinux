@@ -11,10 +11,18 @@ import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentUnitCommit;
-import gold.debug.windowstolinux.mod.deployment.linux.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublish;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard;
+import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentOriginalPublishStatus;
+import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentPublishArguments;
+import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentPublishChannel;
+import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentRemoteReleaseSnapshot;
+import gold.debug.windowstolinux.mod.deployment.linux.runtime.DeploymentRemoteRuntimeObservation;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentApplicationGraph;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitCommit;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentWorkload;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.DeploymentSecretRef;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishResult;
 
 /** Executes one neutral managed graph publication with actual health and known-failure rollback. / 以真实健康和已知失败回滚执行一项中立受管图发布。 */
 public final class DeploymentGraphPublisher {
@@ -116,8 +124,8 @@ public final class DeploymentGraphPublisher {
      * @param proposal exact complete business proposal / 精确完整业务提案
      * @param candidates one confirmed candidate per component / 每组件一份已确认候选
      * @return actual remote outcome and complete proposal / 真实远端结果及完整提案 */
-    public OperationResult<DeploymentPublish> publish(DeploymentPublish proposal,
-                                                      Map<String, Candidate> candidates) {
+    public OperationResult<DeploymentPublishResult> publish(DeploymentPublishResult proposal,
+                                                            Map<String, Candidate> candidates) {
         try {
             var graph = proposal.graph();
             var commits = byComponent(proposal, candidates);
@@ -207,7 +215,7 @@ public final class DeploymentGraphPublisher {
      * @param candidates exact original candidates / 精确原候选
      * @param successful whether new releases were fully verified / 新发布是否完整核实
      * @return confirmed cleanup or retained uncertainty / 已确认收尾或留存未知 */
-    public OperationResult<Void> cleanup(DeploymentPublish proposal, Map<String, Candidate> candidates,
+    public OperationResult<Void> cleanup(DeploymentPublishResult proposal, Map<String, Candidate> candidates,
                                          boolean successful) {
         try {
             var order = topological(proposal.graph());
@@ -260,7 +268,20 @@ public final class DeploymentGraphPublisher {
      * @param candidates original candidate identities / 原候选身份
      * @return all component statuses or retained uncertainty / 全部组件状态或留存未知 */
     public OperationResult<Map<String, DeploymentOriginalPublishStatus>> observeOriginal(
-        DeploymentPublish proposal, Map<String, Candidate> candidates) {
+        DeploymentPublishResult proposal, Map<String, Candidate> candidates) {
+        return observeOriginal(proposal, candidates, ignored -> {
+        });
+    }
+
+    /** Preserves the original status outcome while reporting a caught failure to caller-owned diagnostics.
+     * @param proposal original immutable proposal
+     * @param candidates original candidate identities
+     * @param diagnostics failure observer, never an execution permission
+     * @return original observations or retained uncertainty */
+    public OperationResult<Map<String, DeploymentOriginalPublishStatus>> observeOriginal(
+        DeploymentPublishResult proposal, Map<String, Candidate> candidates,
+        java.util.function.Consumer<Exception> diagnostics) {
+        Objects.requireNonNull(diagnostics);
         try {
             var values = new LinkedHashMap<String, DeploymentOriginalPublishStatus>();
             for (var component : proposal.graph().components()) {
@@ -285,6 +306,11 @@ public final class DeploymentGraphPublisher {
             }
             return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(Map.copyOf(values)), Optional.empty());
         } catch (Exception unavailable) {
+            try {
+                diagnostics.accept(unavailable);
+            } catch (RuntimeException diagnosticFailure) {
+                unavailable.addSuppressed(diagnosticFailure);
+            }
             return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                 Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GRAPH_STATUS_UNAVAILABLE")));
         }
@@ -294,9 +320,21 @@ public final class DeploymentGraphPublisher {
      * @param proposal exact persisted proposal / 精确持久提案
      * @param candidates original candidate identities / 原候选身份
      * @return known healthy or retained uncertainty / 已知健康或留存未知 */
-    public OperationResult<Void> verifyPublished(DeploymentPublish proposal, Map<String, Candidate> candidates) {
+    public OperationResult<Void> verifyPublished(DeploymentPublishResult proposal, Map<String, Candidate> candidates) {
+        return verifyPublished(proposal, candidates, ignored -> {
+        });
+    }
+
+    /** Keeps the original health outcome while exposing a caught failure to its mode-owned diagnostics.
+     * @param proposal original immutable proposal
+     * @param candidates original candidate identities
+     * @param diagnostics caller-owned failure observer, never an execution permission
+     * @return confirmed health or retained uncertainty */
+    public OperationResult<Void> verifyPublished(DeploymentPublishResult proposal, Map<String, Candidate> candidates,
+                                                 java.util.function.Consumer<Exception> diagnostics) {
+        Objects.requireNonNull(diagnostics);
         try {
-            var statuses = observeOriginal(proposal, candidates);
+            var statuses = observeOriginal(proposal, candidates, diagnostics);
             if (statuses.outcome() != TaskResult.SUCCEEDED)
                 return unknownVoid("DEPLOYMENT_GRAPH_STATUS_UNCONFIRMED");
             for (var component : proposal.graph().components()) {
@@ -316,6 +354,11 @@ public final class DeploymentGraphPublisher {
                 ? new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty())
                 : unknownVoid("DEPLOYMENT_GRAPH_WHOLE_HEALTH_UNCONFIRMED");
         } catch (Exception unavailable) {
+            try {
+                diagnostics.accept(unavailable);
+            } catch (RuntimeException diagnosticFailure) {
+                unavailable.addSuppressed(diagnosticFailure);
+            }
             return unknownVoid("DEPLOYMENT_GRAPH_HEALTH_UNAVAILABLE");
         }
     }
@@ -324,7 +367,7 @@ public final class DeploymentGraphPublisher {
      * @param proposal retained original graph / 留存原图
      * @param previousRunning exact original snapshot state per existing unit / 每个既有单元的精确原快照状态
      * @return success only if all observed states match / 仅全部观察状态匹配时成功 */
-    public OperationResult<Void> verifyRestoredState(DeploymentPublish proposal,
+    public OperationResult<Void> verifyRestoredState(DeploymentPublishResult proposal,
                                                      Map<String, Boolean> previousRunning) {
         try {
             for (var component : proposal.graph().components()) {
@@ -413,8 +456,8 @@ public final class DeploymentGraphPublisher {
      * @param reason original known failure / 原已知失败
      * @return failed only after full verified rollback / 仅完整核实回滚后为失败
      * @throws Exception on unavailable evidence / 依据不可用时 */
-    private OperationResult<DeploymentPublish> rollback(DeploymentPublish proposal,
-                                                        Map<String, Candidate> candidates, List<String> order, Problem reason) throws Exception {
+    private OperationResult<DeploymentPublishResult> rollback(DeploymentPublishResult proposal,
+                                                              Map<String, Candidate> candidates, List<String> order, Problem reason) throws Exception {
         for (String id : reversed(order)) {
             if (!affected.contains(id))
                 continue;
@@ -446,7 +489,7 @@ public final class DeploymentGraphPublisher {
      * @param proposal complete graph / 完整图
      * @param candidates exact candidates / 精确候选
      * @return component-to-commit map / 组件至提交映射 */
-    private static Map<String, DeploymentUnitCommit> byComponent(DeploymentPublish proposal,
+    private static Map<String, DeploymentUnitCommit> byComponent(DeploymentPublishResult proposal,
                                                                  Map<String, Candidate> candidates) {
         var commits = new HashMap<String, DeploymentUnitCommit>();
         for (var component : proposal.graph().components()) {
@@ -511,7 +554,7 @@ public final class DeploymentGraphPublisher {
      * @param proposal complete proposal / 完整提案
      * @param candidates candidates / 候选
      * @return bounded digest / 有界摘要 */
-    private static String identity(DeploymentPublish proposal, Map<String, Candidate> candidates) {
+    private static String identity(DeploymentPublishResult proposal, Map<String, Candidate> candidates) {
         try {
             var digest = java.security.MessageDigest.getInstance("SHA-256");
             digest.update(proposal.graph().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -539,7 +582,7 @@ public final class DeploymentGraphPublisher {
     /** Preserves classified stage result without fabricating a proposal. / 保留分类暂存结果而不虚构提案。
      * @param result original result / 原结果
      * @return no-value result / 无值结果 */
-    private static OperationResult<DeploymentPublish> convert(OperationResult<?> result) {
+    private static OperationResult<DeploymentPublishResult> convert(OperationResult<?> result) {
         return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
     }
 
@@ -562,7 +605,7 @@ public final class DeploymentGraphPublisher {
     /** Reports unknown graph effects without automatic replay. / 报告未知图副作用且不自动重放。
      * @param event stable event / 稳定事件
      * @return unknown result / 未知结果 */
-    private static OperationResult<DeploymentPublish> unknown(String event) {
+    private static OperationResult<DeploymentPublishResult> unknown(String event) {
         return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
             Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }

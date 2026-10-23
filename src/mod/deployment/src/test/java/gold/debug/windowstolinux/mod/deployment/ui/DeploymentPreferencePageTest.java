@@ -9,7 +9,6 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
-
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
@@ -41,67 +40,66 @@ class DeploymentPreferencePageTest extends DeploymentRuntimeFixture {
             pages.navigateView(workspaceKey, "static-deployment");
             show(window, mounted.get());
             var approval = (JComboBox<?>) named(mounted.get(), "deployment.preference.approval");
-            var authorization = (JComboBox<?>) named(mounted.get(), "deployment.preference.authorization");
+            var rememberAuthorization = (JCheckBox) named(mounted.get(), "deployment.preference.rememberAuthorization");
             var assisted = (JCheckBox) named(mounted.get(), "deployment.preference.assisted");
             await(() -> approval.isEnabled());
             edt(() -> {
                 assertTrue(assisted.isSelected());
                 assertEquals("AUTOMATIC", approval.getSelectedItem());
-                assertEquals("GENERAL", authorization.getSelectedItem());
+                assertEquals(true, rememberAuthorization.isSelected());
                 assisted.doClick();
             });
             await(() -> approval.isEnabled());
             edt(() -> approval.setSelectedItem("FULL_CONTROL"));
             await(() -> approval.isEnabled());
-            edt(() -> authorization.setSelectedItem("FULL"));
-            await(() -> authorization.isEnabled());
+            edt(() -> assertFalse(rememberAuthorization.isVisible()));
             pages.environment(new UiEnvironment(Locale.ENGLISH, "DARK", false));
             edt(() -> {
                 assertFalse(assisted.isSelected());
                 assertEquals("FULL_CONTROL", approval.getSelectedItem());
-                assertEquals("FULL", authorization.getSelectedItem());
+                assertEquals(true, rememberAuthorization.isSelected());
             });
             pages.closeView(workspaceKey);
             pages.navigateView(workspaceKey, "static-deployment");
             show(window, mounted.get());
             var reopened = (JComboBox<?>) named(mounted.get(), "deployment.preference.approval");
-            var reopenedAuthorization = (JComboBox<?>) named(mounted.get(), "deployment.preference.authorization");
+            var reopenedAuthorization = (JCheckBox) named(mounted.get(), "deployment.preference.rememberAuthorization");
             await(() -> reopened.isEnabled());
             edt(() -> {
                 assertEquals("FULL_CONTROL", reopened.getSelectedItem());
-                assertEquals("FULL", reopenedAuthorization.getSelectedItem());
+                assertEquals(true, reopenedAuthorization.isSelected());
                 assertFalse(((JCheckBox) named(mounted.get(), "deployment.preference.assisted")).isSelected());
             });
-            assertTriple(runtime, "STATIC", "FULL_CONTROL", "FULL");
-            sql(runtime, "ALTER TABLE preference ADD CONSTRAINT reject_page_authorization CHECK(preference_key<>'deploy_authorization' OR preference_value<>'GENERAL')");
+            assertTriple(runtime, "STATIC", "FULL_CONTROL", true);
+            sql(runtime, "ALTER TABLE preference ADD CONSTRAINT reject_page_authorization CHECK(preference_key<>'deploy_approval' OR preference_value<>'MANUAL_REVIEW')");
             edt(() -> reopened.setSelectedItem("MANUAL_REVIEW"));
             await(() -> reopened.isEnabled());
             edt(() -> {
                 assertEquals("FULL_CONTROL", reopened.getSelectedItem());
-                assertEquals("FULL", reopenedAuthorization.getSelectedItem());
+                assertEquals(true, reopenedAuthorization.isSelected());
             });
-            assertTriple(runtime, "STATIC", "FULL_CONTROL", "FULL");
+            assertTriple(runtime, "STATIC", "FULL_CONTROL", true);
             sql(runtime, "ALTER TABLE preference DROP CONSTRAINT reject_page_authorization");
             pages.closeView(workspaceKey);
             pages.navigateView(workspaceKey, "agent-deployment");
             show(window, mounted.get());
             var agent = (JComboBox<?>) named(mounted.get(), "deployment.preference.approval");
-            var agentAuthorization = (JComboBox<?>) named(mounted.get(), "deployment.preference.authorization");
+            var agentAuthorization = (JCheckBox) named(mounted.get(), "deployment.preference.rememberAuthorization");
             await(() -> agent.isEnabled());
             edt(() -> {
                 assertEquals("FULL_CONTROL", agent.getSelectedItem());
-                assertEquals("FULL", agentAuthorization.getSelectedItem());
+                assertEquals(true, agentAuthorization.isSelected());
                 agent.setSelectedItem("MANUAL_REVIEW");
             });
             await(() -> agent.isEnabled());
-            edt(() -> assertEquals("GENERAL", agentAuthorization.getSelectedItem()));
+            edt(() -> assertEquals(true, agentAuthorization.isSelected()));
             pages.closeView(workspaceKey);
             pages.navigateView(workspaceKey, "agent-deployment");
             show(window, mounted.get());
             var agentReopened = (JComboBox<?>) named(mounted.get(), "deployment.preference.approval");
             await(() -> agentReopened.isEnabled());
             edt(() -> assertEquals("MANUAL_REVIEW", agentReopened.getSelectedItem()));
-            assertTriple(runtime, "AGENT", "MANUAL_REVIEW", "GENERAL");
+            assertTriple(runtime, "AGENT", "MANUAL_REVIEW", true);
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task WHERE task_type IN ('deployment-publication','deployment-agent')"));
             pages.closeView(workspaceKey);
             awaitClosedWorkers(originalThreads);
@@ -116,70 +114,49 @@ class DeploymentPreferencePageTest extends DeploymentRuntimeFixture {
 
     @ParameterizedTest
     @ValueSource(strings = {"static-deployment", "agent-deployment"})
-    void actualPagesEnforceSevenPolicyPairsForKeyboardMouseProgrammaticEditsAndLock(String view) throws Exception {
+    void actualPagesExposeCurrentCheckboxAndPreserveCapturedSelectionDuringLock(String view) throws Exception {
         enable();
         var mounted = new AtomicReference<JComponent>();
         var pages = registry(mounted);
         var key = new ModPageRegistry.PageKey(OWNER, "workspace");
         var originalThreads = java.util.Set.copyOf(Thread.getAllStackTraces().keySet());
-        var window = new JFrame("Actual deployment authorization controls");
+        var window = new JFrame("Actual deployment rememberAuthorization controls");
         try (var runtime = open()) {
             assertTrue(runtime.startDevelopmentMods(workspace(), pages).problems().isEmpty());
             pages.navigateView(key, view);
             show(window, mounted.get());
             var approval = (JComboBox<?>) named(mounted.get(), "deployment.preference.approval");
-            var authorization = (JComboBox<?>) named(mounted.get(), "deployment.preference.authorization");
+            var rememberAuthorization = (JCheckBox) named(mounted.get(), "deployment.preference.rememberAuthorization");
             var mode = view.equals("agent-deployment") ? "AGENT" : "ASSISTED";
             await(approval::isEnabled);
             edit(approval, "MANUAL_REVIEW");
-            assertTriple(runtime, mode, "MANUAL_REVIEW", "GENERAL");
-            assertGreyChoice(authorization, "FULL", 2);
-            edt(() -> authorization.setSelectedItem("FULL"));
-            edt(() -> assertEquals("GENERAL", authorization.getSelectedItem()));
-            clickPopupChoice(authorization, 2);
-            edt(() -> assertEquals("GENERAL", authorization.getSelectedItem()));
-            edit(authorization, "ONCE");
-            assertTriple(runtime, mode, "MANUAL_REVIEW", "ONCE");
-            edt(authorization::requestFocusInWindow);
-            await(authorization::isFocusOwner);
-            var robot = new Robot();
-            robot.keyPress(java.awt.event.KeyEvent.VK_END);
-            robot.keyRelease(java.awt.event.KeyEvent.VK_END);
-            robot.waitForIdle();
-            edt(() -> assertEquals("ONCE", authorization.getSelectedItem()));
+            assertTriple(runtime, mode, "MANUAL_REVIEW", true);
+            edt(rememberAuthorization::doClick);
+            await(approval::isEnabled);
+            assertTriple(runtime, mode, "MANUAL_REVIEW", false);
             edit(approval, "AUTOMATIC");
-            assertTriple(runtime, mode, "AUTOMATIC", "ONCE");
+            assertTriple(runtime, mode, "AUTOMATIC", false);
+            edt(rememberAuthorization::doClick);
+            await(approval::isEnabled);
+            assertTriple(runtime, mode, "AUTOMATIC", true);
             edit(approval, "FULL_CONTROL");
-            edt(() -> assertEquals("GENERAL", authorization.getSelectedItem(), "Switching from ONCE to full control must reset only the draft to GENERAL"));
-            assertTriple(runtime, mode, "FULL_CONTROL", "GENERAL");
-            edit(approval, "AUTOMATIC");
-            edit(authorization, "GENERAL");
-            assertTriple(runtime, mode, "AUTOMATIC", "GENERAL");
-            edit(authorization, "FULL");
-            assertTriple(runtime, mode, "AUTOMATIC", "FULL");
-            edt(() -> assertTrue(((JTextArea) named(mounted.get(), "deployment.preference.authorizationDescription"))
-                .getText().contains("HIGH"), "Automatic full authorization must explain its HIGH alternative policy"));
-            edit(approval, "FULL_CONTROL");
-            assertTriple(runtime, mode, "FULL_CONTROL", "FULL");
-            assertGreyChoice(authorization, "ONCE", 0);
-            edt(() -> authorization.setSelectedIndex(0));
-            edt(() -> assertEquals("FULL", authorization.getSelectedItem()));
-            clickPopupChoice(authorization, 0);
-            edt(() -> assertEquals("FULL", authorization.getSelectedItem()));
-            edit(authorization, "GENERAL");
-            assertTriple(runtime, mode, "FULL_CONTROL", "GENERAL");
+            edt(() -> {
+                assertFalse(rememberAuthorization.isVisible());
+                assertFalse(rememberAuthorization.isEnabled());
+            });
+            assertTriple(runtime, mode, "FULL_CONTROL", true);
             pages.environment(new UiEnvironment(Locale.ENGLISH, "DARK", true));
             edt(() -> {
                 assertFalse(approval.isEnabled());
-                assertFalse(authorization.isEnabled());
+                assertFalse(rememberAuthorization.isEnabled());
                 approval.setSelectedItem("AUTOMATIC");
-                authorization.setSelectedItem("FULL");
+                rememberAuthorization.doClick();
                 assertEquals("FULL_CONTROL", approval.getSelectedItem());
-                assertEquals("GENERAL", authorization.getSelectedItem());
+                assertEquals(true, rememberAuthorization.isSelected());
             });
             pages.environment(new UiEnvironment(Locale.ENGLISH, "DARK", false));
             await(approval::isEnabled);
-            assertTriple(runtime, mode, "FULL_CONTROL", "GENERAL");
+            assertTriple(runtime, mode, "FULL_CONTROL", true);
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task WHERE task_type IN ('deployment-publication','deployment-agent')"));
             pages.closeView(key);
             awaitClosedWorkers(originalThreads);
@@ -193,34 +170,6 @@ class DeploymentPreferencePageTest extends DeploymentRuntimeFixture {
         edt(() -> choice.setSelectedItem(value));
         await(choice::isEnabled);
         edt(() -> assertEquals(value, choice.getSelectedItem()));
-    }
-
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private void assertGreyChoice(JComboBox<?> choice, String value, int index) throws Exception {
-        edt(() -> {
-            assertEquals(value, choice.getItemAt(index), "Unsupported combinations remain visible");
-            var renderer = (ListCellRenderer) choice.getRenderer();
-            assertFalse(renderer.getListCellRendererComponent(new JList<>(), value, index, false, false).isEnabled());
-        });
-    }
-
-    private void clickPopupChoice(JComboBox<?> choice, int index) throws Exception {
-        var location = new AtomicReference<Point>();
-        edt(() -> {
-            choice.showPopup();
-            var popup = (javax.swing.plaf.basic.BasicComboPopup) choice.getAccessibleContext().getAccessibleChild(0);
-            var list = popup.getList();
-            var bounds = list.getCellBounds(index, index);
-            var point = list.getLocationOnScreen();
-            point.translate(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-            location.set(point);
-        });
-        var robot = new Robot();
-        robot.mouseMove(location.get().x, location.get().y);
-        robot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
-        robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
-        robot.waitForIdle();
-        edt(choice::hidePopup);
     }
 
     private void awaitClosedWorkers(java.util.Set<Thread> originalThreads) throws Exception {
@@ -295,11 +244,11 @@ class DeploymentPreferencePageTest extends DeploymentRuntimeFixture {
         }
     }
 
-    private void assertTriple(PlatformRuntime runtime, String mode, String approval, String authorization) throws Exception {
+    private void assertTriple(PlatformRuntime runtime, String mode, String approval, boolean rememberAuthorization) throws Exception {
         var context = runtime.modContexts().get(OWNER).context();
         var handle = context.tasks().submit(new TaskRequest("preference_page_assert", "Read actual page preferences", List.of(), true), task -> {
-            var actual = new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences(context.db()).read(task);
-            assertEquals(new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection(mode, approval, authorization), actual);
+            var actual = new gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore(context.db()).read(task);
+            assertEquals(new gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore.Selection(mode, approval, rememberAuthorization), actual);
             try (var connection = context.db().openConnection(task); var statement = connection.createStatement();
                  var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_execution")) {
                 assertTrue(rows.next());

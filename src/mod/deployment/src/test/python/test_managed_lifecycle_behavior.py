@@ -19,9 +19,9 @@ PARTS = ('input/15-deployment-input.sh', 'input/16-application-input.sh', 'input
          'runtime/45-application-container-contract.sh', 'release/12-container-image-input.sh',
          'release/18-container-storage.sh', 'release/50-container-release.sh', 'release/52-container-recovery.sh',
          'database/10-native-instances.sh', 'database/20-native-targets.sh', 'database/21-native-operations.sh',
-         str(LINUX / 'runtime/systemd/helper/61-service-identity.sh'),
-         str(LINUX / 'runtime/systemd/helper/systemd-manager-isolation.sh'),
-         str(LINUX / 'runtime/container/helper/55-podman-quadlet.sh'))
+         str(LINUX / 'runtime/systemd/61-service-identity.sh'),
+         str(LINUX / 'runtime/systemd/systemd-manager-isolation.sh'),
+         str(LINUX / 'runtime/container/55-podman-quadlet.sh'))
 
 PUBLISH_PARTS = PARTS + ('workspace/20-candidate-workspace.sh', 'workspace/21-workspace-volume.sh',
                          'workspace/22-restricted-build.sh', 'release/10-typed-release.sh')
@@ -55,6 +55,7 @@ log_command() {
     printf '%s\0' "$@" >>"$fixture/commands"
     printf '\n' >>"$fixture/commands"
 }
+timeout() { shift 2; "$@"; }
 systemctl() {
     if [[ "${@: -1}" = windowstolinux-build-*.service ]]; then
         [ "$1" = show ] && [ "${4:-}" = LoadState ] || reject unexpected-build-runtime-command
@@ -71,6 +72,7 @@ systemctl() {
                 ActiveState) if [ -f "$fixture/stopped" ]; then printf inactive; else printf active; fi ;;
                 MainPID) printf 0 ;;
                 ControlGroup) : ;;
+                UnitFileState) printf enabled ;;
                 *) printf 'ActiveState=inactive\nMainPID=0\nExecMainStatus=0\n' ;;
             esac ;;
         is-active) [ ! -f "$fixture/stopped" ] ;;
@@ -197,6 +199,97 @@ def image_archive(root, engine, candidate_id):
 
 
 class ManagedLifecycleBehaviorTest(unittest.TestCase):
+    def test_stop_post_observation_retries_never_repeat_stop(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            result = invoke(root, RUNTIME + r'''
+create_original native "$1"
+eval "$(declare -f systemctl | sed '1s/systemctl/original_systemctl/')"
+systemctl() {
+    if [ "$1" = show ] && [ "${4:-}" = ActiveState ] && [ -f "$fixture/stopped" ]; then
+        local count=0
+        [ ! -f "$fixture/queries" ] || count="$(cat "$fixture/queries")"
+        count=$((count + 1)); printf '%s' "$count" >"$fixture/queries"
+        if [ "$count" -lt 3 ]; then return 1; fi
+    fi
+    original_systemctl "$@"
+}
+lifecycle_deployment demo stop "$manifest" "$original"
+''', PARTS, (payload(False),), CURRENT_POSTCONDITION)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertEqual([['systemctl', 'stop', 'windowstolinux-demo.service']], commands(root))
+            self.assertIn('LIFECYCLE=stop\n', result.stdout)
+            self.assertEqual('5', (root / 'queries').read_text())
+
+    def test_systemd_observation_failure_and_identity_conflict_prevent_lifecycle_effects(self):
+        for scenario in ('nonzero', 'bus-disconnected', 'fragment-drift', 'recovered'):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary)
+                result = invoke(root, RUNTIME + r'''
+create_original native "$2"
+scenario="$1"
+eval "$(declare -f systemctl | sed '1s/systemctl/original_systemctl/')"
+systemctl() {
+    if [ "$1" = show ] && [ "${4:-}" = FragmentPath ]; then
+        local count=0
+        [ ! -f "$fixture/queries" ] || count="$(cat "$fixture/queries")"
+        count=$((count + 1)); printf '%s' "$count" >"$fixture/queries"
+        case "$scenario" in
+            nonzero) printf 'query failed\n' >&2; return 1 ;;
+            bus-disconnected) printf 'Failed to get properties: Message recipient disconnected from message bus without replying\n' >&2; return 1 ;;
+            fragment-drift) printf /foreign/unit.service; return 0 ;;
+            recovered) if [ "$count" -lt 3 ]; then return 1; fi ;;
+        esac
+    fi
+    original_systemctl "$@"
+}
+lifecycle_deployment demo restart "$manifest" "$original"
+''', PARTS, (scenario, payload(False)), CURRENT_POSTCONDITION)
+                self.assertEqual(0 if scenario == 'recovered' else 64 if scenario == 'fragment-drift' else 75,
+                                 result.returncode, result.stdout + result.stderr)
+                self.assertEqual('1' if scenario == 'fragment-drift' else '3', (root / 'queries').read_text())
+                actual = commands(root)
+                if scenario == 'recovered':
+                    self.assertEqual([['systemctl', 'restart', 'windowstolinux-demo.service']], actual)
+                else:
+                    self.assertEqual([], actual)
+                    if scenario == 'fragment-drift':
+                        self.assertIn('MANAGED_HELPER_REJECT=unit-fragment', result.stderr)
+                    else:
+                        self.assertEqual(1, result.stderr.count('MANAGED_HELPER_OBSERVATION_UNAVAILABLE=systemd-query'))
+                        self.assertNotIn('MANAGED_HELPER_REJECT=unit-fragment', result.stderr)
+
+    def test_container_secret_cleanup_rejects_linked_parents_and_removes_valid_directory(self):
+        digest = 'b' * 64
+        for parent in ('root', 'application', 'credentials', 'valid'):
+            with self.subTest(parent=parent), tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary)
+                delivery = root / 'storage/demo/.container-credentials' / digest
+                delivery.mkdir(parents=True)
+                sentinel = delivery / 'keep'
+                sentinel.write_text('retained credential delivery', encoding='utf-8')
+                result = invoke(root, r'''
+case "$1" in
+    root) ln -s "$fixture/storage" "$secrets_root" ;;
+    application)
+        mkdir -p "$secrets_root"
+        ln -s "$fixture/storage/demo" "$secrets_root/demo"
+        ;;
+    credentials)
+        mkdir -p "$secrets_root/demo"
+        ln -s "$fixture/storage/demo/.container-credentials" "$secrets_root/demo/.container-credentials"
+        ;;
+    valid) secrets_root="$fixture/storage" ;;
+esac
+remove_container_secret_delivery demo "$2"
+''', ('release/12-container-image-input.sh',), (parent, digest))
+                self.assertEqual(0 if parent == 'valid' else 64, result.returncode,
+                                 result.stdout + result.stderr)
+                if parent == 'valid':
+                    self.assertFalse(delivery.exists())
+                else:
+                    self.assertEqual('retained credential delivery', sentinel.read_text(encoding='utf-8'))
+
     def test_four_argument_actions_keep_original_maintenance_and_release_identity(self):
         for backend in ('native', 'docker', 'podman'):
             for scenario, expected in (('exact', 0), ('drift', 64), ('owner', 64), ('orphan', 64)):

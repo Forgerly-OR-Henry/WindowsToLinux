@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
 import java.sql.*;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -14,21 +15,38 @@ import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
 import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
-import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.run.TaskWork;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.service.core.config.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentGraphStore;
+import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishStore;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentConfigStore;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentSecretStore;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentUnitRuntimeCodec;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigInput;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentApplicationGraph;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentCurrentRelease;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitCommit;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitIdentity;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitRuntimeConfig;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentFileBinding;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.path.DeploymentStorageLocation;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.path.DeploymentStoragePath;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.DeploymentSecretRef;
 
-abstract class DeploymentGraphFixture extends DeploymentRuntimeFixture {
-    static final Instant OBSERVED = Instant.parse("2026-09-27T00:00:00Z");
+public abstract class DeploymentGraphFixture extends DeploymentRuntimeFixture {
+    public static final Instant OBSERVED = Instant.parse("2026-09-27T00:00:00Z");
 
-    DeploymentApplicationGraph.Part component(String id, String server, List<String> dependencies) {
+    public DeploymentApplicationGraph.Part component(String id, String server, List<String> dependencies) {
         var health = new DeploymentHealthCheck.Tcp(8080, 20, 2);
         var definition = new DeploymentRuntimeDefinition.NodeService(22, health);
         var unit = DeploymentUnitIdentity.forManaged(id, new ServerId(server), "a".repeat(64));
@@ -42,14 +60,21 @@ abstract class DeploymentGraphFixture extends DeploymentRuntimeFixture {
             new DeploymentResourceBindings(List.of(binding), Optional.empty()));
     }
 
-    DeploymentApplicationGraph graph(String id) {
+    public DeploymentApplicationGraph graph(String id) {
         var web = component("web", "server", List.of("worker"));
         var worker = component("worker", "server", List.of());
         return new DeploymentApplicationGraph(id, "web", new DeploymentHealthCheck.Process(20, 2),
             List.of(worker, web));
     }
 
-    void run(PlatformRuntime runtime, TaskWork<Void> work) throws Exception {
+    public void run(PlatformRuntime runtime, TaskWork<Void> work) throws Exception {
+        run(runtime, work, Duration.ofSeconds(15));
+    }
+
+    public void run(PlatformRuntime runtime, TaskWork<Void> work, Duration wait) throws Exception {
+        Objects.requireNonNull(wait);
+        if (wait.isNegative() || wait.isZero() || wait.compareTo(Duration.ofSeconds(90)) > 0)
+            throw new IllegalArgumentException("Fixture wait must be positive and at most ninety seconds");
         var context = runtime.modContexts().get(OWNER).context();
         var observed = new AtomicReference<Throwable>();
         var handle = context.tasks()
@@ -63,7 +88,7 @@ abstract class DeploymentGraphFixture extends DeploymentRuntimeFixture {
             });
         OperationResult<Void> result;
         try {
-            result = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
+            result = handle.completion().toCompletableFuture().get(wait.toNanos(), TimeUnit.NANOSECONDS);
         } catch (java.util.concurrent.TimeoutException timeout) {
             throw new AssertionError("Original fixture work did not conclude: " + handle.snapshot(),
                 observed.get() == null ? timeout : observed.get());
@@ -73,18 +98,18 @@ abstract class DeploymentGraphFixture extends DeploymentRuntimeFixture {
         assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
     }
 
-    void server(PlatformRuntime runtime) throws Exception {
+    public void server(PlatformRuntime runtime) throws Exception {
         runtime.servers().saveServerProfile(
             gold.debug.windowstolinux.app.service.server.ServerProfile
                 .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "tester", "fixture-password")),
             "fixture-secret".toCharArray());
     }
 
-    OperationResult<Void> success() {
+    public OperationResult<Void> success() {
         return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
     }
 
-    void seed(PlatformRuntime runtime, TaskContext task, DeploymentApplicationGraph graph) throws Exception {
+    public void seed(PlatformRuntime runtime, TaskContext task, DeploymentApplicationGraph graph) throws Exception {
         var context = runtime.modContexts().get(OWNER).context();
         for (var component : graph.components()) {
             var reference = context.servers().reserve(component.unit().server(), "unit:" + component.unit().id(), task);
@@ -110,21 +135,21 @@ abstract class DeploymentGraphFixture extends DeploymentRuntimeFixture {
         }
     }
 
-    void sql(PlatformRuntime runtime, TaskContext task, String sql) throws Exception {
+    public void sql(PlatformRuntime runtime, TaskContext task, String sql) throws Exception {
         try (var connection = runtime.modContexts().get(OWNER).context().db().openConnection(task);
              var statement = connection.createStatement()) {
             statement.executeUpdate(sql);
         }
     }
 
-    void valid(PlatformRuntime runtime) throws Exception {
+    public void valid(PlatformRuntime runtime) throws Exception {
         try (var scope = scope(runtime, true)) {
             var report = new DeploymentSchema().validate(scope);
             assertTrue(report.valid(), report.toString());
         }
     }
 
-    ModDatabase commitFault(ModDatabase delegate) {
+    public ModDatabase commitFault(ModDatabase delegate) {
         return new ModDatabase() {
             public SchemaIdentity identity() throws ApiException {
                 return delegate.identity();
@@ -147,8 +172,8 @@ abstract class DeploymentGraphFixture extends DeploymentRuntimeFixture {
         };
     }
 
-    List<DeploymentUnitCommit> publications(DeploymentApplicationGraph graph, int revision,
-                                            List<DeploymentSecretRef> secrets) {
+    public List<DeploymentUnitCommit> publications(DeploymentApplicationGraph graph, int revision,
+                                                   List<DeploymentSecretRef> secrets) {
         return graph.components().stream()
             .map(component -> new DeploymentUnitCommit(component.unit(), component.runtime(),
                 new DeploymentCurrentRelease(component.unit().id(),
@@ -160,7 +185,7 @@ abstract class DeploymentGraphFixture extends DeploymentRuntimeFixture {
             .toList();
     }
 
-    long count(PlatformRuntime runtime, TaskContext task, String sql) throws Exception {
+    public long count(PlatformRuntime runtime, TaskContext task, String sql) throws Exception {
         try (var connection = runtime.modContexts().get(OWNER).context().db().openConnection(task);
              var statement = connection.createStatement();
              var rows = statement.executeQuery(sql)) {
@@ -169,8 +194,8 @@ abstract class DeploymentGraphFixture extends DeploymentRuntimeFixture {
         }
     }
 
-    void verify(PlatformRuntime runtime, TaskContext task, DeploymentApplicationGraph graph,
-                List<DeploymentUnitCommit> records) throws Exception {
+    public void verify(PlatformRuntime runtime, TaskContext task, DeploymentApplicationGraph graph,
+                       List<DeploymentUnitCommit> records) throws Exception {
         var context = runtime.modContexts().get(OWNER).context();
         var publication = new DeploymentPublishStore(context.db());
         var configuration = new DeploymentConfigStore(context.db());

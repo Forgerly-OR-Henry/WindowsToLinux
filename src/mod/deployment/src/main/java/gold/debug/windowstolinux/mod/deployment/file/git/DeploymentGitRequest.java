@@ -3,9 +3,6 @@ package gold.debug.windowstolinux.mod.deployment.file.git;
 import java.util.Objects;
 import java.util.Set;
 
-import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRef;
-import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRemote;
-
 /**
  * Bounded input for a read-only Git analysis snapshot; credentials remain external to this value.
  *

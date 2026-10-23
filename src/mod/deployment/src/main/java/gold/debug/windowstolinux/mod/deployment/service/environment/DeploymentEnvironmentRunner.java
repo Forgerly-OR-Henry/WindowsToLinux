@@ -4,7 +4,6 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
@@ -35,6 +34,9 @@ final class DeploymentEnvironmentRunner {
     /** Poll spacing, injected only by bounded local tests. / 轮询间隔，仅有界本机测试注入。 */
     private final Duration pollInterval;
 
+    /** Original captured command timing, independent of current resource settings. / 原捕获命令时序，独立于当前资源配置。 */
+    private final gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.Environment timing;
+
     /** Only true inside the host's explicit original recovery callback. / 仅在宿主明确原恢复回调中为真。 */
     private boolean recovering;
 
@@ -42,13 +44,34 @@ final class DeploymentEnvironmentRunner {
      * @param context original capabilities / 原能力
      * @param review complete command review / 完整命令审核
      * @param task original task / 原任务
-     * @param journal original journal / 原日志 */
+     * @param journal original journal / 原日志
+     * @throws ApiException if original evidence or admission is unconfirmed / 原依据或准入未确认时
+     */
     DeploymentEnvironmentRunner(ModContext context, DeploymentEnvironmentCommandReview review, TaskContext task,
-                                DeploymentEnvironmentJournal journal) {
-        this(context, review, task, journal, Duration.ofMinutes(15), Duration.ofSeconds(5));
+                                DeploymentEnvironmentJournal journal) throws ApiException {
+        this(context, review, task, journal,
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.environment(context.tasks(), task));
     }
 
-    /** Injects observation timing without changing production authorization. / 注入观察时序，不改变生产授权。
+    /** Uses the same original task's captured observation and command timing. / 使用同一原任务捕获的观察及命令时序。
+     * @param context original capabilities / 原能力
+     * @param review original review / 原审核
+     * @param task authentic task / 真实任务
+     * @param journal original journal / 原日志
+     * @param timing captured timing / 捕获时序 */
+    private DeploymentEnvironmentRunner(ModContext context, DeploymentEnvironmentCommandReview review, TaskContext task,
+                                        DeploymentEnvironmentJournal journal,
+                                        gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.Environment timing) {
+        this.context = context;
+        this.review = review;
+        this.task = task;
+        this.journal = journal;
+        this.timing = timing;
+        this.rebootBudget = Duration.ofSeconds(timing.rebootSeconds());
+        this.pollInterval = Duration.ofSeconds(timing.pollSeconds());
+    }
+
+    /** Injects observation timing without changing production rememberAuthorization. / 注入观察时序，不改变生产授权。
      * @param context original capabilities / 原能力
      * @param review exact command review / 精确命令审核
      * @param task original task / 原任务
@@ -63,6 +86,7 @@ final class DeploymentEnvironmentRunner {
         this.journal = journal;
         this.rebootBudget = rebootBudget;
         this.pollInterval = pollInterval;
+        this.timing = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.Environment.original();
     }
 
     /** Performs admitted original work or only explicitly authorized original reconciliation. / 执行已准入原工作或仅明确授权的原核对。
@@ -107,7 +131,7 @@ final class DeploymentEnvironmentRunner {
 
     /** Reconciles only previously attempted effects after cancellation and sends no subsequent business effect. / 取消后仅核对先前已尝试副作用，不发送后续业务副作用。
      * @return cancellation only when original effects and actual connection closure are known / 仅原副作用与实际连接关闭已知时返回取消
-     * @throws ApiException if original authorization, receipt persistence or physical closure fails / 原授权、回执持久化或物理关闭失败时
+     * @throws ApiException if original rememberAuthorization, receipt persistence or physical closure fails / 原授权、回执持久化或物理关闭失败时
      * @throws DeploymentEnvironmentPendingException if original security or sent effects remain unresolved / 原安全状态或已发送副作用仍未决时 */
     private OperationResult<Void> finishCancelledRecovery() throws ApiException, DeploymentEnvironmentPendingException {
         var state = journal.read();
@@ -160,7 +184,7 @@ final class DeploymentEnvironmentRunner {
     private void step() throws ApiException, DeploymentEnvironmentPendingException, InterruptedException {
         var state = journal.read();
         gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(
-            context, task, "Environment / 环境: " + state.stage());
+            context, task, gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "environment.stage", state.stage()));
         switch (state.stage()) {
             case "OBSERVED" -> beginChanges(state);
             case "PREPARE_DISPATCHED" -> settleSecurity(state, "prepare", "REBOOT_PENDING");
@@ -209,7 +233,7 @@ final class DeploymentEnvironmentRunner {
     private void dispatch(DeploymentEnvironmentState state, String stage, String dispatched)
         throws ApiException, DeploymentEnvironmentPendingException {
         checkCancellation();
-        try (var session = context.linux().connect(state.target(), task); var request = DeploymentEnvironmentScripts.request(state, stage)) {
+        try (var session = context.linux().connect(state.target(), task); var request = DeploymentEnvironmentScripts.request(state, stage, timing)) {
             var approval = review.approve(state.target(), revision(state), request, task);
             if (approval.outcome() != TaskResult.SUCCEEDED) {
                 if (state.stage().equals("OBSERVED")) {
@@ -303,7 +327,7 @@ final class DeploymentEnvironmentRunner {
 
     /** Requires a fresh authenticated enforcing observation before persistent commit. / 持久提交前要求一次新认证的强制态观测。
      * @param state original enforcing stage / 原强制态阶段
-     * @throws ApiException if original authorization fails / 原授权失败时
+     * @throws ApiException if original rememberAuthorization fails / 原授权失败时
      * @throws DeploymentEnvironmentPendingException if fresh login or posture is unproved / 新登录或姿态未证时 */
     private void commit(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPendingException {
         var observed = observe(state, "probe");
@@ -377,7 +401,7 @@ final class DeploymentEnvironmentRunner {
      * @throws DeploymentEnvironmentPendingException if the command lacks verified facts / 命令缺少已核事实时 */
     private DeploymentEnvironmentObservation execute(RemoteSession session, DeploymentEnvironmentState state, String stage)
         throws ApiException, DeploymentEnvironmentPendingException {
-        try (var request = DeploymentEnvironmentScripts.request(state, stage)) {
+        try (var request = DeploymentEnvironmentScripts.request(state, stage, timing)) {
             var approval = review.approve(state.target(), revision(state), request, task);
             if (approval.outcome() != TaskResult.SUCCEEDED) throw cancelledFailure();
             var result = session.execute(request, approval.value().orElseThrow());
@@ -405,7 +429,7 @@ final class DeploymentEnvironmentRunner {
             + DeploymentEnvironmentScripts.targetDigest(state.target()) + "\nbody=" + state.bodySha() + "\n" + observed + "\n" + effect;
         var approval = context.interaction().approve(new ActionIntent("deployment.environment." + stage,
             List.of(state.target().server().id()), state.target().server().id(), revision(state), exact,
-            "Explicit system preparation confirmation / 明确系统准备确认（默认取消）"), task);
+            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "environment.confirmSystem")), task);
         if (approval.outcome() != TaskResult.SUCCEEDED) throw cancelledFailure();
     }
 
@@ -478,7 +502,7 @@ final class DeploymentEnvironmentRunner {
             java.util.Map.entry("commitRequest", observed.commitRequest()));
         return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.of(new gold.debug.windowstolinux.appapi.task.result.Problem(
             ProblemCode.CANCELLED, "ENVIRONMENT_CANCELLED_AFTER_KNOWN_EFFECTS",
-            "Known original effects remain; further preparation was cancelled / 原已发生副作用保留，后续准备已取消",
+            "Known original effects remain; further preparation was cancelled",
             facts, Optional.empty())));
     }
 }

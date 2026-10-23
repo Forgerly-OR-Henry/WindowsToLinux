@@ -153,8 +153,8 @@ public final class DeploymentToolchainSetup {
             if (!complete(observed))
                 return observed.outcome() == TaskResult.FAILED && knownExit(observed)
                     ? observed.value().orElseThrow().stdout().startsWith("TOOLCHAIN_FAILURE=unavailable:")
-                    ? failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_TOOLCHAIN_UNSUPPORTED")
-                    : failure(ProblemCode.IO_FAILURE, "DEPLOYMENT_TOOLCHAIN_PREPARE_FAILED")
+                    ? preparationFailure(observed, ProblemCode.INCOMPATIBLE, "DEPLOYMENT_TOOLCHAIN_UNSUPPORTED")
+                    : preparationFailure(observed, ProblemCode.IO_FAILURE, "DEPLOYMENT_TOOLCHAIN_PREPARE_FAILED")
                     : unknown("DEPLOYMENT_TOOLCHAIN_PREPARE_UNCONFIRMED");
             String stdout = observed.value().orElseThrow().stdout();
             if (!stdout.startsWith("TOOLCHAIN=") || !stdout.endsWith("\n")
@@ -246,6 +246,12 @@ public final class DeploymentToolchainSetup {
      * @return known failure / 已知失败 */
     private static OperationResult<DeploymentResolvedToolchains> failure(ProblemCode code, String event) {
         return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(problem(code, event)));
+    }
+
+    private static OperationResult<DeploymentResolvedToolchains> preparationFailure(OperationResult<?> original, ProblemCode code, String event) {
+        var problem = problem(code, event);
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(problem.code(), problem.eventCode(),
+            problem.message(), original.problem().map(Problem::context).orElse(Map.of()), original.problem().flatMap(Problem::diagnosticId))));
     }
 
     /** Retains uncertain installation or binding effects. / 保留未知的安装或绑定副作用。

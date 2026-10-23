@@ -18,9 +18,9 @@ import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
@@ -43,12 +43,18 @@ import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentHelperInstallerScript;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentPublishPolicyFacts;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.DeploymentSecretRef;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.setup.DeploymentProtocolBootstrap;
+import gold.debug.windowstolinux.mod.deployment.service.core.setup.DeploymentProtocolBootstrapActionLog;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentDatabasePlanActionLog;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentNativeDatabaseActionLog;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentNativeDatabaseChannel;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.policy.DeploymentPublishPolicyFacts;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStandardSetupActionLog;
 import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.command.Command;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -291,7 +297,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
      * @throws ApiException if original capture, actual authentication or close fails / 原捕获、实际认证或关闭失败时 */
     private static void captureOriginalPolicy(ModContext context, ServerId server, TaskContext task) throws ApiException {
         var policy = DeploymentPublishPolicyFacts.begin(context, task, server,
-            "STATIC", "MANUAL_REVIEW", "GENERAL", "");
+            "STATIC", "MANUAL_REVIEW", true, "");
         try (var actual = context.linux().connect(policy.facts().fixedTarget(), task)) {
             policy.authenticated(actual.facts().fingerprint());
         }
@@ -322,7 +328,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
         var handle = context.tasks().submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE,
             "Original helper installation", List.of(server.id()), true), task -> {
             captureOriginalPolicy(context, server, task);
-            DeploymentStaticSetupActionLog.begin(context.tasks(), task, server);
+            DeploymentStandardSetupActionLog.begin(context.tasks(), task, server);
             var outcome = new DeploymentProtocolBootstrap(context.tasks(), task, server, session,
                 context.interaction()).ensure();
             var facts = DeploymentProtocolBootstrapActionLog.find(context.tasks(), task).orElseThrow().facts();
@@ -365,7 +371,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
         var handle = context.tasks().submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE,
             "Original native DB operation", List.of(server.id()), true), task -> {
             captureOriginalPolicy(context, server, task);
-            DeploymentStaticSetupActionLog.begin(context.tasks(), task, server);
+            DeploymentStandardSetupActionLog.begin(context.tasks(), task, server);
             return new DeploymentNativeDatabaseChannel(session, context.interaction(), server, task)
                 .start(context.tasks(), "POSTGRESQL", "postgresql.service", "a".repeat(64));
         });
@@ -406,7 +412,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
         var handle = context.tasks().submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE,
             "Original indexed native database", List.of(server.id()), true), task -> {
             captureOriginalPolicy(context, server, task);
-            DeploymentStaticSetupActionLog.begin(context.tasks(), task, server);
+            DeploymentStandardSetupActionLog.begin(context.tasks(), task, server);
             var plan = DeploymentDatabasePlanActionLog.begin(context.tasks(), task, server, "a".repeat(64),
                 List.of(entry));
             byte[] password = "controlled-password".getBytes(StandardCharsets.UTF_8);

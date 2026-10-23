@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-FRAGMENTS = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments'
+FRAGMENTS = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/mod/deployment/linux/helper'
 OPERATION = 'backup-' + 'a' * 32
 TASK = 'b' * 32
 REVISION = 'c' * 64

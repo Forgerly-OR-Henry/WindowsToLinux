@@ -7,16 +7,16 @@ import java.nio.file.StandardCopyOption;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentEcosystemToolType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
 
 /** Copies reviewed repository fixtures and changes only runtime-bound acceptance values. / 复制经审阅的仓库夹具，且只修改运行时绑定的验收值。 */
-final class DeploymentEcosystemExtensionFixture {
+public final class DeploymentEcosystemExtensionFixture {
     private DeploymentEcosystemExtensionFixture() {
     }
 
     /** Creates a healthy or health-rejected source tree for one exact architecture. / 为一个精确架构创建健康或健康拒绝源码树。 */
-    static Path create(Path parent, ArchitectureType architecture, String applicationId, String runtimeVersion,
-                       String toolVersion, String marker, boolean healthy) throws IOException {
+    public static Path create(Path parent, ArchitectureType architecture, String applicationId, String runtimeVersion,
+                              String toolVersion, String marker, boolean healthy) throws IOException {
         Path root = DeploymentStoreServiceFixture.copy(parent, applicationId, architecture.fixturePath() + "/http-service",
             healthy);
         if (architecture.pythonLocked() && runtimeVersion.equals("3.11")) {

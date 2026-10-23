@@ -1,0 +1,82 @@
+package gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem;
+
+import java.util.Set;
+
+import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentBuildLimits;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.build.contract.DeploymentBuildWriter;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.build.script.SafeBuildScriptEnvelope;
+
+/**
+ * Renders the fixed single-target CMake experimental architecture. / 渲染固定单目标 CMake 试验架构。
+ */
+public final class CmakeBuildWriter implements DeploymentBuildWriter {
+    /**
+     * Returns the CMake service type. / 返回 CMake 服务类型。
+     *
+     * @return the CMake service type /  CMake 服务类型
+     */
+    @Override
+    public DeploymentProjectKind projectType() {
+        return DeploymentProjectKind.CMAKE_SERVICE;
+    }
+
+    /**
+     * Returns the CMake build identity. / 返回 CMake 构建身份。
+     *
+     * @return the CMake build identity /  CMake 构建身份
+     */
+    @Override
+    public Set<DeploymentBuildToolType> buildTools() {
+        return Set.of(DeploymentBuildToolType.CMAKE);
+    }
+
+    /**
+     * Renders fixed preset configure/build and ELF dependency verification. / 渲染固定 preset 配置/构建与 ELF 依赖验证。
+     *
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @return render text / 渲染文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
+    @Override
+    public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+        if (!(runtime instanceof DeploymentRuntimeDefinition.CmakeService cmake)
+            || facts.buildTool() != DeploymentBuildToolType.CMAKE) {
+            throw new IllegalArgumentException("CMake renderer requires reviewed single-target inputs");
+        }
+        if (facts.languageFacts().sourceLanguages().isEmpty()) {
+            throw new IllegalArgumentException("CMake renderer requires a reviewed C/C++ source language set");
+        }
+        String preset = SafeBuildScriptEnvelope.shellQuote(cmake.preset());
+        String target = SafeBuildScriptEnvelope.shellQuote(cmake.target());
+        String tools = SafeBuildScriptEnvelope.cmakeToolArguments(facts.languageFacts().sourceLanguages());
+        String command = """
+            %srequire_build_tool ldd
+            preset=%s
+            target=%s
+            test "$preset" = w2l-release
+            test -f ./CMakeLists.txt
+            test -f ./CMakePresets.json
+            run cmake -S . -B .w2l/cmake-build -G Ninja -DCMAKE_BUILD_TYPE=Release "${cmake_arguments[@]}"
+            run cmake --build .w2l/cmake-build --target "$target" --parallel 1
+            artifact="./.w2l/cmake-build/$target"
+            test -x "$artifact"
+            test ! -L "$artifact"
+            mkdir -p ./.w2l/bin
+            cp -- "$artifact" "./.w2l/bin/$target"
+            chmod 0555 -- "./.w2l/bin/$target"
+            run ldd "./.w2l/bin/$target" > "./.w2l/bin/$target.ldd"
+            ! grep -F 'not found' "./.w2l/bin/$target.ldd"
+            printf 'ARTIFACT=%%s\n' "./.w2l/bin/$target"
+            """.formatted(tools, preset, target);
+        return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
+    }
+}

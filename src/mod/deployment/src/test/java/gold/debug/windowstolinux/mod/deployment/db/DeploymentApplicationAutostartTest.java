@@ -10,14 +10,30 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
 import gold.debug.windowstolinux.appapi.task.result.*;
-import gold.debug.windowstolinux.mod.deployment.api.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
+import gold.debug.windowstolinux.mod.deployment.api.ApplicationAutostartState;
+import gold.debug.windowstolinux.mod.deployment.api.ApplicationRunState;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationId;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentCollectionRequest;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentHandoffState;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentLifecycleAction;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentApplicationReader;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentApplicationRunner;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentApplicationsService;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentManagementActionLog;
+import gold.debug.windowstolinux.mod.deployment.service.core.collect.DeploymentCollectionFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.handoff.DeploymentHandoffLedger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.*;
 
 /** Automatic startup is an actual component state change under the original journal, preserving runtime. / 自启在原日志下改变实际组件状态并保持运行态。 */
 class DeploymentApplicationAutostartTest extends DeploymentAutostartFixture {
+    @ParameterizedTest
+    @ValueSource(strings = {"STOP_ACK", "START_ACK", "DISABLE_ACK", "DISABLE_PARTIAL_ACK", "DISABLE_RAW_DRIFT", "OTHER_RAW", "OTHER_AUTOSTART", "IDENTITY", "MODEL", "TARGET", "HEALTH"})
+    void originalComponentUnknownReconcilesReadOnlyWithoutResend(String scenario) throws Exception {
+        DeploymentApplicationLifecycleTest.isolatedManagedRecovery(root, scenario);
+    }
+
     @ParameterizedTest
     @CsvSource({"NATIVE,false", "NATIVE,true", "DOCKER,false", "DOCKER,true", "PODMAN,false", "PODMAN,true"})
     void actualAutostartChangesEveryDaemonAndPreservesRunningOrStoppedState(Backend backend, boolean active) throws Exception {

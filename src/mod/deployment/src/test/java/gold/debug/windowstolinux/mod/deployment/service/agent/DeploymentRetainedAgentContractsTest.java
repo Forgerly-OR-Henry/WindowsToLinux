@@ -26,6 +26,7 @@ import gold.debug.windowstolinux.appapi.task.model.TaskState;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -148,8 +149,8 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
                         default -> invoke(actual, method, arguments);
                     };
                 });
-            var request = new DeploymentAgentWorkflow.Request(Map.of("goal", "Actual original task"), selected.policy,
-                "GENERAL", 65536, 100, 65536);
+            var request = new DeploymentAgentInputs.Request(Map.of("goal", "Actual original task"), selected.policy,
+                true, 65536, 100, 65536);
             var handle = new DeploymentAgentWorkflow(bound)
                 .submitLocal(new gold.debug.windowstolinux.appapi.server.model.ServerId("server"), request);
             var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);

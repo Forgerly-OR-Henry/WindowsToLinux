@@ -26,7 +26,7 @@ public final class DeploymentAgentPreparationAbsence {
         .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     private static final Set<String> BEFORE = Set.of("REMEMBER_AUTHORIZATION", "REMOTE_TARGET", "REMOTE_LAYOUT", "SOURCE",
-        "SUCCESSOR_BINDING", "TARGET_PROFILE", "AGENT_QUERY", "AGENT_ASSESSMENT", "AGENT_OBSERVATION", "DECISION", "PLAN", "PLAN_APPLICATION", "STATE",
+        "SUCCESSOR_BINDING", "TARGET_PROFILE", "AGENT_QUERY", "AGENT_ASSESSMENT", "AGENT_OBSERVATION", "DECISION", "PLAN", "PLAN_APPLICATION", "STATE", "WORKSPACE_QUOTA",
         "PREPARE_EXECUTING", "RECOVERY_REVIEW_BOUND", "RECOVERY_REVIEW_REBOUND");
 
     private static final Set<String> AFTER = Set.of("STATE", "RECOVERY_REVIEW_BOUND", "RECOVERY_REVIEW_REBOUND");
@@ -73,7 +73,7 @@ public final class DeploymentAgentPreparationAbsence {
                 || !profile.action().isEmpty() || !profile.detail().matches("[0-9a-f]{64}")
                 || !endpoint.action().isEmpty() || !endpoint.detail().matches("[0-9a-f]{64}")
                 || !policy.action().equals("rememberAuthorization.v1") || !policy.detail().equals(Boolean.toString(snapshot.identity().rememberAuthorization()))
-                || !preparation.action().equals(hash(task + ":" + preparation.detail() + ":" + source.detail())))
+                || !preparation.action().equals(DeploymentAgentPreparationBinding.preparationAction(task, snapshot.identity(), source, plan, preparation, layout.digest(), events)))
                 return Optional.empty();
             for (var header : List.of(source, plan, application, profile, endpoint, policy, capturedLayout))
                 if (header.id() >= preparation.id()) return Optional.empty();

@@ -150,6 +150,7 @@ public final class DeploymentCommandReviewScope implements ModContext {
              * @throws ApiException if original authority rejects / 原权限拒绝时 */
             public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext supplied) throws ApiException {
                 sameTask(supplied);
+                DeploymentApprovalPolicies.boundary(supplied, policy);
                 return host.approve(intent, supplied);
             }
 
@@ -160,6 +161,7 @@ public final class DeploymentCommandReviewScope implements ModContext {
              * @throws ApiException if original authority rejects / 原权限拒绝时 */
             public OperationResult<ApprovalGrant> approveRequired(ActionIntent intent, TaskContext supplied) throws ApiException {
                 sameTask(supplied);
+                DeploymentApprovalPolicies.boundary(supplied, policy);
                 return host.approveRequired(intent, supplied);
             }
 
@@ -191,38 +193,46 @@ public final class DeploymentCommandReviewScope implements ModContext {
     }
 
     private static DeploymentCurrentCommandEvidence retain(DeploymentCurrentCommandEvidence retained,
-                                                            DeploymentCurrentCommandEvidence current) {
+                                                           DeploymentCurrentCommandEvidence current) {
         if (retained == DeploymentCurrentCommandEvidence.NONE) return current;
         return new DeploymentCurrentCommandEvidence() {
             public java.util.Map<String, ?> facts(ActionIntent intent, CommandRequest request, TaskContext task) throws ApiException {
                 var facts = new java.util.LinkedHashMap<String, Object>();
                 retained.facts(intent, request, task).forEach(facts::put);
                 current.facts(intent, request, task).forEach((key, value) -> {
-                    if (facts.containsKey(key)) throw new IllegalArgumentException("Retained command evidence key conflict");
+                    if (facts.containsKey(key))
+                        throw new IllegalArgumentException("Retained command evidence key conflict");
                     facts.put(key, value);
                 });
                 return java.util.Collections.unmodifiableMap(facts);
             }
+
             public void verify(ActionIntent intent, CommandRequest request, TaskContext task) throws ApiException {
                 retained.verify(intent, request, task);
                 current.verify(intent, request, task);
             }
+
             public void reviewed(ActionIntent intent, CommandRequest request, TaskContext task, DeploymentReviewDecision decision) throws ApiException {
                 retained.reviewed(intent, request, task, decision);
                 current.reviewed(intent, request, task, decision);
             }
+
             public void workflowOpened(gold.debug.windowstolinux.appapi.task.action.WorkflowGrant permission) {
                 retained.workflowOpened(permission);
                 current.workflowOpened(permission);
             }
+
             public String reviewInstructions() throws ApiException {
                 return instructions(retained.reviewInstructions(), current.reviewInstructions());
             }
+
             public String reviewInstructions(ActionIntent intent, CommandRequest request, TaskContext task) throws ApiException {
                 return instructions(retained.reviewInstructions(intent, request, task), current.reviewInstructions(intent, request, task));
             }
+
             private String instructions(String first, String second) {
-                if (first == null || second == null) throw new IllegalArgumentException("Retained review instructions missing");
+                if (first == null || second == null)
+                    throw new IllegalArgumentException("Retained review instructions missing");
                 return first.isEmpty() ? second : second.isEmpty() ? first : first + "\n" + second;
             }
         };

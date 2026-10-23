@@ -7,7 +7,6 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-
 import javax.swing.JComponent;
 import javax.tools.ToolProvider;
 
@@ -30,6 +29,7 @@ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.file.git.GitRuntimeTestBridge;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -73,12 +73,11 @@ class DeploymentOptionalGitLocalTest extends DeploymentPublishAcceptanceFixture 
             var reviewer = observingReviewer(runtime, graph);
             var workflow = GitRuntimeTestBridge.staticWorkflow(runtime, bound);
             var handle = workflow.submit(new ServerId("server"),
-                new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(), reviewer);
+                new DeploymentStandardInputs.Draft("", 65536, 100, 65536), Optional.empty(), reviewer);
             var result = handle.completion().toCompletableFuture().get(60, TimeUnit.SECONDS);
             assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.problem().toString());
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             assertNotNull(graph.get());
-            assertFalse(graph.get().legacy());
             assertEquals(Set.of(OWNER), graph.get().releases().stream().map(TaskRecoveryGraph.Release::owner)
                 .collect(java.util.stream.Collectors.toSet()));
             assertTrue(graph.get().edges().isEmpty());
@@ -95,12 +94,12 @@ class DeploymentOptionalGitLocalTest extends DeploymentPublishAcceptanceFixture 
         }
     }
 
-    private DeploymentStaticWorkflow.Reviewer observingReviewer(PlatformRuntime runtime,
+    private DeploymentStandardInputs.Reviewer observingReviewer(PlatformRuntime runtime,
                                                                 AtomicReference<TaskRecoveryGraph> observed) {
         var delegate = reviewer(1);
-        return (DeploymentStaticWorkflow.Reviewer) Proxy.newProxyInstance(
-            DeploymentStaticWorkflow.Reviewer.class.getClassLoader(),
-            new Class<?>[]{DeploymentStaticWorkflow.Reviewer.class}, (proxy, method, args) -> {
+        return (DeploymentStandardInputs.Reviewer) Proxy.newProxyInstance(
+            DeploymentStandardInputs.Reviewer.class.getClassLoader(),
+            new Class<?>[]{DeploymentStandardInputs.Reviewer.class}, (proxy, method, args) -> {
                 if (args != null)
                     for (Object argument : args)
                         if (argument instanceof TaskContext task) {
@@ -130,7 +129,7 @@ class DeploymentOptionalGitLocalTest extends DeploymentPublishAcceptanceFixture 
                 Optional.empty()), false);
             if (state == AvailabilityState.INCOMPATIBLE || state == AvailabilityState.START_FAILED)
                 intents.apply(intents.review(GIT, new PlatformModIntents.Choice(true,
-                    Optional.of(state == AvailabilityState.INCOMPATIBLE ? "2.0.0" : "1.0.0-dev.1")), Optional.empty()), false);
+                    Optional.of(state == AvailabilityState.INCOMPATIBLE ? "2.0.0" : "1.0.0")), Optional.empty()), false);
         }
     }
 

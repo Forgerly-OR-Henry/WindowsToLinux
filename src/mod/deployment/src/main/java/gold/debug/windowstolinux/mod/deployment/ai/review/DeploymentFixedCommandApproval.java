@@ -86,6 +86,7 @@ public final class DeploymentFixedCommandApproval {
                                                   boolean rememberAuthorization, DeploymentCommandReviewModel model,
                                                   DeploymentCurrentCommandEvidence currentEvidence, boolean trustedInstructions,
                                                   DeploymentCommandProtocol protocol) throws ApiException {
+        policy = DeploymentApprovalPolicies.boundary(task, policy);
         DeploymentAuthorizationPolicy.requireAllowed(policy, rememberAuthorization);
         if (!protocol.registered(intent) || !intent.type().equals("platform.ssh.execute") || intent.serverIds().size() != 1)
             throw denied(task, "DEPLOYMENT_COMMAND_UNREGISTERED");
@@ -173,7 +174,8 @@ public final class DeploymentFixedCommandApproval {
     /** Detaches review input from the protocol's mutable object graph; the canonical string remains the comparison identity. */
     private static Map<String, Object> protocolFacts(String snapshot) throws IOException {
         var decoded = new com.fasterxml.jackson.databind.ObjectMapper().readValue(snapshot,
-            new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+            new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
+            });
         var result = new LinkedHashMap<String, Object>();
         decoded.forEach((key, value) -> result.put(key, immutableValue(value)));
         return java.util.Collections.unmodifiableMap(result);
@@ -185,7 +187,8 @@ public final class DeploymentFixedCommandApproval {
             map.forEach((key, item) -> result.put((String) key, immutableValue(item)));
             return java.util.Collections.unmodifiableMap(result);
         }
-        if (value instanceof java.util.List<?> list) return list.stream().map(DeploymentFixedCommandApproval::immutableValue).toList();
+        if (value instanceof java.util.List<?> list)
+            return list.stream().map(DeploymentFixedCommandApproval::immutableValue).toList();
         return value;
     }
 

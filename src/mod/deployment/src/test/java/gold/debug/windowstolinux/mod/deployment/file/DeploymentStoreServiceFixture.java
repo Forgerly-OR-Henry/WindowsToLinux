@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** Materializes complete independent repository fixtures, preserving binary dependencies. / 实例化完整独立仓库夹具并保留二进制依赖。 */
-final class DeploymentStoreServiceFixture {
+public final class DeploymentStoreServiceFixture {
     private static final Set<String> GENERATED = Set.of("target", "node_modules", ".venv", ".gradle", "build", "dist",
         ".w2l", "__pycache__", "obj", "vendor");
 
@@ -20,7 +20,7 @@ final class DeploymentStoreServiceFixture {
     private DeploymentStoreServiceFixture() {
     }
 
-    static Path copy(Path parent, String applicationId, String combination, boolean healthy) throws IOException {
+    public static Path copy(Path parent, String applicationId, String combination, boolean healthy) throws IOException {
         Path base = parent.toAbsolutePath().normalize();
         Path target = base.resolve(applicationId).normalize();
         if (!target.getParent().equals(base))
@@ -53,7 +53,7 @@ final class DeploymentStoreServiceFixture {
         return target;
     }
 
-    static void replaceText(Path root, Map<String, String> replacements) throws IOException {
+    public static void replaceText(Path root, Map<String, String> replacements) throws IOException {
         try (var files = Files.walk(root)) {
             for (Path file : files.filter(Files::isRegularFile).toList()) {
                 String name = file.getFileName().toString();
@@ -70,7 +70,7 @@ final class DeploymentStoreServiceFixture {
         }
     }
 
-    static Path repositoryRoot() {
+    public static Path repositoryRoot() {
         for (Path path = Path.of("").toAbsolutePath().normalize(); path != null; path = path.getParent()) {
             if (Files.isRegularFile(path.resolve("test/single-language/matrix.json")))
                 return path;

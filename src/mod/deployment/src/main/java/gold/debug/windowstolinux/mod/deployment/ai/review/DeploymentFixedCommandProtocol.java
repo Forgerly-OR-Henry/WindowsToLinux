@@ -26,7 +26,11 @@ public final class DeploymentFixedCommandProtocol implements DeploymentCommandPr
         "deployment.candidate.query.v1",
         "deployment.candidate.upload.v1",
         "deployment.candidate.verify.v1",
+        "deployment.candidate.compensation.observe.v1",
+        "deployment.candidate.compensation.execute.v1",
+        "deployment.candidate.compensation.receipt.v1",
         "deployment.toolchain.prepare.v1",
+        "deployment.toolchain.diagnostic.v1",
         "deployment.toolchain.bind.v1",
         "deployment.toolchain.prepare.tracked.v1",
         "deployment.toolchain.bind.tracked.v1",
@@ -77,6 +81,29 @@ public final class DeploymentFixedCommandProtocol implements DeploymentCommandPr
         if (!registered(intent)) throw new IllegalArgumentException("Unsupported common command operation");
         requireTaskTargets(intent, task);
         DeploymentCommandStaticGate.requireFixedAllowed(request.script());
+        if (intent.semantics().orElseThrow().operation().startsWith(
+            gold.debug.windowstolinux.mod.deployment.linux.cleanup.DeploymentCandidateCompensationProgram.OPERATION_PREFIX)) {
+            var compensation = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.cleanup.DeploymentCandidateCompensation
+                .reviewFacts(context, task, intent, request, layout);
+            var evidence = new java.util.LinkedHashMap<String, Object>(DeploymentCommandEvidence.baseFacts(intent, request, layout, false));
+            byte[] input = request.stdin();
+            try {
+                String executable = java.nio.charset.StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                    .decode(java.nio.ByteBuffer.wrap(input)).toString();
+                DeploymentCommandStaticGate.requireFixedAllowed(executable);
+                evidence.put("commandScript", request.script());
+                evidence.put("inputKind", "EXECUTABLE_SCRIPT");
+                evidence.put("completeExecutableInput", executable);
+                evidence.put("timeoutSeconds", request.timeout().toSeconds());
+                evidence.put("outputLimitBytes", request.outputLimitBytes());
+                evidence.put("candidateCompensation", compensation);
+                return java.util.Collections.unmodifiableMap(evidence);
+            } finally {
+                java.util.Arrays.fill(input, (byte) 0);
+            }
+        }
         var facts = DeploymentCommandEvidence.facts(intent, request, layout, context, task);
         if (facts.get("modelCommand") instanceof Map<?, ?> command && !task.id().toString().equals(command.get("task")))
             throw new IllegalArgumentException("Model command task differs from original context");
@@ -84,6 +111,8 @@ public final class DeploymentFixedCommandProtocol implements DeploymentCommandPr
             throw new IllegalArgumentException("Publication status task differs from original context");
         if (facts.get("trackedToolchain") instanceof Map<?, ?> tracked && !task.id().toString().equals(tracked.get("taskId")))
             throw new IllegalArgumentException("Tracked toolchain task differs from original context");
+        if (facts.get("toolchainDiagnostic") instanceof Map<?, ?> diagnostic && !task.id().toString().equals(diagnostic.get("taskId")))
+            throw new IllegalArgumentException("Toolchain diagnostic task differs from original context");
         return facts;
     }
     /** A declared task target can only refer to the authentic original task. */

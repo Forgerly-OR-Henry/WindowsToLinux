@@ -28,8 +28,7 @@ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentProjectStore;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentProjectSourceRecorder;
+import gold.debug.windowstolinux.mod.deployment.db.project.DeploymentProjectStore;
 import org.junit.jupiter.api.Test;
 
 class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
@@ -85,7 +84,7 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
         var context = activeContext();
         var handle = context.tasks().submit(new TaskRequest("git", "Git", List.of(), true), task -> {
             try {
-                try (var material = preparer.prepare(request, 2 * 1024 * 1024, 100, task, gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture.begin(context, task, request))) {
+                try (var material = preparer.prepare(request, 2 * 1024 * 1024, 100, task, gold.debug.windowstolinux.mod.deployment.service.core.source.DeploymentGitJournalFixture.begin(context, task, request))) {
                     assertEquals(expected, material.commit());
                     assertTrue(material.source().includedFiles().contains("pom.xml"));
                     assertTrue(
@@ -142,7 +141,7 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
         var handle = activeContext().tasks().submit(new TaskRequest("git-rejected", "Git rejected", List.of(), true),
             task -> {
                 try {
-                    observer.set(gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture.begin(context, task, request));
+                    observer.set(gold.debug.windowstolinux.mod.deployment.service.core.source.DeploymentGitJournalFixture.begin(context, task, request));
                     var rejected = assertThrows(ApiException.class,
                         () -> preparer.prepare(request, 2 * 1024 * 1024, 100, task, observer.get()));
                     if (rejected.problem().code() == ProblemCode.UNKNOWN)
@@ -253,7 +252,7 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
                 2 * 1024 * 1024, true);
             var failure = new AtomicReference<Throwable>();
             var handle = context.tasks().submit(new TaskRequest("git-move", "Git move", List.of(), true), task -> {
-                try (var material = preparer.prepare(request, 2 * 1024 * 1024, 100, task, gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture.begin(context, task, request))) {
+                try (var material = preparer.prepare(request, 2 * 1024 * 1024, 100, task, gold.debug.windowstolinux.mod.deployment.service.core.source.DeploymentGitJournalFixture.begin(context, task, request))) {
                     assertEquals(initial, material.commit());
                     Files.writeString(repo.resolve("pom.xml"), "second");
                     git(repo, "add", ".");
@@ -302,7 +301,7 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
             var failure = new AtomicReference<Throwable>();
             var handle = context.tasks().submit(new TaskRequest("git-large-source", "Large Git source", List.of(), true), task -> {
                 try (var material = preparer.prepare(request, 32L * 1024 * 1024, 100, task,
-                    gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture
+                    gold.debug.windowstolinux.mod.deployment.service.core.source.DeploymentGitJournalFixture
                         .begin(context, task, request, 32L * 1024 * 1024, 100))) {
                     assertEquals(commit, material.commit());
                     assertEquals(24L * 1024 * 1024,
@@ -488,7 +487,7 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
                             provider.set(actual);
                             return processes;
                         });
-                        var observer = gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture
+                        var observer = gold.debug.windowstolinux.mod.deployment.service.core.source.DeploymentGitJournalFixture
                             .begin(context, task, request);
                         originalObserver.set(observer);
                         var unknown = assertThrows(ApiException.class,

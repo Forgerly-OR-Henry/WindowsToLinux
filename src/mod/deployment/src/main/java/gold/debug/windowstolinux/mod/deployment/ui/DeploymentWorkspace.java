@@ -12,12 +12,16 @@ import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.ui.page.ModPage;
 import gold.debug.windowstolinux.appapi.ui.page.PageFactory;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences;
+import gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore;
 
 /** Owns lazy deployment views inside one published root. / 在唯一已发布根内持有按需创建的部署视图。 */
 public final class DeploymentWorkspace implements ModPage {
     /** Stable internal identities also accepting old standalone page targets. / 稳定内部身份，同时接收旧独立页面目标。 */
     private static final String[] NAVIGATION = {"static-deployment", "agent-deployment", "applications", "environment"};
+
+    private final boolean unified;
+
+    private String flowNavigation = "deployment-flow";
 
     /** Initial navigation restored before any business view exists. / 任何业务视图创建前恢复的初始导航。 */
     private int initialSelection;
@@ -41,13 +45,13 @@ public final class DeploymentWorkspace implements ModPage {
     private final JPanel[] slots;
 
     /** Production-only original preference query; preview mounting performs no task. / 仅生产使用原偏好查询；预览挂载不产生任务。 */
-    private final Callable<TaskHandle<DeploymentPreferences.Selection>> preferenceTask;
+    private final Callable<TaskHandle<DeploymentPreferenceStore.Selection>> preferenceTask;
 
     /** Only the production preference observation uses this view worker. / 仅生产偏好观察使用本视图工作线程。 */
     private final ExecutorService worker;
 
     /** Monitor-protected original query retained through actual completion. / 由本实例监视器保护并保留至实际完成的原查询。 */
-    private TaskHandle<DeploymentPreferences.Selection> preferenceHandle;
+    private TaskHandle<DeploymentPreferenceStore.Selection> preferenceHandle;
 
     /** Explicit host navigation takes precedence over the saved initial mode. / 宿主明确导航优先于保存的初始模式。 */
     private boolean restored, preferenceReady, preferencePending, preferenceFailed;
@@ -73,6 +77,11 @@ public final class DeploymentWorkspace implements ModPage {
     /** Publishes close to the original preference worker before late admission. / 在迟到准入前将关闭状态发布给原偏好工作线程。 */
     private volatile boolean closed;
 
+    /** Production workspace exposes only the unified flow and installed applications. / 生产工作区只呈现统一流程及已部署应用。 */
+    public DeploymentWorkspace(PageFactory flow, PageFactory applications) {
+        this(new PageFactory[]{flow, applications}, null);
+    }
+
     /** Captures factories without creating any internal view. / 捕获工厂，不创建内部视图。
      * @param standard standard and assisted view / 标准及辅助视图
      * @param agent autonomous view / 自主视图
@@ -88,14 +97,15 @@ public final class DeploymentWorkspace implements ModPage {
      * @param environment environment preparation view / 环境准备视图
      * @param preferenceTask original owner preference query / 原所属偏好查询 */
     public DeploymentWorkspace(PageFactory standard, PageFactory agent, PageFactory applications,
-                               PageFactory environment, Callable<TaskHandle<DeploymentPreferences.Selection>> preferenceTask) {
+                               PageFactory environment, Callable<TaskHandle<DeploymentPreferenceStore.Selection>> preferenceTask) {
         this(new PageFactory[]{standard, agent, applications, environment}, java.util.Objects.requireNonNull(preferenceTask));
     }
 
     /** Captures fixed factories and creates no task or business page. / 抓取固定工厂，不创建任务或业务页面。
      * @param factories fixed original factories / 固定原工厂
      * @param preferenceTask production query or absent preview query / 生产查询或无查询预览 */
-    private DeploymentWorkspace(PageFactory[] factories, Callable<TaskHandle<DeploymentPreferences.Selection>> preferenceTask) {
+    private DeploymentWorkspace(PageFactory[] factories, Callable<TaskHandle<DeploymentPreferenceStore.Selection>> preferenceTask) {
+        unified = factories.length == 2;
         this.factories = factories.clone();
         for (var factory : this.factories) java.util.Objects.requireNonNull(factory);
         this.preferenceTask = preferenceTask;
@@ -168,7 +178,8 @@ public final class DeploymentWorkspace implements ModPage {
     @Override
     public String navigationId() {
         requireEdt();
-        return NAVIGATION[tabs.getTabCount() == 0 ? initialSelection : tabs.getSelectedIndex()];
+        int selected = tabs.getTabCount() == 0 ? initialSelection : tabs.getSelectedIndex();
+        return unified ? selected == 0 ? "deployment-flow" : "applications" : NAVIGATION[selected];
     }
 
     /** Restores a known internal page before creation or within the retained root. / 创建前或保留根内恢复已知内部页面。
@@ -176,6 +187,19 @@ public final class DeploymentWorkspace implements ModPage {
     @Override
     public void restoreNavigation(String id) {
         requireEdt();
+        if (unified) {
+            int selected;
+            if (java.util.Set.of("deployment-flow", "static-deployment", "agent-deployment", "environment").contains(id)) {
+                selected = 0;
+                flowNavigation = id;
+                if (instances[0] != null) instances[0].restoreNavigation(id);
+            } else if (id.equals("applications")) selected = 1;
+            else return;
+            restored = true;
+            initialSelection = selected;
+            if (tabs.getTabCount() != 0) tabs.setSelectedIndex(selected);
+            return;
+        }
         for (int index = 0; index < factories.length; index++)
             if (NAVIGATION[index].equals(id)) {
                 restored = true;
@@ -253,7 +277,7 @@ public final class DeploymentWorkspace implements ModPage {
     /** Cancels only this original short query; its durable cleanup remains with the host. / 仅取消本原短查询；持久清理仍由宿主负责。
      * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if original cancellation cannot be confirmed / 原取消无法确认时 */
     private void cancelPreference() throws gold.debug.windowstolinux.appapi.task.result.ApiException {
-        final TaskHandle<DeploymentPreferences.Selection> handle;
+        final TaskHandle<DeploymentPreferenceStore.Selection> handle;
         synchronized (this) {
             handle = preferenceHandle;
         }
@@ -272,6 +296,7 @@ public final class DeploymentWorkspace implements ModPage {
         opening = true;
         try {
             instances[index] = java.util.Objects.requireNonNull(factories[index].create());
+            if (unified && index == 0) instances[index].restoreNavigation(flowNavigation);
             var component = java.util.Objects.requireNonNull(instances[index].create(environment));
             if (component.getParent() != null) throw new IllegalStateException("View is already mounted");
             components[index] = component;
@@ -308,9 +333,14 @@ public final class DeploymentWorkspace implements ModPage {
     private void localize() {
         messages = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page", environment.locale(),
             ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_DEFAULT));
-        String[] keys = {"workspace.standard", "workspace.agent", "workspace.applications", "workspace.environment"};
+        String[] keys = unified ? new String[]{"workspace.flow", "workspace.installed"}
+            : new String[]{"workspace.standard", "workspace.agent", "workspace.applications", "workspace.environment"};
         for (int index = 0; index < tabs.getTabCount(); index++)
             tabs.setTitleAt(index, messages.getString(keys[index]));
+        if (unified && tabs.getTabCount() == 2) {
+            tabs.setIconAt(0, gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle.icon("folder", 20));
+            tabs.setIconAt(1, gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle.icon("app", 20));
+        }
         problem.setText(messages.getString(preferencePending ? "workspace.loading" : preferenceFailed ? "workspace.preferenceFailed" : "workspace.failed"));
         retry.setText(messages.getString("workspace.retry"));
         retry.setEnabled(!environment.locked() && !closed && !preferencePending);

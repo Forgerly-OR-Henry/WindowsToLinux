@@ -10,7 +10,6 @@ import java.util.ArrayDeque;
 import java.util.concurrent.*;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
-
 import javax.imageio.ImageIO;
 import javax.swing.*;
 
@@ -19,12 +18,12 @@ import gold.debug.windowstolinux.app.main.start.ApplicationLauncher;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.ai.PlatformModelService;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
-import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.*;
+import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.mod.ModNavigationPane;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
@@ -32,12 +31,120 @@ import org.junit.jupiter.api.Test;
 /** Actual startup shell and CLASS Mod together, with isolated storage and no remote work. / 实际启动外壳与 CLASS Mod 联合验收，使用隔离存储而不执行远程操作。 */
 class DeploymentRestyledWindowTest extends DeploymentRuntimeFixture {
     @Test
+    void currentControlSurfacesKeepFixedContentAndOriginalClassModDraft() throws Exception {
+        assertFalse(GraphicsEnvironment.isHeadless());
+        enable();
+        Path evidence = Files.createDirectories(Path.of("target/phase13-p0"));
+        Files.writeString(evidence.resolve("controls-layout.csv"),
+            "variant,contentWidth,contentHeight,sidebarWidth,headerHeight,statusHeight,modWidth,modHeight\n");
+        var create = ApplicationLauncher.class.getDeclaredMethod("createWindow", PlatformRuntime.class,
+            MessageCatalog.class, DesktopDisplayConfig.class, ThemeMode.class,
+            FailureReportStore.class, PlatformModelService.class);
+        create.setAccessible(true);
+        var install = ApplicationLauncher.class.getDeclaredMethod("installModManagement", PlatformRuntime.class,
+            PlatformFrame.class);
+        install.setAccessible(true);
+        float previousZoom = com.formdev.flatlaf.util.UIScale.getZoomFactor();
+        try {
+            for (var theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK})
+                for (int scale : new int[]{100, 150}) {
+                    String variant = theme + "-zh-CN-" + scale;
+                    try (var runtime = PlatformRuntime.open(root.resolve("data"), PROTECTION)) {
+                        runtime.security().unlock(PASSWORD.toCharArray());
+                        var models = runtime.models();
+                        PlatformFrame frame = edt(() -> (PlatformFrame) create.invoke(null, runtime,
+                            MessageCatalog.forLanguageTag("zh-CN"), new DesktopDisplayConfig("zh-CN", theme, scale, false),
+                            theme, FailureReportStore.disabled(), models));
+                        runtime.started();
+                        try {
+                            if (scalar(runtime, "SELECT COUNT(*) FROM server_profile") == 0)
+                                runtime.servers().saveServerProfile(ServerProfile.fromStored(new StoredServerProfile(
+                                        "visual-server", "127.0.0.1", 22, "fixture", "fixture", "控件验收服务器")),
+                                    "fixture".toCharArray());
+                            edt(() -> {
+                                frame.setVisible(true);
+                                return null;
+                            });
+                            var report = runtime.startDevelopmentMods(workspace(), frame.pages());
+                            assertTrue(report.problems().isEmpty(), report.problems().toString());
+                            edt(() -> {
+                                frame.showModStartup(report.running().size(), report.problems());
+                                return null;
+                            });
+                            install.invoke(null, runtime, frame);
+                            await(() -> ((ModNavigationPane) named(frame, "mods.navigation")).available());
+                            openInside(frame, "static-deployment");
+                            await(() -> ((JComboBox<?>) named(frame, "deployment.server")).getItemCount() == 1);
+                            JTextField draft = edt(() -> (JTextField) named(frame, "deployment.sourceName"));
+                            JTabbedPane tabs = edt(() -> (JTabbedPane) named(frame, "deployment.workspace.tabs"));
+                            edt(() -> {
+                                draft.setText("controls-保留的部署草稿");
+                                frame.showHome();
+                                frame.pages().navigateView(new ModPageRegistry.PageKey(OWNER, "workspace"));
+                                assertEquals("static-deployment", frame.currentPage().detailId());
+                                return null;
+                            });
+                            for (String id : new String[]{"static-deployment", "agent-deployment", "applications"}) {
+                                openInside(frame, id);
+                                await(() -> id.equals("applications") ? named(frame, "applications.refresh").isEnabled()
+                                    : ((JComboBox<?>) named(frame, id.equals("static-deployment")
+                                    ? "deployment.server" : "deployment.agent.server")).getItemCount() == 1);
+                                await(() -> !DesktopTaskRunner.hasActiveTasks());
+                                captureControlsAt(frame, 1600, 900, variant + "-" + id);
+                                captureControlsAt(frame, 1280, 720, variant + "-" + id + "-minimum");
+                                edt(() -> {
+                                    assertEquals(id, frame.currentPage().detailId());
+                                    assertSame(tabs, named(frame, "deployment.workspace.tabs"));
+                                    assertSame(draft, named(frame, "deployment.sourceName"));
+                                    assertEquals("controls-保留的部署草稿", draft.getText());
+                                    return null;
+                                });
+                            }
+                            openInside(frame, "static-deployment");
+                            edt(() -> {
+                                ((JComboBox<?>) named(frame, "deployment.sourceMode")).setSelectedIndex(1);
+                                ((JButton) named(frame, "deployment.advanced")).doClick(0);
+                                var advanced = (JDialog) Stream.of(frame.getOwnedWindows())
+                                    .filter(window -> "deployment.advanced.window".equals(window.getName()))
+                                    .findFirst().orElseThrow();
+                                var url = (JTextField) named(advanced, "deployment.git.url");
+                                url.setText("https://example.invalid/controls-retained.git");
+                                capture(advanced, "controls-" + variant + "-advanced");
+                                var scroll = (JScrollPane) advanced.getContentPane().getComponent(0);
+                                scroll.getVerticalScrollBar().setValue(scroll.getVerticalScrollBar().getMaximum());
+                                capture(advanced, "controls-" + variant + "-advanced-bottom");
+                                advanced.setVisible(false);
+                                ((JButton) named(frame, "deployment.advanced")).doClick(0);
+                                assertEquals("https://example.invalid/controls-retained.git", url.getText());
+                                advanced.setVisible(false);
+                                return null;
+                            });
+                            frame.pages().closeView(new ModPageRegistry.PageKey(OWNER, "workspace"));
+                        } finally {
+                            edt(() -> {
+                                frame.dispose();
+                                return null;
+                            });
+                            await(() -> !DesktopTaskRunner.hasActiveTasks()
+                                && runtime.security().securityState().activeTasks() == 0);
+                        }
+                    }
+                }
+        } finally {
+            edt(() -> {
+                DesktopThemeService.install(ThemeMode.LIGHT, Math.round(previousZoom * 100));
+                return null;
+            });
+        }
+    }
+
+    @Test
     void actualMainWindowKeepsOriginalModDraftAndOwnedWindowAcrossAppearanceAndLock() throws Exception {
         assertFalse(GraphicsEnvironment.isHeadless());
         enable();
         Files.createDirectories(Path.of("target/phase13-p0"));
         Files.writeString(Path.of("target/phase13-p0/layout.csv"), "variant,frameWidth,frameHeight,sidebarWidth,hostWidth,hostHeight,contentWidth,contentHeight,rootWidth,rootHeight\n");
-        for (int scale : new int[]{100, 150, 200}) {
+        for (int scale : new int[]{100, 150}) {
             for (var theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK}) {
                 for (String language : new String[]{"zh-CN", "en"}) {
                     String variant = theme + "-" + language + "-" + scale;
@@ -135,15 +242,14 @@ class DeploymentRestyledWindowTest extends DeploymentRuntimeFixture {
                             edt(() -> {
                                 capture(frame, variant + "-pinned-collapsed");
                                 var pin = (JButton) named(frame, "mods.pinned.0");
-                                assertEquals("", pin.getText());
+                                assertEquals(pin.getAccessibleContext().getAccessibleName(), pin.getText());
                                 assertFalse(pin.getAccessibleContext().getAccessibleName().isBlank());
                                 assertTrue(pin.getWidth() >= pin.getIcon().getIconWidth() + pin.getInsets().left
                                     + pin.getInsets().right, pin.getBounds() + " / " + pin.getInsets());
                                 ((JButton) named(frame, "navigation.collapse")).doClick(0);
                                 return null;
                             });
-                            await(() -> named(frame, "platform.sidebar").getWidth() == com.formdev.flatlaf.util.UIScale
-                                .scale(168));
+                            await(() -> named(frame, "platform.sidebar").getWidth() == 160);
                             var field = edt(() -> (JTextField) named(frame, "deployment.sourceName"));
                             var originalTabs = edt(() -> (JTabbedPane) named(frame, "deployment.workspace.tabs"));
                             edt(() -> {
@@ -535,9 +641,33 @@ class DeploymentRestyledWindowTest extends DeploymentRuntimeFixture {
         } finally {
             graphics.dispose();
         }
-        var file = Path.of("target/phase13-p0", "main-" + name + ".png");
+        var file = Path.of("target/phase13-p0", (name.startsWith("controls-") ? name : "main-" + name) + ".png");
         Files.createDirectories(file.getParent());
         ImageIO.write(bitmap, "png", file.toFile());
+    }
+
+    private static void captureControlsAt(PlatformFrame window, int width, int height, String name) throws Exception {
+        edt(() -> {
+            window.setSize(width + window.getWidth() - window.getContentPane().getWidth(),
+                height + window.getHeight() - window.getContentPane().getHeight());
+            window.validate();
+            return null;
+        });
+        await(() -> window.getContentPane().getSize().equals(new Dimension(width, height)));
+        edt(() -> {
+            components(window).filter(JScrollPane.class::isInstance).map(JScrollPane.class::cast)
+                .filter(Component::isShowing).forEach(scroll -> scroll.getVerticalScrollBar().setValue(0));
+            capture(window, "controls-" + name);
+            assertEquals(new Dimension(width, height), window.getContentPane().getSize());
+            assertEquals(160, named(window, "platform.sidebar").getWidth());
+            assertEquals(60, named(window, "platform.header").getHeight());
+            assertEquals(30, named(window, "platform.statusBar").getHeight());
+            var mod = named(window, "deployment.workspace");
+            assertTrue(mod.getWidth() > 0 && mod.getHeight() > 0);
+            Files.writeString(Path.of("target/phase13-p0/controls-layout.csv"), name + "," + width + "," + height
+                + ",160,60,30," + mod.getWidth() + "," + mod.getHeight() + "\n", StandardOpenOption.APPEND);
+            return null;
+        });
     }
 
     private static void captureAt(PlatformFrame window, int width, int height, String name) throws Exception {

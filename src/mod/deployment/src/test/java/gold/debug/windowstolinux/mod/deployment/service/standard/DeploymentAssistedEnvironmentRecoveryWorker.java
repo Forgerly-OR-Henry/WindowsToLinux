@@ -259,7 +259,8 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                         assertEquals(TaskResult.SUCCEEDED, ((OperationResult<?>) returned).outcome(),
                             "Physical effect precedes the lost acknowledgement");
                         var tracked = DeploymentTrackedToolchains.decode(command.stdin());
-                        if (target) peer.acknowledgementLost(tracked, boundary == DeploymentAssistedEnvironmentRecoveryRestartTest.BoundaryType.PREPARE);
+                        if (target)
+                            peer.acknowledgementLost(tracked, boundary == DeploymentAssistedEnvironmentRecoveryRestartTest.BoundaryType.PREPARE);
                         return new OperationResult<CommandResult>(TaskResult.UNKNOWN, Optional.empty(),
                             Optional.of(new Problem(ProblemCode.UNKNOWN,
                                 "TEST_ORIGINAL_" + boundary + "_ACK_LOST",
@@ -450,7 +451,8 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                 assertTrue(request.remove("trackedToolchains").isObject());
                 byte[] originalResult = rows.getBytes(3);
                 try (var write = connection.prepareStatement("UPDATE deployment_execution SET request_payload=? WHERE execution_id=?")) {
-                    write.setBytes(1, json.writeValueAsBytes(request)); write.setObject(2, rows.getObject(1, UUID.class));
+                    write.setBytes(1, json.writeValueAsBytes(request));
+                    write.setObject(2, rows.getObject(1, UUID.class));
                     assertEquals(1, write.executeUpdate());
                 }
                 Files.write(root.resolve("legacy-original-unknown-result.json"), originalResult);
@@ -464,7 +466,9 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
         var result = runtime.tasks().reconcile(id).toCompletableFuture().get(25, TimeUnit.SECONDS);
         assertEquals(id, result.id());
         assertEquals(0, aiCalls.get(), "Recovery never asks LANGUAGE to plan or replay a build");
-        assertEquals(0, failures.get()); assertEquals(0, sourceScans.get()); assertEquals(0, toolCalls.get());
+        assertEquals(0, failures.get());
+        assertEquals(0, sourceScans.get());
+        assertEquals(0, toolCalls.get());
         assertEquals(prepares, peer.trackedSends.getOrDefault("prepare-tracked", 0));
         assertEquals(binds, peer.trackedSends.getOrDefault("bind-tracked", 0));
         assertEquals(List.of(1), List.copyOf(peer.builds.values()));
@@ -477,7 +481,8 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
             assertEquals(TaskState.UNKNOWN, result.state(), result.toString());
             assertTrue(result.outcome().isEmpty());
             if (scenario.equals("HOST_CONFLICT")) {
-                assertEquals(0, fixedReviews.sends.get()); assertEquals(0, independent.get());
+                assertEquals(0, fixedReviews.sends.get());
+                assertEquals(0, independent.get());
                 assertEquals(original, snapshot(runtime, id));
             } else if (scenario.equals("ACTIVE_INTERRUPTED")) {
                 assertEquals(0, peer.trackedSends.getOrDefault("cleanup-tracked", 0));
@@ -536,20 +541,27 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                         gold.debug.windowstolinux.app.mod.run.ModRuntimeSession.ContextLease.class.getClassLoader(),
                         new Class<?>[]{gold.debug.windowstolinux.app.mod.run.ModRuntimeSession.ContextLease.class}, (leaseProxy, leaseMethod, leaseArgs) -> {
                             if (leaseMethod.getName().equals("context")) return selected;
-                            try { return leaseMethod.invoke(originalLease, leaseArgs); }
-                            catch (InvocationTargetException failure) { throw failure.getCause(); }
+                            try {
+                                return leaseMethod.invoke(originalLease, leaseArgs);
+                            } catch (InvocationTargetException failure) {
+                                throw failure.getCause();
+                            }
                         });
                     var session = new gold.debug.windowstolinux.app.mod.run.ModRuntimeSession(loader, lease, api,
                         originalLease.journal(() -> sessions.remove(loader.manifest().id())));
                     assertNull(sessions.putIfAbsent(loader.manifest().id(), session));
                     return session;
                 }
-                try { return method.invoke(originalHost, args); }
-                catch (InvocationTargetException failure) { throw failure.getCause(); }
+                try {
+                    return method.invoke(originalHost, args);
+                } catch (InvocationTargetException failure) {
+                    throw failure.getCause();
+                }
             });
         var build = new Properties();
         try (var input = ModContext.class.getResourceAsStream("/gold/debug/windowstolinux/appapi/build.properties")) {
-            assertNotNull(input); build.load(input);
+            assertNotNull(input);
+            build.load(input);
         }
         controlledRecoveryFlow = new gold.debug.windowstolinux.app.main.mod.PlatformModFlow(host, workspace(), true,
             gold.debug.windowstolinux.app.db.mod.ModRestartLedger.initiallyDisabled(runtime.persistence().database()), pages(),
@@ -562,16 +574,24 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
             public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected, TaskContext task) throws ApiException {
                 return fixedReviews.connect(expected, task, actual, this);
             }
+
             public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
                 return interrupted(fixedReviews.session(peer.session(task), task));
             }
-            public List<TransferCheckpoint> pendingTransfers(TaskContext task) { return List.of(); }
+
+            public List<TransferCheckpoint> pendingTransfers(TaskContext task) {
+                return List.of();
+            }
         };
         var ai = models(actual.ai());
         return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
             if (method.getName().equals("linux")) return linux;
             if (method.getName().equals("ai")) return ai;
-            try { return method.invoke(actual, args); } catch (InvocationTargetException failure) { throw failure.getCause(); }
+            try {
+                return method.invoke(actual, args);
+            } catch (InvocationTargetException failure) {
+                throw failure.getCause();
+            }
         });
     }
 
@@ -584,14 +604,17 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                 assertTrue(rows.next());
                 var record = DeploymentExecutionStore.row(rows);
                 assertEquals(TaskResult.FAILED, record.outcome().orElseThrow());
-                assertEquals("FINISHED", record.phase()); assertTrue(record.cleanupComplete()); assertFalse(record.businessCommitted());
+                assertEquals("FINISHED", record.phase());
+                assertTrue(record.cleanupComplete());
+                assertFalse(record.businessCommitted());
                 var request = json.readTree(record.requestJson());
                 var state = gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentTrackedToolchainState.read(record,
                     DeploymentTrackedToolchains.sha256(before.path("execution").path("request").path("buildIntent").toString().getBytes(StandardCharsets.UTF_8))).orElseThrow();
                 assertTrue(state.allSettled());
                 assertEquals(before.path("execution").path("recovery").path("referenceIds"), json.readTree(record.recoveryJson()).path("referenceIds"));
                 if (boundary == DeploymentAssistedEnvironmentRecoveryRestartTest.BoundaryType.BIND) {
-                    assertEquals(1, request.path("buildReviews").size()); assertTrue(request.path("buildIntent").isNull());
+                    assertEquals(1, request.path("buildReviews").size());
+                    assertTrue(request.path("buildIntent").isNull());
                     var review = request.path("buildReviews").get(0);
                     assertEquals(before.path("execution").path("review").asText(), review.path("previousRoot").asText());
                     assertEquals(record.identity().reviewedRevision(), review.path("nextRoot").asText());
@@ -600,14 +623,19 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                     assertEquals(before.path("execution").path("request").path("buildIntent"), request.path("buildIntent"));
                     assertTrue(request.path("buildReviews").isEmpty());
                 }
-                result.set("request", request); result.put("outcome", record.outcome().orElseThrow().name());
-                result.put("phase", record.phase()); result.put("originalUnknownResult", before.path("execution").path("resultRaw").textValue());
+                result.set("request", request);
+                result.put("outcome", record.outcome().orElseThrow().name());
+                result.put("phase", record.phase());
+                result.put("originalUnknownResult", before.path("execution").path("resultRaw").textValue());
             }
         }
         try (var connection = runtime.persistence().database().openConnection();
              var statement = connection.prepareStatement("SELECT COUNT(*) FROM platform_task_resource WHERE task_id=? AND released_at IS NULL AND resource_kind IN ('FILE','CUSTOM')")) {
             statement.setObject(1, task);
-            try (var rows = statement.executeQuery()) { assertTrue(rows.next()); assertEquals(0, rows.getInt(1)); }
+            try (var rows = statement.executeQuery()) {
+                assertTrue(rows.next());
+                assertEquals(0, rows.getInt(1));
+            }
         }
         assertTrue(new TaskLedger(runtime.persistence().database()).queries().unfinished().isEmpty());
         return result;
@@ -721,9 +749,8 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
             for (var member : state.members().get(purpose)) {
                 var configured = member.configuration();
                 var profile = configured.profile();
-                var value = members.addObject().put("enabled", member.enabled()).put("id", profile.id())
-                    .put("endpoint", profile.endpoint()).put("fileEndpoint", profile.endpoint())
-                    .put("realtimeEndpoint", profile.endpoint()).put("model", profile.model())
+                var value = members.addObject().put("id", profile.id())
+                    .put("endpoint", profile.endpoint()).put("model", profile.model())
                     .put("credentialKey", profile.credentialKey()).put("revision", configured.revision())
                     .put("outputLimit", runtime.persistence().aiProfiles().outputLimit(profile.id()).orElse(-1));
                 for (var capability : AiCapabilityType.values())

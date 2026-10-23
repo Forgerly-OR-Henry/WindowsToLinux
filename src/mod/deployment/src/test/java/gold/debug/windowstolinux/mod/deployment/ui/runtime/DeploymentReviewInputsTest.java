@@ -10,7 +10,7 @@ import java.util.ResourceBundle;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.*;
 
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStaticRuntimeResolver;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentStandardRuntimeResolver;
 import org.junit.jupiter.api.Test;
 
 /** Verifies retained editable multiline values, exact help and locale updates on the actual forms. / 在实际表单验证保留多行值、精确帮助和语言更新。 */
@@ -20,7 +20,7 @@ class DeploymentReviewInputsTest {
         SwingUtilities.invokeAndWait(() -> {
             var english = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page", Locale.ENGLISH);
             var chinese = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page", Locale.SIMPLIFIED_CHINESE);
-            var field = DeploymentStaticRuntimeResolver.field("api", "configuration", "RUNTIME:MODE=first\nRUNTIME:PORT=8080", java.util.List.of());
+            var field = DeploymentStandardRuntimeResolver.field("api", "configuration", "RUNTIME:MODE=first\nRUNTIME:PORT=8080", java.util.List.of());
             var input = (JTextArea) DeploymentReviewInputs.create(field);
             var decorated = DeploymentReviewInputs.decorated(input, field, english::getString);
             input.setText("RUNTIME:MODE=changed\nRUNTIME:PORT=9090");

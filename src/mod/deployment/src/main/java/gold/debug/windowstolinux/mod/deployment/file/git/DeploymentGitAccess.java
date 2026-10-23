@@ -1,7 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.file.git;
 
 import java.nio.file.Path;
-import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.file.material.MaterialRef;
 import gold.debug.windowstolinux.appapi.mod.ModContext;

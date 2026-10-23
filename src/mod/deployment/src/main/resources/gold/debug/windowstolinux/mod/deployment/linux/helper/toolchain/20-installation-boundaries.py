@@ -1,20 +1,89 @@
 # @compat:toolchain-archives@
 
+import threading
+
+
+class InstallationOutputTail:
+    """Keep only redacted diagnostic bytes; pipes are drained while the child runs."""
+    LIMIT = 16384
+
+    def __init__(self):
+        self.value = bytearray()
+        self.truncated = False
+
+    def drain(self, source):
+        private = False
+        hidden_continuation = False
+        oversized = False
+        for raw in iter(lambda: source.readline(8193), b''):
+            complete = raw.endswith(b'\n')
+            text = raw.decode('utf-8', errors='replace')
+            if '-----BEGIN ' in text:
+                private = True
+            hidden = private or hidden_continuation or oversized or len(raw) > 8192
+            if oversized or len(raw) > 8192:
+                self.truncated = True
+            if '-----END ' in text:
+                private = False
+            if hidden:
+                safe = '[redacted diagnostic line]\n' if not oversized else ''
+            else:
+                text = re.sub(r'''(?i)(["']?(?:password|secret|token|api[_-]?key|authorization)["']?\s*[:=]\s*)[^\r\n]+''', r'\1[redacted]', text)
+                text = re.sub(r'(?i)(--(?:password|secret|token|api[_-]?key|authorization)(?:\s+|=))[^\r\n]+', r'\1[redacted]', text)
+                text = re.sub(r'(?i)(authorization\s+(?:bearer|basic)\s+)[^\r\n]+', r'\1[redacted]', text)
+                text = re.sub(r'(?i)(https?://)[^\s/@]+:[^\s/@]+@', r'\1[redacted]@', text)
+                text = re.sub(r'(?i)([?&](?:password|secret|token|api[_-]?key)=)[^&\s]+', r'\1[redacted]', text)
+                safe = ''.join(c if c in '\t\n\r' or ord(c) >= 32 and ord(c) != 127 else '?' for c in text)
+            hidden_continuation = bool(re.search(r'''(?i)["']?(?:password|secret|token|api[_-]?key|authorization)["']?\s*[:=]?\s*$''', text.rstrip())) or (hidden_continuation and not text.strip())
+            oversized = not complete and (oversized or len(raw) > 8192)
+            if complete:
+                oversized = False
+            encoded = safe.encode('utf-8')
+            self.value.extend(encoded)
+            if len(self.value) > self.LIMIT:
+                del self.value[:-self.LIMIT]
+                # Never expose an incomplete UTF-8 prefix after truncation.
+                self.value[:] = self.value.decode('utf-8', errors='ignore').encode('utf-8')
+                self.truncated = True
+
+    def text(self):
+        return self.value.decode('utf-8')
+
+
+def installation_stage(command):
+    executable = pathlib.Path(command[0]).name
+    if executable in ('apt-get', 'dnf'):
+        return 'system-dependencies'
+    if executable == 'configure':
+        return 'source-configure'
+    if executable == 'make':
+        return 'source-install' if 'install' in command[1:] else 'source-build'
+    return 'installation-command'
+
 
 def run(command, cwd=None, environment=None):
+    stdout, stderr = InstallationOutputTail(), InstallationOutputTail()
     process = subprocess.Popen(
         command,
         cwd=cwd,
         env=environment,
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         start_new_session=True,
         **tracked_process_options(),
     )
-    tracked_process_started(process)
+    readers = [threading.Thread(target=tail.drain, args=(stream,))
+               for tail, stream in ((stdout, process.stdout), (stderr, process.stderr))]
+    for reader in readers:
+        reader.start()
+    failure = None
     try:
+        tracked_process_started(process)
         code = process.wait(timeout=remaining())
+    except BaseException as error:
+        failure = error
+        raise
     finally:
         # Kill the owned process group on cancellation, timeout, and leaked descendants after normal completion.
         try:
@@ -22,7 +91,19 @@ def run(command, cwd=None, environment=None):
         except ProcessLookupError:
             pass
         process.wait()
+        for reader in readers:
+            reader.join()
+        process.stdout.close()
+        process.stderr.close()
         tracked_process_finished(process)
+        recorder = globals().get('record_installation_diagnostic')
+        if recorder is not None:
+            recorder({'stage': installation_stage(command), 'executable': pathlib.Path(command[0]).name,
+                      'actualExitCode': process.returncode,
+                      'timedOut': isinstance(failure, subprocess.TimeoutExpired) or isinstance(failure, PreparationFailure) and failure.category == 'timeout',
+                      'cancelled': isinstance(failure, PreparationFailure) and failure.category == 'cancelled',
+                      'stdout': stdout.text(), 'stderr': stderr.text(),
+                      'stdoutTruncated': stdout.truncated, 'stderrTruncated': stderr.truncated})
     if code:
         fail('installation', 'official toolchain installation command failed: ' + pathlib.Path(command[0]).name)
 

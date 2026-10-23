@@ -1,29 +1,27 @@
 package gold.debug.windowstolinux.mod.deployment.ui.environment;
 
 import java.awt.BorderLayout;
-import java.util.Locale;
 import java.util.ResourceBundle;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
-
 import javax.swing.*;
 
 import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
-import gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind;
 import gold.debug.windowstolinux.appapi.ui.page.ModPage;
+import gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.service.environment.DeploymentEnvironmentWorkflow;
-import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.DeploymentStandardPageService;
 import gold.debug.windowstolinux.mod.deployment.ui.feedback.DeploymentTaskFeedback;
 
 /** Prepares an explicitly selected original server through the real recoverable environment workflow. / 经真实可恢复环境流程准备明确选定的原服务器。 */
 public final class DeploymentEnvironmentPage implements ModPage {
     /** Actual short server lookup and host navigation. / 实际短服务器查询及宿主导航。 */
-    private final DeploymentStaticPageService lookups;
+    private final DeploymentStandardPageService lookups;
 
     /** Original environment task submission and recovery. / 原环境任务提交及恢复。 */
     private final DeploymentEnvironmentWorkflow workflow;
@@ -77,7 +75,7 @@ public final class DeploymentEnvironmentPage implements ModPage {
     /** Binds current services without querying storage. / 绑定当前服务，不查询存储。
      * @param lookups original short server lookup / 原短服务器查询
      * @param workflow original environment workflow / 原环境流程 */
-    public DeploymentEnvironmentPage(DeploymentStaticPageService lookups, DeploymentEnvironmentWorkflow workflow) {
+    public DeploymentEnvironmentPage(DeploymentStandardPageService lookups, DeploymentEnvironmentWorkflow workflow) {
         this.lookups = java.util.Objects.requireNonNull(lookups);
         this.workflow = java.util.Objects.requireNonNull(workflow);
     }
@@ -116,7 +114,8 @@ public final class DeploymentEnvironmentPage implements ModPage {
         north.add(controls, BorderLayout.NORTH);
         north.add(scope, BorderLayout.CENTER);
         root.add(gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle.card("environment.title", north), BorderLayout.NORTH);
-        feedback = new DeploymentTaskFeedback(lookups.feedback(), actions, () -> navigate(PlatformPageKind.TASKS));
+        feedback = new DeploymentTaskFeedback(lookups.feedback(), actions, () -> navigate(PlatformPageKind.TASKS),
+            lookups.configuration().view());
         root.add(gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle.card("environment.feedback", feedback.component()), BorderLayout.CENTER);
         refresh.addActionListener(ignored -> refresh());
         prepare.addActionListener(ignored -> prepare());

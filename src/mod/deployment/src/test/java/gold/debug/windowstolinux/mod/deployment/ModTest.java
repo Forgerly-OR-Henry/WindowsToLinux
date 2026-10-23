@@ -73,7 +73,7 @@ class ModTest extends DeploymentRuntimeFixture {
                         assertThrows(SQLException.class,
                             () -> statement.executeQuery("SELECT * FROM app.mod_registry"));
                         assertEquals(1,
-                            statement.executeUpdate("INSERT INTO preference VALUES('acceptance','retained')"));
+                            statement.executeUpdate("INSERT INTO preference(preference_key,preference_value) VALUES('acceptance','retained')"));
                     }
                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of("saved"), Optional.empty());
                 });
@@ -123,7 +123,7 @@ class ModTest extends DeploymentRuntimeFixture {
             try (var access = scope(runtime, false);
                  var connection = access.openConnection();
                  var statement = connection.createStatement()) {
-                statement.executeUpdate("INSERT INTO preference VALUES('retained','original')");
+                statement.executeUpdate("INSERT INTO preference(preference_key,preference_value) VALUES('retained','original')");
                 assertThrows(SQLException.class, () -> new DeploymentSchema().initialize(access));
                 try (var rows = statement.executeQuery("SELECT preference_value FROM preference")) {
                     assertTrue(rows.next());
@@ -165,16 +165,16 @@ class ModTest extends DeploymentRuntimeFixture {
                  var connection = access.openConnection();
                  var statement = connection.createStatement()) {
                 assertThrows(SQLException.class, () -> statement.executeUpdate(
-                    "INSERT INTO deployment_unit_configuration_snapshot VALUES('unit',0,'a','1',1)"));
+                    "INSERT INTO deployment_unit_configuration_snapshot(deployment_unit_id,configuration_revision,configuration_sha256,schema_version,created_at) VALUES('unit',0,'a','1',1)"));
                 assertThrows(SQLException.class, () -> statement.executeUpdate(
-                    "INSERT INTO deployment_unit_configuration_entry VALUES('absent',1,'port','NUMBER','80','SERVER')"));
+                    "INSERT INTO deployment_unit_configuration_entry(deployment_unit_id,configuration_revision,configuration_key,value_type,value_text,configuration_scope) VALUES('absent',1,'port','NUMBER','80','SERVER')"));
                 String digest = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot
                     .create("unit", 1, "1", java.time.Instant.ofEpochMilli(1), List.of()).sha256();
                 statement.executeUpdate(
-                    "INSERT INTO deployment_unit_configuration_snapshot VALUES('unit',1,'" + digest + "','1',1)");
+                    "INSERT INTO deployment_unit_configuration_snapshot(deployment_unit_id,configuration_revision,configuration_sha256,schema_version,created_at) VALUES('unit',1,'" + digest + "','1',1)");
                 assertThrows(SQLException.class, () -> statement.executeUpdate(
-                    "INSERT INTO deployment_unit_release_binding VALUES('unit','release',1,NULL,0)"));
-                statement.executeUpdate("INSERT INTO deployment_unit_release_binding VALUES('unit','release',1,'"
+                    "INSERT INTO deployment_unit_release_binding(deployment_unit_id,release_sha256,configuration_revision,configuration_sha256,is_secret_binding_complete) VALUES('unit','release',1,NULL,0)"));
+                statement.executeUpdate("INSERT INTO deployment_unit_release_binding(deployment_unit_id,release_sha256,configuration_revision,configuration_sha256,is_secret_binding_complete) VALUES('unit','release',1,'"
                     + "b".repeat(64) + "',0)");
             }
             try (var access = scope(runtime, true)) {

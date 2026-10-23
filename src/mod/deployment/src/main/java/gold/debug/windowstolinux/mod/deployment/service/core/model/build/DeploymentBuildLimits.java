@@ -1,0 +1,54 @@
+package gold.debug.windowstolinux.mod.deployment.service.core.model.build;
+
+/**
+ * Explicit, reviewed limits for every fixed managed-deployment build entrypoint.
+ *
+ *  <p>全部固定受管部署构建入口经过审阅的明确限制。
+ *
+ * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
+ * @param maxProcesses max processes / 最大进程
+ * @param maxMemoryMiB max memory mi B / 最大内存MiB
+ * @param maxOutputBytes max output bytes / 最大输出字节
+ * @param maxWorkspaceBytes max workspace bytes / 最大工作区字节
+ * @param runAsRoot run as root / 运行As根目录
+ */
+public record DeploymentBuildLimits(int timeoutSeconds, int maxProcesses, int maxMemoryMiB, long maxOutputBytes,
+                                    long maxWorkspaceBytes, boolean runAsRoot, long hostReserveBytes) {
+    public DeploymentBuildLimits(int timeoutSeconds, int maxProcesses, int maxMemoryMiB, long maxOutputBytes,
+                                 long maxWorkspaceBytes, boolean runAsRoot) {
+        this(timeoutSeconds, maxProcesses, maxMemoryMiB, maxOutputBytes, maxWorkspaceBytes, runAsRoot, 1024L * 1024 * 1024);
+    }
+
+    /**
+     * Validates and binds the inputs required by build limit configuration.
+     * <p>校验并绑定构建限制配置所需输入。
+     *
+     * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
+     * @param maxProcesses max processes / 最大进程
+     * @param maxMemoryMiB max memory mi B / 最大内存MiB
+     * @param maxOutputBytes max output bytes / 最大输出字节
+     * @param maxWorkspaceBytes max workspace bytes / 最大工作区字节
+     * @param runAsRoot run as root / 运行As根目录
+     * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
+     */
+    public DeploymentBuildLimits {
+        if (hostReserveBytes < 1024L * 1024 * 1024 || hostReserveBytes > DeploymentWorkspaceQuota.MAXIMUM)
+            throw new IllegalArgumentException("Host workspace reserve is outside policy bounds");
+        if (timeoutSeconds < 60 || timeoutSeconds > 7200) {
+            throw new IllegalArgumentException("timeoutSeconds must be between 60 and 7200");
+        }
+        if (maxProcesses < 8 || maxProcesses > 4096) {
+            throw new IllegalArgumentException("maxProcesses must be between 8 and 4096");
+        }
+        if (maxMemoryMiB < 256 || maxMemoryMiB > 262144) {
+            throw new IllegalArgumentException("maxMemoryMiB must be between 256 and 262144");
+        }
+        if (maxOutputBytes < 4096 || maxOutputBytes > 128L * 1024 * 1024) {
+            throw new IllegalArgumentException("maxOutputBytes must be between 4 KiB and 128 MiB");
+        }
+        if (maxWorkspaceBytes < 64L * 1024 * 1024 || maxWorkspaceBytes > 128L * 1024 * 1024 * 1024) {
+            throw new IllegalArgumentException("maxWorkspaceBytes must be between 64 MiB and 128 GiB");
+        }
+    }
+
+}

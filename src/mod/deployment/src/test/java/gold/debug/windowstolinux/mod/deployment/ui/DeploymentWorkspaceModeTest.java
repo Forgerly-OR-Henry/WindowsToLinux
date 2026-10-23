@@ -5,10 +5,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.awt.Component;
 import java.awt.Container;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.*;
@@ -21,29 +21,30 @@ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences;
+import gold.debug.windowstolinux.mod.deployment.DeploymentStandardEntryFixture;
+import gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore;
 import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentPageService;
 import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentWorkflow;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
-import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService;
-import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.ui.agent.DeploymentAgentPage;
+import gold.debug.windowstolinux.mod.deployment.ui.standard.DeploymentStandardPage;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.junit.jupiter.api.Test;
 
 /** Restores real private preferences into actual lazy business views without navigation writes. / 将真实私有偏好恢复到实际惰性业务页且导航不写回。 */
 class DeploymentWorkspaceModeTest extends DeploymentRuntimeFixture {
-    private static final class LateCancellation implements TaskHandle<DeploymentPreferences.Selection> {
-        private final TaskHandle<DeploymentPreferences.Selection> original;
+    private static final class LateCancellation implements TaskHandle<DeploymentPreferenceStore.Selection> {
+        private final TaskHandle<DeploymentPreferenceStore.Selection> original;
 
         private final CountDownLatch refused = new CountDownLatch(1), release = new CountDownLatch(1), applied = new CountDownLatch(1);
 
         private final AtomicReference<Thread> worker = new AtomicReference<>();
 
-        private final CompletableFuture<OperationResult<DeploymentPreferences.Selection>> completion = new CompletableFuture<>() {
+        private final CompletableFuture<OperationResult<DeploymentPreferenceStore.Selection>> completion = new CompletableFuture<>() {
             @Override
-            public CompletableFuture<OperationResult<DeploymentPreferences.Selection>> whenComplete(
-                java.util.function.BiConsumer<? super OperationResult<DeploymentPreferences.Selection>, ? super Throwable> action) {
+            public CompletableFuture<OperationResult<DeploymentPreferenceStore.Selection>> whenComplete(
+                java.util.function.BiConsumer<? super OperationResult<DeploymentPreferenceStore.Selection>, ? super Throwable> action) {
                 return super.whenComplete((result, failure) -> {
                     action.accept(result, failure);
                     SwingUtilities.invokeLater(applied::countDown);
@@ -51,7 +52,7 @@ class DeploymentWorkspaceModeTest extends DeploymentRuntimeFixture {
             }
         };
 
-        private LateCancellation(TaskHandle<DeploymentPreferences.Selection> original) {
+        private LateCancellation(TaskHandle<DeploymentPreferenceStore.Selection> original) {
             this.original = original;
             original.completion().whenComplete((result, failure) -> {
                 if (failure == null) completion.complete(result);
@@ -70,7 +71,7 @@ class DeploymentWorkspaceModeTest extends DeploymentRuntimeFixture {
         }
 
         @Override
-        public CompletionStage<OperationResult<DeploymentPreferences.Selection>> completion() {
+        public CompletionStage<OperationResult<DeploymentPreferenceStore.Selection>> completion() {
             return completion;
         }
 
@@ -106,7 +107,7 @@ class DeploymentWorkspaceModeTest extends DeploymentRuntimeFixture {
             var original = context.tasks().submit(new TaskRequest("workspace-cancel-boundary", "Read original preferences", List.of(), false), task -> {
                 queryEntered.countDown();
                 assertTrue(queryRelease.await(15, TimeUnit.SECONDS));
-                var selection = new DeploymentPreferences(context.db()).read(task);
+                var selection = new DeploymentPreferenceStore(context.db()).read(task);
                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(selection), Optional.empty());
             });
             var late = new LateCancellation(original);
@@ -177,18 +178,18 @@ class DeploymentWorkspaceModeTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
-            var expected = new DeploymentPreferences.Selection(mode, "MANUAL_REVIEW", "GENERAL");
+            var expected = new DeploymentPreferenceStore.Selection(mode, "MANUAL_REVIEW", true);
             var seed = context.tasks().submit(new TaskRequest("seed-workspace-mode", "Save original mode", List.of(), true), task -> {
-                new DeploymentPreferences(context.db()).save(task, expected);
+                new DeploymentPreferenceStore(context.db()).save(task, expected);
                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(expected), Optional.empty());
             });
             assertEquals(expected, seed.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).value().orElseThrow());
-            var service = new DeploymentStaticPageService(context, new DeploymentStaticWorkflow(context, new DeploymentRefFlow(context)));
+            var service = DeploymentStandardEntryFixture.pages(context, new DeploymentStandardEntryFixture(context, new DeploymentRefFlow(context)));
             var staticCreates = new AtomicInteger();
             var agentCreates = new AtomicInteger();
             var workspace = new DeploymentWorkspace(() -> {
                 staticCreates.incrementAndGet();
-                return new DeploymentStaticPage(service);
+                return new DeploymentStandardPage(service);
             }, () -> {
                 agentCreates.incrementAndGet();
                 return new DeploymentAgentPage(new DeploymentAgentPageService(context, new DeploymentAgentWorkflow(context)));

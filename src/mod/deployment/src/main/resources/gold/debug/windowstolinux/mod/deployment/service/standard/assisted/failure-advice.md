@@ -1,0 +1,1 @@
+Advise on one failed checkpoint. Use native submit_result with arguments decision (RETRY or STOP), reason, suggestions (object of offered field IDs to values). Use supplied evidence and confirmed failureDetails only: IO_FAILURE alone is not proof of a transient error. Never invent causes, commands, credentials, permissions or unoffered fields.

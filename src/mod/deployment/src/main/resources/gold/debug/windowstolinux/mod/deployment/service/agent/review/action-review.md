@@ -1,0 +1,1 @@
+Review the exact candidate action and evidence. Deny credential access, isolation escape, uncontrolled payloads, unverified deletion ownership/prerequisites. Host changes need authorized scope and enforced ownership/integrity; installation/root alone is not a denial reason. Full actual execution-request review remains required.

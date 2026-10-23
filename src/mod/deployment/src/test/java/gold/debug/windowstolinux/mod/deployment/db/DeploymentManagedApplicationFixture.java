@@ -14,17 +14,22 @@ import java.util.concurrent.TimeUnit;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublish;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublishPlan;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionCodec;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionIdentity;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore;
+import gold.debug.windowstolinux.mod.deployment.db.release.DeploymentReleaseRecord;
+import gold.debug.windowstolinux.mod.deployment.db.release.DeploymentReleaseStore;
 import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentApplicationGraph;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentApplicationGraph;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishPlan;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishResult;
 
 /** Seeds complete managed applications through the actual formal publication contract. / 通过实际正式发布契约建立完整受管应用种子。 */
-abstract class DeploymentManagedApplicationFixture extends DeploymentGraphFixture {
+public abstract class DeploymentManagedApplicationFixture extends DeploymentGraphFixture {
     /** Verifies a permanently unknown original task in an owned child without pretending host cleanup. / 在所属子进程核实永久未知原任务，不冒称宿主清理。
      * @param scenario exact original negative scenario / 精确原负例场景
      * @throws Exception if the actual child fails or does not exit / 实际子进程失败或未退出时 */
-    void runIsolated(String scenario) throws Exception {
+    public void runIsolated(String scenario) throws Exception {
         var executable = Path.of(System.getProperty("java.home"), "bin", "java.exe");
         var process = new ProcessBuilder(executable.toString(), "-cp", System.getProperty("java.class.path"),
             getClass().getName(), "--unknown", root.toString(), scenario).redirectErrorStream(true).start();
@@ -51,12 +56,12 @@ abstract class DeploymentManagedApplicationFixture extends DeploymentGraphFixtur
      * @param revision original configuration revision / 原配置修订
      * @return exact immutable formal release / 精确不可变正式发布
      * @throws Exception if the actual original publication fails / 实际原发布失败时 */
-    DeploymentReleaseRecord publishManaged(PlatformRuntime runtime, TaskContext task,
-                                           DeploymentApplicationGraph graph, int revision) throws Exception {
+    public DeploymentReleaseRecord publishManaged(PlatformRuntime runtime, TaskContext task,
+                                                  DeploymentApplicationGraph graph, int revision) throws Exception {
         var context = runtime.modContexts().get(OWNER).context();
         var units = publications(graph, revision, List.of()).stream()
             .sorted(java.util.Comparator.comparing(value -> value.unit().id())).toList();
-        var proposal = new DeploymentPublish(graph, units);
+        var proposal = new DeploymentPublishResult(graph, units);
         var server = graph.components().getFirst().unit().server();
         var plan = new DeploymentPublishPlan(UUID.randomUUID(), Optional.empty(), graph.applicationId(), server,
             DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "a".repeat(64),

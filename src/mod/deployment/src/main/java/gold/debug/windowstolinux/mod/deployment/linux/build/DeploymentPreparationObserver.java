@@ -10,6 +10,9 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.Dep
 public interface DeploymentPreparationObserver {
     DeploymentPreparationObserver NONE = new DeploymentPreparationObserver() { };
 
+    default void diagnosticRequested(DeploymentToolchainDiagnostics.Request request, TaskContext task) throws ApiException {
+    }
+
     default void toolsPrepared(ServerId server, DeploymentResolvedToolchains tools, TaskContext task) throws ApiException {
     }
 

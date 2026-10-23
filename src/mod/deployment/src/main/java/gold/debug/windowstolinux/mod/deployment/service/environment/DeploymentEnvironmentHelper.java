@@ -8,9 +8,9 @@ import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentHelperInstallerScript;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentSendGuard;
+import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper;
 
 /** Uses the original environment operation for helper receipts, including recovery without creating another checkpoint. / 使用原环境操作保存 helper 回执，包括不创建另一检查点的恢复。 */
 final class DeploymentEnvironmentHelper {

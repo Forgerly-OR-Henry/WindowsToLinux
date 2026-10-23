@@ -19,6 +19,8 @@ public final class NativeAiFixture {
 
     public Optional<ApiException> refusal = Optional.empty();
 
+    public String configurationRevision = "fixture-route";
+
     private final UUID id = UUID.randomUUID();
 
     public final TaskContext task = (TaskContext) Proxy.newProxyInstance(TaskContext.class.getClassLoader(), new Class<?>[]{TaskContext.class},
@@ -31,7 +33,7 @@ public final class NativeAiFixture {
 
     private final AiService ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(), new Class<?>[]{AiService.class},
         (p, m, a) -> {
-            if (m.getName().equals("configurationRevision")) return "fixture-route";
+            if (m.getName().equals("configurationRevision")) return configurationRevision;
             if (m.getName().equals("call")) {
                 requests.add((AiRequest) a[0]);
                 if (refusal.isPresent()) throw refusal.orElseThrow();
@@ -47,20 +49,53 @@ public final class NativeAiFixture {
             return null;
         });
 
-    private final gold.debug.windowstolinux.appapi.task.TaskService tasks =
-        (gold.debug.windowstolinux.appapi.task.TaskService) Proxy.newProxyInstance(
+    private final gold.debug.windowstolinux.appapi.task.TaskService tasks = approvalCheckpoints(task);
+
+    /** Keeps only the author policy and empty legacy layout; it grants no execution capability. */
+    public static gold.debug.windowstolinux.appapi.task.TaskService approvalCheckpoints(TaskContext task) {
+        var checkpoints = new HashMap<String, gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint>();
+        return (gold.debug.windowstolinux.appapi.task.TaskService) Proxy.newProxyInstance(
             gold.debug.windowstolinux.appapi.task.TaskService.class.getClassLoader(),
             new Class<?>[]{gold.debug.windowstolinux.appapi.task.TaskService.class}, (p, m, a) -> {
                 if (m.getName().equals("findCheckpoint") && a[0] == task
                     && "deployment.config.remote-layout.v1".equals(a[1])) return Optional.empty();
+                if (a[0] == task && gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.KEY.equals(a[1])) {
+                    if (m.getName().equals("findCheckpoint")) return Optional.ofNullable(checkpoints.get(a[1]));
+                    if (m.getName().equals("beginCheckpoint")) {
+                        if (checkpoints.containsKey(a[1]))
+                            throw new IllegalStateException("Original checkpoint already exists");
+                        var checkpoint = new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint() {
+                            private Snapshot state = new Snapshot(0, (String) a[2], false);
+
+                            public Snapshot snapshot() {
+                                return state;
+                            }
+
+                            public Snapshot advance(Snapshot expected, String next) {
+                                if (!state.equals(expected) || state.released())
+                                    throw new IllegalStateException("Original checkpoint changed");
+                                return state = new Snapshot(state.revision() + 1, next, false);
+                            }
+
+                            public void close() {
+                                state = new Snapshot(state.revision() + 1, state.payload(), true);
+                            }
+                        };
+                        checkpoints.put((String) a[1], checkpoint);
+                        return checkpoint;
+                    }
+                }
                 throw new AssertionError("Unexpected task operation in legacy native fixture: " + m.getName());
             });
+    }
 
     public final ModContext context = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
         (p, m, a) -> switch (m.getName()) {
             case "ai" -> ai;
             case "logs" -> logs;
             case "tasks" -> tasks;
+            case "identity" ->
+                new gold.debug.windowstolinux.appapi.mod.model.ModIdentity("fixture", "1.0.0", Optional.of("1"));
             default -> throw new AssertionError("No execution capability in native protocol fixture: " + m.getName());
         });
 

@@ -11,10 +11,10 @@ import java.util.regex.Pattern;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
@@ -31,11 +31,19 @@ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.api.*;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
-import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
-import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticUnitResolver;
+import gold.debug.windowstolinux.mod.deployment.api.ApplicationRunState;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationId;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentLifecycleAction;
+import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishStore;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentApplicationReader;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentApplicationRunner;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentManagementActionLog;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentApplicationGraph;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitRuntimeConfig;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentWorkload;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.DeploymentStandardUnitResolver;
 import org.junit.jupiter.api.Test;
 
 /** Migrates native managed identity and durable health through formal CLASS/H2 publications. / 经正式 CLASS/H2 发布迁移原生受管身份与持久健康策略。 */
@@ -90,7 +98,7 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
             assertFalse(references.isEmpty());
             run(runtime, task -> {
                 var context = runtime.modContexts().get(OWNER).context();
-                var resolver = new DeploymentStaticUnitResolver(context.db());
+                var resolver = new DeploymentStandardUnitResolver(context.db());
                 var expected = graph.components().stream().filter(value -> value.componentId().equals("web"))
                     .findFirst().orElseThrow().unit();
                 assertEquals(expected, resolver.resolve(task, expected.id(), expected.server()));
@@ -135,7 +143,7 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
                 var original = new DeploymentPublishStore(database).findUnit(task, "web").orElseThrow();
                 assertEquals("windowstolinux-other.service", original.systemdUnit());
                 var denied = assertThrows(ApiException.class,
-                    () -> new DeploymentStaticUnitResolver(database).resolve(task, "web", new ServerId("server")));
+                    () -> new DeploymentStandardUnitResolver(database).resolve(task, "web", new ServerId("server")));
                 assertEquals(ProblemCode.INVALID_INPUT, denied.problem().code());
                 assertEquals("service.deployment.identity-invalid", denied.problem().eventCode());
                 assertEquals(original,
@@ -358,11 +366,11 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
         }
 
         private OperationResult<CommandResult> command(CommandRequest request) {
-            if (request.script().contains("/usr/bin/sha256sum --check --status"))
+            if (request.script().contains("managed-helper' probe"))
                 return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
                     + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
             var fields = new ArrayList<String>();
-            var matcher = Pattern.compile("'([^']*)'").matcher(request.script());
+            var matcher = Pattern.compile("'([^']*)'").matcher(DeploymentManagedHelperBundle.verifiedBody(request.script()));
             while (matcher.find())
                 fields.add(matcher.group(1));
             assertTrue(fields.size() >= 3, fields.toString());

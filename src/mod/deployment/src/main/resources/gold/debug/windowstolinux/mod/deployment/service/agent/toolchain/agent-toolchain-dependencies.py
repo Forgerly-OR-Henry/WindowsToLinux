@@ -246,7 +246,7 @@ def dependency_packages(manager, ecosystem):
     if not isinstance(table, dict) or set(table) != {'APT', 'DNF'}:
         dependency_reject('PACKAGED_DEPENDENCY_TABLE')
     for branch in table.values():
-        if not isinstance(branch, dict) or set(branch) != {'PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD'}:
+        if not isinstance(branch, dict) or set(branch) != {'PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD', 'HELPER_RUNTIME'}:
             dependency_reject('PACKAGED_DEPENDENCY_TABLE')
         for packages in branch.values():
             if not isinstance(packages, list) or not packages or len(packages) > 64 or any(not isinstance(p, str) or not re.fullmatch('[a-z0-9][a-z0-9+.-]{0,95}', p) for p in packages) or len(set(packages)) != len(packages):
@@ -512,7 +512,7 @@ def dependency_validate_apt():
     dependency_validate_dpkg()
 
 
-def dependency_dnf_config(value, repository=False):
+def dependency_dnf_config(value, repository=False, enable_crb=True):
     parser = configparser.ConfigParser(interpolation=None, strict=True)
     try:
         parser.read_string(value)
@@ -526,7 +526,7 @@ def dependency_dnf_config(value, repository=False):
         for key in ('gpgcheck', 'localpkg_gpgcheck', 'repo_gpgcheck', 'sslverify'):
             if key in fields and fields[key].lower() not in ('1', 'true', 'yes'):
                 dependency_reject('UNAUTHENTICATED_DNF_CONFIGURATION')
-        forced = OS_PROFILE is not None and OS_PROFILE['id'] == 'centos' and OS_PROFILE['manager'] == 'DNF' and section == 'crb'
+        forced = enable_crb and OS_PROFILE is not None and OS_PROFILE['id'] == 'centos' and OS_PROFILE['manager'] == 'DNF' and section == 'crb'
         if not repository or not forced and fields.get('enabled', '1').lower() in ('0', 'false', 'no'):
             continue
         if fields.get('gpgcheck', '').lower() not in ('1', 'true', 'yes') or not fields.get('gpgkey'):
@@ -542,16 +542,16 @@ def dependency_dnf_config(value, repository=False):
     return count
 
 
-def dependency_validate_dnf():
+def dependency_validate_dnf(enable_crb=True):
     for name in ('/etc/dnf/dnf.conf', '/etc/yum.conf'):
         path = pathlib.Path(name)
         if path.exists() or path.is_symlink():
-            dependency_dnf_config(dependency_text(path))
+            dependency_dnf_config(dependency_text(path), enable_crb=enable_crb)
     root = dependency_protected('/etc/yum.repos.d')
     files = sorted(root.iterdir())
     if len(files) > 1024:
         dependency_reject('OS_CONFIGURATION_LIMIT')
-    count = sum(dependency_dnf_config(dependency_text(path), True) for path in files if path.suffix == '.repo')
+    count = sum(dependency_dnf_config(dependency_text(path), True, enable_crb) for path in files if path.suffix == '.repo')
     if count < 1:
         dependency_reject('AUTHENTICATED_OS_SOURCE_REQUIRED')
 
@@ -570,11 +570,11 @@ def dependency_versions(output, packages):
 
 def dependency_main(args):
     global OS_PROFILE
-    if os.geteuid() != 0 or len(args) != 2 or args[0] not in ('JAVA', 'NODE', 'PYTHON', 'DOTNET', 'KOTLIN', 'GO', 'RUST', 'PHP', 'RUBY', 'NATIVE_BUILD') or not re.fullmatch('[a-f0-9]{32}', args[1]):
+    if os.geteuid() != 0 or len(args) != 2 or args[0] not in ('JAVA', 'NODE', 'PYTHON', 'DOTNET', 'KOTLIN', 'GO', 'RUST', 'PHP', 'RUBY', 'NATIVE_BUILD', 'HELPER_RUNTIME') or not re.fullmatch('[a-f0-9]{32}', args[1]):
         dependency_reject('DEPENDENCY_ARGUMENT_FRAME')
     ecosystem, operation = args
     manager, versions = 'NONE', {}
-    if ecosystem in ('PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD'):
+    if ecosystem in ('PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD', 'HELPER_RUNTIME'):
         OS_PROFILE = dependency_profile()
         manager = OS_PROFILE['manager']
         packages = dependency_packages(manager, ecosystem)
@@ -587,9 +587,12 @@ def dependency_main(args):
             dependency_run([dependency_tool('apt-get'), *flags, 'install', '-y', '--no-install-recommends', *packages])
             output = dependency_run([dependency_tool('dpkg-query'), '-W', '-f=' + '$' + '{Package}\\t' + '$' + '{Version}\\n', *packages])
         else:
-            dependency_validate_dnf()
+            if ecosystem == 'HELPER_RUNTIME':
+                dependency_validate_dnf(enable_crb=False)
+            else:
+                dependency_validate_dnf()
             flags = ['--disableplugin=*', '--setopt=gpgcheck=1', '--setopt=localpkg_gpgcheck=1', '--setopt=sslverify=1']
-            if OS_PROFILE['id'] == 'centos':
+            if OS_PROFILE['id'] == 'centos' and ecosystem != 'HELPER_RUNTIME':
                 flags += ['--enablerepo=crb']
             dependency_run([dependency_tool('dnf'), *flags, 'install', '-y', *packages])
             output = dependency_run([dependency_tool('rpm'), '-q', '--qf', '%{NAME}\\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}.%{ARCH}\\n', *packages])

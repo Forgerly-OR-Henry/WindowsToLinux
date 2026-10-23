@@ -7,17 +7,21 @@ import java.util.*;
 import java.util.concurrent.CompletionStage;
 
 import gold.debug.windowstolinux.app.db.task.DependencyRecovery;
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
-import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.file.material.MaterialRef;
+import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.*;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentProjectRecord;
-import gold.debug.windowstolinux.appapi.server.model.ServerId;
-import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
+import gold.debug.windowstolinux.mod.deployment.db.project.DeploymentProjectRecord;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStandardAssembly;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardRecoverySupport;
+import gold.debug.windowstolinux.mod.deployment.service.standard.staticmode.DeploymentStaticWorkflow;
 
 /** Runs existing typed assertions against the actual isolated deployment code and shared Git exports. / 让既有类型断言运行于实际隔离部署代码及共享 Git 导出。 */
 public final class GitRuntimeTestBridge {
@@ -26,21 +30,21 @@ public final class GitRuntimeTestBridge {
     private GitRuntimeTestBridge() {
     }
 
-    static Map<DependencyRecovery, List<UUID>> retainedCalls(PlatformRuntime runtime, UUID task) throws Exception {
+    public static Map<DependencyRecovery, List<UUID>> retainedCalls(PlatformRuntime runtime, UUID task) throws Exception {
         var calls = new TaskLedger(runtime.persistence().database()).queries().dependencies(task);
         org.junit.jupiter.api.Assertions.assertFalse(calls.isEmpty());
         for (var identity : calls.keySet()) {
             org.junit.jupiter.api.Assertions.assertEquals("service.v2", identity.encode().protocol());
             org.junit.jupiter.api.Assertions.assertEquals("gold.debug.windowstolinux.mod.git", identity.provider());
-            org.junit.jupiter.api.Assertions.assertEquals("1.0.0-dev.1", identity.version());
+            org.junit.jupiter.api.Assertions.assertEquals("1.0.0", identity.version());
             org.junit.jupiter.api.Assertions.assertEquals("gold.debug.windowstolinux.mod.deployment", identity.caller());
-            org.junit.jupiter.api.Assertions.assertEquals("1.1.0-dev.3", identity.callerVersion());
+            org.junit.jupiter.api.Assertions.assertEquals("1.0.0", identity.callerVersion());
         }
         return calls;
     }
 
-    static void onlyOriginalCallsRemain(PlatformRuntime runtime, UUID task,
-                                        Map<DependencyRecovery, List<UUID>> original) throws Exception {
+    public static void onlyOriginalCallsRemain(PlatformRuntime runtime, UUID task,
+                                               Map<DependencyRecovery, List<UUID>> original) throws Exception {
         org.junit.jupiter.api.Assertions.assertNotNull(original);
         var observed = retainedCalls(runtime, task);
         org.junit.jupiter.api.Assertions.assertEquals(original, observed);
@@ -65,7 +69,7 @@ public final class GitRuntimeTestBridge {
         org.junit.jupiter.api.Assertions.assertEquals(expected, actual);
     }
 
-    static ClassLoader loader(PlatformRuntime runtime, String owner) throws ReflectiveOperationException {
+    public static ClassLoader loader(PlatformRuntime runtime, String owner) throws ReflectiveOperationException {
         var activation = runtime.modContexts().get(owner);
         var field = activation.getClass().getDeclaredField("loader");
         field.setAccessible(true);
@@ -80,16 +84,16 @@ public final class GitRuntimeTestBridge {
 
     public static Flow flow(PlatformRuntime runtime, ModContext context) throws Exception {
         var loader = loader(runtime, context.identity().id());
-        var type = loader.loadClass(ROOT + "service.core.DeploymentGitSourceFlow");
+        var type = loader.loadClass(ROOT + "service.core.source.DeploymentGitSourceFlow");
         return new Flow(loader, type.getConstructor(ModContext.class).newInstance(context));
     }
 
     public static StaticWorkflow staticWorkflow(PlatformRuntime runtime, ModContext context) throws Exception {
         var loader = loader(runtime, context.identity().id());
-        var referenceType = loader.loadClass(ROOT + "service.core.DeploymentRefFlow");
+        var referenceType = loader.loadClass(DeploymentRefFlow.class.getName());
         var references = referenceType.getConstructor(ModContext.class).newInstance(context);
         var type = loader.loadClass(DeploymentStaticWorkflow.class.getName());
-        return new StaticWorkflow(loader, type.getConstructor(ModContext.class, referenceType).newInstance(context, references));
+        return new StaticWorkflow(loader, type.getConstructor(ModContext.class, referenceType, loader.loadClass(DeploymentStandardRecoverySupport.class.getName())).newInstance(context, references, loader.loadClass(DeploymentStandardAssembly.class.getName()).getConstructor().newInstance()));
     }
 
     public static OperationResult<MaterialRef> reconcileOriginal(PlatformRuntime runtime, ModContext context,
@@ -283,7 +287,7 @@ public final class GitRuntimeTestBridge {
             this.actual = actual;
         }
 
-        public void validateReview(DeploymentStaticWorkflow.Prompt prompt, DeploymentStaticWorkflow.Answers answers) {
+        public void validateReview(DeploymentStandardInputs.Prompt prompt, DeploymentStandardInputs.Answers answers) {
             try {
                 invoke(actual, "validateReview", copy(prompt, loader), copy(answers, loader));
             } catch (ApiException failure) {
@@ -291,11 +295,11 @@ public final class GitRuntimeTestBridge {
             }
         }
 
-        public TaskHandle<Void> submit(ServerId server, DeploymentStaticWorkflow.Draft draft,
-                                       Optional<DeploymentStaticWorkflow.GitSource> git,
-                                       DeploymentStaticWorkflow.Reviewer reviewer) throws ApiException {
+        public TaskHandle<Void> submit(ServerId server, DeploymentStandardInputs.Draft draft,
+                                       Optional<DeploymentStandardInputs.GitSource> git,
+                                       DeploymentStandardInputs.Reviewer reviewer) throws ApiException {
             try {
-                var contract = loader.loadClass(DeploymentStaticWorkflow.Reviewer.class.getName());
+                var contract = loader.loadClass(DeploymentStandardInputs.Reviewer.class.getName());
                 var observation = Proxy.newProxyInstance(loader, new Class<?>[]{contract}, (proxy, method, args) -> {
                     Object[] arguments = args == null ? new Object[0] : Arrays.stream(args)
                         .map(item -> copy(item, GitRuntimeTestBridge.class.getClassLoader())).toArray();

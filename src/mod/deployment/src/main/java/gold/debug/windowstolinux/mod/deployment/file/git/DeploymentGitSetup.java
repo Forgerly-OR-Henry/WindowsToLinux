@@ -10,7 +10,10 @@ import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.mod.service.AvailabilityState;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.file.*;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchiver;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceSetup;
 
 /** Consumes optional Git material through platform grants and keeps deployment filtering locally. / 经平台授权消费可选 Git 素材，并在部署侧保留筛选。 */
 public final class DeploymentGitSetup {

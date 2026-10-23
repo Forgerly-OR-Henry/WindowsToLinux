@@ -410,6 +410,8 @@ public class DeploymentStandardGraphPublishRunner {
                         Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GRAPH_CANDIDATE_CANCELLED")));
                 var observed = candidates.build(prepared.get(id), session, task);
                 if (observed.outcome() != TaskResult.SUCCEEDED) {
+                    if (observed.outcome() == TaskResult.UNKNOWN || observed.outcome() == TaskResult.CANCELLED)
+                        gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.candidateTransferFailure(context, task, observed);
                     var failure = observed.outcome() == TaskResult.UNKNOWN || observed.outcome() == TaskResult.CANCELLED
                         ? unknown("DEPLOYMENT_GRAPH_CANDIDATE_UNCONFIRMED")
                         : candidateFailure(ordering, plans, units, session, task, root, journals, observed);
@@ -462,6 +464,7 @@ public class DeploymentStandardGraphPublishRunner {
                                                                         Map<String, DeploymentUnitIdentity> units, RemoteSession session, TaskContext task,
                                                                         DeploymentStandardGraphPublishActionLog root, Map<String, DeploymentPublishCleanupActionLog> journals,
                                                                         OperationResult<?> failure) {
+        gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.candidateTransferFailure(context, task, failure);
         if (!root.verified(TaskResult.FAILED, failure.problem()))
             return unknown("DEPLOYMENT_GRAPH_BUILD_FAILURE_UNCONFIRMED");
         for (var id : ordering.startOrder()) {

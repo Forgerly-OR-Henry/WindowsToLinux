@@ -1,6 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.ui.application;
 
 import java.awt.BorderLayout;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.GridLayout;
+import java.awt.Point;
+import java.awt.Rectangle;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -58,6 +63,26 @@ public final class DeploymentApplicationsPage implements ModPage {
 
     /** Visible selected identity, state and bindings. / 可见所选身份、状态及绑定。 */
     private final JTextArea details = new JTextArea(14, 60);
+
+    private final JPanel information = DeploymentPageStyle.form();
+
+    private final JPanel components = DeploymentPageStyle.form();
+
+    private final JLabel objectName = DeploymentPageStyle.title(null, 24);
+
+    private final JLabel inventoryCount = new JLabel();
+
+    private final JPanel discovery = DeploymentPageStyle.form();
+
+    private final JTextArea discoveryIssues = new JTextArea(3, 36);
+
+    private final JPopupMenu more = new JPopupMenu();
+
+    private final JButton moreButton = new JButton();
+
+    private JDialog discoveryWindow;
+
+    private JScrollPane detailScroll;
 
     /** Original durable action snapshots and failures. / 原持久动作快照及失败。 */
     private final JTextArea tasks = new JTextArea(5, 60);
@@ -118,38 +143,76 @@ public final class DeploymentApplicationsPage implements ModPage {
     public JComponent create(UiEnvironment environment) {
         requireEdt();
         locale(environment);
-        root.setBorder(BorderFactory.createEmptyBorder(18, 20, 18, 20));
-        var top = DeploymentPageStyle.form();
+        root.setBorder(BorderFactory.createEmptyBorder(DeploymentPageStyle.scale(14), DeploymentPageStyle.scale(16),
+            DeploymentPageStyle.scale(14), DeploymentPageStyle.scale(16)));
         applications.setName("applications.inventory");
+        applications.putClientProperty("desktop.inventory.outlined", true);
         categories.setName("applications.category");
         serverFilter.setName("applications.serverFilter");
         servers.setName("applications.scanServer");
         discovered.setName("applications.discovered");
         details.setName("applications.details");
+        information.setName("applications.information");
+        components.setName("applications.components");
         tasks.setName("applications.tasks");
-        var filters = new JPanel();
+        var inventoryBody = new JPanel(new BorderLayout(0, DeploymentPageStyle.scale(12)));
+        var inventoryTop = DeploymentPageStyle.form();
+        var titleRow = new JPanel(new java.awt.GridBagLayout());
+        var titleAlignment = new java.awt.GridBagConstraints();
+        titleAlignment.anchor = java.awt.GridBagConstraints.WEST;
+        titleRow.add(DeploymentPageStyle.title("style.applications", 20), titleAlignment);
+        titleAlignment.gridx = 1;
+        titleAlignment.weightx = 1;
+        titleRow.add(inventoryCount, titleAlignment);
+        var refreshRow = new JPanel(new BorderLayout());
+        button(refreshRow, "refresh", this::refresh);
+        var inventoryHeading = new ResponsiveHeading(titleRow, refreshRow);
+        inventoryTop.add(inventoryHeading);
+        var filters = new JPanel(new GridLayout(1, 2, DeploymentPageStyle.scale(8), 0));
         filters.add(categories);
         filters.add(serverFilter);
-        top.add(filters);
-        var row = new JPanel();
+        filters.setBorder(BorderFactory.createEmptyBorder(DeploymentPageStyle.scale(12), 0, 0, 0));
+        inventoryTop.add(filters);
         applications.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        applications.setFixedCellHeight(86);
-        button(row, "refresh", this::refresh);
+        applications.setFixedCellHeight(DeploymentPageStyle.scale(116));
+        inventoryBody.add(inventoryTop, BorderLayout.NORTH);
+        inventoryBody.add(DeploymentPageStyle.scroll(applications), BorderLayout.CENTER);
+        var discoverEntry = new JPanel(new FlowLayout(FlowLayout.LEADING, 0, 0));
+        button(discoverEntry, "discover", this::openDiscovery);
+        inventoryBody.add(discoverEntry, BorderLayout.SOUTH);
+
+        var row = new JPanel(new FlowLayout(FlowLayout.LEADING, 8, 4));
         button(row, "inspect", this::inspect);
         for (var action : DeploymentLifecycleAction.values())
-            button(row, action.name().toLowerCase(Locale.ROOT), () -> lifecycle(action));
-        top.add(row);
-        var metadata = new JPanel();
+            if (!action.autostart()) button(row, action.name().toLowerCase(Locale.ROOT), () -> lifecycle(action));
+        var metadata = DeploymentPageStyle.form();
+        more.add(metadata);
+        for (var action : DeploymentLifecycleAction.values())
+            if (action.autostart()) button(metadata, action.name().toLowerCase(Locale.ROOT), () -> lifecycle(action));
         button(metadata, "edit", this::edit);
         button(metadata, "history", this::history);
-        button(metadata, "reattach", this::reattach);
-        top.add(metadata);
-        var scan = new JPanel();
+        button(metadata, "reattach", () -> {
+            more.setVisible(false);
+            openDiscovery();
+        });
+        moreButton.setName("applications.more");
+        moreButton.setComponentPopupMenu(more);
+        moreButton.addActionListener(event -> more.show(moreButton, 0, moreButton.getHeight()));
+        row.add(moreButton);
+        var scan = new JPanel(new FlowLayout(FlowLayout.LEADING, 8, 4));
         scan.add(servers);
-        scan.add(discovered);
         button(scan, "scan", this::scan);
-        button(scan, "adopt", this::adopt);
-        top.add(scan);
+        discovery.add(scan);
+        discovery.add(discovered);
+        var adoption = new JPanel(new FlowLayout(FlowLayout.LEADING, 8, 4));
+        button(adoption, "adopt", this::adopt);
+        button(adoption, "reattachConfirm", this::reattach);
+        discovery.add(adoption);
+        discoveryIssues.setEditable(false);
+        discoveryIssues.setName("applications.discoveryIssues");
+        discoveryIssues.setLineWrap(true);
+        discoveryIssues.setWrapStyleWord(true);
+        discovery.add(DeploymentPageStyle.scroll(discoveryIssues));
         configureRenderers();
 
         applications.addListSelectionListener(ignored -> {
@@ -162,41 +225,87 @@ public final class DeploymentApplicationsPage implements ModPage {
                 filter(selected() == null ? null : selected().key());
         });
         details.setEditable(false);
+        details.setLineWrap(true);
+        details.setWrapStyleWord(true);
+        details.setRows(2);
+        details.setVisible(false);
+        details.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent event) {
+                changed();
+            }
+
+            public void removeUpdate(javax.swing.event.DocumentEvent event) {
+                changed();
+            }
+
+            public void changedUpdate(javax.swing.event.DocumentEvent event) {
+                changed();
+            }
+
+            private void changed() {
+                details.setVisible(!details.getText().isBlank());
+                root.revalidate();
+            }
+        });
         tasks.setEditable(false);
-        root.add(top, BorderLayout.NORTH);
-        var applicationViews = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
-            DeploymentPageStyle.card("style.applications", new JScrollPane(applications)),
-            DeploymentPageStyle.card("style.details", new JSplitPane(JSplitPane.VERTICAL_SPLIT, new JScrollPane(details), delivery)));
-        applicationViews.setResizeWeight(0.4);
+        tasks.putClientProperty("deployment.style.log", true);
+        tasks.setLineWrap(true);
+        tasks.setWrapStyleWord(true);
+        tasks.setRows(4);
+        var detailBody = new JPanel(new BorderLayout(0, DeploymentPageStyle.scale(12)));
+        var objectHeading = new JPanel(new BorderLayout(DeploymentPageStyle.scale(12), 0));
+        objectHeading.add(new JLabel(DeploymentPageStyle.icon("app", 32)), BorderLayout.WEST);
+        objectHeading.add(objectName, BorderLayout.CENTER);
+        detailBody.add(objectHeading, BorderLayout.NORTH);
+        var sections = new DetailColumn();
+        sections.add(DeploymentPageStyle.section("style.information", information));
+        sections.add(Box.createVerticalStrut(DeploymentPageStyle.scale(12)));
+        sections.add(DeploymentPageStyle.section("style.components", components));
+        sections.add(Box.createVerticalStrut(DeploymentPageStyle.scale(12)));
+        sections.add(DeploymentPageStyle.section("style.access", delivery));
+        sections.add(details);
+        detailScroll = DeploymentPageStyle.scroll(sections);
+        detailScroll.setName("applications.detailScroll");
+        detailBody.add(detailScroll, BorderLayout.CENTER);
+        detailBody.add(DeploymentPageStyle.section("style.actions", row), BorderLayout.SOUTH);
+        var right = new JPanel(new BorderLayout(0, DeploymentPageStyle.scale(14)));
+        right.add(DeploymentPageStyle.outer(detailBody), BorderLayout.CENTER);
+        var lower = new JPanel(new BorderLayout());
+        lower.add(DeploymentPageStyle.scroll(tasks), BorderLayout.CENTER);
+        var cancelRow = new JPanel(new FlowLayout(FlowLayout.TRAILING, 0, 4));
+        button(cancelRow, "cancel", this::cancel);
+        lower.add(cancelRow, BorderLayout.SOUTH);
+        var taskCard = DeploymentPageStyle.card("style.results", lower);
+        taskCard.setPreferredSize(new Dimension(DeploymentPageStyle.scale(500), DeploymentPageStyle.scale(180)));
+        right.add(taskCard, BorderLayout.SOUTH);
+        var applicationViews = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, DeploymentPageStyle.outer(inventoryBody), right);
+        applicationViews.setResizeWeight(0.34);
         applicationViews.setPreferredSize(new java.awt.Dimension(600, 260));
         applicationViews.setMinimumSize(new java.awt.Dimension(0, 160));
-        applicationViews.setDividerLocation(300);
+        applicationViews.setDividerLocation(0.34);
+        applicationViews.setDividerSize(DeploymentPageStyle.scale(14));
+        applicationViews.setContinuousLayout(true);
         applicationViews.setBorder(BorderFactory.createEmptyBorder());
         applicationViews.addComponentListener(new java.awt.event.ComponentAdapter() {
             /** Stacks inventory and details when both columns would be cramped. / 两列过窄时纵排清单与详情。
              * @param event current size / 当前尺寸 */
             @Override
             public void componentResized(java.awt.event.ComponentEvent event) {
-                int orientation = applicationViews.getWidth() < 620
+                int orientation = applicationViews.getWidth() < DeploymentPageStyle.scale(620)
                     ? JSplitPane.VERTICAL_SPLIT
                     : JSplitPane.HORIZONTAL_SPLIT;
-                if (applicationViews.getOrientation() != orientation) {
+                if (applicationViews.getOrientation() != orientation
+                    || !Boolean.TRUE.equals(applicationViews.getClientProperty("applications.divider.initialized"))) {
                     applicationViews.setOrientation(orientation);
                     applicationViews.setPreferredSize(
                         new java.awt.Dimension(600, orientation == JSplitPane.VERTICAL_SPLIT ? 420 : 260));
-                    applicationViews.setDividerLocation(0.45);
+                    applicationViews.setDividerLocation(orientation == JSplitPane.VERTICAL_SPLIT ? 0.4 : 0.34);
+                    applicationViews.putClientProperty("applications.divider.initialized", true);
                     applicationViews.revalidate();
                 }
             }
         });
         root.add(applicationViews, BorderLayout.CENTER);
-        var lower = new JPanel(new BorderLayout());
-        lower.add(new JScrollPane(tasks), BorderLayout.CENTER);
-        var cancelRow = new JPanel();
-        button(cancelRow, "cancel", this::cancel);
-        lower.add(cancelRow, BorderLayout.SOUTH);
-        root.add(DeploymentPageStyle.card("style.results", lower), BorderLayout.SOUTH);
-        DeploymentPageStyle.scrollPage(root);
         localize();
         refresh();
         return root;
@@ -205,16 +314,30 @@ public final class DeploymentApplicationsPage implements ModPage {
     /** Binds saved identities and filters to their original localized renderers. / 为保存身份与筛选绑定原本地化呈现器。 */
     private void configureRenderers() {
         applications.setCellRenderer((list, value, index, selected, focus) -> {
-            var copy = DeploymentPageStyle.form();
+            var copy = new JPanel(new BorderLayout(DeploymentPageStyle.scale(14), 0));
+            copy.setOpaque(false);
+            var lines = DeploymentPageStyle.form();
             var name = new JLabel(value == null ? "" : value.name());
             name.putClientProperty("html.disable", true);
-            name.setFont(name.getFont().deriveFont(java.awt.Font.BOLD, name.getFont().getSize2D() * 14f / 13f));
-            copy.add(name);
+            name.setFont(name.getFont().deriveFont(java.awt.Font.BOLD, (float) DeploymentPageStyle.scale(16)));
+            lines.add(name);
+            lines.add(Box.createVerticalStrut(DeploymentPageStyle.scale(4)));
             var detail = new JLabel(value == null
                 ? ""
                 : text(value.managed().isPresent() ? "managed" : "external") + " · " + value.server().id());
             detail.putClientProperty("html.disable", true);
-            copy.add(detail);
+            detail.setFont(detail.getFont().deriveFont((float) DeploymentPageStyle.scale(14)));
+            detail.setForeground(UIManager.getColor("Label.disabledForeground"));
+            lines.add(detail);
+            var centered = new JPanel(new java.awt.GridBagLayout());
+            centered.setOpaque(false);
+            var alignment = new java.awt.GridBagConstraints();
+            alignment.weightx = 1;
+            alignment.anchor = java.awt.GridBagConstraints.WEST;
+            centered.add(lines, alignment);
+            copy.add(centered, BorderLayout.CENTER);
+            copy.add(new JLabel(DeploymentPageStyle.icon("app", 30)), BorderLayout.WEST);
+            copy.setToolTipText(value == null ? null : value.name() + " · " + value.server().id());
             return copy;
         });
         categories.setRenderer((list, value, index, selected, focus) -> label(list,
@@ -235,6 +358,8 @@ public final class DeploymentApplicationsPage implements ModPage {
         requireEdt();
         locale(environment);
         generation.incrementAndGet();
+        more.setVisible(false);
+        if (discoveryWindow != null) discoveryWindow.dispose();
         if (reattachmentConfirmation != null)
             reattachmentConfirmation.dispose();
         localize();
@@ -247,6 +372,8 @@ public final class DeploymentApplicationsPage implements ModPage {
         requireEdt();
         closed = true;
         generation.incrementAndGet();
+        more.setVisible(false);
+        if (discoveryWindow != null) discoveryWindow.dispose();
         if (reattachmentConfirmation != null)
             reattachmentConfirmation.dispose();
         delivery.clear();
@@ -445,7 +572,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         run(() -> service.scan(server.ref()), scan -> {
             discovered.removeAllItems();
             scan.applications().stream().filter(value -> !value.managed()).forEach(discovered::addItem);
-            details.setText(String.join("\n", scan.issues()));
+            discoveryIssues.setText(String.join("\n", scan.issues()));
         });
     }
 
@@ -469,41 +596,123 @@ public final class DeploymentApplicationsPage implements ModPage {
     /** Shows saved business category, URL and origin-specific dates without claiming live state. / 展示保存的业务类别、URL及来源时间，不宣称实时状态。 */
     private void showSelection() {
         var selected = selected();
+        String key = selected == null ? null : selected.key();
+        boolean changed = !Objects.equals(key, details.getClientProperty("inventory.key"));
+        Point previousPosition = detailScroll == null ? new Point() : detailScroll.getViewport().getViewPosition();
+        information.removeAll();
+        components.removeAll();
         if (selected == null) {
             details.setText("");
             details.putClientProperty("inventory.body", null);
             details.putClientProperty("inventory.key", null);
             delivery.clear();
+            objectName.setText("");
+            information.revalidate();
+            components.revalidate();
+            restoreDetailPosition(null, new Point());
             availability();
             return;
         }
-        String old = (String) details.getClientProperty("inventory.body");
-        String tail = selected.key().equals(details.getClientProperty("inventory.key")) && old != null
-            && details.getText().startsWith(old) ? details.getText().substring(old.length()) : "";
-        String body = java.text.MessageFormat.format(text("entryDetails"), selected.name(), selected.key(),
-            text(selected.managed().isPresent() ? "managed" : "external"), selected.server().id(),
-            text(selected.category()), selected.accessUrl().orElse(text("absent")),
-            selected.deployedAt().map(Object::toString).orElse(text("absent")),
-            selected.adoptedAt().map(Object::toString).orElse(text("absent")));
+        if (!selected.key().equals(details.getClientProperty("inventory.key"))) details.setText("");
+        objectName.setText(selected.name());
+        objectName.setToolTipText(selected.name());
+        objectName.putClientProperty("html.disable", true);
+        information.setLayout(new GridLayout(0, 2, DeploymentPageStyle.scale(16), DeploymentPageStyle.scale(10)));
+        fact(information, "identity", selected.key());
+        fact(information, "origin", text(selected.managed().isPresent() ? "managed" : "external"));
+        fact(information, "server", selected.server().id());
+        fact(information, "category", text(selected.category()));
+        fact(information, "accessUrl", selected.accessUrl().orElse(text("absent")));
+        fact(information, selected.managed().isPresent() ? "deployedAt" : "adoptedAt", selected.time().toString());
         if (selected.managed().isPresent()) {
             var managed = selected.managed().orElseThrow();
-            body += "\n" + (managed.state() == ApplicationRunState.INSTALLED ? text("installedAvailable") : managed.state())
-                + "\n" + text("autostartObservation") + managed.autostart() + "\n" + managed.revisionSha256() + "\n"
-                + managed.bindings().stream()
-                .map(value -> value.componentId() + " · " + value.kind() + " · " + value.path())
-                .collect(java.util.stream.Collectors.joining("\n"));
+            fact(information, "savedState", managed.state() == ApplicationRunState.INSTALLED
+                ? text("installedAvailable") : text("state." + managed.state()));
+            fact(information, "autostart", text("autostart." + managed.autostart()));
+            fact(components, "revision", managed.revisionSha256());
+            for (var binding : managed.bindings())
+                fact(components, "binding", binding.componentId() + " · " + binding.kind() + " · " + binding.path());
             selected.usage().ifPresent(delivery::show);
         } else {
             delivery.clear();
             var external = selected.external().orElseThrow();
-            body += "\n" + external.target().kind() + "\n" + external.target().identity() + "\n"
-                + external.target().fingerprint() + "\n" + external.target().state()
-                + "\n" + text("externalCapabilities") + external.target().canStart() + " / " + external.target().canStop();
+            String stateKey = "state." + external.target().state();
+            fact(information, "savedState", messages.containsKey(stateKey) ? text(stateKey) : external.target().state());
+            fact(components, "runtimeKind", external.target().kind());
+            fact(components, "runtimeIdentity", external.target().identity());
+            fact(components, "fingerprint", external.target().fingerprint());
+            fact(components, "externalCapabilities", external.target().canStart() + " / " + external.target().canStop());
         }
-        details.putClientProperty("inventory.body", body);
         details.putClientProperty("inventory.key", selected.key());
-        details.setText(body + tail);
+        information.revalidate();
+        components.revalidate();
+        restoreDetailPosition(key, changed ? new Point() : previousPosition);
         availability();
+    }
+
+    /** Starts a new selection at its heading and preserves existing scroll during restyling. / 新选择归顶，样式更新保留已滚动位置。 */
+    private void restoreDetailPosition(String key, Point position) {
+        long view = generation.get();
+        SwingUtilities.invokeLater(() -> {
+            if (closed || detailScroll == null || view != generation.get()
+                || !Objects.equals(key, details.getClientProperty("inventory.key"))) return;
+            var viewport = detailScroll.getViewport();
+            viewport.doLayout();
+            int maximum = Math.max(0, viewport.getViewSize().height - viewport.getExtentSize().height);
+            viewport.setViewPosition(new Point(0, Math.min(position.y, maximum)));
+        });
+    }
+
+    /** Keeps original facts structured and copies long values without clipping. / 分区呈现原事实并允许复制长值。 */
+    private void fact(JPanel parent, String key, String value) {
+        var row = new JPanel(new BorderLayout(0, DeploymentPageStyle.scale(4)));
+        row.setOpaque(false);
+        var label = new JLabel(text(key));
+        label.setForeground(UIManager.getColor("Label.disabledForeground"));
+        label.putClientProperty("html.disable", true);
+        var content = new JTextArea(value);
+        content.setName("applications.field." + key);
+        content.setEditable(false);
+        content.setLineWrap(true);
+        content.setWrapStyleWord(true);
+        content.setOpaque(false);
+        content.setBorder(BorderFactory.createEmptyBorder());
+        content.setFont(UIManager.getFont("Label.font").deriveFont((float) DeploymentPageStyle.scale(14)));
+        ((javax.swing.text.DefaultCaret) content.getCaret()).setUpdatePolicy(javax.swing.text.DefaultCaret.NEVER_UPDATE);
+        if (key.equals("savedState")) {
+            var entry = selected();
+            String state = entry == null ? "UNKNOWN" : entry.managed().map(item -> item.state().name())
+                .orElseGet(() -> entry.external().orElseThrow().target().state());
+            String marker = state.equals("RUNNING") || state.equals("INSTALLED") ? "✓ "
+                : state.equals("DEGRADED") ? "✕ " : "− ";
+            content.setText(marker + value);
+            if (state.equals("RUNNING") || state.equals("INSTALLED"))
+                content.setForeground(new java.awt.Color(31, 145, 85));
+            else if (state.equals("DEGRADED")) content.setForeground(new java.awt.Color(205, 66, 66));
+        }
+        row.add(label, BorderLayout.NORTH);
+        row.add(content, BorderLayout.CENTER);
+        row.setBorder(BorderFactory.createMatteBorder(0, 0, DeploymentPageStyle.scale(1), 0,
+            UIManager.getColor("Panel.background")));
+        parent.add(row);
+    }
+
+    /** Opens the original explicit scan/adoption controls in one owned view. / 在所属窗口打开原显式扫描与接管控件。 */
+    private void openDiscovery() {
+        if (closed || locked || busy) return;
+        if (discoveryWindow == null || !discoveryWindow.isDisplayable()) {
+            discoveryWindow = new JDialog(SwingUtilities.getWindowAncestor(root), text("style.discovery"),
+                java.awt.Dialog.ModalityType.MODELESS);
+            discoveryWindow.setName("applications.discovery.window");
+            discoveryWindow.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+            var wrapper = DeploymentPageStyle.outer(discovery);
+            DeploymentPageStyle.refresh(wrapper, messages);
+            discoveryWindow.add(wrapper);
+            discoveryWindow.setSize(DeploymentPageStyle.scale(650), DeploymentPageStyle.scale(360));
+            discoveryWindow.setLocationRelativeTo(root);
+        }
+        discoveryWindow.setVisible(true);
+        discoveryWindow.toFront();
     }
 
     /** Applies both filters to already read facts, retaining the exact original choice or clearing it. / 对已读事实应用两项筛选，保留精确原选项或清空。
@@ -519,6 +728,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         applications.setSelectedValue(values.stream().filter(value -> value.key().equals(key)).findFirst().orElse(null),
             true);
         applications.putClientProperty("inventory.loading", false);
+        inventoryCount.setText("  " + values.size());
         showSelection();
     }
 
@@ -570,21 +780,20 @@ public final class DeploymentApplicationsPage implements ModPage {
                     }
                     availability();
                     if (error != null || result == null) {
-                        details.append("\n" + text("failed"));
+                        feedback(text("failed"));
                         return;
                     }
                     if (result.outcome() == TaskResult.SUCCEEDED && result.value().isPresent())
                         completed.accept(result.value().orElseThrow());
                     else
-                        details.append(
-                            "\n" + result.outcome() + " · " + result.problem().map(Problem::eventCode).orElse(""));
+                        feedback(result.outcome() + " · " + result.problem().map(Problem::eventCode).orElse(""));
                 }));
             } catch (Exception failure) {
                 SwingUtilities.invokeLater(() -> {
                     busy = false;
                     availability();
                     if (!closed)
-                        details.append("\n" + text("failed"));
+                        feedback(text("failed"));
                 });
             }
         });
@@ -601,6 +810,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         controls.add(button);
         parent.add(button);
         button.addActionListener(ignored -> action.run());
+        if (SwingUtilities.isDescendingFrom(parent, more)) button.addActionListener(ignored -> more.setVisible(false));
     }
 
     /** Loads exact current host localisation and lock state. / 加载精确当前宿主本地化及锁状态。
@@ -614,9 +824,14 @@ public final class DeploymentApplicationsPage implements ModPage {
 
     /** Applies the current locale to every original action. / 将当前语言应用到每个原动作。 */
     private void localize() {
-        applications.setFixedCellHeight(Math.round(86f * UIManager.getFont("Label.font").getSize2D() / 13f));
+        root.setBorder(BorderFactory.createEmptyBorder(DeploymentPageStyle.scale(14), DeploymentPageStyle.scale(16),
+            DeploymentPageStyle.scale(14), DeploymentPageStyle.scale(16)));
+        applications.setFixedCellHeight(DeploymentPageStyle.scale(116));
         keys.forEach((button, key) -> button.setText(text(key)));
+        moreButton.setText(text("more"));
         DeploymentPageStyle.refresh(root, messages);
+        DeploymentPageStyle.refresh(more, messages);
+        DeploymentPageStyle.refresh(discovery, messages);
         categories.setToolTipText(text("categoryFilter"));
         serverFilter.setToolTipText(text("serverFilter"));
         categories.getAccessibleContext().setAccessibleName(text("categoryFilter"));
@@ -624,9 +839,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         categories.repaint();
         serverFilter.repaint();
         applications.repaint();
-        if (selected() != null && details.getClientProperty("inventory.body") instanceof String body
-            && details.getText().startsWith(body))
-            showSelection();
+        if (selected() != null) showSelection();
         availability();
     }
 
@@ -642,6 +855,9 @@ public final class DeploymentApplicationsPage implements ModPage {
                 button.setEnabled(!closed && !locked && !busy && selected != null && selected.managed().isPresent());
             if (key.equals("reattach"))
                 button.setEnabled(!closed && !locked && !busy && selected != null && selected.external().isPresent());
+            if (key.equals("reattachConfirm"))
+                button.setEnabled(!closed && !locked && !busy && selected != null && selected.external().isPresent());
+            if (key.equals("cancel")) button.setEnabled(!closed && !locked && current != null);
             for (var action : DeploymentLifecycleAction.values())
                 if (key.equals(action.name().toLowerCase(Locale.ROOT))) {
                     boolean supported = selected != null && (selected.usage().map(value -> value.actions().contains(action)).orElse(false)
@@ -655,6 +871,7 @@ public final class DeploymentApplicationsPage implements ModPage {
                 }
         });
         delivery.enabled(!closed && !locked && !busy);
+        moreButton.setEnabled(!closed && !locked && !busy && selected != null);
         applications.setEnabled(!closed && !locked && !busy);
         servers.setEnabled(!closed && !locked && !busy);
         discovered.setEnabled(!closed && !locked && !busy);
@@ -675,6 +892,13 @@ public final class DeploymentApplicationsPage implements ModPage {
             if (!closed)
                 tasks.append("\n" + text("failed"));
         });
+    }
+
+    /** Preserves action failures in the page and an open discovery view. / 在页面及打开的发现窗口保留动作失败。 */
+    private void feedback(String value) {
+        details.append((details.getText().isBlank() ? "" : "\n") + value);
+        if (discoveryWindow != null && discoveryWindow.isVisible())
+            discoveryIssues.append((discoveryIssues.getText().isBlank() ? "" : "\n") + value);
     }
 
     /** Renders saved identity using the actual list's selected colours. / 使用实际清单选中色彩呈现保存身份。
@@ -713,5 +937,88 @@ public final class DeploymentApplicationsPage implements ModPage {
      * @param category selected allowed category / 所选允许类别
      * @param url selected optional website link / 所选可选网站链接 */
     private record EditChoice(String name, String category, Optional<String> url) {
+    }
+
+    /** Keeps action width natural and wraps it below the title in a narrow inventory. / 保留操作自然宽度，窄清单时换到标题下方。 */
+    private static final class ResponsiveHeading extends JPanel {
+        private final JComponent title;
+
+        private final JComponent action;
+
+        private boolean stacked;
+
+        private ResponsiveHeading(JComponent title, JComponent action) {
+            super(null);
+            this.title = title;
+            this.action = action;
+            add(title);
+            add(action);
+            setOpaque(false);
+        }
+
+        private boolean narrow() {
+            return getWidth() > 0 && getWidth() < title.getPreferredSize().width + action.getPreferredSize().width
+                + DeploymentPageStyle.scale(12);
+        }
+
+        @Override
+        public Dimension getPreferredSize() {
+            var a = title.getPreferredSize();
+            var b = action.getPreferredSize();
+            return new Dimension(a.width + b.width + DeploymentPageStyle.scale(12),
+                narrow() ? a.height + b.height + DeploymentPageStyle.scale(8) : Math.max(a.height, b.height));
+        }
+
+        @Override
+        public Dimension getMaximumSize() {
+            return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+        }
+
+        @Override
+        public void doLayout() {
+            var a = title.getPreferredSize();
+            var b = action.getPreferredSize();
+            boolean wrap = narrow();
+            if (wrap) {
+                title.setBounds(0, 0, getWidth(), a.height);
+                action.setBounds(Math.max(0, getWidth() - b.width), a.height + DeploymentPageStyle.scale(8), b.width, b.height);
+            } else {
+                title.setBounds(0, (getHeight() - a.height) / 2,
+                    Math.max(0, getWidth() - b.width - DeploymentPageStyle.scale(12)), a.height);
+                action.setBounds(getWidth() - b.width, (getHeight() - b.height) / 2, b.width, b.height);
+            }
+            if (stacked != wrap) {
+                stacked = wrap;
+                SwingUtilities.invokeLater(this::revalidate);
+            }
+        }
+    }
+
+    /** Width-following details with a single independent scroll surface. / 仅使用一个独立滚动面的随宽详情。 */
+    private static final class DetailColumn extends JPanel implements Scrollable {
+        private DetailColumn() {
+            setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
+            setOpaque(false);
+        }
+
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
+
+        public int getScrollableUnitIncrement(Rectangle visible, int axis, int direction) {
+            return DeploymentPageStyle.scale(18);
+        }
+
+        public int getScrollableBlockIncrement(Rectangle visible, int axis, int direction) {
+            return Math.max(1, visible.height - DeploymentPageStyle.scale(18));
+        }
     }
 }

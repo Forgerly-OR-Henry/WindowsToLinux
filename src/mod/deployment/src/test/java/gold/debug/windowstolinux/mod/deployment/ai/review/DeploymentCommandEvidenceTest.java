@@ -964,7 +964,9 @@ class DeploymentCommandEvidenceTest {
     void trackedInstallerEvidenceReconstructsEveryByteAndRejectsTampering() throws Exception {
         var json = new ObjectMapper();
         String input = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.renderTracked(
-            UUID.randomUUID(), UUID.randomUUID(), "a".repeat(64), "b".repeat(64));
+            UUID.randomUUID(), UUID.randomUUID(), "a".repeat(64),
+            gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.digest(
+                gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.render()));
         var valid = json.valueToTree(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describe(input));
         assertArrayEquals(input.getBytes(StandardCharsets.UTF_8),
             gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.reconstruct(valid).getBytes(StandardCharsets.UTF_8));

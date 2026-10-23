@@ -17,8 +17,8 @@ import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
 import gold.debug.windowstolinux.appapi.mod.*;
 import gold.debug.windowstolinux.appapi.mod.lifecycle.StopReason;
@@ -29,11 +29,9 @@ import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectPart;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
+import gold.debug.windowstolinux.mod.deployment.DeploymentStandardEntryFixture;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -59,12 +57,12 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublishAcceptance
             peer.publicationAttempts = true;
             var running = new HashSet<String>();
             var bound = bind(original, peer, running);
-            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentRefFlow(bound));
+            var workflow = new DeploymentStandardEntryFixture(bound, new DeploymentRefFlow(bound));
             var handle = workflow.submit(new ServerId("server"),
-                new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(count), false,
+                new DeploymentStandardInputs.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(count), false,
                 "MANUAL_REVIEW");
-            assertEquals(TaskResult.SUCCEEDED,
-                handle.completion().toCompletableFuture().get(60, TimeUnit.SECONDS).outcome());
+            var publication = handle.completion().toCompletableFuture().get(60, TimeUnit.SECONDS);
+            assertEquals(TaskResult.SUCCEEDED, publication.outcome(), () -> publication + "\nCommands=" + peer.commands);
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             assertEquals(count, running.size());
             assertEquals(running, peer.current.keySet());
@@ -105,6 +103,30 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublishAcceptance
      * @return context with only its remote boundary controlled / 仅远端边界受控的上下文 */
     protected static ModContext bind(ModContext original, DeploymentAssistedBuildPeer peer, Set<String> running) {
         LinuxService linux = new LinuxService() {
+            public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected, TaskContext task) throws ApiException {
+                var saved = original.servers().get(expected.server(), task);
+                assertEquals(task.id(), expected.taskId());
+                assertEquals(saved.ref(), expected.server());
+                assertEquals(saved.host(), expected.host());
+                assertEquals(saved.port(), expected.port());
+                assertEquals(saved.username(), expected.username());
+                var session = connect(expected.server(), task);
+                try {
+                    if (expected.fingerprint().isPresent() && !expected.fingerprint().orElseThrow().equals(session.facts().fingerprint()))
+                        throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+                            gold.debug.windowstolinux.appapi.task.result.ProblemCode.ACCESS_DENIED, "DEPLOYMENT_TEST_WIRE_CHANGED",
+                            "Controlled wire differs from the original frozen target", Map.of(), Optional.of(task.id())));
+                    return session;
+                } catch (ApiException failure) {
+                    try {
+                        session.close();
+                    } catch (ApiException closeFailure) {
+                        failure.addSuppressed(closeFailure);
+                    }
+                    throw failure;
+                }
+            }
+
             public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
                 var session = peer.session(task);
                 return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
@@ -207,6 +229,8 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublishAcceptance
     }
 
     private static List<String> quoted(String script) {
+        if (script.contains(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.PATH))
+            script = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedBody(script);
         var values = new ArrayList<String>();
         var matcher = Pattern.compile("'([^']*)'").matcher(script);
         while (matcher.find())

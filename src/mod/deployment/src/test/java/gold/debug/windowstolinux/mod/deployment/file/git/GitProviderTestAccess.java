@@ -2,8 +2,8 @@ package gold.debug.windowstolinux.mod.deployment.file.git;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
-import java.util.function.Function;
 import java.util.Map;
+import java.util.function.Function;
 
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.appapi.mod.ModContext;

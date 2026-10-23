@@ -33,15 +33,23 @@ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.file.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.DeploymentStandardEntryFixture;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchiver;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceSetup;
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectPart;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentBuildLimits;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.DeploymentStandardAnalyzer;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.part.DiscoveredProjectPart;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentPreparedDatabase;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.DeploymentStandardPlanner;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.DeploymentReviewConsent;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentRequest;
 import org.junit.jupiter.api.Test;
 
 /** Preserves local static boundaries through actual CLASS/H2 tasks without the retired facade. / 经真实 CLASS/H2 任务保留本地静态边界，不恢复旧门面。 */
@@ -91,7 +99,7 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
                     return invoke(actual, method, arguments);
                 });
             var reviews = new AtomicInteger();
-            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentRefFlow(bound));
+            var workflow = new DeploymentStandardEntryFixture(bound, new DeploymentRefFlow(bound));
             var handle = workflow.submit(new ServerId("server"), draft(), refusalReviewer(reviews));
             var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
             assertEquals(TaskResult.CANCELLED, result.outcome(), result.toString());
@@ -134,7 +142,7 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
                 awaitUnknown(original);
                 var retained = leases(runtime, original.id());
                 assertFalse(retained.isEmpty());
-                var workflow = new DeploymentStaticWorkflow(context, new DeploymentRefFlow(context));
+                var workflow = new DeploymentStandardEntryFixture(context, new DeploymentRefFlow(context));
                 var waiting = workflow.submit(new ServerId("server"), draft(), refusalReviewer(new AtomicInteger()));
                 try {
                     assertEquals(TaskState.QUEUED, waiting.snapshot().state());
@@ -189,7 +197,7 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
                                 Instant.now(), List.of());
                             var consent = new DeploymentReviewConsent(facts.applicationId(), "server",
                                 material.snapshot().sha256(), archive.sha256(), Instant.now());
-                            var limits = DeploymentBuildLimits.defaultNonRoot();
+                            var limits = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().limits();
                             var resources = new DeploymentResourceBindings(List.of(), Optional.of(List.of()));
                             var safe = new ReviewedDeploymentRequest(new ServerId("server"), facts, material,
                                 archive, config, List.of(), resources, run, Optional.empty(), limits, consent,
@@ -260,23 +268,23 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
         runtime.persistence().aiProfiles().saveOutputLimit(id, 1600);
     }
 
-    private static DeploymentStaticWorkflow.Draft draft() {
-        return new DeploymentStaticWorkflow.Draft("demo", 65536, 100, 65536);
+    private static DeploymentStandardInputs.Draft draft() {
+        return new DeploymentStandardInputs.Draft("demo", 65536, 100, 65536);
     }
 
-    private static DeploymentStaticWorkflow.Reviewer refusalReviewer(AtomicInteger reviews) {
-        return new DeploymentStaticWorkflow.Reviewer() {
-            public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerId server, String sha,
+    private static DeploymentStandardInputs.Reviewer refusalReviewer(AtomicInteger reviews) {
+        return new DeploymentStandardInputs.Reviewer() {
+            public OperationResult<DeploymentStandardInputs.Selection> select(ServerId server, String sha,
                                                                               List<DiscoveredProjectPart> discovered, TaskContext task) {
                 assertEquals(1, discovered.size());
-                return success(new DeploymentStaticWorkflow.Selection("demo",
+                return success(new DeploymentStandardInputs.Selection("demo",
                     Map.of(discovered.getFirst().id(),
-                        new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE, Set.of())),
+                        new DeploymentStandardInputs.Choice(DeploymentProjectKind.GO_SERVICE, Set.of())),
                     Optional.empty()));
             }
 
-            public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerId server, String sha,
-                                                                                         List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
+            public OperationResult<Map<String, DeploymentStandardInputs.Answers>> review(ServerId server, String sha,
+                                                                                         List<DeploymentStandardInputs.Prompt> prompts, TaskContext task) {
                 assertEquals(1, prompts.size());
                 reviews.incrementAndGet();
                 var prompt = prompts.getFirst();
@@ -287,13 +295,13 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
                 values.put("port", "8080");
                 values.put("healthMode", "TCP");
                 values.put("exposure", "INTERNAL");
-                return success(Map.of(prompt.componentId(), new DeploymentStaticWorkflow.Answers(values, List.of(),
-                    DeploymentBuildLimits.defaultNonRoot(), false, true)));
+                return success(Map.of(prompt.componentId(), new DeploymentStandardInputs.Answers(values, List.of(),
+                    gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().limits(), false, true)));
             }
 
             public OperationResult<Boolean> confirm(ServerId server, String sha, Map<String, String> archives,
-                                                    Map<String, DeploymentStaticWorkflow.Answers> answers,
-                                                    Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStaticWorkflow.GitReview> git,
+                                                    Map<String, DeploymentStandardInputs.Answers> answers,
+                                                    Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStandardInputs.GitReview> git,
                                                     TaskContext task) {
                 assertEquals(1, archives.size());
                 assertEquals(archives.keySet(), answers.keySet());

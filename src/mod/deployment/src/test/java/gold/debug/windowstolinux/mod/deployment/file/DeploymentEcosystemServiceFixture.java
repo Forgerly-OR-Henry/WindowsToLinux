@@ -6,15 +6,15 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
 
 /** Copies complete repository services for live ecosystem acceptance. / 为生态实机验收复制完整仓库服务。 */
-final class DeploymentEcosystemServiceFixture {
+public final class DeploymentEcosystemServiceFixture {
     private DeploymentEcosystemServiceFixture() {
     }
 
-    static Path create(Path parent, DeploymentProjectKind projectType, String applicationId, String version,
-                       String marker, boolean healthy, Path gradleWrapperJar) throws IOException {
+    public static Path create(Path parent, DeploymentProjectKind projectType, String applicationId, String version,
+                              String marker, boolean healthy, Path gradleWrapperJar) throws IOException {
         String combination = switch (projectType) {
             case GO_SERVICE -> "go/gomodule/http-service";
             case RUST_SERVICE -> "rust/cargo/http-service";

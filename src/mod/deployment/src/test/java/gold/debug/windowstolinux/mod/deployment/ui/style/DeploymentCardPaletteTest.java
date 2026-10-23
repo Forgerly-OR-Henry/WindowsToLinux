@@ -54,10 +54,12 @@ class DeploymentCardPaletteTest {
                 var selected = DeploymentPageStyle.card(null, new JLabel("选中库存卡片"));
                 selected.putClientProperty("deployment.style.inventory", true);
                 selected.putClientProperty("deployment.style.selected", true);
+                var inner = DeploymentPageStyle.section(null, new JLabel("内层浅框"));
                 var board = new JPanel(null);
                 board.add(detail);
                 board.add(inventory);
                 board.add(selected);
+                board.add(inner);
 
                 for (ThemeMode theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK})
                     for (int zoom : new int[]{100, 150}) {
@@ -68,18 +70,23 @@ class DeploymentCardPaletteTest {
                         board.setBackground(UIManager.getColor("Panel.background"));
                         int width = UIScale.scale(640);
                         int rowHeight = UIScale.scale(120);
-                        board.setSize(width, rowHeight * 3 + 20);
+                        board.setSize(width, rowHeight * 4 + 20);
                         for (int index = 0; index < board.getComponentCount(); index++)
                             board.getComponent(index).setBounds(10, rowHeight * index + 10, width - 20, rowHeight - 12);
                         layout(board);
 
                         Color surface = gray(theme == ThemeMode.DARK ? 20 : 250);
+                        assertEquals(UIScale.scale(20), DeploymentPageStyle.scale(20));
                         Color selectedSurface = UIManager.getColor("List.selectionBackground");
                         assertEquals(surface, UIManager.getColor("Table.background"));
                         assertSurface(detail, surface);
                         assertSurface(inventory, surface);
                         assertTrue(selectedSurface.getBlue() > selectedSurface.getRed());
                         assertSurface(selected, selectedSurface);
+                        assertSurface(inner, surface);
+                        assertEquals(gray(theme == ThemeMode.DARK ? 50 : 220).getRGB(),
+                            render(inner).getRGB(0, inner.getHeight() / 2));
+                        assertEquals(gray(theme == ThemeMode.DARK ? 30 : 240), action.getBackground());
                         assertSame(content, ((BorderLayout) detail.getLayout()).getLayoutComponent(BorderLayout.CENTER));
                         assertSame(document, draft.getDocument());
                         assertEquals("未保存的部署草稿", draft.getText());

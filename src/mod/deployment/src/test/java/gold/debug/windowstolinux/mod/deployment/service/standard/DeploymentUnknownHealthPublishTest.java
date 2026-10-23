@@ -28,8 +28,10 @@ import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentStandardPublishRecovery;
+import gold.debug.windowstolinux.mod.deployment.DeploymentStandardEntryFixture;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.recovery.DeploymentStandardTaskRecovery;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -87,20 +89,23 @@ class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixt
                     assertEquals("a".repeat(64), expected);
                     String response;
                     if (request.purpose() == AiPurpose.APPROVAL)
-                        response = "{\"decision\":\"APPROVE\",\"risk\":\"NORMAL\",\"reason\":\"Exact fixed action\"}";
+                        response = "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Exact fixed action\"}";
                     else {
                         assertEquals(AiPurpose.LANGUAGE, request.purpose());
                         language.incrementAndGet();
                         try {
                             var facts = new ObjectMapper().readTree(request.messages().getLast().text());
-                            if (Set.of("BUILD", "ROLLBACK_VERIFIED").contains(facts.path("phase").asText())) {
+                            if (facts.has("projectTypes"))
+                                response = DeploymentAssistedGoModelFixture.sourceScan(facts, count);
+                            else if (facts.has("tools"))
+                                response = DeploymentAssistedGoModelFixture.publicationTool(facts);
+                            else if (Set.of("BUILD", "ROLLBACK_VERIFIED").contains(facts.path("phase").asText())) {
                                 diagnosis.incrementAndGet();
                                 throw new AssertionError("Unknown health must never authorize diagnosis");
-                            }
-                            response = "{\"action\":\"ADVISE\",\"sourceRevision\":\""
+                            } else response = "{\"action\":\"ADVISE\",\"sourceRevision\":\""
                                 + facts.path("sourceRevision").asText()
                                 + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Retain human inputs\",\"unresolved\":[]}}";
-                        } catch (java.io.IOException failure) {
+                        } catch (Exception failure) {
                             throw new AssertionError(failure);
                         }
                     }
@@ -162,9 +167,9 @@ class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixt
                     }
                 });
             var flow = new DeploymentRefFlow(bound, new DeploymentStandardPublishRecovery(bound));
-            try (var registration = tasks.registerRecovery(DeploymentRefFlow.TASK_TYPE, new DeploymentStaticTaskRecovery(bound, flow))) {
-                var handle = new DeploymentStaticWorkflow(bound, flow).submit(new ServerId("server"),
-                    new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(count),
+            try (var registration = tasks.registerRecovery(DeploymentRefFlow.TASK_TYPE, new DeploymentStandardTaskRecovery(bound, flow, new DeploymentStandardAssembly()))) {
+                var handle = new DeploymentStandardEntryFixture(bound, flow).submit(new ServerId("server"),
+                    new DeploymentStandardInputs.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(count),
                     true, "MANUAL_REVIEW");
                 long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
                 while (handle.snapshot().state() != TaskState.UNKNOWN && handle.snapshot().state() != TaskState.ENDED

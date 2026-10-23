@@ -5,17 +5,17 @@ CREATE TABLE deployment_unit
     systemd_unit_name            CHARACTER VARYING NOT NULL,
     release_root_path            CHARACTER VARYING NOT NULL,
     ownership_manifest_sha256    CHARACTER VARYING NOT NULL,
-    current_release_sha256       CHARACTER VARYING,
-    runtime_payload              BINARY LARGE OBJECT,
-    runtime_state                CHARACTER VARYING,
-    autostart_state              CHARACTER VARYING,
-    is_ownership_verified        INTEGER CHECK (is_ownership_verified IN (0, 1)),
-    observation_evidence         CHARACTER VARYING,
     has_display_override         INTEGER           NOT NULL DEFAULT 0 CHECK (has_display_override IN (0, 1)),
     display_name                 CHARACTER VARYING,
     application_category         CHARACTER VARYING CHECK (application_category IN ('WEBSITE', 'APP')),
     access_url                   CHARACTER VARYING,
+    current_release_sha256       CHARACTER VARYING,
+    runtime_payload              BINARY LARGE OBJECT,
     current_release_published_at BIGINT,
+    runtime_state                CHARACTER VARYING,
+    autostart_state              CHARACTER VARYING,
+    is_ownership_verified        INTEGER CHECK (is_ownership_verified IN (0, 1)),
+    observation_evidence         CHARACTER VARYING,
     observed_at                  BIGINT,
     CHECK ((current_release_sha256 IS NULL) = (current_release_published_at IS NULL)),
     CHECK ((runtime_state IS NULL AND autostart_state IS NULL AND is_ownership_verified IS NULL AND
@@ -29,11 +29,11 @@ CREATE TABLE deployment_unit
 CREATE TABLE managed_application
 (
     application_id       CHARACTER VARYING NOT NULL PRIMARY KEY,
-    server_profile_id    CHARACTER VARYING NOT NULL,
     health_component_id  CHARACTER VARYING,
     health_check_payload BINARY LARGE OBJECT,
-    updated_at           BIGINT            NOT NULL,
+    server_profile_id    CHARACTER VARYING NOT NULL,
     graph_ready          BOOLEAN           NOT NULL DEFAULT FALSE,
+    updated_at           BIGINT            NOT NULL,
     CHECK (NOT graph_ready OR health_component_id IS NOT NULL)
 );
 CREATE TABLE managed_application_component
@@ -66,14 +66,14 @@ CREATE TABLE external_application
     bound_host              CHARACTER VARYING NOT NULL,
     bound_ssh_port          INTEGER           NOT NULL CHECK (bound_ssh_port BETWEEN 1 AND 65535),
     bound_username          CHARACTER VARYING NOT NULL,
-    runtime_state           CHARACTER VARYING NOT NULL,
-    can_start               INTEGER           NOT NULL CHECK (can_start IN (0, 1)),
-    can_stop                INTEGER           NOT NULL CHECK (can_stop IN (0, 1)),
     detected_name           CHARACTER VARYING NOT NULL,
     has_display_override    INTEGER           NOT NULL DEFAULT 0 CHECK (has_display_override IN (0, 1)),
     display_name            CHARACTER VARYING,
     application_category    CHARACTER VARYING CHECK (application_category IN ('WEBSITE', 'APP')),
     access_url              CHARACTER VARYING,
+    can_start               INTEGER           NOT NULL CHECK (can_start IN (0, 1)),
+    can_stop                INTEGER           NOT NULL CHECK (can_stop IN (0, 1)),
+    runtime_state           CHARACTER VARYING NOT NULL,
     adopted_at              BIGINT            NOT NULL,
     observed_at             BIGINT            NOT NULL,
     UNIQUE (server_profile_id, runtime_type, runtime_identity),
@@ -95,9 +95,9 @@ CREATE TABLE deployment_unit_configuration_entry
     deployment_unit_id     CHARACTER VARYING NOT NULL,
     configuration_revision INTEGER           NOT NULL,
     configuration_key      CHARACTER VARYING NOT NULL,
+    configuration_scope    CHARACTER VARYING NOT NULL,
     value_type             CHARACTER VARYING NOT NULL CHECK (value_type IN ('TEXT', 'NUMBER', 'FLAG')),
     value_text             CHARACTER VARYING NOT NULL,
-    configuration_scope    CHARACTER VARYING NOT NULL,
     PRIMARY KEY (deployment_unit_id, configuration_revision, configuration_key),
     FOREIGN KEY (deployment_unit_id, configuration_revision) REFERENCES deployment_unit_configuration_snapshot (deployment_unit_id, configuration_revision)
 );
@@ -117,8 +117,8 @@ CREATE TABLE secret_revision
     secret_id       CHARACTER VARYING NOT NULL,
     secret_revision INTEGER           NOT NULL CHECK (secret_revision > 0),
     credential_id   CHARACTER VARYING NOT NULL,
-    created_at      BIGINT            NOT NULL,
     purpose         CHARACTER VARYING CHECK (purpose IS NULL OR LENGTH(purpose) BETWEEN 1 AND 128),
+    created_at      BIGINT            NOT NULL,
     PRIMARY KEY (secret_id, secret_revision)
 );
 CREATE TABLE deployment_unit_release_secret_reference
@@ -178,16 +178,16 @@ CREATE TABLE deployment_project
 CREATE TABLE deployment_execution
 (
     execution_id       UUID PRIMARY KEY,
-    platform_task_id   UUID              NOT NULL UNIQUE,
     project_id         UUID REFERENCES deployment_project (project_id),
+    platform_task_id   UUID              NOT NULL UNIQUE,
     application_id     CHARACTER VARYING,
     server_profile_id  CHARACTER VARYING NOT NULL,
     mode               VARCHAR(16)       NOT NULL CHECK (mode IN ('STATIC', 'ASSISTED', 'AGENT')),
-    phase              VARCHAR(40)       NOT NULL,
-    outcome            VARCHAR(16) CHECK (outcome IN ('SUCCEEDED', 'FAILED', 'CANCELLED', 'UNKNOWN')),
     reviewed_revision  CHAR(64)          NOT NULL,
     request_payload    BINARY LARGE OBJECT NOT NULL,
     recovery_payload   BINARY LARGE OBJECT NOT NULL,
+    phase              VARCHAR(40)       NOT NULL,
+    outcome            VARCHAR(16) CHECK (outcome IN ('SUCCEEDED', 'FAILED', 'CANCELLED', 'UNKNOWN')),
     result_payload     BINARY LARGE OBJECT,
     business_committed BOOLEAN           NOT NULL DEFAULT FALSE,
     cleanup_complete   BOOLEAN           NOT NULL DEFAULT FALSE,
@@ -200,11 +200,12 @@ CREATE TABLE deployment_release
 (
     application_id  CHARACTER VARYING NOT NULL REFERENCES managed_application (application_id),
     release_id      UUID              NOT NULL,
+    execution_id    UUID              NOT NULL,
+    origin_payload  BINARY LARGE OBJECT NOT NULL,
     release_sha256  CHAR(64)          NOT NULL,
-    execution_id    UUID              NOT NULL REFERENCES deployment_execution (execution_id),
-    state           VARCHAR(20)       NOT NULL CHECK (state IN ('CANDIDATE', 'ACTIVE', 'RETIRED', 'FAILED', 'UNKNOWN')),
     runtime_payload BINARY LARGE OBJECT NOT NULL,
     health_payload  BINARY LARGE OBJECT NOT NULL,
+    state           VARCHAR(20)       NOT NULL CHECK (state IN ('CANDIDATE', 'ACTIVE', 'RETIRED', 'FAILED', 'UNKNOWN')),
     created_at      BIGINT            NOT NULL,
     PRIMARY KEY (application_id, release_id),
     UNIQUE (application_id, release_sha256)
@@ -218,14 +219,14 @@ CREATE TABLE deployment_handoff
     source_server_id  CHARACTER VARYING NOT NULL,
     target_server_id  CHARACTER VARYING,
     revision_sha256   CHAR(64)          NOT NULL,
-    state             VARCHAR(24)       NOT NULL CHECK (state IN
-                                                        ('REVIEWED', 'MAINTENANCE', 'COLLECTED', 'PREPARED',
-                                                         'ACTIVATING', 'ACTIVE', 'COMPENSATING', 'FINISHED',
-                                                         'UNKNOWN')),
     maintenance_token CHARACTER VARYING,
     candidate_id      CHARACTER VARYING,
     request_payload   BINARY LARGE OBJECT NOT NULL,
     recovery_payload  BINARY LARGE OBJECT NOT NULL,
+    state             VARCHAR(24)       NOT NULL CHECK (state IN
+                                                        ('REVIEWED', 'MAINTENANCE', 'COLLECTED', 'PREPARED',
+                                                         'ACTIVATING', 'ACTIVE', 'COMPENSATING', 'FINISHED',
+                                                         'UNKNOWN')),
     result_payload    BINARY LARGE OBJECT,
     updated_at        BIGINT            NOT NULL
 );
@@ -239,19 +240,19 @@ CREATE TABLE preference
 CREATE TABLE deployment_log
 (
     log_id         CHAR(36) PRIMARY KEY,
-    recorded_at    BIGINT            NOT NULL,
     owner_id       VARCHAR(512)      NOT NULL,
     category       VARCHAR(64)       NOT NULL CHECK (REGEXP_LIKE(category, '^[a-z0-9_]{1,64}$')),
-    level          VARCHAR(8)        NOT NULL CHECK (level IN ('DEBUG', 'INFO', 'WARN', 'ERROR')),
-    event_code     VARCHAR(128)      NOT NULL,
-    message        CHARACTER VARYING NOT NULL,
-    details        CHARACTER LARGE OBJECT,
     subject_mod_id VARCHAR(512),
     mod_version    VARCHAR(512),
     task_id        UUID,
     operation_id   UUID,
+    level          VARCHAR(8)        NOT NULL CHECK (level IN ('DEBUG', 'INFO', 'WARN', 'ERROR')),
+    event_code     VARCHAR(128)      NOT NULL,
+    message        CHARACTER VARYING NOT NULL,
+    details        CHARACTER LARGE OBJECT,
     outcome        VARCHAR(16) CHECK (outcome IN ('SUCCEEDED', 'FAILED', 'CANCELLED')),
     truncated      BOOLEAN           NOT NULL,
+    recorded_at    BIGINT            NOT NULL,
     CHECK (OCTET_LENGTH(message) <= 2048)
 );
 CREATE INDEX deployment_log_order ON deployment_log (owner_id, category, recorded_at DESC, log_id DESC);
@@ -268,12 +269,30 @@ CREATE TABLE deployment_management_operation
         'LIFECYCLE_DISABLE_AUTOSTART','EXTERNAL_ADOPT',
         'EXTERNAL_START','EXTERNAL_STOP','EXTERNAL_RESTART','HISTORY_SWITCH')
 ) ,
- current_release_sha256 CHAR(64) NOT NULL CHECK(REGEXP_LIKE(current_release_sha256,'^[0-9a-f]{64}$')),
- target_release_sha256 CHAR(64) CHECK(target_release_sha256 IS NULL OR REGEXP_LIKE(target_release_sha256,'^[0-9a-f]{64}$')),
- phase VARCHAR(24) NOT NULL CHECK(phase IN
+    current_release_sha256 CHAR(64) NOT NULL CHECK(REGEXP_LIKE(current_release_sha256,'^[0-9a-f]{64}$')),
+    target_release_sha256 CHAR(64) CHECK(target_release_sha256 IS NULL OR REGEXP_LIKE(target_release_sha256,'^[0-9a-f]{64}$')),
+    component_state BINARY LARGE OBJECT NOT NULL,
+    phase VARCHAR(24) NOT NULL CHECK(phase IN
   ('REVIEWED','RESERVED','INSERTING','REGISTERED','SNAPSHOTTING','ACTIVATING',
    'EFFECTING','COMPENSATING','FINISHED','UNKNOWN')),
- component_state BINARY LARGE OBJECT NOT NULL,
- updated_at BIGINT NOT NULL
+    updated_at BIGINT NOT NULL
 );
 CREATE INDEX deployment_management_application ON deployment_management_operation (application_id, updated_at DESC);
+
+CREATE TABLE deployment_operation_receipt
+(
+    operation_id       UUID PRIMARY KEY,
+    platform_task_id   UUID              NOT NULL UNIQUE,
+    server_profile_id  CHARACTER VARYING NOT NULL,
+    mode               VARCHAR(16)       NOT NULL CHECK (mode IN ('STATIC', 'ASSISTED', 'AGENT')),
+    outcome            VARCHAR(16)       NOT NULL CHECK (outcome IN ('SUCCEEDED', 'FAILED', 'CANCELLED')),
+    application_id     CHARACTER VARYING,
+    release_id         UUID,
+    release_sha256     CHAR(64),
+    settlement_payload BINARY LARGE OBJECT NOT NULL,
+    settled_at         BIGINT            NOT NULL,
+    FOREIGN KEY (application_id, release_id) REFERENCES deployment_release (application_id, release_id),
+    CHECK ((outcome = 'SUCCEEDED' AND application_id IS NOT NULL AND release_id IS NOT NULL AND
+            release_sha256 IS NOT NULL) OR
+           (outcome <> 'SUCCEEDED' AND application_id IS NULL AND release_id IS NULL AND release_sha256 IS NULL))
+);

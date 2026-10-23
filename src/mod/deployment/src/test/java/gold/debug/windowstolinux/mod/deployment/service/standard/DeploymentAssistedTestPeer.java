@@ -11,21 +11,27 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 
 /** Controlled standard helper receipts consumed by actual publication channels. / 由真实发布频道消费的受控标准 helper 回执。 */
 final class DeploymentAssistedTestPeer {
+    final java.util.List<Long> createdWorkspaceBytes = new java.util.ArrayList<>();
+
+    final java.util.List<String> buildScripts = new java.util.ArrayList<>();
+
+    long availableBytes = 1000000000L * 4096;
+
     final AtomicInteger publications = new AtomicInteger();
 
     private String archive;
@@ -64,6 +70,8 @@ final class DeploymentAssistedTestPeer {
 
     private OperationResult<CommandResult> command(CommandRequest request) throws Exception {
         String script = request.script();
+        if (script.contains(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.PATH))
+            script = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedBody(script);
         if (script.contains("managed-helper' probe"))
             return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
                 + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
@@ -71,7 +79,7 @@ final class DeploymentAssistedTestPeer {
             return reply(
                 "DISTRO_ID=ubuntu\nVERSION=24.04\nARCH=x86_64\nPACKAGE_MANAGER=apt\nPACKAGE_ARCH=amd64\nSYSTEMD=1\nCPU_LEVEL=x86-64-v3\nSECURITY_MODULE=apparmor\nSECURITY_STATE=enabled\nFIREWALL=ufw\nFIREWALL_STATE=active\n");
         if (script.contains("stat -f -c"))
-            return reply("1000000000 4096\n");
+            return reply((availableBytes / 4096) + " 4096\n");
         if (script.contains("build-preflight"))
             return reply("");
         if (script.contains("prepare-toolchains 'prepare'"))
@@ -88,6 +96,9 @@ final class DeploymentAssistedTestPeer {
             var matcher = Pattern.compile("candidate-create-task '[^']+' '([^']+)'").matcher(script);
             assertTrue(matcher.find(), script);
             candidate = matcher.group(1);
+            var quota = Pattern.compile("candidate-create-task '[^']+' '[^']+' ([0-9]+)").matcher(script);
+            assertTrue(quota.find(), script);
+            createdWorkspaceBytes.add(Long.parseLong(quota.group(1)));
             present = true;
             return reply("CANDIDATE=/var/lib/windowstolinux/work/" + candidate + "\n");
         }
@@ -96,9 +107,11 @@ final class DeploymentAssistedTestPeer {
                 + "\nOWNER=0\n");
         if (script.contains("candidate-query-task"))
             return reply("CANDIDATE_STATE=" + (present ? "owned" : "absent") + "\nBUILD_ACTIVE=no\n");
-        if (script.startsWith("exec /usr/bin/python3 -I -c "))
+        if (script.startsWith("exec /usr/bin/python3 -I -c ")) {
+            buildScripts.add(new String(request.stdin(), StandardCharsets.UTF_8));
             return reply("WTL_BUILD_REPORT=1\nEXIT=0\nBYTES=0\nSHA256=" + "c".repeat(64)
                 + "\nUID=1001\nENGINE=ordinary\nTOOL=GO_MODULE\nCOMPAT=0\nLIMIT=-\nCONFLICT=0\nHEAD=\nTAIL=\n");
+        }
         if (script.contains("stage-config"))
             return reply("INPUT_STAGED=1\n");
         if (script.contains("snapshot-deployment"))

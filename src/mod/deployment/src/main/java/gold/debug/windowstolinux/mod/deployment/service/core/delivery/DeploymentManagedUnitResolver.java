@@ -9,8 +9,9 @@ import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentPublishStore;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentUnitIdentity;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishStore;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitIdentity;
 
 /** Resolves canonical ownership for either deployment mode without using source or plan hashes. / 为两种部署模式解析规范归属，不使用来源或计划散列。 */
 public final class DeploymentManagedUnitResolver {
@@ -30,11 +31,18 @@ public final class DeploymentManagedUnitResolver {
      * @return saved or fresh unpersisted identity / 已存或新未持久身份
      * @throws Exception on conflicting or unreadable ownership / 归属冲突或不可读时 */
     public DeploymentUnitIdentity resolve(TaskContext task, String unitId, ServerId server) throws Exception {
+        return resolve(task, unitId, server, DeploymentRemoteLayout.original());
+    }
+
+    /** Requires saved and proposed ownership to share the captured complete layout. */
+    public DeploymentUnitIdentity resolve(TaskContext task, String unitId, ServerId server,
+                                           DeploymentRemoteLayout layout) throws Exception {
+        Objects.requireNonNull(layout);
         var saved = publications.findUnit(task, unitId);
         if (saved.isPresent()) {
             var existing = saved.orElseThrow();
             if (!existing.server().equals(server) || !existing
-                .equals(DeploymentUnitIdentity.forManaged(unitId, server, existing.ownershipManifestSha256())))
+                .equals(DeploymentUnitIdentity.forManaged(unitId, server, existing.ownershipManifestSha256(), layout)))
                 throw new ApiException(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_OWNER_CONFLICT",
                     "Managed unit belongs to another target or has invalid ownership", Map.of(), Optional.empty()));
             return existing;
@@ -42,7 +50,7 @@ public final class DeploymentManagedUnitResolver {
         byte[] random = new byte[32];
         new SecureRandom().nextBytes(random);
         try {
-            return DeploymentUnitIdentity.forManaged(unitId, server, HexFormat.of().formatHex(random));
+            return DeploymentUnitIdentity.forManaged(unitId, server, HexFormat.of().formatHex(random), layout);
         } finally {
             Arrays.fill(random, (byte) 0);
         }

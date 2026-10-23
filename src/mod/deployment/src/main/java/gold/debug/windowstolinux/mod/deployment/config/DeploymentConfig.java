@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentBuildLimits;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentBuildLimits;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.path.DeploymentStorageLocation;
 
 /** Immutable fixed settings for one deployment Mod activation. / 一次部署 Mod 启用的不可变固定配置。
@@ -14,7 +14,8 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.path
  * @param view feedback and pagination settings / 反馈与分页配置
  * @param ai requested output budgets / 申请输出额度
  * @param paths remote layout captured by deployments and retained operations / 部署及保留操作捕获的远端布局配置 */
-public record DeploymentConfig(Source source, Build build, Environment environment, View view, Ai ai, RemotePaths paths) {
+public record DeploymentConfig(Source source, Build build, Environment environment, View view, Ai ai,
+                               RemotePaths paths) {
     /** Requires all six configuration groups. / 要求六组配置齐全。
      * @param source source limits / 来源限额
      * @param build build defaults / 构建默认值
@@ -44,6 +45,7 @@ public record DeploymentConfig(Source source, Build build, Environment environme
             "/usr/bin", "/usr/lib", "/usr/lib64", "/usr/local", "/usr/local/bin", "/usr/local/lib",
             "/usr/local/sbin", "/usr/sbin", "/usr/share", "/var", "/var/cache", "/var/lib", "/var/log",
             "/var/opt");
+
         private static final List<String> CONTROL_TREES = List.of("/proc", "/sys", "/dev", "/run", "/tmp",
             "/var/tmp", "/etc/systemd", "/etc/containers");
 
@@ -83,11 +85,57 @@ public record DeploymentConfig(Source source, Build build, Environment environme
 
     /** Requested budgets; the APP's output policy determines the actual provider limit. */
     public record Ai(int deploymentMaxOutputTokens, int extendedDeploymentMaxOutputTokens,
-                     int approvalMaxOutputTokens) {
+                     int approvalMaxOutputTokens, Requests requests, Execution execution, History history) {
         public Ai {
             if (deploymentMaxOutputTokens < 1 || extendedDeploymentMaxOutputTokens < deploymentMaxOutputTokens
-                || approvalMaxOutputTokens < 1 || approvalMaxOutputTokens > deploymentMaxOutputTokens)
+                || approvalMaxOutputTokens < 1 || approvalMaxOutputTokens > extendedDeploymentMaxOutputTokens)
                 throw new IllegalArgumentException("Invalid deployment AI output budgets");
+            Objects.requireNonNull(requests);
+            Objects.requireNonNull(execution);
+            Objects.requireNonNull(history);
+        }
+    }
+
+    /** Caller-owned request deadlines and an optional Agent pure-generation recovery budget; unrelated to project size, tool attempts or execution permission.
+     * @param deploymentTimeoutSeconds ordinary logical generation deadline / 普通逻辑生成期限
+     * @param approvalTimeoutSeconds approval logical generation deadline / 审批逻辑生成期限
+     * @param extendedTimeoutSeconds extended logical generation deadline / 扩展逻辑生成期限
+     * @param generationRecoveryAttempts extra incomplete-body generation attempts for independently selected Agent callers, 0..16; 0 disables / 独立 Agent 调用者选择的正文不完整额外生成次数，0..16；0 关闭 */
+    public record Requests(int deploymentTimeoutSeconds, int approvalTimeoutSeconds, int extendedTimeoutSeconds,
+                           int generationRecoveryAttempts) {
+        public Requests(int deploymentTimeoutSeconds, int approvalTimeoutSeconds, int extendedTimeoutSeconds) {
+            this(deploymentTimeoutSeconds, approvalTimeoutSeconds, extendedTimeoutSeconds, 0);
+        }
+
+        public Requests {
+            if (generationRecoveryAttempts < 0 || generationRecoveryAttempts > 16)
+                throw new IllegalArgumentException("Generation recovery attempts must be in 0..16");
+            if (deploymentTimeoutSeconds < 1 || approvalTimeoutSeconds < 1 || extendedTimeoutSeconds < 1
+                || extendedTimeoutSeconds > 86400 || extendedTimeoutSeconds < deploymentTimeoutSeconds
+                || extendedTimeoutSeconds < approvalTimeoutSeconds)
+                throw new IllegalArgumentException("Invalid deployment AI request deadlines");
+        }
+    }
+
+    /** Finite task resource ceilings; models decide whether to continue without filling these budgets. */
+    public record Execution(int sharedToolAttempts, int standaloneToolAttempts, int localToolTurns,
+                            int agentModelResponses, int retainedReviewSessions, int maxObservations) {
+        public Execution {
+            if (sharedToolAttempts < 1 || standaloneToolAttempts < 1 || localToolTurns < 1 || agentModelResponses < 1
+                || retainedReviewSessions < 1 || standaloneToolAttempts > sharedToolAttempts || localToolTurns > standaloneToolAttempts
+                || retainedReviewSessions > sharedToolAttempts || agentModelResponses > Integer.MAX_VALUE / 4
+                || maxObservations < 1 || maxObservations > 999999)
+                throw new IllegalArgumentException("Invalid deployment AI execution budgets");
+        }
+    }
+
+    /** Whole-batch history limits within the unchanged non-vision 1 MiB request boundary. */
+    public record History(int maxBatches, int characters, int payloadBytes, int initialBatches,
+                          int initialPayloadBytes) {
+        public History {
+            if (maxBatches < 1 || characters < 1 || characters > 1024 * 1024 || payloadBytes < 1 || payloadBytes > 1024 * 1024
+                || initialBatches < 1 || initialBatches > maxBatches || initialPayloadBytes < 1 || initialPayloadBytes > payloadBytes)
+                throw new IllegalArgumentException("Invalid deployment AI history budgets");
         }
     }
 
@@ -113,7 +161,12 @@ public record DeploymentConfig(Source source, Build build, Environment environme
      * @param memoryMiB memory limit in MiB / 内存 MiB 上限
      * @param outputBytes captured output limit / 捕获输出上限
      * @param workspaceBytes build workspace limit / 构建工作目录上限 */
-    public record Build(int timeoutSeconds, int processes, int memoryMiB, long outputBytes, long workspaceBytes) {
+    public record Build(int timeoutSeconds, int processes, int memoryMiB, long outputBytes, long workspaceBytes,
+                        long workspaceMaxBytes, long workspaceHostReserveBytes) {
+        public Build(int timeoutSeconds, int processes, int memoryMiB, long outputBytes, long workspaceBytes) {
+            this(timeoutSeconds, processes, memoryMiB, outputBytes, workspaceBytes, 128L * 1024 * 1024 * 1024, 1024L * 1024 * 1024);
+        }
+
         /** Applies the existing build validation without granting root execution. / 应用既有构建校验，不授予 root 执行。
          * @param timeoutSeconds waiting seconds / 等待秒数
          * @param processes process limit / 进程上限
@@ -122,12 +175,17 @@ public record DeploymentConfig(Source source, Build build, Environment environme
          * @param workspaceBytes workspace bytes / 工作目录字节 */
         public Build {
             new DeploymentBuildLimits(timeoutSeconds, processes, memoryMiB, outputBytes, workspaceBytes, false);
+            new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Policy(workspaceMaxBytes, workspaceHostReserveBytes);
         }
 
         /** Creates the initial values presented for explicit review. / 创建供明确审阅的初始值。
          * @return initial non-root build limits / 初始非 root 构建限额 */
+        public gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Policy workspacePolicy() {
+            return new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Policy(workspaceMaxBytes, workspaceHostReserveBytes);
+        }
+
         public DeploymentBuildLimits limits() {
-            return new DeploymentBuildLimits(timeoutSeconds, processes, memoryMiB, outputBytes, workspaceBytes, false);
+            return new DeploymentBuildLimits(timeoutSeconds, processes, memoryMiB, outputBytes, workspaceBytes, false, workspaceHostReserveBytes);
         }
     }
 

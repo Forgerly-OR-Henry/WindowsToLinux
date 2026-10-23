@@ -32,11 +32,11 @@ import gold.debug.windowstolinux.appapi.task.model.TaskState;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import org.junit.jupiter.api.Test;
 
 /** Real isolated H2 task/checkpoint behavior with a controlled SSH state peer; no actual package or security command runs. / 真实隔离 H2 任务及检查点与受控 SSH 状态 peer，不运行实际安装或安全命令。 */
-class DeploymentEnvironmentWorkflowTest extends DeploymentRuntimeFixture {
+public class DeploymentEnvironmentWorkflowTest extends DeploymentRuntimeFixture {
     Predicate<ActionIntent> policy = ignored -> true;
 
     @Override
@@ -64,12 +64,14 @@ class DeploymentEnvironmentWorkflowTest extends DeploymentRuntimeFixture {
         return peer.wrap(fresh);
     }
 
-    static final class Peer {
-        final AtomicInteger authentications = new AtomicInteger();
+    public static final class Peer {
+        public final AtomicInteger authentications = new AtomicInteger();
 
-        final AtomicInteger closes = new AtomicInteger();
+        public final AtomicInteger closes = new AtomicInteger();
 
-        final AtomicInteger commands = new AtomicInteger();
+        public final AtomicInteger commands = new AtomicInteger();
+
+        final Map<String, Duration> timeouts = new LinkedHashMap<>();
 
         final Map<String, Integer> sends = new HashMap<>();
 
@@ -83,7 +85,7 @@ class DeploymentEnvironmentWorkflowTest extends DeploymentRuntimeFixture {
 
         String packagePhase = "ABSENT", packageRequest = "none", prepareRequest = "none", enforceRequest = "none", commitRequest = "none";
 
-        boolean active, losePackages, receiptMissing, failLoginAfterPackages, reboot = true, failedEnforce;
+        public boolean active, losePackages, receiptMissing, failLoginAfterPackages, reboot = true, failedEnforce;
 
         boolean helperInstalled = true, loseHelper, helperReceiptMissing;
 
@@ -91,11 +93,11 @@ class DeploymentEnvironmentWorkflowTest extends DeploymentRuntimeFixture {
 
         String helperReceipt = "";
 
-        Peer(String profile) {
+        public Peer(String profile) {
             this(profile, "SHA256:" + "B".repeat(43));
         }
 
-        Peer(String profile, String fingerprint) {
+        public Peer(String profile, String fingerprint) {
             this.profile = profile;
             this.fingerprint = fingerprint;
             if (profile.startsWith("centos")) {
@@ -105,7 +107,7 @@ class DeploymentEnvironmentWorkflowTest extends DeploymentRuntimeFixture {
             }
         }
 
-        ModContext wrap(ModContext original) {
+        public ModContext wrap(ModContext original) {
             var linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(), new Class<?>[]{LinuxService.class},
                 (proxy, method, args) -> {
                     assertEquals("connect", method.getName());
@@ -152,9 +154,9 @@ class DeploymentEnvironmentWorkflowTest extends DeploymentRuntimeFixture {
                 if (input.contains("prepare_stage=platform-packages")) {
                     helperInstalls++;
                     helperInstalled = true;
-                    helperReceipt = gold.debug.windowstolinux.mod.deployment.linux.DeploymentHelperInstallerScript.receipt(task.id(),
+                    helperReceipt = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.receipt(task.id(),
                         original.operation(), DeploymentEnvironmentScripts.digest(original.target().server().id()),
-                        DeploymentEnvironmentScripts.digest(gold.debug.windowstolinux.mod.deployment.linux.DeploymentHelperInstallerScript.render()), "SUCCEEDED");
+                        DeploymentEnvironmentScripts.digest(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.render()), "SUCCEEDED");
                     if (loseHelper)
                         return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(problem(ProblemCode.UNKNOWN, "HELPER_REPLY_LOST").problem()));
                     return ok("");
@@ -163,6 +165,7 @@ class DeploymentEnvironmentWorkflowTest extends DeploymentRuntimeFixture {
                     Optional.of(new CommandResult(Optional.of(3), "", "", false)), Optional.empty()) : ok(helperReceipt);
             }
             String stage = assignment(input, "stage");
+            timeouts.put(stage, request.timeout());
             String digest = assignment(input, "request_sha");
             sends.merge(stage, 1, Integer::sum);
             if (stage.equals("prepare")) {
@@ -266,6 +269,25 @@ class DeploymentEnvironmentWorkflowTest extends DeploymentRuntimeFixture {
             assertTrue(peer.authentications.get() >= 4);
             assertEquals(peer.authentications.get(), peer.closes.get());
             assertFalse(peer.active);
+        }
+    }
+
+    @Test
+    void customTimingIsCapturedBeforeTheOriginalEnvironmentCommands() throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            var peer = new Peer("ubuntu-24.04");
+            var context = bound(runtime, peer);
+            var timing = new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.Environment(333, 19, 60, 2);
+            var workflow = new DeploymentEnvironmentWorkflow(context,
+                (target, revision, request, task) -> context.interaction().approve(RemoteActions.command(target.server(), revision, request), task), timing);
+            assertEquals(TaskResult.SUCCEEDED, workflow.submit(saved(runtime)).completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+            assertEquals(Duration.ofSeconds(333), peer.timeouts.get("packages"));
+            assertEquals(Duration.ofSeconds(19), peer.timeouts.get("probe"));
+            assertEquals(Duration.ofSeconds(19), peer.timeouts.get("verify"));
+            assertEquals(1, peer.sent("packages"));
+            assertEquals(peer.authentications.get(), peer.closes.get());
         }
     }
 

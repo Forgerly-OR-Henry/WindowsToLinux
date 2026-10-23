@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.DeploymentSecretRef;
 
 /**
  * Parses the bounded desktop build/runtime configuration notation. / 解析桌面端有界构建/运行配置记法。

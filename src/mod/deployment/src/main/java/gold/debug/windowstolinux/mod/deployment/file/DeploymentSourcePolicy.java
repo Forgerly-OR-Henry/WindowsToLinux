@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.file;
 
 import java.util.*;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentCommand;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentCommand;
 
 /** Deployment-specific exclusions migrated from the original source archive rules. / 从原源码归档规则迁入的部署专用排除策略。 */
 final class DeploymentSourcePolicy {

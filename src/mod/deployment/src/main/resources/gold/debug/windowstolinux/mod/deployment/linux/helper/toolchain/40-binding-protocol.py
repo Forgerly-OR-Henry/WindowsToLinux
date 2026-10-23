@@ -184,6 +184,9 @@ def main(args):
 
     if os.geteuid() != 0:
         fail('permission', 'managed preparation requires the approved privileged environment boundary')
+    if args and args[0] in ('prepare-diagnosed', 'diagnose-only'):
+        installation_diagnostic_main(args)
+        return
     if args and args[0] in ('prepare-tracked', 'bind-tracked', 'observe-tracked', 'cleanup-tracked'):
         tracked_main(args)
         return

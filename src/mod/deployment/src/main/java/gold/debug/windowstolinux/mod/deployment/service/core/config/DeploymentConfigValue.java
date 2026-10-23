@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.service.core.config;
 
 import java.util.Objects;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentConfigException;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.error.DeploymentConfigException;
 
 /**
  * A typed non-secret configuration value that cannot carry a shell fragment.

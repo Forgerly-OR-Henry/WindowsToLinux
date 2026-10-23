@@ -4,7 +4,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.server.DeploymentCpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.server.LinuxDistroType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.server.security.DeploymentLinuxSecurityPosture;

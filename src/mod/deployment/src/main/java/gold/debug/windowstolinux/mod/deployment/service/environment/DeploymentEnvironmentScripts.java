@@ -17,7 +17,7 @@ final class DeploymentEnvironmentScripts {
     private static final String BODY = resource("environment.sh") + "\n" + resource("selinux.sh");
 
     /** One frozen digest avoids repeatedly assembling the large unchanged helper installer. / 一项冻结摘要避免反复组装未改变的大型 helper 安装程序。 */
-    private static final String BODY_DIGEST = digest(BODY + gold.debug.windowstolinux.mod.deployment.linux.DeploymentHelperInstallerScript.render());
+    private static final String BODY_DIGEST = digest(body(gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()) + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.render());
 
     /** Prevents construction. / 禁止实例化。 */
     private DeploymentEnvironmentScripts() {
@@ -25,6 +25,16 @@ final class DeploymentEnvironmentScripts {
 
     /** Computes the fixed production resource identity. / 计算固定生产资源身份。
      * @return lower-case SHA-256 / 小写 SHA-256 */
+    static String body(gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        String parents = String.join(" ", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentRemoteLayoutAdmission
+            .ancestors(layout.paths().stateRoot()));
+        return gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTemplate.render(BODY.replace("@STATE_ANCESTORS@", parents), layout);
+    }
+
+    static String bodyDigest(gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        return digest(body(layout) + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.render(layout));
+    }
+
     static String bodyDigest() {
         return BODY_DIGEST;
     }
@@ -40,14 +50,18 @@ final class DeploymentEnvironmentScripts {
     /** Renders one fixed stage with exact original observations and receipt identity. / 渲染一项固定阶段，带精确原观测及回执身份。
      * @param state original operation state / 原操作状态
      * @param stage fixed command stage / 固定命令阶段
+     * @param timing original task timing / 原任务时序
      * @return complete immutable request / 完整不可变请求 */
-    static CommandRequest request(DeploymentEnvironmentState state, String stage) {
+    static CommandRequest request(DeploymentEnvironmentState state, String stage,
+                                  gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.Environment timing) {
         if (!Set.of("probe", "verify", "packages", "prepare", "enforce", "commit").contains(stage))
             throw new IllegalArgumentException("Invalid fixed environment command");
-        String input = assignments(state, stage) + BODY;
+        String input = assignments(state, stage) + body(state.layout());
+        if (!Set.of("probe", "verify").contains(stage))
+            input += gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentRemoteLayoutAdmission.initialize(state.layout());
         String script = "request_sha=" + quote(digest(input)) + "\n" + input + "\nenvironment\n";
         return new CommandRequest("/bin/bash -s", script.getBytes(StandardCharsets.UTF_8),
-            stage.equals("packages") ? Duration.ofMinutes(15) : Duration.ofSeconds(30), 1024 * 1024);
+            Duration.ofSeconds(stage.equals("packages") ? timing.installSeconds() : timing.checkSeconds()), 1024 * 1024);
     }
 
     /** Computes the canonical stage receipt identity before adding its envelope. / 添加封套前计算规范阶段回执身份。
@@ -55,7 +69,10 @@ final class DeploymentEnvironmentScripts {
      * @param stage fixed stage / 固定阶段
      * @return request digest matched by original remote receipt / 与原远端回执匹配的请求摘要 */
     static String requestDigest(DeploymentEnvironmentState state, String stage) {
-        return digest(assignments(state, stage) + BODY);
+        String input = assignments(state, stage) + body(state.layout());
+        if (!Set.of("probe", "verify").contains(stage))
+            input += gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentRemoteLayoutAdmission.initialize(state.layout());
+        return digest(input);
     }
 
     /** Renders literal original values for fixed resources. / 为固定资源渲染原字面值。

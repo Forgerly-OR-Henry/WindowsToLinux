@@ -14,8 +14,8 @@ import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
@@ -31,6 +31,8 @@ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import org.junit.jupiter.api.Test;
 
 class DeploymentManagedHelperRuntimeTest extends DeploymentRuntimeFixture {
@@ -95,7 +97,7 @@ class DeploymentManagedHelperRuntimeTest extends DeploymentRuntimeFixture {
                         calls.incrementAndGet();
                         return new OperationResult<>(TaskResult.SUCCEEDED,
                             Optional.of(new CommandResult(Optional.of(0),
-                                "HELPER=1\nPROTOCOL=14\nSHA256="
+                                "HELPER=1\nPROTOCOL=16\nSHA256="
                                     + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n",
                                 "", false)),
                             Optional.empty());

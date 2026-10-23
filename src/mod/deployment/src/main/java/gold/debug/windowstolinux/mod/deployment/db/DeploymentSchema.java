@@ -9,7 +9,16 @@ import java.util.*;
 import gold.debug.windowstolinux.appapi.db.schema.CheckResult;
 import gold.debug.windowstolinux.appapi.db.schema.ModSchemaLifecycle;
 import gold.debug.windowstolinux.appapi.db.schema.SchemaAccess;
-import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.mod.deployment.db.check.DeploymentPayloadChecker;
+import gold.debug.windowstolinux.mod.deployment.db.check.DeploymentReleaseChecker;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore;
+import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentOperationReceipts;
+import gold.debug.windowstolinux.mod.deployment.db.project.DeploymentProjectStore;
+import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentGraphStore;
+import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishStore;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentConfigStore;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentSecretStore;
+import gold.debug.windowstolinux.mod.deployment.db.schema.DeploymentSchemaIdentity;
 
 /** Initializes and reads the fixed official deployment schema through public managed JDBC. / 通过公开受管 JDBC 初始化并读取固定官方部署结构。 */
 public final class DeploymentSchema implements ModSchemaLifecycle {
@@ -23,21 +32,13 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
     public DeploymentSchema() {
     }
 
-    /** Rejects foreign ownership before opening any author connection. / 打开任一作者连接前拒绝其他所有者。
-     * @param identity original bound data identity / 原绑定数据身份 */
-    public static void requireIdentity(SchemaIdentity identity) {
-        if (!OWNER.equals(identity.ownerId()) || !VERSION.equals(identity.schemaVersion()))
-            throw new IllegalArgumentException(
-                "Deployment schema identity differs from the supported owner and version");
-    }
-
     /** Creates the documented tables only inside the fresh platform target. / 仅在全新平台目标内创建文档约定表。
      * @param target original fresh generation / 原全新代次
      * @throws SQLException if target is nonempty or DDL fails / 目标非空或 DDL 失败时
      * @throws IOException if the fixed schema resource is absent / 固定结构资源缺失时 */
     @Override
     public void initialize(SchemaAccess target) throws SQLException, IOException {
-        requireIdentity(target.identity());
+        DeploymentSchemaIdentity.requireIdentity(target.identity());
         String script = resource("schema-v1.sql");
         try (var connection = target.openConnection()) {
             if (!tables(connection).isEmpty())
@@ -56,7 +57,7 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
      * @throws Exception if reading cannot establish a result / 读取无法确立结果时 */
     @Override
     public CheckResult validate(SchemaAccess target) throws Exception {
-        requireIdentity(target.identity());
+        DeploymentSchemaIdentity.requireIdentity(target.identity());
         var violations = new ArrayList<String>();
         String inventory = resource("validation-v1.sql");
         try (var connection = target.openConnection()) {
@@ -73,13 +74,17 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
                          var columns = all.executeQuery("SELECT * FROM " + table + " WHERE 1=0")) {
                         if (declared != columns.getMetaData().getColumnCount())
                             violations.add("Unexpected deployment columns: " + table);
+                        else
+                            for (int position = 1; position <= declared; position++)
+                                if (!rows.getMetaData().getColumnName(position).equals(columns.getMetaData().getColumnName(position)))
+                                    violations.add("Deployment column order differs: " + table + " at " + position);
                     }
                 } catch (SQLException invalid) {
                     violations.add("Deployment table or columns are unavailable: " + table);
                 }
             }
             if (!tables(connection).equals(expected))
-                violations.add("Deployment table inventory differs from schema version 1");
+                violations.add("Deployment table inventory differs from schema version " + VERSION);
             if (violations.isEmpty()) {
                 validateBindings(connection, violations);
                 try {
@@ -106,6 +111,11 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
                     DeploymentExecutionStore.validate(connection);
                 } catch (SQLException invalid) {
                     violations.add("Stored deployment execution evidence is invalid");
+                }
+                try {
+                    DeploymentOperationReceipts.validate(connection);
+                } catch (SQLException invalid) {
+                    violations.add("Stored deployment settlement receipts are invalid");
                 }
                 try {
                     DeploymentPayloadChecker.validate(connection);

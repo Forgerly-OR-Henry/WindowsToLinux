@@ -9,7 +9,7 @@ import java.util.stream.Stream;
 
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentEcosystemExtensionFixture.ArchitectureType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.DeploymentAdmissionStatus;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisFlow;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.core.DeploymentAnalysisFlow;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

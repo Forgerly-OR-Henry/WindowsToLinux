@@ -15,15 +15,19 @@ import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
-import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentManagementActionLog;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentManagementActionLog;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentApplicationGraph;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitRuntimeConfig;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentIdentityMode;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentWorkload;
 
 /** Actual task leases, original H2 journal and controlled fixed helper protocol. / 实际任务租约、原H2日志与受控固定helper协议。 */
-abstract class DeploymentAutostartFixture extends DeploymentUsageFixture {
+public abstract class DeploymentAutostartFixture extends DeploymentUsageFixture {
     enum Backend {NATIVE, DOCKER, PODMAN}
 
-    DeploymentApplicationGraph lifecycleGraph(Backend backend, boolean mixed) {
+    public DeploymentApplicationGraph lifecycleGraph(Backend backend, boolean mixed) {
         var original = usageGraph("demo", false, true);
         var parts = new ArrayList<DeploymentApplicationGraph.Part>();
         for (var part : original.components()) {
@@ -44,7 +48,7 @@ abstract class DeploymentAutostartFixture extends DeploymentUsageFixture {
         return new DeploymentApplicationGraph("demo", "service", original.healthCheck(), parts);
     }
 
-    DeploymentApplicationGraph withoutReview(DeploymentApplicationGraph original) {
+    public DeploymentApplicationGraph withoutReview(DeploymentApplicationGraph original) {
         var parts = new ArrayList<DeploymentApplicationGraph.Part>();
         for (var part : original.components()) {
             var old = part.runtime().workload();
@@ -59,7 +63,7 @@ abstract class DeploymentAutostartFixture extends DeploymentUsageFixture {
         return new DeploymentApplicationGraph(original.applicationId(), original.healthComponentId(), original.healthCheck(), parts);
     }
 
-    ModContext bind(ModContext actual, ManagedPeer controlled) {
+    public ModContext bind(ModContext actual, ManagedPeer controlled) {
         LinuxService linux = new LinuxService() {
             public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
                 assertEquals(new ServerId("server"), server);
@@ -92,7 +96,7 @@ abstract class DeploymentAutostartFixture extends DeploymentUsageFixture {
             });
     }
 
-    static final class ManagedPeer {
+    public static final class ManagedPeer {
         final ModContext actual;
 
         final Map<String, DeploymentRuntimeDefinition> definitions = new HashMap<>();
@@ -140,7 +144,7 @@ abstract class DeploymentAutostartFixture extends DeploymentUsageFixture {
         }
 
         OperationResult<CommandResult> command(CommandRequest request, TaskContext task) throws Exception {
-            if (request.script().contains("/usr/bin/sha256sum --check --status"))
+            if (request.script().contains("managed-helper' probe"))
                 return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
             if (request.script().contains("inspect --format")) {
                 String unit = definitions.keySet().stream().filter(value -> request.script().contains("windowstolinux-" + value)).findFirst().orElseThrow();
@@ -152,7 +156,7 @@ abstract class DeploymentAutostartFixture extends DeploymentUsageFixture {
                 return reply("OWNER=1\nRUNNING=" + running.get(unit) + "\nENABLED=" + (enabled.get(unit) ? engine.equals("docker") ? "unless-stopped" : "enabled" : "no") + "\n");
             }
             var args = new ArrayList<String>();
-            var matcher = Pattern.compile("'([^']*)'").matcher(request.script());
+            var matcher = Pattern.compile("'([^']*)'").matcher(DeploymentManagedHelperBundle.verifiedBody(request.script()));
             while (matcher.find()) args.add(matcher.group(1));
             assertEquals(DeploymentManagedHelperBundle.PATH, args.getFirst());
             String verb = args.get(1), unit = args.get(2);

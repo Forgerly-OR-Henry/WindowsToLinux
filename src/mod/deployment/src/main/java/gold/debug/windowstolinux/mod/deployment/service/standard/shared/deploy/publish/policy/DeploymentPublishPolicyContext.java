@@ -132,6 +132,8 @@ public final class DeploymentPublishPolicyContext implements ModContext {
      * @return one shared recovery context / 一份共用恢复上下文
      * @throws ApiException if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
     public static DeploymentPublishPolicyContext recover(ModContext original, TaskContext task, DeploymentStandardRecoverySupport recoverySupport) throws ApiException {
+        gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.original(original, task, "MANUAL_REVIEW");
+        gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.releaseKnown(original, task);
         var journal = DeploymentPublishPolicyFacts.find(original, task);
         if (journal.isEmpty()) throw new ApiException(new Problem(ProblemCode.CONTRACT_VIOLATION,
             "DEPLOYMENT_PUBLICATION_POLICY_REQUIRED", "Current deployment recovery requires its original policy checkpoint", Map.of(), Optional.of(task.id())));
@@ -213,6 +215,43 @@ public final class DeploymentPublishPolicyContext implements ModContext {
             return guarded.released;
         }
         return true;
+    }
+
+    /** Releases only the original policy after helper-only recovery has closed its actual sessions and local files.
+     * / 仅在仅helper恢复已关闭真实会话及本机文件后释放原策略。
+     * @param context same guarded original recovery / 同份受控原恢复
+     * @param task authentic original context / 真实原上下文
+     * @return whether no other explicit resource remained at observation and policy closed / 观测时无其他显式资源且策略已关闭
+     * @throws ApiException if authority cleanup, observation or policy close fails / 权限清理、观测或策略关闭失败时 */
+    public static boolean releaseHelperOnly(ModContext context, TaskContext task) throws ApiException {
+        if (!(context instanceof DeploymentPublishPolicyContext guarded) || !guarded.recovery || guarded.journal.isEmpty())
+            return false;
+        guarded.sameTask(task);
+        guarded.finish(TaskResult.UNKNOWN);
+        guarded.original.interaction().closeWorkflowResources(task);
+        if (!guarded.original.tasks().resourcesReleasedExceptCheckpoints(task, Set.of(DeploymentPublishPolicyFacts.KEY)))
+            return false;
+        guarded.finish(TaskResult.FAILED);
+        return guarded.released;
+    }
+
+    /** Closes a verified single diagnostic preparation only after all actual resources and its complete original author set agree. */
+    public static boolean releaseSingleDiagnosticPreparation(ModContext context, TaskContext task, String diagnosticKey) throws ApiException {
+        if (!(context instanceof DeploymentPublishPolicyContext guarded) || !guarded.recovery || guarded.journal.isEmpty())
+            return false;
+        guarded.sameTask(task);
+        var marker = gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStandardSetupActionLog
+            .find(guarded.original.tasks(), task).orElseThrow();
+        if (marker.wasCancelled()) return false;
+        String setupKey = gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStandardSetupActionLog.KEY;
+        guarded.original.file().closeTaskResources(task);
+        guarded.finish(TaskResult.UNKNOWN);
+        guarded.original.interaction().closeWorkflowResources(task);
+        if (!guarded.original.tasks().resourcesReleasedExceptCheckpoints(task, Set.of(setupKey, DeploymentPublishPolicyFacts.KEY),
+            Set.of(setupKey, DeploymentPublishPolicyFacts.KEY, diagnosticKey))) return false;
+        marker.close();
+        guarded.finish(TaskResult.FAILED);
+        return guarded.released;
     }
 
     /** Shares the already frozen assisted capabilities with the advisor without creating another scope. / 与顾问共用已冻结辅助能力，不另建作用域。

@@ -5,9 +5,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainVersion;
-
 /**
  * The single, injectable build-release allowlist; release discovery supplies patch versions. / 唯一可注入构建分支目录，补丁由官方发布发现提供。
  */

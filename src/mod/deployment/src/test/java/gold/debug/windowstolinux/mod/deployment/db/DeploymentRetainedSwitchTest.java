@@ -11,10 +11,10 @@ import java.util.regex.Pattern;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
@@ -33,10 +33,14 @@ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.api.*;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
-import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationId;
+import gold.debug.windowstolinux.mod.deployment.db.release.DeploymentReleaseRecord;
+import gold.debug.windowstolinux.mod.deployment.db.release.DeploymentReleaseStore;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentManagementActionLog;
+import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentRetainedReleases;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentApplicationGraph;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -297,11 +301,11 @@ class DeploymentRetainedSwitchTest extends DeploymentManagedApplicationFixture {
         }
 
         private OperationResult<CommandResult> command(CommandRequest request) {
-            if (request.script().contains("/usr/bin/sha256sum --check --status"))
+            if (request.script().contains("managed-helper' probe"))
                 return reply(0, "HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
                     + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
             var args = new ArrayList<String>();
-            var matcher = Pattern.compile("'([^']*)'").matcher(request.script());
+            var matcher = Pattern.compile("'([^']*)'").matcher(DeploymentManagedHelperBundle.verifiedBody(request.script()));
             while (matcher.find())
                 args.add(matcher.group(1));
             String verb = args.get(1), unit = args.get(2);

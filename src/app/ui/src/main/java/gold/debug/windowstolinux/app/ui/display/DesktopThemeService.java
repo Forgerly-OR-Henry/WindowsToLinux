@@ -54,6 +54,7 @@ public final class DesktopThemeService {
         }
         com.formdev.flatlaf.util.UIScale.getUserScaleFactor();
         com.formdev.flatlaf.util.UIScale.setZoomFactor(scalePercent / 100f);
+        UIManager.put("Component.uiScale", com.formdev.flatlaf.util.UIScale.getUserScaleFactor());
     }
 
     /**

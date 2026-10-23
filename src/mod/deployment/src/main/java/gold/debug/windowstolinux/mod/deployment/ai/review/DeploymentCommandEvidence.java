@@ -81,6 +81,16 @@ public final class DeploymentCommandEvidence {
         }
         byte[] input = request.stdin();
         try {
+            if (operation.equals("deployment.toolchain.diagnostic.v1")
+                || operation.equals("deployment.toolchain.prepare.v1") && input.length != 0) {
+                if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Original diagnostic server required");
+                var diagnostic = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.decode(input);
+                if (!diagnostic.planRevision().equals(intent.revision())) throw new IllegalArgumentException("Original diagnostic plan differs");
+                facts.put("toolchainDiagnostic", gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.reviewFacts(
+                    operation.equals("deployment.toolchain.prepare.v1") ? "prepare-diagnosed" : "diagnose-only",
+                    invocation, input, intent.serverIds().getFirst(), intent.semantics().orElseThrow().targets(), layout));
+                facts.put("originalToolchainPreparation", diagnostic.preparationArguments());
+            }
             boolean trackedToolchain = Set.of("deployment.toolchain.prepare.tracked.v1", "deployment.toolchain.bind.tracked.v1",
                 "deployment.toolchain.observe.tracked.v1", "deployment.toolchain.cleanup.tracked.v1").contains(operation);
             if (trackedToolchain) {

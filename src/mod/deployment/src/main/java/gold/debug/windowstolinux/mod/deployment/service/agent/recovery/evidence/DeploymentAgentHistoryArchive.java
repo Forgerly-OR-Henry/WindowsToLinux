@@ -28,6 +28,7 @@ import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecution
 import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentOperationReceipts;
 import gold.debug.windowstolinux.mod.deployment.db.schema.DeploymentSchemaIdentity;
 import gold.debug.windowstolinux.mod.deployment.db.transaction.DeploymentStorageTransaction;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCompensation;
 
 /** Removes one actually settled Agent operation after preserving its durable receipt. / 保留持久凭据后移除一项实际结清的自主操作。 */
 public final class DeploymentAgentHistoryArchive {
@@ -168,7 +169,26 @@ public final class DeploymentAgentHistoryArchive {
                 }
             }
             boolean deliveryProof = events.stream().anyMatch(event -> event.type().equals(DeploymentAgentActionLog.DELIVERY_RECOVERY_SETTLED));
-            if (deliveryProof || !DeploymentAgentActionLog.effectsSettled(events)) {
+            boolean compensation = events.stream().anyMatch(event -> event.type().equals(DeploymentAgentPublicationCompensation.PLAN)
+                || event.type().equals(DeploymentAgentPublicationCompensation.DELIVERY_SETTLED));
+            if (compensation) {
+                if (!recovered || execution == null || observed.outcome() != TaskResult.FAILED || deliveryProof)
+                    throw new SQLException("Original compensation recovery is unconfirmed");
+                if (!task.id().equals(selected)) throw new SQLException("Compensation archival requires the authentic original task");
+                DeploymentAgentPublicationCompensation.FailureDeliveryProof proof;
+                try {
+                    DeploymentAgentPublicationCompensation.requireReleasedReferences(context, task, execution, connection);
+                    var template = new DeploymentExecutionStore(context.db()).publicationTemplate(execution).orElseThrow();
+                    proof = DeploymentAgentPublicationCompensation.deliveryProof(connection, selected, saved, execution, template, events);
+                } catch (SQLException unconfirmed) {
+                    throw unconfirmed;
+                } catch (Exception unconfirmed) {
+                    throw new SQLException("Original failed compensation proof is unconfirmed", unconfirmed);
+                }
+                if (events.stream().noneMatch(event -> event.type().equals(DeploymentAgentPublicationCompensation.DELIVERY_SETTLED)))
+                    DeploymentAgentPublicationCompensation.appendDeliveryProof(connection, selected, proof);
+                events = DeploymentAgentActionLog.events(connection, selected);
+            } else if (deliveryProof || !DeploymentAgentActionLog.effectsSettled(events)) {
                 if (!recovered || execution == null || observed.outcome() != TaskResult.SUCCEEDED)
                     throw new SQLException("Original delivery recovery is unconfirmed");
                 var template = new DeploymentExecutionStore(context.db()).publicationTemplate(execution).orElseThrow();

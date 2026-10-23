@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.db.execution;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -44,6 +45,25 @@ import gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocume
 import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishProposal;
 import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentRecovery;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCompensation;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationObservation;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryInstallation;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecovery;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflight;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnostic;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticFollowup;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrection;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationReconsideration;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrectionProgram;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticFollowupProgram;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticProgram;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuation;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflightProgram;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryDiagnostic;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryDiagnosticProgram;
+import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentOriginalPublishStatus;
 import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.application.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
@@ -56,6 +76,1730 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 /** Real H2/CLASS transaction fixtures; no model or SSH peer is started. / 真实H2/CLASS事务夹具，不启动模型或SSH替身。 */
 class DeploymentAgentHistoryArchiveTest extends DeploymentAgentArchiveFixture {
+    @ParameterizedTest
+    @ValueSource(strings={"identity","source-version","pending-intent","reused-grant"})
+    void readonlyDiagnosticRejectsChangedOriginalBindingAndReusedGrant(String change)throws Exception {
+        enable();
+        try(var runtime=open()) {
+            start(runtime,true);server(runtime);
+            run(runtime,task->{
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());
+                originalPublication(runtime,task,false);var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);
+                var old=compensationIntent(context,task,plan,UUID.randomUUID());
+                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.empty(),Optional.of(DeploymentAgentPublicationCompensation.failure())),false);
+                var oldResult=log.events(task).getLast();
+                assertTrue(DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).isEmpty(),"Original baseline is not a later observation");
+                compensationObservation(context,task,true);
+                var eligible=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                var unit=new DeploymentExecutionStore(context.db()).publicationTemplate(new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow()).orElseThrow().graph().components().getFirst().unit();
+                var program=new DeploymentAgentPublicationRecoveryDiagnosticProgram(unit.layout());
+                try(var request=program.request(diagnosticBinding(eligible),UUID.randomUUID())) {
+                    var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(unit.server(),plan.sha256(),request.command())
+                        .withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationRecoveryDiagnosticProgram.OPERATION,request.resourceTargets()));
+                    var diagnostic=DeploymentAgentPublicationRecoveryDiagnostic.open(task,log,eligible,request,intent);
+                    if(change.equals("reused-grant")) {
+                        diagnostic.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Local diagnostic fixture"),"5".repeat(64));
+                        var before=log.events(task);assertThrows(Exception.class,()->diagnostic.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(old.grant())));assertEquals(before,log.events(task));diagnostic.retainInterrupted();
+                    } else {
+                        var before=log.events(task);var forged=new ArrayList<>(before);var last=forged.getLast();var node=DeploymentJsonDocument.parse(last.detail());
+                        switch(change){case "identity"->node.put("task",UUID.randomUUID().toString());case "source-version"->node.put("sourceVersion","0".repeat(64));case "pending-intent"->node.put("pendingIntent",old.event()+1);default->throw new AssertionError(change);}
+                        forged.set(forged.size()-1,new DeploymentAgentActionLog.Event(last.id(),last.type(),last.action(),DeploymentJsonDocument.encode(node)));
+                        assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.read(forged,task.id()));assertEquals(before,log.events(task));diagnostic.retainInterrupted();
+                    }
+                }
+                assertEquals(Optional.of(old),DeploymentAgentPublicationCompensation.read(log.events(task),task.id()).pending());assertTrue(log.events(task).contains(oldResult));assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
+                compensationObservation(context,task,false);DeploymentAgentPublicationCompensation.observedOnly(task,log,old);
+                completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));return success();
+            });
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings={"refused-followup","denied-request","interrupted-request"})
+    void correctionRequiresCompleteFollowupAndConsumesDeniedOrInterruptedRequest(String scenario)throws Exception {
+        enable();
+        try(var runtime=open()) {
+            start(runtime,true);server(runtime);
+            run(runtime,task->{
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());
+                var layout=gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(),task,layout);
+                originalPublication(runtime,task,false);var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);
+                var old=compensationIntent(context,task,plan,UUID.randomUUID());
+                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.empty(),Optional.of(DeploymentAgentPublicationCompensation.failure())),false);
+                var oldResult=log.events(task).getLast();compensationObservation(context,task,true);
+                var original=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                appendReadyPreflightFixture(task,log,original,layout);appendUnknownContinuationFixture(task,log,layout);
+                compensationObservation(context,task,true);appendContractControlFixture(task,log,layout,true);
+                compensationObservation(context,task,true);var authority=appendObservedFollowupFixture(task,log,layout,!scenario.equals("refused-followup"));
+                var immutable=List.copyOf(log.events(task));
+                assertTrue(DeploymentAgentPublicationCorrection.eligibility(DeploymentAgentPublicationCompensation.read(immutable,task.id()),immutable).isEmpty());
+                compensationObservation(context,task,true);
+                var selected=DeploymentAgentPublicationCorrection.eligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task));
+                if(scenario.equals("refused-followup"))assertTrue(selected.isEmpty());
+                else {
+                    var eligible=selected.orElseThrow();var program=new DeploymentAgentPublicationCorrectionProgram(layout);
+                    UUID historicalAction=UUID.fromString(log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryDiagnostic.EVENT)).findFirst().orElseThrow().action());
+                    try(var reused=program.request(DeploymentAgentPublicationCorrection.binding(eligible),historicalAction)) {
+                        var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(plan.server()),plan.sha256(),reused.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationCorrectionProgram.OPERATION,reused.resourceTargets()));
+                        var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationCorrection.open(task,log,eligible,reused,intent));assertEquals(before,log.events(task));
+                    }
+                    try(var request=program.request(DeploymentAgentPublicationCorrection.binding(eligible),UUID.randomUUID())) {
+                        var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(plan.server()),plan.sha256(),request.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationCorrectionProgram.OPERATION,request.resourceTargets()));
+                        var durable=DeploymentAgentPublicationCorrection.open(task,log,eligible,request,intent);
+                        var before=log.events(task);
+                        for(String field:List.of("task","sourceVersion","prior","continuationRequest")) {
+                            var forged=new ArrayList<>(before);var event=forged.getLast();var node=DeploymentJsonDocument.parse(event.detail());
+                            if(field.equals("task"))node.put(field,UUID.randomUUID().toString());else if(field.equals("continuationRequest"))node.put(field,1);else node.put(field,"0".repeat(64));
+                            forged.set(forged.size()-1,new DeploymentAgentActionLog.Event(event.id(),event.type(),event.action(),DeploymentJsonDocument.encode(node)));
+                            assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.read(forged,task.id()));assertEquals(before,log.events(task));
+                        }
+                        boolean interrupted=scenario.equals("interrupted-request");
+                        durable.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(interrupted?"APPROVE":"DENY",false,"Local correction decision"),"5".repeat(64));
+                        if(interrupted) {
+                            var beforeGrant=log.events(task);assertThrows(Exception.class,()->durable.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(authority.get("grant"))));assertEquals(beforeGrant,log.events(task));
+                            durable.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID()));durable.dispatch();
+                        }
+                        durable.retainInterrupted();assertTrue(DeploymentAgentPublicationCorrection.attempted(log.events(task),eligible));
+                        var attempted=log.events(task);try(var again=program.request(DeploymentAgentPublicationCorrection.binding(eligible),UUID.randomUUID())) {
+                            var next=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(plan.server()),plan.sha256(),again.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationCorrectionProgram.OPERATION,again.resourceTargets()));
+                            assertThrows(Exception.class,()->DeploymentAgentPublicationCorrection.open(task,log,eligible,again,next));assertEquals(attempted,log.events(task));
+                        }
+                        assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.observedOnly(task,log,old));assertEquals(attempted,log.events(task));
+                    }
+                }
+                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());assertTrue(state.verified().isEmpty());
+                assertEquals(immutable,log.events(task).subList(0,immutable.size()));assertTrue(log.events(task).contains(oldResult));assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
+                compensationObservation(context,task,false);DeploymentAgentPublicationCompensation.observedOnly(task,log,old);completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));return success();
+            }, java.time.Duration.ofSeconds(60));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings={"identity","source-version","prior-receipt","old-result","old-observation","reused-grant","reused-action","repeat","non-control"})
+    void contractFollowupKeepsOldCodecAndRejectsChangedOrConsumedEvidence(String change)throws Exception {
+        enable();
+        try(var runtime=open()) {
+            start(runtime,true);server(runtime);
+            run(runtime,task->{
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());
+                var layout=gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(),task,layout);
+                originalPublication(runtime,task,false);var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);
+                var old=compensationIntent(context,task,plan,UUID.randomUUID());
+                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.empty(),Optional.of(DeploymentAgentPublicationCompensation.failure())),false);
+                var oldResult=log.events(task).getLast();compensationObservation(context,task,true);
+                var original=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                var prior=appendReadyPreflightFixture(task,log,original,layout);appendUnknownContinuationFixture(task,log,layout);compensationObservation(context,task,true);
+                var authority=appendContractControlFixture(task,log,layout,!change.equals("non-control"));var immutable=List.copyOf(log.events(task));
+                assertEquals(Optional.of(old),DeploymentAgentPublicationCompensation.read(immutable,task.id()).pending());
+                assertTrue(DeploymentAgentPublicationContractDiagnosticFollowup.eligibility(DeploymentAgentPublicationCompensation.read(immutable,task.id()),immutable).isEmpty());
+                if(!change.equals("old-observation"))compensationObservation(context,task,true);
+                var selected=DeploymentAgentPublicationContractDiagnosticFollowup.eligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task));
+                if(Set.of("old-observation","non-control").contains(change))assertTrue(selected.isEmpty());
+                else {
+                    var eligible=selected.orElseThrow();var program=new DeploymentAgentPublicationContractDiagnosticFollowupProgram(layout);
+                    UUID action=change.equals("reused-action")?UUID.fromString(log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryDiagnostic.EVENT)).findFirst().orElseThrow().action()):UUID.randomUUID();
+                    try(var request=program.request(DeploymentAgentPublicationContractDiagnosticFollowup.binding(eligible),action)) {
+                        var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(plan.server()),plan.sha256(),request.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationContractDiagnosticFollowupProgram.OPERATION,request.resourceTargets()));
+                        if(change.equals("reused-action")){var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationContractDiagnosticFollowup.open(task,log,eligible,request,intent));assertEquals(before,log.events(task));}
+                        else {
+                            var durable=DeploymentAgentPublicationContractDiagnosticFollowup.open(task,log,eligible,request,intent);
+                            if(change.equals("reused-grant")) {
+                                durable.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Local followup review"),"5".repeat(64));
+                                var before=log.events(task);assertThrows(Exception.class,()->durable.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(authority.get("grant"))));assertEquals(before,log.events(task));
+                            } else if(change.equals("repeat")) {
+                                var before=log.events(task);try(var again=program.request(DeploymentAgentPublicationContractDiagnosticFollowup.binding(eligible),UUID.randomUUID())) {
+                                    var next=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(plan.server()),plan.sha256(),again.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationContractDiagnosticFollowupProgram.OPERATION,again.resourceTargets()));
+                                    assertThrows(Exception.class,()->DeploymentAgentPublicationContractDiagnosticFollowup.open(task,log,eligible,again,next));assertEquals(before,log.events(task));
+                                }
+                            } else {
+                                var before=log.events(task);var forged=new ArrayList<>(before);var event=forged.getLast();var node=DeploymentJsonDocument.parse(event.detail());
+                                if(change.equals("identity"))node.put("task",UUID.randomUUID().toString());
+                                else if(change.equals("source-version"))node.put("sourceVersion","0".repeat(64));
+                                else if(change.equals("prior-receipt"))((com.fasterxml.jackson.databind.node.ObjectNode)node.path("binding").path("prior")).put("receiptSha256","0".repeat(64));
+                                else if(change.equals("old-result"))((com.fasterxml.jackson.databind.node.ObjectNode)node.path("binding").path("diagnostic").path("continuation")).put("pendingResultSha256","0".repeat(64));
+                                else throw new AssertionError(change);
+                                forged.set(forged.size()-1,new DeploymentAgentActionLog.Event(event.id(),event.type(),event.action(),DeploymentJsonDocument.encode(node)));
+                                assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.read(forged,task.id()));assertEquals(before,log.events(task));
+                            }
+                            durable.retainInterrupted();assertTrue(DeploymentAgentPublicationContractDiagnosticFollowup.attempted(log.events(task),eligible));
+                            var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.observedOnly(task,log,old));assertEquals(before,log.events(task));
+                        }
+                    }
+                }
+                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());assertTrue(state.verified().isEmpty());
+                assertEquals(immutable,log.events(task).subList(0,immutable.size()));assertTrue(log.events(task).contains(oldResult));assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
+                compensationObservation(context,task,false);DeploymentAgentPublicationCompensation.observedOnly(task,log,old);completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));return success();
+            });
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings={"identity","source-version","prior-receipt","old-result","reused-grant","reused-action","repeat","old-observation"})
+    void contractDiagnosticRequiresNewObservationAndRejectsChangedHistory(String change)throws Exception {
+        enable();
+        try(var runtime=open()) {
+            start(runtime,true);server(runtime);
+            run(runtime,task->{
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());
+                var capturedLayout=gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(),task,capturedLayout);
+                originalPublication(runtime,task,false);var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);
+                var old=compensationIntent(context,task,plan,UUID.randomUUID());
+                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.empty(),Optional.of(DeploymentAgentPublicationCompensation.failure())),false);
+                var originalResult=log.events(task).getLast();compensationObservation(context,task,true);
+                var original=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                var unit=new DeploymentExecutionStore(context.db()).publicationTemplate(new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow()).orElseThrow().graph().components().getFirst().unit();
+                var prior=appendReadyPreflightFixture(task,log,original,unit.layout());
+                appendUnknownContinuationFixture(task,log,unit.layout());
+                assertTrue(DeploymentAgentPublicationContractDiagnostic.eligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).isEmpty());
+                compensationObservation(context,task,true);
+                var v1=log.events(task).stream().filter(e->Set.of(DeploymentAgentPublicationRecoveryDiagnostic.EVENT,DeploymentAgentPublicationRecoveryPreflight.EVENT,DeploymentAgentPublicationContinuation.EVENT).contains(e.type())).toList();
+                var selected=DeploymentAgentPublicationContractDiagnostic.eligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task));
+                {
+                    var eligible=selected.orElseThrow();var program=new DeploymentAgentPublicationContractDiagnosticProgram(unit.layout());
+                    try(var request=program.request(DeploymentAgentPublicationContractDiagnostic.binding(eligible),change.equals("reused-action")?UUID.fromString(v1.getFirst().action()):UUID.randomUUID())) {
+                        var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(unit.server(),plan.sha256(),request.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationContractDiagnosticProgram.OPERATION,request.resourceTargets()));
+                        if(change.equals("reused-action")){var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationContractDiagnostic.open(task,log,eligible,request,intent));assertEquals(before,log.events(task));}
+                        else {
+                            var preflight=DeploymentAgentPublicationContractDiagnostic.open(task,log,eligible,request,intent);
+                            if(change.equals("old-observation")) {
+                                var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.observedOnly(task,log,old));assertEquals(before,log.events(task));
+                            }else if(change.equals("reused-grant")) {
+                                preflight.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Local preflight fixture"),"5".repeat(64));
+                                var before=log.events(task);assertThrows(Exception.class,()->preflight.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(prior.get("grant"))));assertEquals(before,log.events(task));
+                            }else if(change.equals("repeat")) {
+                                var before=log.events(task);try(var again=program.request(DeploymentAgentPublicationContractDiagnostic.binding(eligible),UUID.randomUUID())) {
+                                    var next=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(unit.server(),plan.sha256(),again.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationContractDiagnosticProgram.OPERATION,again.resourceTargets()));
+                                    assertThrows(Exception.class,()->DeploymentAgentPublicationContractDiagnostic.open(task,log,eligible,again,next));assertEquals(before,log.events(task));
+                                }
+                            }else {
+                                var before=log.events(task);var forged=new ArrayList<>(before);var event=forged.getLast();var node=DeploymentJsonDocument.parse(event.detail());
+                                if(change.equals("identity"))node.put("task",UUID.randomUUID().toString());
+                                else if(change.equals("source-version"))node.put("sourceVersion","0".repeat(64));
+                                else if(change.equals("prior-receipt"))((com.fasterxml.jackson.databind.node.ObjectNode)node.path("binding").path("prior")).put("receiptSha256","0".repeat(64));
+                                else if(change.equals("old-result"))((com.fasterxml.jackson.databind.node.ObjectNode)node.path("binding").path("continuation")).put("pendingResultSha256","0".repeat(64));
+                                else throw new AssertionError(change);
+                                forged.set(forged.size()-1,new DeploymentAgentActionLog.Event(event.id(),event.type(),event.action(),DeploymentJsonDocument.encode(node)));
+                                assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.read(forged,task.id()));assertEquals(before,log.events(task));
+                            }
+                            preflight.retainInterrupted();
+                        }
+                    }
+                }
+                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());long barrier=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationContractDiagnostic.EVENT)).reduce((a,b)->b).map(DeploymentAgentActionLog.Event::id).orElse(v1.getLast().id());assertEquals(barrier,state.lastActionEvent());
+                assertEquals(v1,log.events(task).stream().filter(e->Set.of(DeploymentAgentPublicationRecoveryDiagnostic.EVENT,DeploymentAgentPublicationRecoveryPreflight.EVENT,DeploymentAgentPublicationContinuation.EVENT).contains(e.type())).toList());assertTrue(log.events(task).contains(originalResult));assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
+                compensationObservation(context,task,false);DeploymentAgentPublicationCompensation.observedOnly(task,log,old);completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));return success();
+            });
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings={"identity","source-version","prior-receipt","current-fingerprint","old-result","reused-grant","reused-action","repeat","old-observation"})
+    void continuationRejectsChangedCurrentStateAndReusedAuthority(String change)throws Exception {
+        enable();
+        try(var runtime=open()) {
+            start(runtime,true);server(runtime);
+            run(runtime,task->{
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());
+                originalPublication(runtime,task,false);var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);
+                var old=compensationIntent(context,task,plan,UUID.randomUUID());
+                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.empty(),Optional.of(DeploymentAgentPublicationCompensation.failure())),false);
+                var originalResult=log.events(task).getLast();compensationObservation(context,task,true);
+                var original=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                var unit=new DeploymentExecutionStore(context.db()).publicationTemplate(new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow()).orElseThrow().graph().components().getFirst().unit();
+                var prior=appendReadyPreflightFixture(task,log,original,unit.layout());
+                var v1=log.events(task).stream().filter(e->Set.of(DeploymentAgentPublicationRecoveryDiagnostic.EVENT,DeploymentAgentPublicationRecoveryPreflight.EVENT).contains(e.type())).toList();
+                var selected=DeploymentAgentPublicationContinuation.eligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task));
+                {
+                    var eligible=selected.orElseThrow();var program=new DeploymentAgentPublicationContinuationProgram(unit.layout());
+                    try(var request=program.request(DeploymentAgentPublicationContinuation.binding(eligible),change.equals("reused-action")?UUID.fromString(v1.getFirst().action()):UUID.randomUUID())) {
+                        var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(unit.server(),plan.sha256(),request.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationContinuationProgram.OPERATION,request.resourceTargets()));
+                        if(change.equals("reused-action")){var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationContinuation.open(task,log,eligible,request,intent));assertEquals(before,log.events(task));}
+                        else {
+                            var preflight=DeploymentAgentPublicationContinuation.open(task,log,eligible,request,intent);
+                            if(change.equals("old-observation")) {
+                                var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.observedOnly(task,log,old));assertEquals(before,log.events(task));
+                            }else if(change.equals("reused-grant")) {
+                                preflight.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Local preflight fixture"),"5".repeat(64));
+                                var before=log.events(task);assertThrows(Exception.class,()->preflight.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(prior.get("grant"))));assertEquals(before,log.events(task));
+                            }else if(change.equals("repeat")) {
+                                var before=log.events(task);try(var again=program.request(DeploymentAgentPublicationContinuation.binding(eligible),UUID.randomUUID())) {
+                                    var next=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(unit.server(),plan.sha256(),again.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationContinuationProgram.OPERATION,again.resourceTargets()));
+                                    assertThrows(Exception.class,()->DeploymentAgentPublicationContinuation.open(task,log,eligible,again,next));assertEquals(before,log.events(task));
+                                }
+                            }else {
+                                var before=log.events(task);var forged=new ArrayList<>(before);var event=forged.getLast();var node=DeploymentJsonDocument.parse(event.detail());
+                                if(change.equals("identity"))node.put("task",UUID.randomUUID().toString());
+                                else if(change.equals("source-version"))node.put("sourceVersion","0".repeat(64));
+                                else if(change.equals("prior-receipt"))((com.fasterxml.jackson.databind.node.ObjectNode)node.path("binding").path("preflight")).put("receiptSha256","0".repeat(64));
+                                else if(change.equals("current-fingerprint"))((com.fasterxml.jackson.databind.node.ObjectNode)node.path("binding").path("current")).put("unitSha256","0".repeat(64));
+                                else if(change.equals("old-result"))((com.fasterxml.jackson.databind.node.ObjectNode)node.path("binding")).put("pendingResultSha256","0".repeat(64));
+                                else throw new AssertionError(change);
+                                forged.set(forged.size()-1,new DeploymentAgentActionLog.Event(event.id(),event.type(),event.action(),DeploymentJsonDocument.encode(node)));
+                                assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.read(forged,task.id()));assertEquals(before,log.events(task));
+                            }
+                            preflight.retainInterrupted();
+                        }
+                    }
+                }
+                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());long barrier=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationContinuation.EVENT)).reduce((a,b)->b).map(DeploymentAgentActionLog.Event::id).orElse(originalResult.id());assertEquals(barrier,state.lastActionEvent());
+                assertEquals(v1,log.events(task).stream().filter(e->Set.of(DeploymentAgentPublicationRecoveryDiagnostic.EVENT,DeploymentAgentPublicationRecoveryPreflight.EVENT).contains(e.type())).toList());assertTrue(log.events(task).contains(originalResult));assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
+                compensationObservation(context,task,false);DeploymentAgentPublicationCompensation.observedOnly(task,log,old);completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));return success();
+            });
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings={"identity","source-version","prior-receipt","reused-grant","reused-action","repeat","legacy-incomplete","legacy-not-env-failure"})
+    void preflightRejectsChangedHistoryIdentityAndReusedAuthority(String change)throws Exception {
+        enable();
+        try(var runtime=open()) {
+            start(runtime,true);server(runtime);
+            run(runtime,task->{
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());
+                originalPublication(runtime,task,false);var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);
+                var old=compensationIntent(context,task,plan,UUID.randomUUID());
+                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.empty(),Optional.of(DeploymentAgentPublicationCompensation.failure())),false);
+                var originalResult=log.events(task).getLast();compensationObservation(context,task,true);
+                var original=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                var unit=new DeploymentExecutionStore(context.db()).publicationTemplate(new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow()).orElseThrow().graph().components().getFirst().unit();
+                String legacy=change.equals("legacy-incomplete")?"INCOMPLETE":change.equals("legacy-not-env-failure")?"NOT_ENV_FAILURE":"ENV_FAIL";
+                var prior=appendV1DiagnosticFixture(task,log,original,unit.layout(),legacy);
+                var v1=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryDiagnostic.EVENT)).toList();
+                var selected=DeploymentAgentPublicationRecoveryPreflight.eligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task));
+                if(!legacy.equals("ENV_FAIL"))assertTrue(selected.isEmpty());
+                else {
+                    var eligible=selected.orElseThrow();var program=new DeploymentAgentPublicationRecoveryPreflightProgram(unit.layout());
+                    try(var request=program.request(preflightBinding(eligible),change.equals("reused-action")?prior.get("action"):UUID.randomUUID())) {
+                        var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(unit.server(),plan.sha256(),request.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationRecoveryPreflightProgram.OPERATION,request.resourceTargets()));
+                        if(change.equals("reused-action")){var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationRecoveryPreflight.open(task,log,eligible,request,intent));assertEquals(before,log.events(task));}
+                        else {
+                            var preflight=DeploymentAgentPublicationRecoveryPreflight.open(task,log,eligible,request,intent);
+                            if(change.equals("reused-grant")) {
+                                preflight.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Local preflight fixture"),"5".repeat(64));
+                                var before=log.events(task);assertThrows(Exception.class,()->preflight.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(prior.get("grant"))));assertEquals(before,log.events(task));
+                            }else if(change.equals("repeat")) {
+                                var before=log.events(task);try(var again=program.request(preflightBinding(eligible),UUID.randomUUID())) {
+                                    var next=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(unit.server(),plan.sha256(),again.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationRecoveryPreflightProgram.OPERATION,again.resourceTargets()));
+                                    assertThrows(Exception.class,()->DeploymentAgentPublicationRecoveryPreflight.open(task,log,eligible,again,next));assertEquals(before,log.events(task));
+                                }
+                            }else {
+                                var before=log.events(task);var forged=new ArrayList<>(before);var event=forged.getLast();var node=DeploymentJsonDocument.parse(event.detail());
+                                if(change.equals("identity"))node.put("task",UUID.randomUUID().toString());
+                                else if(change.equals("source-version"))node.put("sourceVersion","0".repeat(64));
+                                else if(change.equals("prior-receipt"))((com.fasterxml.jackson.databind.node.ObjectNode)node.path("binding").path("prior")).put("receiptSha256","0".repeat(64));
+                                else throw new AssertionError(change);
+                                forged.set(forged.size()-1,new DeploymentAgentActionLog.Event(event.id(),event.type(),event.action(),DeploymentJsonDocument.encode(node)));
+                                assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.read(forged,task.id()));assertEquals(before,log.events(task));
+                            }
+                            preflight.retainInterrupted();
+                        }
+                    }
+                }
+                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());assertEquals(originalResult.id(),state.lastActionEvent());
+                assertEquals(v1,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryDiagnostic.EVENT)).toList());assertTrue(log.events(task).contains(originalResult));assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
+                compensationObservation(context,task,false);DeploymentAgentPublicationCompensation.observedOnly(task,log,old);completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));return success();
+            });
+        }
+    }
+
+    /** Authentic original TaskWork/journal; APP model and host/SSH are local capability peers, not real remote acceptance. */
+    @ParameterizedTest
+    @ValueSource(strings={"complete","unknown","timeout","goal-already"})
+    void correctionEveryResultRetainsUnknownUntilFreshGoalAndIndependentCleanup(String scenario)throws Exception {
+        correctionScenario(scenario);
+    }
+
+    @Test
+    void correctionDenialRetainsRedactedReasonWithoutGrantOrReplay()throws Exception {
+        correctionScenario("deny");
+    }
+
+    @Test
+    void reconsiderationHumanRefusalConsumesAdmissionWithoutApp()throws Exception {correctionScenario("reconsider-refuse");}
+
+    @Test
+    void reconsiderationCancellationConsumesAdmissionWithoutApp()throws Exception {correctionScenario("reconsider-cancel");}
+
+    @Test
+    void reconsiderationConfirmedDenialRetainsUnknownWithoutGrant()throws Exception {correctionScenario("reconsider-app-deny");}
+
+    @Test
+    void reconsiderationConfirmedApprovalNeedsFreshGrantAndLaterGoal()throws Exception {correctionScenario("reconsider-approve");}
+
+    @Test
+    void reconsiderationConfirmedGoalSkipsCorrectionMutation()throws Exception {correctionScenario("reconsider-goal");}
+
+    private void correctionScenario(String scenario)throws Exception {
+        boolean reconsiderationCase=scenario.startsWith("reconsider-");
+        boolean initiallyDenied=scenario.equals("deny")||reconsiderationCase;
+        enable();
+        try(var runtime=open()) {
+            start(runtime,true);server(runtime);
+            run(runtime,task->{
+                long fixtureStarted=System.nanoTime();
+                java.util.function.Consumer<String> fixturePhase=name->{System.out.println("CORRECTION_FIXTURE_PHASE scenario="+scenario+" phase="+name+" elapsedNanos="+(System.nanoTime()-fixtureStarted));try{task.progress("Correction fixture "+name,Optional.empty());}catch(gold.debug.windowstolinux.appapi.task.result.ApiException unavailable){throw new AssertionError("Fixture phase could not be recorded",unavailable);}};
+                fixturePhase.accept("TASK_WORK_BEGIN");
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());var store=new DeploymentExecutionStore(context.db());
+                var server=new ServerId("server");String fingerprint="local-diagnostic-peer";
+                var capturedLayout=gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(),task,capturedLayout);
+                originalPublication(runtime,task,false,DeploymentAgentInputs.hash(server.id()+":"+fingerprint),DeploymentAgentInputs.targetProfile(context.servers().get(server,task)));
+                var formal=store.findForTask(task).orElseThrow();var template=store.publicationTemplate(formal).orElseThrow();var unit=template.graph().components().getFirst().unit();
+                assertEquals(capturedLayout,gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.original(context,task,log.find(task).orElseThrow().identity(),log.events(task)));
+                var installedProgram=new DeploymentAgentPublicationRecoveryProgram(unit.layout());
+                var installation=DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"b".repeat(64),installedProgram);
+                try(var ready=installedProgram.readiness(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,ready);installation.result(ready.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"));}
+                try(var install=installedProgram.install(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,install);installation.result(install.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),install.action().toString().replace("-","")));}
+                var installationFrames=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList();
+                var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);var old=compensationIntent(context,task,plan,UUID.randomUUID());
+                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(70),"PUBLICATION_RECOVERY_FAILURE=UNKNOWN\n","",false)),Optional.of(new Problem(ProblemCode.IO_FAILURE,"SSH_COMMAND_NONZERO","Local rollback peer returned a nonzero exit",Map.of(),Optional.empty()))),false);
+                var oldResult=log.events(task).getLast();compensationObservation(context,task,true);
+                var eligible=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                appendReadyPreflightFixture(task,log,eligible,unit.layout());
+                appendUnknownContinuationFixture(task,log,unit.layout());
+                compensationObservation(context,task,true);appendContractControlFixture(task,log,unit.layout(),true);
+                compensationObservation(context,task,true);appendObservedFollowupFixture(task,log,unit.layout(),true);
+                var immutableOld=List.copyOf(log.events(task));fixturePhase.accept("OLD_IMMUTABLE_HISTORY_READY");
+                var program=new DeploymentAgentPublicationCorrectionProgram(unit.layout());
+                var correctionBinding=new AtomicReference<DeploymentAgentPublicationCorrectionProgram.Binding>();
+                String denialReason="Correction denied: bounded public reason\npassword=LOCAL_PASSWORD_SENTINEL\napi_key=LOCAL_API_KEY_SENTINEL\n"+"Retained explanation. ".repeat(60);
+                var deniedExactAction=new AtomicReference<String>();
+                var allowGoal=new java.util.concurrent.atomic.AtomicBoolean(scenario.equals("goal-already"));
+                var reviews=new java.util.concurrent.atomic.AtomicInteger();var grants=new java.util.concurrent.atomic.AtomicInteger();var sends=new java.util.concurrent.atomic.AtomicInteger();
+                var humanQuestions=new java.util.concurrent.atomic.AtomicInteger();var reconsiderationReviews=new java.util.concurrent.atomic.AtomicInteger();var correctionGrants=new java.util.concurrent.atomic.AtomicInteger();
+                var granted=new AtomicReference<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>();var expectedCommand=new AtomicReference<String>();var diagnosticAction=new AtomicReference<UUID>();var correctionSends=new java.util.concurrent.atomic.AtomicInteger();var cleanups=new java.util.concurrent.atomic.AtomicInteger();var uniqueGrants=new java.util.HashSet<UUID>();
+                var ai=(gold.debug.windowstolinux.appapi.ai.AiService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.ai.AiService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.ai.AiService.class},(p,m,a)->{if(m.getName().equals("configurationRevision"))return "b".repeat(64);throw new AssertionError("No provider call in local diagnostic fixture");});
+                var reviewedContext=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},(p,m,a)->m.getName().equals("ai")?ai:invoke(m,context,a));
+                gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel model=(instructions,facts,intent,command,revision,supplied)->{
+                    assertTrue(supplied==task);reviews.incrementAndGet();
+                    var node=new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(facts);
+                    if(node.has("publicationCorrection")) {
+                        assertEquals(plan.sha256(),intent.revision());
+                        assertEquals(program.source(),node.path("completeExecutableInput").asText());assertEquals(program.sourceVersion(),node.at("/publicationCorrection/expectedSourceVersion").asText());
+                        assertEquals(old.event(),node.at("/publicationCorrection/binding/followup/diagnostic/continuation/original/pendingIntentEvent").longValue());
+                        diagnosticAction.set(UUID.fromString(node.at("/publicationCorrection/action").asText()));expectedCommand.set(command.script());
+                        deniedExactAction.set(DeploymentAgentInputs.hash(intent.exactAction()));
+                        try(var decoded=program.decode(command)){correctionBinding.set(decoded.binding());assertEquals(old.event(),decoded.binding().followup().diagnostic().continuation().original().pendingIntentEvent());}
+                    }
+                    boolean reconsidered=node.path("currentCommandEvidence").has("publicationReconsideration");
+                    if(reconsidered) {
+                        reconsiderationReviews.incrementAndGet();assertEquals(1,humanQuestions.get());
+                        assertTrue(node.path("currentCommandEvidence").path("publicationReconsideration").isObject());
+                    }
+                    boolean denied=node.has("publicationCorrection")&&(reconsidered?scenario.equals("reconsider-app-deny"):initiallyDenied);
+                    return new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel.Result(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(denied?"DENY":"APPROVE",false,denied?denialReason:"Local diagnostic decision"),Map.of());
+                };
+                var host=(gold.debug.windowstolinux.appapi.task.action.InteractionService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.task.action.InteractionService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class},(p,m,a)->{
+                    if(m.getName().equals("requestText")) {
+                        assertTrue(a[3]==task);assertEquals(false,a[2]);assertEquals(1,humanQuestions.incrementAndGet());
+                        var question=DeploymentAgentPublicationReconsideration.validateQuestion(task.id(),(String)a[0],(String)a[1]);
+                        assertEquals(task.id(),question.task());assertTrue(question.questionSha256().matches("[0-9a-f]{64}"));
+                        assertEquals(0,correctionGrants.get());assertEquals(0,correctionSends.get());
+                        assertEquals(3,reviews.get());assertEquals(2,grants.get());assertEquals(2,sends.get());
+                        if(scenario.equals("reconsider-refuse"))return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(DeploymentAgentPublicationReconsideration.ALLOW+" "),Optional.empty());
+                        if(scenario.equals("reconsider-goal"))allowGoal.set(true);
+                        if(scenario.equals("reconsider-app-deny")||scenario.equals("reconsider-approve")||scenario.equals("reconsider-goal"))return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(DeploymentAgentPublicationReconsideration.ALLOW),Optional.empty());
+                        return new OperationResult<>(TaskResult.CANCELLED,Optional.empty(),Optional.empty());
+                    }
+                    if(!m.getName().equals("approveReviewedAction"))throw new AssertionError("Diagnostic cannot bypass APP");
+                    var reviewedIntent=(gold.debug.windowstolinux.appapi.task.action.ActionIntent)a[0];
+                    if(reviewedIntent.semantics().map(v->v.operation().equals(DeploymentAgentPublicationCorrectionProgram.OPERATION)).orElse(false))correctionGrants.incrementAndGet();
+                    grants.incrementAndGet();var value=new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID());assertTrue(uniqueGrants.add(value.id()));granted.set(value);return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(value),Optional.empty());
+                });
+                var session=(gold.debug.windowstolinux.appapi.linux.session.RemoteSession)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class},(p,m,a)->{
+                    if(m.getName().equals("facts"))return new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("Linux","x86_64",fingerprint);
+                    if(!m.getName().equals("execute"))throw new AssertionError("No mutation or other remote capability");
+                    var command=(gold.debug.windowstolinux.appapi.linux.command.CommandRequest)a[0];assertEquals(granted.get(),a[1]);sends.incrementAndGet();
+                    if(command.script().contains("'publication-original-status'")) {
+                        boolean retained=!allowGoal.get()&&command.script().contains("'"+unit.id()+"'");
+                        String output="PUBLICATION_STATUS=1\nCURRENT="+(retained?plan.components().getFirst().release():"none")+"\nCURRENT_KIND="+(retained?"deployment":"none")+"\nCURRENT_MODE="+(retained?"DAEMON":"none")+"\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE="+(cleanups.get()==2?"absent":"owned")+"\nBUILD_ACTIVE=no\nUNIT_PRESENT="+(retained?"yes":"no")+"\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT="+(retained?1:0)+"\n";
+                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),output,"",false)),Optional.empty());
+                    }
+                    if(command.script().contains("'candidate-cleanup-task'")) {cleanups.incrementAndGet();return localReceipt("CANDIDATE_CLEANED=1\n");}
+                    assertEquals(expectedCommand.get(),command.script());correctionSends.incrementAndGet();
+                    try(var expected=program.request(correctionBinding.get(),diagnosticAction.get())) {
+                        assertEquals(expected.command().script(),command.script());assertTrue(java.util.Arrays.equals(expected.command().stdin(),command.stdin()));
+                        if(scenario.equals("timeout"))return new OperationResult<>(TaskResult.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"LOCAL_CONTINUATION_TIMEOUT","Local peer timeout",Map.of(),Optional.empty())));
+                        String output=DeploymentAgentPublicationCorrectionProgram.FRAME+correctionSafeReceipt(program,expected,scenario.equals("unknown"))+"\n";
+                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),output,"",false)),Optional.empty());
+                    }
+                });
+                var scope=new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope(reviewedContext,host,task,"MANUAL_REVIEW",false,()->"b".repeat(64),null,gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE,()->model);
+                var candidates=new java.util.LinkedHashMap<String,gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate>();
+                for(var component:plan.components())candidates.put(component.id(),new gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate(component.candidate(),"f".repeat(64),"e".repeat(64),"0".repeat(64),false,Map.of()));
+                var producer=new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log);
+                fixturePhase.accept("FIRST_RECONCILE_BEGIN");
+                boolean firstResult=producer.run();fixturePhase.accept("FIRST_RECONCILE_END");
+                if(scenario.equals("goal-already")) {
+                    assertTrue(firstResult);assertEquals(0,correctionSends.get());assertEquals(2,cleanups.get());
+                    assertTrue(log.events(task).stream().noneMatch(e->e.type().equals(DeploymentAgentPublicationCorrection.EVENT)));
+                    assertEquals(TaskResult.FAILED,new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task)).outcome());return success();
+                }
+                assertFalse(firstResult);
+                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());
+                assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());assertTrue(state.verified().isEmpty());
+                assertEquals(0,cleanups.get());assertEquals(3,reviews.get());assertEquals(initiallyDenied?2:3,grants.get());
+                assertEquals(initiallyDenied?2:3,sends.get());assertEquals(initiallyDenied?0:1,correctionSends.get());
+                assertTrue(state.lastActionEvent()>immutableOld.getLast().id());
+                var correctionEvents=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationCorrection.EVENT)).toList();
+                assertFalse(correctionEvents.isEmpty());var afterAttempt=List.copyOf(correctionEvents);
+                var deniedDiagnostics=new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(context).read(task.id());
+                assertTrue(deniedDiagnostics.problem().isEmpty());
+                var denialRecords=deniedDiagnostics.records().stream().filter(r->r.event().eventCode().equals("DEPLOYMENT_AGENT_REVIEW_DENIED")).toList();
+                if(initiallyDenied) {
+                    assertEquals(1,denialRecords.size());var record=denialRecords.getFirst();String message=record.event().message();
+                    assertEquals(Optional.of(task.id()),record.event().taskId());assertFalse(record.truncated());
+                    assertTrue(message.startsWith("type=COMMAND action="+deniedExactAction.get()+" Correction denied: bounded public reason"));
+                    assertTrue(message.contains("[credential content excluded]"));
+                    assertFalse(message.contains("LOCAL_PASSWORD_SENTINEL"));assertFalse(message.contains("LOCAL_API_KEY_SENTINEL"));
+                    assertTrue(message.length()<=512+"type=COMMAND action=".length()+64+1);
+                    assertTrue(message.getBytes(java.nio.charset.StandardCharsets.UTF_8).length<=2048);
+                    assertTrue(message.chars().noneMatch(Character::isISOControl));assertFalse(message.contains("WTL-SSH-COMMAND-1"));
+                    assertEquals(List.of("REQUEST","REVIEW","NOT_SENT"),correctionEvents.stream().map(e->{try{return new com.fasterxml.jackson.databind.ObjectMapper().readTree(e.detail()).path("kind").asText();}catch(Exception invalid){throw new AssertionError(invalid);}}).toList());
+                } else assertTrue(denialRecords.isEmpty());
+                assertEquals(immutableOld,log.events(task).subList(0,immutableOld.size()));assertTrue(log.events(task).contains(oldResult));
+                assertEquals(installationFrames,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList());
+                assertTrue(log.events(task).stream().noneMatch(e->Set.of("AI_PUBLICATION_FINISHED","AI_PUBLICATION_CLEANED","AI_RECOVERY_SETTLED").contains(e.type())));
+                assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
+                var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.observedOnly(task,log,old));assertEquals(before,log.events(task));
+                if(scenario.equals("reconsider-refuse"))correctionReconsiderationRejectsEffectfulPrefixes(before,task.id());
+                fixturePhase.accept("REPEAT_UNMET_RECONCILE_BEGIN");
+                if(initiallyDenied) {
+                    boolean reconsideredResult=new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run();
+                    if(scenario.equals("reconsider-goal")) {
+                        assertTrue(reconsideredResult);assertEquals(1,humanQuestions.get());assertEquals(0,reconsiderationReviews.get());
+                        assertEquals(0,correctionGrants.get());assertEquals(0,correctionSends.get());assertEquals(2,cleanups.get());
+                        assertEquals(afterAttempt,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationCorrection.EVENT)).toList());
+                        assertTrue(log.events(task).contains(oldResult));
+                        var admitted=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationReconsideration.EVENT)).toList();
+                        assertTrue(admitted.stream().noneMatch(e->{try{return new com.fasterxml.jackson.databind.ObjectMapper().readTree(e.detail()).path("kind").asText().equals("REQUEST");}catch(Exception invalid){throw new AssertionError(invalid);}}));
+                        assertTrue(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()).verified().isPresent());
+                        assertEquals(TaskResult.FAILED,new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task)).outcome());return success();
+                    }
+                    assertFalse(reconsideredResult);
+                } else assertThrows(Exception.class,()->new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run());
+                fixturePhase.accept("REPEAT_UNMET_RECONCILE_END");
+                assertEquals(afterAttempt,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationCorrection.EVENT)).toList());assertEquals(0,cleanups.get());
+                if(initiallyDenied) {
+                    var retainedDiagnostics=new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(context).read(task.id());
+                    assertTrue(retainedDiagnostics.problem().isEmpty());
+                    var retainedDenials=retainedDiagnostics.records().stream().filter(r->r.event().eventCode().equals("DEPLOYMENT_AGENT_REVIEW_DENIED")).toList();
+                    assertEquals(scenario.equals("reconsider-app-deny")?2:1,retainedDenials.size());
+                    assertTrue(retainedDenials.containsAll(denialRecords));
+                    for(var record:retainedDenials) {assertFalse(record.event().message().contains("LOCAL_PASSWORD_SENTINEL"));assertFalse(record.event().message().contains("LOCAL_API_KEY_SENTINEL"));}
+                    assertEquals(1,humanQuestions.get());
+                    assertEquals(scenario.equals("reconsider-approve")?1:0,correctionGrants.get());
+                    assertEquals(scenario.equals("reconsider-approve")?1:0,correctionSends.get());
+                    if(!reconsiderationCase||scenario.equals("reconsider-refuse")||scenario.equals("reconsider-cancel")){assertEquals(2,grants.get());assertEquals(2,sends.get());}
+                    var reconsidered=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationReconsideration.EVENT)).toList();
+                    var kinds=reconsidered.stream().map(e->{try{return new com.fasterxml.jackson.databind.ObjectMapper().readTree(e.detail()).path("kind").asText();}catch(Exception invalid){throw new AssertionError(invalid);}}).toList();
+                    assertEquals(1,kinds.stream().filter("ASK"::equals).count());assertEquals(1,kinds.stream().filter("ANSWER"::equals).count());
+                    boolean reviewAllowed=scenario.equals("reconsider-app-deny")||scenario.equals("reconsider-approve");
+                    assertEquals(reviewAllowed?1:0,reconsiderationReviews.get());assertEquals(reviewAllowed?1:0,kinds.stream().filter("REQUEST"::equals).count());
+                    assertEquals(scenario.equals("reconsider-approve")?1:0,kinds.stream().filter("GRANT"::equals).count());
+                    assertEquals(scenario.equals("reconsider-approve")?1:0,kinds.stream().filter("DISPATCH"::equals).count());
+                    var unsettled=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());
+                    assertEquals(Optional.of(old),unsettled.pending());assertEquals(0,unsettled.completed());assertTrue(unsettled.verified().isEmpty());
+                    assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
+                    if(reconsiderationCase) {
+                        int nativeGrants=correctionGrants.get(),nativeSends=correctionSends.get(),independentReviews=reconsiderationReviews.get();
+                        assertThrows(Exception.class,()->new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run());
+                        assertEquals(1,humanQuestions.get());assertEquals(nativeGrants,correctionGrants.get());assertEquals(nativeSends,correctionSends.get());assertEquals(independentReviews,reconsiderationReviews.get());
+                        assertEquals(reconsidered,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationReconsideration.EVENT)).toList());
+                    }
+                }
+                allowGoal.set(true);fixturePhase.accept("FINAL_GOAL_RECONCILE_BEGIN");
+                assertTrue(new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run());
+                fixturePhase.accept("FINAL_GOAL_RECONCILE_END");
+                assertEquals(initiallyDenied?(scenario.equals("reconsider-approve")?1:0):1,correctionSends.get());assertEquals(2,cleanups.get());
+                assertEquals(grants.get(),uniqueGrants.size());assertEquals(reviews.get(),grants.get()+(initiallyDenied?1:0)+(scenario.equals("reconsider-app-deny")?1:0));
+                assertEquals(immutableOld,log.events(task).subList(0,immutableOld.size()));
+                assertTrue(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()).verified().isPresent());
+                fixturePhase.accept("LOCAL_FAILED_TAIL_BEGIN");
+                assertEquals(TaskResult.FAILED,new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task)).outcome());
+                fixturePhase.accept("LOCAL_FAILED_TAIL_END");return success();
+            }, java.time.Duration.ofSeconds(90));
+        }
+    }
+
+    /** Pure alternate prefixes; no event is inserted into the fixture database. */
+    private void correctionReconsiderationRejectsEffectfulPrefixes(List<DeploymentAgentActionLog.Event> denied,UUID task)throws Exception {
+        assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.read(denied,UUID.randomUUID()));
+        var selected=denied.stream().filter(e->e.type().equals(DeploymentAgentPublicationCorrection.EVENT)).toList();
+        assertEquals(3,selected.size());var json=new com.fasterxml.jackson.databind.ObjectMapper();
+        var prior=denied.stream().filter(e->e.id()<selected.getFirst().id()).toList();
+        for(String terminal:List.of("GRANT","DISPATCH","UNKNOWN")) {
+            var alternate=new ArrayList<>(prior);alternate.add(selected.getFirst());
+            var review=(com.fasterxml.jackson.databind.node.ObjectNode)json.readTree(selected.get(1).detail());review.put("decision","APPROVE");
+            correctionAlternateFrame(alternate,review,selected.getFirst().action());
+            var common=(com.fasterxml.jackson.databind.node.ObjectNode)json.readTree(selected.getLast().detail());
+            correctionAlternateFrame(alternate,common.deepCopy().put("kind","GRANT").put("grant",UUID.randomUUID().toString()),selected.getFirst().action());
+            if(!terminal.equals("GRANT"))correctionAlternateFrame(alternate,common.deepCopy().put("kind","DISPATCH"),selected.getFirst().action());
+            if(terminal.equals("UNKNOWN")) {
+                correctionAlternateFrame(alternate,common.deepCopy().put("kind","RESULT").put("observedOutcome","UNKNOWN").put("actual","f".repeat(64)).put("fixedReceiptVerified",false).put("receipt","none").put("parts",0),selected.getFirst().action());
+                correctionAlternateFrame(alternate,common.deepCopy().put("kind","END"),selected.getFirst().action());
+            }
+            var state=DeploymentAgentPublicationCompensation.read(alternate,task);
+            assertTrue(DeploymentAgentPublicationReconsideration.eligibility(state,alternate).isEmpty(),terminal+" is never an unsent independent denial");
+        }
+    }
+
+    private void correctionAlternateFrame(List<DeploymentAgentActionLog.Event> events,com.fasterxml.jackson.databind.node.ObjectNode frame,String action)throws Exception {
+        frame.put("history",DeploymentAgentPublicationObservation.prefixSha256(events));
+        events.add(new DeploymentAgentActionLog.Event(events.getLast().id()+1,DeploymentAgentPublicationCorrection.EVENT,action,frame.toString()));
+    }
+
+    /** Authentic original TaskWork/journal; APP model and host/SSH are local capability peers, not real remote acceptance. */
+    @ParameterizedTest
+    @ValueSource(strings={"complete","partial","timeout","deny","refused","goal-already"})
+    void contractFollowupFreshObservationAndEveryResultPreserveUnknownWithoutReplay(String scenario)throws Exception {
+        enable();
+        try(var runtime=open()) {
+            start(runtime,true);server(runtime);
+            run(runtime,task->{
+                long fixtureStarted=System.nanoTime();
+                java.util.function.Consumer<String> fixturePhase=name->{System.out.println("FOLLOWUP_FIXTURE_PHASE scenario="+scenario+" phase="+name+" elapsedNanos="+(System.nanoTime()-fixtureStarted));try{task.progress("Followup fixture "+name,Optional.empty());}catch(gold.debug.windowstolinux.appapi.task.result.ApiException unavailable){throw new AssertionError("Fixture phase could not be recorded",unavailable);}};
+                fixturePhase.accept("TASK_WORK_BEGIN");
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());var store=new DeploymentExecutionStore(context.db());
+                var server=new ServerId("server");String fingerprint="local-diagnostic-peer";
+                var capturedLayout=gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(),task,capturedLayout);
+                originalPublication(runtime,task,false,DeploymentAgentInputs.hash(server.id()+":"+fingerprint),DeploymentAgentInputs.targetProfile(context.servers().get(server,task)));
+                var formal=store.findForTask(task).orElseThrow();var template=store.publicationTemplate(formal).orElseThrow();var unit=template.graph().components().getFirst().unit();
+                assertEquals(capturedLayout,gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.original(context,task,log.find(task).orElseThrow().identity(),log.events(task)));
+                var installedProgram=new DeploymentAgentPublicationRecoveryProgram(unit.layout());
+                var installation=DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"b".repeat(64),installedProgram);
+                try(var ready=installedProgram.readiness(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,ready);installation.result(ready.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"));}
+                try(var install=installedProgram.install(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,install);installation.result(install.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),install.action().toString().replace("-","")));}
+                var installationFrames=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList();
+                var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);var old=compensationIntent(context,task,plan,UUID.randomUUID());
+                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(70),"PUBLICATION_RECOVERY_FAILURE=UNKNOWN\n","",false)),Optional.of(new Problem(ProblemCode.IO_FAILURE,"SSH_COMMAND_NONZERO","Local rollback peer returned a nonzero exit",Map.of(),Optional.empty()))),false);
+                var oldResult=log.events(task).getLast();compensationObservation(context,task,true);
+                var eligible=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                appendReadyPreflightFixture(task,log,eligible,unit.layout());
+                appendUnknownContinuationFixture(task,log,unit.layout());
+                compensationObservation(context,task,true);appendContractControlFixture(task,log,unit.layout(),true);
+                var immutableOld=List.copyOf(log.events(task));fixturePhase.accept("OLD_IMMUTABLE_HISTORY_READY");
+                var program=new DeploymentAgentPublicationContractDiagnosticFollowupProgram(unit.layout());
+                var followupBinding=new AtomicReference<DeploymentAgentPublicationContractDiagnosticFollowupProgram.Binding>();
+                var allowGoal=new java.util.concurrent.atomic.AtomicBoolean(scenario.equals("goal-already"));
+                var reviews=new java.util.concurrent.atomic.AtomicInteger();var grants=new java.util.concurrent.atomic.AtomicInteger();var sends=new java.util.concurrent.atomic.AtomicInteger();
+                var granted=new AtomicReference<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>();var expectedCommand=new AtomicReference<String>();var diagnosticAction=new AtomicReference<UUID>();var followupSends=new java.util.concurrent.atomic.AtomicInteger();var cleanups=new java.util.concurrent.atomic.AtomicInteger();var uniqueGrants=new java.util.HashSet<UUID>();
+                var ai=(gold.debug.windowstolinux.appapi.ai.AiService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.ai.AiService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.ai.AiService.class},(p,m,a)->{if(m.getName().equals("configurationRevision"))return "b".repeat(64);throw new AssertionError("No provider call in local diagnostic fixture");});
+                var reviewedContext=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},(p,m,a)->m.getName().equals("ai")?ai:invoke(m,context,a));
+                gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel model=(instructions,facts,intent,command,revision,supplied)->{
+                    assertTrue(supplied==task);reviews.incrementAndGet();
+                    var node=new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(facts);
+                    if(node.has("publicationContractDiagnosticFollowup")) {
+                        assertEquals(plan.sha256(),intent.revision());
+                        assertEquals(program.source(),node.path("completeExecutableInput").asText());assertEquals(program.sourceVersion(),node.at("/publicationContractDiagnosticFollowup/expectedSourceVersion").asText());
+                        assertEquals(old.event(),node.at("/publicationContractDiagnosticFollowup/binding/diagnostic/continuation/original/pendingIntentEvent").longValue());
+                        diagnosticAction.set(UUID.fromString(node.at("/publicationContractDiagnosticFollowup/action").asText()));expectedCommand.set(command.script());
+                        try(var decoded=program.decode(command)){followupBinding.set(decoded.binding());assertEquals(old.event(),decoded.binding().diagnostic().continuation().original().pendingIntentEvent());}
+                    }
+                    return new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel.Result(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(scenario.equals("deny")&&node.has("publicationContractDiagnosticFollowup")?"DENY":"APPROVE",false,"Local diagnostic decision"),Map.of());
+                };
+                var host=(gold.debug.windowstolinux.appapi.task.action.InteractionService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.task.action.InteractionService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class},(p,m,a)->{
+                    if(!m.getName().equals("approveReviewedAction"))throw new AssertionError("Diagnostic cannot bypass APP");
+                    grants.incrementAndGet();var value=new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID());assertTrue(uniqueGrants.add(value.id()));granted.set(value);return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(value),Optional.empty());
+                });
+                var session=(gold.debug.windowstolinux.appapi.linux.session.RemoteSession)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class},(p,m,a)->{
+                    if(m.getName().equals("facts"))return new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("Linux","x86_64",fingerprint);
+                    if(!m.getName().equals("execute"))throw new AssertionError("No mutation or other remote capability");
+                    var command=(gold.debug.windowstolinux.appapi.linux.command.CommandRequest)a[0];assertEquals(granted.get(),a[1]);sends.incrementAndGet();
+                    if(command.script().contains("'publication-original-status'")) {
+                        boolean retained=!allowGoal.get()&&command.script().contains("'"+unit.id()+"'");
+                        String output="PUBLICATION_STATUS=1\nCURRENT="+(retained?plan.components().getFirst().release():"none")+"\nCURRENT_KIND="+(retained?"deployment":"none")+"\nCURRENT_MODE="+(retained?"DAEMON":"none")+"\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE="+(cleanups.get()==2?"absent":"owned")+"\nBUILD_ACTIVE=no\nUNIT_PRESENT="+(retained?"yes":"no")+"\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT="+(retained?1:0)+"\n";
+                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),output,"",false)),Optional.empty());
+                    }
+                    if(command.script().contains("'candidate-cleanup-task'")) {cleanups.incrementAndGet();return localReceipt("CANDIDATE_CLEANED=1\n");}
+                    assertEquals(expectedCommand.get(),command.script());followupSends.incrementAndGet();
+                    try(var expected=program.request(followupBinding.get(),diagnosticAction.get())) {
+                        assertEquals(expected.command().script(),command.script());assertTrue(java.util.Arrays.equals(expected.command().stdin(),command.stdin()));
+                        if(scenario.equals("timeout"))return new OperationResult<>(TaskResult.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"LOCAL_CONTINUATION_TIMEOUT","Local peer timeout",Map.of(),Optional.empty())));
+                        String output=scenario.equals("partial")?"PUBLICATION_CONTRACT_DIAGNOSTIC_FOLLOWUP={":"PUBLICATION_CONTRACT_DIAGNOSTIC_FOLLOWUP="+contractFollowupSafeReceipt(program,expected,scenario.equals("refused"))+"\n";
+                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),output,"",scenario.equals("partial"))),Optional.empty());
+                    }
+                });
+                var scope=new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope(reviewedContext,host,task,"MANUAL_REVIEW",false,()->"b".repeat(64),null,gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE,()->model);
+                var candidates=new java.util.LinkedHashMap<String,gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate>();
+                for(var component:plan.components())candidates.put(component.id(),new gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate(component.candidate(),"f".repeat(64),"e".repeat(64),"0".repeat(64),false,Map.of()));
+                var producer=new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log);
+                fixturePhase.accept("FIRST_RECONCILE_BEGIN");
+                boolean firstResult=producer.run();fixturePhase.accept("FIRST_RECONCILE_END");
+                if(scenario.equals("goal-already")) {
+                    assertTrue(firstResult);assertEquals(0,followupSends.get());assertEquals(2,cleanups.get());
+                    assertTrue(log.events(task).stream().noneMatch(e->e.type().equals(DeploymentAgentPublicationContractDiagnosticFollowup.EVENT)));
+                    assertEquals(TaskResult.FAILED,new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task)).outcome());return success();
+                }
+                assertFalse(firstResult);
+                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());
+                assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());assertTrue(state.verified().isEmpty());
+                assertEquals(0,cleanups.get());assertEquals(3,reviews.get());assertEquals(scenario.equals("deny")?2:3,grants.get());
+                assertEquals(scenario.equals("deny")?2:3,sends.get());assertEquals(scenario.equals("deny")?0:1,followupSends.get());
+                assertTrue(state.lastActionEvent()>immutableOld.getLast().id());
+                var followupEvents=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationContractDiagnosticFollowup.EVENT)).toList();
+                assertFalse(followupEvents.isEmpty());var afterAttempt=List.copyOf(followupEvents);
+                assertEquals(immutableOld,log.events(task).subList(0,immutableOld.size()));assertTrue(log.events(task).contains(oldResult));
+                assertEquals(installationFrames,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList());
+                assertTrue(log.events(task).stream().noneMatch(e->Set.of("AI_PUBLICATION_FINISHED","AI_PUBLICATION_CLEANED","AI_RECOVERY_SETTLED").contains(e.type())));
+                assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
+                var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.observedOnly(task,log,old));assertEquals(before,log.events(task));
+                fixturePhase.accept("REPEAT_UNMET_RECONCILE_BEGIN");
+                assertThrows(Exception.class,()->new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run());
+                fixturePhase.accept("REPEAT_UNMET_RECONCILE_END");
+                assertEquals(afterAttempt,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationContractDiagnosticFollowup.EVENT)).toList());assertEquals(0,cleanups.get());
+                allowGoal.set(true);fixturePhase.accept("FINAL_GOAL_RECONCILE_BEGIN");
+                assertTrue(new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run());
+                fixturePhase.accept("FINAL_GOAL_RECONCILE_END");
+                assertEquals(scenario.equals("deny")?0:1,followupSends.get());assertEquals(2,cleanups.get());
+                assertEquals(grants.get(),uniqueGrants.size());assertEquals(reviews.get(),grants.get()+(scenario.equals("deny")?1:0));
+                assertEquals(immutableOld,log.events(task).subList(0,immutableOld.size()));
+                assertTrue(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()).verified().isPresent());
+                fixturePhase.accept("LOCAL_FAILED_TAIL_BEGIN");
+                assertEquals(TaskResult.FAILED,new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task)).outcome());
+                fixturePhase.accept("LOCAL_FAILED_TAIL_END");return success();
+            }, java.time.Duration.ofSeconds(60));
+        }
+    }
+
+    /** Authentic original TaskWork/journal; APP model and host/SSH are local capability peers, not real remote acceptance. */
+    @ParameterizedTest
+    @ValueSource(strings={"complete","partial","timeout","deny","refused"})
+    void contractDiagnosticAlwaysEndsUnknownWithoutMutationOrReplay(String scenario)throws Exception {
+        enable();
+        try(var runtime=open()) {
+            start(runtime,true);server(runtime);
+            run(runtime,task->{
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());var store=new DeploymentExecutionStore(context.db());
+                var server=new ServerId("server");String fingerprint="local-diagnostic-peer";
+                var capturedLayout=gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(),task,capturedLayout);
+                originalPublication(runtime,task,false,DeploymentAgentInputs.hash(server.id()+":"+fingerprint),DeploymentAgentInputs.targetProfile(context.servers().get(server,task)));
+                var formal=store.findForTask(task).orElseThrow();var template=store.publicationTemplate(formal).orElseThrow();var unit=template.graph().components().getFirst().unit();
+                assertEquals(capturedLayout,gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.original(context,task,log.find(task).orElseThrow().identity(),log.events(task)));
+                var installedProgram=new DeploymentAgentPublicationRecoveryProgram(unit.layout());
+                var installation=DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"b".repeat(64),installedProgram);
+                try(var ready=installedProgram.readiness(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,ready);installation.result(ready.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"));}
+                try(var install=installedProgram.install(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,install);installation.result(install.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),install.action().toString().replace("-","")));}
+                var installationFrames=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList();
+                var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);var old=compensationIntent(context,task,plan,UUID.randomUUID());
+                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(70),"PUBLICATION_RECOVERY_FAILURE=UNKNOWN\n","",false)),Optional.of(new Problem(ProblemCode.IO_FAILURE,"SSH_COMMAND_NONZERO","Local rollback peer returned a nonzero exit",Map.of(),Optional.empty()))),false);
+                var oldResult=log.events(task).getLast();compensationObservation(context,task,true);
+                var eligible=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                appendReadyPreflightFixture(task,log,eligible,unit.layout());
+                appendUnknownContinuationFixture(task,log,unit.layout());
+                var immutableOld=List.copyOf(log.events(task));compensationObservation(context,task,true);
+                var contractEligible=DeploymentAgentPublicationContractDiagnostic.eligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                var program=new DeploymentAgentPublicationContractDiagnosticProgram(unit.layout());
+                var reviews=new java.util.concurrent.atomic.AtomicInteger();var grants=new java.util.concurrent.atomic.AtomicInteger();var sends=new java.util.concurrent.atomic.AtomicInteger();
+                var granted=new AtomicReference<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>();var expectedCommand=new AtomicReference<String>();var diagnosticAction=new AtomicReference<UUID>();var continuationSends=new java.util.concurrent.atomic.AtomicInteger();var cleanups=new java.util.concurrent.atomic.AtomicInteger();var uniqueGrants=new java.util.HashSet<UUID>();
+                var ai=(gold.debug.windowstolinux.appapi.ai.AiService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.ai.AiService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.ai.AiService.class},(p,m,a)->{if(m.getName().equals("configurationRevision"))return "b".repeat(64);throw new AssertionError("No provider call in local diagnostic fixture");});
+                var reviewedContext=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},(p,m,a)->m.getName().equals("ai")?ai:invoke(m,context,a));
+                gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel model=(instructions,facts,intent,command,revision,supplied)->{
+                    assertTrue(supplied==task);reviews.incrementAndGet();
+                    var node=new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(facts);
+                    if(node.has("publicationContractDiagnostic")) {
+                        assertEquals(plan.sha256(),intent.revision());
+                        assertEquals(program.source(),node.path("completeExecutableInput").asText());assertEquals(program.sourceVersion(),node.at("/publicationContractDiagnostic/expectedSourceVersion").asText());
+                        assertEquals(old.event(),node.at("/publicationContractDiagnostic/binding/continuation/original/pendingIntentEvent").longValue());
+                        diagnosticAction.set(UUID.fromString(node.at("/publicationContractDiagnostic/action").asText()));expectedCommand.set(command.script());
+                    }
+                    return new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel.Result(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(scenario.equals("deny")&&node.has("publicationContractDiagnostic")?"DENY":"APPROVE",false,"Local diagnostic decision"),Map.of());
+                };
+                var host=(gold.debug.windowstolinux.appapi.task.action.InteractionService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.task.action.InteractionService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class},(p,m,a)->{
+                    if(!m.getName().equals("approveReviewedAction"))throw new AssertionError("Diagnostic cannot bypass APP");
+                    grants.incrementAndGet();var value=new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID());assertTrue(uniqueGrants.add(value.id()));granted.set(value);return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(value),Optional.empty());
+                });
+                var session=(gold.debug.windowstolinux.appapi.linux.session.RemoteSession)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class},(p,m,a)->{
+                    if(m.getName().equals("facts"))return new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("Linux","x86_64",fingerprint);
+                    if(!m.getName().equals("execute"))throw new AssertionError("No mutation or other remote capability");
+                    var command=(gold.debug.windowstolinux.appapi.linux.command.CommandRequest)a[0];assertEquals(granted.get(),a[1]);sends.incrementAndGet();
+                    if(command.script().contains("'publication-original-status'")) {
+                        String output="PUBLICATION_STATUS=1\nCURRENT=none\nCURRENT_KIND=none\nCURRENT_MODE=none\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE="+(cleanups.get()==2?"absent":"owned")+"\nBUILD_ACTIVE=no\nUNIT_PRESENT=no\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=0\n";
+                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),output,"",false)),Optional.empty());
+                    }
+                    if(command.script().contains("'candidate-cleanup-task'")) {cleanups.incrementAndGet();return localReceipt("CANDIDATE_CLEANED=1\n");}
+                    assertEquals(expectedCommand.get(),command.script());continuationSends.incrementAndGet();
+                    try(var expected=program.request(DeploymentAgentPublicationContractDiagnostic.binding(contractEligible),diagnosticAction.get())) {
+                        assertEquals(expected.command().script(),command.script());assertTrue(java.util.Arrays.equals(expected.command().stdin(),command.stdin()));
+                        if(scenario.equals("timeout"))return new OperationResult<>(TaskResult.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"LOCAL_CONTINUATION_TIMEOUT","Local peer timeout",Map.of(),Optional.empty())));
+                        String output=scenario.equals("partial")?"PUBLICATION_CONTRACT_DIAGNOSTIC={":"PUBLICATION_CONTRACT_DIAGNOSTIC="+contractDiagnosticSafeReceipt(program,expected,scenario.equals("refused"))+"\n";
+                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),output,"",scenario.equals("partial"))),Optional.empty());
+                    }
+                });
+                var scope=new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope(reviewedContext,host,task,"MANUAL_REVIEW",false,()->"b".repeat(64),null,gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE,()->model);
+                var candidates=new java.util.LinkedHashMap<String,gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate>();
+                for(var component:plan.components())candidates.put(component.id(),new gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate(component.candidate(),"f".repeat(64),"e".repeat(64),"0".repeat(64),false,Map.of()));
+                var producer=new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log);
+                assertFalse(producer.run());
+                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());
+                assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());assertTrue(state.verified().isEmpty());
+                assertEquals(0,cleanups.get());assertEquals(1,reviews.get());assertEquals(scenario.equals("deny")?0:1,grants.get());
+                assertEquals(scenario.equals("deny")?0:1,sends.get());assertEquals(sends.get(),continuationSends.get());
+                assertTrue(state.lastActionEvent()>contractEligible.original().observationEnd());
+                assertTrue(DeploymentAgentPublicationContractDiagnostic.attempted(log.events(task),contractEligible));
+                assertEquals(immutableOld,log.events(task).subList(0,immutableOld.size()));assertTrue(log.events(task).contains(oldResult));
+                assertEquals(installationFrames,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList());
+                assertTrue(log.events(task).stream().noneMatch(e->Set.of("AI_PUBLICATION_FINISHED","AI_PUBLICATION_CLEANED","AI_RECOVERY_SETTLED").contains(e.type())));
+                assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
+                var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.observedOnly(task,log,old));assertEquals(before,log.events(task));
+                // A separate later reconciliation obtains fresh approved whole-graph goals and cleanups; it never repeats this diagnostic.
+                assertTrue(new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run());
+                assertEquals(scenario.equals("deny")?0:1,continuationSends.get());assertEquals(2,cleanups.get());
+                assertEquals(grants.get(),uniqueGrants.size());assertEquals(reviews.get(),grants.get()+(scenario.equals("deny")?1:0));
+                assertEquals(immutableOld,log.events(task).subList(0,immutableOld.size()));
+                assertTrue(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()).verified().isPresent());
+                assertEquals(TaskResult.FAILED,new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task)).outcome());
+                return success();
+            });
+        }
+    }
+
+    /** Authentic original TaskWork/journal; APP model and host/SSH are local capability peers, not real remote acceptance. */
+    @ParameterizedTest
+    @ValueSource(strings={"complete","partial","timeout","deny","refused"})
+    void currentStateContinuationNeverReplaysAndNeedsFreshWholeGraph(String scenario)throws Exception {
+        enable();
+        try(var runtime=open()) {
+            start(runtime,true);server(runtime);
+            run(runtime,task->{
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());var store=new DeploymentExecutionStore(context.db());
+                var server=new ServerId("server");String fingerprint="local-diagnostic-peer";
+                var capturedLayout=gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(),task,capturedLayout);
+                originalPublication(runtime,task,false,DeploymentAgentInputs.hash(server.id()+":"+fingerprint),DeploymentAgentInputs.targetProfile(context.servers().get(server,task)));
+                var formal=store.findForTask(task).orElseThrow();var template=store.publicationTemplate(formal).orElseThrow();var unit=template.graph().components().getFirst().unit();
+                assertEquals(capturedLayout,gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.original(context,task,log.find(task).orElseThrow().identity(),log.events(task)));
+                var installedProgram=new DeploymentAgentPublicationRecoveryProgram(unit.layout());
+                var installation=DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"b".repeat(64),installedProgram);
+                try(var ready=installedProgram.readiness(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,ready);installation.result(ready.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"));}
+                try(var install=installedProgram.install(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,install);installation.result(install.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),install.action().toString().replace("-","")));}
+                var installationFrames=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList();
+                var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);var old=compensationIntent(context,task,plan,UUID.randomUUID());
+                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(70),"PUBLICATION_RECOVERY_FAILURE=UNKNOWN\n","",false)),Optional.of(new Problem(ProblemCode.IO_FAILURE,"SSH_COMMAND_NONZERO","Local rollback peer returned a nonzero exit",Map.of(),Optional.empty()))),false);
+                var oldResult=log.events(task).getLast();compensationObservation(context,task,true);
+                var eligible=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                appendReadyPreflightFixture(task,log,eligible,unit.layout());
+                var originalV1=log.events(task).stream().filter(e->Set.of(DeploymentAgentPublicationRecoveryDiagnostic.EVENT,DeploymentAgentPublicationRecoveryPreflight.EVENT).contains(e.type())).toList();
+                var preflightEligible=DeploymentAgentPublicationContinuation.eligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                var program=new DeploymentAgentPublicationContinuationProgram(unit.layout());
+                var reviews=new java.util.concurrent.atomic.AtomicInteger();var grants=new java.util.concurrent.atomic.AtomicInteger();var sends=new java.util.concurrent.atomic.AtomicInteger();
+                var granted=new AtomicReference<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>();var expectedCommand=new AtomicReference<String>();var diagnosticAction=new AtomicReference<UUID>();var continuationSends=new java.util.concurrent.atomic.AtomicInteger();var cleanups=new java.util.concurrent.atomic.AtomicInteger();var uniqueGrants=new java.util.HashSet<UUID>();
+                var ai=(gold.debug.windowstolinux.appapi.ai.AiService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.ai.AiService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.ai.AiService.class},(p,m,a)->{if(m.getName().equals("configurationRevision"))return "b".repeat(64);throw new AssertionError("No provider call in local diagnostic fixture");});
+                var reviewedContext=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},(p,m,a)->m.getName().equals("ai")?ai:invoke(m,context,a));
+                gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel model=(instructions,facts,intent,command,revision,supplied)->{
+                    assertTrue(supplied==task);reviews.incrementAndGet();
+                    var node=new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(facts);
+                    if(node.has("publicationRecoveryContinuation")) {
+                        assertEquals(plan.sha256(),intent.revision());
+                        assertEquals(program.source(),node.path("completeExecutableInput").asText());assertEquals(program.sourceVersion(),node.at("/publicationRecoveryContinuation/expectedSourceVersion").asText());
+                        assertEquals(old.event(),node.at("/publicationRecoveryContinuation/binding/original/pendingIntentEvent").longValue());
+                        diagnosticAction.set(UUID.fromString(node.at("/publicationRecoveryContinuation/action").asText()));expectedCommand.set(command.script());
+                    }
+                    return new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel.Result(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(scenario.equals("deny")&&node.has("publicationRecoveryContinuation")?"DENY":"APPROVE",false,"Local diagnostic decision"),Map.of());
+                };
+                var host=(gold.debug.windowstolinux.appapi.task.action.InteractionService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.task.action.InteractionService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class},(p,m,a)->{
+                    if(!m.getName().equals("approveReviewedAction"))throw new AssertionError("Diagnostic cannot bypass APP");
+                    grants.incrementAndGet();var value=new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID());assertTrue(uniqueGrants.add(value.id()));granted.set(value);return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(value),Optional.empty());
+                });
+                var session=(gold.debug.windowstolinux.appapi.linux.session.RemoteSession)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class},(p,m,a)->{
+                    if(m.getName().equals("facts"))return new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("Linux","x86_64",fingerprint);
+                    if(!m.getName().equals("execute"))throw new AssertionError("No mutation or other remote capability");
+                    var command=(gold.debug.windowstolinux.appapi.linux.command.CommandRequest)a[0];assertEquals(granted.get(),a[1]);sends.incrementAndGet();
+                    if(command.script().contains("'publication-original-status'")) {
+                        String output="PUBLICATION_STATUS=1\nCURRENT=none\nCURRENT_KIND=none\nCURRENT_MODE=none\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE="+(cleanups.get()==2?"absent":"owned")+"\nBUILD_ACTIVE=no\nUNIT_PRESENT=no\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=0\n";
+                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),output,"",false)),Optional.empty());
+                    }
+                    if(command.script().contains("'candidate-cleanup-task'")) {cleanups.incrementAndGet();return localReceipt("CANDIDATE_CLEANED=1\n");}
+                    assertEquals(expectedCommand.get(),command.script());continuationSends.incrementAndGet();
+                    try(var expected=program.request(DeploymentAgentPublicationContinuation.binding(preflightEligible),diagnosticAction.get())) {
+                        assertEquals(expected.command().script(),command.script());assertTrue(java.util.Arrays.equals(expected.command().stdin(),command.stdin()));
+                        if(scenario.equals("timeout"))return new OperationResult<>(TaskResult.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"LOCAL_CONTINUATION_TIMEOUT","Local peer timeout",Map.of(),Optional.empty())));
+                        String output=scenario.equals("partial")?"PUBLICATION_CONTINUATION={":"PUBLICATION_CONTINUATION="+continuationSafeReceipt(program,expected,scenario.equals("refused"))+"\n";
+                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),output,"",scenario.equals("partial"))),Optional.empty());
+                    }
+                });
+                var scope=new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope(reviewedContext,host,task,"MANUAL_REVIEW",false,()->"b".repeat(64),null,gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE,()->model);
+                var candidates=new java.util.LinkedHashMap<String,gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate>();
+                for(var component:plan.components())candidates.put(component.id(),new gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate(component.candidate(),"f".repeat(64),"e".repeat(64),"0".repeat(64),false,Map.of()));
+                var producer=new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log);
+                assertEquals(scenario.equals("complete"),producer.run());
+                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());
+                if(!scenario.equals("complete")) {
+                    assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());assertTrue(state.verified().isEmpty());assertEquals(0,cleanups.get());
+                    assertTrue(state.lastActionEvent()>oldResult.id());assertEquals(1,reviews.get());assertEquals(scenario.equals("deny")?0:1,grants.get());
+                    assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
+                    // This later explicit run uses new independently approved whole-graph receipts; it never resends the continuation.
+                    assertTrue(new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run());
+                }
+                assertEquals(scenario.equals("deny")?0:1,continuationSends.get());assertEquals(2,cleanups.get());assertEquals(grants.get(),uniqueGrants.size());assertEquals(reviews.get(),grants.get()+(scenario.equals("deny")?1:0));
+                assertTrue(DeploymentAgentPublicationContinuation.attempted(log.events(task),preflightEligible));
+                assertEquals(originalV1,log.events(task).stream().filter(e->Set.of(DeploymentAgentPublicationRecoveryDiagnostic.EVENT,DeploymentAgentPublicationRecoveryPreflight.EVENT).contains(e.type())).toList());assertTrue(log.events(task).contains(oldResult));
+                assertEquals(installationFrames,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList());
+                assertTrue(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()).verified().isPresent());
+                assertTrue(log.events(task).stream().noneMatch(e->Set.of("AI_PUBLICATION_FINISHED","AI_PUBLICATION_CLEANED","AI_RECOVERY_SETTLED").contains(e.type())));
+                String window=switch(scenario){case "complete"->"REFERENCE_ACK_LOST";case "partial"->"FAILED";case "deny"->"FINISHED";default->"UNKNOWN";};
+                var id=store.findForTask(task).orElseThrow().identity().executionId();
+                if(window.equals("UNKNOWN")) store.recordUncommittedOutcome(task,id,TaskResult.UNKNOWN,
+                    new Problem(ProblemCode.UNKNOWN,"FIXTURE_ORIGINAL_UNKNOWN","Original publication remains unknown",Map.of(),Optional.empty()),java.time.Instant.now());
+                if(window.equals("REFERENCE_ACK_LOST")) {
+                    var once=new java.util.concurrent.atomic.AtomicBoolean();var servers=context.servers();
+                    var losing=(gold.debug.windowstolinux.appapi.server.ServerService)Proxy.newProxyInstance(servers.getClass().getClassLoader(),
+                        new Class<?>[]{gold.debug.windowstolinux.appapi.server.ServerService.class},(proxy,method,args)->{
+                            var result=invoke(method,servers,args);
+                            if(method.getName().equals("resolve")&&once.compareAndSet(false,true))throw new ApiException(new Problem(ProblemCode.UNKNOWN,"FIXTURE_REFERENCE_ACK_LOST","Local fixture acknowledgement",Map.of(),Optional.empty()));
+                            return result;
+                        });
+                    var losingContext=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},
+                        (proxy,method,args)->method.getName().equals("servers")?losing:invoke(method,context,args));
+                    assertEquals(TaskResult.UNKNOWN,new DeploymentOriginalPublishCommit(losingContext).completeUncommittedVerified(task,id,TaskResult.FAILED,DeploymentAgentPublicationCompensation.failure()).outcome());
+                    assertEquals(Optional.of(TaskResult.FAILED),store.findForTask(task).orElseThrow().outcome());
+                } else if(!window.equals("UNKNOWN")) {
+                    assertEquals(TaskResult.FAILED,new DeploymentOriginalPublishCommit(context).completeUncommittedVerified(task,id,TaskResult.FAILED,DeploymentAgentPublicationCompensation.failure()).outcome());
+                    if(window.equals("FINISHED"))assertEquals(TaskResult.FAILED,new DeploymentOriginalPublishCommit(context).finishKnown(task,store.findForTask(task).orElseThrow()).outcome());
+                }
+                var linux=new java.util.concurrent.atomic.AtomicInteger();var localAiCalls=new java.util.concurrent.atomic.AtomicInteger();
+                var localOnly=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},(proxy,method,args)->{
+                    if(method.getName().equals("linux")){linux.incrementAndGet();throw new AssertionError("Verified local tail cannot obtain Linux");}
+                    if(method.getName().equals("ai")){localAiCalls.incrementAndGet();throw new AssertionError("Verified local tail cannot obtain AI");}
+                    return invoke(method,context,args);
+                });
+                var recovery=new DeploymentAgentRecovery(localOnly,log);
+                assertEquals(TaskResult.FAILED,recovery.reconcile(task,log.find(task).orElseThrow()).outcome());
+                var settled=log.events(task);assertEquals(TaskResult.FAILED,recovery.reconcile(task,log.find(task).orElseThrow()).outcome());
+                assertEquals(settled,log.events(task));assertEquals(0,linux.get());assertEquals(0,localAiCalls.get());
+                assertEquals(DeploymentAgentPublicationCompensation.FAILURE,store.problem(store.findForTask(task).orElseThrow()).orElseThrow().eventCode());
+                assertEquals(TaskResult.FAILED,new DeploymentAgentHistoryArchive(context).settle(task,new OperationResult<>(TaskResult.FAILED,Optional.empty(),Optional.of(DeploymentAgentPublicationCompensation.failure()))).outcome());
+
+                return success();
+            });
+        }
+    }
+
+    /** Authentic original TaskWork/journal; APP model and host/SSH are local capability peers, not real remote acceptance. */
+    @ParameterizedTest
+    @ValueSource(strings={"complete","partial","timeout","deny"})
+    void environmentFailurePreflightEndsUnknownWithoutMutationOrAutomaticReplay(String scenario)throws Exception {
+        enable();
+        try(var runtime=open()) {
+            start(runtime,true);server(runtime);
+            run(runtime,task->{
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());var store=new DeploymentExecutionStore(context.db());
+                var server=new ServerId("server");String fingerprint="local-diagnostic-peer";
+                originalPublication(runtime,task,false,DeploymentAgentInputs.hash(server.id()+":"+fingerprint),DeploymentAgentInputs.targetProfile(context.servers().get(server,task)));
+                var formal=store.findForTask(task).orElseThrow();var template=store.publicationTemplate(formal).orElseThrow();var unit=template.graph().components().getFirst().unit();
+                var installedProgram=new DeploymentAgentPublicationRecoveryProgram(unit.layout());
+                var installation=DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"b".repeat(64),installedProgram);
+                try(var ready=installedProgram.readiness(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,ready);installation.result(ready.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"));}
+                try(var install=installedProgram.install(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,install);installation.result(install.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),install.action().toString().replace("-","")));}
+                var installationFrames=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList();
+                var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);var old=compensationIntent(context,task,plan,UUID.randomUUID());
+                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(70),"PUBLICATION_RECOVERY_FAILURE=UNKNOWN\n","",false)),Optional.of(new Problem(ProblemCode.IO_FAILURE,"SSH_COMMAND_NONZERO","Local rollback peer returned a nonzero exit",Map.of(),Optional.empty()))),false);
+                var oldResult=log.events(task).getLast();compensationObservation(context,task,true);
+                var eligible=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                appendV1DiagnosticFixture(task,log,eligible,unit.layout(),"ENV_FAIL");
+                var originalV1=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryDiagnostic.EVENT)).toList();
+                var preflightEligible=DeploymentAgentPublicationRecoveryPreflight.eligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                var program=new DeploymentAgentPublicationRecoveryPreflightProgram(unit.layout());
+                var reviews=new java.util.concurrent.atomic.AtomicInteger();var grants=new java.util.concurrent.atomic.AtomicInteger();var sends=new java.util.concurrent.atomic.AtomicInteger();
+                var granted=new AtomicReference<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>();var expectedCommand=new AtomicReference<String>();var diagnosticAction=new AtomicReference<UUID>();
+                var ai=(gold.debug.windowstolinux.appapi.ai.AiService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.ai.AiService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.ai.AiService.class},(p,m,a)->{if(m.getName().equals("configurationRevision"))return "b".repeat(64);throw new AssertionError("No provider call in local diagnostic fixture");});
+                var reviewedContext=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},(p,m,a)->m.getName().equals("ai")?ai:invoke(m,context,a));
+                gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel model=(instructions,facts,intent,command,revision,supplied)->{
+                    assertTrue(supplied==task);assertEquals(plan.sha256(),intent.revision());reviews.incrementAndGet();
+                    var node=new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(facts);
+                    assertEquals(program.source(),node.path("completeExecutableInput").asText());assertEquals(program.sourceVersion(),node.at("/publicationRecoveryPreflight/expectedSourceVersion").asText());
+                    assertEquals(old.event(),node.at("/publicationRecoveryPreflight/binding/original/pendingIntentEvent").longValue());
+                    diagnosticAction.set(UUID.fromString(node.at("/publicationRecoveryPreflight/action").asText()));expectedCommand.set(command.script());
+                    return new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel.Result(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(scenario.equals("deny")?"DENY":"APPROVE",false,"Local diagnostic decision"),Map.of());
+                };
+                var host=(gold.debug.windowstolinux.appapi.task.action.InteractionService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.task.action.InteractionService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class},(p,m,a)->{
+                    if(!m.getName().equals("approveReviewedAction"))throw new AssertionError("Diagnostic cannot bypass APP");
+                    grants.incrementAndGet();var value=new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID());granted.set(value);return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(value),Optional.empty());
+                });
+                var session=(gold.debug.windowstolinux.appapi.linux.session.RemoteSession)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class},(p,m,a)->{
+                    if(m.getName().equals("facts"))return new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("Linux","x86_64",fingerprint);
+                    if(!m.getName().equals("execute"))throw new AssertionError("No mutation or other remote capability");
+                    var command=(gold.debug.windowstolinux.appapi.linux.command.CommandRequest)a[0];assertEquals(expectedCommand.get(),command.script());assertEquals(granted.get(),a[1]);sends.incrementAndGet();
+                    try(var expected=program.request(preflightBinding(preflightEligible),diagnosticAction.get())) {
+                        assertEquals(expected.command().script(),command.script());assertTrue(java.util.Arrays.equals(expected.command().stdin(),command.stdin()));
+                        if(scenario.equals("timeout"))return new OperationResult<>(TaskResult.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"LOCAL_DIAGNOSTIC_TIMEOUT","Local peer timeout",Map.of(),Optional.empty())));
+                        String output=scenario.equals("partial")?"PUBLICATION_RECOVERY_PREFLIGHT={":"PUBLICATION_RECOVERY_PREFLIGHT="+preflightSafeReceipt(program,expected)+"\n";
+                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),output,"",scenario.equals("partial"))),Optional.empty());
+                    }
+                });
+                var scope=new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope(reviewedContext,host,task,"MANUAL_REVIEW",false,()->"b".repeat(64),null,gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE,()->model);
+                var candidates=new java.util.LinkedHashMap<String,gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate>();
+                for(var component:plan.components())candidates.put(component.id(),new gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate(component.candidate(),"f".repeat(64),"e".repeat(64),"0".repeat(64),false,Map.of()));
+                assertFalse(new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run());
+                assertEquals(1,reviews.get());assertEquals(scenario.equals("deny")?0:1,grants.get());assertEquals(scenario.equals("deny")?0:1,sends.get());
+                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());assertEquals(oldResult.id(),state.lastActionEvent());assertTrue(state.verified().isEmpty());
+                assertTrue(DeploymentAgentPublicationRecoveryPreflight.attempted(log.events(task),preflightEligible));assertEquals(originalV1,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryDiagnostic.EVENT)).toList());assertTrue(log.events(task).contains(oldResult));
+                assertEquals(installationFrames,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList());
+                assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));assertTrue(log.events(task).stream().noneMatch(e->Set.of("AI_PUBLICATION_FINISHED","AI_PUBLICATION_CLEANED","AI_RECOVERY_SETTLED",DeploymentAgentPublicationCompensation.VERIFIED).contains(e.type())));
+                try(var repeated=program.request(preflightBinding(preflightEligible),UUID.randomUUID())){assertThrows(Exception.class,()->DeploymentAgentPublicationRecoveryPreflight.open(task,log,preflightEligible,repeated,gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server,plan.sha256(),repeated.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationRecoveryPreflightProgram.OPERATION,repeated.resourceTargets()))));}
+                // A future explicit normal observation can still prove the goal; the diagnostic is never a permanent latch.
+                compensationObservation(context,task,false);DeploymentAgentPublicationCompensation.observedOnly(task,log,old);assertTrue(log.events(task).contains(oldResult));
+                completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));
+                return success();
+            });
+        }
+    }
+
+    /** Authentic original TaskWork/journal; APP model and host/SSH are local capability peers, not real remote acceptance. */
+    @ParameterizedTest
+    @ValueSource(strings={"complete","partial","timeout","deny"})
+    void failedRollbackDiagnosticEndsUnknownWithoutMutationOrAutomaticReplay(String scenario)throws Exception {
+        enable();
+        try(var runtime=open()) {
+            start(runtime,true);server(runtime);
+            run(runtime,task->{
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());var store=new DeploymentExecutionStore(context.db());
+                var server=new ServerId("server");String fingerprint="local-diagnostic-peer";
+                originalPublication(runtime,task,false,DeploymentAgentInputs.hash(server.id()+":"+fingerprint),DeploymentAgentInputs.targetProfile(context.servers().get(server,task)));
+                var formal=store.findForTask(task).orElseThrow();var template=store.publicationTemplate(formal).orElseThrow();var unit=template.graph().components().getFirst().unit();
+                var installedProgram=new DeploymentAgentPublicationRecoveryProgram(unit.layout());
+                var installation=DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"b".repeat(64),installedProgram);
+                try(var ready=installedProgram.readiness(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,ready);installation.result(ready.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"));}
+                try(var install=installedProgram.install(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,install);installation.result(install.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),install.action().toString().replace("-","")));}
+                var installationFrames=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList();
+                var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);var old=compensationIntent(context,task,plan,UUID.randomUUID());
+                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(70),"PUBLICATION_RECOVERY_FAILURE=UNKNOWN\n","",false)),Optional.of(new Problem(ProblemCode.IO_FAILURE,"SSH_COMMAND_NONZERO","Local rollback peer returned a nonzero exit",Map.of(),Optional.empty()))),false);
+                var oldResult=log.events(task).getLast();compensationObservation(context,task,true);
+                var eligible=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+                var program=new DeploymentAgentPublicationRecoveryDiagnosticProgram(unit.layout());
+                var reviews=new java.util.concurrent.atomic.AtomicInteger();var grants=new java.util.concurrent.atomic.AtomicInteger();var sends=new java.util.concurrent.atomic.AtomicInteger();
+                var granted=new AtomicReference<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>();var expectedCommand=new AtomicReference<String>();var diagnosticAction=new AtomicReference<UUID>();
+                var ai=(gold.debug.windowstolinux.appapi.ai.AiService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.ai.AiService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.ai.AiService.class},(p,m,a)->{if(m.getName().equals("configurationRevision"))return "b".repeat(64);throw new AssertionError("No provider call in local diagnostic fixture");});
+                var reviewedContext=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},(p,m,a)->m.getName().equals("ai")?ai:invoke(m,context,a));
+                gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel model=(instructions,facts,intent,command,revision,supplied)->{
+                    assertTrue(supplied==task);assertEquals(plan.sha256(),intent.revision());reviews.incrementAndGet();
+                    var node=new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(facts);
+                    assertEquals(program.source(),node.path("completeExecutableInput").asText());assertEquals(program.sourceVersion(),node.at("/publicationRecoveryDiagnostic/expectedSourceVersion").asText());
+                    assertEquals(old.event(),node.at("/publicationRecoveryDiagnostic/binding/pendingIntentEvent").longValue());
+                    diagnosticAction.set(UUID.fromString(node.at("/publicationRecoveryDiagnostic/action").asText()));expectedCommand.set(command.script());
+                    return new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel.Result(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(scenario.equals("deny")?"DENY":"APPROVE",false,"Local diagnostic decision"),Map.of());
+                };
+                var host=(gold.debug.windowstolinux.appapi.task.action.InteractionService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.task.action.InteractionService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class},(p,m,a)->{
+                    if(!m.getName().equals("approveReviewedAction"))throw new AssertionError("Diagnostic cannot bypass APP");
+                    grants.incrementAndGet();var value=new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID());granted.set(value);return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(value),Optional.empty());
+                });
+                var session=(gold.debug.windowstolinux.appapi.linux.session.RemoteSession)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class},(p,m,a)->{
+                    if(m.getName().equals("facts"))return new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("Linux","x86_64",fingerprint);
+                    if(!m.getName().equals("execute"))throw new AssertionError("No mutation or other remote capability");
+                    var command=(gold.debug.windowstolinux.appapi.linux.command.CommandRequest)a[0];assertEquals(expectedCommand.get(),command.script());assertEquals(granted.get(),a[1]);sends.incrementAndGet();
+                    try(var expected=program.request(diagnosticBinding(eligible),diagnosticAction.get())) {
+                        assertEquals(expected.command().script(),command.script());assertTrue(java.util.Arrays.equals(expected.command().stdin(),command.stdin()));
+                        if(scenario.equals("timeout"))return new OperationResult<>(TaskResult.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"LOCAL_DIAGNOSTIC_TIMEOUT","Local peer timeout",Map.of(),Optional.empty())));
+                        String output=scenario.equals("partial")?"PUBLICATION_RECOVERY_DIAGNOSTIC={":"PUBLICATION_RECOVERY_DIAGNOSTIC="+diagnosticSafeReceipt(program,expected)+"\n";
+                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),output,"",scenario.equals("partial"))),Optional.empty());
+                    }
+                });
+                var scope=new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope(reviewedContext,host,task,"MANUAL_REVIEW",false,()->"b".repeat(64),null,gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE,()->model);
+                var candidates=new java.util.LinkedHashMap<String,gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate>();
+                for(var component:plan.components())candidates.put(component.id(),new gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate(component.candidate(),"f".repeat(64),"e".repeat(64),"0".repeat(64),false,Map.of()));
+                assertFalse(new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run());
+                assertEquals(1,reviews.get());assertEquals(scenario.equals("deny")?0:1,grants.get());assertEquals(scenario.equals("deny")?0:1,sends.get());
+                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());assertEquals(oldResult.id(),state.lastActionEvent());assertTrue(state.verified().isEmpty());
+                assertTrue(DeploymentAgentPublicationRecoveryDiagnostic.attempted(log.events(task),old));assertTrue(log.events(task).contains(oldResult));
+                assertEquals(installationFrames,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList());
+                assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));assertTrue(log.events(task).stream().noneMatch(e->Set.of("AI_PUBLICATION_FINISHED","AI_PUBLICATION_CLEANED","AI_RECOVERY_SETTLED",DeploymentAgentPublicationCompensation.VERIFIED).contains(e.type())));
+                try(var repeated=program.request(diagnosticBinding(eligible),UUID.randomUUID())){assertThrows(Exception.class,()->DeploymentAgentPublicationRecoveryDiagnostic.open(task,log,eligible,repeated,gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server,plan.sha256(),repeated.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationRecoveryDiagnosticProgram.OPERATION,repeated.resourceTargets()))));}
+                // A future explicit normal observation can still prove the goal; the diagnostic is never a permanent latch.
+                compensationObservation(context,task,false);DeploymentAgentPublicationCompensation.observedOnly(task,log,old);assertTrue(log.events(task).contains(oldResult));
+                completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));
+                return success();
+            });
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"UNKNOWN", "FAILED", "FINISHED", "REFERENCE_ACK_LOST"})
+    void verifiedCompensationResumesOnlyLocalFailureTail(String window) throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true); server(runtime);
+            run(runtime, task -> {
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());var store=new DeploymentExecutionStore(context.db());
+                originalPublication(runtime,task,false);
+                var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);completeCompensation(context,task,plan,false);
+                var id=store.findForTask(task).orElseThrow().identity().executionId();
+                if(window.equals("UNKNOWN")) store.recordUncommittedOutcome(task,id,TaskResult.UNKNOWN,
+                    new Problem(ProblemCode.UNKNOWN,"FIXTURE_ORIGINAL_UNKNOWN","Original publication remains unknown",Map.of(),Optional.empty()),java.time.Instant.now());
+                if(window.equals("REFERENCE_ACK_LOST")) {
+                    var once=new java.util.concurrent.atomic.AtomicBoolean();var servers=context.servers();
+                    var losing=(gold.debug.windowstolinux.appapi.server.ServerService)Proxy.newProxyInstance(servers.getClass().getClassLoader(),
+                        new Class<?>[]{gold.debug.windowstolinux.appapi.server.ServerService.class},(proxy,method,args)->{
+                            var result=invoke(method,servers,args);
+                            if(method.getName().equals("resolve")&&once.compareAndSet(false,true))throw new ApiException(new Problem(ProblemCode.UNKNOWN,"FIXTURE_REFERENCE_ACK_LOST","Local fixture acknowledgement",Map.of(),Optional.empty()));
+                            return result;
+                        });
+                    var losingContext=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},
+                        (proxy,method,args)->method.getName().equals("servers")?losing:invoke(method,context,args));
+                    assertEquals(TaskResult.UNKNOWN,new DeploymentOriginalPublishCommit(losingContext).completeUncommittedVerified(task,id,TaskResult.FAILED,DeploymentAgentPublicationCompensation.failure()).outcome());
+                    assertEquals(Optional.of(TaskResult.FAILED),store.findForTask(task).orElseThrow().outcome());
+                } else if(!window.equals("UNKNOWN")) {
+                    assertEquals(TaskResult.FAILED,new DeploymentOriginalPublishCommit(context).completeUncommittedVerified(task,id,TaskResult.FAILED,DeploymentAgentPublicationCompensation.failure()).outcome());
+                    if(window.equals("FINISHED"))assertEquals(TaskResult.FAILED,new DeploymentOriginalPublishCommit(context).finishKnown(task,store.findForTask(task).orElseThrow()).outcome());
+                }
+                var linux=new java.util.concurrent.atomic.AtomicInteger();var ai=new java.util.concurrent.atomic.AtomicInteger();
+                var localOnly=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},(proxy,method,args)->{
+                    if(method.getName().equals("linux")){linux.incrementAndGet();throw new AssertionError("Verified local tail cannot obtain Linux");}
+                    if(method.getName().equals("ai")){ai.incrementAndGet();throw new AssertionError("Verified local tail cannot obtain AI");}
+                    return invoke(method,context,args);
+                });
+                var recovery=new DeploymentAgentRecovery(localOnly,log);
+                assertEquals(TaskResult.FAILED,recovery.reconcile(task,log.find(task).orElseThrow()).outcome());
+                var settled=log.events(task);assertEquals(TaskResult.FAILED,recovery.reconcile(task,log.find(task).orElseThrow()).outcome());
+                assertEquals(settled,log.events(task));assertEquals(0,linux.get());assertEquals(0,ai.get());
+                assertEquals(DeploymentAgentPublicationCompensation.FAILURE,store.problem(store.findForTask(task).orElseThrow()).orElseThrow().eventCode());
+                assertEquals(TaskResult.FAILED,new DeploymentAgentHistoryArchive(context).settle(task,new OperationResult<>(TaskResult.FAILED,Optional.empty(),Optional.of(DeploymentAgentPublicationCompensation.failure()))).outcome());
+                return success();
+            });
+            valid(runtime);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"pending-action", "pending-install", "foreign-failure"})
+    void pendingPublicationRecoveryNeverResendsUnknownMutation(String state) throws Exception {
+        enable();
+        try (var runtime=open()) {
+            start(runtime,true);server(runtime);
+            run(runtime,task->{
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());var store=new DeploymentExecutionStore(context.db());
+                originalPublication(runtime,task,false);
+                if(state.equals("pending-install")) {
+                    var formal=store.findForTask(task).orElseThrow();var unit=store.publicationTemplate(formal).orElseThrow().graph().components().getFirst().unit();
+                    var program=new DeploymentAgentPublicationRecoveryProgram(unit.layout());
+                    var installation=DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"b".repeat(64),program);
+                    try(var ready=program.readiness(unit,task.id(),UUID.randomUUID())) {
+                        installationFixtureDispatch(installation,ready);
+                        installation.result(ready.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"));
+                    }
+                    UUID originalAction=UUID.randomUUID();
+                    try(var install=program.install(unit,task.id(),originalAction)) {
+                        installationFixtureDispatch(installation,install);
+                        installation.result(install.action(),new OperationResult<>(TaskResult.UNKNOWN,Optional.empty(),Optional.of(DeploymentAgentPublicationCompensation.failure())),null);
+                    }
+                    var unchanged=log.events(task);
+                    try(var repeated=program.install(unit,task.id(),UUID.randomUUID())) {
+                        assertThrows(Exception.class,()->installation.request(repeated,gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(unit.server(),installation.state().binding(),repeated.command())));
+                    }
+                    assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.begin(context,task,log));assertEquals(unchanged,log.events(task));
+                    assertTrue(!installation.state().ready()&&!installation.state().mayInstall());
+                    var contradictory=new ArrayList<>(unchanged);var unknown=contradictory.getLast();
+                    var falseNotSent=DeploymentJsonDocument.parse(unknown.detail());falseNotSent.put("resolution","NOT_SENT");
+                    contradictory.set(contradictory.size()-1,new DeploymentAgentActionLog.Event(unknown.id(),unknown.type(),unknown.action(),DeploymentJsonDocument.encode(falseNotSent)));
+                    assertThrows(Exception.class,()->DeploymentAgentPublicationRecoveryInstallation.read(contradictory));
+                    for(var unconfirmed:List.of(new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"),
+                        new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",UUID.randomUUID().toString(),originalAction.toString().replace("-","")),
+                        new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),UUID.randomUUID().toString().replace("-","")))) {
+                        try(var query=program.readiness(unit,task.id(),UUID.randomUUID())) {
+                            installationFixtureDispatch(installation,query);installation.result(query.action(),localReceipt(),unconfirmed);
+                        }
+                        assertFalse(installation.state().ready());assertFalse(installation.state().mayInstall());assertEquals(Optional.of(originalAction),installation.state().installAction());
+                        var retained=log.events(task);
+                        try(var repeated=program.install(unit,task.id(),UUID.randomUUID())) {assertThrows(Exception.class,()->installationFixtureRequest(installation,repeated));}
+                        assertEquals(retained,log.events(task));
+                    }
+                    // Only a new read-only receipt for the original version/task/install operation closes this fixture's uncertainty.
+                    try(var query=program.readiness(unit,task.id(),UUID.randomUUID())) {
+                        installationFixtureDispatch(installation,query);
+                        installation.result(query.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),originalAction.toString().replace("-","")));
+                    }
+                    assertTrue(installation.state().ready());
+                    var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);completeCompensation(context,task,plan,false);
+                    new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));
+                } else if(state.equals("pending-action")) {
+                    var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);var intent=compensationIntent(context,task,plan,UUID.randomUUID());
+                    var malformed=new OperationResult<gold.debug.windowstolinux.appapi.linux.command.CommandResult>(TaskResult.SUCCEEDED,
+                        Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),"MALFORMED_FIXED_RECEIPT\n","fixture stderr",false)),Optional.empty());
+                    DeploymentAgentPublicationCompensation.acknowledge(task,log,intent,malformed,false);
+                    var actual=DeploymentJsonDocument.parse(log.events(task).getLast().detail());assertEquals("UNKNOWN",DeploymentJsonDocument.string(actual,"resolution"));
+                    assertEquals("SUCCEEDED",DeploymentJsonDocument.string(actual,"observedOutcome"));assertTrue(!actual.path("fixedReceiptVerified").booleanValue());
+                    var digest=DeploymentJsonDocument.object().put("formatVersion",1).put("outcome","SUCCEEDED").put("stdout",DeploymentAgentInputs.hash("MALFORMED_FIXED_RECEIPT\n"))
+                        .put("stderr",DeploymentAgentInputs.hash("fixture stderr")).put("truncated",false).put("exitCode",0).putNull("problemCode").putNull("eventCode");
+                    assertEquals(DeploymentAgentInputs.hash(DeploymentJsonDocument.encode(digest)),DeploymentJsonDocument.string(actual,"receipt"));
+                    var unchanged=log.events(task);assertThrows(Exception.class,()->compensationIntent(context,task,plan,UUID.randomUUID()));
+                    assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.acknowledge(task,log,intent,localReceipt()));assertEquals(unchanged,log.events(task));
+                    compensationObservation(context,task,false);DeploymentAgentPublicationCompensation.observedOnly(task,log,intent);
+                    completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));
+                } else {
+                    var formal=store.findForTask(task).orElseThrow();
+                    var foreign=new Problem(ProblemCode.IO_FAILURE,"FOREIGN_KNOWN_FAILURE","Unrelated fixed fixture failure",Map.of(),Optional.empty());
+                    assertEquals(TaskResult.FAILED,new DeploymentOriginalPublishCommit(context).completeUncommittedVerified(task,formal.identity().executionId(),TaskResult.FAILED,foreign).outcome());
+                    var calls=new java.util.concurrent.atomic.AtomicInteger();
+                    var localOnly=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},(proxy,method,args)->{
+                        if(Set.of("linux","ai").contains(method.getName())){calls.incrementAndGet();throw new AssertionError("Known failure without Verified cannot dispatch");}return invoke(method,context,args);
+                    });
+                    assertEquals(TaskResult.UNKNOWN,new DeploymentAgentRecovery(localOnly,log).reconcile(task,log.find(task).orElseThrow()).outcome());
+                    assertEquals(0,calls.get());assertEquals("FOREIGN_KNOWN_FAILURE",store.problem(store.findForTask(task).orElseThrow()).orElseThrow().eventCode());
+                    // Close only real fixture reservations; do not fabricate Agent settlement or a successful archive.
+                    new DeploymentOriginalPublishCommit(context).finishKnown(task,store.findForTask(task).orElseThrow());
+                    assertTrue(!DeploymentAgentActionLog.effectsSettled(log.events(task)));
+                }
+                return success();
+            });
+        }
+    }
+
+    /** Real TaskWork and journal, with local codec receipts only; no APP peer, host consumption or SSH execution. */
+    @ParameterizedTest
+    @ValueSource(strings={"approve-new","deny-again","reused-action","reused-grant","changed-version","changed-review","approved-not-sent"})
+    void deniedUnsentInstallationRequiresFreshIndependentAttempt(String scenario)throws Exception {
+        enable();
+        try(var runtime=open()) {
+            start(runtime,true);server(runtime);
+            run(runtime,task->{
+                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());var store=new DeploymentExecutionStore(context.db());
+                originalPublication(runtime,task,false);var formal=store.findForTask(task).orElseThrow();var unit=store.publicationTemplate(formal).orElseThrow().graph().components().getFirst().unit();
+                var program=new DeploymentAgentPublicationRecoveryProgram(unit.layout());var installation=DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"b".repeat(64),program);
+                UUID firstReadinessGrant=UUID.randomUUID();
+                try(var query=program.readiness(unit,task.id(),UUID.randomUUID())) {
+                    installationFixtureDispatch(installation,query,firstReadinessGrant);installation.result(query.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"));
+                }
+                UUID firstInstall=UUID.randomUUID();boolean approvedUnsent=scenario.equals("approved-not-sent");
+                var unsentInstallActions=new java.util.HashSet<String>();unsentInstallActions.add(firstInstall.toString());
+                try(var request=program.install(unit,task.id(),firstInstall)) {
+                    installationFixtureRequest(installation,request);installation.reviewed(request.action(),new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(approvedUnsent?"APPROVE":"DENY",false,"Local unsent installation fixture"),"5".repeat(64));
+                    installation.retainInterrupted();
+                }
+                var preserved=log.events(task);var notSent=DeploymentJsonDocument.parse(preserved.getLast().detail());
+                assertEquals("NOT_SENT",DeploymentJsonDocument.string(notSent,"resolution"));assertFalse(installation.state().ready());assertFalse(installation.state().mayInstall());
+                assertEquals(approvedUnsent?Optional.of(firstInstall):Optional.empty(),installation.state().installAction());
+                assertFalse(installation.state().attempt().orElseThrow().granted());assertFalse(installation.state().attempt().orElseThrow().dispatched());
+                assertThrows(Exception.class,()->installation.granted(firstInstall,new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID())));
+                assertThrows(Exception.class,()->installation.dispatch(firstInstall));
+                try(var tooSoon=program.install(unit,task.id(),UUID.randomUUID())) {assertThrows(Exception.class,()->installationFixtureRequest(installation,tooSoon));}
+                assertEquals(preserved,log.events(task));
+                if(scenario.equals("changed-version")) {
+                    var paths=unit.layout().paths();var other=new DeploymentAgentPublicationRecoveryProgram(new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
+                        new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(paths.helperDirectory()+"-next",paths.applicationsRoot()+"-next",paths.stateRoot()+"-next",paths.configurationRoot()+"-next",paths.dataRoot()+"-next")));
+                    assertFalse(program.version().equals(other.version()));assertThrows(Exception.class,()->DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"b".repeat(64),other));
+                    assertEquals(preserved,log.events(task));
+                }
+                if(scenario.equals("changed-review")) {
+                    assertThrows(Exception.class,()->DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"c".repeat(64),program));assertEquals(preserved,log.events(task));
+                }
+                // A subsequent caller must obtain another independently reviewed strict MISSING before proposing an install.
+                try(var query=program.readiness(unit,task.id(),UUID.randomUUID())) {
+                    installationFixtureDispatch(installation,query);installation.result(query.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"));
+                }
+                if(approvedUnsent) {
+                    assertFalse(installation.state().mayInstall());assertEquals(Optional.of(firstInstall),installation.state().installAction());
+                    var retained=log.events(task);try(var repeated=program.install(unit,task.id(),UUID.randomUUID())) {assertThrows(Exception.class,()->installationFixtureRequest(installation,repeated));}assertEquals(retained,log.events(task));
+                    // Finish the local receipt fixture through a read-only exact owner receipt, without dispatching another install.
+                    try(var query=program.readiness(unit,task.id(),UUID.randomUUID())) {
+                        installationFixtureDispatch(installation,query);installation.result(query.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),firstInstall.toString().replace("-","")));
+                    }
+                } else {
+                    assertTrue(installation.state().mayInstall());assertTrue(installation.state().installAction().isEmpty());
+                    if(scenario.equals("reused-action")) {
+                        var retained=log.events(task);try(var repeated=program.install(unit,task.id(),firstInstall)) {assertThrows(Exception.class,()->installationFixtureRequest(installation,repeated));}assertEquals(retained,log.events(task));
+                    }
+                    UUID secondInstall=UUID.randomUUID();
+                    try(var request=program.install(unit,task.id(),secondInstall)) {
+                        installationFixtureRequest(installation,request);installation.reviewed(secondInstall,new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(scenario.equals("deny-again")?"DENY":"APPROVE",false,"New local installation decision"),"6".repeat(64));
+                        if(scenario.equals("deny-again")) {
+                            unsentInstallActions.add(secondInstall.toString());
+                            installation.retainInterrupted();assertFalse(installation.state().ready());assertFalse(installation.state().mayInstall());assertTrue(installation.state().installAction().isEmpty());
+                            assertFalse(installation.state().attempt().orElseThrow().granted());assertFalse(installation.state().attempt().orElseThrow().dispatched());
+                            var retained=log.events(task);try(var automaticRetry=program.install(unit,task.id(),UUID.randomUUID())) {assertThrows(Exception.class,()->installationFixtureRequest(installation,automaticRetry));}assertEquals(retained,log.events(task));
+                        } else {
+                            if(scenario.equals("reused-grant")) {
+                                var retained=log.events(task);assertThrows(Exception.class,()->installation.granted(secondInstall,new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(firstReadinessGrant)));assertEquals(retained,log.events(task));
+                            }
+                            UUID freshGrant=UUID.randomUUID();assertFalse(firstReadinessGrant.equals(freshGrant));installation.granted(secondInstall,new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(freshGrant));installation.dispatch(secondInstall);
+                            installation.result(secondInstall,localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),secondInstall.toString().replace("-","")));
+                            assertEquals(Optional.of(secondInstall),installation.state().installAction());
+                        }
+                    }
+                    if(scenario.equals("deny-again")) {
+                        // A separately observed immutable cache closes this codec fixture; neither denied install was dispatched.
+                        try(var query=program.readiness(unit,task.id(),UUID.randomUUID())) {
+                            installationFixtureDispatch(installation,query);installation.result(query.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),UUID.randomUUID().toString().replace("-","")));
+                        }
+                    }
+                }
+                assertEquals(preserved,log.events(task).subList(0,preserved.size()));assertTrue(installation.state().ready());
+                long deniedInstallDispatches=0;
+                for(var event:log.events(task))if(event.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)) {
+                    var frame=DeploymentJsonDocument.parse(event.detail());
+                    if(frame.path("kind").asText().equals("DISPATCH")&&unsentInstallActions.contains(frame.path("action").asText()))deniedInstallDispatches++;
+                }
+                assertEquals(0,deniedInstallDispatches);
+                var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));
+                return success();
+            });
+            valid(runtime);
+        }
+    }
+
+    private static OperationResult<gold.debug.windowstolinux.appapi.linux.command.CommandResult> localReceipt(){return new OperationResult<>(TaskResult.SUCCEEDED,
+        Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),"LOCAL_RECEIPT_FIXTURE=1\n","",false)),Optional.empty());}
+
+    /** Installation codec fixture only: no real APP, grant consumption, SSH, sidecar parser or registry integration is claimed. */
+    private static void installationFixtureDispatch(DeploymentAgentPublicationRecoveryInstallation installation,DeploymentAgentPublicationRecoveryProgram.Request request)throws Exception {
+        installationFixtureDispatch(installation,request,UUID.randomUUID());
+    }
+
+    private static void installationFixtureRequest(DeploymentAgentPublicationRecoveryInstallation installation,DeploymentAgentPublicationRecoveryProgram.Request request)throws Exception {
+        var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(request.unit().server(),installation.state().binding(),request.command())
+            .withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(request.operation(),request.resourceTargets()));
+        installation.request(request,intent);
+    }
+
+    private static void installationFixtureDispatch(DeploymentAgentPublicationRecoveryInstallation installation,DeploymentAgentPublicationRecoveryProgram.Request request,UUID grant)throws Exception {
+        installationFixtureRequest(installation,request);installation.reviewed(request.action(),new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Local installation receipt fixture"),"5".repeat(64));
+        installation.granted(request.action(),new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(grant));installation.dispatch(request.action());
+    }
+
+    @Test
+    void failedCompensationProofClosesOnlyOriginalDelivery() throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true); server(runtime);
+            run(runtime, task -> {
+                var context = runtime.modContexts().get(OWNER).context();
+                originalPublication(runtime, task, false);
+                var plan = DeploymentAgentPublicationCompensation.begin(context, task, new DeploymentAgentActionLog(context.db()));
+                completeCompensation(context, task, plan, false);
+                var result = finishCompensation(context, task);
+                var events = new DeploymentAgentActionLog(context.db()).events(task);
+                assertTrue(!DeploymentAgentActionLog.effectsSettled(events));
+                assertTrue(events.stream().noneMatch(e -> Set.of("DELIVERY_RESULT", "AI_PUBLICATION_FINISHED", DeploymentAgentActionLog.DELIVERY_RECOVERY_SETTLED).contains(e.type())));
+                var archive = new DeploymentAgentHistoryArchive(context);
+                var formal = new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow();
+                try (var held = context.db().openConnection(task)) {
+                    assertFalse(context.tasks().resourcesReleased(task));
+                    assertEquals(TaskResult.UNKNOWN, archive.settle(task, result).outcome());
+                    assertEquals(events, new DeploymentAgentActionLog(context.db()).events(task));
+                    assertEquals(formal, new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow());
+                    assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM deployment_operation_receipt"));
+                }
+                assertTrue(context.tasks().resourcesReleased(task));
+                assertEquals(TaskResult.FAILED, archive.settle(task, result).outcome());
+                assertEquals(TaskResult.FAILED, archive.retained(task).orElseThrow().outcome());
+                try (var connection = context.db().openConnection(task)) {
+                    var receipt = DeploymentOperationReceipts.read(connection, task.id()).orElseThrow();
+                    assertEquals(DeploymentAgentPublicationCompensation.FAILURE, receipt.eventCode());
+                    assertTrue(receipt.applicationId().isEmpty() && receipt.release().isEmpty());
+                }
+                assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM managed_application"));
+                assertTrue(new DeploymentAgentActionLog(context.db()).find(task).isEmpty());
+                return success();
+            });
+            valid(runtime);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"snapshot-owner", "snapshot-result", "snapshot-duplicate", "delivery-duplicate", "all-current", "all-empty", "source", "unknown-action", "reused-grant", "new-intent-after-verified", "latest-observation-incomplete", "foreign-proof"})
+    void failedCompensationRejectsChangedOrUnresolvedEvidence(String change) throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true); server(runtime);
+            run(runtime, task -> {
+                var context = runtime.modContexts().get(OWNER).context(); var log = new DeploymentAgentActionLog(context.db());
+                originalPublication(runtime, task, false);
+                var initialEvents = log.events(task);
+                if (change.startsWith("snapshot") || change.equals("delivery-duplicate") || change.equals("all-current") || change.equals("all-empty")) {
+                    if (change.equals("all-current") || change.equals("all-empty")) compensationObservation(context, task, change.equals("all-current") ? 2 : 3);
+                    if (change.equals("snapshot-duplicate")) log.event(task, "SNAPSHOT_RESULT", "web", "none:0:none:none");
+                    else if (change.equals("delivery-duplicate")) log.event(task, "DELIVERY_EXECUTING", "2".repeat(64), "1");
+                    else if (change.startsWith("snapshot")) try (var connection = context.db().openConnection(task); var update = connection.prepareStatement(
+                        "UPDATE deployment_agent_event SET event_detail=? WHERE task_id=? AND event_type=?")) {
+                        update.setString(1, change.equals("snapshot-owner") ? "0".repeat(64) : "none:1:none:none");
+                        update.setString(2, task.id().toString()); update.setString(3, change.equals("snapshot-owner") ? "SNAPSHOT_EXECUTING" : "SNAPSHOT_RESULT"); update.executeUpdate();
+                    }
+                    assertThrows(Exception.class, () -> DeploymentAgentPublicationCompensation.begin(context, task, log));
+                    requireReservedOriginalReferences(context, task);
+                    // Restore deliberately corrupted fixture bytes only; this is not a recovery implementation.
+                    restoreEvents(context, task, initialEvents);
+                    var valid = DeploymentAgentPublicationCompensation.begin(context, task, log);
+                    completeCompensation(context, task, valid, false);
+                    new DeploymentAgentHistoryArchive(context).settle(task, finishCompensation(context, task));
+                } else {
+                    var plan = DeploymentAgentPublicationCompensation.begin(context, task, log);
+                    if (change.equals("unknown-action") || change.equals("reused-grant")) {
+                        var grant = UUID.randomUUID(); var intent = compensationIntent(context, task, plan, grant);
+                        if (change.equals("reused-grant")) {
+                            DeploymentAgentPublicationCompensation.acknowledge(task, log, intent, new OperationResult<>(TaskResult.SUCCEEDED,
+                                Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0), "LOCAL_RECEIPT_FIXTURE=1\n", "", false)), Optional.empty()));
+                            var unchanged = log.events(task);
+                            assertThrows(Exception.class, () -> compensationIntent(context, task, plan, grant));
+                            assertEquals(unchanged, log.events(task));
+                        } else {
+                            DeploymentAgentPublicationCompensation.acknowledge(task, log, intent, new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(DeploymentAgentPublicationCompensation.failure())));
+                            assertTrue(DeploymentAgentPublicationCompensation.read(log.events(task), task.id()).pending().isPresent());
+                            assertThrows(Exception.class, () -> compensationIntent(context, task, plan, UUID.randomUUID()));
+                            assertThrows(Exception.class, () -> DeploymentAgentPublicationCompensation.verify(context, task, log));
+                            requireReservedOriginalReferences(context, task);
+                            compensationObservation(context, task, false);
+                            DeploymentAgentPublicationCompensation.observedOnly(task, log, intent);
+                        }
+                        completeCompensation(context, task, plan, false);
+                        new DeploymentAgentHistoryArchive(context).settle(task, finishCompensation(context, task));
+                    } else {
+                        completeCompensation(context, task, plan, false);
+                        var result = finishCompensation(context, task);
+                        var settledEvents = log.events(task);
+                        if (change.equals("source")) try (var connection = context.db().openConnection(task); var update = connection.prepareStatement(
+                            "UPDATE deployment_agent_event SET event_detail=? WHERE task_id=? AND event_type='SOURCE'")) {
+                            update.setString(1, "0".repeat(64)); update.setString(2, task.id().toString()); update.executeUpdate();
+                        }
+                        if (change.equals("new-intent-after-verified")) log.event(task, "CAPABILITY_EXECUTING", "foreign", "1");
+                        if (change.equals("latest-observation-incomplete")) {
+                            var old = log.events(task).stream().filter(e -> e.type().equals(DeploymentAgentPublicationObservation.BEGIN)).reduce((a,b) -> b).orElseThrow();
+                            log.event(task, old.type(), old.action(), old.detail());
+                        }
+                        if (change.equals("foreign-proof")) log.event(task, DeploymentAgentPublicationCompensation.DELIVERY_SETTLED, "0".repeat(64), "{}");
+                        assertThrows(Exception.class, () -> new DeploymentAgentHistoryArchive(context).settle(task, result));
+                        assertTrue(log.find(task).isPresent());
+                        assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM deployment_operation_receipt"));
+                        restoreEvents(context, task, settledEvents);
+                        new DeploymentAgentHistoryArchive(context).settle(task, result);
+                    }
+                }
+                assertTrue(log.find(task).isEmpty());
+                assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM deployment_operation_receipt"));
+                return success();
+            });
+        }
+    }
+
+    @Test
+    void compensationObservationResolvesGoalWithoutInventingOriginalAck() throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true); server(runtime);
+            run(runtime, task -> {
+                var context = runtime.modContexts().get(OWNER).context(); var log = new DeploymentAgentActionLog(context.db());
+                originalPublication(runtime, task, false);
+                var plan = DeploymentAgentPublicationCompensation.begin(context, task, log);
+                completeCompensation(context, task, plan, true);
+                var events = log.events(task);
+                assertEquals(1, events.stream().filter(e -> e.type().equals(DeploymentAgentPublicationCompensation.RESULT)
+                    && e.detail().contains("\"resolution\":\"UNKNOWN\"")).count());
+                assertEquals(1, events.stream().filter(e -> e.type().equals(DeploymentAgentPublicationCompensation.RESULT)
+                    && e.detail().contains("\"resolution\":\"OBSERVED_ONLY\"")).count());
+                assertTrue(DeploymentAgentPublicationCompensation.verified(task.id(), log.find(task).orElseThrow(), new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow(),
+                    new DeploymentExecutionStore(context.db()).publicationTemplate(new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow()).orElseThrow(), events).event() > plan.readyEvent());
+                assertEquals(TaskResult.FAILED, new DeploymentAgentHistoryArchive(context).settle(task, finishCompensation(context, task)).outcome());
+                return success();
+            });
+            valid(runtime);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"proof", "receipt", "events", "task", "execution", "before_commit", "lost_ack"})
+    void failedCompensationArchiveIsAtomicAndReceiptReplayIsLocal(String point) throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true); server(runtime);
+            run(runtime, task -> {
+                var context = runtime.modContexts().get(OWNER).context(); var log = new DeploymentAgentActionLog(context.db());
+                originalPublication(runtime, task, false);
+                var plan = DeploymentAgentPublicationCompensation.begin(context, task, log);
+                completeCompensation(context, task, plan, false);
+                var result = finishCompensation(context, task); var events = log.events(task);
+                var original = new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow();
+                assertThrows(Exception.class, () -> new DeploymentAgentHistoryArchive(withDatabase(context, fault(context.db(), point))).settle(task, result));
+                if (!point.equals("lost_ack")) {
+                    assertEquals(events, log.events(task));
+                    assertEquals(original, new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow());
+                    assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM deployment_operation_receipt"));
+                }
+                var strict = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+                    if (Set.of("linux", "ai", "file").contains(method.getName())) throw new AssertionError("Local settlement must not redispatch " + method.getName());
+                    return invoke(method, context, args);
+                });
+                assertEquals(TaskResult.FAILED, new DeploymentAgentHistoryArchive(strict).settle(task, result).outcome());
+                assertEquals(TaskResult.FAILED, new DeploymentAgentHistoryArchive(strict).retained(task).orElseThrow().outcome());
+                return success();
+            });
+            valid(runtime);
+        }
+    }
+
+    private static void requireReservedOriginalReferences(ModContext context, TaskContext task) throws Exception {
+        assertTrue(context.tasks().resourcesReleased(task));
+        var store = new DeploymentExecutionStore(context.db());
+        var references = store.references(store.findForTask(task).orElseThrow());
+        assertTrue(!references.isEmpty());
+        for (var entry : references.entrySet()) {
+            var intent = entry.getKey();
+            assertEquals(gold.debug.windowstolinux.mod.deployment.db.reference.DeploymentRefIntent.DeploymentRefKind.SERVER, intent.kind());
+            var reference = context.servers().findReference(new ServerId(intent.resourceId()), intent.businessKey(), task).orElseThrow();
+            assertEquals(entry.getValue().orElseThrow(), reference.id());
+            assertEquals(new ServerId(intent.resourceId()), reference.server());
+            assertEquals(intent.businessKey(), reference.businessKey());
+            assertEquals(gold.debug.windowstolinux.appapi.task.ref.ResourceRefState.RESERVED, reference.state());
+        }
+    }
+
+    private static OperationResult<gold.debug.windowstolinux.appapi.linux.command.CommandResult> localReceipt(String stdout) {
+        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),stdout,"",false)),Optional.empty());
+    }
+    /** Strict typed fixture only; no remote check or historical current-state fingerprint is asserted. */
+    private static Map<String,UUID> appendReadyPreflightFixture(TaskContext task,DeploymentAgentActionLog log,DeploymentAgentPublicationCompensation.DiagnosticEligibility original,
+        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout)throws Exception {
+        appendV1DiagnosticFixture(task,log,original,layout,"ENV_FAIL");
+        var eligible=DeploymentAgentPublicationRecoveryPreflight.eligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
+        var program=new DeploymentAgentPublicationRecoveryPreflightProgram(layout);UUID action=UUID.randomUUID(),grant=UUID.randomUUID();
+        try(var request=program.request(preflightBinding(eligible),action)) {
+            var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(original.plan().server()),original.plan().sha256(),request.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationRecoveryPreflightProgram.OPERATION,request.resourceTargets()));
+            var durable=DeploymentAgentPublicationRecoveryPreflight.open(task,log,eligible,request,intent);durable.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Complete local v2 preflight"),"5".repeat(64));durable.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(grant));durable.dispatch();
+            var json=new com.fasterxml.jackson.databind.ObjectMapper();var safe=(com.fasterxml.jackson.databind.node.ObjectNode)json.readTree(preflightSafeReceipt(program,request));
+            for(var row:safe.path("checks"))if(!Set.of("FULL_PARAMETER_VALIDATION","UNIT_RENDER_MATCH","MANAGED_DATA_LINKS").contains(row.path("id").asText())) {
+                var check=(com.fasterxml.jackson.databind.node.ObjectNode)row;check.put("status","PASS").put("reason","MATCH").put("flag",true);
+                if(Set.of("CANDIDATE_OWNER","CANDIDATE_TASK","MAINTENANCE_OWNER","RELEASE_OWNER","PARAMETERS_FILE","UNIT_FILE").contains(check.path("id").asText()))check.put("sha256",DeploymentAgentInputs.hash("fixture:"+check.path("id").asText()));
+            }
+            String canonical=program.validateReceipt(request,safe.toString()).canonicalJson();var actual=localReceipt("PUBLICATION_RECOVERY_PREFLIGHT="+canonical+"\n");durable.result(actual,program.parse(request,actual));
+        }
+        return Map.of("action",action,"grant",grant);
+    }
+    private static Map<String,UUID> appendContractControlFixture(TaskContext task,DeploymentAgentActionLog log,
+        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout,boolean control)throws Exception {
+        var events=log.events(task);var eligible=DeploymentAgentPublicationContractDiagnostic.eligibility(DeploymentAgentPublicationCompensation.read(events,task.id()),events).orElseThrow();
+        var program=new DeploymentAgentPublicationContractDiagnosticProgram(layout);UUID action=UUID.randomUUID(),grant=UUID.randomUUID();
+        try(var request=program.request(DeploymentAgentPublicationContractDiagnostic.binding(eligible),action)) {
+            var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(eligible.original().plan().server()),eligible.original().plan().sha256(),request.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationContractDiagnosticProgram.OPERATION,request.resourceTargets()));
+            var durable=DeploymentAgentPublicationContractDiagnostic.open(task,log,eligible,request,intent);
+            durable.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Immutable original contract review"),"4".repeat(64));durable.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(grant));durable.dispatch();
+            var node=(com.fasterxml.jackson.databind.node.ObjectNode)new com.fasterxml.jackson.databind.ObjectMapper().readTree(contractDiagnosticSafeReceipt(program,request,false));
+            if(control){node.put("status","UNKNOWN").put("phase","CONTROL").put("reason","UNCONFIRMED").putNull("exitCode");for(var check:node.path("checks"))((com.fasterxml.jackson.databind.node.ObjectNode)check).put("status","UNKNOWN").put("reason","NOT_CHECKED").putNull("exitCode");}
+            String safe=program.validateReceipt(request,node.toString()).canonicalJson();var actual=localReceipt(DeploymentAgentPublicationContractDiagnosticProgram.FRAME+safe+"\n");durable.result(actual,program.parse(request,actual));
+        }
+        return Map.of("action",action,"grant",grant);
+    }
+    private static Map<String,UUID> appendObservedFollowupFixture(TaskContext task,DeploymentAgentActionLog log,
+        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout,boolean allPass)throws Exception {
+        var events=log.events(task);var eligible=DeploymentAgentPublicationContractDiagnosticFollowup.eligibility(DeploymentAgentPublicationCompensation.read(events,task.id()),events).orElseThrow();
+        var program=new DeploymentAgentPublicationContractDiagnosticFollowupProgram(layout);UUID action=UUID.randomUUID(),grant=UUID.randomUUID();
+        try(var request=program.request(DeploymentAgentPublicationContractDiagnosticFollowup.binding(eligible),action)) {
+            var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(eligible.original().plan().server()),eligible.original().plan().sha256(),request.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationContractDiagnosticFollowupProgram.OPERATION,request.resourceTargets()));
+            var durable=DeploymentAgentPublicationContractDiagnosticFollowup.open(task,log,eligible,request,intent);
+            durable.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Immutable complete native contract review"),"4".repeat(64));durable.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(grant));durable.dispatch();
+            String safe=contractFollowupSafeReceipt(program,request,!allPass);var actual=localReceipt(DeploymentAgentPublicationContractDiagnosticFollowupProgram.FRAME+safe+"\n");durable.result(actual,program.parse(request,actual));
+        }
+        return Map.of("action",action,"grant",grant);
+    }
+    private static String correctionSafeReceipt(DeploymentAgentPublicationCorrectionProgram program,
+        DeploymentAgentPublicationCorrectionProgram.Request request,boolean unknown)throws Exception {
+        var json=new com.fasterxml.jackson.databind.ObjectMapper();var safe=json.createObjectNode().put("format",DeploymentAgentPublicationCorrectionProgram.FORMAT).put("sourceVersion",program.sourceVersion()).put("action",request.action().toString());safe.set("binding",json.valueToTree(request.binding()));
+        safe.put("status",unknown?"UNKNOWN":"ROLLED_BACK").put("check",unknown?"INTERNAL":"COMPLETE").put("mutationStarted",true);
+        for(String key:List.of("currentAbsent","unitAbsent","releaseAbsent","maintenanceAbsent","candidateRetained"))if(unknown)safe.putNull(key);else safe.put(key,true);
+        return program.validateReceipt(request,safe.toString()).canonicalJson();
+    }
+
+    private static String contractFollowupSafeReceipt(DeploymentAgentPublicationContractDiagnosticFollowupProgram program,
+        DeploymentAgentPublicationContractDiagnosticFollowupProgram.Request request,boolean refused)throws Exception {
+        var json=new com.fasterxml.jackson.databind.ObjectMapper();var safe=json.createObjectNode().put("format",DeploymentAgentPublicationContractDiagnosticFollowupProgram.FORMAT).put("sourceVersion",program.sourceVersion()).put("action",request.action().toString());safe.set("binding",json.valueToTree(request.binding()));
+        safe.put("status",refused?"REFUSED":"OBSERVED").put("phase",refused?"FINGERPRINTS":"COMPLETE").put("reason",refused?"REJECTED":"MATCH");if(refused)safe.put("exitCode",64);else safe.put("exitCode",0);
+        var checks=safe.putArray("checks");for(String id:List.of("FULL_PARAMETER_VALIDATION","MANAGED_DATA_LINKS","UNIT_RENDER_MATCH")){var row=checks.addObject().put("id",id).put("status",refused?"UNKNOWN":"PASS").put("reason",refused?"NOT_CHECKED":"MATCH");if(refused)row.putNull("exitCode");else row.put("exitCode",0);}
+        return program.validateReceipt(request,safe.toString()).canonicalJson();
+    }
+
+    private static Map<String,UUID> appendUnknownContinuationFixture(TaskContext task,DeploymentAgentActionLog log,
+        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout)throws Exception {
+        var events=log.events(task);var eligible=DeploymentAgentPublicationContinuation.eligibility(DeploymentAgentPublicationCompensation.read(events,task.id()),events).orElseThrow();
+        var program=new DeploymentAgentPublicationContinuationProgram(layout);UUID action=UUID.randomUUID(),grant=UUID.randomUUID();
+        try(var request=program.request(DeploymentAgentPublicationContinuation.binding(eligible),action)) {
+            var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(eligible.original().plan().server()),eligible.original().plan().sha256(),request.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationContinuationProgram.OPERATION,request.resourceTargets()));
+            var durable=DeploymentAgentPublicationContinuation.open(task,log,eligible,request,intent);
+            durable.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Original local unknown continuation"),"4".repeat(64));durable.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(grant));durable.dispatch();
+            var safe=(com.fasterxml.jackson.databind.node.ObjectNode)new com.fasterxml.jackson.databind.ObjectMapper().readTree(continuationSafeReceipt(program,request,false));
+            safe.put("status","UNKNOWN").put("check","INTERNAL").put("mutationStarted",true);
+            for(String key:List.of("currentAbsent","unitAbsent","releaseAbsent","maintenanceAbsent","candidateRetained"))safe.putNull(key);
+            String canonical=program.validateReceipt(request,safe.toString()).canonicalJson();var actual=localReceipt("PUBLICATION_CONTINUATION="+canonical+"\n");durable.result(actual,program.parse(request,actual));
+        }
+        return Map.of("action",action,"grant",grant);
+    }
+    private static String contractDiagnosticSafeReceipt(DeploymentAgentPublicationContractDiagnosticProgram program,
+        DeploymentAgentPublicationContractDiagnosticProgram.Request request,boolean refused)throws Exception {
+        var json=new com.fasterxml.jackson.databind.ObjectMapper();var safe=json.createObjectNode().put("format",DeploymentAgentPublicationContractDiagnosticProgram.FORMAT)
+            .put("sourceVersion",program.sourceVersion()).put("action",request.action().toString());safe.set("binding",json.valueToTree(request.binding()));
+        safe.put("status",refused?"REFUSED":"OBSERVED").put("phase",refused?"FINGERPRINTS":"COMPLETE").put("reason",refused?"REJECTED":"MATCH");
+        if(refused)safe.put("exitCode",64);else safe.put("exitCode",0);
+        var checks=safe.putArray("checks");for(String id:List.of("FULL_PARAMETER_VALIDATION","MANAGED_DATA_LINKS","UNIT_RENDER_MATCH")) {
+            var row=checks.addObject().put("id",id).put("status",refused?"UNKNOWN":"PASS").put("reason",refused?"NOT_CHECKED":"MATCH");if(refused)row.putNull("exitCode");else row.put("exitCode",0);
+        }
+        return program.validateReceipt(request,safe.toString()).canonicalJson();
+    }
+
+    private static String continuationSafeReceipt(DeploymentAgentPublicationContinuationProgram program,DeploymentAgentPublicationContinuationProgram.Request request,boolean refused)throws Exception {
+        var json=new com.fasterxml.jackson.databind.ObjectMapper();var n=json.createObjectNode().put("format",DeploymentAgentPublicationContinuationProgram.FORMAT).put("sourceVersion",program.sourceVersion()).put("action",request.action().toString());n.set("binding",json.valueToTree(request.binding()));
+        n.put("status",refused?"REFUSED":"ROLLED_BACK").put("check",refused?"FINGERPRINTS":"COMPLETE").put("mutationStarted",!refused);
+        for(String key:List.of("currentAbsent","unitAbsent","releaseAbsent","maintenanceAbsent","candidateRetained"))if(refused)n.putNull(key);else n.put(key,true);
+        return program.validateReceipt(request,n.toString()).canonicalJson();
+    }
+
+    private static DeploymentAgentPublicationRecoveryPreflightProgram.Binding preflightBinding(DeploymentAgentPublicationRecoveryPreflight.Eligibility eligible)throws Exception {
+        return new DeploymentAgentPublicationRecoveryPreflightProgram.Binding(diagnosticBinding(eligible.original()),eligible.prior());
+    }
+
+    /** Complete old v1 history is retained under the immutable old codec; no remote observation is claimed. */
+    private static Map<String,UUID> appendV1DiagnosticFixture(TaskContext task,DeploymentAgentActionLog log,DeploymentAgentPublicationCompensation.DiagnosticEligibility eligible,
+        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout,String mode)throws Exception {
+        var program=new DeploymentAgentPublicationRecoveryDiagnosticProgram(layout);UUID action=UUID.randomUUID(),grant=UUID.randomUUID();
+        try(var request=program.request(diagnosticBinding(eligible),action)) {
+            var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(eligible.plan().server()),eligible.plan().sha256(),request.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationRecoveryDiagnosticProgram.OPERATION,request.resourceTargets()));
+            var diagnostic=DeploymentAgentPublicationRecoveryDiagnostic.open(task,log,eligible,request,intent);
+            diagnostic.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Original local v1 diagnostic"),"6".repeat(64));diagnostic.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(grant));diagnostic.dispatch();
+            if(mode.equals("INCOMPLETE")){diagnostic.retainInterrupted();return Map.of("action",action,"grant",grant);}
+            String safe=diagnosticSafeReceipt(program,request);
+            if(mode.equals("ENV_FAIL")) {
+                var node=(com.fasterxml.jackson.databind.node.ObjectNode)new com.fasterxml.jackson.databind.ObjectMapper().readTree(safe);node.put("stable",false);
+                for(var check:node.path("checks")) {
+                    var entry=(com.fasterxml.jackson.databind.node.ObjectNode)check;
+                    if(entry.path("id").asText().equals("ENVIRONMENT"))entry.put("status","FAIL").put("reason","MISMATCH").put("flag",false);
+                    if(entry.path("id").asText().equals("STABILITY"))entry.put("status","UNKNOWN").put("reason","DRIFT");
+                }
+                safe=program.validateReceipt(request,node.toString()).canonicalJson();
+            }
+            var actual=new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),"PUBLICATION_RECOVERY_DIAGNOSTIC="+safe+"\n","",false)),Optional.<Problem>empty());
+            diagnostic.result(actual,program.parse(request,actual));
+        }
+        return Map.of("action",action,"grant",grant);
+    }
+
+    /** Synthetic fixed receipt only; no assertion that the real guard, stability or provider was exercised. */
+    private static String preflightSafeReceipt(DeploymentAgentPublicationRecoveryPreflightProgram program,DeploymentAgentPublicationRecoveryPreflightProgram.Request request)throws Exception {
+        var json=new com.fasterxml.jackson.databind.ObjectMapper();var node=json.createObjectNode().put("format",DeploymentAgentPublicationRecoveryPreflightProgram.FORMAT).put("sourceVersion",program.sourceVersion()).put("action",request.action().toString());
+        node.set("binding",json.valueToTree(request.binding()));node.put("stage","GUARD_CHECKS");
+        node.putObject("environment").put("bashEnv","DEV_NULL").put("env","DEV_NULL").put("ldPreload","ABSENT").put("ldLibraryPath","ABSENT").put("exportedFunctions","ABSENT").put("snapshot","COMPLETE").put("sanitizedSentinels",true).put("pythonStarted",true);
+        var checks=node.putArray("checks");
+        for(String id:DeploymentAgentPublicationRecoveryPreflightProgram.CHECK_IDS) {
+            boolean pass=Set.of("ENVIRONMENT","ROOT_IDENTITY","STABILITY").contains(id);var check=checks.addObject().put("id",id).put("status",pass?"PASS":"UNKNOWN")
+                .put("reason",pass?"MATCH":Set.of("FULL_PARAMETER_VALIDATION","UNIT_RENDER_MATCH","MANAGED_DATA_LINKS").contains(id)?"NOT_IMPLEMENTED":"NOT_CHECKED").putNull("number");
+            if(pass)check.put("flag",true);else check.putNull("flag");check.putNull("sha256");
+        }
+        node.put("stable",true);return program.validateReceipt(request,json.writeValueAsString(node)).canonicalJson();
+    }
+
+    private static DeploymentAgentPublicationRecoveryDiagnosticProgram.Binding diagnosticBinding(DeploymentAgentPublicationCompensation.DiagnosticEligibility eligible)throws Exception {
+        var p=eligible.plan();var a=eligible.pending();var c=eligible.component();
+        return new DeploymentAgentPublicationRecoveryDiagnosticProgram.Binding(p.server(),p.task(),p.execution(),a.actionId(),a.event(),DeploymentAgentInputs.hash(a.frame()),p.sha256(),c.unit(),c.owner(),c.candidate(),c.release(),DeploymentJsonDocument.string(DeploymentJsonDocument.parse(p.header()),"layout"));
+    }
+
+    /** Local safe receipt fixture only, not a remote observation or proof that diagnostic checks passed. */
+    private static String diagnosticSafeReceipt(DeploymentAgentPublicationRecoveryDiagnosticProgram program,DeploymentAgentPublicationRecoveryDiagnosticProgram.Request request)throws Exception {
+        var json=new com.fasterxml.jackson.databind.ObjectMapper();var node=json.createObjectNode().put("format",DeploymentAgentPublicationRecoveryDiagnosticProgram.FORMAT).put("sourceVersion",program.sourceVersion()).put("action",request.action().toString());
+        node.set("binding",json.valueToTree(request.binding()));var checks=node.putArray("checks");
+        for(String id:DeploymentAgentPublicationRecoveryDiagnosticProgram.CHECK_IDS) {
+            boolean stable=id.equals("STABILITY");var check=checks.addObject().put("id",id).put("status",stable?"PASS":"UNKNOWN")
+                .put("reason",stable?"MATCH":Set.of("FULL_PARAMETER_VALIDATION","UNIT_RENDER_MATCH","MANAGED_DATA_LINKS").contains(id)?"NOT_IMPLEMENTED":"NOT_CHECKED").putNull("number");
+            if(stable)check.put("flag",true);else check.putNull("flag");check.putNull("sha256");
+        }
+        node.put("stable",true);String safe=json.writeValueAsString(node);return program.validateReceipt(request,safe).canonicalJson();
+    }
+
+    private static DeploymentAgentPublicationCompensation.Intent compensationIntent(ModContext context, TaskContext task,
+        DeploymentAgentPublicationCompensation.Plan plan, UUID grant) throws Exception {
+        var log = new DeploymentAgentActionLog(context.db()); var state = DeploymentAgentPublicationCompensation.read(log.events(task), task.id());
+        var step = DeploymentAgentPublicationCompensation.next(state).orElseThrow(); var component = step.component();
+        String script = "local-fixture-only:" + component.id() + ":" + step.verb();
+        boolean cleanup = step.verb() == DeploymentAgentPublicationCompensation.Verb.CLEANUP_CANDIDATE;
+        if (cleanup) {
+            var store = new DeploymentExecutionStore(context.db());
+            var unit = store.publicationTemplate(store.findForTask(task).orElseThrow()).orElseThrow().graph().components().stream().filter(p -> p.componentId().equals(component.id())).findFirst().orElseThrow().unit();
+            String command = java.util.stream.Stream.of(unit.layout().helperPath(), "candidate-cleanup-task", unit.id(), component.candidate(), task.id().toString())
+                .map(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildCommandChannel::shellQuote).collect(java.util.stream.Collectors.joining(" "));
+            script = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedCommand(command, unit.layout());
+        }
+        try (var request = new gold.debug.windowstolinux.appapi.linux.command.CommandRequest(script, new byte[0], java.time.Duration.ofSeconds(cleanup ? 90 : 30), 4096)) {
+            var action = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(plan.server()), plan.sha256(), request)
+                .withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(step.verb() == DeploymentAgentPublicationCompensation.Verb.GUARDED_ROLLBACK
+                    ? DeploymentAgentPublicationCompensation.ROLLBACK_OPERATION : DeploymentAgentPublicationCompensation.CLEANUP_OPERATION,
+                    Set.of(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(plan.server(), "deployment-release", component.releaseRoot()))));
+            return DeploymentAgentPublicationCompensation.intend(context, task, log, plan, UUID.randomUUID(), action, request,
+                new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE", false, "Local receipt fixture"), "5".repeat(64),
+                new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(grant));
+        }
+    }
+
+    private static void completeCompensation(ModContext context, TaskContext task, DeploymentAgentPublicationCompensation.Plan plan, boolean unknownFirst) throws Exception {
+        var log = new DeploymentAgentActionLog(context.db());
+        int count = plan.components().size() + (int) plan.components().stream().filter(c -> c.initial().current().isPresent()).count();
+        for (int i = DeploymentAgentPublicationCompensation.read(log.events(task), task.id()).completed(); i < count; i++) {
+            var intent = compensationIntent(context, task, plan, UUID.randomUUID());
+            if (i == 0 && unknownFirst) {
+                DeploymentAgentPublicationCompensation.acknowledge(task, log, intent, new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(DeploymentAgentPublicationCompensation.failure())));
+                compensationObservation(context, task, false);
+                DeploymentAgentPublicationCompensation.observedOnly(task, log, intent);
+            } else DeploymentAgentPublicationCompensation.acknowledge(task, log, intent, new OperationResult<>(TaskResult.SUCCEEDED,
+                Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0), "LOCAL_RECEIPT_FIXTURE=1\n", "", false)), Optional.empty()));
+        }
+        compensationObservation(context, task, false);
+        DeploymentAgentPublicationCompensation.verify(context, task, log);
+    }
+
+    private static OperationResult<Void> finishCompensation(ModContext context, TaskContext task) throws Exception {
+        var store = new DeploymentExecutionStore(context.db()); var log = new DeploymentAgentActionLog(context.db());
+        var id = store.findForTask(task).orElseThrow().identity().executionId();
+        var commit = new DeploymentOriginalPublishCommit(context);
+        assertEquals(TaskResult.FAILED, commit.completeUncommittedVerified(task, id, TaskResult.FAILED, DeploymentAgentPublicationCompensation.failure()).outcome());
+        assertEquals(TaskResult.FAILED, commit.finishKnown(task, store.findForTask(task).orElseThrow()).outcome());
+        log.event(task, "AI_PUBLICATION_CLEANED", "application", "ABSENT");
+        log.event(task, "AI_RECOVERY_SETTLED", task.id().toString(), "FAILED:COMMAND_NATIVE_DATABASE_SECRET_CANDIDATE_SOURCE_SETTLED");
+        log.state(task, "FAILED");
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(DeploymentAgentPublicationCompensation.failure()));
+    }
+
+    /** Local codec/transaction fixture only: no APP, host grant, SSH or remote result is claimed exercised. */
+    private static void compensationObservation(ModContext context, TaskContext task, boolean initial) throws Exception {
+        compensationObservation(context, task, initial ? 1 : 0);
+    }
+
+    private static void compensationObservation(ModContext context, TaskContext task, int mode) throws Exception {
+        boolean initial = mode != 0;
+        var log = new DeploymentAgentActionLog(context.db()); var store = new DeploymentExecutionStore(context.db());
+        var formal = store.findForTask(task).orElseThrow(); var template = store.publicationTemplate(formal).orElseThrow();
+        var prefix = log.events(task); String invocation = UUID.randomUUID().toString();
+        var begin = DeploymentJsonDocument.object().put("formatVersion", 1).put("kind", "BEGIN").put("invocation", invocation)
+            .put("task", task.id().toString()).put("execution", formal.identity().executionId().toString()).put("server", "server").put("application", "application")
+            .put("reviewRevision", "b".repeat(64)).put("templateSha256", DeploymentAgentInputs.hash(formal.requestJson()))
+            .put("proposalSha256", DeploymentAgentInputs.hash(new DeploymentPublishResult(template.graph(), template.units()).toString()))
+            .put("prefixEndEvent", prefix.getLast().id()).put("prefixSha256", DeploymentAgentPublicationObservation.prefixSha256(prefix));
+        var names = begin.putArray("components"); template.graph().components().forEach(p -> names.add(p.componentId()));
+        String beginText = DeploymentAgentPublicationObservation.encodeFrame(begin);
+        log.event(task, DeploymentAgentPublicationObservation.BEGIN, invocation, beginText); long beginId = log.events(task).getLast().id();
+        var ids = new ArrayList<Long>(); int index = 0;
+        for (var part : template.graph().components()) {
+            String component = part.componentId(); var commit = template.units().stream().filter(u -> u.unit().equals(part.unit())).findFirst().orElseThrow();
+            String candidate = prefix.stream().filter(e -> e.type().equals("CANDIDATE") && e.action().equals(component)).findFirst().orElseThrow().detail();
+            boolean current = mode == 2 || mode == 1 && index++ == 0;
+            var status = new DeploymentOriginalPublishStatus(current ? Optional.of(commit.release().sha256()) : Optional.empty(), current ? "deployment" : "none",
+                current ? part.reviewedRuntime().workload().mode().name() : "none", false, Optional.empty(), "none", Optional.empty(), current, initial, false, current, Optional.empty(), current ? 1 : 0);
+            String exact = DeploymentAgentInputs.hash(invocation + component + ":exact"), review = DeploymentAgentInputs.hash(invocation + component + ":review");
+            String evidence = "6".repeat(64), request = "7".repeat(64), result = "8".repeat(64), statusSha = DeploymentAgentPublicationObservation.statusSha256(status);
+            log.event(task, "HEALTH_STATUS_QUERY_REQUEST", review, "exactAction=" + exact + ";evidence=" + evidence + ";requestSha256=" + request); long requestId = log.events(task).getLast().id();
+            log.event(task, "HEALTH_STATUS_QUERY_APPROVED", review, "exactAction=" + exact + ";evidence=" + evidence + ";reasonSha256=" + "9".repeat(64));
+            log.event(task, "HEALTH_STATUS_QUERY_RESULT", exact, "resultSha256=" + result + ";review=" + review + ";evidence=" + evidence + ";statusSha256=" + statusSha); long resultId = log.events(task).getLast().id();
+            var row = DeploymentJsonDocument.object().put("formatVersion", 1).put("kind", "COMPONENT").put("invocation", invocation).put("beginEvent", beginId)
+                .put("beginSha256", DeploymentAgentInputs.hash(beginText)).put("component", component).put("unit", part.unit().id()).put("expectedOwnerSha256", part.unit().ownershipManifestSha256())
+                .put("candidate", candidate).put("releaseSha256", commit.release().sha256()).put("layoutSha256", part.unit().layout().digest()).put("missingReason", "NONE");
+            var snapshots = row.putArray("originalSnapshotEvents"); prefix.stream().filter(e -> e.action().equals(component) && Set.of("SNAPSHOT_EXECUTING", "SNAPSHOT_RESULT").contains(e.type()))
+                .forEach(e -> snapshots.addObject().put("id", e.id()).put("type", e.type()).put("detailSha256", DeploymentAgentInputs.hash(e.detail())));
+            var receipt = row.putObject("receipt").put("requestEvent", requestId).put("resultEvent", resultId).put("exactActionSha256", exact).put("requestSha256", request)
+                .put("reviewSha256", review).put("evidenceSha256", evidence).put("resultSha256", result).put("statusSha256", statusSha);
+            receipt.putObject("status").put("current", status.current().orElse("none")).put("currentKind", status.currentKind()).put("currentMode", status.currentMode()).put("snapshot", false)
+                .put("previousDigest", "none").put("previousKind", "none").put("previousRunning", "none").put("maintenance", status.maintenance()).put("candidate", status.candidate())
+                .put("buildActive", false).put("unitPresent", status.unitPresent()).put("containerPresent", "none").put("retainedCount", status.retainedCount());
+            log.event(task, DeploymentAgentPublicationObservation.COMPONENT, invocation, DeploymentAgentPublicationObservation.encodeFrame(row)); ids.add(log.events(task).getLast().id());
+        }
+        var end = DeploymentJsonDocument.object().put("formatVersion", 1).put("kind", "END").put("invocation", invocation).put("beginEvent", beginId).put("beginSha256", DeploymentAgentInputs.hash(beginText))
+            .put("observationComplete", true).put("outcome", "UNKNOWN").put("authority", "NONE"); var endIds = end.putArray("componentEvents"); ids.forEach(endIds::add);
+        log.event(task, DeploymentAgentPublicationObservation.END, invocation, DeploymentAgentPublicationObservation.encodeFrame(end));
+    }
+
     @Test
     void originalRecoveryProducerArchivesSuccessKeepsSharedBusinessAndNeverDispatchesAfterReopen() throws Exception {
         enable();
@@ -320,14 +2064,22 @@ class DeploymentAgentHistoryArchiveTest extends DeploymentAgentArchiveFixture {
     }
 
     private UUID originalSuccess(PlatformRuntime runtime, TaskContext task) throws Exception {
+        return originalPublication(runtime, task, true);
+    }
+
+    private UUID originalPublication(PlatformRuntime runtime, TaskContext task, boolean successful) throws Exception {
+        return originalPublication(runtime,task,successful,"a".repeat(64),"a".repeat(64));
+    }
+
+    private UUID originalPublication(PlatformRuntime runtime, TaskContext task, boolean successful,String target,String profile) throws Exception {
         var context = runtime.modContexts().get(OWNER).context();
         var log = new DeploymentAgentActionLog(context.db());
-        log.create(task, agentIdentity(), Optional.of("a".repeat(64)));
+        log.create(task, successful ? agentIdentity() : new DeploymentAgentActionLog.Identity("server", target, "b".repeat(64), "MANUAL_REVIEW", false), Optional.of("a".repeat(64)));
         var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
         gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.record(log, task, new ServerId("server"), layout);
         String archive = "c".repeat(64), source = "d".repeat(64), current = "e".repeat(64), artifact = "f".repeat(64), plan = "1".repeat(64);
         log.event(task, "SOURCE", archive, source);
-        log.event(task, "TARGET_PROFILE", "", "a".repeat(64));
+        log.event(task, "TARGET_PROFILE", "", profile);
         log.event(task, "PLAN_APPLICATION", "", "application");
         log.event(task, "PLAN", "", plan);
         var parts = graph("application").components().stream().map(p -> new DeploymentApplicationGraph.Part(p.componentId(),
@@ -363,7 +2115,7 @@ class DeploymentAgentHistoryArchiveTest extends DeploymentAgentArchiveFixture {
         var proposal = new DeploymentPublishResult(graph, commits);
         var id = UUID.randomUUID();
         var store = new DeploymentExecutionStore(context.db());
-        var identity = new DeploymentExecutionIdentity(id, task.id(), Optional.empty(), "application", new ServerId("server"), DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, "a".repeat(64));
+        var identity = new DeploymentExecutionIdentity(id, task.id(), Optional.empty(), "application", new ServerId("server"), DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, target);
         var intents = DeploymentOriginalPublishCommit.references(new ServerId("server"), proposal, Map.of());
         store.begin(task, identity, "deployment-agent", intents, Optional.empty(), OBSERVED);
         var refs = new ArrayList<UUID>();
@@ -375,6 +2127,16 @@ class DeploymentAgentHistoryArchiveTest extends DeploymentAgentArchiveFixture {
         store.startEffects(task, id, OBSERVED.plusSeconds(2));
         store.recordPublicationTemplate(task, id, new DeploymentPublishProposal(graph, commits), OBSERVED.plusSeconds(3));
         log.event(task, "AI_PUBLICATION", "application", "MODEL_GENERATED_COMMANDS");
+        if (!successful) {
+            for (var part : parts) {
+                log.event(task, "SNAPSHOT_EXECUTING", part.componentId(), part.unit().ownershipManifestSha256());
+                log.event(task, "SNAPSHOT_RESULT", part.componentId(), "none:0:none:none");
+                log.event(task, "PUBLISH_EXECUTING", part.componentId(), commits.stream().filter(u -> u.unit().equals(part.unit())).findFirst().orElseThrow().release().sha256());
+            }
+            log.state(task, "UNKNOWN");
+            compensationObservation(context, task, true);
+            return id;
+        }
         log.event(task, "STAGE_EXECUTING", "web", "original");
         log.event(task, "STAGE_RESULT", "web", "staged");
         log.event(task, "AI_PUBLICATION_VERIFIED", "application", "HEALTHY");

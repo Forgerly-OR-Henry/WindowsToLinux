@@ -1,14 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.ui.runtime;
 
-import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
-
 import java.awt.BorderLayout;
 import java.util.Set;
 import java.util.function.Function;
 import javax.swing.*;
 import javax.swing.text.JTextComponent;
 
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentReviewField;
 
 /** Creates real editable inputs with accessible field help and bounded multiline declarations. / 创建带可访问字段帮助及有界多行声明的真实编辑输入。 */
 public final class DeploymentReviewInputs {

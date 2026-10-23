@@ -4,19 +4,27 @@ import java.awt.*;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.function.Consumer;
+import java.util.function.DoubleConsumer;
 
 import javax.swing.*;
 
 import com.formdev.flatlaf.ui.FlatTabbedPaneUI;
 import com.formdev.flatlaf.util.UIScale;
 import gold.debug.windowstolinux.app.ui.control.DesktopIcons;
+import gold.debug.windowstolinux.app.ui.control.DesktopButtonStyle;
+import gold.debug.windowstolinux.app.ui.control.DesktopNavigationButton;
 import gold.debug.windowstolinux.app.ui.display.DesktopMotion;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 
 /** Persistent desktop navigation around existing page instances. / 围绕已有页面实例的常驻桌面导航。 */
 final class PlatformNavigationShell extends JPanel implements AutoCloseable {
+    /** Expanded sidebar width, independent of window resizing and UI zoom. / 不随窗口缩放及界面缩放变化的展开侧栏宽度。 */
+    static final int SIDEBAR_WIDTH = 160;
+
+    /** Reserved upper workspace height in application pixels. / 应用像素计量的工作区顶部预留高度。 */
+    static final int HEADER_HEIGHT = 60;
+
     /** Original page selection and ownership container. / 原页面选择及归属容器。 */
     private final JTabbedPane pages;
 
@@ -40,7 +48,7 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
         /** Applies the current width to late-mounted security controls. / 对后挂载安全控件应用当前宽度。 */
         @Override
         public void doLayout() {
-            presentUtilities();
+            presentNavigation();
             super.doLayout();
         }
     };
@@ -58,7 +66,7 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
     private final JPanel body = new JPanel(new BorderLayout());
 
     /** Product identity without a business-module dependency. / 不依赖业务模块的产品标识。 */
-    private final JButton brand;
+    private final DesktopBrandLabel brand;
 
     /** Logo navigation callback supplied by the owning window. / 所属窗口提供的 Logo 导航回调。 */
     private Runnable openHome = () -> {
@@ -80,15 +88,15 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
         private final JLabel description = new JLabel();
 
         /** Header surface. / 标题界面。 */
-        private final JPanel header = new JPanel(new BorderLayout(0, 5));
+        private final JPanel header = new JPanel(new CardLayout());
 
     }
 
     /** Collapse action. / 折叠动作。 */
-    private final JButton collapse = new JButton();
+    private final DesktopNavigationButton collapse = new DesktopNavigationButton("");
 
     /** Settings entry remains at the bottom. / 设置入口保持在底部。 */
-    private final JButton settings = new JButton();
+    private final DesktopNavigationButton settings = new DesktopNavigationButton("");
 
     /** Page presentation metadata only. / 仅保存页面展示元数据。 */
     private final List<Entry> registered = new ArrayList<>();
@@ -129,7 +137,7 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
     }
 
     /** Updates pinned-entry presentation. / 更新固定入口展示。 */
-    private Consumer<Boolean> collapseObserver = ignored -> {
+    private DoubleConsumer collapseObserver = ignored -> {
     };
 
     /** Builds the shell without creating or replacing business views. / 创建外壳，不创建或替换业务视图。
@@ -144,46 +152,21 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
         utilities.setLayout(new BoxLayout(utilities, BoxLayout.Y_AXIS));
         utilities.setOpaque(false);
         brand = new DesktopBrandLabel(messages);
-        motion.width = motion.target = UIScale.scale(168);
+        motion.width = motion.target = SIDEBAR_WIDTH;
         setName("platform.shell");
-        sidebar.setName("platform.sidebar");
-        sidebar.setPreferredSize(new Dimension(UIScale.scale(168), 0));
-        sidebar.setBorder(BorderFactory.createEmptyBorder(18, 8, 12, 8));
-        var top = column();
-        brand.setName("navigation.logo");
-        brand.setIcon(DesktopIcons.logo(36));
-        brand.setHorizontalAlignment(SwingConstants.CENTER);
-        brand.setAlignmentX(Component.LEFT_ALIGNMENT);
-        brand.setBorder(BorderFactory.createEmptyBorder(0, 0, 14, 0));
-        brand.setMaximumSize(new Dimension(Integer.MAX_VALUE, UIScale.scale(54)));
-        brand.setToolTipText(messages.text("home.open"));
-        brand.getAccessibleContext().setAccessibleName(messages.text("home.open"));
-        brand.addActionListener(event -> openHome.run());
-        top.add(brand);
-        configure(collapse, "navigation/panel-left-close");
-        collapse.setName("navigation.collapse");
-        collapse.addActionListener(event -> collapse(!collapsed, true));
-        top.add(collapse);
-        sidebar.add(top, BorderLayout.NORTH);
-        var middle = column();
-        middle.add(entries);
-        middle.add(Box.createVerticalStrut(16));
-        middle.add(pins);
-        sidebar.add(scroll(middle), BorderLayout.CENTER);
-        configure(settings, "navigation/settings");
-        settings.setName("navigation.settings");
-        settings.addActionListener(event -> {
-            if (lastSetting != null)
-                pages.setSelectedComponent(lastSetting);
-        });
-        utilities.add(settings);
-        sidebar.add(utilities, BorderLayout.SOUTH);
+        assembleSidebar();
         heading.title.setName("platform.pageTitle");
         heading.title.setFont(heading.title.getFont().deriveFont(Font.BOLD, UIScale.scale(19f)));
         heading.description.setFont(heading.description.getFont().deriveFont(UIScale.scale(12f)));
-        heading.header.setBorder(BorderFactory.createEmptyBorder(14, 20, 13, 20));
-        heading.header.add(heading.title, BorderLayout.NORTH);
-        heading.header.add(heading.description, BorderLayout.SOUTH);
+        heading.header.setBorder(BorderFactory.createEmptyBorder(0, 20, 0, 20));
+        heading.header.setName("platform.header");
+        heading.header.setPreferredSize(new Dimension(0, HEADER_HEIGHT));
+        heading.description.setName("platform.pageDescription");
+        var labels = new JPanel(new BorderLayout(20, 0));
+        labels.setOpaque(false);
+        labels.add(heading.title, BorderLayout.WEST);
+        labels.add(heading.description, BorderLayout.CENTER);
+        heading.header.add(centerHeading(labels), "platform");
         var workspace = new JPanel(new BorderLayout());
         workspace.add(heading.header, BorderLayout.NORTH);
         categoryPicker.setName("settings.category");
@@ -216,6 +199,67 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
         refresh();
     }
 
+    /** Mounts navigation, pins and security controls in their existing order. / 按既有顺序挂载导航、固定项及安全控件。 */
+    private void assembleSidebar() {
+        sidebar.setName("platform.sidebar");
+        sidebar.setPreferredSize(new Dimension(SIDEBAR_WIDTH, 0));
+        sidebar.setBorder(BorderFactory.createEmptyBorder(18, 8, 12, 8));
+        var top = column();
+        brand.setName("navigation.logo");
+        brand.setIcon(DesktopIcons.logo(36));
+        brand.setHorizontalAlignment(SwingConstants.CENTER);
+        brand.setAlignmentX(Component.LEFT_ALIGNMENT);
+        brand.setBorder(BorderFactory.createEmptyBorder(0, 0, 14, 0));
+        brand.setMaximumSize(new Dimension(Integer.MAX_VALUE, UIScale.scale(54)));
+        brand.setToolTipText(messages.text("home.open"));
+        brand.getAccessibleContext().setAccessibleName(messages.text("home.open"));
+        brand.addActionListener(event -> openHome.run());
+        top.add(brand);
+        configure(collapse, "navigation/panel-left-close");
+        collapse.setName("navigation.collapse");
+        collapse.addActionListener(event -> collapse(!collapsed, true));
+        top.add(collapse);
+        sidebar.add(top, BorderLayout.NORTH);
+        var middle = column();
+        middle.add(entries);
+        middle.add(Box.createVerticalStrut(16));
+        middle.add(pins);
+        sidebar.add(scroll(middle), BorderLayout.CENTER);
+        configure(settings, "navigation/settings");
+        settings.setName("navigation.settings");
+        settings.addActionListener(event -> {
+            if (lastSetting != null)
+                pages.setSelectedComponent(lastSetting);
+        });
+        utilities.add(settings);
+        sidebar.add(utilities, BorderLayout.SOUTH);
+    }
+
+    /** Mounts the original root heading inside the fixed upper region. / 将原根标题挂载到固定顶部区域。
+     * @param rootHeading original root title and close action / 原根标题及关闭动作 */
+    void workspaceHeading(JComponent rootHeading) {
+        heading.header.add(centerHeading(rootHeading), "workspace");
+    }
+
+    /** Centers one natural-height heading without stretching its buttons. / 将自然高度标题居中，不拉伸按钮。
+     * @param heading original heading / 原标题
+     * @return transparent heading holder / 透明标题容器 */
+    private static JPanel centerHeading(JComponent heading) {
+        var holder = new JPanel(new GridBagLayout());
+        holder.setOpaque(false);
+        var constraints = new GridBagConstraints();
+        constraints.weightx = 1;
+        constraints.fill = GridBagConstraints.HORIZONTAL;
+        holder.add(heading, constraints);
+        return holder;
+    }
+
+    /** Returns the actual width travelled by the existing collapse motion. / 返回既有折叠动画的实际宽度行程。
+     * @return expanded-to-collapsed distance / 展开至折叠距离 */
+    static int sidebarTravel() {
+        return SIDEBAR_WIDTH - UIScale.scale(64);
+    }
+
     /** Creates a vertical, transparent group. / 创建透明纵向分组。
      * @return empty group / 空分组 */
     private static JPanel column() {
@@ -246,7 +290,7 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
      * @param order display order / 展示顺序
      * @param setting whether this is a settings category / 是否为设置分类 */
     void register(Component component, String key, String icon, int order, boolean setting) {
-        var button = new JButton();
+        var button = setting ? new JButton() : new DesktopNavigationButton("");
         configure(button, icon);
         button.setName("navigation." + key);
         button.addActionListener(event -> pages.setSelectedComponent(component));
@@ -331,10 +375,10 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
     /** Mounts explicit pins and observes collapse without taking page ownership. / 挂载明确固定项并通知折叠，不接管页面归属。
      * @param view original pin view / 原固定视图
      * @param observer presentation callback / 展示回调 */
-    void pins(JComponent view, Consumer<Boolean> observer) {
+    void pins(JComponent view, DoubleConsumer observer) {
         pins.add(view);
         collapseObserver = observer;
-        observer.accept(collapsed);
+        presentNavigation();
     }
 
     /** Styles one icon-led navigation action. / 设置图标导航动作的样式。
@@ -360,10 +404,10 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
     void appearance(ThemePalette palette) {
         this.palette = palette;
         if (motion.clock != null) motion.clock.close();
-        motion.width = motion.target = UIScale.scale(collapsed ? 64 : 168);
+        motion.width = motion.target = collapsed ? UIScale.scale(64) : SIDEBAR_WIDTH;
         motion.velocity = 0;
-        sidebar.setPreferredSize(new Dimension(UIScale.scale(collapsed ? 64 : 168), 0));
-        presentUtilities();
+        sidebar.setPreferredSize(new Dimension((int) motion.target, 0));
+        presentNavigation();
         brand.setIcon(DesktopIcons.logo(36));
         brand.setMaximumSize(new Dimension(Integer.MAX_VALUE, UIScale.scale(54)));
         categoryScroll.setPreferredSize(new Dimension(UIScale.scale(150), 0));
@@ -377,15 +421,14 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
      * @param animate whether to animate visible windows / 是否为可见窗口播放动画 */
     void collapse(boolean value, boolean animate) {
         collapsed = value;
-        collapseObserver.accept(value);
         refresh();
-        motion.target = UIScale.scale(value ? 64 : 168);
+        motion.target = value ? UIScale.scale(64) : SIDEBAR_WIDTH;
         if (!animate || !isShowing() || !DesktopMotion.enabled()) {
             if (motion.clock != null) motion.clock.close();
             motion.width = motion.target;
             motion.velocity = 0;
             sidebar.setPreferredSize(new Dimension((int) motion.target, 0));
-            presentUtilities();
+            presentNavigation();
             revalidate();
             sidebar.repaint();
             return;
@@ -406,16 +449,25 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
             motion.clock.close();
         }
         sidebar.setPreferredSize(new Dimension((int) Math.round(motion.width), 0));
-        presentUtilities();
+        presentNavigation();
         revalidate();
         sidebar.repaint();
     }
 
-    /** Shares the width clock with footer rotation and its vertical space. / 与底部转位和纵向空间共用宽度时钟。 */
-    private void presentUtilities() {
-        double folded = (UIScale.scale(168) - motion.width) / UIScale.scale(104);
+    /** Shares the width clock with fixed navigation icons, captions and footer motion. / 固定导航图标、文案及底部运动共用宽度时钟。 */
+    private void presentNavigation() {
+        double folded = (SIDEBAR_WIDTH - motion.width) / sidebarTravel();
+        brand.presentation(folded);
+        collapse.presentation(folded);
+        settings.presentation(folded);
+        for (var entry : registered)
+            if (entry.button instanceof DesktopNavigationButton button) button.presentation(folded);
+        collapseObserver.accept(folded);
         for (var component : utilities.getComponents())
-            if (component instanceof DesktopLockStatus status) status.presentation(folded);
+            if (component instanceof DesktopLockStatus status) {
+                status.alignWith(settings);
+                status.presentation(folded);
+            }
     }
 
     /** Adapts settings categories without recreating fonts, icons or button styles. / 调整设置分类，不重新创建字体、图标或按钮样式。 */
@@ -444,28 +496,33 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
         setBackground(palette.pageBackground());
         heading.title.setForeground(palette.sidebarForeground());
         heading.description.setForeground(palette.subduedText());
-        brand.setText(collapsed ? "" : messages.text("shell.brand"));
+        brand.setText(messages.text("shell.brand"));
         brand.setFont(brand.getFont().deriveFont(Font.BOLD, UIScale.scale(12f)));
+        brand.fitCaption(SIDEBAR_WIDTH - sidebar.getInsets().left - sidebar.getInsets().right);
         brand.setIconTextGap(UIScale.scale(6));
         brand.setForeground(palette.accent());
         brand.setToolTipText(messages.text("home.open"));
         brand.getAccessibleContext().setAccessibleName(messages.text("home.open"));
         heading.title.setText(selected == null ? messages.text("shell.workspace") : messages.text(selected.key));
-        heading.header.setVisible(selected == null || !selected.key.equals("shell.workspace"));
+        ((CardLayout) heading.header.getLayout()).show(heading.header,
+            selected != null && selected.key.equals("shell.workspace") ? "workspace" : "platform");
         heading.description.setText(messages.text(selected != null && selected.key.equals("shell.home")
             ? "home.description" : setting ? "shell.settings.description" : "shell.workspace.description"));
         heading.description.setVisible(selected == null || !selected.key.equals("platform.models"));
-        style(collapse, messages.text(collapsed ? "nav.expand" : "nav.collapse"), false, collapsed);
+        heading.description.setToolTipText(heading.description.getText());
+        heading.title.setToolTipText(heading.description.getText());
+        style(collapse, messages.text(collapsed ? "nav.expand" : "nav.collapse"), false);
         collapse.setIcon(
             DesktopIcons.icon(collapsed ? "navigation/panel-left-open" : "navigation/panel-left-close", 19, collapse::getForeground));
-        style(settings, messages.text("nav.settings"), setting, collapsed);
+        style(settings, messages.text("nav.settings"), setting);
         for (var entry : registered)
             style(entry.button, messages.text(switch (entry.key) {
                 case "platform.servers" -> "shell.servers";
                 case "platform.models" -> "shell.ai";
                 case "tasks.title" -> "shell.tasks";
                 default -> entry.key;
-            }), entry == selected, !entry.setting && collapsed);
+            }), entry == selected);
+        presentNavigation();
         revalidate();
         repaint();
     }
@@ -473,25 +530,23 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
     /** Applies stateful navigation styling while retaining accessible labels. / 应用导航状态样式并保留无障碍标签。
      * @param button actual action / 实际动作
      * @param text localized label / 本地化标签
-     * @param selected active location / 当前位置
-     * @param iconOnly collapsed presentation / 折叠展示 */
-    private void style(JButton button, String text, boolean selected, boolean iconOnly) {
+     * @param selected active location / 当前位置 */
+    private void style(JButton button, String text, boolean selected) {
         button.setMaximumSize(new Dimension(Integer.MAX_VALUE, UIScale.scale(38)));
         button.setMinimumSize(new Dimension(0, UIScale.scale(38)));
         button.setPreferredSize(new Dimension(UIScale.scale(140), UIScale.scale(38)));
-        button.setText(iconOnly ? "" : text);
-        button.setMargin(new Insets(8, iconOnly ? 3 : 10, 8, iconOnly ? 3 : 10));
+        button.setText(text);
+        button.setMargin(new Insets(8, 10, 8, 10));
         button.setToolTipText(text);
         button.getAccessibleContext().setAccessibleName(text);
-        button.setHorizontalAlignment(iconOnly ? SwingConstants.CENTER : SwingConstants.LEFT);
+        button.setHorizontalAlignment(SwingConstants.LEFT);
         boolean category = registered.stream().anyMatch(entry -> entry.setting && entry.button == button);
         java.awt.Color active = category ? palette.navigationActive() : palette.accent();
-        button.setBackground(selected ? active : palette.sidebarBackground());
-        button.setForeground(selected && !category ? java.awt.Color.WHITE : palette.sidebarForeground());
         button.setFont(button.getFont().deriveFont(Font.PLAIN, UIScale.scale(13f)));
-        button.putClientProperty("FlatLaf.style", java.util.Map.of("arc", 8,
-            "hoverBackground", selected ? active : palette.secondaryButtonBackground(),
-            "pressedBackground", selected ? active : palette.navigationActive()));
+        DesktopButtonStyle.navigation(button, selected ? active : palette.sidebarBackground(),
+            selected && !category ? java.awt.Color.WHITE : palette.sidebarForeground(),
+            selected ? active.darker() : palette.secondaryButtonBackground(),
+            selected ? active.darker().darker() : palette.navigationActive());
     }
 
     /** Stops the owned animation. / 停止所属动画。 */

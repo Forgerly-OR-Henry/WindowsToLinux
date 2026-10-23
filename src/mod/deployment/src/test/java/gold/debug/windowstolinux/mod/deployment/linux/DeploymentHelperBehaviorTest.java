@@ -17,7 +17,7 @@ class DeploymentHelperBehaviorTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"test_native_database_behavior.py", "test_managed_storage_behavior.py",
-        "test_managed_lifecycle_behavior.py"})
+        "test_managed_lifecycle_behavior.py", "test_toolchain_*_behavior.py", "test_release_retention_behavior.py"})
     void currentHelperFunctionsKeepTheirFilesystemAndCommandContracts(String suite) throws Exception {
         Path workspace = Path.of("").toAbsolutePath();
         while (workspace != null && !Files.isDirectory(workspace.resolve("src/mod/deployment/src/test/python")))

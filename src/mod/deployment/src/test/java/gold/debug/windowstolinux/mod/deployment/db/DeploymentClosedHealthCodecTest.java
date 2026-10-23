@@ -6,7 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.net.URI;
 import java.util.Arrays;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentHealthCheck;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentHealthCodec;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck;
 import org.junit.jupiter.api.Test;
 
 /** Preserves the former APP health payload's HTTP/TCP and corrupt-document acceptance. */

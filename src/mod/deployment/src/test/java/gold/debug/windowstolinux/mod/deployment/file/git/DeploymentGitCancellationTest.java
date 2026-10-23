@@ -26,9 +26,8 @@ import java.util.function.Predicate;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
-
-import gold.debug.windowstolinux.app.db.task.ProcessRecovery;
 import gold.debug.windowstolinux.app.db.task.DependencyRecovery;
+import gold.debug.windowstolinux.app.db.task.ProcessRecovery;
 import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
@@ -45,7 +44,6 @@ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import org.junit.jupiter.api.Test;
 
 class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
@@ -267,7 +265,7 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                             provider.set(actual);
                             return observed;
                         });
-                        var observer = gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture.begin(original, task, request);
+                        var observer = gold.debug.windowstolinux.mod.deployment.service.core.source.DeploymentGitJournalFixture.begin(original, task, request);
                         originalObserver.set(observer);
                         preparer.prepare(request, 2 * 1024 * 1024, 100, task, observer);
                         throw new AssertionError("The held native Git fetch completed without cancellation");

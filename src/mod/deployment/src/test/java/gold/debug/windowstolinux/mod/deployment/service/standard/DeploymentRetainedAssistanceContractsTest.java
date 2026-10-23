@@ -35,11 +35,15 @@ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.file.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance.DeploymentAssistedAdvisor;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField;
+import gold.debug.windowstolinux.mod.deployment.DeploymentStandardEntryFixture;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceSetup;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedAdvisor;
+import gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedReviewCoordinator;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentReviewField;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -131,7 +135,7 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
                         assertEquals(material.snapshot().sha256(), observed.path("sourceRevision").textValue());
                         for (var sent : http.requests) {
                             assertEquals("fixture/selected", sent.path("model").textValue());
-                            assertEquals(1200, sent.path("max_tokens").intValue());
+                            assertEquals(8192, sent.path("max_tokens").intValue());
                             assertEquals("json_object", sent.path("response_format").path("type").textValue());
                             assertEquals("system", sent.path("messages").get(0).path("role").textValue());
                             assertTrue(sent.path("messages").get(0).path("content").textValue()
@@ -149,13 +153,19 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
                     throw failure;
                 }
             });
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            while (!handle.completion().toCompletableFuture().isDone() && failures.get() == null
+                && handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline) Thread.sleep(10);
+            if (failures.get() != null)
+                throw new AssertionError("Original role/evidence callback failed", failures.get());
+            http.assertHealthy();
             assertEquals(TaskResult.SUCCEEDED,
                 handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS).outcome(),
                 () -> String.valueOf(failures.get()));
             if (failures.get() != null)
                 throw new AssertionError("Original role/evidence callback failed", failures.get());
             http.assertHealthy();
-            assertEquals(List.of("Bearer fixture-selected-key", "Bearer fixture-selected-key"), http.authorization);
+            assertEquals(List.of("Bearer fixture-selected-key", "Bearer fixture-selected-key"), http.rememberAuthorization);
             assertTrue(approvals.isEmpty());
             assertNoPublicationOrResources(runtime);
         }
@@ -260,10 +270,10 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
                         phase.set("SOURCE_PREPARED");
                         var advisor = new DeploymentAssistedAdvisor(context);
                         advisor.humanAnswers(Map.of("app/port", "9090"));
-                        var prompt = new DeploymentStaticWorkflow.Prompt("app", "demo",
+                        var prompt = new DeploymentStandardInputs.Prompt("app", "demo",
                             DeploymentProjectKind.NODE_SERVICE, Map.of("port", "9090"), fields());
-                        var assistance = new DeploymentStaticAssistance(context,
-                            new DeploymentStaticWorkflow(context, new DeploymentRefFlow(context)));
+                        var assistance = new DeploymentAssistedReviewCoordinator(context,
+                            new DeploymentStandardEntryFixture(context, new DeploymentRefFlow(context))::validateReview);
                         if (accepted) {
                             assertSame(prompt, assistance.prompt(new ServerId("server"), prompt, advisor,
                                 material, task));
@@ -396,7 +406,7 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
 
         private final List<JsonNode> requests = new CopyOnWriteArrayList<>();
 
-        private final List<String> authorization = new CopyOnWriteArrayList<>();
+        private final List<String> rememberAuthorization = new CopyOnWriteArrayList<>();
 
         private final AtomicReference<Throwable> failure = new AtomicReference<>();
 
@@ -411,7 +421,7 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
                 try {
                     var sent = JSON.readTree(exchange.getRequestBody());
                     requests.add(sent);
-                    authorization.add(exchange.getRequestHeaders().getFirst("Authorization"));
+                    rememberAuthorization.add(exchange.getRequestHeaders().getFirst("Authorization"));
                     if (reject) {
                         exchange.sendResponseHeaders(503, -1);
                         return;

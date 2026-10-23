@@ -16,8 +16,14 @@ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader;
 import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRequest;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentSourceSelectionService;
+import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
+import gold.debug.windowstolinux.mod.deployment.service.agent.control.DeploymentAgentControl;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentHistoryReader;
+import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentDeliveryPort;
+import gold.debug.windowstolinux.mod.deployment.service.core.source.DeploymentSourceSelectionService;
 
 /** Provides agent-only page queries and original task admission. / 提供自主专用页面查询与原任务接纳。 */
 public final class DeploymentAgentPageService implements TaskRecovery {
@@ -30,13 +36,39 @@ public final class DeploymentAgentPageService implements TaskRecovery {
     /** Dedicated original task admission and recovery coordinator. / 专有原任务准入及恢复协调器。 */
     private final DeploymentAgentWorkflow workflow;
 
+    public void requestApprovalPolicyChange(UUID original, String mode, long expectedRevision) throws ApiException {
+        workflow.requestApprovalPolicyChange(original, mode, expectedRevision);
+    }
+
+    public gold.debug.windowstolinux.mod.deployment.service.core.DeploymentApprovalPolicyState approvalPolicyState(UUID original) {
+        return workflow.approvalPolicyState(original);
+    }
+
     /** Binds one activation and its own agent workflow. / 绑定一次启用及其专有自主工作流。
      * @param context active Mod / 活动 Mod
      * @param workflow original agent workflow / 原自主工作流 */
     public DeploymentAgentPageService(ModContext context, DeploymentAgentWorkflow workflow) {
+        this(context, workflow, DeploymentConfigLoader.current());
+    }
+
+    /** Shares fixed source and view settings with the owning page. / 与所属页面共享固定来源及视图配置。
+     * @param context original capabilities / 原能力
+     * @param workflow original workflow / 原流程
+     * @param configuration immutable activation settings / 不可变启用配置 */
+    public DeploymentAgentPageService(ModContext context, DeploymentAgentWorkflow workflow, DeploymentConfig configuration) {
+        this.configuration = java.util.Objects.requireNonNull(configuration);
         this.context = Objects.requireNonNull(context);
         this.workflow = Objects.requireNonNull(workflow);
     }
+
+    /** Returns fixed defaults without changing submitted requests. / 返回固定默认值，不改变已提交请求。
+     * @return immutable activation configuration / 不可变启用配置 */
+    public DeploymentConfig configuration() {
+        return configuration;
+    }
+
+    /** Immutable defaults shared by the original page and queries. / 原页面及查询共享的不可变默认值。 */
+    private final DeploymentConfig configuration;
 
     /** Returns the original owned diagnostic reader without storage on the EDT. / 返回原所属诊断读取器，不在EDT访问存储。
      * @return original task feedback reader / 原任务反馈读取器 */
@@ -50,7 +82,7 @@ public final class DeploymentAgentPageService implements TaskRecovery {
      * @throws ApiException if original query admission fails / 原查询准入失败时 */
     public TaskHandle<Optional<gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationUsage>> delivery(UUID originalTaskUUID)
         throws ApiException {
-        return new gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApplicationsService(context)
+        return new gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentApplicationsService(context)
             .usageForCompletedTask(originalTaskUUID);
     }
 
@@ -70,21 +102,21 @@ public final class DeploymentAgentPageService implements TaskRecovery {
     /** Loads the owned page selection through the actual worker query. / 经实际工作线程查询加载所属页面选择。
      * @return original preference query / 原偏好查询
      * @throws ApiException if original query admission fails / 原查询准入失败时 */
-    public TaskHandle<gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection> preferences()
+    public TaskHandle<gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore.Selection> preferences()
         throws ApiException {
         return query("Agent page preferences (fills missing defaults)", List.of(),
-            task -> new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences(context.db()).read(task));
+            task -> new gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore(context.db()).read(task));
     }
 
     /** Saves a captured approval edit on its own original metadata task. / 在自身原元数据任务保存已抓取审批编辑。
      * @param selection captured page mode and policy / 已抓取页面模式与策略
      * @return original observable metadata task / 原可观察元数据任务
      * @throws ApiException if admission fails / 准入失败时 */
-    public TaskHandle<gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection> savePreferences(
-        gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection selection) throws ApiException {
+    public TaskHandle<gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore.Selection> savePreferences(
+        gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore.Selection selection) throws ApiException {
         Objects.requireNonNull(selection);
         return query("Save explicit agent page preference", List.of(), task -> {
-            new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences(context.db()).save(task, selection);
+            new gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore(context.db()).save(task, selection);
             return selection;
         });
     }
@@ -128,7 +160,7 @@ public final class DeploymentAgentPageService implements TaskRecovery {
         var all = new ArrayList<TaskSnapshot>();
         Optional<String> cursor = Optional.empty();
         do {
-            var page = context.tasks().list(cursor, 200);
+            var page = context.tasks().list(cursor, configuration.view().pageSize());
             page.items().stream().filter(item -> item.type().equals(DeploymentAgentWorkflow.TASK_TYPE))
                 .forEach(all::add);
             cursor = page.nextCursor();
@@ -150,20 +182,65 @@ public final class DeploymentAgentPageService implements TaskRecovery {
         return workflow.controlState(taskId);
     }
 
+    public Optional<DeploymentAgentGoal> goal(UUID root) {
+        return workflow.goal(root);
+    }
+
+    /** Durable chain facts after restart grant no dispatch, source recovery or budget reset. */
+    public TaskHandle<List<DeploymentAgentContinuation.Ticket>> continuationHistory(UUID root) throws ApiException {
+        return query("Read original Agent goal admission tickets (no execution)", List.of(), task -> {
+            var journal = new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog(context.db());
+            var values = new ArrayList<DeploymentAgentContinuation.Ticket>();
+            var seen = new HashSet<UUID>();
+            UUID predecessor = root;
+            while (seen.add(predecessor)) {
+                var next = journal.successor(task, predecessor);
+                if (next.isEmpty()) return List.copyOf(values);
+                var ticket = next.orElseThrow();
+                if (!ticket.intent().root().equals(root) || !ticket.intent().predecessor().equals(predecessor)
+                    || ticket.intent().ordinal() != values.size() + 2)
+                    throw new IllegalStateException("Original goal ticket chain changed");
+                if (!values.isEmpty()) {
+                    var original = values.getFirst().intent();
+                    if (!original.application().equals(ticket.intent().application()) || !original.resources().equals(ticket.intent().resources())
+                        || !original.source().source().equals(ticket.intent().source().source()) || !original.target().equals(ticket.intent().target())
+                        || !original.configuration().equals(ticket.intent().configuration()) || !original.request().equals(ticket.intent().request()))
+                        throw new IllegalStateException("Original goal scope changed");
+                    DeploymentAgentContinuation.requireCarry(values.getLast().settledAllowance(), ticket.intent().allowance());
+                }
+                values.add(ticket);
+                if (ticket.child() == null) return List.copyOf(values);
+                predecessor = ticket.child();
+            }
+            throw new IllegalStateException("Original goal ticket cycle");
+        });
+    }
+
     /** Reads existing ended and retained business history without recreating tasks. / 读取既有结束及留存业务历史，不重建任务。
      * @return actual bounded query / 实际有界查询
      * @throws ApiException if admission fails / 准入失败时 */
-    public TaskHandle<List<DeploymentAgentHistory.Entry>> history() throws ApiException {
-        return query("Agent original history", List.of(), task -> new DeploymentAgentHistory(context).recent(task));
+    public TaskHandle<List<DeploymentAgentHistoryReader.Entry>> history() throws ApiException {
+        return query("Agent original history", List.of(), task -> new DeploymentAgentHistoryReader(context, configuration.view()).recent(task));
     }
 
     /** Reads exact events for a selected original UUID under a new actual query. / 在新实际查询下读取所选原UUID的精确事件。
      * @param selected original business identity / 原业务身份
      * @return actual detail query / 实际详情查询
      * @throws ApiException if admission fails / 准入失败时 */
-    public TaskHandle<DeploymentAgentHistory.Detail> events(UUID selected) throws ApiException {
+    public TaskHandle<DeploymentAgentHistoryReader.Detail> events(UUID selected) throws ApiException {
         return query("Agent original events", List.of(),
-            task -> new DeploymentAgentHistory(context).detail(task, selected));
+            task -> new DeploymentAgentHistoryReader(context, configuration.view()).detail(task, selected));
+    }
+
+    /** Settles only locally retained history with a platform-proven original completion. / 仅结清有平台原结束证明的本地留存历史。 */
+    public TaskHandle<Boolean> clearSettledHistory(UUID selected) throws ApiException {
+        Objects.requireNonNull(selected);
+        return query("Clear settled original Agent history", List.of(), task -> {
+            var result = new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentHistoryArchive(context)
+                .archiveRecoveredHistory(task, selected);
+            if (result.outcome() == TaskResult.UNKNOWN) throw new ApiException(result.problem().orElseThrow());
+            return true;
+        });
     }
 
     /** Records an explicit inspection request; no new task bypasses an UNKNOWN server lock. / 记录显式检查请求，新任务不绕过UNKNOWN服务器锁。
@@ -172,18 +249,18 @@ public final class DeploymentAgentPageService implements TaskRecovery {
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<Long> requestInspection(UUID selected) throws ApiException {
         return query("Request original agent inspection (writes metadata)", List.of(),
-            task -> new DeploymentAgentHistory(context).request(task, selected));
+            task -> new DeploymentAgentHistoryReader(context, configuration.view()).request(task, selected));
     }
 
-    /** Inspects only an ended original candidate using current profile and fingerprint authorization. / 使用当前资料及指纹授权，仅检查已结束原候选。
+    /** Inspects only an ended original candidate using current profile and fingerprint rememberAuthorization. / 使用当前资料及指纹授权，仅检查已结束原候选。
      * @param selected original business entry / 原业务项
      * @return actual readonly facts or conflict / 实际只读事实或冲突
      * @throws ApiException if original work remains retained or admission fails / 原工作仍留存或准入失败时 */
-    public TaskHandle<Map<String, String>> inspect(DeploymentAgentHistory.Entry selected) throws ApiException {
+    public TaskHandle<Map<String, String>> inspect(DeploymentAgentHistoryReader.Entry selected) throws ApiException {
         if (tasks().stream().anyMatch(task -> task.id().equals(selected.id())))
             throw new ApiException(problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_AGENT_INSPECT_ORIGINAL_REQUIRED"));
         return query("Inspect ended original agent candidate", List.of(selected.server().id()), task -> {
-            var history = new DeploymentAgentHistory(context);
+            var history = new DeploymentAgentHistoryReader(context, configuration.view());
             var actual = history.detail(task, selected.id());
             if (!actual.entry().equals(selected)
                 || !Set.of("FAILED", "CANCELLED", "SUCCEEDED", "INTERRUPTED").contains(actual.entry().state()))
@@ -241,7 +318,7 @@ public final class DeploymentAgentPageService implements TaskRecovery {
      * @return original observable task / 原可观察任务
      * @throws ApiException on failed admission / 准入失败时 */
     public TaskHandle<DeploymentAgentDeliveryPort.Published> submitLocal(ServerId server,
-                                                                         DeploymentAgentWorkflow.Request request,
+                                                                         DeploymentAgentInputs.Request request,
                                                                          DeploymentSourceSelectionService.LocalLocation location) throws ApiException {
         return workflow.submitLocal(server, request, location);
     }
@@ -255,7 +332,7 @@ public final class DeploymentAgentPageService implements TaskRecovery {
      * @return original observable task / 原可观察任务
      * @throws ApiException on failed admission / 准入失败时 */
     public TaskHandle<DeploymentAgentDeliveryPort.Published> submitGit(ServerId server,
-                                                                       DeploymentAgentWorkflow.Request request, DeploymentGitRequest git, Path executable, String projectName)
+                                                                       DeploymentAgentInputs.Request request, DeploymentGitRequest git, Path executable, String projectName)
         throws ApiException {
         return workflow.submitGit(server, request, git, executable, projectName);
     }

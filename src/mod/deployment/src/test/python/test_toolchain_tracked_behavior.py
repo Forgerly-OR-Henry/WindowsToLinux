@@ -354,6 +354,8 @@ class TrackedToolchainBehaviorTest(unittest.TestCase):
 
     def test_subprocesses_inherit_the_original_preparation_lock(self):
         process = mock.Mock(pid=321)
+        process.stdout, process.stderr = io.BytesIO(), io.BytesIO()
+        process.returncode = 0
         process.wait.return_value = 0
         recorder = mock.Mock()
         with mock.patch.dict(self.ns, {'TRACKED_PREPARE_LOCK': 17, 'TRACKED_OPERATION': recorder, 'DEADLINE': None}), \

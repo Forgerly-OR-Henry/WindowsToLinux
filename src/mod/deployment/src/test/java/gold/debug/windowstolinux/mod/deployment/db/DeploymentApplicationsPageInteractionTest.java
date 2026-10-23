@@ -155,7 +155,7 @@ class DeploymentApplicationsPageInteractionTest extends DeploymentAutostartFixtu
                 var inventory = (JList<?>) named(mounted.root(), "applications.inventory");
                 waitEdt(() -> inventory.isEnabled() && inventory.getSelectedValue() != null);
                 SwingUtilities.invokeAndWait(() -> {
-                    assertTrue(((JTextArea) named(mounted.root(), "applications.details")).getText().contains("Installed and available"));
+                    assertTrue(((JTextArea) named(mounted.root(), "applications.field.savedState")).getText().contains("Installed and available"));
                     ((JButton) named(mounted.root(), "delivery.copyCommand")).doClick();
                     assertEquals("sudo /usr/local/lib/windowstolinux/managed-helper app-run demo-job " + "a".repeat(64) + " --", effects.copies.getFirst());
                     for (var action : DeploymentLifecycleAction.values()) {
@@ -192,9 +192,12 @@ class DeploymentApplicationsPageInteractionTest extends DeploymentAutostartFixtu
             var mounted = mount(service, new DesktopEffects());
             try {
                 var inventory = (JList<?>) named(mounted.root(), "applications.inventory");
-                var scan = (JButton) named(mounted.root(), "applications.scan");
                 var details = (JTextArea) named(mounted.root(), "applications.details");
-                waitEdt(() -> inventory.isEnabled() && inventory.getSelectedValue() != null && ((JComboBox<?>) named(mounted.root(), "applications.scanServer")).getItemCount() == 1);
+                waitEdt(() -> inventory.isEnabled() && inventory.getSelectedValue() != null);
+                SwingUtilities.invokeAndWait(() -> ((JButton) named(mounted.root(), "applications.discover")).doClick());
+                var scan = (JButton) named(mounted.root(), "applications.scan");
+                var issues = (JTextArea) named(mounted.root(), "applications.discoveryIssues");
+                waitEdt(() -> ((JComboBox<?>) named(mounted.root(), "applications.scanServer")).getItemCount() == 1);
                 SwingUtilities.invokeAndWait(() -> {
                     assertTrue(((JButton) named(mounted.root(), "applications.start")).isEnabled());
                     for (String action : List.of("stop", "restart", "enable_autostart", "disable_autostart")) {
@@ -202,10 +205,10 @@ class DeploymentApplicationsPageInteractionTest extends DeploymentAutostartFixtu
                         assertFalse(button.isEnabled());
                         button.doClick();
                     }
-                    assertTrue(details.getText().contains("true / false"));
+                    assertTrue(((JTextArea) named(mounted.root(), "applications.field.externalCapabilities")).getText().contains("true / false"));
                     scan.doClick();
                 });
-                waitEdt(() -> scan.isEnabled() && details.getText().contains("DOCKER_PERMISSION"));
+                waitEdt(() -> scan.isEnabled() && issues.getText().contains("DOCKER_PERMISSION"));
                 assertEquals(0, peer.effects.get());
                 SwingUtilities.invokeAndWait(() -> ((JButton) named(mounted.root(), "applications.start")).doClick());
                 waitEdt(() -> inventory.isEnabled() && peer.effects.get() == 1 && inventory.getModel().getSize() == 1);
@@ -242,13 +245,13 @@ class DeploymentApplicationsPageInteractionTest extends DeploymentAutostartFixtu
 
     private static Component named(Container root, String name) {
         if (name.equals(root.getName())) return root;
-        for (var component : root.getComponents()) {
-            if (name.equals(component.getName())) return component;
-            if (component instanceof Container child) {
-                var found = find(child, name);
+        var local = find(root, name);
+        if (local != null) return local;
+        for (var window : Window.getWindows())
+            if (window.isDisplayable() && "applications.discovery.window".equals(window.getName())) {
+                var found = find(window, name);
                 if (found != null) return found;
             }
-        }
         throw new AssertionError("Actual component missing: " + name);
     }
 
@@ -257,6 +260,10 @@ class DeploymentApplicationsPageInteractionTest extends DeploymentAutostartFixtu
             if (name.equals(component.getName())) return component;
             if (component instanceof Container child) {
                 var found = find(child, name);
+                if (found != null) return found;
+            }
+            if (component instanceof JComponent child && child.getComponentPopupMenu() != null) {
+                var found = find(child.getComponentPopupMenu(), name);
                 if (found != null) return found;
             }
         }

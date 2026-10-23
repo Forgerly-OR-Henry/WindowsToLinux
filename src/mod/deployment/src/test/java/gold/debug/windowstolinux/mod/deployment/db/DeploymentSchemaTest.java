@@ -30,6 +30,26 @@ class DeploymentSchemaTest extends DeploymentRuntimeFixture {
             try (var writer = scope(runtime, identity, false)) {
                 new DeploymentSchema().initialize(writer);
                 try (var connection = writer.openConnection()) {
+                    try (var stream = java.util.Objects.requireNonNull(getClass().getResourceAsStream("column-order-v1.txt"))) {
+                        var lines = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).lines().toList();
+                        assertEquals(20, lines.size());
+                        for (var line : lines) {
+                            var parts = line.split("=", 2);
+                            var actual = new java.util.ArrayList<String>();
+                            try (var statement = connection.createStatement(); var columns = statement.executeQuery("SELECT * FROM " + parts[0] + " WHERE 1=0")) {
+                                for (int i = 1; i <= columns.getMetaData().getColumnCount(); i++)
+                                    actual.add(columns.getMetaData().getColumnName(i));
+                            }
+                            assertEquals(java.util.List.of(parts[1].split(",")), actual, parts[0]);
+                            var keys = new java.util.TreeMap<Short, String>();
+                            try (var primary = connection.getMetaData().getPrimaryKeys(null, connection.getSchema(), parts[0])) {
+                                while (primary.next())
+                                    keys.put(primary.getShort("KEY_SEQ"), primary.getString("COLUMN_NAME"));
+                            }
+                            assertFalse(keys.isEmpty(), parts[0]);
+                            assertEquals(java.util.List.copyOf(keys.values()), actual.subList(0, keys.size()), parts[0]);
+                        }
+                    }
                     for (var action : accepted) insertManagementAction(connection, action);
                     var failure = assertThrows(SQLException.class,
                         () -> insertManagementAction(connection, "LIFECYCLE_UNREVIEWED_ACTION"));
@@ -96,6 +116,34 @@ class DeploymentSchemaTest extends DeploymentRuntimeFixture {
         }
     }
 
+    @Test
+    void readOnlyValidationRejectsReorderedColumnsWithoutChangingSavedRows() throws Exception {
+        try (var runtime = open()) {
+            var identity = register(runtime);
+            try (var writer = scope(runtime, identity, false)) {
+                new DeploymentSchema().initialize(writer);
+                try (var connection = writer.openConnection(); var statement = connection.createStatement()) {
+                    statement.executeUpdate("ALTER TABLE preference RENAME TO preference_original");
+                    statement.executeUpdate("CREATE TABLE preference(preference_value CHARACTER VARYING NOT NULL, preference_key VARCHAR(128) PRIMARY KEY)");
+                    statement.executeUpdate("INSERT INTO preference(preference_key,preference_value) VALUES('retained','original')");
+                    statement.executeUpdate("DROP TABLE preference_original");
+                }
+            }
+            var before = SchemaSnapshot.digest(runtime.persistence().database(), new SchemaCoordinates(identity));
+            try (var reader = scope(runtime, identity, true)) {
+                var result = new DeploymentSchema().validate(reader);
+                assertFalse(result.valid());
+                assertTrue(result.violations().stream().anyMatch(value -> value.startsWith("Deployment column order differs: preference")));
+                try (var connection = reader.openConnection(); var statement = connection.createStatement();
+                     var row = statement.executeQuery("SELECT preference_value FROM preference WHERE preference_key='retained'")) {
+                    assertTrue(row.next());
+                    assertEquals("original", row.getString(1));
+                }
+            }
+            assertEquals(before, SchemaSnapshot.digest(runtime.persistence().database(), new SchemaCoordinates(identity)));
+        }
+    }
+
     /** Inserts a real management row whose only varying constraint input is the action. / 写入真实管理行，仅动作是变化的约束输入。
      * @param connection original restricted writer / 原受限写者
      * @param action exact tested action / 精确受测动作
@@ -126,7 +174,7 @@ class DeploymentSchemaTest extends DeploymentRuntimeFixture {
      * @return exact registered identity / 精确已登记身份
      * @throws Exception if registration or preparation fails / 登记或准备失败时 */
     private static SchemaIdentity register(PlatformRuntime runtime) throws Exception {
-        var identity = new SchemaIdentity(OWNER, "1", UUID.randomUUID());
+        var identity = new SchemaIdentity(OWNER, DeploymentSchema.VERSION, UUID.randomUUID());
         var coordinates = new SchemaCoordinates(identity);
         try (var connection = runtime.persistence().database().openConnection();
              var registry = connection.prepareStatement("MERGE INTO mod_registry(mod_id,updated_at) KEY(mod_id) VALUES(?,1)");
@@ -137,7 +185,7 @@ class DeploymentSchemaTest extends DeploymentRuntimeFixture {
             registry.setString(1, OWNER);
             registry.executeUpdate();
             schema.setString(1, OWNER);
-            schema.setString(2, "1");
+            schema.setString(2, DeploymentSchema.VERSION);
             schema.setObject(3, identity.generation());
             schema.setString(4, coordinates.physicalName());
             schema.setString(5, coordinates.databaseUser());

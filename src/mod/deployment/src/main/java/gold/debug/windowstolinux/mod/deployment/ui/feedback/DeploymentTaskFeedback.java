@@ -8,11 +8,10 @@ import java.util.ResourceBundle;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
-
 import javax.swing.*;
 
-import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationUsage;
@@ -50,6 +49,10 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
     /** Bounded persisted event window. / 有界持久事件窗口。 */
     private final JTextArea events = new JTextArea(6, 40);
 
+    private final JScrollPane eventsScroll = new JScrollPane(events);
+
+    private boolean compactIdle;
+
     /** Cooperative cancellation of the original handle. / 原句柄的协作取消。 */
     private final JButton cancel = new JButton();
 
@@ -60,7 +63,7 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
     private final AtomicBoolean reading = new AtomicBoolean();
 
     /** EDT timer dispatches storage to the original worker. / EDT计时器将存储派发给原工作线程。 */
-    private final Timer timer = new Timer(750, ignored -> poll());
+    private final Timer timer;
 
     /** Actual original accepted task, retained after completion. / 实际原已准入任务，完成后仍保留。 */
     private TaskHandle<?> handle;
@@ -85,7 +88,18 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
      * @param worker original page background executor / 原页面后台执行器
      * @param openTasks finite actual task destination / 有限实际任务目的页 */
     public DeploymentTaskFeedback(DeploymentDiagnostics diagnostics, Executor worker, Runnable openTasks) {
-        this(diagnostics, worker, openTasks, Optional.empty());
+        this(diagnostics, worker, openTasks, Optional.empty(),
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().view());
+    }
+
+    /** Uses the owning page's fixed refresh interval. / 使用所属页面的固定刷新间隔。
+     * @param diagnostics original diagnostic reader / 原诊断读取器
+     * @param worker original worker / 原工作线程
+     * @param openTasks task navigation / 任务导航
+     * @param view immutable presentation settings / 不可变展示配置 */
+    public DeploymentTaskFeedback(DeploymentDiagnostics diagnostics, Executor worker, Runnable openTasks,
+                                  gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.View view) {
+        this(diagnostics, worker, openTasks, Optional.empty(), view);
     }
 
     /** Includes original successful-publication delivery without a polling task. / 包含原成功发布交付，不创建轮询任务。
@@ -95,18 +109,34 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
      * @param delivery actual UUID-bound delivery lookup / 实际UUID绑定交付查询 */
     public DeploymentTaskFeedback(DeploymentDiagnostics diagnostics, Executor worker, Runnable openTasks,
                                   DeliveryLookup delivery) {
-        this(diagnostics, worker, openTasks, Optional.of(Objects.requireNonNull(delivery)));
+        this(diagnostics, worker, openTasks, delivery,
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().view());
+    }
+
+    /** Binds delivery and refresh timing without creating polling tasks. / 绑定交付及刷新时序，不创建轮询任务。
+     * @param diagnostics original diagnostic reader / 原诊断读取器
+     * @param worker original worker / 原工作线程
+     * @param openTasks task navigation / 任务导航
+     * @param delivery original publication lookup / 原发布查询
+     * @param view immutable presentation settings / 不可变展示配置 */
+    public DeploymentTaskFeedback(DeploymentDiagnostics diagnostics, Executor worker, Runnable openTasks,
+                                  DeliveryLookup delivery,
+                                  gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.View view) {
+        this(diagnostics, worker, openTasks, Optional.of(Objects.requireNonNull(delivery)), view);
     }
 
     /** Builds the original feedback with only the supplied concrete publication capability. / 仅以所提供具体发布能力构建原反馈。
      * @param diagnostics original owned reader / 原所属读取器
      * @param worker original page worker / 原页面工作线程
      * @param openTasks finite actual destination / 有限实际目的页
-     * @param lookup present only for publication pages / 仅发布页面提供 */
+     * @param lookup present only for publication pages / 仅发布页面提供
+     * @param view immutable refresh settings / 不可变刷新配置 */
     private DeploymentTaskFeedback(DeploymentDiagnostics diagnostics, Executor worker, Runnable openTasks,
-                                   Optional<DeliveryLookup> lookup) {
+                                   Optional<DeliveryLookup> lookup,
+                                   gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.View view) {
         this.diagnostics = Objects.requireNonNull(diagnostics);
         this.worker = Objects.requireNonNull(worker);
+        this.timer = new Timer(Objects.requireNonNull(view).refreshMillis(), ignored -> poll());
         this.openTasks = Objects.requireNonNull(openTasks);
         this.delivery = lookup.map(value -> new DeploymentTaskDelivery(value, worker)).orElse(null);
         root.setName("deployment.task.feedback");
@@ -125,7 +155,7 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
         controls.add(tasks);
         root.add(state, BorderLayout.NORTH);
         var observation = new JPanel(new BorderLayout(4, 4));
-        observation.add(new JScrollPane(events), BorderLayout.CENTER);
+        observation.add(eventsScroll, BorderLayout.CENTER);
         if (delivery != null) observation.add(delivery.component(), BorderLayout.SOUTH);
         root.add(observation, BorderLayout.CENTER);
         root.add(controls, BorderLayout.SOUTH);
@@ -141,6 +171,13 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
      * @return actual feedback root / 实际反馈根 */
     public JComponent component() {
         return root;
+    }
+
+    /** Lets an owning flow present its inventory's single idle message. / 让所属流程仅呈现任务清单的一处空态。 */
+    public void compactIdle(boolean compact) {
+        requireEdt();
+        compactIdle = compact;
+        availability();
     }
 
     /** Binds an admitted original handle on the EDT. / 在EDT绑定已准入原句柄。
@@ -282,6 +319,9 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
 
     /** Derives controls from current admission and actual original terminal state. / 从当前准入及实际原终态确定控件。 */
     private void availability() {
+        boolean showObservation = !compactIdle || !closed && !unavailable && handle != null;
+        state.setVisible(showObservation);
+        eventsScroll.setVisible(showObservation);
         cancel.setEnabled(!closed && !unavailable && handle != null && !cancellationRequested
             && handle.snapshot().endedAt().isEmpty());
         tasks.setEnabled(!closed && !unavailable);

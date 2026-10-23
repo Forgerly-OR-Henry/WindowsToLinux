@@ -91,6 +91,16 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
                 if (intent.type().equals("platform.ssh.execute")) {
                     assertEquals(intent.exactAction(), active.approvedActions.getLast(), "Independent AI must finish before the host question");
                     active.events.add("HUMAN:" + digest(intent.exactAction()));
+                    var gate = active.questionGate;
+                    if (gate != null && gate.first.compareAndSet(false, true)) {
+                        gate.opened.countDown();
+                        try {
+                            assertTrue(gate.release.await(10, TimeUnit.SECONDS), "The test must settle the original human question");
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            throw new AssertionError("Original human question interrupted", interrupted);
+                        }
+                    }
                     return !active.rejectCommands;
                 }
                 return true;
@@ -158,6 +168,131 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
         peer.healthy();
         assertEquals(TaskState.ENDED, handle.snapshot().state(), handle.snapshot().toString());
         assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
+    }
+
+    @Test
+    void queuedPolicyChangeWaitsForTheOriginalHumanQuestionAndAppliesAtTheNextRealApprovalBoundary() throws Exception {
+        enable();
+        var question = new PolicyQuestionGate();
+        try (var peer = new Peer(root.resolve("peer")); var runtime = open()) {
+            configure(runtime, peer);
+            peer.questionGate = question;
+            start(runtime, true);
+            var actual = runtime.modContexts().get(OWNER).context();
+            var policyUpdates = new java.util.concurrent.atomic.AtomicInteger();
+            var originalWorker = new AtomicReference<Thread>();
+            var originalContext = new AtomicReference<TaskContext>();
+            var host = (gold.debug.windowstolinux.appapi.task.action.InteractionService) java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class},
+                (proxy, method, arguments) -> {
+                    if (method.getName().equals("updateReviewedWorkflowPolicy")) {
+                        assertSame(originalWorker.get(), Thread.currentThread(), "Only the original worker may apply the request");
+                        assertSame(originalContext.get(), arguments[3]);
+                        assertEquals(0L, arguments[1]);
+                        assertEquals(gold.debug.windowstolinux.appapi.task.action.CommandReviewMode.AUTOMATIC, arguments[2]);
+                        assertEquals(1, peer.sends.size(), "The original approved command must settle before changing the host policy");
+                        policyUpdates.incrementAndGet();
+                    }
+                    try {
+                        return method.invoke(actual.interaction(), arguments);
+                    } catch (java.lang.reflect.InvocationTargetException error) {
+                        throw error.getCause();
+                    }
+                });
+            var context = (ModContext) java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("interaction")) return host;
+                    try {
+                        return method.invoke(actual, arguments);
+                    } catch (java.lang.reflect.InvocationTargetException error) {
+                        throw error.getCause();
+                    }
+                });
+            var failure = new AtomicReference<Throwable>();
+            var handle = context.tasks().submit(new TaskRequest("hd16-dynamic-policy", "Actual next-boundary approval change", List.of(SERVER.id()), false), task -> {
+                originalWorker.set(Thread.currentThread());
+                originalContext.set(task);
+                try {
+                    String revision = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
+                    try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision,
+                        "MANUAL_REVIEW", false, "original bounded loopback commands");
+                         var session = context.linux().connect(SERVER, task)) {
+                        var reviewed = modeReview(context, task, workflow, revision, "ASSISTED", "MANUAL_REVIEW", false);
+                        var commands = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) reviewed;
+                        try (var first = command("policy-before")) {
+                            var intent = intent(first, "original-before-policy", OPERATION);
+                            peer.expect(intent, first, false);
+                            var grant = commands.approveCommand(intent, first, task).value().orElseThrow();
+                            var pending = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.state(context, task.id());
+                            assertEquals("MANUAL_REVIEW", pending.mode());
+                            assertEquals(0, pending.revision());
+                            assertEquals(Optional.of("AUTOMATIC"), pending.pendingMode());
+                            assertEquals(0, policyUpdates.get(), "Finishing the original question cannot change its granted policy");
+                            assertEquals(TaskResult.SUCCEEDED, session.execute(first, grant).outcome());
+                        }
+                        assertEquals(1, peer.sends.size());
+                        try (var second = command("policy-after")) {
+                            var intent = intent(second, "original-after-policy", OPERATION);
+                            peer.expect(intent, second, false);
+                            var grant = commands.approveCommand(intent, second, task).value().orElseThrow();
+                            var confirmed = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.state(context, task.id());
+                            assertEquals("AUTOMATIC", confirmed.mode());
+                            assertEquals(1, confirmed.revision());
+                            assertTrue(confirmed.pendingMode().isEmpty());
+                            assertTrue(confirmed.problem().isEmpty(), "Actual task policy and default preference both persisted");
+                            assertEquals(1, policyUpdates.get());
+                            assertEquals(1, peer.commandQuestions(), "The next low-risk command uses the newly confirmed automatic policy");
+                            assertEquals(TaskResult.SUCCEEDED, session.execute(second, grant).outcome());
+                        }
+                        assertEquals("MANUAL_REVIEW", peer.facts.getFirst().path("authorizationPolicy").asText());
+                        assertEquals("AUTOMATIC", peer.facts.getLast().path("authorizationPolicy").asText());
+                        assertEquals(2, peer.approvedActions.size(), "Independent review remains mandatory under both policies");
+                        assertEquals(2, peer.sends.size());
+                    }
+                    var checkpoint = context.tasks().findCheckpoint(task,
+                        gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.KEY).orElseThrow().snapshot();
+                    assertTrue(checkpoint.released(), "Closing the actual host workflow releases its policy occupancy");
+                    var retained = JSON.readTree(checkpoint.payload());
+                    assertEquals("CONFIRMED", retained.path("phase").asText());
+                    assertEquals("AUTOMATIC", retained.path("mode").asText());
+                    assertEquals(1, retained.path("revision").asLong());
+                    assertTrue(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.controller(task).isEmpty());
+                    return success(null);
+                } catch (Throwable error) {
+                    failure.set(error);
+                    throw error;
+                }
+            });
+            try {
+                assertTrue(question.opened.await(10, TimeUnit.SECONDS), () -> "Original human question did not open: " + failure.get());
+                assertEquals(1, peer.commandQuestions());
+                assertEquals(0, peer.sends.size());
+                gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.request(context, handle.id(), "AUTOMATIC", 0);
+                var pending = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.state(context, handle.id());
+                assertEquals("MANUAL_REVIEW", pending.mode());
+                assertEquals(0, pending.revision());
+                assertEquals(Optional.of("AUTOMATIC"), pending.pendingMode());
+                assertEquals(0, policyUpdates.get(), "The UI request cannot call the host while the original question is pending");
+            } finally {
+                question.release.countDown();
+            }
+            await(handle, peer, failure);
+            peer.assertSendOrdering();
+            assertEquals(1, policyUpdates.get());
+            assertEquals(1, peer.commandQuestions());
+            assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        } finally {
+            question.release.countDown();
+            active = null;
+        }
+    }
+
+    private static final class PolicyQuestionGate {
+        private final java.util.concurrent.atomic.AtomicBoolean first = new java.util.concurrent.atomic.AtomicBoolean();
+
+        private final CountDownLatch opened = new CountDownLatch(1);
+
+        private final CountDownLatch release = new CountDownLatch(1);
     }
 
     @ParameterizedTest
@@ -699,6 +834,8 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
         final AtomicReference<Throwable> failure = new AtomicReference<>();
 
         volatile boolean rejectCommands;
+
+        volatile PolicyQuestionGate questionGate;
 
         volatile String modelReply = "APPROVE";
 

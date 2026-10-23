@@ -8,7 +8,6 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.util.*;
-
 import javax.tools.ToolProvider;
 
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
@@ -24,24 +23,24 @@ import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 
 /** Real CLASS caller and production provider, with distinct PF4J loaders and the exported contract. / 真实 CLASS 调用方及生产提供方，使用独立 PF4J 加载器与公开合同。 */
-final class DeploymentApiCallerFixture {
-    static final String CALLER = "example.deploymentcaller";
+public final class DeploymentApiCallerFixture {
+    public static final String CALLER = "example.deploymentcaller";
 
-    static final String PROVIDER = DeploymentSchema.OWNER;
+    public static final String PROVIDER = DeploymentSchema.OWNER;
 
-    static final String PROVIDER_VERSION = "1.1.0-dev.3";
+    public static final String PROVIDER_VERSION = "1.0.0";
 
-    static final String CALLER_VERSION = "1.1.0-dev.1";
+    public static final String CALLER_VERSION = "1.1.0-dev.1";
 
-    static final String API_PACKAGE = "gold.debug.windowstolinux.mod.deployment.api";
+    public static final String API_PACKAGE = "gold.debug.windowstolinux.mod.deployment.api";
 
-    final PlatformRuntime runtime;
+    public final PlatformRuntime runtime;
 
-    final ModClassLoader providerLoader, callerLoader;
+    public final ModClassLoader providerLoader, callerLoader;
 
-    final Class<?> callerClass;
+    public final Class<?> callerClass;
 
-    DeploymentApiCallerFixture(PlatformRuntime runtime) throws Exception {
+    public DeploymentApiCallerFixture(PlatformRuntime runtime) throws Exception {
         this.runtime = runtime;
         // Read-only host metadata: both sessions and loaders belong to the actual startup coordinator.
         providerLoader = activeLoader(runtime, PROVIDER);
@@ -62,7 +61,7 @@ final class DeploymentApiCallerFixture {
     }
 
     /** Copies the actual provider build and generates both official CLASS descriptions before the preparation boot. / 在准备启动前复制实际提供方构建并生成两个官方 CLASS 描述。 */
-    static Path prepareWorkspace(Path workspace, Path temporary) throws Exception {
+    public static Path prepareWorkspace(Path workspace, Path temporary) throws Exception {
         workspace = DevelopmentInfo.workspace(workspace);
         var descriptor = DevelopmentInfo.read(workspace,
             workspace.resolve("src/mod/deployment/target/wtlmod-development.json"));
@@ -102,7 +101,7 @@ final class DeploymentApiCallerFixture {
         Path classes = compileCaller(module, providerClasses);
         String manifest = """
             {"formatVersion":1,"id":"example.deploymentcaller","name":"Deployment API caller fixture",
-             "version":"%s","platformApiRange":"[1.0.0-dev.4,1.0.0)","minJavaVersion":21,
+             "version":"%s","platformApiRange":"1.0.0","minJavaVersion":21,
              "mainJar":"main/caller.jar","entryClass":"example.deploymentcaller.Mod",
              "dependencies":[{"id":"%s","versionRange":"[%s,1.1.0)"}]}
             """.formatted(CALLER_VERSION, PROVIDER, PROVIDER_VERSION);
@@ -111,7 +110,7 @@ final class DeploymentApiCallerFixture {
             <project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>
             <groupId>example</groupId><artifactId>deployment-caller-fixture</artifactId><version>%s</version>
             <dependencies><dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-appapi</artifactId>
-            <version>1.0.0-dev.4</version><scope>provided</scope></dependency>
+            <version>1.0.0</version><scope>provided</scope></dependency>
             <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-mod-deployment</artifactId>
             <version>%s</version><scope>provided</scope></dependency></dependencies></project>
             """.formatted(CALLER_VERSION, PROVIDER_VERSION));
@@ -161,7 +160,7 @@ final class DeploymentApiCallerFixture {
         return digest.digest();
     }
 
-    Object invoke(String name, Class<?>[] types, Object... arguments) throws Exception {
+    public Object invoke(String name, Class<?>[] types, Object... arguments) throws Exception {
         try {
             return callerClass.getMethod(name, types).invoke(null, arguments);
         } catch (InvocationTargetException failure) {
@@ -170,39 +169,39 @@ final class DeploymentApiCallerFixture {
         }
     }
 
-    TaskHandle<?> collect(String application, String revision, List<String> bindings, Runnable between) throws Exception {
+    public TaskHandle<?> collect(String application, String revision, List<String> bindings, Runnable between) throws Exception {
         return (TaskHandle<?>) invoke("collect", new Class<?>[]{String.class, String.class, List.class, Runnable.class},
             application, revision, bindings, between);
     }
 
-    TaskHandle<?> boundaries() throws Exception {
+    public TaskHandle<?> boundaries() throws Exception {
         return (TaskHandle<?>) invoke("boundaries", new Class<?>[]{});
     }
 
-    TaskHandle<?> occupancy(Runnable retained) throws Exception {
+    public TaskHandle<?> occupancy(Runnable retained) throws Exception {
         return (TaskHandle<?>) invoke("occupancy", new Class<?>[]{Runnable.class}, retained);
     }
 
-    TaskHandle<?> restore(Map<String, Object> archive, Path files, Runnable prepared) throws Exception {
+    public TaskHandle<?> restore(Map<String, Object> archive, Path files, Runnable prepared) throws Exception {
         return (TaskHandle<?>) invoke("restore", new Class<?>[]{Map.class, Path.class, Runnable.class}, archive, files, prepared);
     }
 
-    TaskHandle<?> restoreRejected(Map<String, Object> archive, Path files, String code, String event, Runnable reviewed) throws Exception {
+    public TaskHandle<?> restoreRejected(Map<String, Object> archive, Path files, String code, String event, Runnable reviewed) throws Exception {
         return (TaskHandle<?>) invoke("restoreRejected", new Class<?>[]{Map.class, Path.class, String.class, String.class, Runnable.class},
             archive, files, code, event, reviewed);
     }
 
-    TaskHandle<?> lostPrepare(Map<String, Object> archive, Path files, boolean prepared,
-                              Runnable fault, Runnable malformed, Runnable lookup) throws Exception {
+    public TaskHandle<?> lostPrepare(Map<String, Object> archive, Path files, boolean prepared,
+                                     Runnable fault, Runnable malformed, Runnable lookup) throws Exception {
         return (TaskHandle<?>) invoke("lostPrepare", new Class<?>[]{Map.class, Path.class, boolean.class,
             Runnable.class, Runnable.class, Runnable.class}, archive, files, prepared, fault, malformed, lookup);
     }
 
-    UUID handoff() throws Exception {
+    public UUID handoff() throws Exception {
         return (UUID) callerClass.getField("handoff").get(null);
     }
 
-    static Path compileCaller(Path temporary, Path providerClasses) throws Exception {
+    public static Path compileCaller(Path temporary, Path providerClasses) throws Exception {
         Path source = temporary.resolve("src/main/java/example/deploymentcaller/Mod.java");
         Path classes = temporary.resolve("target/classes");
         Files.createDirectories(source.getParent());
@@ -215,7 +214,7 @@ final class DeploymentApiCallerFixture {
         return classes;
     }
 
-    static ModPageRegistry pages() {
+    public static ModPageRegistry pages() {
         return new ModPageRegistry(new ModPageRegistry.PageHost() {
             public void show(ModPageRegistry.PageKey key, PageSpec spec, javax.swing.JComponent component) {
             }
@@ -231,7 +230,7 @@ final class DeploymentApiCallerFixture {
         }, new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
     }
 
-    static final String SOURCE = """
+    public static final String SOURCE = """
         package example.deploymentcaller;
         import java.util.*;
         import java.nio.file.*;
@@ -245,7 +244,7 @@ final class DeploymentApiCallerFixture {
             public static UUID handoff;
             public static TaskContext originalTask;
             public static Throwable assertion;
-            public static String firstPrepareError;
+            public static volatile String firstPrepareError;
             public static boolean firstPrepareReturned;
             private static DeploymentRestoreRequest reliableRequest;
             public static volatile String firstPrepareProviderEvidence;
@@ -549,7 +548,7 @@ final class DeploymentApiCallerFixture {
                             throw new AssertionError("First prepare unexpectedly returned a value");
                         } catch(ApiException expected) {
                             firstPrepareError=expected.problem().eventCode();
-                            check(firstPrepareError.equals(prepared?"SERVICE_RELEASE_PERSISTENCE":"SERVICE_RELEASE_PENDING"),expected.problem().toString());
+                            check(firstPrepareError.equals(prepared?"SERVICE_RELEASE_PERSISTENCE":"TASK_EFFECT_UNCERTAIN"),expected.problem().toString());
                         }
                         check(handoff==null && !root.snapshot().released(),"Lost prepare leaked an ID or released caller checkpoint");
                         return uncertain();

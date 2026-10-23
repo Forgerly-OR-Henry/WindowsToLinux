@@ -87,13 +87,18 @@ public final class ExtensionPagePane extends JPanel implements PageHost {
         close.addActionListener(event -> {
             if (selected != null) closeRequest.accept(selected);
         });
-        heading.setBorder(BorderFactory.createEmptyBorder(6, 16, 6, 8));
+        heading.setBorder(BorderFactory.createEmptyBorder(0, 16, 0, 8));
         heading.add(title, BorderLayout.CENTER);
         heading.add(close, BorderLayout.EAST);
         heading.setVisible(false);
-        add(heading, BorderLayout.NORTH);
         add(pages, BorderLayout.CENTER);
         settingSurface.add(settingGroups, BorderLayout.CENTER);
+    }
+
+    /** Returns the original compact heading for the host's reserved upper region. / 返回供宿主顶部预留区域挂载的原紧凑标题。
+     * @return root title and close action / 根标题及关闭动作 */
+    public JComponent headingComponent() {
+        return heading;
     }
 
     /** Binds the host's root selection without taking author ownership. / 绑定宿主根选择，不接管作者归属。

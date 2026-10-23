@@ -67,6 +67,12 @@ public final class DeploymentBuildCommandChannel {
 
     private final java.util.ArrayList<DeploymentTrackedToolchains.Selection> trackedPreparationReceipts = new java.util.ArrayList<>();
 
+    private DeploymentToolchainDiagnostics.Request lastPreparationDiagnosticRequest;
+
+    public Optional<DeploymentToolchainDiagnostics.Request> lastPreparationDiagnosticRequest() {
+        return Optional.ofNullable(lastPreparationDiagnosticRequest);
+    }
+
     /** Binds the original task, server and borrowed session; the caller closes the session. / 绑定原任务、服务器和借用会话；由调用方关闭会话。
      * @param session original authenticated session / 原已认证会话
      * @param interaction actual host review / 实际宿主审核
@@ -262,11 +268,15 @@ public final class DeploymentBuildCommandChannel {
             .isPresent())
             || javaHome == null || javaHome.length() > 2048)
             throw new IllegalArgumentException("Invalid fixed toolchain preparation");
+        var original = new DeploymentToolchainDiagnostics.Request(java.util.UUID.randomUUID(), task.id().toString(),
+            server.id(), DeploymentTrackedToolchains.sha256(session.facts().fingerprint().getBytes(StandardCharsets.UTF_8)),
+            planRevision, layout, List.of("prepare", Objects.requireNonNull(ecosystem).name(), branch, exact,
+                Integer.toString(seconds), javaHome));
+        lastPreparationDiagnosticRequest = original;
+        preparationObserver.diagnosticRequested(original, task);
         var observed = send("deployment.toolchain.prepare.v1", layout.toolchains(),
-            helper("prepare-toolchains",
-                List.of("prepare", Objects.requireNonNull(ecosystem).name(), branch, exact,
-                    Integer.toString(seconds), javaHome)),
-            new byte[0], Duration.ofSeconds(seconds + 15L), 65536);
+            DeploymentToolchainDiagnostics.command("prepare-diagnosed", original), original.bytes(),
+            Duration.ofSeconds(seconds + 15L), 65536);
         if (observed.outcome() == TaskResult.SUCCEEDED && observed.value().isPresent()) {
             var receipt = observed.value().orElseThrow();
             if (receipt.exitCode().equals(Optional.of(0)) && !receipt.truncated() && receipt.stdout().length() <= 8192
@@ -276,7 +286,49 @@ public final class DeploymentBuildCommandChannel {
                 preparationReceipts.addLast(receipt.stdout());
             }
         }
+        if (observed.value().isPresent() && observed.value().orElseThrow().exitCode().filter(code -> code != 0).isPresent()
+            && observed.outcome() != TaskResult.CANCELLED) {
+            var context = new java.util.LinkedHashMap<String, String>(observed.problem().map(Problem::context).orElse(Map.of()));
+            context.put("toolchainDiagnosticOperation", original.operationId().toString());
+            context.put("toolchainDiagnosticRequestSha256", original.sha256());
+            // Failure to retrieve an attachment never replaces the original preparation result.
+            try {
+                var diagnostic = toolchainDiagnostic(original);
+                diagnostic.value().ifPresent(value -> context.put("toolchainDiagnostic", value));
+                if (diagnostic.value().isEmpty()) context.put("toolchainDiagnosticObservation", diagnostic.outcome().name());
+            } catch (ApiException unavailable) {
+                context.put("toolchainDiagnosticObservation", unavailable.problem().eventCode());
+            }
+            var problem = observed.problem().orElse(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_TOOLCHAIN_PREPARE_FAILED",
+                "Original toolchain installation command failed", Map.of(), Optional.empty()));
+            observed = new OperationResult<>(observed.outcome(), observed.value(), Optional.of(new Problem(problem.code(),
+                problem.eventCode(), problem.message(), context, problem.diagnosticId())));
+        }
         return observed;
+    }
+
+    /** Independently reviews a read of one protected attachment; it cannot repeat preparation. */
+    public OperationResult<String> toolchainDiagnostic(DeploymentToolchainDiagnostics.Request original) throws ApiException {
+        if (!original.taskId().equals(task.id().toString()) || !original.serverId().equals(server.id())
+            || !original.planRevision().equals(planRevision) || !original.layout().equals(layout)
+            || !original.fingerprintSha256().equals(DeploymentTrackedToolchains.sha256(session.facts().fingerprint().getBytes(StandardCharsets.UTF_8))))
+            throw new IllegalArgumentException("Diagnostic differs from the original task, plan or authenticated host");
+        var result = sendWithBoundary("deployment.toolchain.diagnostic.v1",
+            Set.of(new ActionTarget(server.id(), "deployment-toolchain-diagnostic", original.target()),
+                new ActionTarget(server.id(), "task", original.taskId())),
+            DeploymentToolchainDiagnostics.command("diagnose-only", original), original.bytes(), Duration.ofSeconds(30),
+            DeploymentToolchainDiagnostics.MAX_OUTPUT_BYTES, () -> { });
+        if (result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()
+            || !result.value().orElseThrow().exitCode().equals(Optional.of(0)) || result.value().orElseThrow().truncated()
+            || !result.value().orElseThrow().stderr().isEmpty())
+            return new OperationResult<>(result.outcome() == TaskResult.SUCCEEDED ? TaskResult.UNKNOWN : result.outcome(), Optional.empty(), result.problem());
+        try {
+            String attachment = DeploymentToolchainDiagnostics.attachment(result.value().orElseThrow().stdout().getBytes(StandardCharsets.UTF_8), original);
+            return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(attachment), Optional.empty());
+        } catch (IllegalArgumentException invalid) {
+            return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
+                "DEPLOYMENT_TOOLCHAIN_DIAGNOSTIC_UNCONFIRMED", "Original toolchain diagnostic is unconfirmed", Map.of(), Optional.empty())));
+        }
     }
 
     /** Matches validated typed selections to this channel's actual complete successful preparation receipts. */

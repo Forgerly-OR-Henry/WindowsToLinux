@@ -624,6 +624,8 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
         var values = new ArrayList<>(List.of(layout.helperPath(), verb));
         values.addAll(arguments);
         String script = values.stream().map(DeploymentBuildCommandChannel::shellQuote).collect(java.util.stream.Collectors.joining(" "));
+        if (verb.equals("inspect-runtime") || verb.equals("observe-deployment"))
+            script = "WTL_SYSTEMD_QUERY_SECONDS=" + timeout + " " + script;
         return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, layout), new byte[0], Duration.ofSeconds(timeout), 4096);
     }
 

@@ -24,12 +24,12 @@ import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.*;
 import gold.debug.windowstolinux.appapi.secret.model.SecretId;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
-import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
-import gold.debug.windowstolinux.appapi.task.ref.ResourceRefState;
 import gold.debug.windowstolinux.appapi.task.TaskService;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefState;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
@@ -41,8 +41,9 @@ import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretStore;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentSecretStore;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.DeploymentSecretRef;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.DeploymentSecretRevision;
 import org.junit.jupiter.api.Test;
 
 class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
@@ -145,7 +146,7 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
                 task -> {
                     var stored = new DeploymentSecretStore(context.db()).findRevision(task, REVISION);
                     var secret = new SecretId(row.credentialId(), PURPOSE);
-                    var intent = gold.debug.windowstolinux.mod.deployment.db.DeploymentRefKey
+                    var intent = gold.debug.windowstolinux.mod.deployment.db.reference.DeploymentRefKey
                         .secretRevision(SERVER, secret, REVISION);
                     var reference = context.secrets().findReference(secret, intent.businessKey(), task);
                     boolean matched = context.secrets().use(secret, PURPOSE, task,

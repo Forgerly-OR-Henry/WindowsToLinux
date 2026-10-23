@@ -23,6 +23,11 @@ final class DeploymentAgentToolchainRelease {
     }
 
     static Map<String, String> decode(String encoded, DeploymentToolchainType ecosystem, String branch, String exact, String operation) {
+        return decode(encoded, ecosystem, branch, exact, operation, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original());
+    }
+
+    static Map<String, String> decode(String encoded, DeploymentToolchainType ecosystem, String branch, String exact, String operation,
+                                      gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
         byte[] bytes = null;
         try {
             if (encoded == null || encoded.length() > 5464 || !operation.matches("[a-f0-9]{32}"))
@@ -45,7 +50,7 @@ final class DeploymentAgentToolchainRelease {
                 || !values.get("operation").equals(operation) || !values.get("ecosystem").equals(ecosystem.name())
                 || !values.get("branch").equals(branch) || !values.get("requestedExact").equals(exact)
                 || !values.get("platform").equals("linux-x86_64")
-                || !values.get("resolverSourceSha256").equals(DeploymentAgentToolchainPrograms.sha256(DeploymentAgentToolchainPrograms.resolver())))
+                || !values.get("resolverSourceSha256").equals(DeploymentAgentToolchainPrograms.sha256(DeploymentAgentToolchainPrograms.resolver(layout))))
                 throw new IllegalArgumentException("Current release source or request binding changed");
             var version = DeploymentToolchainVersion.parse(ecosystem, values.get("version")).orElseThrow();
             if (version.preview() || !version.text().equals(values.get("version")) || !version.branch().equals(branch)

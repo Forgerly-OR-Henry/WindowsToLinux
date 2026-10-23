@@ -2,8 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.service.core.config;
 
 import java.util.Objects;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentConfigException;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.error.DeploymentConfigException;
 
 /**
  * One type-checked non-secret value inside an immutable configuration snapshot.

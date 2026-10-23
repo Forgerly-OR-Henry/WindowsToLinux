@@ -5,9 +5,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.server.LinuxDistroType;
 
 /**

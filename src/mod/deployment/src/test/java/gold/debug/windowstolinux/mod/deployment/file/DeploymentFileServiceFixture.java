@@ -7,11 +7,11 @@ import java.util.HashMap;
 
 import gold.debug.windowstolinux.appapi.file.FileService;
 import gold.debug.windowstolinux.appapi.file.action.FileActionService;
+import gold.debug.windowstolinux.appapi.file.material.FileMaterialService;
 import gold.debug.windowstolinux.appapi.file.query.FileQueryService;
 import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshotService;
 import gold.debug.windowstolinux.appapi.file.source.FileSourceService;
 import gold.debug.windowstolinux.appapi.file.work.FileWorkspaceService;
-import gold.debug.windowstolinux.appapi.file.material.FileMaterialService;
 
 /** Intercepts actual responsibility calls without intercepting entry accessors. / 拦截实际职责调用，不将入口访问器作为操作。 */
 public final class DeploymentFileServiceFixture {

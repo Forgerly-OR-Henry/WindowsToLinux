@@ -7,9 +7,9 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
@@ -181,6 +181,8 @@ final class DeploymentPublishStatePeer {
     }
 
     private static List<String> quoted(String script) {
+        if (script.contains(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.PATH))
+            script = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedBody(script);
         var values = new ArrayList<String>();
         var matcher = Pattern.compile("'([^']*)'").matcher(script);
         while (matcher.find())

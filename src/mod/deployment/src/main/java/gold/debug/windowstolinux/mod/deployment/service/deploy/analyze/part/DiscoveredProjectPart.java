@@ -1,0 +1,26 @@
+package gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.part;
+
+import java.nio.file.Path;
+import java.util.List;
+
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
+
+/**
+ * Declared deployable roots and possible types; ambiguity is preserved for input resolution. / 声明可部署根目录及可能类型，保留歧义供输入解析处理。
+ *
+ * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+ * @param relativeRoot relative root / 相对根目录
+ * @param types types / 类型集合
+ */
+public record DiscoveredProjectPart(String id, Path relativeRoot, List<DeploymentProjectKind> types) {
+    /**
+     * Freezes candidate types. / 固定候选类型。
+     *
+     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+     * @param relativeRoot relative root / 相对根目录
+     * @param types types / 类型集合
+     */
+    public DiscoveredProjectPart {
+        types = List.copyOf(types);
+    }
+}

@@ -15,16 +15,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
-import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.main.start.LoopbackSshServer;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
-import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
@@ -46,11 +46,16 @@ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentPublishPolicyContext;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentPublishPolicyFacts;
+import gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentNativeDatabaseActionLog;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentNativeDatabaseChannel;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.policy.DeploymentPublishPolicyContext;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.policy.DeploymentPublishPolicyFacts;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.recovery.DeploymentStandardTaskRecovery;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStandardSetupActionLog;
+import gold.debug.windowstolinux.mod.deployment.service.standard.staticmode.DeploymentStaticWorkflow;
 import org.junit.jupiter.api.Test;
 
 /** Checks actual helper receipt processing against the original CLASS/H2 task and recovery. / 以原 CLASS/H2 任务和恢复核对实际 helper 回执处理。 */
@@ -294,7 +299,7 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                     }
                 });
             var callbackFailure = new AtomicReference<Throwable>();
-            var recovery = new DeploymentStaticTaskRecovery(bound, new DeploymentRefFlow(bound));
+            var recovery = new DeploymentStandardTaskRecovery(bound, new DeploymentRefFlow(bound), new DeploymentStandardAssembly());
             try (var registration = tasks.registerRecovery(DeploymentRefFlow.TASK_TYPE, (previous, task) -> {
                 var reconciled = recovery.reconcile(previous, task);
                 assertEquals(TaskResult.FAILED, reconciled.outcome(), reconciled + " status=" + observedStatus.get());
@@ -305,12 +310,12 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                 var handle = tasks.submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE,
                     "Reconcile original native DB receipt", List.of(server.id()), true), task -> {
                     try {
-                        var preferences = new DeploymentPreferences(original.db());
-                        preferences.save(task, new DeploymentPreferences.Selection("STATIC", "MANUAL_REVIEW", "ONCE"));
+                        var preferences = new DeploymentPreferenceStore(original.db());
+                        preferences.save(task, new DeploymentPreferenceStore.Selection("STATIC", "MANUAL_REVIEW", false));
                         var policy = preferences.read(task);
                         assertEquals("STATIC", policy.mode());
-                        var guarded = DeploymentPublishPolicyContext.begin(capture, task, server, false,
-                            policy.approval(), policy.authorization(), "Original native database fixture");
+                        var guarded = DeploymentPublishPolicyContext.begin(capture, task, server, DeploymentStaticWorkflow.support(),
+                            policy.approval(), policy.rememberAuthorization(), "Original native database fixture", new DeploymentStandardAssembly());
                         try {
                             try (var actual = guarded.linux().connect(server, task)) {
                                 wire.set(actual.facts());
@@ -319,7 +324,7 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                         } finally {
                             guarded.finish(TaskResult.UNKNOWN);
                         }
-                        DeploymentStaticSetupActionLog.begin(tasks, task, server);
+                        DeploymentStandardSetupActionLog.begin(tasks, task, server);
                         var channel = new DeploymentNativeDatabaseChannel(session, original.interaction(), server,
                             task);
                         assertEquals(TaskResult.UNKNOWN,

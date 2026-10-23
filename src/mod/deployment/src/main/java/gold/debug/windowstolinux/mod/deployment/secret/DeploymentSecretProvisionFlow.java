@@ -8,10 +8,10 @@ import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.*;
 import gold.debug.windowstolinux.appapi.secret.model.SecretId;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
-import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 import gold.debug.windowstolinux.appapi.task.recover.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
@@ -19,9 +19,9 @@ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
-import gold.debug.windowstolinux.mod.deployment.db.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRevision;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentSecretStore;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.DeploymentSecretRef;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.DeploymentSecretRevision;
 
 /** Creates one credential and immutable revision under an original task, then only reconciles durable facts. / 在原任务下创建一次凭据及不可变修订，此后仅核对持久依据。 */
 public final class DeploymentSecretProvisionFlow implements TaskRecovery {
@@ -127,10 +127,20 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @param server exact server in the original plan / 原计划中的精确服务器
      * @return known child outcome or retained unknown / 已知子项结果或保留未知 */
     public OperationResult<Void> reconcileChild(TaskContext task, String key, ServerId server) {
+        return reconcileChild(task, key, server, "deployment-database");
+    }
+
+    /** Reconciles an indexed child using its exact original purpose. / 按精确原用途核对索引子项。
+     * @param task original task / 原任务
+     * @param key original child key / 原子项键
+     * @param server original server / 原服务器
+     * @param purpose indexed purpose / 索引用途
+     * @return known result or uncertainty / 已知结果或未知 */
+    public OperationResult<Void> reconcileChild(TaskContext task, String key, ServerId server, String purpose) {
         try {
             var original = DeploymentSecretProvisionActionLog.find(context.tasks(), task, key);
             if (original.isEmpty() || !server.equals(original.orElseThrow().facts().server())
-                || !"deployment-database".equals(original.orElseThrow().facts().purpose()))
+                || !purpose.equals(original.orElseThrow().facts().purpose()))
                 return unknown();
             return settle(task, original.orElseThrow(), false);
         } catch (Exception | LinkageError | AssertionError unconfirmed) {

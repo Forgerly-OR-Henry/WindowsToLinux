@@ -10,6 +10,31 @@ import java.util.*;
 
 /** Read-only paginated access to an owned frozen source, shared by assistance and agent. / 供辅助与自主部署共用的所属冻结源码只读分页访问。 */
 public final class DeploymentSourceBrowser {
+    private static final com.fasterxml.jackson.databind.ObjectMapper NAVIGATION_JSON = new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /** Rejects only a supplied source member path; frozen-source integrity failures retain their own exception. / 仅拒绝所提供的来源成员路径，冻结来源完整性故障保留原异常。 */
+    public static final class InputPathRejectedException extends SecurityException {
+        private InputPathRejectedException() {
+            super("Source member path does not satisfy the frozen-source input contract");
+        }
+    }
+
+    /** A valid query names no file in the unchanged frozen inventory. / 合法查询未命中原冻结清单中的文件。 */
+    public static final class MissingMemberException extends IOException {
+        /** Binds only the original inputs and capabilities owned by this adapter. / 仅绑定当前适配所属的原输入及能力。 */
+        private MissingMemberException() {
+            super("No source was read: the requested file is absent from the frozen inventory. List directories to find actual files before reading or citing them; correction consumes the remaining decision budget.");
+        }
+
+        /** Describes an absent inventory member without exposing source paths or changing retry behavior. / 描述清单成员缺失，不暴露来源路径或改变重试行为。
+         * @return stable missing-member failure / 稳定的成员缺失问题 */
+        public gold.debug.windowstolinux.appapi.task.result.Problem problem() {
+            return new gold.debug.windowstolinux.appapi.task.result.Problem(
+                gold.debug.windowstolinux.appapi.task.result.ProblemCode.NOT_FOUND,
+                "DEPLOYMENT_SOURCE_MEMBER_MISSING", getMessage(), Map.of(), Optional.empty());
+        }
+    }
+
     /** Maximum single text file. / 单个文本文件上限。 */
     private static final int MAX_FILE = 262144;
 
@@ -25,7 +50,7 @@ public final class DeploymentSourceBrowser {
     /** Indexes a real platform-owned snapshot and rejects links. / 索引真实平台所属快照并拒绝链接。
      * @param root snapshot directory / 快照目录
      * @param revision platform-reported content digest / 平台报告的内容摘要
-     * @throws Exception if the snapshot is unsafe or exceeds limits / 快照不安全或超限时 */
+     * @throws Exception if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
     public DeploymentSourceBrowser(Path root, String revision) throws Exception {
         this.root = Objects.requireNonNull(root).toRealPath(LinkOption.NOFOLLOW_LINKS);
         if (!Files.isDirectory(this.root, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(this.root))
@@ -50,10 +75,19 @@ public final class DeploymentSourceBrowser {
         verifyBoundaries();
         String name = relative(path);
         String expected = files.get(name);
-        if (expected == null) throw new IOException("Source member was not indexed");
+        if (expected == null) throw new MissingMemberException();
         if (!expected.equals(digest(root.resolve(name))))
             throw new SecurityException("Frozen source changed while hashing");
         return expected;
+    }
+
+    /** Checks original regular-file membership without reading or admitting content as model evidence. / 仅检查原普通文件清单，不读取内容或将其记为模型证据。
+     * @param path admitted relative file / 已准入相对文件
+     * @return whether the unchanged inventory contains the file / 未变清单是否包含该文件
+     * @throws Exception on invalid paths or changed source boundaries / 路径无效或来源边界改变时 */
+    public boolean containsFile(String path) throws Exception {
+        verifyBoundaries();
+        return files.containsKey(relative(path));
     }
 
     /** Rechecks exact file inventory and content before model use. / 模型使用前复核精确文件清单与内容。
@@ -87,7 +121,7 @@ public final class DeploymentSourceBrowser {
     }
 
     /** Lists immediate members using a bounded stable cursor. / 使用有界稳定游标列举直属成员。
-     * @param directory relative directory, empty for root / 相对目录，空串为根
+     * @param directory relative directory, optional final slash, empty for root / 相对目录，可带末尾斜线，空串为根
      * @param offset zero-based cursor / 从零开始的游标
      * @param limit bounded page size / 有界页大小
      * @return sorted relative members / 已排序相对成员
@@ -95,7 +129,8 @@ public final class DeploymentSourceBrowser {
     public List<String> list(String directory, int offset, int limit) throws Exception {
         page(offset, limit);
         verifyBoundaries();
-        String prefix = directory.isEmpty() ? "" : relative(directory) + "/";
+        String member = directory.endsWith("/") ? directory.substring(0, directory.length() - 1) : directory;
+        String prefix = directory.isEmpty() ? "" : relative(member) + "/";
         var children = new TreeSet<String>();
         for (String name : files.keySet())
             if (name.startsWith(prefix)) {
@@ -125,6 +160,150 @@ public final class DeploymentSourceBrowser {
             throw new IllegalArgumentException("A source path exceeds index page budget");
         return "sourceRevision=" + revision + " kind=PATH_INDEX metadataOnly=true total=" + paths.size()
             + " next=" + next + ". Read the selected files to obtain actual READ evidence.\n" + body;
+    }
+
+    /** Recursive path metadata, not evidence that a source body was read. */
+    public record IndexPage(String sourceRevision, String directory, boolean metadataOnly, int offset, int next,
+                            int total, boolean hasMore, List<String> paths) {
+        public IndexPage {
+            paths = List.copyOf(paths);
+        }
+    }
+
+    /** Returns an actual bounded recursive inventory cursor without changing the shared legacy index. */
+    public IndexPage indexPage(String directory, int offset, int limit) throws Exception {
+        page(offset, limit);
+        verifyBoundaries();
+        String selected = directory == null ? "" : directory;
+        if (selected.length() > 1 && selected.endsWith("/")) selected = selected.substring(0, selected.length() - 1);
+        String prefix = selected.isEmpty() ? "" : relative(selected) + "/";
+        var paths = files.keySet().stream().filter(path -> path.startsWith(prefix)).toList();
+        if (offset > paths.size())
+            throw new IllegalArgumentException("Source index cursor is outside the frozen selection");
+        var result = new ArrayList<String>();
+        int next = offset, characters = 0;
+        while (next < paths.size() && result.size() < limit) {
+            String path = paths.get(next);
+            if (characters + path.length() + 1 > 5400) break;
+            result.add(path);
+            var candidate = new IndexPage(revision, selected, true, offset, next + 1, paths.size(), next + 1 < paths.size(), result);
+            if (!navigationFits(candidate)) {
+                result.removeLast();
+                break;
+            }
+            characters += path.length() + 1;
+            next++;
+        }
+        if (next == offset && next < paths.size())
+            throw new IllegalArgumentException("Source index cannot fit its next complete path");
+        return new IndexPage(revision, selected, true, offset, next, paths.size(), next < paths.size(), result);
+    }
+
+    /** A zero-based file and line position in the immutable inventory. */
+    public record SearchCursor(int file, int line) {
+    }
+
+    /** A location-bearing search preview; this is not complete source READ evidence. */
+    public record SearchMatch(String path, int line, String preview, boolean previewComplete) {
+    }
+
+    /** A skipped text member remains explicitly unavailable, never a proven absence of matches. */
+    public record SearchSkipped(String path, String status) {
+    }
+
+    public record SearchPage(String sourceRevision, String query, boolean metadataOnly, int totalFiles,
+                             SearchCursor start, SearchCursor next, boolean hasMore, List<SearchMatch> matches,
+                             List<SearchSkipped> unavailable) {
+        public SearchPage {
+            matches = List.copyOf(matches);
+            unavailable = List.copyOf(unavailable);
+        }
+    }
+
+    /** Searches bounded files with an actual line continuation when a match or payload limit is reached. */
+    public SearchPage searchPage(String query, int offset, int line, int limit) throws Exception {
+        page(offset, limit);
+        if (line < 0 || line > 1000000 || query == null || query.isBlank() || query.length() > 256)
+            throw new IllegalArgumentException("Invalid source search cursor or query");
+        verifyBoundaries();
+        var paths = List.copyOf(files.keySet());
+        if (offset > paths.size() || offset == paths.size() && line != 0)
+            throw new IllegalArgumentException("Source search cursor is outside the frozen inventory");
+        var start = new SearchCursor(offset, line);
+        var matches = new ArrayList<SearchMatch>();
+        var unavailable = new ArrayList<SearchSkipped>();
+        int file = offset, row = line, visited = 0;
+        while (file < paths.size() && visited++ < limit) {
+            String path = paths.get(file);
+            List<String> lines;
+            try {
+                lines = text(path);
+            } catch (IOException unsupported) {
+                if (row != 0) throw new IllegalArgumentException("Unavailable source has no admitted line cursor");
+                unavailable.add(new SearchSkipped(path, "TEXT_UNAVAILABLE"));
+                var candidate = searchPage(query, paths.size(), start, new SearchCursor(file + 1, 0), matches, unavailable);
+                if (!navigationFits(candidate)) {
+                    unavailable.removeLast();
+                    return searchStop(query, paths.size(), start, new SearchCursor(file, row), matches, unavailable);
+                }
+                file++;
+                continue;
+            }
+            if (row > lines.size())
+                throw new IllegalArgumentException("Source search line cursor is outside the selected file");
+            while (row < lines.size()) {
+                String original = redacted(lines.get(row));
+                if (!original.contains(query)) {
+                    row++;
+                    continue;
+                }
+                int end = Math.min(4000, original.length());
+                if (end < original.length() && end > 0 && Character.isHighSurrogate(original.charAt(end - 1))) end--;
+                String preview = original.substring(0, end) + (end < original.length() ? " [line truncated]" : "");
+                matches.add(new SearchMatch(path, row + 1, preview, end == original.length()));
+                var next = row + 1 == lines.size() ? new SearchCursor(file + 1, 0) : new SearchCursor(file, row + 1);
+                if (!navigationFits(searchPage(query, paths.size(), start, next, matches, unavailable))) {
+                    matches.removeLast();
+                    if (!matches.isEmpty() || !unavailable.isEmpty())
+                        return searchStop(query, paths.size(), start, new SearchCursor(file, row), matches, unavailable);
+                    int low = 0, high = original.codePointCount(0, end), best = -1;
+                    while (low <= high) {
+                        int middle = (low + high) >>> 1;
+                        int cut = original.offsetByCodePoints(0, middle);
+                        var shortened = new SearchMatch(path, row + 1, original.substring(0, cut) + " [preview truncated]", false);
+                        if (navigationFits(searchPage(query, paths.size(), start, next, List.of(shortened), unavailable))) {
+                            best = cut;
+                            low = middle + 1;
+                        } else high = middle - 1;
+                    }
+                    if (best < 0)
+                        return searchStop(query, paths.size(), start, new SearchCursor(file, row), matches, unavailable);
+                    matches.add(new SearchMatch(path, row + 1, original.substring(0, best) + " [preview truncated]", false));
+                }
+                row++;
+                if (matches.size() == 100) return searchPage(query, paths.size(), start, next, matches, unavailable);
+            }
+            file++;
+            row = 0;
+        }
+        return searchPage(query, paths.size(), start, new SearchCursor(file, row), matches, unavailable);
+    }
+
+    private SearchPage searchStop(String query, int total, SearchCursor start, SearchCursor next,
+                                  List<SearchMatch> matches, List<SearchSkipped> unavailable) {
+        if (next.equals(start))
+            throw new IllegalArgumentException("Source search cannot fit its next complete preview; no scan progress or EOF is claimed");
+        return searchPage(query, total, start, next, matches, unavailable);
+    }
+
+    private SearchPage searchPage(String query, int total, SearchCursor start, SearchCursor next,
+                                  List<SearchMatch> matches, List<SearchSkipped> unavailable) {
+        return new SearchPage(revision, query, true, total, start, next, next.file() < total, matches, unavailable);
+    }
+
+    private static boolean navigationFits(Object value) throws IOException {
+        String encoded = NAVIGATION_JSON.writeValueAsString(value);
+        return encoded.length() <= 12000 && encoded.getBytes(StandardCharsets.UTF_8).length <= 12000;
     }
 
     /** Reads a bounded page of numbered and redacted UTF-8 lines. / 读取有界的编号脱敏 UTF-8 行。
@@ -276,7 +455,7 @@ public final class DeploymentSourceBrowser {
      * @throws IOException on changed or invalid content / 内容改变或无效时 */
     private List<String> text(String name) throws IOException {
         if (!files.containsKey(name))
-            throw new IOException("Source member was not indexed");
+            throw new MissingMemberException();
         Path path = root.resolve(name);
         if (!path.normalize().startsWith(root) || Files.isSymbolicLink(path) || Files.size(path) > MAX_FILE)
             throw new IOException("Source member is unsafe or too large");
@@ -315,10 +494,10 @@ public final class DeploymentSourceBrowser {
     private static String relative(String value) {
         if (value == null || value.isEmpty() || value.length() > 500 || value.startsWith("/") || value.contains("\\")
             || value.contains(":") || value.chars().anyMatch(Character::isISOControl))
-            throw new SecurityException("Invalid source path");
+            throw new InputPathRejectedException();
         for (String part : value.split("/", -1))
             if (part.isEmpty() || part.equals(".") || part.equals(".."))
-                throw new SecurityException("Source traversal rejected");
+                throw new InputPathRejectedException();
         return value;
     }
 

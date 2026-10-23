@@ -11,32 +11,41 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Properties;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentHealthCodec;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentResourceCodec;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentRuntimeCodec;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentStoragePathCodec;
+import gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentUnitRuntimeCodec;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitRuntimeConfig;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.path.DeploymentStoragePath;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
 
 /** Checks independently frozen original bytes without a legacy runtime dependency. / 不依赖旧运行时地核对独立冻结的原字节。 */
-final class DeploymentCodecMatch {
+public final class DeploymentCodecMatch {
     private static final Properties ORIGINAL = originals();
 
     private DeploymentCodecMatch() {
     }
 
-    static byte[] write(DeploymentRuntimeDefinition runtime) throws IOException {
+    public static byte[] write(DeploymentRuntimeDefinition runtime) throws IOException {
         return original("runtime", new DeploymentRuntimeCodec().write(runtime));
     }
 
-    static byte[] write(DeploymentHealthCheck health) throws IOException {
+    public static byte[] write(DeploymentHealthCheck health) throws IOException {
         return original("health", new DeploymentHealthCodec().write(health));
     }
 
-    static byte[] write(DeploymentUnitRuntimeConfig runtime) throws IOException {
+    public static byte[] write(DeploymentUnitRuntimeConfig runtime) throws IOException {
         return original("unit", new DeploymentUnitRuntimeCodec().write(runtime));
     }
 
-    static byte[] write(DeploymentResourceBindings bindings) throws IOException {
+    public static byte[] write(DeploymentResourceBindings bindings) throws IOException {
         return original("resources", new DeploymentResourceCodec().write(bindings));
     }
 
-    static byte[] write(List<DeploymentStoragePath> paths) throws IOException {
+    public static byte[] write(List<DeploymentStoragePath> paths) throws IOException {
         return original("paths", new DeploymentStoragePathCodec().write(paths));
     }
 

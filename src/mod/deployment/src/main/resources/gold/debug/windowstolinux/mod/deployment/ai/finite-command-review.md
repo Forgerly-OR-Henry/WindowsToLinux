@@ -1,0 +1,1 @@
+ Complete one finite review: target binding, full executable evidence, reachable paths, integrity/privilege boundaries and authorized effects. Revisit settled checks only for concrete reachable contradictions. Return a concise decision promptly; unresolved necessary checks require DENY with the gap, not enumeration of unrelated possibilities. No checks are waived.

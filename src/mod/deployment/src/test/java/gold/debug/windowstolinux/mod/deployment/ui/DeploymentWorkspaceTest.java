@@ -61,6 +61,34 @@ class DeploymentWorkspaceTest {
     }
 
     @Test
+    void unifiedProductionWorkspaceHasTwoLazyTabsAndMapsOldFlowIdentities() throws Exception {
+        var flow = new Page();
+        var applications = new Page();
+        var workspace = new DeploymentWorkspace(() -> flow, () -> applications);
+        edt(() -> {
+            workspace.restoreNavigation("agent-deployment");
+            assertEquals("deployment-flow", workspace.navigationId());
+            var tabs = (JTabbedPane) workspace.create(INITIAL).getComponent(0);
+            assertEquals(2, tabs.getTabCount());
+            assertEquals(1, flow.creates);
+            assertEquals(0, applications.creates);
+            flow.draft.setText("single retained flow draft");
+            workspace.restoreNavigation("applications");
+            assertEquals(1, applications.creates);
+            assertEquals("applications", workspace.navigationId());
+            workspace.restoreNavigation("environment");
+            assertEquals(0, tabs.getSelectedIndex());
+            assertEquals("single retained flow draft", flow.draft.getText());
+            workspace.restoreNavigation("static-deployment");
+            assertEquals(1, flow.creates);
+            assertEquals("deployment-flow", workspace.navigationId());
+            workspace.close();
+            assertEquals(1, flow.closes);
+            assertEquals(1, applications.closes);
+        });
+    }
+
+    @Test
     void internalViewsAreLazyRetainDraftsAndReceiveEnvironmentWhileHidden() throws Exception {
         var standard = new Page();
         var agent = new Page();
@@ -176,13 +204,13 @@ class DeploymentWorkspaceTest {
     void preferenceCancellationFailureStillClosesViewsAndRetainsOriginalFailure() throws Exception {
         var original = java.util.UUID.randomUUID();
         var observed = new java.util.concurrent.CountDownLatch(1);
-        var completion = new java.util.concurrent.CompletableFuture<gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection>>();
+        var completion = new java.util.concurrent.CompletableFuture<gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore.Selection>>();
         var cancellation = new gold.debug.windowstolinux.appapi.task.result.ApiException(
             new gold.debug.windowstolinux.appapi.task.result.Problem(
                 gold.debug.windowstolinux.appapi.task.result.ProblemCode.IO_FAILURE, "TASK_CANCEL_PERSISTENCE",
                 "Cancellation request could not be confirmed", java.util.Map.of(), java.util.Optional.of(original)));
         var calls = new java.util.concurrent.atomic.AtomicInteger();
-        var handle = new gold.debug.windowstolinux.appapi.task.run.TaskHandle<gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection>() {
+        var handle = new gold.debug.windowstolinux.appapi.task.run.TaskHandle<gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore.Selection>() {
             @Override
             public java.util.UUID id() {
                 return original;
@@ -194,7 +222,7 @@ class DeploymentWorkspaceTest {
             }
 
             @Override
-            public java.util.concurrent.CompletionStage<gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection>> completion() {
+            public java.util.concurrent.CompletionStage<gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentPreferenceStore.Selection>> completion() {
                 observed.countDown();
                 return completion;
             }

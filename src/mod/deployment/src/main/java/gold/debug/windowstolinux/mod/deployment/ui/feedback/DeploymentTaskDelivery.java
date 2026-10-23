@@ -3,7 +3,6 @@ package gold.debug.windowstolinux.mod.deployment.ui.feedback;
 import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
-
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
@@ -51,6 +50,7 @@ final class DeploymentTaskDelivery implements AutoCloseable {
     DeploymentTaskDelivery(DeploymentTaskFeedback.DeliveryLookup lookup, Executor worker) {
         this.lookup = java.util.Objects.requireNonNull(lookup);
         this.worker = java.util.Objects.requireNonNull(worker);
+        panel.setVisible(false);
     }
 
     /** Returns the actual action panel. / 返回实际动作面板。
@@ -151,7 +151,11 @@ final class DeploymentTaskDelivery implements AutoCloseable {
         loading = false;
         query = null;
         if (failure == null && value != null && value.outcome() == TaskResult.SUCCEEDED
-            && admitted.snapshot().endedAt().isPresent()) value.value().flatMap(item -> item).ifPresent(panel::show);
+            && admitted.snapshot().endedAt().isPresent()) value.value().flatMap(item -> item).ifPresent(usage -> {
+            panel.show(usage);
+            panel.setVisible(true);
+            if (panel.getParent() != null) panel.getParent().revalidate();
+        });
     }
 
     /** Clears previous actionable facts and cancels only an admitted short read. / 清除旧可操作事实，仅取消已准入短读取。 */
@@ -159,6 +163,7 @@ final class DeploymentTaskDelivery implements AutoCloseable {
         generation++;
         loading = false;
         panel.clear();
+        panel.setVisible(false);
         var admitted = query;
         query = null;
         cancelLater(admitted);

@@ -1,33 +1,48 @@
-ai:
-  deployment-max-output-tokens: 32768
-  extended-deployment-max-output-tokens: 65536
-  approval-max-output-tokens: 32768
-  requests:
-    deployment-timeout-seconds: 120
-    approval-timeout-seconds: 600
-    extended-timeout-seconds: 600
-    generation-recovery-attempts: 1
-source:
-  bytes: 2147483648
-  entries: 100000
-  archive-bytes: 2147483648
-build:
-  timeout-seconds: 1800
-  processes: 1024
-  memory-mib: 4096
-  output-bytes: 4194304
-  workspace-bytes: 4294967296
-environment:
-  install-seconds: 900
-  check-seconds: 30
-  reboot-seconds: 900
-  poll-seconds: 5
-view:
-  refresh-ms: 750
-  page-size: 200
-paths:
-  helper-directory: /usr/local/lib/windowstolinux
-  applications-root: /opt/windowstolinux/apps
-  state-root: /var/lib/windowstolinux
-  configuration-root: /etc/opt/windowstolinux/apps
-  data-root: /var/opt/windowstolinux/apps
+ai: # 部署 Mod 的模型运行资源；按类加载器读取快照，不热修改已冻结任务
+  deployment-max-output-tokens: 32768 # 普通部署请求输出预算，单位：token；须大于 0
+  extended-deployment-max-output-tokens: 65536 # 扩展部署请求输出预算，单位：token；不小于普通预算
+  approval-max-output-tokens: 65536 # 独立审批请求输出预算，单位：token；不大于扩展预算，与普通部署预算分别约束
+  requests: # 每次模型请求的期限；超时不代表远端副作用已结清
+    deployment-timeout-seconds: 120 # 普通部署模型单次调用期限，单位：秒
+    approval-timeout-seconds: 600 # 独立审批模型单次调用期限，单位：秒
+    extended-timeout-seconds: 600 # 扩展部署模型单次调用期限，单位：秒；不小于普通/审批期限
+    generation-recovery-attempts: 1 # 独立 AGENT main/APP 显式选择：HTTP 正文不完整后额外纯生成次数，0..16，0 关闭，默认 1；共享原调用期限，仅旧连接和占用释放后发送。不会重放工具/审批/部署，不适用于取消、超时、完整拒绝、格式错误或响应上限；与项目体量及工具预算无关。仅当前生成捕获，旧计划/身份/UNKNOWN 不变，未知用量不补零；其他调用者默认 0。
+  execution: # 有限运行兜底；任一资源耗尽即可停止，不要求模型用满预算
+    shared-tool-attempts: 4096 # 主 AGENT 与嵌套工具循环共用的尝试上限，单位：次；拒绝也扣减
+    standalone-tool-attempts: 256 # 无外层协调 scope 时的工具尝试上限，单位：次
+    local-tool-turns: 128 # 单个局部工具循环的模型响应上限，单位：轮
+    agent-model-responses: 512 # 主 AGENT 协调循环的模型响应上限，单位：轮
+    retained-review-sessions: 4096 # 不同原审批请求会话身份的留存上限，单位：条；主管按 Skill 自主决定是否继续讨论
+    max-observations: 4096 # 原任务观察记录留存上限，单位：条；1..999999，不重用或删除已引用观察身份
+  history: # 仅裁剪完整交互批次；保留的工具响应不截断，编码后仍受公共 1 MiB 上限约束
+    max-batches: 24 # 滚动历史保留的完整 native 交互批次上限，单位：批
+    characters: 131072 # 历史加当前状态的 UTF-16 长度上限，单位：码元
+    payload-bytes: 262144 # 历史/策略/当前状态及 continuation 的 UTF-8 载荷上限，单位：字节；最终编码仍限 1 MiB
+    initial-batches: 2 # 可保留的初始完整交互批次数量，单位：批
+    initial-payload-bytes: 8192 # 初始批次合计载荷上限，单位：UTF-8 字节
+source: # 本地源目录快照及归档资源；仍须满足下游公共 API 的结构限制
+  bytes: 2147483648 # 单次源目录快照总量，单位：字节；最大 2 GiB
+  entries: 100000 # 单次源目录快照条目数上限，单位：条；最大 100000
+  archive-bytes: 2147483648 # 源归档文件大小上限，单位：字节；最大 2 GiB
+build: # 隔离构建的资源约束；服务器能力与公共构建契约仍须满足
+  timeout-seconds: 1800 # 单次隔离构建期限，单位：秒
+  processes: 1024 # 隔离构建可用进程数上限，单位：个
+  memory-mib: 4096 # 隔离构建内存上限，单位：MiB
+  output-bytes: 4194304 # 单次构建输出收集上限，单位：字节
+  workspace-bytes: 4294967296 # EXPLICIT 明确输入时显示的初值，单位：字节；AUTO 在来源及主机观测后计算实际额度
+  workspace-max-bytes: 137438953472 # 自动或明确额度的政策上限，单位：字节；helper 硬界仍为 64 MiB～128 GiB
+  workspace-host-reserve-bytes: 1073741824 # 整图仅计一次的主机余量，单位：字节；不保证独立工具链或原生存储空间足够
+environment: # 产品环境准备与检查期限；不改变命令审批或远端事实要求
+  install-seconds: 900 # 单次依赖安装期限，单位：秒
+  check-seconds: 30 # 单次环境检查期限，单位：秒
+  reboot-seconds: 900 # 重启后等待目标恢复期限，单位：秒
+  poll-seconds: 5 # 环境就绪轮询间隔，单位：秒
+view: # 部署界面刷新及列表分页
+  refresh-ms: 750 # 部署界面刷新间隔，单位：毫秒
+  page-size: 200 # 部署列表每页数量上限，单位：条
+paths: # Linux 远端布局；属于冻结配置身份，修改后仅影响新配置/新任务
+  helper-directory: /usr/local/lib/windowstolinux # 产品 helper 安装目录，绝对路径
+  state-root: /var/lib/windowstolinux # 产品部署状态根目录，绝对路径
+  applications-root: /opt/windowstolinux/apps # 应用安装根目录，绝对路径
+  configuration-root: /etc/opt/windowstolinux/apps # 应用配置根目录，绝对路径
+  data-root: /var/opt/windowstolinux/apps # 应用持久数据根目录，绝对路径

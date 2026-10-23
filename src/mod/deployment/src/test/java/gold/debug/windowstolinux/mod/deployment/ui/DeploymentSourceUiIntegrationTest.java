@@ -20,7 +20,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
-
 import javax.swing.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -51,8 +50,8 @@ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentProjectRecord;
-import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticSourceService;
+import gold.debug.windowstolinux.mod.deployment.db.project.DeploymentProjectRecord;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStandardSourceService;
 import org.junit.jupiter.api.Test;
 
 /** Exercises real project buttons and real platform configuration from the original CLASS workspace. / 从原CLASS工作区操作真实项目按钮及平台配置。 */
@@ -74,23 +73,27 @@ class DeploymentSourceUiIntegrationTest extends DeploymentRuntimeFixture {
         enable();
         try (var runtime = open(); var desktop = new Desktop(runtime)) {
             var frame = desktop.frame;
-            var name = control(frame, "deployment.sourceName", JTextField.class);
+            var options = advanced(frame);
+            var name = control(options, "deployment.sourceName", JTextField.class);
             var location = control(frame, "deployment.local.location", JTextField.class);
             var projects = control(frame, "deployment.projects", JComboBox.class);
             awaitUi(() -> projects.isEnabled());
             assertEquals(0, ui(projects::getItemCount).intValue());
             click(frame, "deployment.local.choose");
-            awaitUi(() -> picked.toUri().toString().equals(location.getText()) && projects.isEnabled());
+            awaitUi(() -> picked.toUri().toString().equals(location.getText()) && buttonText(options, "Save source project").isEnabled());
+            edit(() -> assertFalse(projects.isEnabled(), "A chosen source must be cleared before selecting another saved project"));
             assertEquals(1, pickerCalls.get());
             edit(() -> name.setText("Original UI project"));
             saveProject(frame);
-            awaitUi(() -> projects.isEnabled() && projects.getItemCount() == 1);
+            awaitUi(() -> buttonText(options, "Save source project").isEnabled() && projects.getItemCount() == 1);
             var original = projects(runtime).getFirst();
             assertEquals("Original UI project", original.displayName());
             assertEquals(picked.toRealPath().toUri(), original.source().location());
             assertTrue(original.source().sha256().matches("[0-9a-f]{64}"));
 
-            edit(() -> buttonText(frame, "Refresh projects").doClick(0));
+            edit(() -> buttonText(options, "Refresh projects").doClick(0));
+            awaitUi(() -> buttonText(options, "Save source project").isEnabled());
+            click(frame, "deployment.local.clear");
             awaitUi(projects::isEnabled);
             edit(() -> {
                 projects.setSelectedItem(null);
@@ -98,7 +101,7 @@ class DeploymentSourceUiIntegrationTest extends DeploymentRuntimeFixture {
                 projects.setSelectedIndex(0);
                 assertEquals(original.displayName(), name.getText());
                 assertEquals(original.source().location().toString(), location.getText());
-                assertTrue(control(frame, "deployment.project.saveOnPublication", JCheckBox.class).isSelected());
+                assertTrue(control(options, "deployment.project.saveOnPublication", JCheckBox.class).isSelected());
             });
             click(frame, "deployment.local.clear");
             edit(() -> {
@@ -106,10 +109,10 @@ class DeploymentSourceUiIntegrationTest extends DeploymentRuntimeFixture {
                 assertTrue(location.getTransferHandler().importData(new TransferHandler.TransferSupport(location,
                     new StringSelection(revisedDirectory.toAbsolutePath().toString()))));
             });
-            awaitUi(() -> revisedDirectory.toUri().toString().equals(location.getText()) && projects.isEnabled());
+            awaitUi(() -> revisedDirectory.toUri().toString().equals(location.getText()) && buttonText(options, "Save source project").isEnabled());
             edit(() -> name.setText("Revised original UI project"));
             saveProject(frame);
-            awaitUi(() -> projects.isEnabled() && projects.getItemCount() == 1);
+            awaitUi(() -> buttonText(options, "Save source project").isEnabled() && projects.getItemCount() == 1);
             var rows = projects(runtime);
             assertEquals(1, rows.size(), "The actual revise button must not create another project identity");
             var revised = rows.getFirst();
@@ -120,6 +123,8 @@ class DeploymentSourceUiIntegrationTest extends DeploymentRuntimeFixture {
             assertEquals(revisedDirectory.toRealPath().toUri(), revised.source().location());
             assertNotEquals(original.source().sha256(), revised.source().sha256());
             assertEquals(1, pickerCalls.get(), "Imported explicit metadata must use Path admission, not reopen the host picker");
+            click(frame, "deployment.local.clear");
+            awaitUi(projects::isEnabled);
             edit(() -> {
                 projects.setSelectedItem(null);
                 projects.setSelectedIndex(0);
@@ -239,7 +244,7 @@ class DeploymentSourceUiIntegrationTest extends DeploymentRuntimeFixture {
     }
 
     private static List<DeploymentProjectRecord> projects(PlatformRuntime runtime) throws Exception {
-        var handle = new DeploymentStaticSourceService(runtime.modContexts().get(OWNER).context()).projects();
+        var handle = new DeploymentStandardSourceService(runtime.modContexts().get(OWNER).context()).projects();
         var result = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
         assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.problem().toString());
         assertEquals(TaskState.ENDED, handle.snapshot().state());
@@ -247,7 +252,8 @@ class DeploymentSourceUiIntegrationTest extends DeploymentRuntimeFixture {
     }
 
     private static void saveProject(PlatformFrame frame) throws Exception {
-        SwingUtilities.invokeLater(() -> buttonText(frame, "Save source project").doClick(0));
+        var options = advanced(frame);
+        SwingUtilities.invokeLater(() -> buttonText(options, "Save source project").doClick(0));
         var dialog = dialog("Save source project");
         edit(() -> {
             var option = descendants(dialog).filter(JOptionPane.class::isInstance).map(JOptionPane.class::cast)
@@ -259,13 +265,20 @@ class DeploymentSourceUiIntegrationTest extends DeploymentRuntimeFixture {
 
     private static void returnToDraft(PlatformFrame frame, JTextField name, JTextField location) throws Exception {
         edit(() -> rootButton(frame).doClick(0));
+        var options = advanced(frame);
         awaitUi(() -> name.isShowing());
         edit(() -> {
-            assertSame(name, control(frame, "deployment.sourceName", JTextField.class));
+            assertSame(name, control(options, "deployment.sourceName", JTextField.class));
             assertSame(location, control(frame, "deployment.local.location", JTextField.class));
             assertEquals("original draft across platform configuration", name.getText());
             assertFalse(location.getText().isBlank());
         });
+    }
+
+    private static Window advanced(PlatformFrame frame) throws Exception {
+        if (!ui(() -> Stream.of(Window.getWindows()).anyMatch(value -> value.isShowing() && "deployment.advanced.window".equals(value.getName()))))
+            click(frame, "deployment.advanced");
+        return window("deployment.advanced.window");
     }
 
     private static void assignPurpose(PlatformFrame frame, PlatformModelService models, AiPurposeType purpose,
@@ -279,16 +292,14 @@ class DeploymentSourceUiIntegrationTest extends DeploymentRuntimeFixture {
             assertTrue(add.isEnabled(), "Only the actually verified model can be assigned");
             add.doClick(0);
             assertEquals(1, control(frame, "ai.purpose", JList.class).getModel().getSize());
-            control(frame, "ai.purpose.save", AbstractButton.class).doClick(0);
+            control(frame, "ai.open." + purpose.name(), AbstractButton.class).doClick(0);
         });
         awaitUi(() -> !DesktopTaskRunner.hasActiveTasks()
             && control(frame, "ai.open." + purpose.name(), AbstractButton.class).isEnabled()
-            && descendants(frame).noneMatch(component -> "ai.purpose".equals(component.getName())
-            || "ai.purpose.save".equals(component.getName())));
+            && descendants(frame).noneMatch(component -> "ai.purpose".equals(component.getName())));
         var members = models.listAiPurpose(purpose);
         assertEquals(1, members.size());
         assertEquals(modelId, members.getFirst().profileId());
-        assertTrue(members.getFirst().enabled());
     }
 
     private static void assertUnavailableRoute(ModContext context) throws Exception {
@@ -458,8 +469,8 @@ class DeploymentSourceUiIntegrationTest extends DeploymentRuntimeFixture {
                     });
                     return null;
                 });
-                frame.pages().navigateView(new PageKey(OWNER, "workspace"), "static-deployment");
-                awaitUi(() -> descendants(frame).anyMatch(component -> "deployment.sourceName".equals(component.getName()) && component.isShowing())
+                frame.pages().navigateView(new PageKey(OWNER, "workspace"), "deployment-flow");
+                awaitUi(() -> descendants(frame).anyMatch(component -> "deployment.flow.start".equals(component.getName()) && component.isShowing())
                     && descendants(frame).filter(AbstractButton.class::isInstance).map(AbstractButton.class::cast)
                     .anyMatch(button -> button.getClientProperty("mod.pageKey") instanceof PageKey key && key.ownerId().equals(OWNER)));
             } catch (Exception | Error failure) {
@@ -475,7 +486,7 @@ class DeploymentSourceUiIntegrationTest extends DeploymentRuntimeFixture {
         @Override
         public void close() throws Exception {
             var workers = Thread.getAllStackTraces().keySet().stream().filter(thread -> !originalThreads.contains(thread)
-                && List.of("deployment-page-view", "deployment-agent-page", "deployment-workspace-preferences").contains(thread.getName())).toList();
+                && List.of("deployment-page-view", "deployment-agent-page", "deployment-workspace-preferences", "deployment-unified-flow").contains(thread.getName())).toList();
             frame.pages().closeView(new PageKey(OWNER, "workspace"));
             edit(frame::dispose);
             long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);

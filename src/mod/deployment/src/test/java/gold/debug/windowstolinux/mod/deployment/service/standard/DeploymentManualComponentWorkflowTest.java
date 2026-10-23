@@ -13,17 +13,19 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.file.FileService;
 import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentGraphStore;
-import gold.debug.windowstolinux.mod.deployment.file.git.GitRuntimeTestBridge;
+import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentGraphStore;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentFileServiceFixture;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.file.git.GitRuntimeTestBridge;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStandardSourceService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -49,7 +51,7 @@ class DeploymentManualComponentWorkflowTest extends DeploymentPublishAcceptanceF
             var confirmations = new AtomicInteger();
             var workflow = GitRuntimeTestBridge.staticWorkflow(runtime,
                 DeploymentPublishedApplicationStopTest.bind(original, peer, running));
-            var task = workflow.submit(new ServerId("server"), new DeploymentStaticWorkflow.Draft("manual-source", 65536, 100, 65536),
+            var task = workflow.submit(new ServerId("server"), new DeploymentStandardInputs.Draft("manual-source", 65536, 100, 65536),
                 Optional.empty(), manualReviewer(Optional.empty(), confirmations));
             var result = task.completion().toCompletableFuture().get(60, TimeUnit.SECONDS);
             assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.problem().toString());
@@ -128,7 +130,7 @@ class DeploymentManualComponentWorkflowTest extends DeploymentPublishAcceptanceF
                     throw failure.getCause();
                 }
             });
-            var picked = new DeploymentStaticSourceService(local).select("Choose original source", Optional.empty());
+            var picked = new DeploymentStandardSourceService(local).select("Choose original source", Optional.empty());
             var metadata = picked.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).value().orElseThrow();
             assertEquals(0, snapshots.get());
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
@@ -139,8 +141,8 @@ class DeploymentManualComponentWorkflowTest extends DeploymentPublishAcceptanceF
             var delegate = manualReviewer(Optional.empty(), confirmed);
             var reviewCalls = new java.util.concurrent.CopyOnWriteArrayList<String>();
             var reviewFailure = new AtomicReference<Throwable>();
-            var reviewer = (DeploymentStaticWorkflow.Reviewer) Proxy.newProxyInstance(DeploymentStaticWorkflow.Reviewer.class.getClassLoader(),
-                new Class<?>[]{DeploymentStaticWorkflow.Reviewer.class}, (proxy, method, arguments) -> {
+            var reviewer = (DeploymentStandardInputs.Reviewer) Proxy.newProxyInstance(DeploymentStandardInputs.Reviewer.class.getClassLoader(),
+                new Class<?>[]{DeploymentStandardInputs.Reviewer.class}, (proxy, method, arguments) -> {
                     reviewCalls.add(method.getName());
                     try {
                         int digestIndex = switch (method.getName()) {
@@ -165,10 +167,10 @@ class DeploymentManualComponentWorkflowTest extends DeploymentPublishAcceptanceF
                     }
                 });
             var project = UUID.randomUUID();
-            var options = new DeploymentStaticWorkflow.SourceOptions(Optional.of(metadata.location()), Optional.of(
-                new DeploymentStaticSourceService.ProjectEdit(project, "saved original source", Optional.empty(), Instant.parse("2026-10-05T00:00:00Z"))), Map.of());
+            var options = new DeploymentStandardInputs.SourceOptions(Optional.of(metadata.location()), Optional.of(
+                new DeploymentStandardInputs.ProjectEdit(project, "saved original source", Optional.empty(), Instant.parse("2026-10-05T00:00:00Z"))), Map.of());
             var workflow = GitRuntimeTestBridge.staticWorkflow(runtime, DeploymentPublishedApplicationStopTest.bind(local, peer, running));
-            var handle = workflow.submit(new ServerId("server"), new DeploymentStaticWorkflow.Draft("manual-source", 65536, 100, 65536, options),
+            var handle = workflow.submit(new ServerId("server"), new DeploymentStandardInputs.Draft("manual-source", 65536, 100, 65536, options),
                 Optional.empty(), reviewer);
             gold.debug.windowstolinux.appapi.task.result.OperationResult<Void> result;
             try {
@@ -184,7 +186,7 @@ class DeploymentManualComponentWorkflowTest extends DeploymentPublishAcceptanceF
             assertEquals(1, snapshots.get());
             assertEquals(2, archiveSnapshots.get());
             assertEquals(2, selects.get());
-            var rows = new DeploymentStaticSourceService(original).projects().completion().toCompletableFuture().get(20, TimeUnit.SECONDS).value().orElseThrow();
+            var rows = new DeploymentStandardSourceService(original).projects().completion().toCompletableFuture().get(20, TimeUnit.SECONDS).value().orElseThrow();
             assertEquals(1, rows.size());
             assertEquals(project, rows.getFirst().id());
             assertEquals(sourceDigest.get(), rows.getFirst().source().sha256());
@@ -198,9 +200,13 @@ class DeploymentManualComponentWorkflowTest extends DeploymentPublishAcceptanceF
                 && record.event().operationId().equals(Optional.of(handle.id()))));
             var stages = retained.records().reversed().stream().filter(record -> record.event().eventCode().equals("DEPLOYMENT_STAGE"))
                 .map(record -> record.event().message()).toList();
-            String published = "Publishing a verified original graph component / 发布已核实原图组件";
-            String health = "Verifying the original whole-application health gate / 核验原整应用健康门槛";
-            String closing = "Closing original preparation resources / 关闭原准备资源";
+            var stageMessages = java.util.ResourceBundle.getBundle(
+                "gold.debug.windowstolinux.mod.deployment.service.feedback.workflow-messages",
+                original.ui().environment().locale(), getClass().getClassLoader(),
+                java.util.ResourceBundle.Control.getNoFallbackControl(java.util.ResourceBundle.Control.FORMAT_PROPERTIES));
+            String published = stageMessages.getString("stage.publishGraphComponent");
+            String health = stageMessages.getString("stage.graphHealth");
+            String closing = stageMessages.getString("stage.closePreparation");
             assertEquals(running.size(), stages.stream().filter(published::equals).count(),
                 "Persisted publication stages must correspond to the actual two published units");
             assertEquals(1, stages.stream().filter(health::equals).count(),
@@ -234,7 +240,7 @@ class DeploymentManualComponentWorkflowTest extends DeploymentPublishAcceptanceF
             var confirmations = new AtomicInteger();
             var workflow = GitRuntimeTestBridge.staticWorkflow(runtime,
                 DeploymentPublishedApplicationStopTest.bind(original, peer, running));
-            var task = workflow.submit(new ServerId("server"), new DeploymentStaticWorkflow.Draft("manual-source", 65536, 100, 65536),
+            var task = workflow.submit(new ServerId("server"), new DeploymentStandardInputs.Draft("manual-source", 65536, 100, 65536),
                 Optional.empty(), manualReviewer(Optional.of(invalid), confirmations));
             var result = task.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
             assertEquals(TaskResult.FAILED, result.outcome(), result.problem().toString());
@@ -250,24 +256,24 @@ class DeploymentManualComponentWorkflowTest extends DeploymentPublishAcceptanceF
         }
     }
 
-    private DeploymentStaticWorkflow.Reviewer manualReviewer(Optional<InvalidBoundary> invalid, AtomicInteger confirmations) {
+    private DeploymentStandardInputs.Reviewer manualReviewer(Optional<InvalidBoundary> invalid, AtomicInteger confirmations) {
         var delegate = reviewer(2);
-        return (DeploymentStaticWorkflow.Reviewer) Proxy.newProxyInstance(DeploymentStaticWorkflow.Reviewer.class.getClassLoader(),
-            new Class<?>[]{DeploymentStaticWorkflow.Reviewer.class}, (proxy, method, args) -> {
+        return (DeploymentStandardInputs.Reviewer) Proxy.newProxyInstance(DeploymentStandardInputs.Reviewer.class.getClassLoader(),
+            new Class<?>[]{DeploymentStandardInputs.Reviewer.class}, (proxy, method, args) -> {
                 if (method.getName().equals("select")) {
-                    var choices = new LinkedHashMap<String, DeploymentStaticWorkflow.Choice>();
+                    var choices = new LinkedHashMap<String, DeploymentStandardInputs.Choice>();
                     var artifacts = invalid.filter(InvalidBoundary.OMIT_ARTIFACT::equals).isPresent()
                         ? List.<String>of() : List.of("component0/api");
                     var ports = invalid.filter(InvalidBoundary.OMIT_PORT::equals).isPresent() ? Set.<Integer>of() : Set.of(8080);
-                    choices.put("api", new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE, Set.of("worker"),
-                        Optional.of(new DeploymentStaticWorkflow.ComponentInputs("component0", true, Optional.of(artifacts), Optional.of(ports)))));
-                    choices.put("worker", new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE,
+                    choices.put("api", new DeploymentStandardInputs.Choice(DeploymentProjectKind.GO_SERVICE, Set.of("worker"),
+                        Optional.of(new DeploymentStandardInputs.ComponentInputs("component0", true, Optional.of(artifacts), Optional.of(ports)))));
+                    choices.put("worker", new DeploymentStandardInputs.Choice(DeploymentProjectKind.GO_SERVICE,
                         invalid.filter(InvalidBoundary.DEPENDENCY_CYCLE::equals).isPresent() ? Set.of("api") : Set.of(),
-                        Optional.of(new DeploymentStaticWorkflow.ComponentInputs(
+                        Optional.of(new DeploymentStandardInputs.ComponentInputs(
                             invalid.filter(InvalidBoundary.OVERLAP_ROOT::equals).isPresent() ? "component0" : "component1", false,
                             Optional.of(List.of(invalid.filter(InvalidBoundary.OVERLAP_ROOT::equals).isPresent()
                                 ? "component0/worker" : "component1/worker")), Optional.of(Set.of(8081))))));
-                    return success(new DeploymentStaticWorkflow.Selection("manual-app", choices, Optional.of("api")));
+                    return success(new DeploymentStandardInputs.Selection("manual-app", choices, Optional.of("api")));
                 }
                 if (method.getName().equals("confirm")) confirmations.incrementAndGet();
                 try {

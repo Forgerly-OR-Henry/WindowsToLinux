@@ -5,6 +5,9 @@ import uuid
 
 TRACKED_OPERATION = None
 TRACKED_PREPARE_LOCK = None
+INSTALLATION_DIAGNOSTIC = None
+DIAGNOSTIC_REQUEST_FIELDS = {'formatVersion', 'operationId', 'taskId', 'serverId', 'fingerprintSha256',
+                             'planRevision', 'remoteLayout', 'arguments'}
 TRACKED_REQUEST_FIELDS = {'formatVersion', 'operationId', 'taskId', 'executionId', 'unitId', 'recoveryAttempt',
                           'originalIntentSha256', 'serverId', 'fingerprintSha256', 'remoteLayout', 'kind', 'parameters'}
 TRACKED_STATE_FIELDS = {'formatVersion', 'requestSha256', 'phase', 'executionStatus', 'failureCategory', 'selected',
@@ -147,6 +150,91 @@ def tracked_atomic_bytes(path, payload, mode=0o600):
 
 def tracked_atomic_json(path, value, mode=0o600):
     tracked_atomic_bytes(path, json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8'), mode)
+
+
+def installation_diagnostic_request(args, raw):
+    if (len(args) != 3 or not tracked_uuid(args[1]) or not tracked_digest(args[2])
+            or not raw or len(raw) > 16384 or hashlib.sha256(raw).hexdigest() != args[2]):
+        fail('request', 'invalid installation diagnostic request identity')
+    request = tracked_json(raw)
+    tracked_fields(request, DIAGNOSTIC_REQUEST_FIELDS)
+    if (type(request['formatVersion']) is not int or request['formatVersion'] != 1
+            or request['operationId'] != args[1] or not tracked_uuid(request['taskId'])
+            or not tracked_digest(request['fingerprintSha256']) or not tracked_digest(request['planRevision'])
+            or not isinstance(request['serverId'], str) or not 1 <= len(request['serverId']) <= 512
+            or any(ord(c) < 32 or ord(c) == 127 for c in request['serverId'])):
+        fail('request', 'invalid installation diagnostic business identity')
+    tracked_layout(request['remoteLayout'])
+    arguments = request['arguments']
+    if (not isinstance(arguments, list) or len(arguments) != 6 or arguments[0] != 'prepare'
+            or any(not isinstance(value, str) for value in arguments)
+            or arguments[1] not in ('JAVA', 'NODE', 'PYTHON', 'DOTNET', 'KOTLIN', 'GO', 'RUST', 'PHP', 'RUBY')
+            or not re.fullmatch(r'[0-9]{1,3}(?:\.[0-9]{1,3})?', arguments[2])
+            or not re.fullmatch(r'(?:-|[0-9][0-9.u+_-]{0,95})', arguments[3])
+            or not re.fullmatch('[1-9][0-9]{1,3}', arguments[4]) or not 30 <= int(arguments[4]) <= 7200
+            or not (arguments[5] == '-' or re.fullmatch(re.escape(str(ROOT / 'versions' / 'java-')) + '[a-f0-9]{64}', arguments[5]))):
+        fail('request', 'invalid installation diagnostic preparation arguments')
+    return request
+
+
+def record_installation_diagnostic(command):
+    context = INSTALLATION_DIAGNOSTIC
+    if context is not None:
+        directory, diagnostic = context
+        diagnostic.update(command)
+        tracked_atomic_json(directory / 'diagnostic.json', diagnostic)
+
+
+def installation_diagnostic_main(args, raw=None):
+    global INSTALLATION_DIAGNOSTIC
+    if raw is None:
+        with os.fdopen(os.dup(3), 'rb') as source:
+            raw = source.read(16385)
+    request = installation_diagnostic_request(args, raw)
+    parent = ROOT / 'diagnostics'
+    directory = parent / request['operationId']
+    creating = args[0] == 'prepare-diagnosed'
+    if creating:
+        prepare_shared_directories()
+        owned_directory(parent)
+        parent.mkdir(mode=0o700, exist_ok=True)
+        owned_directory(directory)
+        directory.mkdir(mode=0o700)  # An original operation is never re-executed.
+        tracked_atomic_bytes(directory / 'request.json', raw)
+        diagnostic = {key: request[key] for key in ('formatVersion', 'operationId', 'taskId', 'serverId',
+                                                   'fingerprintSha256', 'planRevision')}
+        diagnostic.update(requestSha256=args[2], preparationStatus='UNKNOWN', failureCategory=None,
+                          stage='preparation-start', executable='', actualExitCode=None, timedOut=False,
+                          cancelled=False, stdout='', stderr='', stdoutTruncated=False, stderrTruncated=False)
+        INSTALLATION_DIAGNOSTIC = (directory, diagnostic)
+        tracked_atomic_json(directory / 'diagnostic.json', diagnostic)
+        try:
+            main(request['arguments'])
+            diagnostic['preparationStatus'] = 'SUCCEEDED'
+        except BaseException as error:
+            diagnostic['preparationStatus'] = 'FAILED'
+            diagnostic['failureCategory'] = (error.category if isinstance(error, PreparationFailure)
+                                             else 'timeout' if isinstance(error, subprocess.TimeoutExpired) else 'installation')
+            raise
+        finally:
+            try:
+                tracked_atomic_json(directory / 'diagnostic.json', diagnostic)
+            finally:
+                INSTALLATION_DIAGNOSTIC = None
+        return
+    owned_directory(ROOT)
+    owned_directory(parent)
+    owned_directory(directory)
+    if tracked_regular(directory / 'request.json', 16384) != raw:
+        fail('integrity', 'installation diagnostic differs from the original operation request')
+    payload = tracked_regular(directory / 'diagnostic.json', 262144)
+    diagnostic = tracked_json(payload)
+    expected = {key: request[key] for key in ('formatVersion', 'operationId', 'taskId', 'serverId',
+                                             'fingerprintSha256', 'planRevision')}
+    expected['requestSha256'] = args[2]
+    if any(diagnostic.get(key) != value for key, value in expected.items()):
+        fail('integrity', 'installation diagnostic identity differs from its original request')
+    print(payload.decode('utf-8'))
 
 
 def tracked_process_identity(pid):

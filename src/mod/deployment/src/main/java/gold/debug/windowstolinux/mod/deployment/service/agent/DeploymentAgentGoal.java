@@ -70,11 +70,14 @@ public final class DeploymentAgentGoal {
 
     private String blocked = "";
 
+    private gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.Confirmed approvalPolicy;
+
     DeploymentAgentGoal(ModContext context, ServerId server, DeploymentAgentInputs.Request request, Submit submit) {
         this.context = context;
         this.journal = new DeploymentAgentActionLog(context.db());
         this.server = server;
         this.request = request;
+        this.approvalPolicy = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.Confirmed(request.approvalMode(), 0);
         this.submit = submit;
         this.budget = new DeploymentAgentGoalBudget(new DeploymentBuildBudget(
             gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().timeoutSeconds()));
@@ -90,6 +93,10 @@ public final class DeploymentAgentGoal {
 
     public CompletionStage<Result> completion() {
         return completion;
+    }
+
+    public synchronized gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.Confirmed approvalPolicy() {
+        return approvalPolicy;
     }
 
     public synchronized Observation observation() {
@@ -270,6 +277,21 @@ public final class DeploymentAgentGoal {
 
         public Optional<DeploymentAgentContinuation.Intent> predecessor() {
             return predecessor;
+        }
+
+        public gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.Confirmed approvalPolicy() {
+            return goal.approvalPolicy();
+        }
+
+        public void approvalPolicy(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.Confirmed next) {
+            if (CURRENT.get() != this)
+                throw new IllegalStateException("Policy propagation requires its current goal worker");
+            synchronized (goal) {
+                if (next.revision() < goal.approvalPolicy.revision() || next.revision() > goal.approvalPolicy.revision() + 1
+                    || next.revision() == goal.approvalPolicy.revision() && !next.mode().equals(goal.approvalPolicy.mode()))
+                    throw new IllegalStateException("Original goal approval revision changed");
+                goal.approvalPolicy = next;
+            }
         }
 
         public void bind(DeploymentSourceMaterial material, DeploymentRemoteLayout layout) {

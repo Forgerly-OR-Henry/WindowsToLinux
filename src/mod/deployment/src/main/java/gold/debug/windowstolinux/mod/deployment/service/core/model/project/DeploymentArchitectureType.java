@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.service.core.model.project;
 
 import java.util.Objects;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
 
 /**
  * One exact deployable project-type and build-tool architecture pair. / 一个精确且可部署的项目类型与构建工具架构组合。

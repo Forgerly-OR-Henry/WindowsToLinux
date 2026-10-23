@@ -23,7 +23,8 @@ final class DeploymentAssistedApproval {
     /** Fixed standard operations; unclassified SSH or transfer effects never enter automatic review. / 固定标准动作；未分类SSH或传输效果绝不进入自动审核。 */
     private static final Set<String> OPERATIONS = Set.of("deployment.helper.install.v1", "deployment.helper.install.tracked.v1", "deployment.helper.install.status.v1", "deployment.helper.probe.v1",
         "deployment.candidate.host-probe.v1", "deployment.candidate.container-probe.v1", "deployment.candidate.capacity.v1", "deployment.candidate.create.v1", "deployment.candidate.query.v1", "deployment.candidate.upload.v1", "deployment.candidate.verify.v1",
-        "deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1", "deployment.build.preflight.v1", "deployment.build.run.v1",
+        "deployment.candidate.compensation.observe.v1", "deployment.candidate.compensation.execute.v1", "deployment.candidate.compensation.receipt.v1",
+        "deployment.toolchain.prepare.v1", "deployment.toolchain.diagnostic.v1", "deployment.toolchain.bind.v1", "deployment.build.preflight.v1", "deployment.build.run.v1",
         "deployment.publication.snapshot.v1", "deployment.publication.original-status.v1", "deployment.publication.snapshot-discard.v1", "deployment.publication.config.v1", "deployment.publication.secret.v1",
         "deployment.publication.publish.v1", "deployment.publication.health.v1", "deployment.publication.stop-old.v1", "deployment.publication.inspect.v1", "deployment.publication.observe.v1",
         "deployment.publication.observe-restored.v1", "deployment.publication.rollback.v1", "deployment.publication.retain.v1", "deployment.publication.maintenance-end.v1", "deployment.publication.candidate-cleanup.v1",
@@ -48,7 +49,11 @@ final class DeploymentAssistedApproval {
      * @return original host grant or retained refusal / 原宿主授权或保留拒绝
      * @throws ApiException if the fixed action or independent review is unavailable, denied or unknown / 固定动作或独立审阅不可用、拒绝或未知时 */
     static OperationResult<ApprovalGrant> approve(ModContext context, InteractionService host, ActionIntent intent, TaskContext task, String revision, String policy, boolean rememberAuthorization) throws ApiException {
+        policy = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.boundary(task, policy);
         context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
+        if (intent.semantics().filter(value -> value.operation().startsWith(
+            gold.debug.windowstolinux.mod.deployment.linux.cleanup.DeploymentCandidateCompensationProgram.OPERATION_PREFIX)).isPresent())
+            throw denied(task, "DEPLOYMENT_ASSISTED_COMPENSATION_COMMAND_REQUIRED");
         if (HUMAN.contains(intent.type())) return host.approve(intent, task);
         var decisions = Set.of("deployment.assisted.retry", "deployment.assisted.build-review", "deployment.assisted.environment-recovery");
         if (decisions.contains(intent.type()) && intent.semantics().isEmpty()) {

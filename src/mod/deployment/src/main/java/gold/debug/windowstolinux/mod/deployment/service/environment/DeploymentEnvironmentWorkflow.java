@@ -32,6 +32,9 @@ public final class DeploymentEnvironmentWorkflow {
     /** Original mode's exact command review. / 原模式精确命令审核。 */
     private final DeploymentEnvironmentCommandReview review;
 
+    /** Fixed timing captured before this task opens an environment operation. / 当前任务打开环境操作前捕获的固定时序。 */
+    private final gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.Environment timing;
+
     /** Only this activation's submitted initial-consent observations; these values grant no task authority. / 仅本启用提交任务的初始同意观测，这些值不授予任务权限。 */
     private final java.util.concurrent.ConcurrentMap<java.util.UUID, Boolean> consentAccepted = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -46,8 +49,18 @@ public final class DeploymentEnvironmentWorkflow {
      * @param context original Mod capabilities / 原 Mod 能力
      * @param review required actual mode review / 所需实际模式审核 */
     public DeploymentEnvironmentWorkflow(ModContext context, DeploymentEnvironmentCommandReview review) {
+        this(context, review, gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().environment());
+    }
+
+    /** Binds explicit timing while retaining the original review authority. / 绑定明确时序并保留原审核权威。
+     * @param context original capabilities / 原能力
+     * @param review actual command review / 实际命令审核
+     * @param timing immutable initial timing / 不可变初始时序 */
+    public DeploymentEnvironmentWorkflow(ModContext context, DeploymentEnvironmentCommandReview review,
+                                         gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.Environment timing) {
         this.context = Objects.requireNonNull(context);
         this.review = Objects.requireNonNull(review);
+        this.timing = Objects.requireNonNull(timing);
     }
 
     /** Submits one original task after freezing the displayed target snapshot. / 冻结展示的目标快照后提交一项原任务。
@@ -56,7 +69,7 @@ public final class DeploymentEnvironmentWorkflow {
      * @throws ApiException if original exclusive admission fails / 原独占准入失败时 */
     public TaskHandle<Void> submit(ServerInfo original) throws ApiException {
         Objects.requireNonNull(original);
-        var handle = context.tasks().<Void>submit(new TaskRequest(TASK_TYPE, "Prepare environment / 准备环境",
+        var handle = context.tasks().<Void>submit(new TaskRequest(TASK_TYPE, gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "environment.taskTitle"),
             List.of(original.ref().id()), true), task -> start(original, task));
         consentAccepted.putIfAbsent(handle.id(), false);
         handle.completion().whenComplete((result, failure) -> consentAccepted.remove(handle.id()));
@@ -98,6 +111,9 @@ public final class DeploymentEnvironmentWorkflow {
      * @return actual outcome / 实际结果
      * @throws Exception if original evidence or cleanup fails / 原依据或清理失败时 */
     private OperationResult<Void> start(ServerInfo original, TaskContext task) throws Exception {
+        var layout = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths());
+        gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), task, layout);
         var target = new RemoteTarget(original.ref(), task.id(), original.host(), original.port(), original.username(),
             original.trustedFingerprint());
         String exact = "server=" + original.ref().id() + "\nhost=" + original.host() + "\nport=" + original.port()
@@ -106,11 +122,12 @@ public final class DeploymentEnvironmentWorkflow {
             + "\nDNF 9 installs/updates openssh, openssh-server and openssh-clients. CentOS CRB is transaction-only."
             + "\nSELinux configuration and reboot require separate explicit system confirmation. No full-system upgrade.";
         var approval = context.interaction().approve(new ActionIntent("deployment.environment.confirm", List.of(original.ref().id()),
-            original.ref().id(), DeploymentEnvironmentScripts.bodyDigest(), exact,
-            "Prepare this exact original target / 准备此精确原目标（默认取消）"), task);
+            original.ref().id(), DeploymentEnvironmentScripts.bodyDigest(layout), exact,
+            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "environment.confirmTarget")), task);
         if (approval.outcome() != TaskResult.SUCCEEDED)
             return new OperationResult<>(approval.outcome(), Optional.empty(), approval.problem());
         consentAccepted.put(task.id(), true);
+        gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.environment(context.tasks(), task, timing);
         var journal = DeploymentEnvironmentJournal.begin(context.tasks(), task, target);
         return new DeploymentEnvironmentRunner(context, review, task, journal).run(false);
     }

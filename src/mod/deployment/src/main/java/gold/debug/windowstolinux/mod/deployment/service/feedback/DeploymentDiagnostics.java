@@ -80,6 +80,37 @@ public final class DeploymentDiagnostics {
             Optional.of(result.outcome()));
     }
 
+    /** Keeps only fixed SFTP failure metadata before graph cleanup can hide the original cause. / 整图清理折叠原因前，仅保留固定SFTP失败元数据。 */
+    public static void candidateTransferFailure(ModContext context, TaskContext task, OperationResult<?> result) {
+        try {
+            if (result.outcome() == TaskResult.SUCCEEDED || result.problem().isEmpty()) return;
+            var problem = result.problem().orElseThrow();
+            if (!problem.eventCode().matches("SFTP_[A-Z0-9_]{1,64}")) return;
+            var values = new java.util.ArrayList<String>();
+            values.add("outcome=" + result.outcome());
+            values.add("problemCode=" + problem.code());
+            values.add("problemEvent=" + problem.eventCode());
+            String transfer = problem.context().get("transferId");
+            if (transfer != null && transfer.matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"))
+                values.add("transferId=" + UUID.fromString(transfer));
+            String phase = problem.context().get("phase");
+            if (java.util.Set.of("local-validation", "sftp-open", "remote-validation", "checkpoint", "upload",
+                "publish", "published-verification").contains(phase == null ? "" : phase))
+                values.add("phase=" + phase);
+            String provider = problem.context().get("providerType");
+            if (provider != null && provider.matches("[A-Za-z][A-Za-z0-9_]{0,79}"))
+                values.add("providerType=" + provider);
+            String status = problem.context().get("status");
+            if ("none".equals(status) || (status != null && status.matches("(?:0|[1-9][0-9]{0,9})")
+                && Long.parseLong(status) <= Integer.MAX_VALUE))
+                values.add("status=" + status);
+            new DeploymentDiagnostics(context).event(task.id(), LogLevel.ERROR, "DEPLOYMENT_CANDIDATE_TRANSFER_FAILURE",
+                String.join(" ", values), Optional.of(result.outcome()));
+        } catch (RuntimeException unavailable) {
+            // This optional diagnostic must not replace the original transfer result when logging is unavailable.
+        }
+    }
+
     /** Records a bounded tool identity while raw observations remain in the existing live view only. / 记录有界工具身份，原观察正文仍仅在既有实时视图。
      * @param context original activation / 原启用
      * @param task original agent task / 原自主任务

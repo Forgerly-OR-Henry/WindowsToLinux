@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-FRAGMENTS = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments'
+FRAGMENTS = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/mod/deployment/linux/helper'
 
 
 class ManagedCurrentGateTest(unittest.TestCase):
@@ -25,6 +25,7 @@ require_app() { :; }
 require_digest() { [[ "$1" =~ ^[0-9a-f]{64}$ ]] || reject digest; }
 require_snapshot_token() { [[ "$1" =~ ^[0-9a-f]{32}$ ]] || reject token; }
 assert_root_owned_regular() { [ -f "$1" ] || reject marker; }
+systemd_observation_budget() { :; }
 application_lock_directory() { printf '%s' "$root/locks"; }
 application_maintenance() { printf 'held' >"$root/locked"; }
 app_root() { printf '%s' "$root/app"; }

@@ -22,6 +22,7 @@ import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.appapi.task.action.InteractionService;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
@@ -750,8 +751,12 @@ public final class DeploymentPublishChannel {
      * @throws ApiException if admission fails before dispatch / 发送前准入失败时 */
     private OperationResult<CommandResult> send(String operation, DeploymentUnitIdentity unit, String verb,
                                                 List<String> arguments, Duration timeout, long output, byte[] input) throws ApiException {
-        StringBuilder script = new StringBuilder(
-            DeploymentBuildCommandChannel.shellQuote(unit.layout().helperPath())).append(' ')
+        StringBuilder script = new StringBuilder();
+        if (Set.of("inspect-runtime", "observe-deployment", "lifecycle-deployment", "lifecycle-container",
+            "snapshot-deployment", "snapshot-deployment-attempt", "publish-deployment", "rollback-deployment",
+            "rollback-deployment-first").contains(verb))
+            script.append("WTL_SYSTEMD_QUERY_SECONDS=").append(timeout.toSeconds()).append(' ');
+        script.append(DeploymentBuildCommandChannel.shellQuote(unit.layout().helperPath())).append(' ')
             .append(DeploymentBuildCommandChannel.shellQuote(verb));
         for (String value : arguments)
             script.append(' ').append(DeploymentBuildCommandChannel.shellQuote(value));
@@ -812,7 +817,7 @@ public final class DeploymentPublishChannel {
                     if (executed.outcome() == TaskResult.CANCELLED
                         || executed.outcome() == TaskResult.FAILED && executed.value().isEmpty())
                         return unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED");
-                    return executed;
+                    return classifySystemdObservation(executed);
                 } catch (ApiException failure) {
                     if (failure.problem().code() == ProblemCode.ACCESS_DENIED
                         || failure.problem().code() == ProblemCode.INVALID_INPUT)
@@ -821,6 +826,19 @@ public final class DeploymentPublishChannel {
                 }
             }
         }
+    }
+
+    /** Separates failed read-only systemd observations from a valid identity conflict. / 区分systemd只读观察失败与有效身份冲突。 */
+    private static OperationResult<CommandResult> classifySystemdObservation(OperationResult<CommandResult> result) {
+        if (result.value().isPresent()) {
+            var value = result.value().orElseThrow();
+            if (!value.truncated() && value.exitCode().equals(Optional.of(75))
+                && value.stderr().lines().filter("MANAGED_HELPER_OBSERVATION_UNAVAILABLE=systemd-query"::equals).count() == 1)
+                return new OperationResult<>(TaskResult.UNKNOWN, result.value(), Optional.of(new Problem(ProblemCode.UNKNOWN,
+                    "DEPLOYMENT_SYSTEMD_OBSERVATION_UNAVAILABLE", "The original systemd observation could not be completed",
+                    Map.of("observation", "systemd-query"), result.problem().flatMap(Problem::diagnosticId))));
+        }
+        return result;
     }
 
     private static boolean authorPayloadNotSent(OperationResult<CommandResult> result) {
