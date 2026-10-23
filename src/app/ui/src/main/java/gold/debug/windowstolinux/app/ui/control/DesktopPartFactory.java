@@ -305,8 +305,8 @@ public final class DesktopPartFactory {
      */
     public JButton primaryButton(String text) {
         JButton button = new JButton(text);
-        DesktopThemeBindings.button(button, palette, true);
-        return DesktopThemeBindings.role(button, "primary");
+        styleButton(button, true);
+        return button;
     }
 
     /**
@@ -334,8 +334,15 @@ public final class DesktopPartFactory {
     /** Reuses secondary surfaces for regular and navigation actions. / 为普通及导航动作复用次级底色。
      * @param button original action / 原动作 */
     private void styleSecondary(JButton button) {
-        DesktopThemeBindings.button(button, palette, false);
-        DesktopThemeBindings.role(button, "secondary");
+        styleButton(button, false);
+    }
+
+    /** Updates an existing action's emphasis while retaining its geometry and listeners. / 更新现有动作的强调色，保留尺寸及监听器。
+     * @param button original action / 原动作
+     * @param primary whether the action is emphasized / 是否强调动作 */
+    public void styleButton(JButton button, boolean primary) {
+        DesktopThemeBindings.button(button, palette, primary);
+        DesktopThemeBindings.role(button, primary ? "primary" : "secondary");
     }
 
     /**

@@ -33,7 +33,24 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
 
     private final JScrollPane inventoryScroll = new JScrollPane(inventory), purposeScroll = new JScrollPane(selected);
 
-    private final JPanel columns = new JPanel(new GridBagLayout()), left = new JPanel(new BorderLayout(0, 14)),
+    private final JPanel columns = new JPanel(new GridBagLayout()) {
+        /** Keeps the fixed purpose controls visible in narrow windows. / 窄窗口中保留用途按钮的完整尺寸。 */
+        @Override
+        public void doLayout() {
+            if (purpose != null) {
+                var grid = (GridBagLayout) getLayout();
+                int available = Math.max(1, getWidth() - arrows.getPreferredSize().width - 24);
+                int right = Math.max(available / 2, roles.getPreferredSize().width);
+                var leftConstraints = grid.getConstraints(left);
+                leftConstraints.weightx = Math.max(0, available - right);
+                grid.setConstraints(left, leftConstraints);
+                var rightConstraints = grid.getConstraints(editor);
+                rightConstraints.weightx = right;
+                grid.setConstraints(editor, rightConstraints);
+            }
+            super.doLayout();
+        }
+    }, left = new JPanel(new BorderLayout(0, 14)),
         leftTools = new JPanel(new BorderLayout(8, 0)), editor = new JPanel(new BorderLayout(0, 14)),
         roles = new JPanel(new GridLayout(1, 4, 6, 0)), arrows = new JPanel(new GridLayout(2, 1, 0, 10)),
         heading = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
@@ -87,6 +104,7 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
             }, () -> service.listAiPurpose(type).stream().map(AiPurposeAssignment::profileId).toList(), ignored -> {
             }, this::render));
             var button = c.secondaryButton("");
+            button.setMargin(new Insets(8, 14, 8, 14));
             button.setName("ai.open." + type.name());
             button.addActionListener(event -> open(type));
             buttons.put(type, button);
@@ -115,6 +133,7 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
             }
         });
         newModel = messages.bind(c.primaryButton(""), "ai.models.add");
+        newModel.setMargin(new Insets(8, 14, 8, 14));
         newModel.setName("ai.models.add");
         newModel.addActionListener(event -> before(() -> edit.accept(null)));
         heading.add(title);
@@ -123,6 +142,8 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
         var orderButtons = c.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         var up = c.secondaryButton("↑");
         var down = c.secondaryButton("↓");
+        up.setMargin(new Insets(8, 14, 8, 14));
+        down.setMargin(new Insets(8, 14, 8, 14));
         up.addActionListener(event -> move(false, -1));
         down.addActionListener(event -> move(false, 1));
         orderButtons.add(up);
@@ -130,6 +151,10 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
         left.add(orderButtons, BorderLayout.SOUTH);
         add.setName("ai.purpose.add");
         remove.setName("ai.purpose.remove");
+        for (var button : List.of(add, remove)) {
+            c.styleButton(button, false);
+            button.setMargin(new Insets(8, 14, 8, 14));
+        }
         add.setToolTipText(messages.text("ai.purpose.add"));
         remove.setToolTipText(messages.text("ai.purpose.remove"));
         add.addActionListener(event -> member(true));
@@ -267,18 +292,14 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
         columns.add(left, g);
         if (purpose != null) {
             editor.removeAll();
-            var top = components.transparent(new BorderLayout(0, 8));
+            var top = components.transparent(new FlowLayout(FlowLayout.RIGHT, 0, 0));
             top.add(roles);
-            var close = components.secondaryButton("×");
-            close.setToolTipText(messages.text("ai.purpose.collapse"));
-            close.getAccessibleContext().setAccessibleName(messages.text("ai.purpose.collapse"));
-            close.addActionListener(event -> open(purpose));
-            top.add(close, BorderLayout.EAST);
             editor.add(top, BorderLayout.NORTH);
             editor.add(purposeScroll);
             var actions = components.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0));
             for (int delta : new int[]{-1, 1}) {
                 var button = components.secondaryButton(delta < 0 ? "↑" : "↓");
+                button.setMargin(new Insets(8, 14, 8, 14));
                 button.addActionListener(event -> move(true, delta));
                 actions.add(button);
             }
@@ -348,7 +369,11 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
         inventory.setEnabled(ready);
         selected.setEnabled(ready);
         newModel.setEnabled(ready);
-        buttons.values().forEach(button -> button.setEnabled(ready));
+        buttons.forEach((type, button) -> {
+            button.setEnabled(ready);
+            button.setSelected(type == purpose);
+            components.styleButton(button, type == purpose);
+        });
         var model = current();
         add.setEnabled(ready && purpose != null && model != null && model.verified(purpose)
             && !purposes.get(purpose).draft().contains(model.profile().id()));
@@ -407,7 +432,8 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
                 case VOICE -> "ai/voice";
             };
             panel.setEnabled(eligible);
-            panel.add(new JLabel(DesktopIcons.icon(icon, 26, () -> foreground)), BorderLayout.WEST);
+            panel.add(new JLabel(DesktopIcons.icon(icon, 30,
+                () -> UIManager.getColor(eligible ? "Component.focusColor" : "Label.disabledForeground"))), BorderLayout.WEST);
             var text = new JPanel(new GridLayout(2, 1, 0, 4));
             text.setOpaque(false);
             var name = new JLabel(model == null ? id : model.name());

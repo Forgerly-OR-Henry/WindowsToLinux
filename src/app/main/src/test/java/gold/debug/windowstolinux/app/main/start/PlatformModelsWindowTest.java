@@ -84,6 +84,7 @@ class PlatformModelsWindowTest {
                             assertEquals(5, descendants(frame).filter(c -> c.getName() != null && c.getName().startsWith("models.verify.")).count());
                             assertFalse(descendants(frame).anyMatch(c -> "ai.open.VISION".equals(c.getName())));
                             assertEquals(0, ((JComboBox<?>) named(frame, "models.checks")).getItemCount());
+                            assertNotNull(((JLabel) named(frame, "models.details.title")).getIcon());
                             return null;
                         });
                         snapshot(frame, "detail", theme, scale);
@@ -99,6 +100,8 @@ class PlatformModelsWindowTest {
                         snapshot(frame, "purpose", theme, scale);
                         onEdt(() -> {
                             assertFalse(descendants(frame).anyMatch(c -> c.getName() != null && Set.of("ai.purpose.save", "ai.purpose.cancel", "model.fileEndpoint", "model.realtimeEndpoint").contains(c.getName())));
+                            assertFalse(descendants((Container) named(frame, "platform.models"))
+                                .anyMatch(c -> c instanceof JButton button && "×".equals(button.getText())));
                             return null;
                         });
                     } finally {
@@ -119,6 +122,11 @@ class PlatformModelsWindowTest {
             var minimum = frame.getMinimumSize();
             frame.setSize(minimum);
             frame.validate();
+            if (state.equals("purpose"))
+                for (var type : AiPurposeType.values()) {
+                    var button = (JButton) named(frame, "ai.open." + type.name());
+                    assertEquals(new Rectangle(0, 0, button.getWidth(), button.getHeight()), button.getVisibleRect());
+                }
             capture(frame, "ai-" + state + "-" + theme + "-" + scale + "-minimum.png");
             frame.setSize(1600, 900);
             frame.validate();

@@ -81,6 +81,12 @@ class AiModelListTest {
                 try {
                     idle();
                     var inventory = edt(() -> find(pane.get(), "ai.inventory", DesktopCardList.class));
+                    var purposeSizes = edt(() -> {
+                        var sizes = new EnumMap<AiPurposeType, Dimension>(AiPurposeType.class);
+                        for (var type : AiPurposeType.values())
+                            sizes.put(type, find(pane.get(), "ai.open." + type.name(), JButton.class).getSize());
+                        return sizes;
+                    });
                     var robot = new Robot();
                     click(robot, inventory, 0);
                     assertNotNull(edt(() -> field(pane.get(), "detailId", String.class)));
@@ -98,6 +104,21 @@ class AiModelListTest {
                     idle();
                     assertEquals(0, store.orderWrites);
                     edt(() -> {
+                        for (var type : AiPurposeType.values()) {
+                            var button = find(pane.get(), "ai.open." + type.name(), JButton.class);
+                            assertEquals(purposeSizes.get(type), button.getSize());
+                            assertEquals(type == AiPurposeType.VISION, button.isSelected());
+                        }
+                        var toggle = find(pane.get(), "ai.open.VISION", JButton.class);
+                        var activeColor = toggle.getBackground();
+                        toggle.doClick(0);
+                        assertTrue(pane.get().capture().purpose().isEmpty());
+                        assertFalse(toggle.isSelected());
+                        assertNotEquals(activeColor, toggle.getBackground());
+                        toggle.doClick(0);
+                        assertEquals(Optional.of(AiPurposeType.VISION), pane.get().capture().purpose());
+                        assertTrue(toggle.isSelected());
+                        assertEquals(activeColor, toggle.getBackground());
                         inventory.setSelectedValue("third", false);
                         assertFalse(find(pane.get(), "ai.purpose.add", JButton.class).isEnabled());
                         inventory.setSelectedValue("first", false);

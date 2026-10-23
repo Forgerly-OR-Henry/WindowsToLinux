@@ -48,10 +48,14 @@ final class ModelDetailsPane extends JPanel implements AutoCloseable {
         setOpaque(false);
         var top = c.transparent(new BorderLayout(8, 0));
         var name = new JLabel(model.name());
+        name.setName("models.details.title");
+        name.setIcon(DesktopIcons.icon("ai/bot", 32, () -> UIManager.getColor("Component.focusColor")));
+        name.setIconTextGap(com.formdev.flatlaf.util.UIScale.scale(16));
         name.putClientProperty("html.disable", true);
         name.setFont(name.getFont().deriveFont(Font.BOLD, name.getFont().getSize2D() + 3));
         top.add(name);
         var close = c.secondaryButton(messages.text("ai.models.collapse"));
+        close.setMargin(new Insets(8, 22, 8, 22));
         close.setName("models.collapse");
         close.addActionListener(event -> collapse.run());
         top.add(close, BorderLayout.EAST);
@@ -63,6 +67,7 @@ final class ModelDetailsPane extends JPanel implements AutoCloseable {
         var configTitle = c.transparent(new BorderLayout());
         configTitle.add(new JLabel(messages.text("ai.models.configuration")));
         edit = c.secondaryButton(messages.text("ai.models.edit"));
+        edit.setMargin(new Insets(8, 14, 8, 14));
         edit.setName("ai.models.edit");
         edit.addActionListener(event -> {
             if (!locked && !busy) editAction.run();
@@ -91,6 +96,7 @@ final class ModelDetailsPane extends JPanel implements AutoCloseable {
             if (!state.reason().isEmpty()) text.setToolTipText(messages.text("ai.check.reason." + state.reason()));
             row.add(text);
             var button = c.secondaryButton(messages.text("ai.models.verify"));
+            button.setMargin(new Insets(8, 14, 8, 14));
             button.setName("models.verify." + capability.name());
             button.addActionListener(event -> check(capability));
             verify.put(capability, button);
@@ -118,6 +124,7 @@ final class ModelDetailsPane extends JPanel implements AutoCloseable {
         reconcile.setName("models.reconcile");
         reconcile.addActionListener(event -> taskAction(true));
         var reload = c.secondaryButton(messages.text("server.refresh"));
+        for (var button : List.of(cancel, reconcile, reload)) button.setMargin(new Insets(8, 14, 8, 14));
         reload.setName("models.refresh");
         reload.addActionListener(event -> refresh.run());
         actions.add(cancel);
