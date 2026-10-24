@@ -39,10 +39,14 @@ final class FilesDialogs {
     Optional<String> name(String key) {
         var input = new JTextField(24);
         input.setName("files.dialog.name");
-        var body = new JPanel(new BorderLayout(4, 4));
-        body.add(label("fullName"), BorderLayout.NORTH);
-        body.add(input, BorderLayout.CENTER);
+        var body = FilesDialogLayout.fields(prompt("fullName", 2, 34), input);
         return show(key, body) ? Optional.of(input.getText()) : Optional.empty();
+    }
+
+    /** Confirms replacing only the active pane's unsubmitted path. / 确认仅替换活动栏未提交路径。
+     * @return whether replacement was accepted / 是否接受替换 */
+    boolean replaceLocation() {
+        return show("replaceLocation", prompt("replaceLocationPrompt", 3, 34));
     }
 
     /** Presents the actual deletion scope before platform authorization. / 在平台授权前展示实际删除范围。
@@ -80,11 +84,7 @@ final class FilesDialogs {
         var path = new JTextField(24);
         choices.setName("files.dialog.server");
         path.setName("files.dialog.remotePath");
-        var body = new JPanel(new java.awt.GridLayout(0, 1, 4, 4));
-        body.add(label("remote"));
-        body.add(choices);
-        body.add(label("absolutePath"));
-        body.add(path);
+        var body = FilesDialogLayout.fields(label("remote"), choices, label("absolutePath"), path);
         if (!show("remote", body) || !(choices.getSelectedItem() instanceof ServerInfo server)) return Optional.empty();
         return Optional.of(FilePath.remote(server.ref(), path.getText()));
     }
@@ -93,24 +93,83 @@ final class FilesDialogs {
      * @param links current two-pane observations / 当前两栏观测
      * @return explicit included links or cancelled input / 明确纳入的链接或已取消输入 */
     Optional<List<FileInfo>> links(List<FileInfo> links) {
-        var body = new JPanel(new BorderLayout(4, 4));
-        var scope = new JTextArea(messages.text("linkScope"), 3, 34);
-        scope.setEditable(false);
-        scope.setLineWrap(true);
-        scope.setWrapStyleWord(true);
-        scope.putClientProperty("files.dialog.key", "linkScope");
+        var body = new JPanel(new BorderLayout());
+        body.putClientProperty("files.dialog.sectionGap", 12);
+        var scope = prompt("linkScope", 3, 34);
+        body.putClientProperty("files.dialog.listScope", scope);
         body.add(scope, BorderLayout.NORTH);
-        var rows = new JPanel(new java.awt.GridLayout(0, 1));
+        var rows = new JPanel(new java.awt.GridBagLayout());
+        rows.putClientProperty("files.dialog.links", true);
         var boxes = links.stream().map(info -> new JCheckBox(info.requested().key())).toList();
-        boxes.forEach(rows::add);
-        var scroll = new JScrollPane(rows);
-        scroll.setPreferredSize(new java.awt.Dimension(360, 150));
-        body.add(scroll, BorderLayout.CENTER);
+        for (int index = 0; index < boxes.size(); index++) addLink(rows, boxes.get(index), index);
+        body.add(rows, BorderLayout.CENTER);
         if (!show("move", body)) return Optional.empty();
         var included = new java.util.ArrayList<FileInfo>();
         for (int index = 0; index < boxes.size(); index++)
             if (boxes.get(index).isSelected()) included.add(links.get(index));
         return Optional.of(List.copyOf(included));
+    }
+
+    /** Keeps each original checkbox beside a naturally wrapping full path. / 在原复选框旁保留自然换行的完整路径。
+     * @param rows original link form / 原链接表单
+     * @param box original selection model and full key / 原选择模型及完整位置键
+     * @param index original observation order / 原观测顺序 */
+    private void addLink(JPanel rows, JCheckBox box, int index) {
+        String key = box.getText();
+        box.setText("");
+        box.setToolTipText(key);
+        box.getAccessibleContext().setAccessibleName(key);
+        var path = new JTextArea(key, 0, 24) {
+            /** Measures every complete wrapped line at the row's current width. / 按当前行宽测量全部换行内容。
+             * @return width-aware natural text size / 随宽度变化的自然文本尺寸 */
+            @Override
+            public java.awt.Dimension getPreferredSize() {
+                var viewport = (JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, this);
+                if (viewport == null || viewport.getExtentSize().width <= 0) return super.getPreferredSize();
+                int width = Math.max(1, viewport.getExtentSize().width - box.getPreferredSize().width - FilesDialogLayout.scale(8));
+                var insets = getInsets();
+                var view = getUI().getRootView(this);
+                view.setSize(Math.max(1, width - insets.left - insets.right), Float.MAX_VALUE);
+                int height = (int) Math.ceil(view.getPreferredSpan(javax.swing.text.View.Y_AXIS)) + insets.top + insets.bottom;
+                return new java.awt.Dimension(width, height);
+            }
+
+            /** Keeps the same wrapped height when GridBag needs a narrower minimum width. / GridBag 使用更窄最小宽度时保留相同换行高度。
+             * @return shrinkable width and complete natural height / 可收缩宽度及完整自然高度 */
+            @Override
+            public java.awt.Dimension getMinimumSize() {
+                return new java.awt.Dimension(0, getPreferredSize().height);
+            }
+        };
+        path.setName("files.dialog.linkPath");
+        path.putClientProperty("files.dialog.linkKey", key);
+        path.setEditable(false);
+        path.setFocusable(false);
+        path.setLineWrap(true);
+        path.setWrapStyleWord(false);
+        var position = new java.awt.GridBagConstraints();
+        position.gridx = 0;
+        position.gridy = index;
+        position.anchor = java.awt.GridBagConstraints.NORTHWEST;
+        position.insets.bottom = FilesDialogLayout.scale(8);
+        rows.add(box, position);
+        position.gridx = 1;
+        position.weightx = 1;
+        position.fill = java.awt.GridBagConstraints.HORIZONTAL;
+        position.insets.left = FilesDialogLayout.scale(8);
+        rows.add(path, position);
+        box.putClientProperty("files.dialog.revealTarget", path);
+        path.addMouseListener(new java.awt.event.MouseAdapter() {
+            /** Toggles the original checkbox when its visible label is clicked. / 点击可见标签时切换原复选框。
+             * @param event original pointer event / 原指针事件 */
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent event) {
+                if (SwingUtilities.isLeftMouseButton(event) && box.isEnabled()) {
+                    box.doClick(0);
+                    box.requestFocusInWindow();
+                }
+            }
+        });
     }
 
     /** Mounts one owned dialog and preserves cancellation as absence. / 挂载一个所属对话框并将取消保留为空值。
@@ -120,10 +179,10 @@ final class FilesDialogs {
     private boolean show(String key, JComponent body) {
         Window owner = SwingUtilities.getWindowAncestor(root);
         var dialog = new JDialog(owner, messages.text(key), Dialog.ModalityType.APPLICATION_MODAL);
+        dialog.setName("files.dialog");
         current = dialog;
         currentKey = key;
         boolean[] accepted = {false};
-        var buttons = new JPanel();
         var ok = new JButton(messages.text("ok"));
         var cancel = new JButton(messages.text("cancel"));
         ok.setName("files.dialog.ok");
@@ -135,14 +194,11 @@ final class FilesDialogs {
             dialog.dispose();
         });
         cancel.addActionListener(event -> dialog.dispose());
-        buttons.add(ok);
-        buttons.add(cancel);
-        dialog.add(body, BorderLayout.CENTER);
-        dialog.add(buttons, BorderLayout.SOUTH);
+        FilesDialogLayout.install(dialog, body, ok, cancel);
         dialog.getRootPane().setDefaultButton(ok);
+        dialog.getRootPane().registerKeyboardAction(event -> dialog.dispose(),
+            KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
         dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-        dialog.pack();
-        dialog.setLocationRelativeTo(root);
         try {
             dialog.setVisible(true);
             return accepted[0];
@@ -166,13 +222,42 @@ final class FilesDialogs {
         return label;
     }
 
+    /** Retains localized prose in a wrapping, non-editable Swing text surface. / 在换行只读 Swing 文本区域保留本地化说明。
+     * @param key localized message key / 本地化文案键
+     * @param rows natural minimum line count / 自然最小行数
+     * @param columns preferred text width / 首选文本宽度
+     * @return original wrapping text surface / 原换行文本区域 */
+    private JTextArea prompt(String key, int rows, int columns) {
+        var text = new JTextArea(messages.text(key), rows, columns) {
+            /** Measures prose against the viewport extent before parent layout assigns child widths. / 父布局分配子项宽度前先按视口实际范围测量说明。
+             * @return natural width and complete wrapped height / 自然宽度及完整换行高度 */
+            @Override
+            public java.awt.Dimension getPreferredSize() {
+                var preferred = super.getPreferredSize();
+                var viewport = (JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, this);
+                if (viewport == null || viewport.getExtentSize().width <= 0) return preferred;
+                var insets = getInsets();
+                var view = getUI().getRootView(this);
+                view.setSize(Math.max(1, viewport.getExtentSize().width - insets.left - insets.right), Float.MAX_VALUE);
+                int height = Math.max(getRows() * getRowHeight(), (int) Math.ceil(view.getPreferredSpan(javax.swing.text.View.Y_AXIS)))
+                    + insets.top + insets.bottom;
+                return new java.awt.Dimension(preferred.width, height);
+            }
+        };
+        text.setEditable(false);
+        text.setLineWrap(true);
+        text.setWrapStyleWord(true);
+        text.putClientProperty("files.dialog.key", key);
+        return text;
+    }
+
     /** Applies actual host appearance without replacing unsubmitted input. / 应用实际宿主外观，不替换未提交输入。 */
     void environmentChanged() {
         if (current == null) return;
         SwingUtilities.updateComponentTreeUI(current);
         current.setTitle(messages.text(currentKey));
         localize(current);
-        current.validate();
+        FilesDialogLayout.refresh(current);
         current.repaint();
     }
 

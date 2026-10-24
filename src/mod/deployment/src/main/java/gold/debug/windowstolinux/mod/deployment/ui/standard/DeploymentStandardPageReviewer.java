@@ -1,6 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.ui.standard;
 
-import java.awt.GridLayout;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,6 +34,7 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.d
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentReviewField;
 import gold.debug.windowstolinux.mod.deployment.ui.runtime.DeploymentReviewInputs;
 import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentDialogs;
 
 /** Translates one current owner-view decision into typed static review values. / 将当前所属视图的一次决定转换为类型化静态审阅值。 */
 final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.Reviewer {
@@ -104,15 +104,15 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
     public OperationResult<Boolean> confirmSqliteInitialization(ServerId server, String componentId,
                                                                 String sourceSha256, DatabaseProjectChecker.Report assessment, TaskContext task) {
         var panel = page.onEdt(() -> {
-            var rows = new JPanel(new GridLayout(0, 1));
-            rows.add(new JLabel(page.text("sqliteFirstInitialization")));
-            rows.add(new JLabel(page.text("sourceDigest") + ": " + sourceSha256));
+            var rows = DeploymentDialogs.form();
+            rows.add(DeploymentDialogs.fact(() -> page.text("sqliteFirstInitialization")));
+            rows.add(DeploymentDialogs.fact(() -> page.text("sourceDigest") + ": " + sourceSha256));
             for (var database : assessment.databases()) {
                 var sqlite = database.sqlite().orElseThrow();
-                rows.add(new JLabel(componentId + " / " + database.id() + " / " + sqlite.fileName()));
-                rows.add(new JLabel(page.text("database.path") + ": " + sqlite.accessPath()));
-                rows.add(new JLabel(page.text("database.seed") + ": " + sqlite.seedFile()));
-                rows.add(new JLabel(
+                rows.add(DeploymentDialogs.fact(() -> componentId + " / " + database.id() + " / " + sqlite.fileName()));
+                rows.add(DeploymentDialogs.fact(() -> page.text("database.path") + ": " + sqlite.accessPath()));
+                rows.add(DeploymentDialogs.fact(() -> page.text("database.seed") + ": " + sqlite.seedFile()));
+                rows.add(DeploymentDialogs.fact(() ->
                     page.text("database.initialize") + ": " + String.join(", ", database.initializationFiles())));
             }
             return rows;
@@ -135,10 +135,10 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
         var selected = page.onEdt(() -> {
             var values = inventory.instances().stream().map(Instance::id).toArray(String[]::new);
             var box = new JComboBox<>(values);
-            var panel = new JPanel(new GridLayout(0, 1));
-            panel.add(new JLabel(componentId + " / " + database.id() + " / " + database.engine()));
+            var panel = DeploymentDialogs.form();
+            panel.add(DeploymentDialogs.fact(() -> componentId + " / " + database.id() + " / " + database.engine()));
             for (var instance : inventory.instances())
-                panel.add(new JLabel(instance.id() + " / " + instance.version() + " / " + instance.service() + " / "
+                panel.add(DeploymentDialogs.fact(() -> instance.id() + " / " + instance.version() + " / " + instance.service() + " / "
                     + (instance.running()
                     ? page.text("database.nativeRunning")
                     : page.text("database.nativeStopped"))));
@@ -160,10 +160,10 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
     public OperationResult<Boolean> install(ServerId server, DatabaseRequirement database, Candidate candidate,
                                             TaskContext task) {
         var panel = page.onEdt(() -> {
-            var rows = new JPanel(new GridLayout(0, 1));
-            rows.add(new JLabel(page.text("database.nativeInstallWarning")));
-            rows.add(new JLabel(server.id() + " / " + database.engine() + " / " + database.id()));
-            rows.add(new JLabel(
+            var rows = DeploymentDialogs.form();
+            rows.add(DeploymentDialogs.fact(() -> page.text("database.nativeInstallWarning")));
+            rows.add(DeploymentDialogs.fact(() -> server.id() + " / " + database.engine() + " / " + database.id()));
+            rows.add(DeploymentDialogs.fact(() ->
                 candidate.name() + " / " + candidate.packageVersion() + " / " + candidate.engineVersion()));
             return rows;
         });
@@ -198,7 +198,7 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
     /** Keeps three independent initially refused replacement consents on the same form. / 在同一表单保留三项独立且默认拒绝的替换同意。 */
     private static final class NativeReplacementForm {
         /** Original visible reviewed facts and decisions. / 原可见审阅事实及决定。 */
-        private final JPanel panel = new JPanel(new GridLayout(0, 1));
+        private final JPanel panel = DeploymentDialogs.form();
 
         /** Backup, downtime and exact software replacement are independent decisions. / 备份、停机与精确软件替换是独立决定。 */
         private final List<JCheckBox> confirmations = new ArrayList<>();
@@ -213,13 +213,16 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
          * @param candidate selected replacement / 选定替换 */
         private NativeReplacementForm(DeploymentStandardPage page, ServerId server, Instance previous,
                                       Candidate candidate) {
-            panel.add(new JLabel(page.text("database.nativeReplacementWarning")));
-            panel.add(new JLabel(server.id() + " / " + previous.engine() + " / " + previous.id()));
-            panel.add(new JLabel(previous.version() + " → " + candidate.engineVersion()));
-            panel.add(new JLabel(candidate.name() + " / " + candidate.packageVersion()));
+            panel.setName("deployment.database.replacement");
+            panel.add(DeploymentDialogs.fact(() -> page.text("database.nativeReplacementWarning")));
+            panel.add(DeploymentDialogs.fact(() -> server.id() + " / " + previous.engine() + " / " + previous.id()));
+            panel.add(DeploymentDialogs.fact(() -> previous.version() + " → " + candidate.engineVersion()));
+            panel.add(DeploymentDialogs.fact(() -> candidate.name() + " / " + candidate.packageVersion()));
             for (String key : List.of("backup", "downtime", "software")) {
                 var check = new JCheckBox(page.text("database.nativeReplacement." + key), false);
                 check.setName("database.replacement." + key);
+                check.setToolTipText(check.getText());
+                check.getAccessibleContext().setAccessibleDescription(check.getText());
                 confirmations.add(check);
                 panel.add(check);
             }
@@ -241,10 +244,10 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
     @Override
     public OperationResult<Boolean> restored(ServerId server, Instance instance, TaskContext task) {
         var panel = page.onEdt(() -> {
-            var rows = new JPanel(new GridLayout(0, 1));
-            rows.add(new JLabel(page.text("database.nativeRestoreWarning")));
-            rows.add(new JLabel(server.id() + " / " + instance.engine() + " / " + instance.id()));
-            rows.add(new JLabel(instance.version() + " / " + instance.service()));
+            var rows = DeploymentDialogs.form();
+            rows.add(DeploymentDialogs.fact(() -> page.text("database.nativeRestoreWarning")));
+            rows.add(DeploymentDialogs.fact(() -> server.id() + " / " + instance.engine() + " / " + instance.id()));
+            rows.add(DeploymentDialogs.fact(() -> instance.version() + " / " + instance.service()));
             return rows;
         });
         return page.approve(view, panel, page.text("database.nativeRestoreTitle"), task)
@@ -301,12 +304,12 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
     public OperationResult<Boolean> existingSchema(ServerId server, String componentId, DatabaseRequirement database,
                                                    String sourceDigest, TaskContext task) {
         var panel = page.onEdt(() -> {
-            var rows = new JPanel(new GridLayout(0, 1));
-            rows.add(new JLabel(page.text("database.nativeExistingSchema")));
-            rows.add(new JLabel(server.id() + " / " + componentId + " / " + database.id() + " / " + database.engine()
+            var rows = DeploymentDialogs.form();
+            rows.add(DeploymentDialogs.fact(() -> page.text("database.nativeExistingSchema")));
+            rows.add(DeploymentDialogs.fact(() -> server.id() + " / " + componentId + " / " + database.id() + " / " + database.engine()
                 + " / " + database.database()));
-            rows.add(new JLabel(page.text("database.inspectionDigest") + ": " + sourceDigest));
-            rows.add(new JLabel(
+            rows.add(DeploymentDialogs.fact(() -> page.text("database.inspectionDigest") + ": " + sourceDigest));
+            rows.add(DeploymentDialogs.fact(() ->
                 page.text("database.initialize") + ": " + String.join(", ", database.initializationFiles())));
             return rows;
         });
@@ -318,7 +321,7 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
     /** Bounded non-secret database fields on the EDT. / EDT 上有界非秘密数据库字段。 */
     private static final class DatabaseInputForm {
         /** Source-bound form. / 来源绑定表单。 */
-        private final JPanel panel = new JPanel(new GridLayout(0, 1, 8, 8));
+        private final JPanel panel = DeploymentDialogs.form();
 
         /** Local error message. / 本地错误提示。 */
         private final JLabel error = new JLabel();
@@ -334,14 +337,14 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
          * @param questions actual missing inputs / 实际缺失输入 */
         private DatabaseInputForm(DeploymentStandardPage page, String componentId, String sourceSha256,
                                   DatabaseProjectChecker.Report assessment, List<DeploymentReviewField> questions) {
-            panel.add(new JLabel(componentId + " / " + page.text("sourceDigest")));
-            panel.add(new JLabel(sourceSha256));
+            panel.add(DeploymentDialogs.fact(() -> componentId + " / " + page.text("sourceDigest")));
+            panel.add(DeploymentDialogs.fact(() -> sourceSha256));
             for (var database : assessment.databases()) {
-                panel.add(new JLabel(database.id() + " / " + database.engine()));
-                panel.add(new JLabel(database.sqlite().map(value -> value.accessPath() + " / " + value.seedFile())
+                panel.add(DeploymentDialogs.fact(() -> database.id() + " / " + database.engine()));
+                panel.add(DeploymentDialogs.fact(() -> database.sqlite().map(value -> value.accessPath() + " / " + value.seedFile())
                     .orElse(database.database())));
-                panel.add(new JLabel(page.text("database.initialize")));
-                panel.add(new JLabel(String.join(", ", database.initializationFiles())));
+                panel.add(DeploymentDialogs.fact(() -> page.text("database.initialize")));
+                panel.add(DeploymentDialogs.fact(() -> String.join(", ", database.initializationFiles())));
             }
             for (var question : questions) {
                 JComponent input = question.choices().isEmpty() || question.id().endsWith(".initialize")
@@ -351,7 +354,9 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
                     field.setToolTipText(String.join(", ", question.choices()));
                 if (input instanceof JComboBox<?> combo && !question.value().isBlank())
                     combo.setSelectedItem(question.value());
-                panel.add(new JLabel(page.text(question.titleKey())));
+                var label = DeploymentReviewInputs.label(question.titleKey(), page::text);
+                label.setLabelFor(input);
+                panel.add(label);
                 panel.add(input);
                 fields.put(question.id(), input);
             }
@@ -473,7 +478,7 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
         private final Map<String, JComponent> fields = new LinkedHashMap<>();
 
         /** Current owner-view form. / 当前所属视图表单。 */
-        private final JPanel panel = new JPanel(new GridLayout(0, 2, 8, 8));
+        private final JPanel panel = DeploymentDialogs.form();
 
         /** Validation message. / 校验提示。 */
         private final JLabel error = new JLabel();
@@ -487,7 +492,7 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
                                     DeploymentStandardInputs.Prompt prompt, DeploymentStandardInputs.Answers original) {
             this.original = original;
             panel.add(new JLabel(page.text("sourceDigest")));
-            panel.add(new JLabel(sourceSha256));
+            panel.add(DeploymentDialogs.text(sourceSha256));
             panel.add(new JLabel(page.text("application")));
             panel.add(new JLabel(prompt.applicationId()));
             for (var field : prompt.fields()) {
@@ -529,7 +534,7 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
     /** One complete editable review on the EDT. / EDT 上的一份完整可编辑审阅。 */
     private static final class ReviewForm {
         /** Tabbed review container. / 分页审阅容器。 */
-        private final JPanel panel = new JPanel(new java.awt.BorderLayout());
+        private final JPanel panel = new JPanel(new java.awt.BorderLayout(0, DeploymentPageStyle.scale(12)));
 
         /** Validation message. / 校验提示。 */
         private final JLabel error = new JLabel();
@@ -541,7 +546,7 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
         private final JTabbedPane tabs = new JTabbedPane();
 
         /** Current owner resources. / 当前所属资源。 */
-        private final DeploymentStandardPage page;
+        private final java.util.function.Function<String, String> texts;
 
         /** Creates source-bound component tabs. / 创建来源绑定的组件页。
          * @param page owner page / 所属页
@@ -549,13 +554,25 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
          * @param prompts actual review prompts / 实际审阅问题 */
         private ReviewForm(DeploymentStandardPage page, String sourceSha256,
                            List<DeploymentStandardInputs.Prompt> prompts) {
-            this.page = page;
+            this(page::text, page.secretChoices(), page.buildDefaults(), sourceSha256, prompts);
+        }
+
+        /** Shares the production review layout without task capabilities. / 无任务能力地共享生产审阅布局。
+         * @param texts original localized labels / 原本地化标签
+         * @param choices non-secret credential revisions / 非秘密凭据修订
+         * @param defaults original build defaults / 原构建默认值
+         * @param sourceSha256 frozen source digest / 冻结来源摘要
+         * @param prompts actual component prompts / 实际组件问题 */
+        private ReviewForm(java.util.function.Function<String, String> texts, List<DeploymentSecretSelection> choices,
+                           DeploymentBuildLimits defaults, String sourceSha256, List<DeploymentStandardInputs.Prompt> prompts) {
+            this.texts = texts;
+            panel.putClientProperty("deployment.dialog.scrollManaged", true);
             for (var prompt : prompts) {
-                var form = new PartForm(page, prompt);
-                tabs.addTab(prompt.componentId(), new JScrollPane(form.panel()));
+                var form = new PartForm(texts, choices, prompt, defaults);
+                tabs.addTab(prompt.componentId(), DeploymentDialogs.scroll(form.panel()));
                 forms.put(prompt.componentId(), form);
             }
-            panel.add(new JLabel(page.text("sourceDigest") + "  " + sourceSha256), java.awt.BorderLayout.NORTH);
+            panel.add(DeploymentDialogs.fact(() -> texts.apply("sourceDigest") + "  " + sourceSha256), java.awt.BorderLayout.NORTH);
             panel.add(tabs, java.awt.BorderLayout.CENTER);
             panel.add(error, java.awt.BorderLayout.SOUTH);
         }
@@ -586,7 +603,7 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
             var control = form.fields.get(key);
             if (control == null) control = form.fields.values().stream().findFirst().orElse(null);
             panel.putClientProperty("deployment.review.focus", control);
-            error.setText(page.text("invalidForm") + " " + component + (key.isEmpty() ? "" : " / " + page.text("auto.field." + key)));
+            error.setText(texts.apply("invalidForm") + " " + component + (key.isEmpty() ? "" : " / " + texts.apply("auto.field." + key)));
         }
     }
 
@@ -621,56 +638,74 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
     private static JPanel confirmation(DeploymentStandardPage page, ServerId server, String sourceSha256,
                                        Map<String, String> archiveSha256, Map<String, DeploymentStandardInputs.Answers> answers,
                                        Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStandardInputs.GitReview> git) {
-        var panel = new JPanel(new GridLayout(0, 1));
-        panel.add(new JLabel(page.text("server") + ": " + server.id()));
-        git.ifPresent(identity -> panel.add(new JLabel(page.text("gitSource") + ": " + identity.remote() + " / "
+        return confirmation(page::text, server, sourceSha256, archiveSha256, answers, databases, git);
+    }
+
+    /** Renders complete facts using a live catalog and immutable reviewed values. / 用实时文案及不可变审阅值呈现完整事实。
+     * @param texts live localized labels / 实时本地化标签
+     * @param server exact selected server / 精确选定服务器
+     * @param sourceSha256 original source digest / 原来源摘要
+     * @param archiveSha256 actual archive digests / 实际归档摘要
+     * @param answers reviewed component answers / 经审阅组件答案
+     * @param databases reviewed database bindings / 经审阅数据库绑定
+     * @param git frozen Git identity or absence / 冻结 Git 身份或空值
+     * @return naturally sized complete confirmation / 自然尺寸的完整确认 */
+    private static JPanel confirmation(java.util.function.Function<String, String> texts, ServerId server, String sourceSha256,
+                                       Map<String, String> archiveSha256, Map<String, DeploymentStandardInputs.Answers> answers,
+                                       Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStandardInputs.GitReview> git) {
+        var panel = DeploymentDialogs.form();
+        panel.add(DeploymentDialogs.fact(() -> texts.apply("server") + ": " + server.id()));
+        git.ifPresent(identity -> panel.add(DeploymentDialogs.fact(() -> texts.apply("gitSource") + ": " + identity.remote() + " / "
             + identity.reference() + " / " + identity.commit())));
-        if (git.isPresent())
-            panel.add(new JLabel(page.text("gitSaveNotice")));
-        panel.add(new JLabel(page.text("sourceDigest") + ": " + sourceSha256));
+        if (git.isPresent()) {
+            var notice = DeploymentDialogs.fact(() -> texts.apply("gitSaveNotice"));
+            notice.setName("deployment.confirmation.gitNotice");
+            panel.add(notice);
+        }
+        panel.add(DeploymentDialogs.fact(() -> texts.apply("sourceDigest") + ": " + sourceSha256));
         archiveSha256.entrySet().stream().sorted(Map.Entry.comparingByKey())
-            .forEach(entry -> panel.add(new JLabel(entry.getKey() + " tar SHA-256: " + entry.getValue())));
+            .forEach(entry -> panel.add(DeploymentDialogs.fact(() -> entry.getKey() + " tar SHA-256: " + entry.getValue())));
         answers.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
-            panel.add(new JLabel(entry.getKey()));
+            panel.add(DeploymentDialogs.fact(() -> entry.getKey()));
             entry.getValue().values().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(value -> {
                 if (!databases.containsKey(entry.getKey()) || databases.get(entry.getKey()).bindings().isEmpty()
                     || !Set.of("databaseMode", "databaseDetails").contains(value.getKey()))
-                    panel.add(new JLabel("  " + label(page, value.getKey()) + ": " + value.getValue()));
+                    panel.add(DeploymentDialogs.fact(() -> "  " + texts.apply(value.getKey()) + ": " + value.getValue()));
             });
             var database = databases.get(entry.getKey());
             if (database != null)
                 database.bindings().forEach(binding -> {
                     if (binding.connection() instanceof DeploymentDatabaseConnection.Sqlite sqlite) {
-                        panel.add(new JLabel("  " + page.text("database.sqliteBinding") + ": " + binding.databaseId()
+                        panel.add(DeploymentDialogs.fact(() -> "  " + texts.apply("database.sqliteBinding") + ": " + binding.databaseId()
                             + " / " + sqlite.fileName() + " / " + sqlite.accessPath()));
-                        panel.add(new JLabel("  " + page.text("database.seed") + ": " + sqlite.seedFile()));
-                        panel.add(new JLabel("  " + page.text("database.initialize") + ": "
+                        panel.add(DeploymentDialogs.fact(() -> "  " + texts.apply("database.seed") + ": " + sqlite.seedFile()));
+                        panel.add(DeploymentDialogs.fact(() -> "  " + texts.apply("database.initialize") + ": "
                             + String.join(", ", sqlite.initializationFiles())));
                     } else if (binding.connection() instanceof DeploymentDatabaseConnection.Server nativeDatabase) {
-                        panel.add(new JLabel("  " + binding.databaseId() + ": " + nativeDatabase.engine() + " / "
+                        panel.add(DeploymentDialogs.fact(() -> "  " + binding.databaseId() + ": " + nativeDatabase.engine() + " / "
                             + nativeDatabase.host() + ":" + nativeDatabase.port() + " / "
                             + nativeDatabase.database() + " / " + nativeDatabase.username()));
-                        panel.add(new JLabel("  " + nativeDatabase.passwordReference().identifier() + ":"
+                        panel.add(DeploymentDialogs.fact(() -> "  " + nativeDatabase.passwordReference().identifier() + ":"
                             + nativeDatabase.passwordReference().revision()));
                     }
-                    panel.add(new JLabel(
-                        "  " + page.text("database.planned") + ": " + database.schemaReview().isPresent()));
+                    panel.add(DeploymentDialogs.fact(() ->
+                        "  " + texts.apply("database.planned") + ": " + database.schemaReview().isPresent()));
                 });
             if (database != null) {
                 database.configuration().forEach(
-                    config -> panel.add(new JLabel("  " + config.key() + " = " + config.value().canonicalValue())));
+                    config -> panel.add(DeploymentDialogs.fact(() -> "  " + config.key() + " = " + config.value().canonicalValue())));
                 database.schemaReview().ifPresent(review -> panel.add(
-                    new JLabel("  " + page.text("database.inspectionDigest") + ": " + review.inspectionSha256())));
+                    DeploymentDialogs.fact(() -> "  " + texts.apply("database.inspectionDigest") + ": " + review.inspectionSha256())));
             }
             entry.getValue().files().forEach(file -> panel.add(
-                new JLabel("  " + page.text("files") + ": " + file.bindingId() + " → " + file.dataPath().path())));
+                DeploymentDialogs.fact(() -> "  " + texts.apply("files") + ": " + file.bindingId() + " → " + file.dataPath().path())));
             panel.add(
-                new JLabel("  " + page.text("timeoutSeconds") + ": " + entry.getValue().limits().timeoutSeconds()));
-            panel.add(new JLabel("  " + page.text("maxWorkspaceBytes") + ": " + entry.getValue().limits().maxWorkspaceBytes()
+                DeploymentDialogs.fact(() -> "  " + texts.apply("timeoutSeconds") + ": " + entry.getValue().limits().timeoutSeconds()));
+            panel.add(DeploymentDialogs.fact(() -> "  " + texts.apply("maxWorkspaceBytes") + ": " + entry.getValue().limits().maxWorkspaceBytes()
                 + " [" + entry.getValue().workspaceRequest().mode() + "]"));
-            entry.getValue().workspaceSelection().ifPresent(selection -> panel.add(new JLabel("  " + page.text("workspaceBasis") + ": " + selection.facts())));
-            panel.add(new JLabel("  " + page.text("containerRisk") + ": " + entry.getValue().containerRisk()));
-            panel.add(new JLabel("  " + page.text("adapterRisk") + ": " + entry.getValue().adapterRisk()));
+            entry.getValue().workspaceSelection().ifPresent(selection -> panel.add(DeploymentDialogs.fact(() -> "  " + texts.apply("workspaceBasis") + ": " + selection.facts())));
+            panel.add(DeploymentDialogs.fact(() -> "  " + texts.apply("containerRisk") + ": " + entry.getValue().containerRisk()));
+            panel.add(DeploymentDialogs.fact(() -> "  " + texts.apply("adapterRisk") + ": " + entry.getValue().adapterRisk()));
         });
         return panel;
     }
@@ -706,12 +741,25 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
      * @return same ordinary runtime form controls / 同一普通运行表单控件 */
     static JPanel runtimePreview(DeploymentStandardInputs.Prompt prompt,
                                  gold.debug.windowstolinux.appapi.ui.page.UiEnvironment environment) {
-        var messages = java.util.ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page",
-            environment.locale());
-        var content = DeploymentPageStyle.card(null, new PartForm(messages::getString, List.of(), prompt,
-            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().limits()).panel());
+        var messages = java.util.ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page", environment.locale(),
+            java.util.ResourceBundle.Control.getNoFallbackControl(java.util.ResourceBundle.Control.FORMAT_DEFAULT));
+        var content = new ReviewForm(messages::getString, List.of(),
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().limits(),
+            "b".repeat(64), List.of(prompt)).panel;
         DeploymentPageStyle.refresh(content, messages);
         return content;
+    }
+
+    /** Reuses the actual final review with fixed non-secret sample values. / 以固定非秘密样例值复用实际最终审阅。
+     * @param texts original localized labels / 原本地化标签
+     * @return capability-free production confirmation / 无能力的生产确认 */
+    static JPanel confirmationPreview(java.util.function.Function<String, String> texts) {
+        var limits = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().limits();
+        var answer = new DeploymentStandardInputs.Answers(Map.of("configuration", "APP_MODE=preview\nPUBLIC_URL=https://example.invalid/" + "long/".repeat(20)),
+            List.of(), limits, false, false);
+        return confirmation(texts, new ServerId("preview-server"), "b".repeat(64), Map.of("preview", "c".repeat(64)),
+            Map.of("preview", answer), Map.of(), Optional.of(new DeploymentStandardInputs.GitReview(
+                "https://example.invalid/" + "source/".repeat(12), "DEFAULT:HEAD", "a".repeat(40))));
     }
 
     /** One typed component form with bounded resource rows. / 一份带有界资源行的类型化组件表单。 */
@@ -723,7 +771,7 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
         private final java.util.function.Function<String, String> texts;
 
         /** Visible controls. / 可见控件。 */
-        private final JPanel panel = new JPanel(new GridLayout(0, 2, 8, 8));
+        private final JPanel panel = DeploymentDialogs.form();
 
         /** Current field inputs. / 当前字段输入。 */
         private final Map<String, JComponent> fields = new LinkedHashMap<>();
@@ -758,12 +806,14 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
                          DeploymentBuildLimits defaults) {
             this.texts = texts;
             this.prompt = prompt;
+            panel.setName("deployment.runtime.component." + prompt.componentId());
             timeout.setText(Integer.toString(defaults.timeoutSeconds()));
             processes.setText(Integer.toString(defaults.maxProcesses()));
             memory.setText(Integer.toString(defaults.maxMemoryMiB()));
             output.setText(Long.toString(defaults.maxOutputBytes()));
             workspace.setText(Long.toString(defaults.maxWorkspaceBytes()));
             workspace.setEnabled(false);
+            workspaceMode.setName("deployment.runtime.workspaceMode");
             workspaceMode.addActionListener(ignored -> workspace.setEnabled(workspaceMode.getSelectedItem() ==
                 gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Mode.EXPLICIT));
             panel.add(new JLabel(texts.apply("application") + ": " + prompt.applicationId()));
@@ -866,6 +916,7 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
                 panel.add(new JLabel(entry.getKey()));
                 panel.add(entry.getValue());
             }
+            DeploymentDialogs.bindReveal(panel);
         }
 
         /** Forms a managed file identity from explicit row controls. / 由明确行控件生成受管文件身份。

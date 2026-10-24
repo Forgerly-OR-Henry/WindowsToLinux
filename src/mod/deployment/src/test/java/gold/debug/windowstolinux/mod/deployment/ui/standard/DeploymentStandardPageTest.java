@@ -338,9 +338,7 @@ class DeploymentStandardPageTest extends DeploymentRuntimeFixture {
             var panel = new AtomicReference<JPanel>();
             var checks = new AtomicReference<List<JCheckBox>>();
             SwingUtilities.invokeAndWait(() -> {
-                panel.set(assertInstanceOf(JPanel.class,
-                    assertInstanceOf(JScrollPane.class, findOptionPane(replacement).getMessage()).getViewport()
-                        .getView()));
+                panel.set(assertInstanceOf(JPanel.class, namedControl(replacement.getRootPane(), "deployment.database.replacement")));
                 checks.set(Arrays.stream(panel.get().getComponents()).filter(JCheckBox.class::isInstance)
                     .map(JCheckBox.class::cast).toList());
                 assertEquals(
@@ -363,8 +361,7 @@ class DeploymentStandardPageTest extends DeploymentRuntimeFixture {
                 current = awaitDialog("替换数据库软件包");
                 var repeated = current;
                 SwingUtilities.invokeAndWait(() -> {
-                    assertSame(panel.get(), assertInstanceOf(JScrollPane.class, findOptionPane(repeated).getMessage())
-                        .getViewport().getView());
+                    assertSame(panel.get(), namedControl(repeated.getRootPane(), "deployment.database.replacement"));
                     for (int index = 0; index < checks.get().size(); index++)
                         assertSame(checks.get().get(index), panel.get().getComponent(index + 4));
                     checks.get().get(accepted).setSelected(true);
@@ -784,7 +781,7 @@ class DeploymentStandardPageTest extends DeploymentRuntimeFixture {
                     var finalPanel = (JPanel) confirmation.invoke(null, page,
                         new gold.debug.windowstolinux.appapi.server.model.ServerId("visual-server"), "b".repeat(64),
                         Map.of("service", "c".repeat(64)), Map.of(), Map.of(), Optional.of(gitReview));
-                    assertNotNull(findLabel(finalPanel, "确认后将在部署前保存本次经审阅的来源项目记录。"));
+                    assertEquals("确认后将在部署前保存本次经审阅的来源项目记录。", ((JTextArea) namedControl(finalPanel, "deployment.confirmation.gitNotice")).getText());
                     render(new JOptionPane(new JScrollPane(finalPanel), JOptionPane.QUESTION_MESSAGE,
                         JOptionPane.OK_CANCEL_OPTION), "git-confirm");
                 } catch (Exception failure) {

@@ -1,7 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.ui.standard;
 
 import java.awt.BorderLayout;
-import java.awt.GridLayout;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,6 +15,7 @@ import gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.part.Disc
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
 import gold.debug.windowstolinux.mod.deployment.ui.runtime.DeploymentReviewInputs;
 import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentDialogs;
 
 /** Edits the actual graph before source analysis, preserving all explicit component boundaries. / 源码分析前编辑实际图，保留全部明确组件边界。 */
 public final class DeploymentComponentEditor {
@@ -29,7 +29,7 @@ public final class DeploymentComponentEditor {
     private final LinkedHashMap<String, DeploymentStandardInputs.Choice> choices = new LinkedHashMap<>();
 
     /** Complete editor surface. / 完整编辑表面。 */
-    private final JPanel panel = new JPanel(new BorderLayout(8, 8));
+    private final JPanel panel = new JPanel(new BorderLayout(DeploymentPageStyle.scale(12), DeploymentPageStyle.scale(12)));
 
     /** Application identity. / 应用身份。 */
     private final JTextField application = new JTextField("application", 24);
@@ -67,28 +67,61 @@ public final class DeploymentComponentEditor {
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         application.setName("deployment.components.application");
         healthOwner.setName("deployment.components.health");
-        var identity = new JPanel(new GridLayout(0, 2, 8, 8));
-        identity.add(DeploymentReviewInputs.label("application", text));
-        identity.add(application);
-        identity.add(DeploymentReviewInputs.label("healthOwner", text));
-        identity.add(healthOwner);
-        panel.add(identity, BorderLayout.NORTH);
-        var center = new JPanel(new BorderLayout(8, 8));
-        center.add(new JScrollPane(list), BorderLayout.WEST);
+        var healthRenderer = new DefaultListCellRenderer();
+        healthOwner.setRenderer((list, value, index, selected, focus) -> healthRenderer.getListCellRendererComponent(
+            list, value == null && choices.size() > 1 ? text.apply("component.healthPlaceholder") : value,
+            index, selected, focus));
+        healthOwner.setToolTipText(text.apply("component.healthHelp"));
+        error.setName("deployment.components.error");
+        var identity = DeploymentDialogs.form();
+        DeploymentPageStyle.field(identity, DeploymentReviewInputs.label("application", text), application);
+        DeploymentPageStyle.field(identity, DeploymentReviewInputs.label("healthOwner", text), healthOwner);
+        var header = new JPanel(new BorderLayout(0, 8));
+        header.add(identity, BorderLayout.NORTH);
+        header.add(error, BorderLayout.SOUTH);
+        panel.add(header, BorderLayout.NORTH);
+        var center = new JPanel(new BorderLayout(DeploymentPageStyle.scale(12), DeploymentPageStyle.scale(12)));
+        var componentScroll = new JScrollPane(list) {
+            /** Bounds long component names without starving the editor. / 限制长组件名而不挤占编辑器。
+             * @return bounded list extent / 有界列表尺寸 */
+            @Override
+            public java.awt.Dimension getPreferredSize() {
+                return new java.awt.Dimension(DeploymentPageStyle.scale(180), super.getPreferredSize().height);
+            }
+        };
+        list.setCellRenderer(new DefaultListCellRenderer() {
+            /** Preserves native selection and exposes the full component ID. / 保留原生选择并提供完整组件 ID。
+             * @param view original list / 原列表
+             * @param value actual component ID / 实际组件 ID
+             * @param index actual row / 实际行
+             * @param selected native selection / 原生选择
+             * @param focus native focus / 原生焦点
+             * @return original rendered row / 原渲染行 */
+            @Override
+            public java.awt.Component getListCellRendererComponent(JList<?> view, Object value, int index, boolean selected, boolean focus) {
+                var cell = super.getListCellRendererComponent(view, value, index, selected, focus);
+                setToolTipText(java.util.Objects.toString(value, ""));
+                return cell;
+            }
+        });
+        center.add(componentScroll, BorderLayout.WEST);
         center.add(form.panel, BorderLayout.CENTER);
         panel.add(center, BorderLayout.CENTER);
-        var actions = new JPanel();
+        var actions = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEADING, DeploymentPageStyle.scale(8), 0));
+        panel.putClientProperty("deployment.dialog.fixedActions", actions);
         var add = new JButton(text.apply("component.addUpdate"));
         add.setName("deployment.components.addUpdate");
+        add.putClientProperty("deployment.style.title", "component.addUpdate");
         remove = new JButton(text.apply("component.remove"));
         remove.setEnabled(false);
         remove.setName("deployment.components.remove");
+        remove.putClientProperty("deployment.style.title", "component.remove");
         var create = new JButton(text.apply("component.new"));
         create.setName("deployment.components.new");
+        create.putClientProperty("deployment.style.title", "component.new");
         actions.add(add);
         actions.add(remove);
         actions.add(create);
-        actions.add(error);
         panel.add(actions, BorderLayout.SOUTH);
         add.addActionListener(ignored -> {
             try {
@@ -150,7 +183,11 @@ public final class DeploymentComponentEditor {
 
     /** Displays a current graph error without dropping the editable rows. / 显示当前图错误，不丢弃可编辑行。 */
     public void showInvalid() {
-        error.setText(text.apply("component.invalid"));
+        boolean missingHealth = choices.size() > 1 && healthOwner.getSelectedItem() == null;
+        String key = missingHealth ? "component.healthRequired" : "component.invalid";
+        error.putClientProperty("deployment.style.title", key);
+        error.setText(text.apply(key));
+        panel.putClientProperty("deployment.review.focus", missingHealth ? healthOwner : error);
     }
 
     /** Captures all current rows for fresh real source analysis. / 抓取全部当前行供新的真实源码分析。
@@ -215,6 +252,8 @@ public final class DeploymentComponentEditor {
         revision++;
         panel.putClientProperty("deployment.components.draftRevision", revision);
         panel.putClientProperty("deployment.components.reviewedRevision", null);
+        panel.putClientProperty("deployment.review.focus", null);
+        error.putClientProperty("deployment.style.title", null);
         error.setText("");
     }
 
@@ -229,7 +268,7 @@ public final class DeploymentComponentEditor {
     /** Retains a complete edit row without converting blank automatic fields into explicit empty values. / 保留完整编辑行，不把空自动字段转换成明确空值。 */
     private static final class ComponentForm {
         /** Real input rows. / 真实输入行。 */
-        private final JPanel panel = DeploymentPageStyle.form();
+        private final JPanel panel = DeploymentDialogs.form();
 
         /** Explicit ID and relative root. / 明确 ID 及相对根。 */
         private final JTextField id = new JTextField(20), root = new JTextField(".", 20);
@@ -271,10 +310,12 @@ public final class DeploymentComponentEditor {
             DeploymentPageStyle.field(panel, DeploymentReviewInputs.label("component.artifacts", text), artifacts);
             autoArtifacts.setName("deployment.component.autoArtifacts");
             autoArtifacts.setText(text.apply("component.autoArtifacts"));
+            autoArtifacts.putClientProperty("deployment.style.title", "component.autoArtifacts");
             panel.add(autoArtifacts);
             DeploymentPageStyle.field(panel, DeploymentReviewInputs.label("component.ports", text), ports);
             autoPorts.setName("deployment.component.autoPorts");
             autoPorts.setText(text.apply("component.autoPorts"));
+            autoPorts.putClientProperty("deployment.style.title", "component.autoPorts");
             panel.add(autoPorts);
             DeploymentPageStyle.field(panel, DeploymentReviewInputs.label("dependencies", text), depends);
             autoArtifacts.addActionListener(ignored -> artifacts.setEnabled(!autoArtifacts.isSelected()));

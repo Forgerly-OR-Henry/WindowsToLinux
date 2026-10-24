@@ -95,7 +95,7 @@ public final class FilePlatformFixture {
         var db = runtime.persistence().database();
         String manifest = """
             {"formatVersion":1,"id":"example.admission","name":"Fixture","version":"1.0.0",\
-            "platformApiRange":"[1.0.0-dev.1,1.0.0)","minJavaVersion":21,"mainJar":"main/fixture.jar",\
+            "platformApiRange":"1.0.0","minJavaVersion":21,"mainJar":"main/fixture.jar",\
             "entryClass":"example.admission.Mod","dependencies":[]}
             """;
         sql(db, "INSERT INTO mod_registry(mod_id,updated_at) VALUES(?,1)", OWNER);

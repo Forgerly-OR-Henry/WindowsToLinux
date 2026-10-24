@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.ui.mod;
 
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
+
 import java.awt.*;
 import java.nio.file.Path;
 import java.util.*;
@@ -728,7 +730,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         panel.add(messages.bind(new JLabel(), "mods.sourceNotice"), BorderLayout.NORTH);
         panel.add(select);
         long original = epoch;
-        if (JOptionPane.showConfirmDialog(this, panel, messages.text("mods.sourceTitle"),
+        if (DesktopDialogs.showConfirmDialog(this, panel, messages.text("mods.sourceTitle"),
             JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION || locked || closed || epoch != original)
             return null;
         var chosen = (SourceChoice) select.getSelectedItem();
@@ -862,14 +864,10 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                 Dialog.ModalityType.APPLICATION_MODAL);
             dialog.setName("mods.changes");
             LocaleBinding.title(dialog, LocalizedMessage.of("modui.pendingTitle"), messages.catalog());
-            var body = components.pagePanel();
-            body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-            body.setBorder(BorderFactory.createEmptyBorder(UIScale.scale(16), UIScale.scale(18),
-                UIScale.scale(16), UIScale.scale(18)));
+            var rows = new ArrayList<JComponent>();
             var caption = messages.bind(new ModTextLabel("", 14, true, false), "modui.pendingRestart");
             caption.setAlignmentX(Component.LEFT_ALIGNMENT);
-            body.add(caption);
-            body.add(Box.createVerticalStrut(UIScale.scale(12)));
+            rows.add(caption);
             for (var change : changes) {
                 var content = components.transparent(new BorderLayout(UIScale.scale(12), UIScale.scale(8)));
                 content.add(new JLabel(DesktopIcons.icon("mod/puzzle", 30,
@@ -881,12 +879,8 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                 identity.add(name, BorderLayout.NORTH);
                 identity.add(new ModTextLabel(change.owner(), 14, false, true), BorderLayout.CENTER);
                 copy.add(identity, BorderLayout.NORTH);
-                var facts = new JTextArea(changeText(change));
+                var facts = DesktopDialogs.prose(changeText(change));
                 facts.setName("mods.change." + change.owner());
-                facts.setEditable(false);
-                facts.setLineWrap(true);
-                facts.setWrapStyleWord(true);
-                facts.setOpaque(false);
                 copy.add(facts);
                 content.add(copy);
                 var undo = messages.bind(components.secondaryButton(""), "modui.undo");
@@ -901,10 +895,12 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                 content.add(undoHolder, BorderLayout.EAST);
                 var card = components.card(new BorderLayout());
                 card.add(content);
-                body.add(wrap(card));
+                rows.add(card);
             }
-            if (changes.isEmpty()) body.add(messages.bind(new JLabel(), "modui.noChanges"));
-            var scroll = new JScrollPane(body, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+            if (changes.isEmpty()) rows.add(messages.bind(new JLabel(), "modui.noChanges"));
+            var body = DesktopDialogs.fields(rows.toArray(JComponent[]::new));
+            var scroll = DesktopDialogs.scroll(body);
+            scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
             scroll.setName("mods.changes.scroll");
             scroll.setBorder(BorderFactory.createEmptyBorder());
             scroll.getVerticalScrollBar().putClientProperty("desktop.inventory.scrollbar", true);
@@ -914,11 +910,9 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             close.addActionListener(event -> dialog.dispose());
             var actions = components.transparent(new FlowLayout(FlowLayout.RIGHT, UIScale.scale(12), UIScale.scale(12)));
             actions.add(close);
-            dialog.add(scroll);
-            dialog.add(actions, BorderLayout.SOUTH);
+            body.setBorder(BorderFactory.createEmptyBorder());
+            DesktopDialogs.install(dialog, scroll, actions, 700, 440);
             dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-            dialog.setSize(UIScale.scale(700), UIScale.scale(440));
-            dialog.setLocationRelativeTo(this);
             pendingDialog = dialog;
             try {
                 dialog.setVisible(true);
@@ -1042,7 +1036,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     private boolean confirm(Component body) {
         long original = epoch;
         var option = new JOptionPane(body, JOptionPane.WARNING_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
-        confirmation = option.createDialog(this, messages.text("mods.confirm"));
+        confirmation = DesktopDialogs.create(option, this, messages.text("mods.confirm"));
         LocaleBinding.title(confirmation, LocalizedMessage.of("mods.confirm"), messages.catalog());
         try {
             confirmation.setVisible(true);
@@ -1295,8 +1289,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             });
             dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
             dialog.setContentPane(chooser);
-            dialog.pack();
-            dialog.setLocationRelativeTo(PlatformModsPane.this);
+            DesktopDialogs.size(dialog, 0, 0);
             try {
                 dialog.setVisible(true);
                 return !locked && !closed && original == epoch ? selected[0] : null;

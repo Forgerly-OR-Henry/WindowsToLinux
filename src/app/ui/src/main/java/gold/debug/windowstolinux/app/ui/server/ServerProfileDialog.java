@@ -14,6 +14,7 @@ import javax.swing.*;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerProfileEditor;
 import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
 import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
@@ -155,17 +156,12 @@ public final class ServerProfileDialog extends JDialog {
         actions.add(cancel);
         actions.add(save);
         JPanel body = c.pagePanel();
-        body.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
         body.add(form, BorderLayout.NORTH);
         status.setRows(4);
         status.setLineWrap(true);
         status.setWrapStyleWord(true);
         body.add(new JScrollPane(status), BorderLayout.CENTER);
-        body.add(actions, BorderLayout.SOUTH);
-        setContentPane(body);
-        setMinimumSize(new Dimension(560, 490));
-        pack();
-        setLocationRelativeTo(owner);
+        DesktopDialogs.install(this, body, actions, 560, 490);
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
             /**

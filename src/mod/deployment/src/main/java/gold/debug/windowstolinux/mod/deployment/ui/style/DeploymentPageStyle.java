@@ -221,8 +221,14 @@ public final class DeploymentPageStyle {
         root.setAlignmentX(Component.LEFT_ALIGNMENT);
         if (root instanceof JLabel label && label.getClientProperty("deployment.style.title") instanceof String key)
             label.setText(messages.getString(key));
+        if (root instanceof AbstractButton button && button.getClientProperty("deployment.style.title") instanceof String key)
+            button.setText(messages.getString(key));
         if (root.getClientProperty("deployment.style.fontSize") instanceof Number size)
             root.setFont(UIManager.getFont("Label.font").deriveFont(Font.BOLD, (float) scale(size.intValue())));
+        if (Boolean.TRUE.equals(root.getClientProperty("deployment.style.formRow"))) {
+            ((BorderLayout) root.getLayout()).setVgap(scale(8));
+            root.setBorder(BorderFactory.createEmptyBorder(0, 0, scale(8), 0));
+        }
         if (root instanceof DeploymentCard)
             root.setBorder(BorderFactory.createEmptyBorder(scale(14), scale(16), scale(14), scale(16)));
         if (root instanceof JTextArea area && !area.isEditable()) {
@@ -232,7 +238,7 @@ public final class DeploymentPageStyle {
         }
         if (root instanceof JButton button) {
             button.putClientProperty("JButton.buttonType", null);
-            button.setMargin(new Insets(scale(8), scale(14), scale(8), scale(14)));
+            button.setMargin(new Insets(8, 14, 8, 14));
             if (Boolean.TRUE.equals(button.getClientProperty("deployment.style.primary"))) {
                 var accent = UIManager.getColor("Component.focusColor");
                 Color foreground = Color.WHITE;
@@ -328,12 +334,13 @@ public final class DeploymentPageStyle {
      * @param label original label / 原标签
      * @param input original input / 原输入 */
     public static void field(JPanel form, JLabel label, JComponent input) {
-        var row = new JPanel(new BorderLayout(0, 4));
+        var row = new JPanel(new BorderLayout(0, scale(8)));
         row.setOpaque(false);
+        row.putClientProperty("deployment.style.formRow", true);
         label.setLabelFor(input);
         row.add(label, BorderLayout.NORTH);
         row.add(input, BorderLayout.CENTER);
-        row.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
+        row.setBorder(BorderFactory.createEmptyBorder(0, 0, scale(8), 0));
         form.add(row);
     }
 
@@ -385,19 +392,9 @@ public final class DeploymentPageStyle {
             if (!button.isEnabled())
                 return;
             if (window == null || !window.isDisplayable()) {
-                window = new JDialog(SwingUtilities.getWindowAncestor(root), title, Dialog.ModalityType.MODELESS);
+                window = DeploymentDialogs.window(root, title, content, null, 600, 680);
                 window.setName("deployment.advanced.window");
                 window.setDefaultCloseOperation(WindowConstants.HIDE_ON_CLOSE);
-                var body = new ViewportPage();
-                body.add(content, BorderLayout.NORTH);
-                var scroll = new JScrollPane(body, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-                    ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-                scroll.setBorder(BorderFactory.createEmptyBorder(18, 18, 18, 18));
-                scroll.getVerticalScrollBar().setUnitIncrement(18);
-                window.add(scroll);
-                var screen = window.getGraphicsConfiguration().getBounds();
-                window.setSize(Math.min(600, screen.width - 40), Math.min(680, screen.height - 80));
-                window.setLocationRelativeTo(root);
             }
             window.setVisible(true);
             window.toFront();
@@ -412,7 +409,7 @@ public final class DeploymentPageStyle {
             button.setEnabled(!locked);
             if (window != null) {
                 window.setTitle(title);
-                SwingUtilities.updateComponentTreeUI(window);
+                DeploymentDialogs.refresh(window, messages);
                 if (locked)
                     window.setVisible(false);
             }

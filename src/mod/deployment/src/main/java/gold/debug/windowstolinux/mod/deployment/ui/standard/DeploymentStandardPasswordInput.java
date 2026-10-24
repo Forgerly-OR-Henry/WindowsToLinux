@@ -1,6 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.ui.standard;
 
-import java.awt.GridLayout;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
@@ -9,12 +8,11 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentDialogs;
 
 /** Captures a one-shot owned UTF-8 password without retaining late EDT characters. / 不保留迟到 EDT 字符地获取一次性所属 UTF-8 密码。 */
 final class DeploymentStandardPasswordInput {
@@ -36,8 +34,8 @@ final class DeploymentStandardPasswordInput {
                           boolean allowEmpty, Runnable onAccepted) throws Exception {
         var field = page.onEdt(JPasswordField::new);
         var form = page.onEdt(() -> {
-            var value = new JPanel(new GridLayout(0, 1));
-            value.add(new JLabel(label));
+            var value = DeploymentDialogs.form();
+            value.add(DeploymentDialogs.text(label));
             value.add(field);
             return value;
         });

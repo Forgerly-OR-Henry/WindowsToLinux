@@ -72,7 +72,10 @@ class DeploymentStandardRuntimePreviewTest extends DeploymentRuntimeFixture {
             assertEquals(Set.of(OWNER), report.running());
             assertEquals(Set.of("workspace"), pages.contributions().stream()
                 .map(value -> value.key().pageId()).collect(java.util.stream.Collectors.toSet()));
-            assertEquals(Set.of("runtime-preview-go_service", "runtime-preview-node_service"), pages.previews().stream()
+            var expectedPreviews = new java.util.HashSet<>(Set.of("runtime-preview-go_service", "runtime-preview-node_service"));
+            for (var family : DeploymentDialogPreview.Kind.values())
+                expectedPreviews.add("dialog-preview-" + family.name().toLowerCase(Locale.ROOT));
+            assertEquals(expectedPreviews, pages.previews().stream()
                 .map(value -> value.key().pageId()).collect(java.util.stream.Collectors.toSet()));
             assertTrue(views.isEmpty());
             var before = effectCounts(runtime);
@@ -133,7 +136,7 @@ class DeploymentStandardRuntimePreviewTest extends DeploymentRuntimeFixture {
                 "deployment_unit_configuration_entry", "deployment_unit_release_binding", "secret_revision",
                 "deployment_unit_release_secret_reference", "deployment_agent_task", "deployment_agent_event",
                 "deployment_project", "deployment_execution", "deployment_release", "deployment_handoff",
-                "preference", "deployment_log", "deployment_management_operation"), Set.copyOf(tables));
+                "preference", "deployment_log", "deployment_management_operation", "deployment_operation_receipt"), Set.copyOf(tables));
             for (var table : tables) {
                 assertTrue(table.matches("[A-Za-z0-9_]+"));
                 try (var statement = connection.createStatement();
@@ -156,7 +159,7 @@ class DeploymentStandardRuntimePreviewTest extends DeploymentRuntimeFixture {
         assertTrue(descendants(root).filter(JTextArea.class::isInstance).map(JTextArea.class::cast)
                 .anyMatch(field -> "APP_MODE=preview".equals(field.getText()) && field.isEditable()),
             "The ordinary configuration must remain a real editable multiline control");
-        var catalog = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page", locale);
+        var catalog = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page", locale, ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_DEFAULT));
         assertTrue(descendants(root).filter(JLabel.class::isInstance).map(JLabel.class::cast).anyMatch(
             label -> (catalog.getString("application") + ": preview-application").equals(label.getText())));
         assertTrue(descendants(root).filter(JButton.class::isInstance).map(JButton.class::cast)

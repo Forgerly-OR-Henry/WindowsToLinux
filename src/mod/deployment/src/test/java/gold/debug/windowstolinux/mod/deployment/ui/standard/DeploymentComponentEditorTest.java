@@ -15,9 +15,46 @@ import javax.swing.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.part.DiscoveredProjectPart;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /** Edits the real component controls and checks invalidation before another source review. / 编辑真实组件控件并核对再次来源审阅前失效。 */
 class DeploymentComponentEditorTest {
+    @ParameterizedTest
+    @CsvSource({"en, 1.0", "zh-CN, 1.0", "en, 1.5", "zh-CN, 1.5"})
+    void missingHealthOwnerShowsVisibleGuidanceAndExplicitSelectionAllowsConfirmation(String language, float scale) throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            var messages = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page", Locale.forLanguageTag(language));
+            var editor = new DeploymentComponentEditor(messages::getString, List.of(
+                new DiscoveredProjectPart("backend", Path.of("backend"), List.of(DeploymentProjectKind.DOTNET_SERVICE)),
+                new DiscoveredProjectPart("web", Path.of("web"), List.of(DeploymentProjectKind.NODE_SERVICE))));
+            var panel = editor.panel();
+            var health = (JComboBox<?>) named(panel, "deployment.components.health");
+            assertNull(health.getSelectedItem(), "The health owner must remain an explicit choice");
+            assertThrows(IllegalArgumentException.class, editor::selection);
+            editor.showInvalid();
+            var error = (JLabel) named(panel, "deployment.components.error");
+            assertNotNull(error, "Validation guidance must be available on the component editor");
+            assertEquals(messages.getString("component.healthRequired"), error.getText());
+            assertSame(health, panel.getClientProperty("deployment.review.focus"));
+            scale(panel, scale);
+            panel.setBorder(BorderFactory.createEmptyBorder(16, 18, 16, 18));
+            var scroll = new JScrollPane(panel);
+            scroll.setSize(760, 480);
+            layout(scroll);
+            health.scrollRectToVisible(new java.awt.Rectangle(0, 0, health.getWidth(), health.getHeight()));
+            assertTrue(scroll.getViewport().getViewRect().contains(
+                    SwingUtilities.convertRectangle(error.getParent(), error.getBounds(), panel)),
+                "The initial viewport must show the error without scrolling to the action row");
+            health.setSelectedItem("web");
+            assertEquals("", error.getText());
+            assertNull(panel.getClientProperty("deployment.review.focus"));
+            var selection = editor.selection();
+            assertEquals(Optional.of("web"), selection.healthComponent());
+            assertEquals(Set.of("backend", "web"), selection.choices().keySet());
+        });
+    }
+
     @Test
     void actualAddRenameDeletePreservesAllManualValuesAndInvalidatesReviewedRevision() throws Exception {
         SwingUtilities.invokeAndWait(() -> {
@@ -129,6 +166,16 @@ class DeploymentComponentEditorTest {
 
     private static JButton button(Container root, String name) {
         return (JButton) named(root, name);
+    }
+
+    private static void scale(Container root, float factor) {
+        root.setFont(root.getFont().deriveFont(root.getFont().getSize2D() * factor));
+        for (var child : root.getComponents()) if (child instanceof Container nested) scale(nested, factor);
+    }
+
+    private static void layout(Container root) {
+        root.doLayout();
+        for (var child : root.getComponents()) if (child instanceof Container nested) layout(nested);
     }
 
     private static Component named(Container root, String name) {

@@ -10,6 +10,7 @@ import java.util.function.Supplier;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
@@ -42,6 +43,7 @@ public final class UiDebugPreviewHost implements ModPageRegistry.PageHost {
         var dialog = new JDialog(owner.get(), spec.defaultTitle(), java.awt.Dialog.ModalityType.MODELESS);
         dialog.setName("debug.preview." + key.ownerId() + "." + key.pageId());
         dialog.setContentPane(new JScrollPane(component));
+        DesktopDialogs.size(dialog, 760, 620);
         dialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         dialog.addWindowListener(new WindowAdapter() {
             /** Releases the author before disposing its host dialog. / 先释放作者再销毁宿主对话框。
@@ -56,8 +58,6 @@ public final class UiDebugPreviewHost implements ModPageRegistry.PageHost {
             }
         });
         windows.put(key, dialog);
-        dialog.setSize(760, 620);
-        dialog.setLocationRelativeTo(owner.get());
         dialog.setVisible(true);
     }
 

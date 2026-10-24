@@ -7,6 +7,8 @@ import javax.swing.*;
 import javax.swing.text.JTextComponent;
 
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentReviewField;
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentDialogs;
 
 /** Creates real editable inputs with accessible field help and bounded multiline declarations. / 创建带可访问字段帮助及有界多行声明的真实编辑输入。 */
 public final class DeploymentReviewInputs {
@@ -46,9 +48,9 @@ public final class DeploymentReviewInputs {
         input.setName("deployment.runtime." + field.id());
         input.setToolTipText(help);
         input.getAccessibleContext().setAccessibleDescription(help);
-        var panel = new JPanel(new BorderLayout(4, 4));
+        var panel = new JPanel(new BorderLayout(DeploymentPageStyle.scale(8), DeploymentPageStyle.scale(8)));
         panel.add(input instanceof JTextArea ? new JScrollPane(input) : input, BorderLayout.CENTER);
-        var details = new JTextArea(help, 3, 24);
+        var details = DeploymentDialogs.text(help);
         details.setEditable(false);
         details.setLineWrap(true);
         details.setWrapStyleWord(true);
@@ -63,7 +65,10 @@ public final class DeploymentReviewInputs {
             details.setVisible(toggle.isSelected());
             panel.revalidate();
         });
-        panel.add(toggle, BorderLayout.EAST);
+        var action = new JPanel(new BorderLayout());
+        action.setOpaque(false);
+        action.add(toggle, BorderLayout.NORTH);
+        panel.add(action, BorderLayout.EAST);
         panel.add(details, BorderLayout.SOUTH);
         input.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke("F1"), "field-help");
         input.getActionMap().put("field-help", new AbstractAction() {

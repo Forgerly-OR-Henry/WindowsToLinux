@@ -385,6 +385,7 @@ WindowsToLinux/
    │  │  │  ├─ DesktopIcons.java  # 跟随主题的内置 SVG 图标
    │  │  │  ├─ DesktopNavigationButton.java  # 固定侧栏图标，完整文案随折叠进度渐隐
    │  │  │  ├─ DesktopPartFactory.java  # 按所选桌面主题及共享视觉约定创建 Swing 控件
+   │  │  │  ├─ DesktopDialogs.java  # 平台弹窗固定操作、滚动正文与所属工作区边界
    │  │  │  ├─ DesktopThemeBindings.java  # 更新已有主题控件时保留明确的配色角色
    │  │  │  ├─ RoundedCard.java  # 共用的可缩放圆角表面
    │  │  │  └─ WrappingFlowLayout.java  # 按可用宽度测量换行操作区
@@ -1466,6 +1467,7 @@ WindowsToLinux/
    │  │  │  │  ├─ DeploymentAgentPage.java  # 用于本地或固定 Git 任务的自主专属所属页面
    │  │  │  │  └─ DeploymentAgentSourceControls.java  # 在任务准入前抓取一个自主本地位置或不含凭据的Git远端
    │  │  │  ├─ application/  # 应用管理页面与专属控件
+   │  │  │  │  ├─ DeploymentApplicationForms.java  # 生产与固定预览复用的应用管理表单
    │  │  │  │  └─ DeploymentApplicationsPage.java  # 展示已保存应用并接纳精确所属管理动作
    │  │  │  ├─ delivery/  # 已核实公开端点与固定命令的桌面动作
    │  │  │  │  └─ DeploymentDeliveryPanel.java  # 复用已核实且带组件身份的交付，不解码不透明运行数据
@@ -1483,6 +1485,7 @@ WindowsToLinux/
    │  │  │  │  └─ DeploymentLocalSourceControls.java  # 共用本地元数据选择，保留每个原短任务至宿主完成
    │  │  │  ├─ standard/  # 标准模式页面、审阅与手工组件等专属控件
    │  │  │  │  ├─ DeploymentComponentEditor.java  # 源码分析前编辑实际图，保留全部明确组件边界
+   │  │  │  │  ├─ DeploymentDialogPreview.java  # 复用生产布局的固定数据弹窗预览
    │  │  │  │  ├─ DeploymentSecretRefField.java  # 将既有精确业务修订添加到高级无秘密引用字段
    │  │  │  │  ├─ DeploymentStandardGitSourceForm.java  # 持有仅 Git 可见输入并构建一项不含凭据的经审阅请求
    │  │  │  │  ├─ DeploymentStandardPage.java  # 绑定所属者的静态部署页面；确认后视图关闭，任务回调仍留在原任务
@@ -1493,6 +1496,7 @@ WindowsToLinux/
    │  │  │  │  └─ DeploymentStandardSourceControls.java  # 持有所选来源元数据及完整项目草稿，不持有活动文件授权
    │  │  │  ├─ style/  # 复用主题值的所属表单与高级窗口排版
    │  │  │  │  ├─ DeploymentCard.java  # 保留原内容布局并裁剪子组件的所属圆角表面
+   │  │  │  │  ├─ DeploymentDialogs.java  # 部署弹窗的自然表单、固定操作与工作区约束
    │  │  │  │  └─ DeploymentPageStyle.java  # 仅使用 Swing 主题值的 Mod 本地展示，不访问宿主实现
    │  │  │  └─ target/  # 共用目标主机选择和事实控件
    │  │  │     └─ DeploymentTargetControls.java  # 保持明确目标身份，仅导航到固定公开宿主目标
@@ -1661,6 +1665,7 @@ WindowsToLinux/
    │  │  ├─ ui/  # 文件工作区、列表、交互、反馈和原任务控制
    │  │  │  ├─ FilesActions.java  # 共享工具栏、菜单及实际键盘动作
    │  │  │  ├─ FilesCommands.java  # 将共享视图动作转换为原平台服务任务
+   │  │  │  ├─ FilesDialogLayout.java  # 文件弹窗的自然表单、固定操作与工作区约束
    │  │  │  ├─ FilesDialogs.java  # 持有未提交的模态输入，以供锁定及关闭撤销
    │  │  │  ├─ FilesFeedback.java  # 显示原任务状态、逐项报告及持久链接步骤
    │  │  │  ├─ FilesMessages.java  # 不重建控件地解析原工作区语言

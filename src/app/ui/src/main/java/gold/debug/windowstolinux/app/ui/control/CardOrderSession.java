@@ -136,7 +136,7 @@ public final class CardOrderSession<T> implements PendingCardEdits {
             }
             if (conflict(failure)) {
                 Object[] options = {messages.text("order.keepDraft"), messages.text("order.reload")};
-                int choice = JOptionPane.showOptionDialog(owner, messages.text("order.conflict"),
+                int choice = DesktopDialogs.showOptionDialog(owner, messages.text("order.conflict"),
                     messages.text("order.saveFailed"), JOptionPane.DEFAULT_OPTION, JOptionPane.ERROR_MESSAGE,
                     null, options, options[0]);
                 if (choice == 1 && !locked) {
@@ -165,7 +165,7 @@ public final class CardOrderSession<T> implements PendingCardEdits {
     }
 
     private void error(Exception failure) {
-        JOptionPane.showMessageDialog(owner, messages.safe(failure), messages.text("order.saveFailed"), JOptionPane.ERROR_MESSAGE);
+        DesktopDialogs.showMessageDialog(owner, messages.safe(failure), messages.text("order.saveFailed"), JOptionPane.ERROR_MESSAGE);
     }
 
     private static boolean conflict(Throwable failure) {

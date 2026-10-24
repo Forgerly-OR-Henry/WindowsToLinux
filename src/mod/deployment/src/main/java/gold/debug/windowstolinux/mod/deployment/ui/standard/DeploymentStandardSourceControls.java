@@ -19,6 +19,7 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStandardSourceService;
 import gold.debug.windowstolinux.mod.deployment.ui.source.DeploymentLocalSourceControls;
 import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentDialogs;
 
 /** Owns selected source metadata and complete project drafts, never an active file grant. / 持有所选来源元数据及完整项目草稿，不持有活动文件授权。 */
 final class DeploymentStandardSourceControls {
@@ -271,10 +272,10 @@ final class DeploymentStandardSourceControls {
                 var handle = source.isPresent() ? service.saveGit(source.orElseThrow(), edit, page.sourceLimits().bytes(), page.sourceLimits().entries())
                     : service.saveLocal(location.orElseThrow(), edit, page.sourceLimits().bytes(), page.sourceLimits().entries(), (row, task) -> {
                     var form = page.onEdt(() -> {
-                        var lines = new JPanel(new java.awt.GridLayout(0, 1));
-                        lines.add(new JLabel(row.displayName()));
-                        lines.add(new JLabel(row.source().location().toString()));
-                        lines.add(new JLabel(page.text("sourceDigest") + ": " + row.source().sha256()));
+                        var lines = DeploymentDialogs.form();
+                        lines.add(DeploymentDialogs.text(row.displayName()));
+                        lines.add(DeploymentDialogs.text(row.source().location().toString()));
+                        lines.add(DeploymentDialogs.fact(() -> page.text("sourceDigest") + ": " + row.source().sha256()));
                         return lines;
                     });
                     return page.approve(view, form, page.text("project.save"), task);

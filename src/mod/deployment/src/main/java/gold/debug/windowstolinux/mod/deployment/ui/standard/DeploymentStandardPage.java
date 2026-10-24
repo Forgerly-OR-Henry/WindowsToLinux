@@ -1,8 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.ui.standard;
 
 import java.awt.BorderLayout;
-import java.awt.Dimension;
-import java.awt.GraphicsEnvironment;
 import java.util.List;
 import java.util.Optional;
 import java.util.ResourceBundle;
@@ -27,6 +25,7 @@ import gold.debug.windowstolinux.mod.deployment.ui.preference.DeploymentPreferen
 import gold.debug.windowstolinux.mod.deployment.ui.runtime.DeploymentReviewInputs;
 import gold.debug.windowstolinux.mod.deployment.ui.runtime.DeploymentRuntimeDraftForm;
 import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentDialogs;
 import gold.debug.windowstolinux.mod.deployment.ui.target.DeploymentTargetControls;
 import gold.debug.windowstolinux.mod.deployment.ui.flow.DeploymentFlowDraft;
 import gold.debug.windowstolinux.mod.deployment.ui.flow.DeploymentFlowDraft.SourceMode;
@@ -333,7 +332,10 @@ public final class DeploymentStandardPage implements ModPage {
         draft.sources.localize();
         targetControls.localize();
         draft.runtime.localize();
-        if (dialog != null) DeploymentReviewInputs.refresh(dialog.getRootPane(), this::text);
+        if (dialog != null) {
+            DeploymentReviewInputs.refresh(dialog.getRootPane(), this::text);
+            DeploymentDialogs.refresh(dialog, messages);
+        }
         feedback.configure(environment);
         secretControls.localize();
         secretControls.updateAvailability();
@@ -731,17 +733,13 @@ public final class DeploymentStandardPage implements ModPage {
             JDialog owned = null;
             try {
                 DeploymentPageStyle.refresh(panel, messages);
-                panel.setBorder(BorderFactory.createEmptyBorder(16, 18, 16, 18));
-                var scroll = new JScrollPane(panel);
-                var screen = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-                scroll.setPreferredSize(new Dimension(Math.min(760, Math.max(320, screen.width - 120)),
-                    Math.min(480, Math.max(260, screen.height - 160))));
-                var pane = new JOptionPane(scroll, JOptionPane.QUESTION_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
-                owned = pane.createDialog(root, title);
+                var pane = new JOptionPane(null, JOptionPane.QUESTION_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
+                owned = DeploymentDialogs.option(root, title, panel, pane, 760, 480);
+                DeploymentDialogs.refresh(owned, messages);
                 dialog = owned;
                 if (panel.getClientProperty("deployment.review.focus") instanceof JComponent focus)
                     SwingUtilities.invokeLater(() -> {
-                        focus.scrollRectToVisible(new java.awt.Rectangle(0, 0, focus.getWidth(), focus.getHeight()));
+                        DeploymentDialogs.reveal(focus);
                         focus.requestFocusInWindow();
                     });
                 owned.setVisible(true);

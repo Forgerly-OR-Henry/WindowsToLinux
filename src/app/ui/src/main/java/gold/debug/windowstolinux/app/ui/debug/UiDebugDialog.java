@@ -7,6 +7,7 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
 import gold.debug.windowstolinux.app.ui.control.DesktopCardList;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
@@ -64,7 +65,6 @@ public final class UiDebugDialog extends JDialog {
             gold.debug.windowstolinux.app.ui.language.LocalizedMessage.of("settings.debug.open"), messages.catalog());
         setName("settings.uiDebug.gallery");
         var body = new JPanel(new BorderLayout(12, 12));
-        body.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
         var heading = new JPanel(new BorderLayout(8, 8));
         heading.add(messages.bind(new JLabel(), "debug.pages.hint"), BorderLayout.NORTH);
         heading.add(navigation, BorderLayout.CENTER);
@@ -100,10 +100,7 @@ public final class UiDebugDialog extends JDialog {
         actions.add(server);
         actions.add(model);
         actions.add(open);
-        body.add(actions, BorderLayout.SOUTH);
-        setContentPane(body);
-        setSize(760, 620);
-        setLocationRelativeTo(owner);
+        DesktopDialogs.install(this, body, actions, 760, 620);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         subscription = pages.onChange(this::refresh);
         refresh();

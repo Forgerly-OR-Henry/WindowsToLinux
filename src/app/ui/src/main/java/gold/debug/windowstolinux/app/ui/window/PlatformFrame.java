@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.ui.window;
 
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
+
 import java.awt.BorderLayout;
 import java.util.Objects;
 
@@ -285,7 +287,7 @@ public final class PlatformFrame extends JFrame {
                 if (failure == null && Boolean.TRUE.equals(ok)) next.run();
                 else {
                     ((PlatformNavigationShell.PageDeck) content).cancelDeparture();
-                    if (failure != null) JOptionPane.showMessageDialog(this, messages.safe(new Exception(failure)));
+                    if (failure != null) DesktopDialogs.showMessageDialog(this, messages.safe(new Exception(failure)));
                 }
             }));
         lock.beforeExit(() -> {
@@ -518,7 +520,7 @@ public final class PlatformFrame extends JFrame {
         details.setEditable(false);
         details.setLineWrap(true);
         details.setWrapStyleWord(true);
-        JOptionPane.showMessageDialog(this, new JScrollPane(details), messages.text("platform.modProblems"),
+        DesktopDialogs.showMessageDialog(this, new JScrollPane(details), messages.text("platform.modProblems"),
             JOptionPane.WARNING_MESSAGE);
     }
 
@@ -641,7 +643,7 @@ public final class PlatformFrame extends JFrame {
                 location = currentPage();
             } catch (RuntimeException failure) {
                 closing = false;
-                JOptionPane.showMessageDialog(PlatformFrame.this, messages.safe(new Exception(failure)), "WindowsToLinux", JOptionPane.ERROR_MESSAGE);
+                DesktopDialogs.showMessageDialog(PlatformFrame.this, messages.safe(new Exception(failure)), "WindowsToLinux", JOptionPane.ERROR_MESSAGE);
                 return;
             }
             new SwingWorker<Void, Void>() {
@@ -663,7 +665,7 @@ public final class PlatformFrame extends JFrame {
                         dispose();
                     } catch (Exception failure) {
                         closing = false;
-                        JOptionPane.showMessageDialog(PlatformFrame.this, messages.safe(new Exception(failure)), "WindowsToLinux",
+                        DesktopDialogs.showMessageDialog(PlatformFrame.this, messages.safe(new Exception(failure)), "WindowsToLinux",
                             JOptionPane.ERROR_MESSAGE);
                     }
                 }
@@ -734,7 +736,7 @@ public final class PlatformFrame extends JFrame {
                                     problem.addSuppressed(cleanup);
                                 }
                                 closing = false;
-                                JOptionPane.showMessageDialog(PlatformFrame.this, messages.safe(problem),
+                                DesktopDialogs.showMessageDialog(PlatformFrame.this, messages.safe(problem),
                                     messages.text("modui.restart.title"), JOptionPane.ERROR_MESSAGE);
                             } else restartFailure(problem);
                         }
@@ -747,7 +749,7 @@ public final class PlatformFrame extends JFrame {
         var retry = messages.text("modui.restart.retry");
         var exit = messages.text("modui.restart.exit");
         Object[] options = restart.retryable() ? new Object[]{retry, exit} : new Object[]{exit};
-        int answer = JOptionPane.showOptionDialog(this, messages.safe(problem), messages.text("modui.restart.title"),
+        int answer = DesktopDialogs.showOptionDialog(this, messages.safe(problem), messages.text("modui.restart.title"),
             JOptionPane.DEFAULT_OPTION, JOptionPane.ERROR_MESSAGE, null, options, options[0]);
         if (restart.retryable() && answer == 0) {
             showRestartProgress();
@@ -795,14 +797,11 @@ public final class PlatformFrame extends JFrame {
         restartProgress = new JDialog(this, messages.text("modui.restart.title"), java.awt.Dialog.ModalityType.DOCUMENT_MODAL);
         restartProgress.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         var body = appearance.components.transparent(new BorderLayout(12, 12));
-        body.setBorder(BorderFactory.createEmptyBorder(24, 28, 24, 28));
         body.add(messages.bind(new JLabel(), "modui.restart.waiting"), BorderLayout.NORTH);
         var progress = new JProgressBar();
         progress.setIndeterminate(true);
         body.add(progress, BorderLayout.CENTER);
-        restartProgress.add(body);
-        restartProgress.pack();
-        restartProgress.setLocationRelativeTo(this);
+        DesktopDialogs.install(restartProgress, body, null, 420, 0);
         var dialog = restartProgress;
         SwingUtilities.invokeLater(() -> {
             if (restartProgress == dialog) dialog.setVisible(true);
@@ -914,14 +913,14 @@ public final class PlatformFrame extends JFrame {
     private void closePage(ModPageRegistry.PageKey key) {
         if (!security.securityState().unlocked()) return;
         Object[] options = {messages.text("workspace.close"), messages.text("button.cancel")};
-        int choice = JOptionPane.showOptionDialog(this, messages.text("workspace.close.confirm"),
+        int choice = DesktopDialogs.showOptionDialog(this, messages.text("workspace.close.confirm"),
             messages.text("workspace.close"), JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE,
             null, options, options[1]);
         if (choice != 0) return;
         try {
             pages.closeView(key);
         } catch (Exception failure) {
-            JOptionPane.showMessageDialog(this, messages.safe(new Exception(failure)), "WindowsToLinux", JOptionPane.ERROR_MESSAGE);
+            DesktopDialogs.showMessageDialog(this, messages.safe(new Exception(failure)), "WindowsToLinux", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -1215,7 +1214,7 @@ public final class PlatformFrame extends JFrame {
             try {
                 pages.environment(environment);
             } catch (Exception failure) {
-                JOptionPane.showMessageDialog(PlatformFrame.this, messages.safe(new Exception(failure)), "WindowsToLinux",
+                DesktopDialogs.showMessageDialog(PlatformFrame.this, messages.safe(new Exception(failure)), "WindowsToLinux",
                     JOptionPane.ERROR_MESSAGE);
             }
             revalidate();

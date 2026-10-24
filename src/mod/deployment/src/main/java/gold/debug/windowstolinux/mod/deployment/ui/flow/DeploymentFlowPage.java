@@ -22,6 +22,7 @@ import gold.debug.windowstolinux.mod.deployment.ui.preference.DeploymentPreferen
 import gold.debug.windowstolinux.mod.deployment.ui.source.DeploymentLocalSourceControls;
 import gold.debug.windowstolinux.mod.deployment.ui.standard.DeploymentStandardPage;
 import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentDialogs;
 
 /** One deployment flow owns the only source/target draft and routes to the original engines. / 唯一部署流程持有唯一来源/目标草稿，并路由至原执行器。 */
 public final class DeploymentFlowPage implements ModPage {
@@ -62,6 +63,9 @@ public final class DeploymentFlowPage implements ModPage {
     private DeploymentPageStyle.Advanced advanced;
 
     private JDialog serverPicker;
+
+    /** Refreshes the retained picker without replacing its search document. / 刷新保留的选择器而不替换搜索文档。 */
+    private Runnable refreshServerPicker;
 
     private JScrollPane selectionScroll;
 
@@ -516,19 +520,14 @@ public final class DeploymentFlowPage implements ModPage {
 
     private void chooseServer() {
         if (!server.isEnabled()) return;
+        if (serverPicker != null && serverPicker.isDisplayable()) {
+            serverPicker.toFront();
+            return;
+        }
         var choices = new DefaultListModel<ServerInfo>();
         var list = new JList<>(choices);
         list.setName("deployment.flow.serverPicker.list");
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        list.setFixedCellHeight(62);
-        list.setCellRenderer((view, value, index, selected, focus) -> {
-            var label = new JLabel("<html>" + html(value.name()) + "<br>" + html(value.username() + "@" + value.host() + ":" + value.port()) + "</html>", DeploymentPageStyle.icon("server", 30), SwingConstants.LEFT);
-            label.setOpaque(true);
-            label.setBackground(selected ? view.getSelectionBackground() : view.getBackground());
-            label.setForeground(selected ? view.getSelectionForeground() : view.getForeground());
-            label.setBorder(BorderFactory.createEmptyBorder(4, 10, 4, 10));
-            return label;
-        });
         var search = new JTextField();
         search.setName("deployment.flow.serverPicker.search");
         search.putClientProperty("JTextField.placeholderText", text("flow.target.search"));
@@ -555,10 +554,7 @@ public final class DeploymentFlowPage implements ModPage {
             }
         });
         filter.run();
-        var body = new JPanel(new BorderLayout(0, 12));
-        body.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
-        body.add(search, BorderLayout.NORTH);
-        body.add(DeploymentPageStyle.scroll(list), BorderLayout.CENTER);
+        var body = serverPickerBody(search, list);
         var choose = new JButton(text("flow.target.use"));
         choose.setEnabled(false);
         list.addListSelectionListener(ignored -> choose.setEnabled(list.getSelectedValue() != null));
@@ -576,15 +572,40 @@ public final class DeploymentFlowPage implements ModPage {
             serverPicker.dispose();
             refreshControls();
         });
-        body.add(choose, BorderLayout.SOUTH);
-        serverPicker = new JDialog(SwingUtilities.getWindowAncestor(root), text("flow.target.select"), Dialog.ModalityType.MODELESS);
+        serverPicker = DeploymentDialogs.window(root, text("flow.target.select"), body, choose, 520, 440);
         serverPicker.setName("deployment.flow.serverPicker");
+        refreshServerPicker = () -> {
+            serverPicker.setTitle(text("flow.target.select"));
+            search.putClientProperty("JTextField.placeholderText", text("flow.target.search"));
+            choose.setText(text("flow.target.use"));
+            list.setFixedCellHeight(DeploymentPageStyle.scale(62));
+            ((BorderLayout) body.getLayout()).setVgap(DeploymentPageStyle.scale(12));
+            DeploymentDialogs.refresh(serverPicker, messages);
+        };
         serverPicker.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-        serverPicker.add(body);
-        serverPicker.setSize(DeploymentPageStyle.scale(520), DeploymentPageStyle.scale(440));
-        serverPicker.setLocationRelativeTo(root);
-        DeploymentPageStyle.refresh(body, messages);
+        DeploymentDialogs.refresh(serverPicker, messages);
         serverPicker.setVisible(true);
+    }
+
+    /** Reuses the real server-picker viewport with fixed search and independently scrolling rows. / 复用实际服务器选择视口，固定搜索并独立滚动条目。
+     * @param search original search document / 原搜索文档
+     * @param list original server model / 原服务器模型
+     * @return original picker content / 原选择内容 */
+    public static JPanel serverPickerBody(JTextField search, JList<ServerInfo> list) {
+        list.setFixedCellHeight(DeploymentPageStyle.scale(62));
+        list.setCellRenderer((view, value, index, selected, focus) -> {
+            var label = new JLabel("<html>" + html(value.name()) + "<br>" + html(value.username() + "@" + value.host() + ":" + value.port()) + "</html>", DeploymentPageStyle.icon("server", 30), SwingConstants.LEFT);
+            label.setOpaque(true);
+            label.setBackground(selected ? view.getSelectionBackground() : view.getBackground());
+            label.setForeground(selected ? view.getSelectionForeground() : view.getForeground());
+            label.setBorder(BorderFactory.createEmptyBorder(4, 10, 4, 10));
+            return label;
+        });
+        var body = new JPanel(new BorderLayout(0, DeploymentPageStyle.scale(12)));
+        body.putClientProperty("deployment.dialog.scrollManaged", true);
+        body.add(search, BorderLayout.NORTH);
+        body.add(DeploymentPageStyle.scroll(list), BorderLayout.CENTER);
+        return body;
     }
 
     private void loadPreferences() {
@@ -651,6 +672,7 @@ public final class DeploymentFlowPage implements ModPage {
             if (modePopup != null) modePopup.setVisible(false);
             if (approvalPopup != null) approvalPopup.setVisible(false);
         }
+        if (!environment.locked() && serverPicker != null && serverPicker.isDisplayable()) refreshServerPicker.run();
         standard.environmentChanged(environment);
         agent.environmentChanged(environment);
         localize();

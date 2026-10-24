@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.main.start;
 
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
+
 import java.awt.GraphicsEnvironment;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -438,6 +440,6 @@ public final class ApplicationLauncher {
             System.err.println(text);
         else
             SwingUtilities.invokeLater(
-                () -> JOptionPane.showMessageDialog(null, text, "WindowsToLinux", JOptionPane.ERROR_MESSAGE));
+                () -> DesktopDialogs.showMessageDialog(null, text, "WindowsToLinux", JOptionPane.ERROR_MESSAGE));
     }
 }

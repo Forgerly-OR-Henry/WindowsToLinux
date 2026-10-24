@@ -8,6 +8,7 @@ import javax.swing.*;
 import gold.debug.windowstolinux.app.ai.model.*;
 import gold.debug.windowstolinux.app.service.ai.*;
 import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 
@@ -41,6 +42,9 @@ final class PlatformModelDialog extends JDialog {
     PlatformModelDialog(Window owner, PlatformModelService service, DesktopPartFactory c,
                         PageMessagePresenter messages, AiModelInfo existing, OptionalInt outputLimit, Runnable saved) {
         super(owner, messages.text(existing == null ? "ai.models.add" : "ai.models.edit"), ModalityType.APPLICATION_MODAL);
+        gold.debug.windowstolinux.app.ui.language.LocaleBinding.title(this,
+            gold.debug.windowstolinux.app.ui.language.LocalizedMessage.of(existing == null ? "ai.models.add" : "ai.models.edit"),
+            messages.catalog());
         this.service = service;
         this.messages = messages;
         this.saved = saved;
@@ -83,15 +87,8 @@ final class PlatformModelDialog extends JDialog {
         var footer = c.transparent(new BorderLayout(0, 8));
         footer.add(status);
         footer.add(actions, BorderLayout.SOUTH);
-        var body = c.pagePanel();
-        body.setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
-        body.add(new JScrollPane(form));
-        body.add(footer, BorderLayout.SOUTH);
-        setContentPane(body);
+        DesktopDialogs.install(this, new JScrollPane(form), footer, 700, 540);
         setName("platform.model.editor");
-        setSize(700, 540);
-        setMinimumSize(new Dimension(560, 480));
-        setLocationRelativeTo(owner);
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override

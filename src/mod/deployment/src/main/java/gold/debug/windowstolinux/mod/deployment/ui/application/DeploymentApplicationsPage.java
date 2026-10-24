@@ -28,6 +28,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.application.Deploym
 import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentExternalApplications;
 import gold.debug.windowstolinux.mod.deployment.ui.delivery.DeploymentDeliveryPanel;
 import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentDialogs;
 
 /** Displays saved applications and admits exact owned management actions. / 展示已保存应用并接纳精确所属管理动作。 */
 public final class DeploymentApplicationsPage implements ModPage {
@@ -72,7 +73,7 @@ public final class DeploymentApplicationsPage implements ModPage {
 
     private final JLabel inventoryCount = new JLabel();
 
-    private final JPanel discovery = DeploymentPageStyle.form();
+    private JPanel discovery;
 
     private final JTextArea discoveryIssues = new JTextArea(3, 36);
 
@@ -87,7 +88,7 @@ public final class DeploymentApplicationsPage implements ModPage {
     /** Original durable action snapshots and failures. / 原持久动作快照及失败。 */
     private final JTextArea tasks = new JTextArea(5, 60);
 
-    private final JPanel logBody = new JPanel(new BorderLayout(0, DeploymentPageStyle.scale(12)));
+    private JPanel logBody;
 
     private final List<String> taskMessages = new ArrayList<>();
 
@@ -126,9 +127,8 @@ public final class DeploymentApplicationsPage implements ModPage {
     /** Original accepted action retained for explicit cancellation. / 为明确取消保留的原已接纳动作。 */
     private volatile TaskHandle<?> current;
 
-    /** Owned reattachment review closed on environment or page changes. / 环境或页面变化时关闭的所属重新绑定审阅。
-     */
-    private JDialog reattachmentConfirmation;
+    /** Unsubmitted original dialogs revoked by lock or close. / 锁定及关闭时撤销的原未提交对话框。 */
+    private final Map<JDialog, String> inputDialogs = new LinkedHashMap<>();
 
     /** Creates one lazy applications view. / 创建一个惰性应用视图。
      * @param service original generation service / 原代次服务 */
@@ -211,17 +211,14 @@ public final class DeploymentApplicationsPage implements ModPage {
         var scan = new JPanel(new FlowLayout(FlowLayout.LEADING, 8, 4));
         scan.add(servers);
         button(scan, "scan", this::scan);
-        discovery.add(scan);
-        discovery.add(discovered);
         var adoption = new JPanel(new FlowLayout(FlowLayout.LEADING, 8, 4));
         button(adoption, "adopt", this::adopt);
         button(adoption, "reattachConfirm", this::reattach);
-        discovery.add(adoption);
         discoveryIssues.setEditable(false);
         discoveryIssues.setName("applications.discoveryIssues");
         discoveryIssues.setLineWrap(true);
         discoveryIssues.setWrapStyleWord(true);
-        discovery.add(DeploymentPageStyle.scroll(discoveryIssues));
+        discovery = DeploymentApplicationForms.discovery(scan, discovered, discoveryIssues, adoption);
         configureRenderers();
 
         applications.addListSelectionListener(ignored -> {
@@ -281,14 +278,10 @@ public final class DeploymentApplicationsPage implements ModPage {
         var actionsCard = DeploymentPageStyle.card("style.actions", row);
         actionsCard.setName("applications.actionBar");
         right.add(actionsCard, BorderLayout.SOUTH);
-        var taskScroll = new JScrollPane(tasks, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-            ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        taskScroll.setBorder(BorderFactory.createEmptyBorder());
-        logBody.add(taskScroll, BorderLayout.CENTER);
         var logActions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 8, 0));
         button(logActions, "refreshLogs", this::refreshTasks);
         button(logActions, "cancel", this::cancel);
-        logBody.add(logActions, BorderLayout.SOUTH);
+        logBody = DeploymentApplicationForms.logs(tasks, logActions);
         var applicationViews = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, DeploymentPageStyle.outer(inventoryBody), right);
         applicationViews.setResizeWeight(0.34);
         applicationViews.setPreferredSize(new java.awt.Dimension(600, 260));
@@ -368,12 +361,22 @@ public final class DeploymentApplicationsPage implements ModPage {
     public void environmentChanged(UiEnvironment environment) {
         requireEdt();
         locale(environment);
-        generation.incrementAndGet();
         more.setVisible(false);
-        if (discoveryWindow != null) discoveryWindow.dispose();
-        if (locked && logsWindow != null) logsWindow.setVisible(false);
-        if (reattachmentConfirmation != null)
-            reattachmentConfirmation.dispose();
+        if (locked) {
+            generation.incrementAndGet();
+            if (discoveryWindow != null) discoveryWindow.dispose();
+            if (logsWindow != null) logsWindow.setVisible(false);
+            for (var dialog : List.copyOf(inputDialogs.keySet())) dialog.dispose();
+        } else {
+            if (discoveryWindow != null && discoveryWindow.isDisplayable()) {
+                discoveryWindow.setTitle(text("style.discovery"));
+                DeploymentDialogs.refresh(discoveryWindow, messages);
+            }
+            for (var dialog : List.copyOf(inputDialogs.keySet())) {
+                dialog.setTitle(text(inputDialogs.get(dialog)));
+                DeploymentDialogs.refresh(dialog, messages);
+            }
+        }
         localize();
     }
 
@@ -387,8 +390,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         more.setVisible(false);
         if (discoveryWindow != null) discoveryWindow.dispose();
         if (logsWindow != null) logsWindow.dispose();
-        if (reattachmentConfirmation != null)
-            reattachmentConfirmation.dispose();
+        for (var dialog : List.copyOf(inputDialogs.keySet())) dialog.dispose();
         delivery.clear();
         delivery.enabled(false);
         availability();
@@ -450,17 +452,9 @@ public final class DeploymentApplicationsPage implements ModPage {
     private void openLogs() {
         if (closed || locked) return;
         if (logsWindow == null || !logsWindow.isDisplayable()) {
-            logsWindow = new JDialog(SwingUtilities.getWindowAncestor(root), text("style.results"),
-                java.awt.Dialog.ModalityType.MODELESS);
+            logsWindow = DeploymentDialogs.window(root, text("style.results"), logBody, null, 780, 480);
             logsWindow.setName("applications.logs.window");
-            logsWindow.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-            logsWindow.setContentPane(DeploymentPageStyle.logSurface(logBody));
-            SwingUtilities.updateComponentTreeUI(logsWindow);
             DeploymentPageStyle.refresh((JComponent) logsWindow.getContentPane(), messages);
-            var screen = logsWindow.getGraphicsConfiguration().getBounds();
-            logsWindow.setSize(Math.min(DeploymentPageStyle.scale(780), screen.width - 60),
-                Math.min(DeploymentPageStyle.scale(480), screen.height - 80));
-            logsWindow.setLocationRelativeTo(root);
         }
         logsWindow.setVisible(true);
         logsWindow.toFront();
@@ -539,29 +533,16 @@ public final class DeploymentApplicationsPage implements ModPage {
         }
         run(() -> service.reviewReattachment(original, candidate), review -> {
             long view = generation.get();
-            var body = new JTextArea(java.text.MessageFormat.format(text("reattachReview"), original.id(),
+            var body = DeploymentApplicationForms.reattachment(() -> java.text.MessageFormat.format(text("reattachReview"), original.id(),
                 original.target().kind(), original.target().identity(), original.target().fingerprint(),
                 candidate.fingerprint(), review.oldEndpoint(),
                 review.endpoint().username() + "@" + review.endpoint().host() + ":" + review.endpoint().port(),
-                original.displayName(), original.category(), original.accessUrl().orElse("")), 14, 70);
-            body.setEditable(false);
-            body.setLineWrap(true);
-            body.setWrapStyleWord(true);
-            var choice = new JOptionPane(new JScrollPane(body), JOptionPane.WARNING_MESSAGE,
-                JOptionPane.OK_CANCEL_OPTION);
-            var dialog = choice.createDialog(root, text("reattach"));
-            reattachmentConfirmation = dialog;
-            try {
-                dialog.setVisible(true);
-            } finally {
-                dialog.dispose();
-                if (reattachmentConfirmation == dialog)
-                    reattachmentConfirmation = null;
-            }
-            if (closed || locked || view != generation.get()
-                || !Integer.valueOf(JOptionPane.OK_OPTION).equals(choice.getValue()) || !entry.equals(selected())
-                || !candidate.equals(discovered.getSelectedItem()) || !server.equals(servers.getSelectedItem()))
-                return;
+                original.displayName(), original.category(), original.accessUrl().orElse("")));
+            var choice = new JOptionPane(null, JOptionPane.WARNING_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
+            var dialog = DeploymentDialogs.option(root, text("reattach"), body, choice, 780, 480);
+            boolean accepted = decide(dialog, choice, "reattach");
+            if (!accepted || view != generation.get() || !entry.equals(selected())
+                || !candidate.equals(discovered.getSelectedItem()) || !server.equals(servers.getSelectedItem())) return;
             run(() -> service.reattach(review), value -> {
                 feedback(text("adopted") + value);
                 refresh();
@@ -576,28 +557,38 @@ public final class DeploymentApplicationsPage implements ModPage {
      * @param editableCategory whether adopted metadata allows category editing / 接管元数据是否允许类别编辑
      * @return selected edit or absence on cancellation / 所选编辑或取消时无值 */
     private EditChoice editor(String name, String category, Optional<String> accessUrl, boolean editableCategory) {
-        var panel = new JPanel(new java.awt.GridLayout(0, 2, 8, 8));
-        var nameField = new JTextField(name, 24);
-        var categories = new JComboBox<>(new String[]{"APP", "WEBSITE"});
-        categories.setSelectedItem(category);
-        categories.setEnabled(editableCategory);
-        var url = new JTextField(accessUrl.orElse(""), 24);
-        url.setEnabled(category.equals("WEBSITE"));
-        categories.addActionListener(ignored -> url.setEnabled("WEBSITE".equals(categories.getSelectedItem())));
-        panel.add(new JLabel(text("name")));
-        panel.add(nameField);
-        panel.add(new JLabel(text("category")));
-        panel.add(categories);
-        panel.add(new JLabel(text("accessUrl")));
-        panel.add(url);
-        if (JOptionPane.showConfirmDialog(root, panel, text("edit"),
-            JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
-            return null;
+        var form = DeploymentApplicationForms.editor(name, category, accessUrl, editableCategory, this::text);
+        var panel = form.panel();
+        var nameField = form.name();
+        var categories = form.category();
+        var url = form.url();
+        var options = new JOptionPane(null, JOptionPane.QUESTION_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
+        var dialog = DeploymentDialogs.option(root, text("edit"), panel, options, 540, 360);
+        if (!decide(dialog, options, "edit")) return null;
         String selected = (String) categories.getSelectedItem();
         return new EditChoice(nameField.getText(), selected,
             selected.equals("WEBSITE") && !url.getText().isBlank()
                 ? Optional.of(url.getText().trim())
                 : Optional.empty());
+    }
+
+    /** Waits for the original live decision without granting a stale view authority. / 等待原活动决定，不授予过期视图权限。
+     * @param dialog owned original dialog / 所属原对话框
+     * @param options original decision controls / 原决定控件
+     * @param titleKey original localization key / 原本地化键
+     * @return whether the current original view confirmed / 当前原视图是否确认 */
+    private boolean decide(JDialog dialog, JOptionPane options, String titleKey) {
+        long view = generation.get();
+        inputDialogs.put(dialog, titleKey);
+        DeploymentDialogs.refresh(dialog, messages);
+        try {
+            dialog.setVisible(true);
+            return !closed && !locked && generation.get() == view
+                && Integer.valueOf(JOptionPane.OK_OPTION).equals(options.getValue());
+        } finally {
+            inputDialogs.remove(dialog);
+            dialog.dispose();
+        }
     }
 
     /** Selects one exact retained release for original-task switch or rollback. / 为原任务切换或回滚选择一个精确保留发布。 */
@@ -616,9 +607,13 @@ public final class DeploymentApplicationsPage implements ModPage {
                 feedback(text("noHistory"));
                 return;
             }
-            var choice = (HistoryChoice) JOptionPane.showInputDialog(root, text("chooseHistory"), text("history"),
-                JOptionPane.PLAIN_MESSAGE, null, choices, choices[0]);
-            if (choice != null)
+            var selection = new JComboBox<>(choices);
+            selection.setSelectedItem(choices[0]);
+            var body = DeploymentApplicationForms.history(selection, this::text);
+            var options = new JOptionPane(null, JOptionPane.PLAIN_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
+            var dialog = DeploymentDialogs.option(root, text("history"), body, options, 650, 260);
+            if (decide(dialog, options, "history") && entry.equals(selected())
+                && selection.getSelectedItem() instanceof HistoryChoice choice)
                 run(() -> service.switchRelease(selected, choice.id()), value -> refresh());
         });
     }
@@ -760,15 +755,9 @@ public final class DeploymentApplicationsPage implements ModPage {
     private void openDiscovery() {
         if (closed || locked || busy) return;
         if (discoveryWindow == null || !discoveryWindow.isDisplayable()) {
-            discoveryWindow = new JDialog(SwingUtilities.getWindowAncestor(root), text("style.discovery"),
-                java.awt.Dialog.ModalityType.MODELESS);
+            discoveryWindow = DeploymentDialogs.window(root, text("style.discovery"), discovery, null, 650, 360);
             discoveryWindow.setName("applications.discovery.window");
-            discoveryWindow.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-            var wrapper = DeploymentPageStyle.outer(discovery);
-            DeploymentPageStyle.refresh(wrapper, messages);
-            discoveryWindow.add(wrapper);
-            discoveryWindow.setSize(DeploymentPageStyle.scale(650), DeploymentPageStyle.scale(360));
-            discoveryWindow.setLocationRelativeTo(root);
+            DeploymentPageStyle.refresh((JComponent) discoveryWindow.getContentPane(), messages);
         }
         discoveryWindow.setVisible(true);
         discoveryWindow.toFront();
@@ -899,8 +888,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         DeploymentPageStyle.refresh(discovery, messages);
         if (logsWindow != null && logsWindow.isDisplayable()) {
             logsWindow.setTitle(text("style.results"));
-            SwingUtilities.updateComponentTreeUI(logsWindow);
-            DeploymentPageStyle.refresh((JComponent) logsWindow.getContentPane(), messages);
+            DeploymentDialogs.refresh(logsWindow, messages);
         }
         categories.setToolTipText(text("categoryFilter"));
         serverFilter.setToolTipText(text("serverFilter"));

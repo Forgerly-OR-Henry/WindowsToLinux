@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentReviewField;
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
 
 /** Reuses ordinary runtime controls with fixed values and no task, database, SSH or model capability. / 以固定值复用普通运行控件，不持有任务、数据库、SSH或模型能力。 */
 public final class DeploymentStandardRuntimePreview implements ModPage {
@@ -58,10 +59,9 @@ public final class DeploymentStandardRuntimePreview implements ModPage {
             entry.getKey(), entry.getKey(), entry.getValue(), List.of())).toList();
         var prompt = new DeploymentStandardInputs.Prompt("preview", "preview-application", kind, values, fields);
         root.removeAll();
-        root.setBorder(BorderFactory.createEmptyBorder(18, 20, 18, 20));
-        var scroll = new JScrollPane(DeploymentStandardPageReviewer.runtimePreview(prompt, environment));
-        scroll.setBorder(BorderFactory.createEmptyBorder());
-        root.add(scroll);
+        int padding = DeploymentPageStyle.scale(20);
+        root.setBorder(BorderFactory.createEmptyBorder(padding, padding, padding, padding));
+        root.add(DeploymentStandardPageReviewer.runtimePreview(prompt, environment));
         root.revalidate();
         root.repaint();
     }

@@ -8,6 +8,7 @@ import javax.swing.*;
 import com.formdev.flatlaf.util.UIScale;
 import gold.debug.windowstolinux.app.service.security.SecurityAccess;
 import gold.debug.windowstolinux.app.ui.control.DesktopIcons;
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
 import gold.debug.windowstolinux.app.ui.language.LocalizedMessage;
@@ -56,7 +57,6 @@ final class DesktopUnlockDialog implements AutoCloseable {
         dialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         var form = new JPanel();
         form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
-        form.setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
         var title = messages.bind(new JLabel(), "security.unlock");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
         title.setIcon(DesktopIcons.icon("lock/unlocked", 24, title::getForeground));
@@ -64,6 +64,7 @@ final class DesktopUnlockDialog implements AutoCloseable {
         form.add(Box.createVerticalStrut(12));
         form.add(messages.bind(new JLabel(), "security.password"));
         password.setName("security.password");
+        password.putClientProperty("FlatLaf.style", "background: $Button.background; focusedBackground: $Button.background");
         password.setMaximumSize(new Dimension(Integer.MAX_VALUE, UIScale.scale(34)));
         form.add(Box.createVerticalStrut(6));
         form.add(password);
@@ -96,12 +97,10 @@ final class DesktopUnlockDialog implements AutoCloseable {
         password.addActionListener(event -> unlock());
         buttons.add(cancel);
         buttons.add(submit);
-        form.add(Box.createVerticalStrut(16));
-        form.add(buttons);
         for (Component child : form.getComponents())
             if (child instanceof JComponent control)
                 control.setAlignmentX(Component.LEFT_ALIGNMENT);
-        dialog.add(form);
+        DesktopDialogs.install(dialog, form, buttons, 380, 0);
         dialog.getRootPane().setDefaultButton(submit);
         dialog.getRootPane().registerKeyboardAction(event -> cancel.doClick(), KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
             JComponent.WHEN_IN_FOCUSED_WINDOW);
@@ -123,10 +122,7 @@ final class DesktopUnlockDialog implements AutoCloseable {
             }
         });
         refresh();
-        dialog.pack();
-        dialog.setSize(Math.max(dialog.getWidth(), UIScale.scale(380)), dialog.getHeight());
-        dialog.setLocationRelativeTo(frame);
-        dialog.setResizable(false);
+        DesktopDialogs.size(dialog, 380, 0);
     }
 
     /** Returns the owned password window for admission checks. / 返回所属密码窗口供准入检查。

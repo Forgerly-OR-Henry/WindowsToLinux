@@ -5,6 +5,7 @@ import java.awt.Dialog;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
 import gold.debug.windowstolinux.app.ui.language.LocalizedMessage;
@@ -44,7 +45,6 @@ final class ModStoreConfirmation {
         LocaleBinding.title(owned, LocalizedMessage.of("store.confirmTitle"), messages.catalog());
         var content = components.pagePanel();
         content.setLayout(new BorderLayout(8, 8));
-        content.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         var notice = new JTextArea(2, 32);
         notice.setEditable(false);
         notice.setLineWrap(true);
@@ -66,11 +66,7 @@ final class ModStoreConfirmation {
         });
         buttons.add(cancel);
         buttons.add(proceed);
-        content.add(buttons, BorderLayout.SOUTH);
-        components.scrollPage(content);
-        owned.add(content);
-        owned.setSize(new java.awt.Dimension(760, 640));
-        owned.setLocationRelativeTo(parent);
+        DesktopDialogs.install(owned, content, buttons, 760, 640);
         try {
             owned.setVisible(true);
             return accepted;

@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.app.ui.task;
 
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
+import com.formdev.flatlaf.util.UIScale;
+
 import java.awt.*;
 import java.util.concurrent.FutureTask;
 
@@ -59,7 +62,7 @@ public final class TaskInteractionPresenter
             description.setWrapStyleWord(true);
             description.setName("file.conflict.details");
             var scroll = new JScrollPane(description);
-            scroll.setPreferredSize(new Dimension(680, 280));
+            scroll.setPreferredSize(UIScale.scale(new Dimension(680, 280)));
             String[] options = {messages.text("file.copy"), messages.text(directory ? "file.merge" : "transfer.overwrite"), messages.text("file.skip")};
             var pane = new JOptionPane(new Object[]{task.ownerId() + " @ " + task.ownerVersion(), scroll}, JOptionPane.QUESTION_MESSAGE,
                 JOptionPane.DEFAULT_OPTION, null, options, options[2]);
@@ -90,7 +93,7 @@ public final class TaskInteractionPresenter
             description.setWrapStyleWord(true);
             description.setName("transfer.conflict.details");
             var scroll = new JScrollPane(description);
-            scroll.setPreferredSize(new Dimension(680, 280));
+            scroll.setPreferredSize(UIScale.scale(new Dimension(680, 280)));
             String[] options = {messages.text("transfer.overwrite"), messages.text("transfer.keepBoth"),
                 messages.text("file.skip")};
             var pane = new JOptionPane(new Object[]{task.ownerId() + " @ " + task.ownerVersion(), scroll},
@@ -124,7 +127,7 @@ public final class TaskInteractionPresenter
             description.setWrapStyleWord(true);
             description.setName("transfer.stall.details");
             var scroll = new JScrollPane(description);
-            scroll.setPreferredSize(new Dimension(680, 300));
+            scroll.setPreferredSize(UIScale.scale(new Dimension(680, 300)));
             String[] options = {messages.text("transfer.retry"), messages.text("transfer.terminate")};
             var pane = new JOptionPane(new Object[]{task.ownerId() + " @ " + task.ownerVersion(), scroll},
                 JOptionPane.QUESTION_MESSAGE, JOptionPane.DEFAULT_OPTION, null, options, options[1]);
@@ -206,9 +209,31 @@ public final class TaskInteractionPresenter
             text.setEditable(false);
             text.setCaretPosition(0);
             var scroll = new JScrollPane(text);
-            scroll.setPreferredSize(new Dimension(760, 450));
+            scroll.setPreferredSize(UIScale.scale(new Dimension(760, 450)));
             String[] options = {messages.text("task.review.allow"), messages.text("task.review.cancel")};
-            var pane = new JOptionPane(scroll, JOptionPane.WARNING_MESSAGE, JOptionPane.DEFAULT_OPTION, null, options,
+            var summary = new JTextArea(deletionWarning(intent) + intent.effectSummary(), 6, 60);
+            summary.setName("task.review.summary");
+            summary.setEditable(false);
+            summary.setLineWrap(true);
+            summary.setWrapStyleWord(true);
+            summary.setCaretPosition(0);
+            var summaryScroll = new JScrollPane(summary);
+            summaryScroll.setPreferredSize(UIScale.scale(new Dimension(760, 100)));
+            var content = new JPanel(new BorderLayout(0, UIScale.scale(8)));
+            var overview = new JPanel(new BorderLayout(0, UIScale.scale(6)));
+            overview.add(summaryScroll, BorderLayout.CENTER);
+            var details = new JCheckBox(messages.text("task.review.details"));
+            details.setName("task.review.details");
+            overview.add(details, BorderLayout.SOUTH);
+            content.add(overview, BorderLayout.NORTH);
+            scroll.setVisible(false);
+            content.add(scroll, BorderLayout.CENTER);
+            details.addActionListener(ignored -> {
+                scroll.setVisible(details.isSelected());
+                var window = SwingUtilities.getWindowAncestor(content);
+                if (window instanceof JDialog owned) DesktopDialogs.fit(owned);
+            });
+            var pane = new JOptionPane(content, JOptionPane.WARNING_MESSAGE, JOptionPane.DEFAULT_OPTION, null, options,
                 options[1]);
             return options[0].equals(show(pane, messages.text("task.review.title"), cancellation));
         });
@@ -240,7 +265,7 @@ public final class TaskInteractionPresenter
             text.setWrapStyleWord(true);
             text.setCaretPosition(0);
             var scroll = new JScrollPane(text);
-            scroll.setPreferredSize(new Dimension(760, 450));
+            scroll.setPreferredSize(UIScale.scale(new Dimension(760, 450)));
             String recycle = messages.text("task.review.delete.recycleChoice");
             String permanent = messages.text("task.review.delete.permanentChoice");
             String decline = messages.text("task.review.delete.declineChoice");
@@ -286,7 +311,7 @@ public final class TaskInteractionPresenter
             explanation.setLineWrap(true);
             explanation.setWrapStyleWord(true);
             var scroll = new JScrollPane(explanation);
-            scroll.setPreferredSize(new Dimension(620, 160));
+            scroll.setPreferredSize(UIScale.scale(new Dimension(620, 160)));
             try {
                 var pane = new JOptionPane(new Object[]{task.ownerId() + " @ " + task.ownerVersion(), scroll, input},
                     JOptionPane.QUESTION_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
@@ -311,7 +336,7 @@ public final class TaskInteractionPresenter
     private Object show(JOptionPane pane, String title, CancelToken cancellation) {
         if (cancellation.requested() || !owner.isDisplayable())
             return null;
-        var dialog = pane.createDialog(owner, title);
+        var dialog = DesktopDialogs.create(pane, owner, title);
         dialog.setName("task.interaction.dialog");
         var timer = new Timer(50, event -> {
             if (cancellation.requested())

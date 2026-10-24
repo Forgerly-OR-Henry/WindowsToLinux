@@ -1,8 +1,9 @@
 package gold.debug.windowstolinux.app.ui.server;
 
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
+
 import java.awt.*;
 import java.awt.event.*;
-import java.util.Optional;
 
 import javax.swing.*;
 
@@ -72,6 +73,9 @@ public final class SshRecoveryDialog {
      */
     private final JCheckBox reconciled;
 
+    /** Wraps the conditional reconciliation caption with its original choice. / 将有条件核对说明与原选择一起换行显示。 */
+    private final JPanel reconciledRow;
+
     /**
      * Swing control for bind.
      * <p>绑定对应的 Swing 控件。
@@ -137,25 +141,19 @@ public final class SshRecoveryDialog {
         dialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         dialog.setName("recovery.dialog");
         JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         details.setLineWrap(true);
         details.setWrapStyleWord(true);
         details.setRows(15);
         details.setColumns(80);
         panel.add(new JScrollPane(details), BorderLayout.CENTER);
-        JPanel handoff = new JPanel(new GridLayout(0, 1, 4, 4));
-        handoff.add(new JLabel(messages.text("recovery.target",
-            java.util.Map.of("id", server.id(), "host", server.host(), "port", server.sshPort()))));
-        handoff.add(messages.bind(new JLabel(), "recovery.handoff"));
-        handoff.add(terminals);
-        JPanel target = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        target.add(messages.bind(new JLabel(), "recovery.identity"));
-        target.add(identity);
-        handoff.add(target);
-        consent = new JCheckBox(messages.text("recovery.consent"));
-        handoff.add(consent);
-        reconciled = new JCheckBox(messages.text("recovery.reconciled"));
-        handoff.add(reconciled);
+        var target = DesktopDialogs.fields(messages.bind(new JLabel(), "recovery.identity"), identity);
+        consent = new JCheckBox();
+        reconciled = new JCheckBox();
+        reconciledRow = choiceRow(reconciled, "recovery.reconciled", components);
+        var handoff = DesktopDialogs.fields(components.description(messages.text("recovery.target",
+                java.util.Map.of("id", server.id(), "host", server.host(), "port", server.sshPort()))),
+            messages.bind(components.description(""), "recovery.handoff"), terminals, target,
+            choiceRow(consent, "recovery.consent", components), reconciledRow);
         panel.add(handoff, BorderLayout.NORTH);
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
         refresh = messages.bind(components.secondaryButton(""), "recovery.refresh");
@@ -186,8 +184,7 @@ public final class SshRecoveryDialog {
         JButton end = messages.bind(components.secondaryButton(""), "recovery.end");
         buttons.add(end);
         end.addActionListener(event -> close());
-        panel.add(buttons, BorderLayout.SOUTH);
-        dialog.setContentPane(panel);
+        DesktopDialogs.install(dialog, panel, buttons, 900, 640);
         dialog.addWindowListener(new WindowAdapter() {
             /**
              * Handles the user's close request through the owning window's cleanup path.
@@ -214,9 +211,46 @@ public final class SshRecoveryDialog {
         timer = new Timer(400, event -> update());
         timer.start();
         update();
-        dialog.pack();
-        dialog.setLocationRelativeTo(owner);
+        DesktopDialogs.size(dialog, 900, 640);
         dialog.setVisible(true);
+    }
+
+    /** Keeps a complete consent caption beside the original checkbox model. / 在原复选模型旁显示完整同意说明。
+     * @param choice original privacy or reconciliation choice / 原隐私或核对选择
+     * @param key complete localized caption / 完整本地化说明键
+     * @param components original themed factory / 原主题控件工厂
+     * @return naturally wrapping choice row / 自然换行的选择行 */
+    private JPanel choiceRow(JCheckBox choice, String key, DesktopPartFactory components) {
+        var row = components.transparent(new BorderLayout(com.formdev.flatlaf.util.UIScale.scale(8), 0));
+        var holder = components.transparent(new BorderLayout());
+        holder.add(choice, BorderLayout.NORTH);
+        var caption = messages.bind(components.description(""), key);
+        caption.setName(key + ".caption");
+        caption.setLabelFor(choice);
+        choice.setToolTipText(messages.text(key));
+        choice.getAccessibleContext().setAccessibleName(messages.text(key));
+        caption.addMouseListener(new java.awt.event.MouseAdapter() {
+            /** Uses the same explicit choice when its visible caption is clicked. / 点击可见说明时使用同一明确选择。
+             * @param event original pointer event / 原指针事件 */
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent event) {
+                if (SwingUtilities.isLeftMouseButton(event) && choice.isEnabled()) {
+                    choice.doClick(0);
+                    choice.requestFocusInWindow();
+                }
+            }
+        });
+        choice.addFocusListener(new java.awt.event.FocusAdapter() {
+            /** Reveals the complete caption with the focused choice. / 随聚焦选择显露完整说明。
+             * @param event original focus event / 原焦点事件 */
+            @Override
+            public void focusGained(java.awt.event.FocusEvent event) {
+                if (row.getParent() instanceof JComponent parent) parent.scrollRectToVisible(row.getBounds());
+            }
+        });
+        row.add(holder, BorderLayout.WEST);
+        row.add(caption, BorderLayout.CENTER);
+        return row;
     }
 
     /**
@@ -282,7 +316,7 @@ public final class SshRecoveryDialog {
         review.setText(messages.text("recovery.highImpact") + "\n\n" + current.action().orElseThrow().command() + "\n\n"
             + current.action().orElseThrow().expected());
         Object cancel = messages.text("button.cancel"), accept = messages.text("recovery.approve");
-        return JOptionPane.showOptionDialog(dialog, new JScrollPane(review), messages.text("recovery.title"),
+        return DesktopDialogs.showOptionDialog(dialog, new JScrollPane(review), messages.text("recovery.title"),
             JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE, null, new Object[]{cancel, accept},
             cancel) == 1;
     }
@@ -318,6 +352,7 @@ public final class SshRecoveryDialog {
         bind.setEnabled(waiting);
         approve.setEnabled(value.state() == BrowserRecoverySnapshot.State.AWAITING_CONFIRMATION);
         reconciled.setVisible(value.resultUnknown());
+        reconciledRow.setVisible(value.resultUnknown());
         if (value.ended()) {
             approve.setEnabled(false);
             bind.setEnabled(false);

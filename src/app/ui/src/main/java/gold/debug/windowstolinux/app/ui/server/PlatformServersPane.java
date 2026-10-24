@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.ui.server;
 
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
+
 import java.awt.*;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -25,6 +27,9 @@ import gold.debug.windowstolinux.appapi.task.model.TaskState;
 
 /** Permanent configuration and authentication-only SSH page with explicit task recovery. / 带显式任务恢复的常驻配置及仅认证 SSH 页面。 */
 public final class PlatformServersPane extends JPanel implements AutoCloseable, gold.debug.windowstolinux.app.ui.control.PendingCardEdits {
+    /** Current unsubmitted editor follows the owning page lifetime. / 当前未提交编辑器跟随所属页面寿命。 */
+    private ServerProfileDialog activeEditor;
+
     /** Current view lifetime and exact request ownership. / 当前视图寿命及精确请求归属。 */
     private final ViewState view = new ViewState();
 
@@ -295,8 +300,16 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable, 
      */
     private void editor(ServerProfile profile) {
         if (!view.locked && !view.busy) autosave.savePending().thenAccept(ok -> {
-            if (ok && !view.locked && !view.closed)
-                new ServerProfileDialog(owner, service, components, messages, profile, saved -> refresh()).setVisible(true);
+            if (ok && !view.locked && !view.closed) {
+                var dialog = new ServerProfileDialog(owner, service, components, messages, profile, saved -> refresh());
+                activeEditor = dialog;
+                try {
+                    dialog.setVisible(true);
+                } finally {
+                    dialog.dispose();
+                    if (activeEditor == dialog) activeEditor = null;
+                }
+            }
         });
     }
 
@@ -356,7 +369,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable, 
         var profile = selected();
         if (profile == null || view.locked || view.busy)
             return;
-        if (JOptionPane.showConfirmDialog(owner,
+        if (DesktopDialogs.showConfirmDialog(owner,
             messages.text("server.deleteConfirm", Map.of("name", profile.displayName())),
             messages.text("server.delete"), JOptionPane.OK_CANCEL_OPTION,
             JOptionPane.WARNING_MESSAGE) != JOptionPane.OK_OPTION)
@@ -425,7 +438,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable, 
             return;
         boolean rescueTask = task.type()
             .equals(gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery.TASK_TYPE);
-        if (JOptionPane.showConfirmDialog(owner,
+        if (DesktopDialogs.showConfirmDialog(owner,
             messages.text(rescueTask ? "recovery.taskReconcileConfirm" : "server.reconcileConfirm"),
             messages.text("server.reconcile"), JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
             return;
@@ -579,6 +592,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable, 
     /** Stops view polling while accepted central tasks keep their original ownership. / 停止视图轮询，已接纳中央任务继续保持原归属。 */
     @Override
     public void close() {
+        if (activeEditor != null) activeEditor.dispose();
         order.close();
         presentation.closeExtensions();
         view.closed = true;

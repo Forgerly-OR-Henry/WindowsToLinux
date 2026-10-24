@@ -126,6 +126,12 @@ public final class Mod implements ModEntrypoint {
                             "deployment.preview.runtime", "Runtime review: " + kind.name(), true),
                         () -> new gold.debug.windowstolinux.mod.deployment.ui.standard.DeploymentStandardRuntimePreview(kind)));
 
+                for (var kind : gold.debug.windowstolinux.mod.deployment.ui.standard.DeploymentDialogPreview.Kind.values())
+                    registrations.add(context.ui().registerPreview(
+                        new PageSpec("dialog-preview-" + kind.name().toLowerCase(java.util.Locale.ROOT),
+                            "deployment.preview.dialog", "Dialog: " + kind.name(), true),
+                        () -> new gold.debug.windowstolinux.mod.deployment.ui.standard.DeploymentDialogPreview(kind)));
+
                 registrations.add(context.ui().register(new PageSpec("workspace", "deployment.workspace.title",
                     "Deployment", false), () -> new gold.debug.windowstolinux.mod.deployment.ui.DeploymentWorkspace(
                     () -> new DeploymentFlowPage(pageTasks, autonomousPageTasks),

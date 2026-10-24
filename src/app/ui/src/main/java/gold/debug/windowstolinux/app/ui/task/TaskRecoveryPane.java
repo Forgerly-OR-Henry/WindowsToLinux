@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.ui.task;
 
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
+
 import java.awt.*;
 import java.util.*;
 import java.util.concurrent.Callable;
@@ -189,7 +191,7 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         var content = new JScrollPane(text);
         content.setPreferredSize(new Dimension(600, 220));
         var choice = new JOptionPane(content, JOptionPane.WARNING_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
-        var dialog = choice.createDialog(this, messages.text("tasks.title"));
+        var dialog = DesktopDialogs.create(choice, this, messages.text("tasks.title"));
         dialog.setName("tasks.confirmation");
         confirmation = dialog;
         controls();

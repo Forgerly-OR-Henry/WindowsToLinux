@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.ui.ai;
 
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
+
 import java.awt.*;
 import java.util.OptionalInt;
 import java.util.concurrent.CompletionStage;
@@ -15,6 +17,9 @@ public final class PlatformModelsPane extends JPanel implements AutoCloseable, P
     private final AiModelListPane inventory;
 
     private boolean locked = true, closed, editing;
+
+    /** Current editor is revoked with the page, independently of accepted saves. / 当前编辑器随页面撤销，已接纳保存独立完成。 */
+    private PlatformModelDialog editor;
 
     public PlatformModelsPane(Window owner, PlatformModelService service, DesktopPartFactory c, PageMessagePresenter messages) {
         super(new BorderLayout());
@@ -38,11 +43,19 @@ public final class PlatformModelsPane extends JPanel implements AutoCloseable, P
             }
             DesktopTaskRunner.run(() -> existing == null ? OptionalInt.empty() : service.outputLimit(existing.profile().id()), limit -> {
                 editing = false;
-                if (!closed && !locked)
-                    new PlatformModelDialog(owner, service, c, messages, existing, limit, this::refresh).setVisible(true);
+                if (!closed && !locked) {
+                    var dialog = new PlatformModelDialog(owner, service, c, messages, existing, limit, this::refresh);
+                    editor = dialog;
+                    try {
+                        dialog.setVisible(true);
+                    } finally {
+                        dialog.dispose();
+                        if (editor == dialog) editor = null;
+                    }
+                }
             }, problem -> {
                 editing = false;
-                if (!closed) JOptionPane.showMessageDialog(owner, messages.safe(problem));
+                if (!closed) DesktopDialogs.showMessageDialog(owner, messages.safe(problem));
             });
         });
     }
@@ -82,6 +95,7 @@ public final class PlatformModelsPane extends JPanel implements AutoCloseable, P
     @Override
     public void close() {
         closed = true;
+        if (editor != null) editor.dispose();
         inventory.close();
     }
 }

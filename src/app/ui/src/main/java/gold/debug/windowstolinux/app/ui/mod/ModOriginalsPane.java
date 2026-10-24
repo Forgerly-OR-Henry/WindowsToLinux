@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.ui.mod;
 
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
+
 import java.awt.*;
 import java.util.*;
 import java.util.List;
@@ -399,7 +401,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
         var option = new JOptionPane(new JScrollPane(area), JOptionPane.WARNING_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
-        confirmation = option.createDialog(this, messages.text("originals.confirm"));
+        confirmation = DesktopDialogs.create(option, this, messages.text("originals.confirm"));
         LocaleBinding.title(confirmation, LocalizedMessage.of("originals.confirm"), messages.catalog());
         try {
             confirmation.setVisible(true);

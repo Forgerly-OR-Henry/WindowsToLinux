@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.main.error;
 
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
+
 import java.util.Objects;
 import java.util.function.IntConsumer;
 
@@ -79,7 +81,7 @@ public final class DesktopUncaughtFailureBoundary implements Thread.UncaughtExce
         }
         Runnable show = () -> {
             try {
-                JOptionPane.showMessageDialog(null, presenter.present(failure), "WindowsToLinux",
+                DesktopDialogs.showMessageDialog(null, presenter.present(failure), "WindowsToLinux",
                     JOptionPane.ERROR_MESSAGE);
             } catch (RuntimeException ignored) {
                 // The last-resort boundary cannot safely recurse through another UI failure. / 最终边界不能因另一 UI 失败而递归。

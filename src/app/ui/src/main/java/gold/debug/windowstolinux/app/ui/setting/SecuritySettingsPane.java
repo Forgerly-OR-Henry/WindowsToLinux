@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.ui.setting;
 
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
+
 import java.awt.*;
 import java.util.Arrays;
 
@@ -114,7 +116,7 @@ public final class SecuritySettingsPane extends JPanel {
         boolean setup = !service.securityState().configured();
         boolean enabled = !service.securityState().encryptionEnabled();
         if (encryption && !enabled
-            && JOptionPane.showConfirmDialog(this, messages.text("security.plaintext.warning"),
+            && DesktopDialogs.showConfirmDialog(this, messages.text("security.plaintext.warning"),
             messages.text("security.settings"), JOptionPane.OK_CANCEL_OPTION,
             JOptionPane.WARNING_MESSAGE) != JOptionPane.OK_OPTION)
             return;
@@ -166,7 +168,7 @@ public final class SecuritySettingsPane extends JPanel {
                     details.setLineWrap(true);
                     details.setWrapStyleWord(true);
                     details.setCaretPosition(0);
-                    JOptionPane.showMessageDialog(SecuritySettingsPane.this, new JScrollPane(details),
+                    DesktopDialogs.showMessageDialog(SecuritySettingsPane.this, new JScrollPane(details),
                         messages.text("security.settings"), JOptionPane.ERROR_MESSAGE);
                     (setup ? replacement : current).requestFocusInWindow();
                 }

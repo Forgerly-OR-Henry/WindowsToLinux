@@ -258,7 +258,21 @@ AI 四个用途按钮在全宽态和用途栏展开后保持相同尺寸，当�
 
 Mod 使用自身 `DeploymentPageStyle` 及宿主 Swing 默认值，不引用 APP 内部控件。内容填充深20／浅250，页面和普通控件30／240，内轮廓及滑块50／220；字段分隔线仍30／240。按钮、字号、图标和滚动尺寸沿用本文公共规范。环境、模式切换与审批生效规则见[产品说明书 §16](PRODUCT-MANUAL.md#16-app-部署模式与模型用途)，不将流程解释放在界面角落。
 
-## 8. 复用入口与核对要求
+## 8. 弹窗布局与生命周期
+
+APP 和官方 Mod 的业务弹窗使用本节规则；第三方 Mod 内部界面及系统选择器交互保留各自合同，不套用对象清单的行高或双卡片结构。
+
+- 正文表面使用内容档20／250，普通控件使用页面档30／240，沿用共用字体、圆角和状态色。外层留白20、独立区域间距12、字段和操作间距8，均为缩放前逻辑尺寸。
+- 操作区固定在底部；按钮按文字自然宽度排列，空间不足时换行。长正文、表单及清单在自己的视口滚动，不把底部操作放进正文滚动区。
+- 字段按内容自然高度排列；多行输入、帮助和校验错误可以增加所属行高度，不能让所有行跟随最高字段等高拉伸。普通表单跟随视口宽度，长标签和说明换行；命令正文保留精确文本和必要的横向滚动。
+- 多组件运行审阅由每个标签页持有滚动区，不再给整个标签页重复套滚动区。字段错误定位到原输入并滚动揭示，纠正时保留其他已填值。
+- 各用途保留自己的首选尺寸，逻辑尺寸只缩放一次。完整窗口（含标题栏和按钮）限制在所在显示器扣除系统保留区并留20个屏幕坐标像素边距的工作区内，这项边距不随应用缩放累计；不能仅限制正文首选尺寸。展开详情、语言变长和外观刷新后重新测量，保留原控件、输入文档、选择及监听器。
+- 弹窗使用实际所属窗口；未提交审批、输入和选择沿所属任务／页面的原撤销合同处理。设置编辑器锁定时隐藏并清空秘密，保留可继续编辑的非秘密草稿；所属页面关闭时释放编辑器。已经接纳的后台动作继续按原生命周期完成。
+- 系统选择器保留原选择、过滤和取消行为；启动失败等尚无主窗口的错误仍可显示有界消息。
+
+APP 通过 `control/DesktopDialogs` 接入，官方 Mod 使用各自 UI 样式层和标准 Swing 默认值，不依赖 APP 内部控件，不增加公共 appapi。入口与验证范围见[弹窗覆盖清单](DIALOG-COVERAGE.md)。
+
+## 9. 复用入口与核对要求
 
 | 实现入口 | 维护职责 |
 | --- | --- |
@@ -266,6 +280,7 @@ Mod 使用自身 `DeploymentPageStyle` 及宿主 Swing 默认值，不引用 APP
 | [DesktopCardSupport](../../src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/display/DesktopCardSupport.java)、[DesktopCardDrag](../../src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/display/DesktopCardDrag.java) | 适用范围、命中、起拖、取消和重排反馈 |
 | [DesktopScrollBarUi](../../src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/display/DesktopScrollBarUi.java) | 卡片滚动条尺寸、满轨道绘制及真实滚动范围 |
 | [DesktopPartFactory](../../src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/control/DesktopPartFactory.java)、[DesktopButtonStyle](../../src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/control/DesktopButtonStyle.java) | 共用控件、按钮状态及分隔线 |
+| [DesktopDialogs](../../src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/control/DesktopDialogs.java) | 平台弹窗滚动正文、固定操作、消息显示及完整窗口工作区约束 |
 | [CardOrderSession](../../src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/control/CardOrderSession.java)、[CardEditGate](../../src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/control/CardEditGate.java) | 各域草稿、完整排列基线和异步离开门禁 |
 
 宿主通过列表、卡片表格和滚动 UI 委托统一接入这些规则，保留原数据模型、排序器和渲染内容。Mod 使用标准 Swing 清单沿用宿主展示，不依赖宿主内部控件，也不因本文增加公开 appapi。

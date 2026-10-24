@@ -39,11 +39,32 @@ import org.junit.jupiter.params.provider.ValueSource;
 /** Keeps the actual ordinary runtime form while the same CLASS task corrects invalid limits. / 同一CLASS任务修正非法限额时保留实际普通运行表单。 */
 class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
     @Override
+    protected gold.debug.windowstolinux.app.service.task.PlatformInteractionService.Prompts interactionPrompts() {
+        var refusal = super.interactionPrompts();
+        var type = gold.debug.windowstolinux.app.service.task.PlatformInteractionService.Prompts.class;
+        return (gold.debug.windowstolinux.app.service.task.PlatformInteractionService.Prompts) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (proxy, method, args) -> {
+            if (method.getName().equals("approve")) {
+                var intent = (gold.debug.windowstolinux.appapi.task.action.ActionIntent) args[0];
+                assertEquals("platform.ssh.execute", intent.type());
+                assertEquals("deployment.candidate.capacity.v1", intent.semantics().orElseThrow().operation());
+                assertTrue(intent.exactAction().endsWith(gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentCandidateChannel.capacityScript(
+                    gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original())));
+                return true;
+            }
+            try {
+                return method.invoke(refusal, args);
+            } catch (InvocationTargetException failure) {
+                throw failure.getCause();
+            }
+        });
+    }
+
+    @Override
     protected Path selectedSourceDirectory() {
         return root.resolve("input");
     }
 
-    /** Reuses exact form controls and requires fresh final approval before any SSH connection. / 复用精确表单控件且任一SSH连接前要求新的最终审批。
+    /** Reuses exact form controls and requires fresh final approval before any deployment effect. / 复用精确表单控件且任何部署副作用前要求新的最终审批。
      * @param invalid invalid human timeout input / 非法人工超时输入
      * @throws Exception if real source, CLASS task or owner modal fails / 实际来源、CLASS任务或所属模态失败时 */
     @ParameterizedTest
@@ -68,8 +89,39 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
             var connections = new AtomicInteger();
             LinuxService linux = new LinuxService() {
                 public RemoteSession connect(ServerId server, TaskContext task) {
-                    connections.incrementAndGet();
-                    throw new AssertionError("No SSH before final approval");
+                    throw new AssertionError("The original fixed target is required");
+                }
+
+                public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget target, TaskContext task) throws gold.debug.windowstolinux.appapi.task.result.ApiException {
+                    assertEquals("server", target.server().id());
+                    assertEquals(task.id(), target.taskId());
+                    assertEquals("127.0.0.1", target.host());
+                    assertEquals(22, target.port());
+                    assertEquals("root", target.username());
+                    assertEquals(1, connections.incrementAndGet(), "Only one read-only capacity observation is permitted");
+                    var lease = task.retain("controlled_ssh", "runtime-form-capacity", "Fixed read-only capacity fixture");
+                    var executes = new AtomicInteger();
+                    return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(), new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                        return switch (method.getName()) {
+                            case "facts" ->
+                                new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("linux", "x86_64", "SHA256:" + "A".repeat(43));
+                            case "close" -> {
+                                lease.close();
+                                yield null;
+                            }
+                            case "execute" -> {
+                                assertEquals(1, executes.incrementAndGet());
+                                assertNotNull(args[1], "The original host must mint the exact approval grant");
+                                var request = (gold.debug.windowstolinux.appapi.linux.command.CommandRequest) args[0];
+                                assertEquals(gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentCandidateChannel.capacityScript(
+                                    gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()), request.script());
+                                assertEquals(0, request.stdin().length);
+                                yield success(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0), "1000000000 4096\n", "", false));
+                            }
+                            default ->
+                                throw new AssertionError("No deployment or transfer is allowed: " + method.getName());
+                        };
+                    });
                 }
 
                 public List<TransferCheckpoint> pendingTransfers(TaskContext task) {
@@ -134,7 +186,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                                                         Map<String, DeploymentPreparedDatabase> databases,
                                                         Optional<DeploymentStandardInputs.GitReview> git, TaskContext task) {
                     assertSame(originalTask.get(), task);
-                    assertEquals(0, connections.get());
+                    assertEquals(1, connections.get());
                     assertEquals(1, archives.size());
                     var reviewed = answers.get(prompt.get().componentId());
                     var completed = new LinkedHashMap<>(prompt.get().defaults());
@@ -165,6 +217,8 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                         .contains(key))
                         set(inputs.get(key), value);
                 });
+                ((JComboBox<?>) descendants(current).stream().filter(value -> "deployment.runtime.workspaceMode".equals(value.getName())).findFirst().orElseThrow())
+                    .setSelectedItem(gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Mode.EXPLICIT);
                 int limitOffset = 2 + inputs.size() * 2;
                 assertEquals(page.get().text("timeoutSeconds"), ((JLabel) current.getComponent(limitOffset)).getText());
                 timeout.set((JTextField) current.getComponent(limitOffset + 1));
@@ -204,17 +258,24 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                     timeout.get().setText("600");
                 decide(repeated, JOptionPane.OK_OPTION);
             });
-            var finalReview = awaitModal(owner.get(), "Confirm deployment");
+            final JDialog finalReview;
+            try {
+                finalReview = awaitModal(owner.get(), "Confirm deployment");
+            } catch (AssertionError missing) {
+                if (handle.completion().toCompletableFuture().isDone())
+                    throw new AssertionError("Final review was not reached: " + handle.completion().toCompletableFuture().get(), missing);
+                throw missing;
+            }
             SwingUtilities.invokeAndWait(() -> {
                 assertEquals(1, confirms.get());
-                assertEquals(0, connections.get());
+                assertEquals(1, connections.get());
                 decide(finalReview, JOptionPane.CANCEL_OPTION);
             });
             var result = handle.completion().toCompletableFuture().get(25, TimeUnit.SECONDS);
             assertEquals(TaskResult.CANCELLED, result.outcome(), result.toString());
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             assertEquals(handle.id(), originalTask.get().id());
-            assertEquals(0, connections.get());
+            assertEquals(1, connections.get());
             SwingUtilities.invokeAndWait(() -> {
                 page.get().close();
                 owner.get().dispose();
@@ -248,7 +309,8 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
         var tabs = (JTabbedPane) descendants(dialog).stream().filter(JTabbedPane.class::isInstance).findFirst()
             .orElseThrow();
         assertEquals(1, tabs.getTabCount());
-        return (JPanel) ((JScrollPane) tabs.getComponentAt(0)).getViewport().getView();
+        return (JPanel) descendants((Container) tabs.getComponentAt(0)).stream()
+            .filter(value -> value instanceof JPanel && value.getName() != null && value.getName().startsWith("deployment.runtime.component.")).findFirst().orElseThrow();
     }
 
     private static Map<String, JComponent> runtimeFields(JPanel panel, DeploymentStandardInputs.Prompt prompt) {
@@ -256,7 +318,8 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
         for (var field : prompt.fields()) {
             String key = field.id().substring(field.id().indexOf('/') + 1);
             if (!fields.containsKey(key)) {
-                var label = (JLabel) panel.getComponent(2 + 2 * fields.size());
+                var label = descendants(panel).stream().filter(JLabel.class::isInstance).map(JLabel.class::cast)
+                    .filter(value -> value.getLabelFor() != null && ("deployment.runtime." + field.id()).equals(value.getLabelFor().getName())).findFirst().orElseThrow();
                 var input = (JComponent) label.getLabelFor();
                 assertNotNull(input, "Actual field label must target the editable control: " + key);
                 assertEquals("deployment.runtime." + field.id(), input.getName());

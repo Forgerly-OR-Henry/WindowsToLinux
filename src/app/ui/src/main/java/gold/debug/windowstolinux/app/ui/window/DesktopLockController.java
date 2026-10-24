@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.ui.window;
 
+import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
+
 import java.awt.*;
 import java.awt.event.*;
 import java.util.*;
@@ -125,14 +127,14 @@ final class DesktopLockController implements AutoCloseable {
             public void windowClosing(WindowEvent event) {
                 if (security.securityState().activeTasks() > 0 || security.securityState().changing()) {
                     if (locked()) controls.blockedExit();
-                    else JOptionPane.showMessageDialog(frame, messages.text("security.exit.tasks"));
+                    else DesktopDialogs.showMessageDialog(frame, messages.text("security.exit.tasks"));
                 } else {
                     if (exiting) return;
                     exiting = true;
                     beforeExit.get().whenComplete((ok, failure) -> SwingUtilities.invokeLater(() -> {
                         exiting = false;
                         if (failure != null)
-                            JOptionPane.showMessageDialog(frame, messages.safe(new Exception(failure)));
+                            DesktopDialogs.showMessageDialog(frame, messages.safe(new Exception(failure)));
                         else if (Boolean.TRUE.equals(ok)) {
                             security.lock();
                             exit.run();
@@ -202,7 +204,7 @@ final class DesktopLockController implements AutoCloseable {
 
     void requireUnlockForDrafts() {
         controls.blockedExit();
-        JOptionPane.showMessageDialog(frame, messages.text("order.unlockBeforeExit"));
+        DesktopDialogs.showMessageDialog(frame, messages.text("order.unlockBeforeExit"));
         openUnlock();
     }
 
@@ -227,7 +229,7 @@ final class DesktopLockController implements AutoCloseable {
     private void promptSetup(Runnable openSettings) {
         if (!frame.isShowing() || security.securityState().configured()) return;
         Object[] options = {messages.text("security.setup.openSettings"), messages.text("security.setup.later")};
-        int choice = JOptionPane.showOptionDialog(frame, messages.text("security.setup.hint"),
+        int choice = DesktopDialogs.showOptionDialog(frame, messages.text("security.setup.hint"),
             messages.text("security.setup"), JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE,
             null, options, options[0]);
         if (choice == 0 && frame.isShowing()) openSettings.run();
