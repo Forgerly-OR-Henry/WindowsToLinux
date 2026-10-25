@@ -129,7 +129,8 @@ public final class DesktopFailureReportStore implements FailureReportStore {
                 Optional.of(new String(boundedReport(descriptor, throwable), StandardCharsets.UTF_8)),
                 Optional.empty(), Optional.of(id), Optional.empty());
             var record = LogRecordCodec.createSummary(target, version, event, id, System.currentTimeMillis(), null);
-            if (logs != null && logs.writeStartup(record).storage() != LogStorage.NOT_SAVED)
+            if (logs != null && !javax.swing.SwingUtilities.isEventDispatchThread()
+                && logs.writeStartup(record).storage() != LogStorage.NOT_SAVED)
                 return Optional.of(new FailureReportRecord(descriptor, directory, report));
             synchronized (LogStore.class) {
                 emergency.append(target, record);
