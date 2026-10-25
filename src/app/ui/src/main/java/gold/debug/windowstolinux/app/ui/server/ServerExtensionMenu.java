@@ -20,11 +20,17 @@ final class ServerExtensionMenu implements UiExtensionHost {
     /** Original delete control and action owner. / 原删除控件及动作所有者。 */
     private final JButton delete;
 
+    /** Original host key review control, with its own authentication-only task. / 持有独立仅认证任务的原主机密钥审阅控件。 */
+    private final JButton recheckIdentity;
+
     /** Actual keyboard-accessible popup. / 实际可键盘访问菜单。 */
     private final JPopupMenu menu = new JPopupMenu();
 
     /** Original delete delegation. / 原删除委托。 */
     private final JMenuItem deleteItem = new JMenuItem();
+
+    /** Explicit replacement entry, separate from normal connection checks. / 与普通连接检查分离的显式替换入口。 */
+    private final JMenuItem recheckIdentityItem = new JMenuItem();
 
     /** Current managed identities. / 当前受管身份。 */
     private List<JComponent> displayed = List.of();
@@ -37,13 +43,17 @@ final class ServerExtensionMenu implements UiExtensionHost {
 
     /** Binds original controls without changing their listeners. / 绑定原控件，不改其监听器。
      * @param more original more action / 原更多动作
-     * @param delete original confirmed deletion / 原确认删除 */
-    ServerExtensionMenu(JButton more, JButton delete) {
+     * @param delete original confirmed deletion / 原确认删除
+     * @param recheckIdentity explicit host key review / 显式主机密钥审阅 */
+    ServerExtensionMenu(JButton more, JButton delete, JButton recheckIdentity) {
         this.more = more;
         this.delete = delete;
+        this.recheckIdentity = recheckIdentity;
         menu.setName("servers.more.menu");
         deleteItem.setName("servers.more.delete");
         deleteItem.addActionListener(event -> delete.doClick());
+        recheckIdentityItem.setName("servers.more.recheckIdentity");
+        recheckIdentityItem.addActionListener(event -> recheckIdentity.doClick());
         more.addActionListener(event -> menu.show(more, 0, more.getHeight()));
         setContents(List.of());
     }
@@ -87,6 +97,7 @@ final class ServerExtensionMenu implements UiExtensionHost {
             menu.removeAll();
             for (var component : components) menu.add(component);
             if (!components.isEmpty()) menu.addSeparator();
+            menu.add(recheckIdentityItem);
             menu.add(deleteItem);
         }
         refresh();
@@ -103,6 +114,8 @@ final class ServerExtensionMenu implements UiExtensionHost {
         }
         deleteItem.setText(delete.getText());
         deleteItem.setEnabled(delete.isEnabled());
+        recheckIdentityItem.setText(recheckIdentity.getText());
+        recheckIdentityItem.setEnabled(recheckIdentity.isEnabled());
         menu.revalidate();
         menu.repaint();
     }

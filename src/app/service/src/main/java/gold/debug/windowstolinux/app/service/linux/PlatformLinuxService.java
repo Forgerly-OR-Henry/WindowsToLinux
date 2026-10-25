@@ -259,7 +259,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      */
     @Override
     public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
-        return connect(server, task, null);
+        return connect(server, task, null, false);
     }
 
     /** Connects using the immutable original task and target expectation. / 使用不可变原任务及目标预期连接。
@@ -273,17 +273,37 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         Objects.requireNonNull(expected);
         if (!expected.taskId().equals(task.id()))
             throw error(ProblemCode.ACCESS_DENIED, "SSH_ORIGINAL_TASK_CHANGED", "Connection expectation belongs to another task");
-        return connect(expected.server(), task, expected);
+        return connect(expected.server(), task, expected, false);
+    }
+
+    /** Authenticates a reinstalled host after a separate exact old/new fingerprint review, without remote commands.
+     * / 单独精确审阅新旧指纹后认证重装主机，不运行远端命令。
+     * @param server original saved profile / 原已保存配置
+     * @param task exclusive host identity-check task / 独占宿主身份检查任务
+     * @return authenticated identity / 已认证身份
+     * @throws ApiException if review, authentication or cleanup fails / 审阅、认证或清理失败时 */
+    public RemoteFacts recheckIdentity(ServerId server, TaskContext task) throws ApiException {
+        worker();
+        var identity = tasks.requireExecuting(task, owner, version);
+        if (!owner.equals(PlatformTaskAdmission.PLATFORM_OWNER)
+            || !identity.type().equals(PlatformTaskAdmission.SERVER_IDENTITY_RECHECK_TYPE))
+            throw error(ProblemCode.ACCESS_DENIED, "SSH_IDENTITY_CHECK_TASK_REQUIRED",
+                "Host key replacement requires its exclusive platform identity-check task");
+        try (var session = connect(server, task, null, true)) {
+            return session.facts();
+        }
     }
 
     /** Retains the physical connection before authentication under a fixed optional expectation. / 在固定可选预期下认证前保留物理连接。
      * @param server admitted saved server / 已准入保存服务器
      * @param task authentic task / 真实任务
      * @param expected fixed expectation or ordinary saved-server access / 固定预期或普通保存服务器访问
+     * @param recheckIdentity explicit host-only replacement review / 显式宿主专用替换审阅
      * @return owned connection / 所属连接
      * @throws ApiException if admission, authentication or cleanup fails / 准入、认证或清理失败时 */
     private RemoteSession connect(ServerId server, TaskContext task,
-                                  gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected) throws ApiException {
+                                  gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected,
+                                  boolean recheckIdentity) throws ApiException {
         worker();
         tasks.requireServer(task, owner, version, Objects.requireNonNull(server).id());
         var thresholds = thresholds(task);
@@ -292,7 +312,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             if (closed)
                 throw error(ProblemCode.UNAVAILABLE, "LINUX_SERVICE_CLOSED", "The owning Linux capability has closed");
             var lease = tasks.retainSshConnection(task, owner, version, server.id());
-            session = new Session(server, task, lease, expected);
+            session = new Session(server, task, lease, expected, recheckIdentity);
             retained.add(session);
         }
         try {
@@ -354,35 +374,68 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                         "SERVER_CREDENTIAL_MISSING", "The saved server credential is unavailable"));
                 }
             });
+            var pendingReview = new java.util.concurrent.atomic.AtomicReference<ActionIntent>();
+            var pendingFingerprint = new java.util.concurrent.atomic.AtomicReference<String>();
+            var reviewedFingerprint = new java.util.concurrent.atomic.AtomicReference<String>();
             var trust = tasks.callbacks().<SshEndpoint, String, Boolean>hostCallback(task, owner, version,
                 (target, fingerprint) -> {
                     if (session.expected != null && session.expected.fingerprint().isPresent())
                         return session.expected.fingerprint().orElseThrow().equals(fingerprint);
+                    if (reviewedFingerprint.get() != null)
+                        return reviewedFingerprint.get().equals(fingerprint);
+                    ActionIntent intent;
                     if (expected.isPresent()) {
                         var trusted = expected.orElseThrow();
-                        return trusted.host().equals(target.host()) && trusted.sshPort() == target.port()
-                            && trusted.hostKeySha256().equals(fingerprint);
+                        if (!trusted.host().equals(target.host()) || trusted.sshPort() != target.port()) return false;
+                        if (trusted.hostKeySha256().equals(fingerprint)) return true;
+                        if (!session.recheckIdentity) return false;
+                        intent = new ActionIntent("platform.ssh.replace-trust", List.of(server.id()), server.id(),
+                            "replace-host-key",
+                            "host=" + target.host() + "\nport=" + target.port() + "\nusername=" + target.username()
+                                + "\nPrevious SSH wire-key fingerprint=" + trusted.hostKeySha256()
+                                + "\nObserved SSH wire-key fingerprint=" + fingerprint,
+                            "Replace the saved SSH host key only if this server was reinstalled or its key was deliberately changed. "
+                                + "Verify the observed fingerprint independently. The original profile and historical tasks remain; "
+                                + "this does not transfer old deployments to the new host. The key is saved only after successful authentication.");
+                    } else {
+                        intent = new ActionIntent("platform.ssh.trust", List.of(server.id()), server.id(),
+                            "first-use",
+                            "host=" + target.host() + "\nport=" + target.port() + "\nusername=" + target.username()
+                                + "\nSSH wire-key fingerprint=" + fingerprint,
+                            "Trust this exact SSH host key for the selected saved server after successful authentication.");
                     }
-                    var intent = new ActionIntent("platform.ssh.trust", List.of(server.id()), server.id(),
-                        "first-use",
-                        "host=" + target.host() + "\nport=" + target.port() + "\nusername=" + target.username()
-                            + "\nSSH wire-key fingerprint=" + fingerprint,
-                        "Trust this exact SSH host key for the selected saved server after successful authentication.");
-                    var decision = interaction.approve(intent, task);
-                    if (decision.outcome() == TaskResult.CANCELLED)
-                        throw error(ProblemCode.CANCELLED, "SSH_TRUST_CANCELLED",
-                            "SSH host trust review was cancelled");
-                    if (decision.outcome() != TaskResult.SUCCEEDED)
-                        return false;
-                    interaction.consume(decision.value().orElseThrow(), intent, task);
-                    return true;
+                    pendingFingerprint.set(fingerprint);
+                    pendingReview.set(intent);
+                    return false;
                 });
-            session.connection = session.connector.connect(endpoint, password, trust::apply, connectTimeout,
-                tasks.operationCancellation(task));
+            try {
+                session.connection = session.connector.connect(endpoint, password, trust::apply, connectTimeout,
+                    tasks.operationCancellation(task));
+            } catch (ApiException failure) {
+                var intent = pendingReview.get();
+                if (intent == null || !failure.problem().eventCode().equals("SSH_HOST_KEY_REJECTED")) throw failure;
+                // Release the unauthenticated probe before waiting for a person, then pin the approved key on a fresh connection.
+                // 等待人工审阅前释放未认证探测连接，再以批准密钥固定校验一次全新连接。
+                var decision = interaction.approve(intent, task);
+                if (decision.outcome() == TaskResult.CANCELLED)
+                    throw error(ProblemCode.CANCELLED, "SSH_TRUST_CANCELLED", "SSH host trust review was cancelled");
+                if (decision.outcome() != TaskResult.SUCCEEDED) throw failure;
+                interaction.consume(decision.value().orElseThrow(), intent, task);
+                reviewedFingerprint.set(pendingFingerprint.get());
+                tasks.requireServer(task, owner, version, server.id());
+                if (!servers.findServerProfile(server.id()).filter(profile::equals).isPresent()
+                    || !servers.findServer(server.id()).equals(expected))
+                    throw error(ProblemCode.BUSY, "SSH_REVIEW_STALE", "Server settings changed during host key review");
+                session.connection = session.connector.connect(endpoint, password, trust::apply, connectTimeout,
+                    tasks.operationCancellation(task));
+            }
             tasks.requireServer(task, owner, version, server.id());
-            servers.saveAuthenticatedServer(
-                new StoredServerIdentity(server.id(), endpoint.host(), endpoint.port(), session.connection.fingerprint()),
-                expected);
+            var observed = new StoredServerIdentity(server.id(), endpoint.host(), endpoint.port(), session.connection.fingerprint());
+            if (tasks.operationCancellation(task).requested())
+                throw error(ProblemCode.CANCELLED, "SSH_TRUST_CANCELLED", "SSH authentication was cancelled before saving trust");
+            if (session.recheckIdentity && expected.isPresent() && !expected.orElseThrow().equals(observed))
+                servers.replaceAuthenticatedServer(observed, expected.orElseThrow(), profile);
+            else servers.saveAuthenticatedServer(observed, expected);
         } finally {
             if (password != null)
                 Arrays.fill(password, '\0');
@@ -527,6 +580,9 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         /** Fixed expectation reused by any reconnect of this logical session. / 此逻辑会话任何重连共用的固定预期。 */
         private final gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected;
 
+        /** Allows a changed key only through the separate host identity-check protocol. / 仅经独立宿主身份检查协议允许更换密钥。 */
+        private final boolean recheckIdentity;
+
         /** Persisted connection occupancy retained until physical close. / 持久连接占用，保留至物理关闭。 */
         private final ResourceLease lease;
 
@@ -560,13 +616,15 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
          * @param task original task / 原始任务
          * @param lease durable resource claim / 持久资源申请
          * @param expected original target expectation or ordinary access / 原目标预期或普通访问
+         * @param recheckIdentity explicitly admitted host review / 显式准入宿主审阅
          */
         private Session(ServerId server, TaskContext task, ResourceLease lease,
-                        gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected) {
+                        gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected, boolean recheckIdentity) {
             this.server = server;
             this.task = task;
             this.lease = lease;
             this.expected = expected;
+            this.recheckIdentity = recheckIdentity;
         }
 
         /** Returns only observed facts; unknown OS and architecture remain empty. / 仅返回已观察事实，未知系统及架构保持为空。

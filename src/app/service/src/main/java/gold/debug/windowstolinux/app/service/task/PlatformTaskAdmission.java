@@ -22,6 +22,10 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
     /** Host rescue protocol allowed to use the fixed read-only SSH verification. / 允许使用固定只读 SSH 复核的宿主救援协议。 */
     public static final String RESCUE_TYPE = gold.debug.windowstolinux.app.db.sshrecover.BrowserRecoveryArchival.TASK_TYPE;
 
+    /** Host-only authentication protocol for explicitly replacing a reinstalled server's wire key.
+     * / 为重装服务器显式替换 wire 密钥的宿主专用认证协议。 */
+    public static final String SERVER_IDENTITY_RECHECK_TYPE = "platform.ssh.recheck-identity.v1";
+
     /** Exact boot whose running Mod instances may accept business. / 可以接纳业务的运行 Mod 实例所属精确启动。 */
     private final UUID bootId;
 

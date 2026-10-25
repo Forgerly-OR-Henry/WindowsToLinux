@@ -211,14 +211,26 @@ public final class TaskInteractionPresenter
             var scroll = new JScrollPane(text);
             scroll.setPreferredSize(UIScale.scale(new Dimension(760, 450)));
             String[] options = {messages.text("task.review.allow"), messages.text("task.review.cancel")};
-            var summary = new JTextArea(deletionWarning(intent) + intent.effectSummary(), 6, 60);
+            boolean replacingHostKey = task.ownerId().equals(gold.debug.windowstolinux.app.service.task.PlatformTaskAdmission.PLATFORM_OWNER)
+                && intent.type().equals("platform.ssh.replace-trust");
+            String summaryText = replacingHostKey
+                ? messages.text("server.identity.review") + "\n\n" + intent.exactAction()
+                    .replace("Previous SSH wire-key fingerprint=", messages.text("server.identity.previous") + ": ")
+                    .replace("Observed SSH wire-key fingerprint=", messages.text("server.identity.observed") + ": ")
+                : deletionWarning(intent) + (intent.type().equals("platform.ssh.execute")
+                    ? messages.text("task.review.remoteCommand") + lifecycleAction(intent) : intent.effectSummary())
+                    + intent.semantics().map(meaning -> "\n\n" + messages.text("task.review.semantics") + ": "
+                        + meaning.operation() + "\n" + meaning.targets().stream()
+                            .map(target -> target.serverId() + " / " + target.kind() + " / " + target.id())
+                            .sorted().collect(java.util.stream.Collectors.joining("\n"))).orElse("");
+            var summary = new JTextArea(summaryText, replacingHostKey ? 12 : 8, 60);
             summary.setName("task.review.summary");
             summary.setEditable(false);
             summary.setLineWrap(true);
             summary.setWrapStyleWord(true);
             summary.setCaretPosition(0);
             var summaryScroll = new JScrollPane(summary);
-            summaryScroll.setPreferredSize(UIScale.scale(new Dimension(760, 100)));
+            summaryScroll.setPreferredSize(UIScale.scale(new Dimension(760, replacingHostKey ? 260 : 180)));
             var content = new JPanel(new BorderLayout(0, UIScale.scale(8)));
             var overview = new JPanel(new BorderLayout(0, UIScale.scale(6)));
             overview.add(summaryScroll, BorderLayout.CENTER);
@@ -350,6 +362,15 @@ public final class TaskInteractionPresenter
             timer.stop();
             dialog.dispose();
         }
+    }
+
+    private String lifecycleAction(ActionIntent intent) {
+        if (intent.semantics().filter(value -> value.operation().equals("deployment.application.lifecycle.v1")).isEmpty())
+            return "";
+        var command = java.util.regex.Pattern.compile(
+            "'lifecycle-(?:deployment|container)' '[A-Za-z0-9._-]+' '(start|stop|restart|enable|disable)' '[a-f0-9]{64}' '[a-f0-9]{64}'\\s*\\z")
+            .matcher(intent.exactAction());
+        return command.find() ? "\n\n" + messages.text("task.review.lifecycle." + command.group(1)) : "";
     }
 
     /**

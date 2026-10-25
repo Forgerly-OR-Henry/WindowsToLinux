@@ -48,6 +48,9 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
     /** Actual platform transport with saved credentials and trust. / 使用已保存凭据及信任的实际平台传输。 */
     private final LinuxService linux;
 
+    /** Host-only key replacement, kept outside the public Linux capability. / 保留在公开 Linux 能力之外的宿主专用密钥替换。 */
+    private final HostIdentityCheck identityCheck;
+
     /** Host cleanup for retained physical resources. / 保留物理资源的宿主清理。 */
     private final TaskCleanup cleanup;
 
@@ -65,24 +68,28 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
      * @param version actual application artifact release / 实际应用产物版本
      * @param linux host-owned public transport adapter / 宿主持有的公开传输适配器
      * @param cleanup physical cleanup without command replay / 不重放命令的物理清理
+     * @param identityCheck authentication-only explicit key replacement / 仅认证的显式密钥替换
      * @throws ApiException if recovery registration is unavailable / 恢复登记不可用时
      */
     public PlatformServerService(PlatformStorage persistence, DesktopSecurityService security,
-                                 PlatformTaskRuntime runtime, String version, LinuxService linux, TaskCleanup cleanup) throws ApiException {
+                                 PlatformTaskRuntime runtime, String version, LinuxService linux, TaskCleanup cleanup,
+                                 HostIdentityCheck identityCheck) throws ApiException {
         this.persistence = Objects.requireNonNull(persistence);
         this.security = Objects.requireNonNull(security);
         this.runtime = Objects.requireNonNull(runtime);
         this.tasks = runtime.bind(PlatformTaskAdmission.PLATFORM_OWNER, version, false);
         this.linux = Objects.requireNonNull(linux);
         this.cleanup = Objects.requireNonNull(cleanup);
+        this.identityCheck = Objects.requireNonNull(identityCheck);
         var versions = new LinkedHashSet<String>();
         versions.add(version);
         for (var task : checks())
             versions.add(task.ownerVersion());
         try {
-            for (var original : versions)
+            for (var original : versions) {
+                for (var type : List.of(CHECK_TYPE, PlatformTaskAdmission.SERVER_IDENTITY_RECHECK_TYPE))
                 recoveries.add(runtime.bind(PlatformTaskAdmission.PLATFORM_OWNER, original, true)
-                    .registerRecovery(CHECK_TYPE, (previous, task) -> {
+                    .registerRecovery(type, (previous, task) -> {
                         if (!releasePreviousProcessResources(previous))
                             this.cleanup.close(task);
                         return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
@@ -90,6 +97,7 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
                             "The earlier authentication check did not deliver a confirmed result; start a new check if needed",
                             Map.of(), Optional.empty())));
                     }));
+            }
         } catch (ApiException failure) {
             try {
                 close();
@@ -149,6 +157,7 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
                         if (!existing.credentialKey().equals(profile.credentialKey()))
                             throw new IllegalArgumentException("Changing credential storage requires a password");
                     } else {
+                        persistence.servers().invalidateAuthentication(profile.id());
                         credentials.save(profile.credentialKey(), password);
                     }
                     persistence.servers().saveServerProfile(profile.stored());
@@ -183,13 +192,37 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
      * @throws ApiException if new checks are unavailable / 新检查不可用时
      */
     public TaskHandle<RemoteFacts> check(ServerProfile profile) throws ApiException {
+        return check(profile, false);
+    }
+
+    /** Checks a reinstalled host through an exclusive task and a separate exact fingerprint decision.
+     * / 经独占任务及单独精确指纹决定检查重装主机。
+     * @param profile saved profile whose password may already have been updated / 可已更新密码的保存配置
+     * @return original authentication-only task / 原仅认证任务
+     * @throws ApiException if task admission fails / 任务准入失败时 */
+    public TaskHandle<RemoteFacts> recheckIdentity(ServerProfile profile) throws ApiException {
+        return check(profile, true);
+    }
+
+    /** Shares original check ownership and cleanup without weakening normal connection trust.
+     * / 共用原检查归属和清理，不放宽普通连接信任。
+     * @param profile original saved profile / 原保存配置
+     * @param replaceKey whether a separate host key review was requested / 是否请求单独主机密钥审阅
+     * @return original task / 原任务
+     * @throws ApiException if the exclusive check cannot start / 独占检查无法开始时 */
+    private TaskHandle<RemoteFacts> check(ServerProfile profile, boolean replaceKey) throws ApiException {
         worker();
         var handle = tasks.<RemoteFacts>submit(
-            new TaskRequest(CHECK_TYPE, "SSH: " + profile.displayName(), List.of(profile.id()), true), task -> {
+            new TaskRequest(replaceKey ? PlatformTaskAdmission.SERVER_IDENTITY_RECHECK_TYPE : CHECK_TYPE,
+                "SSH: " + profile.displayName(), List.of(profile.id()), true), task -> {
                 var current = persistence.servers().findServerProfile(profile.id())
                     .orElseThrow(() -> new SQLException("Admitted server is missing"));
-                try (var session = linux.connect(new ServerId(profile.id()), task)) {
-                    var facts = session.facts();
+                try {
+                    RemoteFacts facts;
+                    if (replaceKey) facts = identityCheck.check(new ServerId(profile.id()), task);
+                    else try (var session = linux.connect(new ServerId(profile.id()), task)) {
+                        facts = session.facts();
+                    }
                     persistence.servers().recordObservation(current, true, facts.operatingSystem());
                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(facts), Optional.empty());
                 } catch (ApiException failure) {
@@ -235,7 +268,8 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
      * @return immutable retained check snapshots / 不可变保留检查快照 */
     public List<TaskSnapshot> checks() {
         return runtime.snapshots().stream().filter(task -> task.ownerId().equals(PlatformTaskAdmission.PLATFORM_OWNER)
-            && task.type().equals(CHECK_TYPE) && task.state() != TaskState.ENDED).toList();
+            && (task.type().equals(CHECK_TYPE) || task.type().equals(PlatformTaskAdmission.SERVER_IDENTITY_RECHECK_TYPE))
+            && task.state() != TaskState.ENDED).toList();
     }
 
     /**
@@ -273,6 +307,18 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
          * @throws ApiException if cleanup remains incomplete / 清理仍未完成时
          */
         void close(TaskContext task) throws ApiException;
+    }
+
+    /** Host-only authentication binding; never published through ModContext. / 从不经 ModContext 发布的宿主专用认证绑定。 */
+    @FunctionalInterface
+    public interface HostIdentityCheck {
+        /** Reviews and authenticates the exact saved host without running remote commands.
+         * / 审阅并认证精确保存主机，不运行远端命令。
+         * @param server saved server / 保存服务器
+         * @param task exclusive host task / 独占宿主任务
+         * @return authenticated facts / 已认证事实
+         * @throws ApiException if review, authentication or cleanup fails / 审阅、认证或清理失败时 */
+        RemoteFacts check(ServerId server, TaskContext task) throws ApiException;
     }
 
     /** Rejects blocking configuration and network admission on the event thread. / 拒绝在事件线程执行阻塞配置及网络准入。 */

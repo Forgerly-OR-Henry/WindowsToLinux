@@ -483,7 +483,7 @@ public final class PlatformRuntime implements AutoCloseable {
             var remote = capabilities.remoteCapabilities(PlatformTaskAdmission.PLATFORM_OWNER, version);
             try {
                 servers = new gold.debug.windowstolinux.app.service.server.PlatformServerService(persistence, security,
-                    tasks, version, remote.linux(), remote::closeTaskResources);
+                    tasks, version, remote.linux(), remote::closeTaskResources, remote.linux::recheckIdentity);
             } catch (gold.debug.windowstolinux.appapi.task.result.ApiException | RuntimeException failure) {
                 try {
                     remote.close();

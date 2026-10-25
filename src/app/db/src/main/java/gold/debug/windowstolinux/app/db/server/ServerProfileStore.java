@@ -160,6 +160,43 @@ public final class ServerProfileStore {
         saveServer(observed);
     }
 
+    /** Replaces one explicitly reviewed wire key only after authentication, preserving the saved profile identity.
+     * / 仅在明确审阅并认证后替换一项 wire 密钥，保留已保存配置身份。
+     * @param observed authenticated replacement / 已认证的新身份
+     * @param expected reviewed previous trust / 已审阅的原信任
+     * @param profile original connection metadata / 原连接元数据
+     * @throws SQLException if any reviewed identity changed / 任一审阅身份已变化时 */
+    public void replaceAuthenticatedServer(StoredServerIdentity observed, StoredServerIdentity expected,
+                                           StoredServerProfile profile) throws SQLException {
+        if (!observed.id().equals(expected.id()) || !observed.id().equals(profile.id())
+            || !observed.host().equals(expected.host()) || observed.sshPort() != expected.sshPort()
+            || !observed.host().equals(profile.host()) || observed.sshPort() != profile.sshPort())
+            throw new SQLException("Reviewed host key replacement cannot rebind the endpoint");
+        connections.transaction(() -> {
+            try (var c = connections.open()) {
+                StoreConnections.lockPlatformState(c);
+                try (var statement = c.prepareStatement("""
+                    UPDATE server_profile SET host_key_sha256=?,host_key_format='SSH_WIRE',
+                    last_checked_at=NULL,last_connection_succeeded=NULL,last_operating_system=NULL
+                    WHERE server_profile_id=? AND host=? AND ssh_port=? AND username=? AND credential_id=?
+                    AND trusted_host=? AND trusted_ssh_port=? AND host_key_sha256=? AND host_key_format='SSH_WIRE'
+                    """)) {
+                    statement.setString(1, observed.hostKeySha256());
+                    statement.setString(2, profile.id());
+                    statement.setString(3, profile.host());
+                    statement.setInt(4, profile.sshPort());
+                    statement.setString(5, profile.username());
+                    statement.setString(6, profile.credentialKey());
+                    statement.setString(7, expected.host());
+                    statement.setInt(8, expected.sshPort());
+                    statement.setString(9, expected.hostKeySha256());
+                    if (statement.executeUpdate() != 1)
+                        throw new SQLException("Reviewed server metadata or host trust changed concurrently");
+                }
+            }
+        });
+    }
+
     /** Saves connection fields without overwriting unrelated trust or observations. / 保存连接字段而不覆盖无关信任或观测。
      * @param profile connection settings / 连接设置
      * @throws SQLException on a forbidden rebind or database failure / 禁止换绑或数据库失败
@@ -208,6 +245,24 @@ public final class ServerProfileStore {
                         s.setString(1, profile.id());
                         s.executeUpdate();
                     }
+                }
+            }
+        });
+    }
+
+    /** Invalidates the last check before an atomic credential replacement, without clearing host trust.
+     * / 原子替换凭据前撤销上次检查，不清除主机信任。
+     * @param serverId existing saved identity / 现有保存身份
+     * @throws SQLException if the server is busy or storage fails / 服务器忙或存储失败时 */
+    public void invalidateAuthentication(String serverId) throws SQLException {
+        connections.transaction(() -> {
+            try (var c = connections.open()) {
+                StoreConnections.lockPlatformState(c);
+                gold.debug.windowstolinux.app.db.task.TaskLedger.TaskLedgerQueries.requireServerIdle(c, serverId);
+                try (var update = c.prepareStatement("UPDATE server_profile SET last_checked_at=NULL,"
+                    + "last_connection_succeeded=NULL,last_operating_system=NULL WHERE server_profile_id=?")) {
+                    update.setString(1, serverId);
+                    update.executeUpdate();
                 }
             }
         });

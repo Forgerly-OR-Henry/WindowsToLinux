@@ -119,6 +119,9 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable, 
     /** Explicit authentication-only check action. / 显式仅认证检查动作。 */
     private final JButton check;
 
+    /** Explicit replacement review for a reinstalled saved host. / 重装保存主机的显式替换审阅。 */
+    private final JButton recheckIdentity;
+
     /** Cooperative check cancellation action. / 协作取消检查动作。 */
     private final JButton cancel;
 
@@ -166,6 +169,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable, 
         delete = button("server.delete", "servers.delete", this::delete);
         refresh = button("server.refresh", "servers.refresh", this::refresh);
         check = button("server.check", "servers.check", this::check);
+        recheckIdentity = button("server.recheckIdentity", "servers.recheckIdentity", () -> check(true));
         rescue = button("server.rescueShort", "servers.rescue", this::rescue);
         cancel = button("server.cancelCheck", "servers.cancel", this::cancel);
         reconcile = button("server.reconcile", "servers.reconcile", this::reconcile);
@@ -173,7 +177,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable, 
         });
         failedRescue = button("server.rescueFailedCheck", "servers.rescueFailedCheck", () -> rescue(checkBinding == null ? null : checkBinding.profile()));
         presentation = new ServerPagePresentation(components, messages, table, selection.search, () -> rows.values,
-            checks, output, new ServerPagePresentation.Controls(add, edit, delete, refresh, check, rescue, more, cancel, reconcile, failedRescue));
+            checks, output, new ServerPagePresentation.Controls(add, edit, delete, refresh, check, rescue, more, cancel, reconcile, failedRescue, recheckIdentity));
         order = components.cardOrder(table, this::visibleOrder, this::reorder, this::canReorder);
         for (int delta : new int[]{-1, 1}) {
             String action = delta < 0 ? "alt UP" : "alt DOWN";
@@ -382,10 +386,17 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable, 
 
     /** Submits one central authentication check and observes its actual terminal result. / 提交一次中央认证检查并观察实际终态结果。 */
     private void check() {
+        check(false);
+    }
+
+    /** Retains the exact selected profile for either normal authentication or explicit host identity review.
+     * / 为普通认证或显式主机身份审阅保留精确选中配置。
+     * @param replaceKey whether to request a separate fingerprint replacement / 是否请求单独替换指纹 */
+    private void check(boolean replaceKey) {
         var profile = selected();
         if (profile == null)
             return;
-        work(() -> service.check(profile), handle -> {
+        work(() -> replaceKey ? service.recheckIdentity(profile) : service.check(profile), handle -> {
             long generation = view.epoch;
             checkBinding = new CheckBinding(handle.id(), profile, handle, false);
             failedRescue.setVisible(false);
@@ -488,6 +499,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable, 
         edit.setEnabled(enabled && selected() != null);
         delete.setEnabled(enabled && selected() != null);
         check.setEnabled(enabled && selected() != null);
+        recheckIdentity.setEnabled(enabled && selected() != null);
         rescue.setEnabled(enabled && recovery != null && selected() != null);
         presentation.targetEnabled(enabled && selected() != null);
         presentation.extensionContext(java.util.Optional.ofNullable(selected())

@@ -32,9 +32,10 @@ final class ServerPagePresentation extends JPanel {
      * @param more additional actions / 更多操作
      * @param cancel cancel original task / 取消原任务
      * @param reconcile reconcile original task / 核对原任务
-     * @param failedRescue captured-target rescue / 捕获目标救援 */
+     * @param failedRescue captured-target rescue / 捕获目标救援
+     * @param recheckIdentity explicit saved host identity review / 显式保存主机身份审阅 */
     record Controls(JButton add, JButton edit, JButton delete, JButton refresh, JButton check, JButton rescue,
-                    JButton more, JButton cancel, JButton reconcile, JButton failedRescue) {
+                    JButton more, JButton cancel, JButton reconcile, JButton failedRescue, JButton recheckIdentity) {
     }
 
     /** Current visual factory and localized captions. / 当前视觉工厂与本地化文案。 */
@@ -184,7 +185,7 @@ final class ServerPagePresentation extends JPanel {
         var actions = components.outlinedCard(new BorderLayout(12, 0));
         actions.setName("servers.details.actions");
         var secondaryActions = components.transparent(new FlowLayout(FlowLayout.LEFT, 8, 4));
-        extensionMenu = new ServerExtensionMenu(more, buttons.delete());
+        extensionMenu = new ServerExtensionMenu(more, buttons.delete(), buttons.recheckIdentity());
         var checkGroup = components.transparent(new BorderLayout(0, 4));
         checkGroup.add(check, BorderLayout.NORTH);
         var checkCaption = messages.bind(new JLabel(), "server.authOnly");

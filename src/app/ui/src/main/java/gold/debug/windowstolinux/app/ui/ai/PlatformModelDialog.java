@@ -22,8 +22,9 @@ final class PlatformModelDialog extends JDialog {
 
     private final String id, credential;
 
-    private final JTextField name = new JTextField(28), endpoint = new JTextField(28), model = new JTextField(28),
-        limit = new JTextField(12);
+    private final JTextField name = new JTextField(28), endpoint = new JTextField(28), model = new JTextField(28);
+
+    private final int retainedOutputLimit;
 
     private final JPasswordField key = new JPasswordField(28);
 
@@ -51,9 +52,9 @@ final class PlatformModelDialog extends JDialog {
         id = existing == null ? "model-" + UUID.randomUUID().toString().substring(0, 12) : existing.profile().id();
         credential = existing == null ? "ai/provider/" + id + "/api-key" : existing.profile().credentialKey();
         form = c.card(new GridBagLayout());
-        var fields = new JTextField[]{name, endpoint, model, key, limit};
-        var labels = new String[]{"ai.models.name", "ai.models.endpoint", "field.model", "field.apiKey", "platform.models.limit"};
-        var names = new String[]{"model.name", "model.endpoint", "model.model", "model.key", "model.limit"};
+        var fields = new JTextField[]{name, endpoint, model, key};
+        var labels = new String[]{"ai.models.name", "ai.models.endpoint", "field.model", "field.apiKey"};
+        var names = new String[]{"model.name", "model.endpoint", "model.model", "model.key"};
         for (int i = 0; i < fields.length; i++) {
             fields[i].setName(names[i]);
             c.addField(form, i, 0, messages, labels[i], fields[i]);
@@ -62,8 +63,8 @@ final class PlatformModelDialog extends JDialog {
         protocol.setName("model.protocol");
         messages.localize(reasoning, "ai.models.reasoningEffort.");
         messages.localize(protocol, "ai.models.protocol.");
-        c.addField(form, 5, 0, messages, "ai.models.reasoningEffort", reasoning);
-        c.addField(form, 6, 0, messages, "ai.models.protocol", protocol);
+        c.addField(form, 4, 0, messages, "ai.models.reasoningEffort", reasoning);
+        c.addField(form, 5, 0, messages, "ai.models.protocol", protocol);
         if (existing != null) {
             name.setText(existing.name());
             endpoint.setText(existing.profile().endpoint().toString());
@@ -72,7 +73,8 @@ final class PlatformModelDialog extends JDialog {
             protocol.setSelectedItem(existing.profile().protocol());
             key.putClientProperty("JTextField.placeholderText", messages.text("ai.models.keepKey"));
         }
-        limit.setText(outputLimit.isPresent() ? Integer.toString(outputLimit.getAsInt()) : "4096");
+        retainedOutputLimit = outputLimit.orElse(4096);
+        c.addField(form, 6, 0, messages, "platform.models.limit", messages.bind(new JLabel(), "ai.models.outputPolicy"));
         save = messages.bind(c.primaryButton(""), "ai.models.saveConfiguration");
         save.setName("model.save");
         save.addActionListener(event -> saveConfiguration());
@@ -106,12 +108,12 @@ final class PlatformModelDialog extends JDialog {
             var profile = new AiModelProfile(id, URI.create(endpoint.getText().strip()), model.getText().strip(), credential,
                 (ModelReasoningLevel) reasoning.getSelectedItem(), (ModelProtocol) protocol.getSelectedItem());
             var displayName = name.getText().strip();
-            int ceiling = Integer.parseInt(limit.getText().strip());
+
             busy = true;
             save.setEnabled(false);
             for (var child : form.getComponents()) child.setEnabled(false);
             DesktopTaskRunner.run(() -> {
-                service.save(profile, displayName, input, ceiling);
+                service.save(profile, displayName, input, retainedOutputLimit);
                 return true;
             }, ignored -> {
                 busy = false;

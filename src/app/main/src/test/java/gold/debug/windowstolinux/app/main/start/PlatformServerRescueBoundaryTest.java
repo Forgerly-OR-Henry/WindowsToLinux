@@ -175,6 +175,8 @@ class PlatformServerRescueBoundaryTest {
                 linux.codes.put("controlled", code);
                 try (var servers = new PlatformServerService(runtime.persistence(), runtime.security(), runtime.tasks(),
                     runtime.version(), linux, task -> {
+                }, (server, task) -> {
+                    throw new AssertionError("Rescue does not replace host trust");
                 })) {
                     var profile = PlatformServerServiceTest.profile("controlled", 2222);
                     servers.saveServerProfile(profile, "fixture-secret".toCharArray());
@@ -217,6 +219,8 @@ class PlatformServerRescueBoundaryTest {
                 linux.codes.put("latest", ProblemCode.CANCELLED);
                 try (var servers = new PlatformServerService(runtime.persistence(), runtime.security(), runtime.tasks(),
                     runtime.version(), linux, task -> {
+                }, (server, task) -> {
+                    throw new AssertionError("Rescue does not replace host trust");
                 })) {
                     var slow = PlatformServerServiceTest.profile("slow", 2222);
                     var latest = PlatformServerServiceTest.profile("latest", 2223);

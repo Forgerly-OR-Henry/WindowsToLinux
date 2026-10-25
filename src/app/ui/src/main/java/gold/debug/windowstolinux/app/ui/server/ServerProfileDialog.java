@@ -144,7 +144,7 @@ public final class ServerProfileDialog extends JDialog {
         c.addField(form, 2, 0, messages, "field.sshPort", port);
         c.addField(form, 3, 0, messages, "field.sshUser", username);
         c.addField(form, 4, 0, messages, "field.sshPassword", password);
-        save = messages.bind(c.primaryButton(""), "button.saveServer");
+        save = messages.bind(c.primaryButton(""), "server.saveProfile");
         save.setName("server.save");
         save.addActionListener(event -> save());
         JButton cancel = messages.bind(c.secondaryButton(""), "button.cancel");
@@ -160,6 +160,7 @@ public final class ServerProfileDialog extends JDialog {
         status.setRows(4);
         status.setLineWrap(true);
         status.setWrapStyleWord(true);
+        if (existing) status.setText(messages.text("server.password.trustSeparate"));
         body.add(new JScrollPane(status), BorderLayout.CENTER);
         DesktopDialogs.install(this, body, actions, 560, 490);
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
