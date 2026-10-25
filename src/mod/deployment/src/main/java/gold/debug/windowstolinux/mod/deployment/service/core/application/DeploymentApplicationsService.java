@@ -120,15 +120,19 @@ public final class DeploymentApplicationsService implements TaskRecovery {
     public TaskHandle<Optional<DeploymentApplicationUsage>> usageForCompletedTask(UUID originalTaskUUID) throws ApiException {
         Objects.requireNonNull(originalTaskUUID);
         return query(List.of(), "Original task delivery", task -> {
-            var data = new DeploymentApplicationReader(context.db()).findForCompletedTask(originalTaskUUID, task);
-            if (data.isEmpty())
-                return success(Optional.empty());
-            var original = data.orElseThrow();
-            var host = DeploymentApplicationHosts.require(DeploymentApplicationHosts.read(context, task),
-                original.snapshot().application().server());
-            var usage = DeploymentApplicationReader.projectUsage(original, host);
-            return success(usage.components().stream().anyMatch(value -> value.mode() == DeploymentApplicationUsage.Mode.UNVERIFIED)
-                ? Optional.empty() : Optional.of(usage));
+            try {
+                var data = new DeploymentApplicationReader(context.db()).findForCompletedTask(originalTaskUUID, task);
+                if (data.isEmpty())
+                    return success(Optional.empty());
+                var original = data.orElseThrow();
+                var host = DeploymentApplicationHosts.require(DeploymentApplicationHosts.read(context, task),
+                    original.snapshot().application().server());
+                var usage = DeploymentApplicationReader.projectUsage(original, host);
+                return success(usage.components().stream().anyMatch(value -> value.mode() == DeploymentApplicationUsage.Mode.UNVERIFIED)
+                    ? Optional.empty() : Optional.of(usage));
+            } catch (ApiException unavailable) {
+                return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(unavailable.problem()));
+            }
         });
     }
 

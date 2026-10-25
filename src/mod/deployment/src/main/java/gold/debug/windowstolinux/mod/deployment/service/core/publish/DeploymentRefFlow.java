@@ -159,6 +159,7 @@ public final class DeploymentRefFlow implements TaskRecovery {
     public OperationResult<Void> reconcile(TaskSnapshot previous, TaskContext task) throws Exception {
         if (!TASK_TYPE.equals(previous.type()) || !previous.id().equals(task.id()))
             return unknown();
+        gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationUpgrade.prepare(context, task, true);
         var original = executions.findForTask(task);
         if (original.isEmpty())
             return unknown();
@@ -202,6 +203,7 @@ public final class DeploymentRefFlow implements TaskRecovery {
             plan.project().map(DeploymentProjectRecord::id), plan.applicationId(), plan.server(), plan.mode(),
             plan.reviewedRevision());
         try {
+            gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationUpgrade.prepare(context, task, false);
             executions.begin(task, identity, TASK_TYPE, plan.references(), plan.project(), plan.createdAt());
             for (var intent : plan.references())
                 reserveOriginal(task, identity, intent);
