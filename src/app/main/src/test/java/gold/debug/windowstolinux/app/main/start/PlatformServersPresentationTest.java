@@ -252,10 +252,25 @@ class PlatformServersPresentationTest {
         var bar = scroll.getVerticalScrollBar();
         assertTrue(bar.isVisible(), "Inventory scrollbar is always visible");
         int right = SwingUtilities.convertPoint(bar, bar.getWidth(), 0, pane).x;
-        for (String action : new String[]{"servers.add", "servers.refresh"}) {
+        for (String action : new String[]{"servers.search", "servers.refresh"}) {
             var button = named(pane, action);
             assertEquals(right, SwingUtilities.convertPoint(button, button.getWidth(), 0, pane).x, action);
         }
+        var add = named(pane, "servers.add");
+        var refresh = named(pane, "servers.refresh");
+        var search = named(pane, "servers.search");
+        var header = named(pane, "servers.inventory.header");
+        var count = named(pane, "servers.count");
+        assertTrue(count.getWidth() >= count.getPreferredSize().width);
+        assertEquals(centerY(add, pane), centerY(refresh, pane));
+        assertTrue(SwingUtilities.convertPoint(add, add.getWidth(), 0, pane).x
+            < SwingUtilities.convertPoint(refresh, 0, 0, pane).x);
+        assertTrue(SwingUtilities.convertPoint(refresh, 0, refresh.getHeight(), pane).y
+            < SwingUtilities.convertPoint(search, 0, 0, pane).y);
+        assertEquals(refresh.getHeight(), search.getHeight());
+        assertEquals(header.getWidth(), search.getWidth());
+        assertEquals(SwingUtilities.convertPoint(header, 0, 0, pane).x,
+            SwingUtilities.convertPoint(search, 0, 0, pane).x);
     }
 
     private static void assertCardSurfaces(JComponent pane) {

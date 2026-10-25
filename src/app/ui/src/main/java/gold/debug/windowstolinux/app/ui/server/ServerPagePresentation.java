@@ -243,24 +243,59 @@ final class ServerPagePresentation extends JPanel {
         var inventory = components.outerCard(new BorderLayout(0, 12));
         inventory.setName("servers.inventory");
         var heading = components.transparent(new BorderLayout(0, 8));
-        var titleRow = components.transparent(new BorderLayout(8, 0));
         messages.bind(inventoryTitle, "server.inventory");
         inventoryTitle.setFont(inventoryTitle.getFont().deriveFont(Font.BOLD, com.formdev.flatlaf.util.UIScale.scale(20f)));
         var titleCopy = components.transparent(new BorderLayout(8, 0));
         titleCopy.add(inventoryTitle, BorderLayout.WEST);
         titleCopy.add(count, BorderLayout.CENTER);
         count.setName("servers.count");
+        var actions = components.transparent(new BorderLayout(8, 0));
+        actions.add(add, BorderLayout.CENTER);
+        actions.add(refresh, BorderLayout.EAST);
+        var titleRow = components.transparent(new BorderLayout(8, 8) {
+            /** Keeps both actions together when the heading needs a separate row. / 标题需独占一行时仍将两个按钮并排放置。 */
+            @Override
+            public void layoutContainer(Container parent) {
+                var titleSize = titleCopy.getPreferredSize();
+                var actionSize = actions.getPreferredSize();
+                boolean stacked = parent.getWidth() < titleSize.width + actionSize.width + getHgap();
+                int rowHeight = stacked ? titleSize.height : Math.max(titleSize.height, actionSize.height);
+                titleCopy.setBounds(0, 0, stacked ? parent.getWidth()
+                    : parent.getWidth() - actionSize.width - getHgap(), rowHeight);
+                actions.setBounds(parent.getWidth() - actionSize.width, stacked ? rowHeight + getVgap() : 0,
+                    actionSize.width, stacked ? actionSize.height : rowHeight);
+                if (parent.getHeight() != (stacked ? rowHeight + getVgap() + actionSize.height : rowHeight))
+                    EventQueue.invokeLater(parent::revalidate);
+            }
+
+            /** Reserves room for the heading and actions at narrow widths. / 窄宽度下为标题和按钮预留两行高度。 */
+            @Override
+            public Dimension preferredLayoutSize(Container parent) {
+                var size = super.preferredLayoutSize(parent);
+                if (parent.getWidth() > 0 && parent.getWidth() < size.width)
+                    size.height = titleCopy.getPreferredSize().height + getVgap() + actions.getPreferredSize().height;
+                return size;
+            }
+        });
         titleRow.add(titleCopy, BorderLayout.CENTER);
-        titleRow.add(add, BorderLayout.EAST);
+        titleRow.add(actions, BorderLayout.EAST);
         inventoryHeader.add(titleRow, BorderLayout.NORTH);
-        var search = components.transparent(new BorderLayout(8, 0));
-        search.add(query, BorderLayout.CENTER);
         components.styleSearchField(query);
         query.putClientProperty("JTextField.placeholderText", messages.text("server.search"));
         query.putClientProperty("JTextField.leadingIcon",
             gold.debug.windowstolinux.app.ui.control.DesktopIcons.icon("action/search", 16,
                 () -> UIManager.getColor("Label.disabledForeground")));
-        search.add(refresh, BorderLayout.EAST);
+        var search = new JPanel(new BorderLayout()) {
+            /** Preserves the original toolbar height through scale changes. / 缩放变化时保留原工具栏高度。 */
+            @Override
+            public Dimension getPreferredSize() {
+                var size = super.getPreferredSize();
+                size.height = Math.max(size.height, refresh.getPreferredSize().height);
+                return size;
+            }
+        };
+        search.setOpaque(false);
+        search.add(query, BorderLayout.CENTER);
         inventoryHeader.add(search, BorderLayout.CENTER);
         heading.add(inventoryHeader, BorderLayout.CENTER);
         feedback.setName("servers.feedback");
