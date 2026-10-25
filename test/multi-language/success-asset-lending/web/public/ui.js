@@ -1,4 +1,7 @@
 export const el = (id) => document.getElementById(id);
+export function newRequestId() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (value) => value.toString(16).padStart(2, "0")).join("");
+}
 let pending = 0;
 export async function api(path, options = {}) {
   pending++;

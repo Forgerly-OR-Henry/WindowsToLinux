@@ -1,4 +1,4 @@
-import { el, api, post, error, cell, action, form } from "./ui.js";
+import { el, api, post, error, cell, action, form, newRequestId } from "./ui.js";
 let assetOffset = 0,
   loanOffset = 0,
   currentLoan;
@@ -17,7 +17,7 @@ const labels = {
   closed: "已结清",
 };
 const actor = () => el("actor").value;
-const request = () => ({ requestId: crypto.randomUUID(), actor: actor() });
+const request = () => ({ requestId: newRequestId(), actor: actor() });
 async function categories() {
   const list = await api("/api/categories");
   for (const id of ["category", "category-filter"])
