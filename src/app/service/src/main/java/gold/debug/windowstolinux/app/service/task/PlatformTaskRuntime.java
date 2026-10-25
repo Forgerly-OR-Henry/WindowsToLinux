@@ -14,6 +14,7 @@ import gold.debug.windowstolinux.app.db.task.TaskResourceObservation;
 import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.control.*;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
@@ -238,8 +239,14 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         public boolean diagnosticOwner(UUID taskId, String owner, String version) throws ApiException {
             synchronized (PlatformTaskRuntime.this) {
                 var execution = executions.get(taskId);
-                if (execution == null)
-                    return false;
+                if (execution == null) {
+                    try {
+                        return ledger.queries().archived(taskId, owner, version).isPresent();
+                    } catch (SQLException invalid) {
+                        throw TaskConclusion.error(ProblemCode.IO_FAILURE, "SERVICE_LOG_OWNER",
+                            "Archived diagnostic attribution cannot be verified");
+                    }
+                }
                 if (execution.snapshot.ownerId().equals(owner) && execution.snapshot.ownerVersion().equals(version))
                     return true;
                 if (dependencyScopes.values().stream().anyMatch(scope -> scope.context.id().equals(taskId)
@@ -431,6 +438,14 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     /** Exact owner/version/type recovery registrations. / 精确所有者、版本及类型的恢复登记。 */
     private final Map<RecoveryKey, TaskRecovery> recoveries = new HashMap<>();
 
+    private final Map<RecoveryKey, ControlBinding> controllers = new HashMap<>();
+
+    private static final class ControlBinding {
+        final TaskController controller;
+        int calls;
+        ControlBinding(TaskController controller) { this.controller = controller; }
+    }
+
     /** Bound author services revoked when their owning activation closes. / 所属启用关闭时撤销的绑定作者服务。 */
     private final Set<BoundTasks> bindings = Collections.newSetFromMap(new IdentityHashMap<>());
 
@@ -573,6 +588,10 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             throw TaskConclusion.error(ProblemCode.IO_FAILURE, "MOD_OCCUPANCY_UNKNOWN",
                 "Mod occupancy could not be verified");
         }
+        if (controllers.entrySet().stream().anyMatch(entry -> entry.getKey().owner().equals(ownerId)
+            && entry.getKey().version().equals(version) && entry.getValue().calls != 0))
+            throw TaskConclusion.error(ProblemCode.BUSY, "TASK_CONTROL_ACTIVE", "Original task control is active");
+        controllers.keySet().removeIf(key -> key.owner().equals(ownerId) && key.version().equals(version));
         recoveries.keySet().removeIf(key -> key.owner().equals(ownerId) && key.version().equals(version));
         for (var binding : List.copyOf(bindings))
             if (binding.owner.equals(ownerId) && binding.version.equals(version)) {
@@ -1086,8 +1105,75 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                     : gold.debug.windowstolinux.app.service.task.TaskManagement.RecoveryState.UNAVAILABLE;
             }
             return new gold.debug.windowstolinux.app.service.task.TaskManagement.Entry(task.snapshot,
-                conclusion.cancellationAvailable(task), state);
+                conclusion.cancellationAvailable(task), state, task.requestTitle);
         }).toList();
+    }
+
+    /** Reads optional Mod observations outside the runtime monitor. / 在运行时锁外读取可选 Mod 观察。 */
+    TaskManagement.Entry present(TaskManagement.Entry entry) {
+        ControlBinding binding;
+        Optional<Double> fraction;
+        synchronized (this) {
+            var task = executions.get(entry.snapshot().id());
+            if (task == null) return entry;
+            fraction = task.progressFraction;
+            binding = closing ? null : controllers.get(new RecoveryKey(entry.snapshot().ownerId(),
+                entry.snapshot().ownerVersion(), entry.snapshot().type()));
+            if (binding != null) binding.calls++;
+        }
+        var controls = TaskControlSnapshot.unavailable("TASK_CONTROL_NOT_REGISTERED");
+        if (binding != null) try {
+            controls = Objects.requireNonNull(binding.controller.snapshot(entry.snapshot().id()));
+        } catch (ApiException | RuntimeException unavailable) {
+            controls = TaskControlSnapshot.unavailable("TASK_CONTROL_UNAVAILABLE");
+        } finally {
+            synchronized (this) { binding.calls--; }
+        }
+        return new TaskManagement.Entry(entry.snapshot(), entry.cancellable(), entry.recovery(), entry.title(),
+            TaskManagement.projection(entry.snapshot(), entry.recovery(), fraction, controls));
+    }
+
+    /** Dispatches explicit controls without lending a business context or holding the runtime lock. */
+    void requestControl(UUID id, TaskCommand command) throws ApiException {
+        Objects.requireNonNull(command);
+        try (var authorization = authorizationSupport.authorize()) {
+            ControlBinding binding;
+            synchronized (this) {
+                var task = executions.get(id);
+                if (closing || task == null || task.reconciling || task.returned
+                    || !Set.of(TaskState.RUNNING, TaskState.WAITING).contains(task.snapshot.state()))
+                    throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "TASK_CONTROL_UNAVAILABLE", "Original live task is unavailable");
+                if (task.snapshot.state() == TaskState.WAITING && command != TaskCommand.INTERVENE)
+                    throw TaskConclusion.error(ProblemCode.BUSY, "TASK_CONTROL_STATE", "Handle the original user decision first");
+                binding = controllers.get(new RecoveryKey(task.snapshot.ownerId(), task.snapshot.ownerVersion(), task.snapshot.type()));
+                if (binding == null)
+                    throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "TASK_CONTROL_NOT_REGISTERED", "The Mod has not registered task controls");
+                binding.calls++;
+            }
+            try {
+                if (!Objects.requireNonNull(binding.controller.snapshot(id)).allows(command))
+                    throw TaskConclusion.error(ProblemCode.BUSY, "TASK_CONTROL_STATE", "The original boundary rejects this action");
+                binding.controller.request(id, command);
+            } finally {
+                synchronized (this) { binding.calls--; }
+            }
+        }
+    }
+
+    gold.debug.windowstolinux.appapi.task.log.LogReadResult readTaskLogs(UUID id) throws ApiException {
+        try (var authorization = authorizationSupport.authorize()) {
+            ControlBinding binding;
+            synchronized (this) {
+                var task = executions.get(id);
+                binding = task == null || closing ? null : controllers.get(new RecoveryKey(task.snapshot.ownerId(),
+                    task.snapshot.ownerVersion(), task.snapshot.type()));
+                if (binding == null)
+                    throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "TASK_LOGS_UNAVAILABLE", "Original Mod task logs are unavailable");
+                binding.calls++;
+            }
+            try { return binding.controller.readLogs(id); }
+            finally { synchronized (this) { binding.calls--; } }
+        }
     }
 
     /** Requests cancellation after fresh host authorization, rechecking state inside the original handle. / 在重新取得宿主授权后请求取消，在原句柄内重查状态。
@@ -1777,6 +1863,26 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             }
         }
 
+        @Override
+        public TaskControlRegistration registerController(String taskType, TaskController controller) throws ApiException {
+            Objects.requireNonNull(controller);
+            if (taskType == null || taskType.isBlank() || taskType.length() > 128)
+                throw TaskConclusion.error(ProblemCode.INVALID_INPUT, "TASK_CONTROL_TYPE", "Invalid task type");
+            var key = new RecoveryKey(owner, version, taskType);
+            var binding = new ControlBinding(controller);
+            synchronized (PlatformTaskRuntime.this) {
+                if (revoked || closing || controllers.putIfAbsent(key, binding) != null)
+                    throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "TASK_CONTROL_REGISTRATION", "Control registration is unavailable");
+            }
+            return () -> {
+                synchronized (PlatformTaskRuntime.this) {
+                    if (binding.calls != 0)
+                        throw TaskConclusion.error(ProblemCode.BUSY, "TASK_CONTROL_ACTIVE", "Original task control is active");
+                    controllers.remove(key, binding);
+                }
+            };
+        }
+
         /** Registers an exact original-version recovery callback. / 登记精确原始版本的恢复回调。
          * @param taskType owner-local type / 所有者内部类型
          * @param recovery explicit reconciliation implementation / 显式核对实现
@@ -1860,6 +1966,10 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         /** Private completion promise exposed only as a minimal stage. / 仅以最小阶段暴露的私有完成承诺。 */
         private final CompletableFuture<OperationResult<T>> completion = new CompletableFuture<>();
 
+        private final String requestTitle;
+
+        private Optional<Double> progressFraction = Optional.empty();
+
         /** Creates a handle after durable admission or recovery lookup. / 在持久化准入或恢复查找后创建句柄。
          * @param snapshot persisted initial state / 持久化初始状态
          * @param work original callback, absent during recovery / 原始回调，恢复时为空
@@ -1871,6 +1981,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             this.work = work;
             this.cancellable = cancellable;
             this.cancelled = ledger.queries().cancellationRequested(snapshot.id());
+            this.requestTitle = ledger.queries().title(snapshot.id());
         }
 
         /** Returns the durable task identity. / 返回持久化任务身份。
@@ -2013,6 +2124,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 requireContext(this);
                 try {
                     ledger.progress(id(), text);
+                    execution.progressFraction = fraction;
                     execution.setSnapshot(ledger.queries().snapshot(id()));
                 } catch (SQLException failure) {
                     throw TaskConclusion.error(ProblemCode.IO_FAILURE, "TASK_PROGRESS_PERSISTENCE",

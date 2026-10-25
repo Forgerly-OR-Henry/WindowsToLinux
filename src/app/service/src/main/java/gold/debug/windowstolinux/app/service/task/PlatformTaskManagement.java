@@ -44,13 +44,73 @@ public final class PlatformTaskManagement implements TaskManagement {
     @Override
     public List<Entry> list() throws ApiException {
         requireAccess();
-        return tasks.management().stream()
+        return tasks.management().stream().map(tasks::present)
             .map(entry -> rescue(entry.snapshot()) && entry.recovery() == RecoveryState.RECONCILE
-                ? new Entry(entry.snapshot(), entry.cancellable(), RecoveryState.CONFIRM_RESCUE)
+                ? new Entry(entry.snapshot(), entry.cancellable(), RecoveryState.CONFIRM_RESCUE, entry.title(), entry.view())
                 : entry)
             .sorted(Comparator.comparing((Entry entry) -> entry.snapshot().startedAt())
                 .thenComparing(entry -> entry.snapshot().id()))
             .toList();
+    }
+
+    /** Binds a private task view to a host-selected release, never to caller-selected task ownership. */
+    public TaskManagement scoped(String owner, String version, java.util.function.BooleanSupplier active) {
+        Objects.requireNonNull(active);
+        if (owner == null || owner.isBlank() || owner.equals(PlatformTaskAdmission.PLATFORM_OWNER)
+            || version == null || version.isBlank()) throw new IllegalArgumentException("Exact Mod release required");
+        return new TaskManagement() {
+            private void requireScope() throws ApiException {
+                requireAccess();
+                if (!active.getAsBoolean())
+                    throw failure(ProblemCode.UNAVAILABLE, "TASK_VIEW_CLOSED", "The original task view is unavailable");
+            }
+
+            @Override public List<Entry> list() throws ApiException {
+                requireScope();
+                return PlatformTaskManagement.this.list().stream().filter(entry ->
+                    entry.snapshot().ownerId().equals(owner) && entry.snapshot().ownerVersion().equals(version)).toList();
+            }
+
+            private void requireOwned(UUID id) throws ApiException {
+                if (list().stream().noneMatch(entry -> entry.snapshot().id().equals(id)))
+                    throw failure(ProblemCode.ACCESS_DENIED, "TASK_VIEW_OWNER", "Task is outside this exact Mod release");
+            }
+
+            @Override public void control(UUID id, gold.debug.windowstolinux.appapi.task.control.TaskCommand command) throws ApiException {
+                requireOwned(id);
+                PlatformTaskManagement.this.control(id, command);
+            }
+
+            @Override public gold.debug.windowstolinux.appapi.task.log.LogReadResult readLogs(UUID id) throws ApiException {
+                requireOwned(id);
+                return PlatformTaskManagement.this.readLogs(id);
+            }
+
+            @Override public TaskSnapshot requestCancel(UUID id) throws ApiException {
+                requireOwned(id);
+                return PlatformTaskManagement.this.requestCancel(id);
+            }
+
+            @Override public TaskSnapshot continueWaiting(UUID id) throws ApiException {
+                requireOwned(id);
+                return PlatformTaskManagement.this.continueWaiting(id);
+            }
+
+            @Override public CompletionStage<TaskSnapshot> reconcile(UUID id, boolean actionReconciled) throws ApiException {
+                requireOwned(id);
+                return PlatformTaskManagement.this.reconcile(id, false);
+            }
+        };
+    }
+
+    @Override public void control(UUID id, gold.debug.windowstolinux.appapi.task.control.TaskCommand command) throws ApiException {
+        requireAccess();
+        tasks.requestControl(id, command);
+    }
+
+    @Override public gold.debug.windowstolinux.appapi.task.log.LogReadResult readLogs(UUID id) throws ApiException {
+        requireAccess();
+        return tasks.readTaskLogs(id);
     }
 
     /** Requests cancellation through the original handle and its actual current state. / 通过原句柄及其实际当前状态请求取消。

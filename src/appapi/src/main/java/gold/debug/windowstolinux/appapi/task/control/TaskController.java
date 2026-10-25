@@ -11,4 +11,11 @@ public interface TaskController {
     /** Revalidate the original boundary before acting; intervention grants no approval.
      * / 执行前复核原边界；介入不授予批准。 */
     void request(UUID originalTask, TaskCommand command) throws ApiException;
+
+    /** Reads only this Mod's bounded original diagnostics. / 仅读取本 Mod 的有界原任务诊断。 */
+    default gold.debug.windowstolinux.appapi.task.log.LogReadResult readLogs(UUID originalTask) throws ApiException {
+        throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNAVAILABLE, "TASK_LOGS_UNAVAILABLE",
+            "Original Mod task logs are unavailable", java.util.Map.of(), java.util.Optional.empty()));
+    }
 }

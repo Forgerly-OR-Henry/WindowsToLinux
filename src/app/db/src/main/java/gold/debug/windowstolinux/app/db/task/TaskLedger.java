@@ -1616,6 +1616,30 @@ public final class TaskLedger {
             });
         }
 
+        /** Reads only the original immutable request's display title, independently of changing progress. */
+        public String title(UUID taskId) throws SQLException {
+            return locked(() -> {
+                try (var connection = connections.open();
+                     var query = connection.prepareStatement("SELECT request_json FROM platform_task WHERE task_id=?")) {
+                    query.setObject(1, taskId);
+                    try (var rows = query.executeQuery()) {
+                        if (!rows.next()) throw new SQLException("Original task request is absent");
+                        try {
+                            var request = json.readTree(rows.getString(1));
+                            if (request == null || !request.isObject()) throw new SQLException("Original task request is invalid");
+                            var title = request.path("title");
+                            if (title.isMissingNode() || title.isNull()) return "";
+                            if (!title.isTextual() || title.textValue().length() > 4096)
+                                throw new SQLException("Original task title is invalid");
+                            return title.textValue();
+                        } catch (java.io.IOException invalid) {
+                            throw new SQLException("Original task request cannot be read", invalid);
+                        }
+                    }
+                }
+            });
+        }
+
         /** Reads the actual persisted state and outstanding explicit resources. / 读取实际持久状态及未结显式资源。
          * @param taskId original task identity / 原任务身份
          * @return immutable original snapshot / 不可变原快照

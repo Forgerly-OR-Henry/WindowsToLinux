@@ -34,11 +34,53 @@ public interface TaskManagement {
      * @throws ApiException if authorization, confirmation or original recovery is unavailable / 授权、确认或原恢复不可用时 */
     CompletionStage<TaskSnapshot> reconcile(UUID id, boolean actionReconciled) throws ApiException;
 
+    default void control(UUID id, gold.debug.windowstolinux.appapi.task.control.TaskCommand command) throws ApiException {
+        throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNAVAILABLE, "TASK_CONTROL_UNAVAILABLE",
+            "Original task controls are unavailable", java.util.Map.of(), java.util.Optional.empty()));
+    }
+
+    default gold.debug.windowstolinux.appapi.task.log.LogReadResult readLogs(UUID id) throws ApiException {
+        throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNAVAILABLE, "TASK_LOGS_UNAVAILABLE",
+            "Original Mod task logs are unavailable", java.util.Map.of(), java.util.Optional.empty()));
+    }
+
     /** Current host observations, never an authorization token. / 当前宿主观察，不作为授权凭据。
      * @param snapshot original task state and outstanding resources / 原任务状态及未释放资源
      * @param cancellable whether cooperative cancellation can currently be requested / 当前是否可请求协作取消
-     * @param recovery available reconciliation path / 可用核对路径 */
-    record Entry(TaskSnapshot snapshot, boolean cancellable, RecoveryState recovery) {
+     * @param recovery available reconciliation path / 可用核对路径
+     * @param title original persisted request title, empty when unavailable / 原持久请求标题，不可用时为空 */
+    record Entry(TaskSnapshot snapshot, boolean cancellable, RecoveryState recovery, String title,
+                 gold.debug.windowstolinux.appapi.task.model.TaskViewSnapshot view) {
+        public Entry {
+            java.util.Objects.requireNonNull(title);
+            java.util.Objects.requireNonNull(view);
+        }
+
+        public Entry(TaskSnapshot snapshot, boolean cancellable, RecoveryState recovery, String title) {
+            this(snapshot, cancellable, recovery, title, projection(snapshot, recovery,
+                java.util.Optional.empty(), gold.debug.windowstolinux.appapi.task.control.TaskControlSnapshot
+                    .unavailable("TASK_CONTROL_NOT_REGISTERED")));
+        }
+
+        public Entry(TaskSnapshot snapshot, boolean cancellable, RecoveryState recovery) {
+            this(snapshot, cancellable, recovery, "");
+        }
+    }
+
+    static gold.debug.windowstolinux.appapi.task.model.TaskViewSnapshot projection(TaskSnapshot snapshot,
+        RecoveryState recovery, java.util.Optional<Double> fraction,
+        gold.debug.windowstolinux.appapi.task.control.TaskControlSnapshot controls) {
+        var category = gold.debug.windowstolinux.appapi.task.model.TaskViewSnapshot.Category.RUNNING;
+        if (snapshot.state() == gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN
+            || recovery != RecoveryState.NOT_READY
+            || controls.state() == gold.debug.windowstolinux.appapi.task.control.TaskControlSnapshot.State.PAUSED)
+            category = gold.debug.windowstolinux.appapi.task.model.TaskViewSnapshot.Category.WAITING_RECOVERY;
+        else if (snapshot.state() == gold.debug.windowstolinux.appapi.task.model.TaskState.WAITING
+            || controls.state() == gold.debug.windowstolinux.appapi.task.control.TaskControlSnapshot.State.WAITING_USER)
+            category = gold.debug.windowstolinux.appapi.task.model.TaskViewSnapshot.Category.WAITING_USER;
+        return new gold.debug.windowstolinux.appapi.task.model.TaskViewSnapshot(category, fraction, controls);
     }
 
     /** Distinguishes execution, missing original code and metadata-only completion. / 区分执行中、缺少原代码和仅元数据收尾。 */
