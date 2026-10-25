@@ -15,7 +15,7 @@ public final class ServerProfileStore {
      */
     private final StoreConnections connections;
 
-    /** Query protecting referenced server identities from rebinding. / 保护被引用服务器身份免于换绑的查询。 */
+    /** Query protecting referenced identities from deletion or unverified rebinding. / 保护引用身份免于删除或未核验换绑的查询。 */
     private final String referenceQuery;
 
     /** Binds owned platform connections and repository transactions. / 绑定所属平台连接和仓库事务。
@@ -160,8 +160,8 @@ public final class ServerProfileStore {
         saveServer(observed);
     }
 
-    /** Replaces one explicitly reviewed wire key only after authentication, preserving the saved profile identity.
-     * / 仅在明确审阅并认证后替换一项 wire 密钥，保留已保存配置身份。
+    /** Saves authenticated reviewed trust, allowing an address change only for the same wire key.
+     * / 保存已审阅并认证的信任，仅同一 wire 密钥允许地址变更。
      * @param observed authenticated replacement / 已认证的新身份
      * @param expected reviewed previous trust / 已审阅的原信任
      * @param profile original connection metadata / 原连接元数据
@@ -169,27 +169,31 @@ public final class ServerProfileStore {
     public void replaceAuthenticatedServer(StoredServerIdentity observed, StoredServerIdentity expected,
                                            StoredServerProfile profile) throws SQLException {
         if (!observed.id().equals(expected.id()) || !observed.id().equals(profile.id())
-            || !observed.host().equals(expected.host()) || observed.sshPort() != expected.sshPort()
             || !observed.host().equals(profile.host()) || observed.sshPort() != profile.sshPort())
-            throw new SQLException("Reviewed host key replacement cannot rebind the endpoint");
+            throw new SQLException("Authenticated trust differs from the saved profile");
+        if ((!observed.host().equals(expected.host()) || observed.sshPort() != expected.sshPort())
+            && !observed.hostKeySha256().equals(expected.hostKeySha256()))
+            throw new SQLException("A referenced server address can change only with the same SSH host key");
         connections.transaction(() -> {
             try (var c = connections.open()) {
                 StoreConnections.lockPlatformState(c);
                 try (var statement = c.prepareStatement("""
-                    UPDATE server_profile SET host_key_sha256=?,host_key_format='SSH_WIRE',
+                    UPDATE server_profile SET host_key_sha256=?,trusted_host=?,trusted_ssh_port=?,host_key_format='SSH_WIRE',
                     last_checked_at=NULL,last_connection_succeeded=NULL,last_operating_system=NULL
                     WHERE server_profile_id=? AND host=? AND ssh_port=? AND username=? AND credential_id=?
                     AND trusted_host=? AND trusted_ssh_port=? AND host_key_sha256=? AND host_key_format='SSH_WIRE'
                     """)) {
                     statement.setString(1, observed.hostKeySha256());
-                    statement.setString(2, profile.id());
-                    statement.setString(3, profile.host());
-                    statement.setInt(4, profile.sshPort());
-                    statement.setString(5, profile.username());
-                    statement.setString(6, profile.credentialKey());
-                    statement.setString(7, expected.host());
-                    statement.setInt(8, expected.sshPort());
-                    statement.setString(9, expected.hostKeySha256());
+                    statement.setString(2, observed.host());
+                    statement.setInt(3, observed.sshPort());
+                    statement.setString(4, profile.id());
+                    statement.setString(5, profile.host());
+                    statement.setInt(6, profile.sshPort());
+                    statement.setString(7, profile.username());
+                    statement.setString(8, profile.credentialKey());
+                    statement.setString(9, expected.host());
+                    statement.setInt(10, expected.sshPort());
+                    statement.setString(11, expected.hostKeySha256());
                     if (statement.executeUpdate() != 1)
                         throw new SQLException("Reviewed server metadata or host trust changed concurrently");
                 }
@@ -211,14 +215,16 @@ public final class ServerProfileStore {
                 if (prior.isPresent() && (changed || !prior.get().username().equals(profile.username())
                     || !prior.get().credentialKey().equals(profile.credentialKey())))
                     gold.debug.windowstolinux.app.db.task.TaskLedger.TaskLedgerQueries.requireServerIdle(c, profile.id());
+                boolean referenced = false;
                 if (changed) {
                     try (var s = c.prepareStatement(referenceQuery)) {
                         s.setString(1, profile.id());
                         try (var rows = s.executeQuery()) {
-                            if (rows.next())
-                                throw new SQLException("a referenced server cannot be rebound; create a new profile");
+                            referenced = rows.next();
                         }
                     }
+                    if (referenced && findServer(profile.id()).isEmpty())
+                        throw new SQLException("Verify the current SSH host identity before changing this server address");
                 }
                 String sql = prior.isPresent()
                     ? "UPDATE server_profile SET credential_id=?,host=?,ssh_port=?,username=?,display_name=? WHERE server_profile_id=?"
@@ -232,7 +238,7 @@ public final class ServerProfileStore {
                     statement.setString(6, profile.id());
                     statement.executeUpdate();
                 }
-                if (changed) {
+                if (changed && !referenced) {
                     try (var s = c.prepareStatement(
                         "UPDATE server_profile SET host_key_sha256=NULL,host_key_format=NULL,trusted_host=NULL,trusted_ssh_port=NULL WHERE server_profile_id=?")) {
                         s.setString(1, profile.id());

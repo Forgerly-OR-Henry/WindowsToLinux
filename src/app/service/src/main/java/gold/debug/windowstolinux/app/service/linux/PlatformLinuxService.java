@@ -386,7 +386,8 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                     ActionIntent intent;
                     if (expected.isPresent()) {
                         var trusted = expected.orElseThrow();
-                        if (!trusted.host().equals(target.host()) || trusted.sshPort() != target.port()) return false;
+                        if (!trusted.host().equals(target.host()) || trusted.sshPort() != target.port())
+                            return session.recheckIdentity && trusted.hostKeySha256().equals(fingerprint);
                         if (trusted.hostKeySha256().equals(fingerprint)) return true;
                         if (!session.recheckIdentity) return false;
                         intent = new ActionIntent("platform.ssh.replace-trust", List.of(server.id()), server.id(),
