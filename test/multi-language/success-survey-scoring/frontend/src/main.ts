@@ -1,4 +1,4 @@
-import { api, post, configure, node, url, message, cell, button, form } from "./api";
+import { api, post, configure, node, url, message, cell, button, form, newRequestId } from "./api";
 import { editor, addQuestion, readContent, renderQuestions, answers, type Content } from "./questions";
 type Revision = {
   id: number;
@@ -96,7 +96,7 @@ async function fill(id: number) {
   filling = await api<Revision>(`/api/revisions/${id}`);
   if (filling.status !== "published") throw new Error("问卷版本未开放");
   surveyId = filling.surveyId;
-  requestId = crypto.randomUUID();
+  requestId = newRequestId();
   node("fill-title").textContent = filling.content.title;
   node("fill-version").textContent = `发布版本 ${filling.number} · 历史结果固定使用本版规则`;
   renderQuestions(filling.content);
