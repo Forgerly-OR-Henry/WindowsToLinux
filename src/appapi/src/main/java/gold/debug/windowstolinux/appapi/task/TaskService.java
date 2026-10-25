@@ -18,6 +18,15 @@ import gold.debug.windowstolinux.appapi.task.run.TaskWork;
  */
 public interface TaskService {
 
+    /** Registers optional controls for this activation's exact owner, version and task type.
+     * / 为本启用代次的精确所有者、版本及任务类型登记可选控制。无长期任务的 Mod 无须登记。 */
+    default gold.debug.windowstolinux.appapi.task.control.TaskControlRegistration registerController(
+        String taskType, gold.debug.windowstolinux.appapi.task.control.TaskController controller) throws ApiException {
+        throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNAVAILABLE, "TASK_CONTROL_UNAVAILABLE",
+            "Task control registration is unavailable", java.util.Map.of(), Optional.empty()));
+    }
+
     /**
      * Admits the entire initial resource set atomically before running author work. / 运行作者逻辑前原子接纳完整初始资源集合。
      * @param <T> public payload or service contract type / 公开载荷或服务契约类型
