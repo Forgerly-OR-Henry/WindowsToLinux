@@ -82,6 +82,10 @@ public final class DeploymentWorkspace implements ModPage {
         this(new PageFactory[]{flow, applications}, null);
     }
 
+    public static DeploymentWorkspace withTasks(PageFactory flow, PageFactory applications, PageFactory tasks) {
+        return new DeploymentWorkspace(new PageFactory[]{flow, applications, tasks}, null, true);
+    }
+
     /** Captures factories without creating any internal view. / 捕获工厂，不创建内部视图。
      * @param standard standard and assisted view / 标准及辅助视图
      * @param agent autonomous view / 自主视图
@@ -105,7 +109,12 @@ public final class DeploymentWorkspace implements ModPage {
      * @param factories fixed original factories / 固定原工厂
      * @param preferenceTask production query or absent preview query / 生产查询或无查询预览 */
     private DeploymentWorkspace(PageFactory[] factories, Callable<TaskHandle<DeploymentPreferenceStore.Selection>> preferenceTask) {
-        unified = factories.length == 2;
+        this(factories, preferenceTask, factories.length == 2);
+    }
+
+    private DeploymentWorkspace(PageFactory[] factories, Callable<TaskHandle<DeploymentPreferenceStore.Selection>> preferenceTask,
+                                 boolean unified) {
+        this.unified = unified;
         this.factories = factories.clone();
         for (var factory : this.factories) java.util.Objects.requireNonNull(factory);
         this.preferenceTask = preferenceTask;
@@ -179,7 +188,7 @@ public final class DeploymentWorkspace implements ModPage {
     public String navigationId() {
         requireEdt();
         int selected = tabs.getTabCount() == 0 ? initialSelection : tabs.getSelectedIndex();
-        return unified ? selected == 0 ? "deployment-flow" : "applications" : NAVIGATION[selected];
+        return unified ? new String[]{"deployment-flow", "applications", "tasks"}[selected] : NAVIGATION[selected];
     }
 
     /** Restores a known internal page before creation or within the retained root. / 创建前或保留根内恢复已知内部页面。
@@ -194,6 +203,7 @@ public final class DeploymentWorkspace implements ModPage {
                 flowNavigation = id;
                 if (instances[0] != null) instances[0].restoreNavigation(id);
             } else if (id.equals("applications")) selected = 1;
+            else if (id.equals("tasks") && factories.length > 2) selected = 2;
             else return;
             restored = true;
             initialSelection = selected;
@@ -216,6 +226,24 @@ public final class DeploymentWorkspace implements ModPage {
                 }
                 return;
             }
+    }
+
+    @Override public void navigate(gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<?> request) throws Exception {
+        requireEdt();
+        if (!closed && environment != null && !environment.locked() && unified
+            && request.destination().equals("intervene-task") && request.contextType() == java.util.UUID.class) {
+            restoreNavigation("deployment-flow");
+            showSelected();
+            instances[0].navigate(request);
+            return;
+        }
+        if (closed || environment == null || environment.locked() || !unified || factories.length < 3
+            || !request.destination().equals("tasks") || request.contextType() != java.util.UUID.class)
+            throw new IllegalArgumentException("Owned task navigation unavailable");
+        restoreNavigation("tasks");
+        showSelected();
+        instances[2].navigate(new gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<>("task", java.util.UUID.class,
+            request.context().map(java.util.UUID.class::cast)));
     }
 
     /** Observes one authentic original preference task, never inferring a mode from a label. / 观察一项真实原偏好任务，不从标签推断模式。 */
@@ -276,12 +304,12 @@ public final class DeploymentWorkspace implements ModPage {
 
     /** Cancels only this original short query; its durable cleanup remains with the host. / 仅取消本原短查询；持久清理仍由宿主负责。
      * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if original cancellation cannot be confirmed / 原取消无法确认时 */
-    private void cancelPreference() throws gold.debug.windowstolinux.appapi.task.result.ApiException {
-        final TaskHandle<DeploymentPreferenceStore.Selection> handle;
-        synchronized (this) {
-            handle = preferenceHandle;
+    private synchronized void cancelPreference() throws gold.debug.windowstolinux.appapi.task.result.ApiException {
+        var handle = preferenceHandle;
+        if (handle != null) {
+            handle.requestCancel();
+            if (preferenceHandle == handle) preferenceHandle = null;
         }
-        if (handle != null) handle.requestCancel();
     }
 
     /** Creates only a new selected view, retaining failed partial instances until cleanup. / 仅创建新的所选视图，失败的部分实例保留至清理。
@@ -333,11 +361,11 @@ public final class DeploymentWorkspace implements ModPage {
     private void localize() {
         messages = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page", environment.locale(),
             ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_DEFAULT));
-        String[] keys = unified ? new String[]{"workspace.flow", "workspace.installed"}
+        String[] keys = unified ? new String[]{"workspace.flow", "workspace.installed", "workspace.tasks"}
             : new String[]{"workspace.standard", "workspace.agent", "workspace.applications", "workspace.environment"};
         for (int index = 0; index < tabs.getTabCount(); index++)
             tabs.setTitleAt(index, messages.getString(keys[index]));
-        if (unified && tabs.getTabCount() == 2) {
+        if (unified && tabs.getTabCount() >= 2) {
             tabs.setIconAt(0, gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle.icon("folder", 20));
             tabs.setIconAt(1, gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle.icon("app", 20));
         }

@@ -14,6 +14,15 @@ import gold.debug.windowstolinux.appapi.task.result.ApiException;
  * Owned page mounting without access to host implementation types. / 不暴露宿主实现类型的所属页面挂载服务。
  */
 public interface UiService {
+    /** Creates the host task template for this published normal activation's exact owner and version. Closing it never cancels tasks.
+     * / 为本已发布普通启用的精确所有者及版本创建宿主任务模板；关闭界面不取消任务。
+     * @return an uncreated owned page / 尚未创建的所属页面
+     * @throws ApiException if the actual host has not composed the capability / 实际宿主未装配此能力时 */
+    default gold.debug.windowstolinux.appapi.ui.page.ModPage createTaskPage() throws ApiException {
+        throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNAVAILABLE, "TASK_PAGE_UNAVAILABLE",
+            "The owned task page is not composed", java.util.Map.of(), java.util.Optional.empty()));
+    }
 
     /**
      * Registers one root workspace, or an isolated settings contribution; publication follows successful startup and adds one root navigation entry. / 登记唯一根工作区或隔离设置扩展；成功启动后发布并自动显示唯一根导航入口。

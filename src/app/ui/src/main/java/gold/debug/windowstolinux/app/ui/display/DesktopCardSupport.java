@@ -24,7 +24,7 @@ final class DesktopCardSupport {
 
     /** Keeps system pickers and combo popups outside inventory interaction. / 系统选择器及下拉弹层不使用清单交互。 */
     static boolean isCardList(JList<?> list) {
-        return !"ComboBox.list".equals(list.getName())
+        return !Boolean.FALSE.equals(list.getClientProperty(CARDS)) && !"ComboBox.list".equals(list.getName())
             && !Boolean.TRUE.equals(list.getClientProperty("List.isFileList"))
             && SwingUtilities.getAncestorOfClass(JFileChooser.class, list) == null;
     }

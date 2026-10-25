@@ -37,6 +37,18 @@ public final class DeploymentRefFlow implements TaskRecovery {
     /** Bound platform and durable execution facts. / 绑定的平台与持久执行事实。 */
     private final ModContext context;
 
+    private final Optional<TaskBoundary> taskBoundary;
+
+    /** An author-supplied lifetime and safe checkpoint; reference logic does not depend on a deployment mode. */
+    public interface TaskBoundary {
+        AutoCloseable begin(TaskContext task) throws Exception;
+        void checkpoint(TaskContext task) throws Exception;
+    }
+
+    public void checkpoint(TaskContext task) throws Exception {
+        if (taskBoundary.isPresent()) taskBoundary.orElseThrow().checkpoint(task);
+    }
+
     /** Original durable execution ledger. / 原持久执行账本。 */
     private final DeploymentExecutionStore executions;
 
@@ -66,24 +78,29 @@ public final class DeploymentRefFlow implements TaskRecovery {
     /** Binds one actual Mod activation. / 绑定一个实际插件启用。
      * @param context original activation / 原启用 */
     public DeploymentRefFlow(ModContext context) {
-        this(context, Optional.empty());
+        this(context, Optional.empty(), Optional.empty());
     }
 
     /** Binds original references and a narrow remote recovery assembled by the same Mod activation. / 绑定原引用及同一Mod启用装配的窄远端恢复。
      * @param context actual original activation / 实际原启用
      * @param recovery original remote recovery / 原远端恢复 */
     public DeploymentRefFlow(ModContext context, DeploymentRemoteRecovery recovery) {
-        this(context, Optional.of(Objects.requireNonNull(recovery)));
+        this(context, Optional.of(Objects.requireNonNull(recovery)), Optional.empty());
+    }
+
+    public DeploymentRefFlow(ModContext context, DeploymentRemoteRecovery recovery, TaskBoundary boundary) {
+        this(context, Optional.of(Objects.requireNonNull(recovery)), Optional.of(Objects.requireNonNull(boundary)));
     }
 
     /** Shares one original setup for reference-only and real standard callers. / 引用调用方和真实标准调用方共用一份原装配。
      * @param context original activation / 原启用
      * @param recovery optional narrow recovery / 可选窄恢复 */
-    private DeploymentRefFlow(ModContext context, Optional<DeploymentRemoteRecovery> recovery) {
+    private DeploymentRefFlow(ModContext context, Optional<DeploymentRemoteRecovery> recovery, Optional<TaskBoundary> boundary) {
         this.context = Objects.requireNonNull(context);
         this.executions = new DeploymentExecutionStore(context.db());
         this.associations = new DeploymentRefAssociationReader(context.db());
         this.remoteRecovery = recovery;
+        this.taskBoundary = boundary;
     }
 
     /** Submits a reviewed one-shot publication whose author callback supplies actual verified effects. / 提交作者回调提供实际已核实结果的一次性已审阅发布。
@@ -111,41 +128,45 @@ public final class DeploymentRefFlow implements TaskRecovery {
         Objects.requireNonNull(preparation);
         return context.tasks().submit(new TaskRequest(TASK_TYPE, "Deployment publication", List.of(server.id()), true),
             task -> {
-                OperationResult<PreparedPublish> prepared;
-                try {
-                    prepared = Objects.requireNonNull(preparation.run(task));
-                } catch (Exception | LinkageError | AssertionError uncertain) {
-                    return unknown();
-                }
-                if (prepared.outcome() != TaskResult.SUCCEEDED)
-                    return new OperationResult<>(prepared.outcome(), Optional.empty(), prepared.problem());
-                if (prepared.value().isEmpty())
-                    return unknown();
-                var ready = prepared.value().orElseThrow();
-                var closed = new java.util.concurrent.atomic.AtomicBoolean();
-                try {
-                    if (!server.equals(ready.plan().server()))
-                        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional
-                            .of(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_PREPARED_SERVER_CHANGED")));
-                    return execute(ready.plan(), original -> {
-                        OperationResult<DeploymentPublishResult> result = null;
-                        try {
-                            result = ready.author().run(original);
-                            return result;
-                        } finally {
-                            if (closed.compareAndSet(false, true)) {
-                                try {
-                                    ready.cleanup().close();
-                                } catch (Exception uncertainCleanup) {
-                                    if (result == null || result.outcome() == TaskResult.UNKNOWN)
-                                        throw uncertainCleanup;
+                try (var boundary = taskBoundary.isPresent() ? taskBoundary.orElseThrow().begin(task) : null) {
+                    OperationResult<PreparedPublish> prepared;
+                    try {
+                        prepared = Objects.requireNonNull(preparation.run(task));
+                    } catch (Exception | LinkageError | AssertionError uncertain) {
+                        return unknown();
+                    }
+                    if (prepared.outcome() != TaskResult.SUCCEEDED)
+                        return new OperationResult<>(prepared.outcome(), Optional.empty(), prepared.problem());
+                    if (prepared.value().isEmpty())
+                        return unknown();
+                    var ready = prepared.value().orElseThrow();
+                    var closed = new java.util.concurrent.atomic.AtomicBoolean();
+                    try {
+                        if (!server.equals(ready.plan().server()))
+                            return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional
+                                .of(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_PREPARED_SERVER_CHANGED")));
+                        checkpoint(task);
+                        return execute(ready.plan(), original -> {
+                            checkpoint(original);
+                            OperationResult<DeploymentPublishResult> result = null;
+                            try {
+                                result = ready.author().run(original);
+                                return result;
+                            } finally {
+                                if (closed.compareAndSet(false, true)) {
+                                    try {
+                                        ready.cleanup().close();
+                                    } catch (Exception uncertainCleanup) {
+                                        if (result == null || result.outcome() == TaskResult.UNKNOWN)
+                                            throw uncertainCleanup;
+                                    }
                                 }
                             }
-                        }
-                    }, task);
-                } finally {
-                    if (closed.compareAndSet(false, true))
-                        ready.cleanup().close();
+                        }, task);
+                    } finally {
+                        if (closed.compareAndSet(false, true))
+                            ready.cleanup().close();
+                    }
                 }
             });
     }

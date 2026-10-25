@@ -90,7 +90,13 @@ public final class DeploymentAgentPageService implements TaskRecovery {
      * @param target explicit finite destination / 明确有限目的页
      * @throws ApiException if original UI access is revoked / 原UI访问被撤销时 */
     public void openPlatform(gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind target) throws ApiException {
-        context.ui().openPlatform(target);
+        if (target == gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind.TASKS) openTasks(java.util.Optional.empty());
+        else context.ui().openPlatform(target);
+    }
+
+    public void openTasks(java.util.Optional<java.util.UUID> original) throws ApiException {
+        context.ui().open("workspace", new gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<>(
+            "tasks", java.util.UUID.class, original));
     }
 
     /** Returns the common original picker without standard-engine or project-write access. / 返回共用原选择器，不取得标准引擎或项目写入访问。

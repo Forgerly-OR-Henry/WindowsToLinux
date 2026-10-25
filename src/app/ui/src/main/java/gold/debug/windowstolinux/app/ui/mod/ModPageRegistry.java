@@ -32,6 +32,22 @@ public final class ModPageRegistry {
     /** Current startup scopes, including unpublished and failed-cleanup scopes. / 当前启动作用域，包含未发布及清理失败的作用域。 */
     private final Map<String, PageScope> scopes = new LinkedHashMap<>();
 
+    private TaskPageFactory taskPages;
+
+    /** Installs only the host-selected task renderer; Mod code never supplies ownership. */
+    public void installTaskPages(TaskPageFactory factory) throws ApiException {
+        onEdt(() -> {
+            if (taskPages != null) throw failure(ProblemCode.BUSY, "TASK_PAGE_EXISTS", "Task renderer already installed");
+            taskPages = Objects.requireNonNull(factory);
+            return null;
+        });
+    }
+
+    @FunctionalInterface
+    public interface TaskPageFactory {
+        ModPage create(String owner, String version, java.util.function.BooleanSupplier active);
+    }
+
     /** Host-only publication observers, confined to the event thread. / 仅宿主使用且限定在事件线程的发布观察器。 */
     private final Set<Runnable> listeners = new LinkedHashSet<>();
 
@@ -136,11 +152,17 @@ public final class ModPageRegistry {
      * @return original scope / 原作用域
      * @throws ApiException if the owner remains retained / 所属者仍被保留时 */
     public PageScope begin(String ownerId, boolean recoveryOnly, UiExtensionAccess access) throws ApiException {
+        return begin(ownerId, "", recoveryOnly, access);
+    }
+
+    /** Binds task UI to the exact release selected by the host loader. */
+    public PageScope begin(String ownerId, String version, boolean recoveryOnly, UiExtensionAccess access) throws ApiException {
         Objects.requireNonNull(ownerId);
+        Objects.requireNonNull(version);
         return onEdt(() -> {
             if (ownerId.isBlank() || scopes.containsKey(ownerId))
                 throw failure(ProblemCode.BUSY, "PAGE_SCOPE_EXISTS", "The Mod still owns a page scope");
-            var scope = new PageScope(ownerId, recoveryOnly, extensions.begin(ownerId, recoveryOnly, access));
+            var scope = new PageScope(ownerId, version, recoveryOnly, extensions.begin(ownerId, recoveryOnly, access));
             scopes.put(ownerId, scope);
             return scope;
         });
@@ -274,7 +296,13 @@ public final class ModPageRegistry {
                 } catch (ApiException problem) {
                     failure = problem;
                 }
-            for (var scope : List.copyOf(scopes.values()))
+            for (var scope : List.copyOf(scopes.values())) {
+                for (var page : List.copyOf(scope.taskViews))
+                    try { page.environmentChanged(next); }
+                    catch (RuntimeException problem) {
+                        if (failure == null) failure = failure(ProblemCode.CONTRACT_VIOLATION,
+                            "TASK_PAGE_ENVIRONMENT_FAILED", "A task page environment notification failed");
+                    }
                 for (var entry : List.copyOf(scope.entries.values()))
                     if (entry.page != null && !entry.pageClosed)
                         try {
@@ -289,6 +317,7 @@ public final class ModPageRegistry {
                                 failure = failure(ProblemCode.CONTRACT_VIOLATION, "PAGE_ENVIRONMENT_FAILED",
                                     "A page environment notification failed");
                         }
+            }
             changed();
             if (failure != null)
                 throw failure;
@@ -417,6 +446,10 @@ public final class ModPageRegistry {
         /** Exact owning Mod identity. / 精确所属 Mod 身份。 */
         private final String owner;
 
+        private final String version;
+
+        private final List<ModPage> taskViews = new ArrayList<>();
+
         /** Whether normal UI publication is forbidden. / 是否禁止普通界面发布。 */
         private final boolean recoveryOnly;
 
@@ -427,13 +460,13 @@ public final class ModPageRegistry {
         private final Map<String, PageEntry> entries = new LinkedHashMap<>();
 
         /** Whether this startup committed its contributions. / 此次启动是否已提交扩展。 */
-        private boolean committed;
+        private volatile boolean committed;
 
         /** Whether cleanup has sealed further registration and opening. / 清理是否已封闭后续登记及打开。 */
-        private boolean stopping;
+        private volatile boolean stopping;
 
         /** Whether every registration and instance was actually released. / 全部登记及实例是否已实际释放。 */
-        private boolean closed;
+        private volatile boolean closed;
 
         /**
          * Creates an unpublished caller scope. / 创建未发布的调用方作用域。
@@ -441,8 +474,9 @@ public final class ModPageRegistry {
          * @param recoveryOnly whether publication is forbidden / 是否禁止发布
          * @param extensionBinding original owned extension registry / 原所属扩展登记
          */
-        private PageScope(String owner, boolean recoveryOnly, UiExtensionRegistry.Binding extensionBinding) {
+        private PageScope(String owner, String version, boolean recoveryOnly, UiExtensionRegistry.Binding extensionBinding) {
             this.owner = owner;
+            this.version = version;
             this.recoveryOnly = recoveryOnly;
             this.extensionBinding = extensionBinding;
         }
@@ -466,6 +500,16 @@ public final class ModPageRegistry {
          * @return whether business contributions are visible / 业务扩展是否可见 */
         private boolean visible() {
             return committed && !recoveryOnly && !stopping;
+        }
+
+        @Override public ModPage createTaskPage() throws ApiException {
+            return onEdt(() -> {
+                if (!visible() || version.isBlank() || taskPages == null)
+                    throw failure(ProblemCode.UNAVAILABLE, "TASK_PAGE_UNAVAILABLE", "The exact Mod task view is unavailable");
+                var page = taskPages.create(owner, version, this::visible);
+                taskViews.add(page);
+                return page;
+            });
         }
 
         /**
@@ -561,6 +605,7 @@ public final class ModPageRegistry {
             onEdt(() -> {
                 stopping = true;
                 extensionBinding.seal();
+                for (var page : taskViews) page.close();
                 changed();
                 return null;
             });
@@ -639,6 +684,10 @@ public final class ModPageRegistry {
                     }
                 if (first != null)
                     throw first;
+                for (var page : taskViews)
+                    try { page.close(); }
+                    catch (Exception invalid) { throw failure(ProblemCode.CONTRACT_VIOLATION, "TASK_PAGE_CLOSE", "Task view cleanup failed"); }
+                taskViews.clear();
                 extensionBinding.close();
                 closed = true;
                 scopes.remove(owner, this);

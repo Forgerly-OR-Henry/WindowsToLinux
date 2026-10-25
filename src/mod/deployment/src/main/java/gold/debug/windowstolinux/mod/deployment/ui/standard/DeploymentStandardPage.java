@@ -306,6 +306,10 @@ public final class DeploymentStandardPage implements ModPage {
                 status.setText(text("target.unavailable") + " " + unavailable.problem().eventCode());
             }
         }, service::delivery, service.configuration().view());
+        feedback.originalTaskNavigation(id -> {
+            try { service.openTasks(java.util.Optional.of(id)); }
+            catch (ApiException unavailable) { status.setText(text("target.unavailable") + " " + unavailable.problem().eventCode()); }
+        });
         if (shared != null) feedback.compactIdle(true);
         var observations = new JPanel(new BorderLayout());
         observations.add(new JScrollPane(status), BorderLayout.NORTH);
@@ -467,6 +471,15 @@ public final class DeploymentStandardPage implements ModPage {
     }
 
     /** Original mode-specific surface used inside the one flow owner. / 在唯一流程所有者内部使用的原模式专用表面。 */
+    public void focusOriginalTask(java.util.UUID id) {
+        if (closed || locked) throw new IllegalStateException("Original view is unavailable");
+        status.setText(id.toString());
+        if (currentTask != null && currentTask.id().equals(id) && dialog != null) {
+            dialog.toFront();
+            dialog.requestFocus();
+        }
+    }
+
     public JComponent flowResults() {
         return root;
     }
@@ -742,6 +755,7 @@ public final class DeploymentStandardPage implements ModPage {
                         DeploymentDialogs.reveal(focus);
                         focus.requestFocusInWindow();
                     });
+                service.userWaiting(task.id(), true);
                 owned.setVisible(true);
                 boolean accepted = !closed && !locked && generation.get() == view
                     && Integer.valueOf(JOptionPane.OK_OPTION).equals(pane.getValue());
@@ -753,6 +767,7 @@ public final class DeploymentStandardPage implements ModPage {
             } catch (RuntimeException failed) {
                 answer.complete(false);
             } finally {
+                service.userWaiting(task.id(), false);
                 if (owned != null)
                     owned.dispose();
                 if (dialog == owned)

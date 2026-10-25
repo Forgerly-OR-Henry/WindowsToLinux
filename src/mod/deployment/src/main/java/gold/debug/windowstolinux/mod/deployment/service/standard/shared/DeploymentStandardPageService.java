@@ -43,6 +43,16 @@ public final class DeploymentStandardPageService implements TaskRecovery {
     /** Original platform capabilities. / 原平台能力。 */
     private final ModContext context;
 
+    private java.util.function.BiConsumer<java.util.UUID, Boolean> taskWaiting;
+
+    public void taskWaiting(java.util.function.BiConsumer<java.util.UUID, Boolean> waiting) {
+        taskWaiting = Objects.requireNonNull(waiting);
+    }
+
+    public void userWaiting(java.util.UUID id, boolean value) {
+        if (taskWaiting != null) taskWaiting.accept(id, value);
+    }
+
     /** Same immutable configuration used by the page and its queries. / 页面及其查询使用的同一不可变配置。 */
     private final DeploymentConfig configuration;
 
@@ -132,7 +142,13 @@ public final class DeploymentStandardPageService implements TaskRecovery {
      * @param target explicit platform destination / 明确平台目标
      * @throws ApiException if current owner UI access is refused / 当前所属 UI 访问被拒绝时 */
     public void openPlatform(gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind target) throws ApiException {
-        context.ui().openPlatform(target);
+        if (target == gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind.TASKS) openTasks(java.util.Optional.empty());
+        else context.ui().openPlatform(target);
+    }
+
+    public void openTasks(java.util.Optional<java.util.UUID> original) throws ApiException {
+        context.ui().open("workspace", new gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<>(
+            "tasks", java.util.UUID.class, original));
     }
 
     /** Loads the owned page selection off the EDT, filling only missing defaults. / 在EDT外加载所属页面选择，仅补缺失默认值。

@@ -71,11 +71,26 @@ class PlatformTaskManagementWindowTest {
     static void select(PlatformFrame frame) throws Exception {
         idle(frame);
         onEdt(() -> {
-            var table = (JTable) named(frame, "tasks.table");
-            assertEquals(1, table.getRowCount());
-            table.setRowSelectionInterval(0, 0);
+            var list = (JList<?>) named(frame, "tasks.list");
+            assertEquals(1, taskCount(frame));
+            for (int i=0;i<list.getModel().getSize();i++) if(list.getModel().getElementAt(i) instanceof TaskManagement.Entry) {
+                list.setSelectedIndex(i); break;
+            }
             return null;
         });
+    }
+
+    static int taskCount(PlatformFrame frame) {
+        var list = (JList<?>) named(frame,"tasks.list"); int count=0;
+        for(int i=0;i<list.getModel().getSize();i++) if(list.getModel().getElementAt(i) instanceof TaskManagement.Entry) count++;
+        return count;
+    }
+
+    static String details(PlatformFrame frame) {
+        var panel = named(frame,"tasks.details");
+        if(!panel.isVisible()) return "";
+        return descendants(panel).map(value -> value instanceof JTextArea area ? area.getText()
+            : value instanceof JLabel label ? label.getText() : "").collect(java.util.stream.Collectors.joining("\n"));
     }
 
     static void click(PlatformFrame frame, String name) throws Exception {
@@ -131,13 +146,12 @@ class PlatformTaskManagementWindowTest {
             try {
                 select(frame);
                 onEdt(() -> {
-                    var table = (JTable) named(frame, "tasks.table");
-                    assertEquals(OWNER, table.getValueAt(0, 0));
-                    assertEquals(VERSION, table.getValueAt(0, 1));
-                    assertEquals("原版本恢复未登记", table.getValueAt(0, 4));
-                    assertFalse(named(frame, "tasks.reconcile").isEnabled());
-                    assertFalse(named(frame, "tasks.cancel").isEnabled());
-                    assertTrue(((JTextArea) named(frame, "tasks.details")).getText().contains("original-file"));
+                    assertTrue(details(frame).contains(OWNER));
+                    assertTrue(details(frame).contains(VERSION));
+                    assertTrue(details(frame).contains("原版本恢复未登记"));
+                    assertFalse(named(frame, "tasks.primary").isEnabled());
+                    assertFalse(descendants(frame).anyMatch(value -> "tasks.cancel".equals(value.getName())));
+                    assertTrue(details(frame).contains("original-file"));
                     capture(frame, "platform-task-missing-recovery.png");
                     return null;
                 });
@@ -149,7 +163,7 @@ class PlatformTaskManagementWindowTest {
                 })) {
                     click(frame, "tasks.reload");
                     select(frame);
-                    var dialog = confirm(frame, "tasks.reconcile");
+                    var dialog = confirm(frame, "tasks.primary");
                     onEdt(() -> {
                         String text = descendants(dialog).filter(JTextArea.class::isInstance).map(JTextArea.class::cast)
                             .map(JTextArea::getText).findFirst().orElseThrow();
@@ -168,7 +182,7 @@ class PlatformTaskManagementWindowTest {
                     assertEquals(1, count(runtime.persistence().database(),
                         "SELECT COUNT(*) FROM runtime_log WHERE category='platform_task'"));
                     onEdt(() -> {
-                        assertEquals(0, ((JTable) named(frame, "tasks.table")).getRowCount());
+                        assertEquals(0, taskCount(frame));
                         return null;
                     });
                     click(frame, "tasks.history");
@@ -189,7 +203,7 @@ class PlatformTaskManagementWindowTest {
     }
 
     @Test
-    void confirmedCancellationKeepsOriginalWorkUntilItActuallyReturns() throws Exception {
+    void cooperativeCancellationKeepsOriginalWorkUntilItActuallyReturns() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             var release = new CountDownLatch(1);
@@ -202,15 +216,17 @@ class PlatformTaskManagementWindowTest {
             var frame = window(runtime, management(runtime));
             try {
                 select(frame);
-                answer(confirm(frame, "tasks.cancel"), JOptionPane.OK_OPTION);
+                task.requestCancel();
+                click(frame, "tasks.reload");
+                idle(frame);
                 idle(frame);
                 assertEquals(TaskState.CANCEL_REQUESTED, task.snapshot().state());
                 assertFalse(task.completion().toCompletableFuture().isDone());
                 assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task"));
                 onEdt(() -> {
-                    assertFalse(named(frame, "tasks.cancel").isEnabled());
-                    assertFalse(named(frame, "tasks.reconcile").isEnabled());
-                    assertTrue(((JLabel) named(frame, "tasks.status")).getText().contains("已请求取消"));
+                    assertFalse(descendants(frame).anyMatch(value -> "tasks.cancel".equals(value.getName())));
+                    assertFalse(named(frame, "tasks.primary").isEnabled());
+                    assertTrue(details(frame).contains("已请求取消"));
                     return null;
                 });
                 release.countDown();
@@ -219,7 +235,7 @@ class PlatformTaskManagementWindowTest {
                 click(frame, "tasks.reload");
                 idle(frame);
                 onEdt(() -> {
-                    assertEquals(0, ((JTable) named(frame, "tasks.table")).getRowCount());
+                    assertEquals(0, taskCount(frame));
                     return null;
                 });
             } finally {
@@ -244,19 +260,19 @@ class PlatformTaskManagementWindowTest {
                 var frame = window(runtime, management(runtime));
                 try {
                     select(frame);
-                    var dialog = confirm(frame, "tasks.reconcile");
+                    var dialog = confirm(frame, "tasks.primary");
                     var stale = option(dialog);
                     runtime.security().lock();
                     await(() -> !dialog.isDisplayable());
                     onEdt(() -> {
                         stale.setValue(JOptionPane.OK_OPTION);
-                        assertEquals(0, ((JTable) named(frame, "tasks.table")).getRowCount());
-                        assertEquals("", ((JTextArea) named(frame, "tasks.details")).getText());
+                        assertEquals(0, taskCount(frame));
+                        assertEquals("", details(frame));
                         return null;
                     });
                     runtime.security().unlock(PASSWORD.toCharArray());
                     select(frame);
-                    var closing = confirm(frame, "tasks.reconcile");
+                    var closing = confirm(frame, "tasks.primary");
                     var closingOption = option(closing);
                     dispose(frame);
                     onEdt(() -> {
@@ -293,11 +309,11 @@ class PlatformTaskManagementWindowTest {
             try {
                 select(frame);
                 onEdt(() -> {
-                    assertEquals("补齐归档", ((JButton) named(frame, "tasks.reconcile")).getText());
-                    assertEquals("仅待平台归档", ((JTable) named(frame, "tasks.table")).getValueAt(0, 4));
+                    assertEquals("继续任务", ((JButton) named(frame, "tasks.primary")).getText());
+                    assertTrue(details(frame).contains("仅待平台归档"));
                     return null;
                 });
-                var dialog = confirm(frame, "tasks.reconcile");
+                var dialog = confirm(frame, "tasks.primary");
                 onEdt(() -> {
                     assertTrue(descendants(dialog).filter(JTextArea.class::isInstance).map(JTextArea.class::cast)
                         .anyMatch(text -> text.getText().contains("不会调用业务或业务恢复回调")));
@@ -344,7 +360,7 @@ class PlatformTaskManagementWindowTest {
             var frame = window(runtime, service);
             try {
                 select(frame);
-                var dialog = confirm(frame, "tasks.reconcile");
+                var dialog = confirm(frame, "tasks.primary");
                 onEdt(() -> {
                     assertTrue(descendants(dialog).filter(JTextArea.class::isInstance).map(JTextArea.class::cast)
                         .anyMatch(text -> text.getText().contains("终端命令已结束")
@@ -354,7 +370,7 @@ class PlatformTaskManagementWindowTest {
                 });
                 answer(dialog, JOptionPane.CANCEL_OPTION);
                 assertEquals(1, service.list().size());
-                answer(confirm(frame, "tasks.reconcile"), JOptionPane.OK_OPTION);
+                answer(confirm(frame, "tasks.primary"), JOptionPane.OK_OPTION);
                 idle(frame);
                 assertTrue(service.list().isEmpty());
                 assertTrue(runtime.recovery().pending().isEmpty());
@@ -431,8 +447,8 @@ class PlatformTaskManagementWindowTest {
                         else
                             idle(frame);
                         onEdt(() -> {
-                            assertEquals(0, ((JTable) named(frame, "tasks.table")).getRowCount());
-                            assertEquals("", ((JTextArea) named(frame, "tasks.details")).getText());
+                            assertEquals(0, taskCount(frame));
+                            assertEquals("", details(frame));
                             return null;
                         });
                         assertEquals(close ? 1 : 2, reads.get());

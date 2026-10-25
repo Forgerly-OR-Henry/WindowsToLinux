@@ -47,6 +47,12 @@ final class DeploymentAgentEvidencePanel {
     /** Query generation prevents stale updates. / 查询代次阻止过时更新。 */
     private long generation;
 
+    void focusOriginalTask(UUID id) {
+        if (unavailable) throw new IllegalStateException("Original view is unavailable");
+        detail.setText(id.toString());
+        perform("history");
+    }
+
     /** Creates the actual task controls and evidence view. / 创建实际任务控件及依据视图。
      * @param service actual owner / 实际所有者
      * @param actions original background actions / 原后台动作

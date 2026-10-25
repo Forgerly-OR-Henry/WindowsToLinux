@@ -178,6 +178,7 @@ WindowsToLinux/                           # [聚合]     工程构建入口，�
    │  │  └─ ref/                          # [公开包]   服务器专属业务引用
    │  ├─ task/                            # [公开包]   任务准入、查询与恢复的服务入口
    │  │  ├─ action/                       # [公开包]   精确动作意图、审批许可、权限模式与输入交互
+   │  │  ├─ control/                      # [公开包]   可选的原 Mod 任务控制、能力观察及登记
    │  │  ├─ log/                          # [公开包]   所属日志登记、事件及实际写入结果
    │  │  ├─ model/                        # [公开包]   任务准入请求、进度状态与不可变快照
    │  │  ├─ process/                      # [公开包]   受管进程启动、协议消息与实际退出合同
@@ -187,6 +188,7 @@ WindowsToLinux/                           # [聚合]     工程构建入口，�
    │  │  ├─ result/                       # [公开包]   业务结果、失败原因与公开异常合同
    │  │  └─ run/                          # [公开包]   任务执行上下文、取消、结果观察与资源持有
    │  └─ ui/                              # [公开包]   页面登记、打开与环境查询入口
+   │     ├─ extension/                    # [公开包]   所属界面扩展、挂载与撤销
    │     └─ page/                         # [公开包]   页面创建、登记句柄、描述、环境更新与关闭合同
    ├─ mod/                                # [聚合]     官方 Mod 的 Maven 模块分组
    │  ├─ pom.xml                          # [构建文件] Maven 模块与依赖声明
@@ -229,6 +231,7 @@ WindowsToLinux/                           # [聚合]     工程构建入口，�
    │     │  └─ git/                       # [包]       Git 公开服务适配、原素材消费及部署筛选归档
    │     ├─ linux/                        # [包]       固定远端协议与职责适配分组
    │     │  ├─ build/                     # [包]       构建输入、输出与受控命令通道
+   │     │  ├─ cleanup/                   # [包]       原命令及受管资源清理证据
    │     │  ├─ command/                   # [包]       受审命令执行与模式无关审核衔接
    │     │  │  ├─ contract/               # [包]       不依赖执行适配的命令审核和模型执行身份合同
    │     │  │  └─ dispatch/               # [包]       公共命令审核路由及发送前门禁
@@ -243,6 +246,9 @@ WindowsToLinux/                           # [聚合]     工程构建入口，�
    │     │  │  ├─ contract/               # [包]       自主任务请求与纯目标身份值
    │     │  │  ├─ control/                # [包]       自主流程取消、暂停及进度控制合同
    │     │  │  ├─ protocol/               # [包]       自主动作、计划、识别、补丁与证据协议
+   │     │  │  ├─ isolation/              # [包]       自主任务隔离边界与资源策略
+   │     │  │  ├─ skill/                  # [包]       自主部署的技能资源和查询
+   │     │  │  ├─ toolchain/              # [包]       原工具链控制器与执行证据
    │     │  │  ├─ recovery/               # [包]       原自主任务恢复与历史读取
    │     │  │  │  └─ evidence/            # [包]       恢复所需有界操作日志与证据
    │     │  │  ├─ review/                 # [包]       自主模式专属审核和模型绑定
@@ -369,6 +375,7 @@ WindowsToLinux/                           # [聚合]     工程构建入口，�
    │        ├─ delivery/                  # [包]       已核实公开端点与固定命令的桌面动作
    │        ├─ environment/               # [包]       环境目标显式选择、审阅与原任务反馈
    │        ├─ feedback/                  # [包]       原句柄持续观察及成功后精确交付查询
+   │        ├─ flow/                      # [包]       统一部署流程与所属任务介入
    │        ├─ preference/                # [包]       共用模式、审核和模型偏好控件
    │        ├─ runtime/                   # [包]       运行预填、原字段校验与键盘帮助
    │        ├─ source/                    # [包]       共用来源选择和输入控件
@@ -437,7 +444,7 @@ test/                                                                           
 | 范围 | 现行组织方式 |
 | --- | --- |
 | `src/app` | 模块内先确定实际功能与所有权，默认只保留模块下面第一层必要功能包；接口、专属数据与实现就近归包。模块本身已准确表达单一职责且不需分类时，具体实现可以直接位于模块 Java 根包。 |
-| `src/appapi` | 保留 9 个一级能力包，在其下按实际职责使用已登记的二级包；根包只保留主要入口，具体合同归二级职责包；当前共 43 个公开包，包含 `file.material` 与 `ui.extension`，不新增三级包。 |
+| `src/appapi` | 保留 9 个一级能力包，在其下按实际职责使用已登记的二级包；根包只保留主要入口，具体合同归二级职责包；当前共 44 个公开包，包含 `file.material` 与 `ui.extension`，不新增三级包。 |
 | `src/mod`、`src/moddev` | 第一层职责包与相应平台模块同名，按需使用 `ai`、`db`、`file`、`linux`、`secret`、`service`、`ui`、`windows`；`api` 是 Mod 专属公开包，根包入口是 `Mod.java`。第一层之后由作者自主组织，APP 的词表、父子包模板、层数与内部命名门禁均不适用，也不提供同类推荐词表。 |
 
 APP 不强制套用 `contract`、`generation`、`extension`、`execution`、`persistence` 中间层。只有实际独立功能、所有权、访问隔离或依赖边界需要时才增加子包；默认一层不是禁止子包，类数达到 6～8 个时检查职责；只有 1～2 个类型时也核对是否适合合并。数量只触发检查，不决定合并或拆分，不凑数，不把无关类型塞进同一包；职责独立的小包保留。包合并前核对包内可见成员、重名、资源定位与引用，不能通过扩大可见性代替职责整理。
@@ -997,7 +1004,7 @@ mod/files ──→ appapi
 | 包 | 当前同模块直接依赖 |
 | --- | --- |
 | `ai` | `ai.model`、`ai.voice`、`task.result`、`task.run` |
-| `ai.model` | `ai.vision` |
+| `ai.model` | `ai.vision`、`task.result` |
 | `ai.vision` | 无，仅使用 JDK。 |
 | `ai.voice` | `task.result` |
 | `db` | `db.schema`、`task.result`、`task.run` |
@@ -1026,10 +1033,11 @@ mod/files ──→ appapi
 | `server` | `server.model`、`server.ref`、`task.query`、`task.ref`、`task.result`、`task.run` |
 | `server.model` | 无，仅使用 JDK。 |
 | `server.ref` | `server.model`、`task.ref` |
-| `task` | `task.model`、`task.query`、`task.recover`、`task.result`、`task.run` |
+| `task` | `task.control`、`task.model`、`task.query`、`task.recover`、`task.result`、`task.run` |
 | `task.action` | `linux.command`、`task.result`、`task.run` |
+| `task.control` | `task.log`、`task.result` |
 | `task.log` | `task.result` |
-| `task.model` | `task.result` |
+| `task.model` | `task.control`、`task.result` |
 | `task.process` | `task.result`、`task.run` |
 | `task.query` | 无，仅使用 JDK。 |
 | `task.recover` | `task.model`、`task.result`、`task.run` |

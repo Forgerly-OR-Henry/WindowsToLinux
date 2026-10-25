@@ -449,6 +449,23 @@ public final class DeploymentFlowPage implements ModPage {
         observe();
     }
 
+    @Override public void navigate(UiNavigationRequest<?> request) {
+        if (closed || environment.locked() || !request.destination().equals("intervene-task")
+            || request.contextType() != UUID.class || request.context().isEmpty())
+            throw new IllegalArgumentException("Original task intervention required");
+        UUID id = (UUID) request.context().orElseThrow();
+        observedTask = id;
+        if (agentService.controlState(id).isPresent()) {
+            observedMode = "AGENT";
+            ((CardLayout) results.getLayout()).show(results, "AGENT");
+            agent.focusOriginalTask(id);
+        } else {
+            observedMode = "STATIC";
+            ((CardLayout) results.getLayout()).show(results, "STANDARD");
+            standard.focusOriginalTask(id);
+        }
+    }
+
     private void observe() {
         if (closed || standard == null) return;
         boolean active = standard.flowBusy() || agent.flowBusy();

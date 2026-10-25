@@ -616,6 +616,13 @@ public final class PlatformFrame extends JFrame {
         tasks.setLocked(!security.securityState().unlocked());
     }
 
+    /** Composes reusable task pages without changing the global task inventory. */
+    public void installModTaskPages(gold.debug.windowstolinux.app.service.task.PlatformTaskManagement service)
+        throws gold.debug.windowstolinux.appapi.task.result.ApiException {
+        pages.installTaskPages((owner, version, active) -> new gold.debug.windowstolinux.app.ui.task.HostTaskPage(
+            service, owner, version, active, appearance.components, messages));
+    }
+
     /** Displays safe localized feedback outside the selected page. / 在所选页面之外显示安全本地化反馈。
      * @param problem structured storage issue / 结构化存储问题 */
     private void showLogIssue(gold.debug.windowstolinux.appapi.task.result.Problem problem) {

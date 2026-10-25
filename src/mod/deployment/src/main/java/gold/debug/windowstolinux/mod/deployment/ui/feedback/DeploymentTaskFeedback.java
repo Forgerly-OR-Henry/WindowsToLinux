@@ -37,6 +37,8 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
     /** Actual finite platform task navigation. / 实际有限平台任务导航。 */
     private final Runnable openTasks;
 
+    private java.util.function.Consumer<UUID> originalTaskNavigation;
+
     /** Optional exact completed-publication delivery. / 可选精确已完成发布交付。 */
     private final DeploymentTaskDelivery delivery;
 
@@ -161,7 +163,10 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
         root.add(controls, BorderLayout.SOUTH);
         cancel.addActionListener(ignored -> cancelOriginal());
         tasks.addActionListener(ignored -> {
-            if (!closed && !unavailable) openTasks.run();
+            if (!closed && !unavailable) {
+                if (handle != null && originalTaskNavigation != null) originalTaskNavigation.accept(handle.snapshot().id());
+                else openTasks.run();
+            }
         });
         timer.setCoalesce(true);
         configure(Locale.SIMPLIFIED_CHINESE, false);
@@ -178,6 +183,12 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
         requireEdt();
         compactIdle = compact;
         availability();
+    }
+
+    /** Navigates using the actual watched task UUID rather than a replacement task. */
+    public void originalTaskNavigation(java.util.function.Consumer<UUID> navigation) {
+        requireEdt();
+        originalTaskNavigation = Objects.requireNonNull(navigation);
     }
 
     /** Binds an admitted original handle on the EDT. / 在EDT绑定已准入原句柄。

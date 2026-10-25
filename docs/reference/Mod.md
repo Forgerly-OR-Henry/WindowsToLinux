@@ -309,7 +309,7 @@ Mod 管理界面提供独立的“原始包”页面，管理 `mod-zip/` 中的�
 - 公共接口只使用约定的跨边界数据类型，不把数据库实体、内部服务、模型客户端或凭据传给调用方。实现留在本 Mod 内部，调用方通过平台约定的注册与发现方式取得服务。
 - `api` 是源码中的公开契约包，包名本身不会自动导出服务或产生独立 API JAR。公开服务使用平台契约注册和发现，私有实现不因包名为 `api` 自动公开。
 
-平台公开类型按 [appapi 结构与职责](File.md#package-rules) 归于一级入口或二级职责包。例如 `TaskService` 位于 `appapi.task`，`TaskContext` 位于 `appapi.task.run`，`ApiException` 位于 `appapi.task.result`，`ServerId` 位于 `appapi.server.model`，Schema 生命周期位于 `appapi.db.schema`，跨 Mod 服务位于 `appapi.mod.service`。各一级能力根包只保留主入口；`mod` 同时保留 `ModContext` 与 `ModEntrypoint` 两个方向的入口。其他合同归入已登记的二级职责包，当前共41个公开包，不新增三级包。当前未发布开发 API 保持原版本；本次直接迁移类型，不留旧包兼容壳，已有外部 Mod 需更新导入与文件分组调用并重新编译。类型由宿主共享加载，Mod 不打包平台 API 副本。
+平台公开类型按 [appapi 结构与职责](File.md#package-rules) 归于一级入口或二级职责包。例如 `TaskService` 位于 `appapi.task`，`TaskContext` 位于 `appapi.task.run`，`ApiException` 位于 `appapi.task.result`，`ServerId` 位于 `appapi.server.model`，Schema 生命周期位于 `appapi.db.schema`，跨 Mod 服务位于 `appapi.mod.service`。各一级能力根包只保留主入口；`mod` 同时保留 `ModContext` 与 `ModEntrypoint` 两个方向的入口。其他合同归入已登记的二级职责包，当前共44个公开包，不新增三级包。当前未发布开发 API 保持原版本；本次直接迁移类型，不留旧包兼容壳，已有外部 Mod 需更新导入与文件分组调用并重新编译。类型由宿主共享加载，Mod 不打包平台 API 副本。
 
 ### 5.3 使用 AI 时如何分工
 
@@ -1004,6 +1004,18 @@ CLASS 的 `content_sha256` 使用 `WTL-CLASS-CONTENT-1\n` 前缀，对 `mod.json
 
 `TaskService.list` 按当前运行时的稳定提交顺序读取未结束任务。后续游标绑定本次启用的精确服务实例及本次启动，并保留首屏提交上限；前页任务结束不导致后页偏移漏项，后续新提交须开启新查询。游标不保证事务快照，已经结束的任务仍可从后续页消失；旧服务绑定、重启或无效游标返回 INVALID_INPUT。宿主界面读取独立发布的不可变任务观察快照，操作时仍重新核验实际任务和权限。
 
+#### 任务展示与可选控制
+
+主 App 持有通用调度、授权和资源台账，以及全部任务汇总界面。业务执行、持久状态、暂停安全节点与原任务恢复仍由所属 Mod 决定；长期任务数据按需要保存在本 Mod 的独立 Schema，不读取其它 Mod 私有表。无长期任务的 Mod 无需声明业务 Schema 或建立任务管理，Files、Git 使用基础任务能力不意味着必须增加一套长期任务库。
+
+`TaskService.registerController(taskType, controller)` 按当前启用的精确 Mod ID、版本及任务类型登记可选 `task.control.TaskController`，返回可关闭的 `TaskControlRegistration`。`snapshot(UUID)` 只返回有界、无业务副作用的 `TaskControlSnapshot`；`request(UUID, TaskCommand)` 处理 PAUSE、RESUME、INTERVENE，并重新核验 Mod 内部的原任务边界。登记撤销时不能遗忘仍执行中的回调。平台在运行时锁外调用作者代码；缺少登记时不伪造控制能力。
+
+暂停只请求 Mod 在当前动作结清后的安全边界等待；PAUSE_REQUESTED 不等于 PAUSED。继续只唤醒同一活动工作，不重置原任务、预算、授权或结果。跨启动以及 UNKNOWN 继续走原 `TaskRecovery`，不恢复任意 Java 调用栈或重放旧部署。介入打开所属 Mod 的原任务处理入口，本身不暂停或批准业务。
+
+`TaskViewSnapshot` 将任务展示为 RUNNING、WAITING_USER、WAITING_RECOVERY，独立于底层 `TaskState` 和 `TaskResult`。任务界面不显示 QUEUED/ENDED；取消及未完成收尾仍须保留，未知结果、缺失原恢复实现与仅待归档分别说明。主 App 汇总页与精确 Mod 版本页复用相同视图，操作与所属日志读取均在服务端重新鉴权。
+
+现有 `TaskContext.progress(text, fraction)` 的比例进入当前运行时展示快照；缺失比例显示不确定进度，不按耗时、工具调用次数或预览的五阶段推算。跨启动由 Mod 已有业务依据决定能恢复多少进度；平台不为界面改变数据库结构。`TaskController.readLogs(UUID)` 可提供本 Mod 的有界脱敏原任务日志，缺少能力明确返回不可用。
+
 `task.result`：
 
 ```java
@@ -1123,6 +1135,8 @@ public interface TaskService {
     TaskCheckpoint beginCheckpoint(TaskContext task, String key, String initial) throws ApiException;
     Optional<TaskCheckpoint> findCheckpoint(TaskContext task, String key) throws ApiException;
     RecoveryRegistration registerRecovery(String taskType, TaskRecovery recovery) throws ApiException;
+    // 可选；绑定当前精确 Mod/版本，默认未装配时返回不可用。
+    TaskControlRegistration registerController(String taskType, TaskController controller) throws ApiException;
 }
 ```
 

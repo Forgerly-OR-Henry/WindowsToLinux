@@ -11,6 +11,25 @@ import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 
 class DeploymentWorkspaceTest {
+    @Test void originalTaskInterventionAndScopedTaskNavigationUseDifferentOwnedViews() throws Exception {
+        edt(() -> {
+            var received = new java.util.concurrent.atomic.AtomicReference<gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<?>>();
+            var flow = new Page() { @Override public void navigate(gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<?> request) { received.set(request); } };
+            var task = new Page() { @Override public void navigate(gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<?> request) { received.set(request); } };
+            var workspace = DeploymentWorkspace.withTasks(() -> flow, Page::new, () -> task);
+            var id = java.util.UUID.randomUUID();
+            try {
+                workspace.create(INITIAL);
+                workspace.navigate(new gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<>("intervene-task", java.util.UUID.class, java.util.Optional.of(id)));
+                assertEquals("intervene-task", received.get().destination()); assertEquals(id, received.get().context().orElseThrow());
+                assertEquals(0, task.creates);
+                workspace.navigate(new gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<>("tasks", java.util.UUID.class, java.util.Optional.of(id)));
+                assertEquals("task", received.get().destination()); assertEquals(1, task.creates);
+                workspace.environmentChanged(new UiEnvironment(java.util.Locale.ENGLISH,"LIGHT",true));
+                assertThrows(IllegalArgumentException.class, () -> workspace.navigate(new gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<>("intervene-task", java.util.UUID.class, java.util.Optional.of(id))));
+            } finally { workspace.close(); }
+        });
+    }
     private static final UiEnvironment INITIAL = new UiEnvironment(Locale.ENGLISH, "LIGHT", false);
 
     static class Page implements ModPage {

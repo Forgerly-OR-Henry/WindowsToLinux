@@ -126,19 +126,18 @@ class PlatformTaskWaitingBoundaryTest {
                     return success(null);
                 });
                 state(handle, TaskState.WAITING);
-                var frame = PlatformTaskManagementWindowTest.window(runtime, management(runtime));
+                var manager = management(runtime);
+                var frame = PlatformTaskManagementWindowTest.window(runtime, manager);
                 try {
                     PlatformTaskManagementWindowTest.select(frame);
                     onEdt(() -> {
-                        assertTrue(named(frame, "tasks.continue").isEnabled());
-                        assertTrue(named(frame, "tasks.cancel").isEnabled());
-                        assertFalse(named(frame, "tasks.reconcile").isEnabled());
-                        assertTrue(((JTextArea) named(frame, "tasks.details")).getText().contains(handle.id().toString()));
+                        assertFalse(named(frame, "tasks.primary").isEnabled());
+                        assertFalse(descendants(frame).anyMatch(value -> "tasks.cancel".equals(value.getName())));
+                        assertTrue(PlatformTaskManagementWindowTest.details(frame).contains(handle.id().toString()));
                         return null;
                     });
-                    if (continueTask) PlatformTaskManagementWindowTest.click(frame, "tasks.continue");
-                    else PlatformTaskManagementWindowTest.answer(
-                        PlatformTaskManagementWindowTest.confirm(frame, "tasks.cancel"), JOptionPane.OK_OPTION);
+                    if (continueTask) manager.continueWaiting(handle.id());
+                    else manager.requestCancel(handle.id());
                     assertEquals(continueTask ? TaskResult.SUCCEEDED : TaskResult.CANCELLED,
                         handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
                     PlatformTaskManagementWindowTest.idle(frame);
@@ -166,7 +165,8 @@ class PlatformTaskWaitingBoundaryTest {
                 return new OperationResult<Void>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
             });
             state(handle, TaskState.WAITING);
-            var frame = PlatformTaskManagementWindowTest.window(runtime, management(runtime));
+            var manager = management(runtime);
+            var frame = PlatformTaskManagementWindowTest.window(runtime, manager);
             try {
                 PlatformTaskManagementWindowTest.select(frame);
                 PlatformTaskManagementWindowTest.dispose(frame);

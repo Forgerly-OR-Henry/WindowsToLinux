@@ -453,7 +453,8 @@ WindowsToLinux/
    │  │  │  ├─ DesktopTaskHandle.java  # 通过中断其工作线程取消单个任务，完成回调等待资源清理
    │  │  │  ├─ DesktopTaskRunner.java  # 运行后台操作并将完成结果返回 Swing 事件线程
    │  │  │  ├─ TaskInteractionPresenter.java  # 在平台隐私窗口所属对话框内呈现完整任务审核
-   │  │  │  ├─ TaskRecoveryPane.java  # 保留任务检查及明确原任务取消或核对
+   │  │  │  ├─ TaskRecoveryPane.java  # 三类任务卡片、搜索、右侧详情与原 Mod 控制
+   │  │  │  ├─ HostTaskPage.java  # 宿主提供的精确 Mod 版本及启用代次任务页面
    │  │  │  └─ WorkflowLaunchButton.java  # 捕获实际选定流程及目标作用域的宿主启动控件
    │  │  ├─ window/  # 主窗口、导航、标题和设置分类
    │  │  │  ├─ DesktopBrandLabel.java  # 固定两行项目名称及宽度驱动淡入淡出
@@ -703,6 +704,11 @@ WindowsToLinux/
    │  │  │  ├─ CommandReviewMode.java  # 命令审核交互的三档模式
    │  │  │  ├─ InteractionService.java  # 绑定已接纳任务的宿主审核及输入交互
    │  │  │  └─ WorkflowGrant.java  # 仅覆盖原任务回调的宿主签发委托
+   │  │  ├─ control/  # 可选的精确 Mod 版本任务控制
+   │  │  │  ├─ TaskCommand.java  # 明确暂停、继续与介入命令
+   │  │  │  ├─ TaskControlRegistration.java  # 启用代次所属控制登记
+   │  │  │  ├─ TaskControlSnapshot.java  # 不授予权限的控制能力观察
+   │  │  │  └─ TaskController.java  # Mod 自行实现的控制与所属诊断入口
    │  │  ├─ log/  # 所属日志登记、事件及实际写入结果
    │  │  │  ├─ LogCategory.java  # 包含可选作者日志表的所属诊断类别
    │  │  │  ├─ LogEvent.java  # 不得包含凭据材料的诊断事件
@@ -715,7 +721,8 @@ WindowsToLinux/
    │  │  ├─ model/  # 任务准入请求、进度状态与不可变快照
    │  │  │  ├─ TaskRequest.java  # 包含完整初始服务器资源集合的任务准入请求
    │  │  │  ├─ TaskSnapshot.java  # 终态结果保持一致的不可变任务状态
-   │  │  │  └─ TaskState.java  # 区分取消请求与业务结果的任务进度状态
+   │  │  │  ├─ TaskState.java  # 区分取消请求与业务结果的任务进度状态
+   │  │  │  └─ TaskViewSnapshot.java  # 不改变底层结果的三类展示与真实比例
    │  │  ├─ process/  # 受管进程启动、协议消息与实际退出合同
    │  │  │  ├─ ManagedProcess.java  # 直到实际退出前持续保留占用的协议进程
    │  │  │  ├─ ProcessMessage.java  # 传输前需要校验 JSON 对象的协议消息
@@ -952,7 +959,9 @@ WindowsToLinux/
    │  │  │  │  ├─ contract/  # 自主任务请求与纯目标身份值
    │  │  │  │  │  └─ DeploymentAgentInputs.java  # 不可变Agent输入及原目标身份工具
    │  │  │  │  ├─ control/  # 自主流程取消、暂停及进度控制合同
-   │  │  │  │  │  └─ DeploymentAgentControl.java  # 仅在动作已结清边界与一项所属工作线程协作
+   │  │  │  │  │  ├─ DeploymentAgentControl.java  # 仅在动作已结清边界与一项所属工作线程协作
+   │  │  │  │  │  ├─ DeploymentTaskController.java  # 复用安全边界并进入原任务处理流程的可选适配
+   │  │  │  │  │  └─ DeploymentTaskControls.java  # 复用已结清安全边界的 Mod 任务暂停与继续状态
    │  │  │  │  ├─ protocol/  # 自主动作、计划、识别、补丁与证据协议
    │  │  │  │  │  ├─ DeploymentAgentAssessment.java  # 关键动作与下一选择共用响应的公开决策摘要
    │  │  │  │  │  ├─ DeploymentAgentEvidence.java  # 滚动反馈之外的有界判断及观察证据

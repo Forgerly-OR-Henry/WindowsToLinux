@@ -110,7 +110,7 @@ public final class PlatformModContext implements ContextLease {
         runtime.tasks().blockOwner(identity.id(), "Mod context is preparing");
         if (schema.isPresent())
             new SchemaCoordinates(schema.get()).requireRegistered(runtime.persistence().database(), Set.of("READY"));
-        pageScope = pages.begin(identity.id(), mode == ModLaunchMode.RECOVERY, new ModUiAccess(loader));
+        pageScope = pages.begin(identity.id(), identity.version(), mode == ModLaunchMode.RECOVERY, new ModUiAccess(loader));
         contributions.add(new OwnedContribution(pageScope::commit, pageScope));
         var services = runtime.services().bind(loader, schema, mode);
         contributions.add(services);
@@ -401,13 +401,15 @@ public final class PlatformModContext implements ContextLease {
             return delegate.findRecoveryCheckpoint(task, key);
         }
 
-        /** Cleans only original host-owned connections before one explicit author callback. / 一次显式作者回调前仅清理原宿主连接。
-         * @param taskType original owner-local task type / 原所属任务类型
-         * @param recovery original author recovery / 原作者恢复
-         * @return actual registration / 实际登记
-         * @throws ApiException if registration fails / 登记失败时 */
+        /** Forwards optional control registration to the exact original binding. / 转发可选控制登记至精确原绑定。 */
         @Override
-        public RecoveryRegistration registerRecovery(String taskType, TaskRecovery recovery) throws ApiException {
+        public gold.debug.windowstolinux.appapi.task.control.TaskControlRegistration registerController(String taskType,
+            gold.debug.windowstolinux.appapi.task.control.TaskController controller) throws ApiException {
+            return delegate.registerController(taskType, controller);
+        }
+
+        /** Cleans only original host-owned connections before the author recovery. / 作者恢复前仅清理原宿主连接。 */
+        @Override public RecoveryRegistration registerRecovery(String taskType, TaskRecovery recovery) throws ApiException {
             Objects.requireNonNull(recovery);
             return delegate.registerRecovery(taskType, (previous, task) -> {
                 cleanup(task);

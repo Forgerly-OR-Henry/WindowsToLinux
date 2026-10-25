@@ -96,6 +96,15 @@ public final class DeploymentAgentPage implements ModPage {
     /** Accepted task retained independently of this view. / 独立于此视图留存的已接纳任务。 */
     private volatile TaskHandle<DeploymentAgentDeliveryPort.Published> current;
 
+    private java.util.UUID focusedTask;
+
+    public void focusOriginalTask(java.util.UUID id) {
+        if (closed || locked) throw new IllegalStateException("Original view is unavailable");
+        focusedTask = id;
+        status.setText(id.toString());
+        evidence.focusOriginalTask(id);
+    }
+
     private volatile gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoal goal;
 
     private javax.swing.Timer goalWatch;
@@ -135,7 +144,7 @@ public final class DeploymentAgentPage implements ModPage {
             () -> "AGENT", selection -> {
         },
             detail -> status.setText(text("preferenceError") + "\n" + detail), this::availability);
-        evidence = new DeploymentAgentEvidencePanel(service, actions, () -> current == null ? null : current.id());
+        evidence = new DeploymentAgentEvidencePanel(service, actions, () -> focusedTask != null ? focusedTask : current == null ? null : current.id());
         targets.servers.setName("deployment.agent.server");
         targets.servers.setRenderer((list, value, index, selected, focus) -> {
             var label = new JLabel(value == null ? "" : value.name() + " (" + value.host() + ")");
@@ -162,6 +171,10 @@ public final class DeploymentAgentPage implements ModPage {
                 status.setText(text("submitError"));
             }
         }, service::delivery, service.configuration().view());
+        feedback.originalTaskNavigation(id -> {
+            try { service.openTasks(java.util.Optional.of(id)); }
+            catch (ApiException unavailable) { status.setText(text("submitError")); }
+        });
         if (shared != null) feedback.compactIdle(true);
         feedback.configure(environment);
         root.setBorder(shared == null ? BorderFactory.createEmptyBorder(18, 20, 18, 20) : BorderFactory.createEmptyBorder());

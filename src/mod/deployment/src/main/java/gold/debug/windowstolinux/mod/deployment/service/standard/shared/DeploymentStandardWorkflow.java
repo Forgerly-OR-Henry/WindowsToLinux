@@ -205,6 +205,7 @@ public final class DeploymentStandardWorkflow {
                 marker.cancelled();
                 return cancelled();
             }
+            references.checkpoint(task);
             DeploymentDiagnostics.progress(context, task, gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.freezeSource"));
             capture.prepare(context, draft, git, task);
             var material = capture.material();
@@ -218,6 +219,7 @@ public final class DeploymentStandardWorkflow {
             advice.sourceCaptured(server, material, task);
             discovered = advice.compare(server, new DeploymentSourceBrowser(
                 material.snapshot().directory(), material.snapshot().sha256()), discovered, task);
+            references.checkpoint(task);
             DeploymentDiagnostics.progress(context, task, gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.reviewGraph"));
             if (discovered.size() > 16)
                 return rejected("DEPLOYMENT_STATIC_COMPONENT_LIMIT");
@@ -246,6 +248,7 @@ public final class DeploymentStandardWorkflow {
             }
             if (pinned != null)
                 pinned.close();
+            references.checkpoint(task);
             DeploymentDiagnostics.progress(context, task, gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.closePreparation"));
             marker.close();
             transferred = true;
@@ -358,6 +361,7 @@ public final class DeploymentStandardWorkflow {
             return schemaReviewRequired();
         if (reanalyzed.value().orElseThrow().assessment().admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING)
             return rejected("DEPLOYMENT_STATIC_ANALYSIS_INCOMPLETE");
+        references.checkpoint(task);
         DeploymentDiagnostics.progress(context, task, gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.archiveComponent"));
         var archive = new DeploymentSourceArchiver(context.file()).prepare(material, relative(discovered),
             draft.archiveBytes(), task);
@@ -380,6 +384,7 @@ public final class DeploymentStandardWorkflow {
         var helper = ensureHelper(server, task);
         if (helper.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(helper);
+        references.checkpoint(task);
         DeploymentDiagnostics.progress(context, task, gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.checkSourceRevision"));
         Optional<DeploymentProjectRecord> project = DeploymentStandardProjectSave.save(context, task, draft, pinned, localProject);
         return single.prepareWithinTask(task, unit, project, credentials,
@@ -448,6 +453,7 @@ public final class DeploymentStandardWorkflow {
             return schemaReviewRequired();
         if (assessment.assessment().admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING)
             return rejected("DEPLOYMENT_STATIC_ANALYSIS_INCOMPLETE");
+        references.checkpoint(task);
         DeploymentDiagnostics.progress(context, task, gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.archiveComponents"));
         var frozen = DeploymentStandardSourceSetup.archiveParts(material, context.file(), discovered,
             draft.archiveBytes(), archives, task);
@@ -473,6 +479,7 @@ public final class DeploymentStandardWorkflow {
         var helper = ensureHelper(server, task);
         if (helper.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(helper);
+        references.checkpoint(task);
         DeploymentDiagnostics.progress(context, task, gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.checkSourceRevision"));
         Optional<DeploymentProjectRecord> project = DeploymentStandardProjectSave.save(context, task, draft, pinned, localProject);
         var corrections = new LinkedHashMap<String, DeploymentAssistedBuildCorrection>();

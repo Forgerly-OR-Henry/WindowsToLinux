@@ -1,359 +1,495 @@
 package gold.debug.windowstolinux.app.ui.task;
 
-import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
-
 import java.awt.*;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
-
 import javax.swing.*;
-import javax.swing.table.DefaultTableModel;
-
+import javax.swing.event.*;
+import com.formdev.flatlaf.ui.FlatEmptyBorder;
+import com.formdev.flatlaf.ui.FlatLineBorder;
+import com.formdev.flatlaf.util.UIScale;
+import gold.debug.windowstolinux.app.service.task.TaskManagement;
 import gold.debug.windowstolinux.app.service.task.TaskManagement.Entry;
 import gold.debug.windowstolinux.app.service.task.TaskManagement.RecoveryState;
-import gold.debug.windowstolinux.app.service.task.TaskManagement;
-import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.control.*;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
-import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.control.*;
+import gold.debug.windowstolinux.appapi.task.model.*;
+import gold.debug.windowstolinux.appapi.task.model.TaskViewSnapshot.Category;
 
-/** Retained-task inspection and explicit original cancellation or reconciliation. / 保留任务检查及明确原任务取消或核对。 */
+/** Shared all-task and exact-Mod inventory; business controls remain in the original Mod. */
 public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
-    /** Host-only task access. / 仅供宿主的任务访问。 */
     private final TaskManagement service;
-
-    /** Localized text and safe failures. / 本地化文字及安全失败。 */
+    private final DesktopPartFactory components;
     private final PageMessagePresenter messages;
-
-    /** Explicit inventory and original-task actions. / 明确清单及原任务操作。 */
-    private final JButton reload, cancel, reconcile, history, continueTask;
-
-    /** Original task identities and states. / 原任务身份及状态。 */
-    private final JTable table = new JTable();
-
-    /** Selected progress, identity and outstanding resource descriptions. / 已选进度、身份及未释放资源描述。 */
-    private final JTextArea details = new JTextArea();
-
-    /** Actual action or inventory feedback. / 实际操作或清单反馈。 */
-    private final JLabel status = new JLabel();
-
-    /** Last received immutable control observations. / 最近收到的不可变操作观察。 */
-    private java.util.List<Entry> entries = java.util.List.of();
-
-    /** Current explicit confirmation, disposed immediately on lock or close. / 当前明确确认，锁定或关闭时立即销毁。 */
-    private JDialog confirmation;
-
-    /** Privacy generation used to reject late callbacks and decisions. / 用于拒绝迟到回调及决定的隐私代次。 */
+    private final Runnable history;
+    private final DefaultListModel<Object> model = new DefaultListModel<>();
+    private final JList<Object> list = new JList<>(model);
+    private final JTextField search = new JTextField();
+    private final JLabel count = new JLabel(), status = new JLabel(), empty = new JLabel();
+    private final JButton reload, logs, primary, intervene, collapse;
+    private final JPanel inventory, detail, workspace;
+    private final JPanel detailBody;
+    private final JScrollPane detailScroll;
+    private final JProgressBar progress = new JProgressBar(0, 1000);
+    private final javax.swing.Timer timer;
+    private List<Entry> entries = List.of();
+    private UUID selection, requestedSelection, renderedSelection;
+    private JDialog confirmation, logWindow;
+    private boolean locked = true, busy, closed, rendering;
     private long epoch;
 
-    /** Privacy, actual background work and view lifetime. / 隐私、实际后台工作及视图寿命。 */
-    private boolean locked = true, busy, closed;
-
-    /** Builds controls without reading tasks on the event thread. / 构造控件，不在事件线程读取任务。
-     * @param service original host task access / 原宿主任务访问
-     * @param components themed controls / 主题控件
-     * @param messages localized feedback / 本地化反馈
-     * @param history opens the existing log view containing completed task summaries / 打开含已结束任务摘要的现有日志界面 */
-    public TaskRecoveryPane(TaskManagement service, DesktopPartFactory components, PageMessagePresenter messages,
-                            Runnable history) {
-        super(new BorderLayout(10, 10));
-        if (!SwingUtilities.isEventDispatchThread())
-            throw new IllegalStateException("Task controls require the EDT");
+    public TaskRecoveryPane(TaskManagement service, DesktopPartFactory components,
+                            PageMessagePresenter messages, Runnable history) {
+        super(new BorderLayout());
+        if (!SwingUtilities.isEventDispatchThread()) throw new IllegalStateException("Task controls require EDT");
         this.service = Objects.requireNonNull(service);
-        this.messages = Objects.requireNonNull(messages);
-        Objects.requireNonNull(history);
+        this.components = components;
+        this.messages = messages;
+        this.history = history;
         setName("platform.tasks");
         components.stylePage(this);
-        setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
-        reload = messages.bind(components.secondaryButton(""), "tasks.reload");
-        cancel = messages.bind(components.secondaryButton(""), "tasks.cancel");
-        reconcile = messages.bind(components.secondaryButton(""), "tasks.reconcile");
-        continueTask = messages.bind(components.secondaryButton(""), "tasks.continue");
-        this.history = messages.bind(components.secondaryButton(""), "tasks.history");
-        reload.setName("tasks.reload");
-        cancel.setName("tasks.cancel");
-        reconcile.setName("tasks.reconcile");
-        continueTask.setName("tasks.continue");
-        this.history.setName("tasks.history");
+        setBorder(new FlatEmptyBorder(16, 20, 16, 20));
+        reload = button("tasks.reload", "tasks.reload", "action/refresh-cw");
+        logs = button("tasks.history", "tasks.history", "mod/archive");
+        primary = components.primaryButton("");
+        primary.setName("tasks.primary");
+        intervene = button("tasks.intervene", "tasks.intervene", "security/hand");
+        collapse = button("tasks.collapse", "tasks.collapse", "navigation/chevron-right");
         reload.addActionListener(event -> refresh());
-        cancel.addActionListener(event -> act(true));
-        reconcile.addActionListener(event -> act(false));
-        continueTask.addActionListener(event -> continueWaiting());
-        this.history.addActionListener(event -> {
-            if (!locked && !closed)
-                history.run();
+        logs.addActionListener(event -> showLogs());
+        primary.addActionListener(event -> runPrimary());
+        intervene.addActionListener(event -> runControl(TaskCommand.INTERVENE));
+        collapse.addActionListener(event -> { selection = null; list.clearSelection(); showSelection(); });
+        inventory = components.outerCard(new BorderLayout(0, UIScale.scale(10)));
+        inventory.setName("tasks.inventory");
+        var heading = components.transparent(new BorderLayout(0, UIScale.scale(8)));
+        var tools = components.transparent(new WrappingFlowLayout(new FlowLayout(FlowLayout.LEFT, 8, 0)));
+        var title = messages.bind(new JLabel(), "tasks.list");
+        title.setFont(title.getFont().deriveFont(Font.BOLD, UIScale.scale(18f)));
+        tools.add(title); tools.add(count);
+        var listActions = components.transparent(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        listActions.add(logs); listActions.add(reload); tools.add(listActions);
+        heading.add(tools, BorderLayout.NORTH);
+        search.setName("tasks.search");
+        components.styleSearchField(search);
+        search.putClientProperty("JTextField.leadingIcon", DesktopIcons.icon("action/search", 16,
+            () -> UIManager.getColor("Label.disabledForeground")));
+        search.getDocument().addDocumentListener(new DocumentListener() {
+            public void insertUpdate(DocumentEvent event) { filter(); }
+            public void removeUpdate(DocumentEvent event) { filter(); }
+            public void changedUpdate(DocumentEvent event) { filter(); }
         });
-        var actions = components.transparent(new FlowLayout(FlowLayout.LEFT));
-        actions.add(reload);
-        actions.add(cancel);
-        actions.add(reconcile);
-        actions.add(continueTask);
-        actions.add(this.history);
-        var heading = components.transparent(new BorderLayout(8, 8));
-        var explanation = new JTextArea();
-        explanation.setEditable(false);
-        messages.bind(explanation, "tasks.explanation");
-        explanation.setOpaque(false);
-        explanation.setLineWrap(true);
-        explanation.setWrapStyleWord(true);
-        explanation.setRows(2);
-        heading.add(explanation, BorderLayout.NORTH);
-        heading.add(actions, BorderLayout.CENTER);
+        heading.add(search, BorderLayout.CENTER);
+        inventory.add(heading, BorderLayout.NORTH);
+        list.setName("tasks.list");
+        list.putClientProperty("desktop.inventory.cards", false);
+        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        list.setCellRenderer(this::render);
+        list.addListSelectionListener(event -> {
+            if (event.getValueIsAdjusting() || rendering) return;
+            selection = list.getSelectedValue() instanceof Entry entry ? entry.snapshot().id() : null;
+            showSelection();
+        });
+        var listScroll = new JScrollPane(list, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        listScroll.setBorder(BorderFactory.createEmptyBorder());
+        components.cardScroll(listScroll);
+        list.setBackground(inventory.getBackground());
+        var listRegion = components.transparent(new BorderLayout());
+        empty.setHorizontalAlignment(SwingConstants.CENTER);
+        listRegion.add(listScroll, BorderLayout.CENTER);
+        listRegion.add(empty, BorderLayout.SOUTH);
+        inventory.add(listRegion, BorderLayout.CENTER);
         status.setName("tasks.status");
-        heading.add(status, BorderLayout.SOUTH);
-        add(heading, BorderLayout.NORTH);
-        table.setName("tasks.table");
-        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        table.getSelectionModel().addListSelectionListener(event -> showSelection());
-        details.setName("tasks.details");
-        details.setEditable(false);
-        details.setLineWrap(true);
-        details.setWrapStyleWord(true);
-        details.setRows(12);
-        var split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, new JScrollPane(table), new JScrollPane(details));
-        split.setResizeWeight(0.5);
-        add(split, BorderLayout.CENTER);
-        display(java.util.List.of(), null);
+        inventory.add(status, BorderLayout.SOUTH);
+        detail = components.outerCard(new BorderLayout());
+        detail.setName("tasks.details");
+        detailBody = new DetailContent();
+        detailScroll = new JScrollPane(detailBody, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        detailScroll.setBorder(BorderFactory.createEmptyBorder());
+        components.cardScroll(detailScroll);
+        detail.add(detailScroll);
+        detail.setVisible(false);
+        progress.setName("tasks.progress");
+        workspace = components.transparent(null);
+        workspace.setLayout(new java.awt.LayoutManager() {
+            public void addLayoutComponent(String name, Component component) {}
+            public void removeLayoutComponent(Component component) {}
+            public Dimension preferredLayoutSize(Container parent) { return UIScale.scale(new Dimension(1100, 650)); }
+            public Dimension minimumLayoutSize(Container parent) { return new Dimension(0, 0); }
+            public void layoutContainer(Container parent) {
+                int gap = detail.isVisible() ? UIScale.scale(16) : 0;
+                int left = detail.isVisible() ? (int) ((parent.getWidth() - gap) * .44) : parent.getWidth();
+                inventory.setBounds(0, 0, left, parent.getHeight());
+                detail.setBounds(left + gap, 0, Math.max(0, parent.getWidth() - left - gap), parent.getHeight());
+            }
+        });
+        workspace.add(inventory); workspace.add(detail); add(workspace);
+        timer = new javax.swing.Timer(1000, event -> {
+            if (isShowing() && !locked && !closed && !busy && confirmation == null && logWindow == null) refresh();
+        });
+        localize();
     }
 
-    /** Preserves loaded observations and invalidates old decisions on every lock transition. / 每次锁定切换保留已加载观察并使旧决定失效。
-     * @param value actual desktop lock state / 实际桌面锁定状态 */
+    private JButton button(String name, String key, String icon) {
+        var button = messages.bind(components.secondaryButton(""), key);
+        button.setName(name);
+        button.setIcon(DesktopIcons.icon(icon, 16, button::getForeground));
+        return button;
+    }
+
     public void setLocked(boolean value) {
         epoch++;
         locked = value;
-        dismissConfirmation();
-        if (!value)
-            refresh();
+        dismissDialogs();
+        if (value) { timer.stop(); progress.setIndeterminate(false); }
+        else { timer.start(); refresh(); }
+        filter();
     }
 
-    /** Refreshes only inventory; entering this page never runs recovery. / 仅刷新清单，进入此页绝不运行恢复。 */
     public void refresh() {
-        var selected = selected();
-        UUID id = selected == null ? null : selected.snapshot().id();
-        work(service::list, result -> {
-            display(result, id);
-            status.setText(messages.text(result.isEmpty() ? "tasks.empty" : "tasks.refreshed"));
+        work(service::list, values -> {
+            entries = List.copyOf(values);
+            if (requestedSelection != null) { selection = requestedSelection; requestedSelection = null; }
+            filter();
         });
     }
 
-    /** Runs one original-task action after its own current explicit confirmation. / 经本操作当前明确确认后运行一个原任务操作。
-     * @param cancellation whether cooperative cancellation was chosen / 是否选择协作取消 */
-    private void act(boolean cancellation) {
-        var selected = selected();
-        if (selected == null || locked || busy || closed || confirmation != null
-            || cancellation && !selected.cancellable() || !cancellation && !recoverable(selected))
-            return;
-        if (!confirm(selected, cancellation))
-            return;
-        work(() -> {
-            var snapshot = cancellation
-                ? service.requestCancel(selected.snapshot().id())
-                : service.reconcile(selected.snapshot().id(), selected.recovery() == RecoveryState.CONFIRM_RESCUE)
-                .toCompletableFuture().get();
-            return new ActionResult(snapshot, service.list());
-        }, result -> {
-            display(result.entries(), selected.snapshot().id());
-            var snapshot = result.snapshot();
-            String state = snapshot.outcome().map(value -> messages.text("tasks.outcome." + value.name()))
-                .orElseGet(() -> messages.text("tasks.state." + snapshot.state().name()));
-            status.setText(messages.text("tasks.result", Map.of("state", state)));
-        });
+    public void selectTask(UUID id) {
+        requestedSelection = Objects.requireNonNull(id);
+        search.setText("");
+        refresh();
     }
 
-    /** Continues only the selected live wait; deletion then asks for a fresh decision. / 仅继续所选存活等待，删除随后取得新的决定。 */
-    private void continueWaiting() {
+    private void filter() {
+        if (closed) return;
+        rendering = true;
+        model.clear();
+        String query = search.getText().strip().toLowerCase(Locale.ROOT);
+        int visible = 0, selectedIndex = -1;
+        if (!locked) for (var category : Category.values()) {
+            var group = entries.stream().filter(entry -> entry.snapshot().state() != TaskState.QUEUED
+                && entry.snapshot().state() != TaskState.ENDED && entry.view().category() == category)
+                .filter(entry -> (title(entry) + " " + entry.snapshot().type() + " " + entry.snapshot().ownerId())
+                    .toLowerCase(Locale.ROOT).contains(query)).toList();
+            if (group.isEmpty()) continue;
+            model.addElement(new Group(category, group.size()));
+            for (var entry : group) {
+                if (entry.snapshot().id().equals(selection)) selectedIndex = model.size();
+                model.addElement(entry); visible++;
+            }
+        }
+        count.setText(Integer.toString(visible));
+        count.setName("tasks.count");
+        list.setSelectedIndex(selectedIndex);
+        if (selectedIndex < 0) selection = null;
+        rendering = false;
+        empty.setText(visible == 0 && !locked ? messages.text(query.isEmpty() ? "tasks.empty" : "tasks.noMatches") : "");
+        showSelection();
+    }
+
+    private Component render(JList<?> owner, Object value, int index, boolean selected, boolean focus) {
+        if (value instanceof Group group) {
+            var label = new JLabel(messages.text("tasks.group." + group.category()) + "  " + group.count());
+            label.setFont(label.getFont().deriveFont(Font.BOLD));
+            label.setBorder(new FlatEmptyBorder(14, 0, 7, 0));
+            return label;
+        }
+        var entry = (Entry) value;
+        var row = components.card(new BorderLayout(UIScale.scale(12), 0));
+        if (row.getBackground().getRed() > 100) row.setBackground(Color.WHITE);
+        row.setName("tasks.card");
+        Color border = selected ? UIManager.getColor("Component.focusColor") : UIManager.getColor("Component.borderColor");
+        row.setBorder(new FlatLineBorder(new Insets(12, 14, 12, 14), border, 1, 12));
+        var icon = new JLabel(DesktopIcons.icon("navigation/panels-top-left", 25,
+            () -> UIManager.getColor("Label.disabledForeground")));
+        row.add(icon, BorderLayout.WEST);
+        var text = components.transparent(new GridLayout(3, 1, 0, UIScale.scale(4)));
+        var name = literal(title(entry)); name.setFont(name.getFont().deriveFont(Font.BOLD));
+        name.setToolTipText(title(entry));
+        text.add(name);
+        String ownerId = entry.snapshot().ownerId();
+        text.add(subdued(ownerId.substring(ownerId.lastIndexOf('.') + 1) + " · " + entry.snapshot().ownerVersion()));
+        text.add(subdued(entry.snapshot().progressText()));
+        row.add(text, BorderLayout.CENTER);
+        var right = components.transparent(new BorderLayout(0, UIScale.scale(8)));
+        var capsule = components.transparent(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        capsule.add(pill(entry.view().category()));
+        right.add(capsule, BorderLayout.NORTH);
+        right.add(subdued(DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.systemDefault())
+            .format(entry.snapshot().startedAt())), BorderLayout.SOUTH);
+        row.add(right, BorderLayout.EAST);
+        var gap = components.transparent(new BorderLayout());
+        gap.setBorder(new FlatEmptyBorder(0, 0, 8, 0));
+        gap.add(row);
+        gap.setPreferredSize(new Dimension(100, row.getPreferredSize().height + UIScale.scale(8)));
+        return gap;
+    }
+
+    private JLabel pill(Category category) {
+        var label = new JLabel(messages.text("tasks.badge." + category)) {
+            @Override protected void paintComponent(Graphics graphics) {
+                var g = (Graphics2D) graphics.create();
+                g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setColor(getBackground()); g.fillRoundRect(0, 0, getWidth(), getHeight(), getHeight(), getHeight());
+                g.dispose(); super.paintComponent(graphics);
+            }
+        };
+        boolean dark = inventory.getBackground().getRed() < 100;
+        Color ink = switch (category) {
+            case RUNNING -> new Color(dark ? 0x73D7A5 : 0x148451);
+            case WAITING_USER -> new Color(dark ? 0xE9C75E : 0x926C00);
+            case WAITING_RECOVERY -> new Color(dark ? 0xC2C6CD : 0x667080);
+        };
+        Color surface = switch (category) {
+            case RUNNING -> new Color(dark ? 0x183D2E : 0xE5F5EC);
+            case WAITING_USER -> new Color(dark ? 0x403619 : 0xFFF5D5);
+            case WAITING_RECOVERY -> new Color(dark ? 0x34373D : 0xECEEF2);
+        };
+        label.setName("tasks.badge"); label.setForeground(ink); label.setBackground(surface);
+        label.setFont(label.getFont().deriveFont(Font.BOLD));
+        label.setBorder(new FlatEmptyBorder(5, 10, 5, 10));
+        label.setHorizontalAlignment(SwingConstants.CENTER);
+        return label;
+    }
+
+    private Entry selected() {
+        return selection == null ? null : entries.stream().filter(value -> value.snapshot().id().equals(selection)).findFirst().orElse(null);
+    }
+
+    private void showSelection() {
+        boolean newSelection = !Objects.equals(renderedSelection, selection);
+        renderedSelection = selection;
+        progress.setIndeterminate(false);
+        detailBody.removeAll();
         var entry = selected();
-        if (entry == null || locked || busy || closed || entry.snapshot().state()
-            != gold.debug.windowstolinux.appapi.task.model.TaskState.WAITING)
-            return;
-        work(() -> new ActionResult(service.continueWaiting(entry.snapshot().id()), service.list()), result -> {
-            display(result.entries(), entry.snapshot().id());
-            status.setText(messages.text("tasks.continued"));
-        });
+        detail.setVisible(entry != null && !locked);
+        if (entry != null && !locked) {
+            var body = components.transparent(new BorderLayout(0, UIScale.scale(20)));
+            var header = components.transparent(new BorderLayout(8, 8));
+            var title = literal(title(entry)); title.setToolTipText(title(entry));
+            title.setFont(title.getFont().deriveFont(Font.BOLD, UIScale.scale(19f)));
+            header.add(title, BorderLayout.CENTER);
+            var right = components.transparent(new WrappingFlowLayout(new FlowLayout(FlowLayout.RIGHT, 6, 0)));
+            right.add(pill(entry.view().category())); right.add(collapse);
+            header.add(right, BorderLayout.NORTH);
+            header.add(subdued(entry.snapshot().ownerId() + " · " + entry.snapshot().ownerVersion()), BorderLayout.SOUTH);
+            body.add(header, BorderLayout.NORTH);
+            var sections = components.transparent(null); sections.setLayout(new BoxLayout(sections, BoxLayout.Y_AXIS));
+            sections.add(section("tasks.progressTitle"));
+            var current = prose(entry.snapshot().progressText()); current.setName("tasks.progressText"); sections.add(current);
+            progress.setStringPainted(true);
+            if (entry.view().fraction().isPresent()) {
+                double fraction = entry.view().fraction().get();
+                progress.setValue((int) Math.round(fraction * 1000));
+                progress.setString(Math.round(fraction * 100) + "%");
+            } else { progress.setValue(0); progress.setString(messages.text("tasks.progressUnknown")); progress.setIndeterminate(true); }
+            progress.setForeground(pill(entry.view().category()).getForeground());
+            progress.setMaximumSize(new Dimension(Integer.MAX_VALUE, UIScale.scale(24)));
+            sections.add(Box.createVerticalStrut(UIScale.scale(8))); sections.add(progress);
+            var actions = components.transparent(new WrappingFlowLayout(new FlowLayout(FlowLayout.LEFT, 8, 10)));
+            actions.add(primary); actions.add(intervene); sections.add(actions);
+            var reason = prose(reason(entry)); reason.setName("tasks.controlReason"); sections.add(reason);
+            sections.add(Box.createVerticalStrut(UIScale.scale(16))); sections.add(section("tasks.information"));
+            field(sections, "tasks.id", entry.snapshot().id().toString());
+            field(sections, "tasks.owner", entry.snapshot().ownerId());
+            field(sections, "tasks.version", entry.snapshot().ownerVersion());
+            field(sections, "tasks.type", entry.snapshot().type());
+            field(sections, "tasks.started", time(entry.snapshot().startedAt()));
+            field(sections, "tasks.state", messages.text("tasks.state." + entry.snapshot().state()));
+            field(sections, "tasks.availability", messages.text("tasks.recovery." + entry.recovery()));
+            sections.add(Box.createVerticalStrut(UIScale.scale(16))); sections.add(section("tasks.blockers"));
+            sections.add(prose(String.join("\n", entry.snapshot().blockers())));
+            for (var child : sections.getComponents()) if (child instanceof JComponent component) {
+                component.setAlignmentX(Component.LEFT_ALIGNMENT);
+                if (component instanceof JLabel)
+                    component.setMaximumSize(new Dimension(Integer.MAX_VALUE, component.getPreferredSize().height));
+            }
+            sections.add(Box.createVerticalGlue());
+            body.add(sections, BorderLayout.CENTER); detailBody.add(body, BorderLayout.NORTH);
+        }
+        controls(); workspace.revalidate(); workspace.repaint();
+        if (newSelection) detailScroll.getViewport().setViewPosition(new Point());
     }
 
-    /** Confirms the exact identity and required recovery semantics in an owned dialog. / 在从属窗口确认精确身份及必要恢复语义。
-     * @param entry original selected task / 原已选任务
-     * @param cancellation whether this is cancellation / 是否为取消
-     * @return whether the same unlocked view received acceptance / 同一已解锁视图是否收到接受 */
-    private boolean confirm(Entry entry, boolean cancellation) {
+    private void field(JPanel parent, String key, String value) {
+        var row = components.transparent(new BorderLayout(UIScale.scale(12), 0));
+        row.setBorder(new FlatEmptyBorder(8, 0, 8, 0));
+        var caption = subdued(messages.text(key));
+        row.add(caption, BorderLayout.WEST); row.add(prose(value), BorderLayout.CENTER);
+        parent.add(row); parent.add(components.divider());
+    }
+
+    private JLabel section(String key) {
+        var label = literal(messages.text(key)); label.setFont(label.getFont().deriveFont(Font.BOLD));
+        label.setBorder(new FlatEmptyBorder(0, 0, 8, 0)); return label;
+    }
+
+    private static JLabel literal(String text) {
+        var label = new JLabel(text); label.putClientProperty("html.disable", true); return label;
+    }
+
+    private static JLabel subdued(String text) {
+        var label = literal(text);
+        label.setToolTipText(text);
+        label.setForeground(UIManager.getColor("Label.disabledForeground"));
+        label.setFont(label.getFont().deriveFont(UIScale.scale(12f)));
+        return label;
+    }
+
+    private static JTextArea prose(String text) {
+        var area = new WrappingText(text); area.setEditable(false); area.setOpaque(false);
+        var caret = new javax.swing.text.DefaultCaret() {
+            @Override protected void adjustVisibility(Rectangle bounds) {
+                if (area.isFocusOwner()) super.adjustVisibility(bounds);
+            }
+        };
+        caret.setUpdatePolicy(javax.swing.text.DefaultCaret.NEVER_UPDATE);
+        area.setCaret(caret);
+        area.setLineWrap(true); area.setWrapStyleWord(true); area.setRows(1);
+        area.setFont(UIManager.getFont("Label.font")); return area;
+    }
+
+    private boolean recoverable(Entry entry) {
+        return Set.of(RecoveryState.RECONCILE, RecoveryState.ARCHIVE_ONLY, RecoveryState.CONFIRM_RESCUE).contains(entry.recovery());
+    }
+
+    private String reason(Entry entry) {
+        if (entry.view().controls().state() == TaskControlSnapshot.State.PAUSE_REQUESTED) return messages.text("tasks.pausePending");
+        if (entry.view().category() == Category.WAITING_USER) return messages.text("tasks.handleFirst");
+        if (recoverable(entry) || entry.view().controls().pause() || entry.view().controls().resume()) return "";
+        if (entry.recovery() == RecoveryState.UNAVAILABLE) return messages.text("tasks.recovery.UNAVAILABLE");
+        String reason = entry.view().controls().reason();
+        return reason.startsWith("TASK_") || reason.isBlank() ? messages.text("tasks.controlUnavailable") : reason;
+    }
+
+    private void controls() {
+        boolean available = !locked && !closed && !busy && confirmation == null;
+        var entry = selected();
+        boolean running = entry != null && entry.view().category() == Category.RUNNING;
+        messages.bind(primary, running ? "tasks.pause" : "tasks.resume");
+        primary.setIcon(DesktopIcons.icon(running ? "action/pause" : "action/play", 16, primary::getForeground));
+        reload.setEnabled(available); logs.setEnabled(available && (history != null || entry != null));
+        search.setEnabled(!locked && !closed); list.setEnabled(!locked && !closed);
+        primary.setEnabled(available && entry != null && (running ? entry.view().controls().pause()
+            : entry.view().category() == Category.WAITING_RECOVERY && (entry.view().controls().resume() || recoverable(entry))));
+        intervene.setEnabled(available && entry != null && entry.view().controls().intervene());
+        primary.setToolTipText(entry == null ? null : reason(entry));
+        intervene.setToolTipText(entry == null || entry.view().controls().intervene() ? null : messages.text("tasks.interventionUnavailable"));
+    }
+
+    private void runPrimary() {
+        var entry = selected();
+        if (entry == null || !primary.isEnabled()) return;
+        if (entry.view().category() == Category.RUNNING) runControl(TaskCommand.PAUSE);
+        else if (entry.view().controls().resume()) runControl(TaskCommand.RESUME);
+        else if (recoverable(entry) && confirm(entry))
+            work(() -> { service.reconcile(entry.snapshot().id(), entry.recovery() == RecoveryState.CONFIRM_RESCUE)
+                .toCompletableFuture().get(); return service.list(); }, values -> { entries = values; filter(); });
+    }
+
+    private void runControl(TaskCommand command) {
+        var entry = selected();
+        if (entry == null || locked || busy) return;
+        work(() -> { service.control(entry.snapshot().id(), command); return service.list(); }, values -> { entries = values; filter(); });
+    }
+
+    private boolean confirm(Entry entry) {
         long observed = epoch;
-        String key = cancellation ? "tasks.cancelConfirm" : switch (entry.recovery()) {
+        String key = switch (entry.recovery()) {
             case ARCHIVE_ONLY -> "tasks.archiveConfirm";
             case CONFIRM_RESCUE -> "recovery.taskReconcileConfirm";
             default -> "tasks.reconcileConfirm";
         };
-        var text = new JTextArea(messages.text(key) + "\n\n" + identity(entry.snapshot()));
-        text.setEditable(false);
-        text.setLineWrap(true);
-        text.setWrapStyleWord(true);
-        var content = new JScrollPane(text);
-        content.setPreferredSize(new Dimension(600, 220));
+        var content = new JScrollPane(prose(messages.text(key) + "\n\n" + title(entry) + "\n" + entry.snapshot().id()
+            + "\n" + entry.snapshot().ownerId() + " @ " + entry.snapshot().ownerVersion()));
+        content.setPreferredSize(UIScale.scale(new Dimension(560, 200)));
         var choice = new JOptionPane(content, JOptionPane.WARNING_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
-        var dialog = DesktopDialogs.create(choice, this, messages.text("tasks.title"));
-        dialog.setName("tasks.confirmation");
-        confirmation = dialog;
-        controls();
-        try {
-            dialog.setVisible(true);
-            return !locked && !closed && observed == epoch && Objects.equals(choice.getValue(), JOptionPane.OK_OPTION);
-        } finally {
-            dialog.dispose();
-            if (confirmation == dialog)
-                confirmation = null;
-            controls();
-        }
+        confirmation = DesktopDialogs.create(choice, this, messages.text("tasks.title"));
+        confirmation.setName("tasks.confirmation"); controls();
+        try { confirmation.setVisible(true); return !locked && !closed && observed == epoch
+            && Integer.valueOf(JOptionPane.OK_OPTION).equals(choice.getValue()); }
+        finally { if (confirmation != null) confirmation.dispose(); confirmation = null; controls(); }
     }
 
-    /** Runs existing task APIs off the EDT and rejects results from an older privacy generation. / 在 EDT 外运行已有任务接口，拒绝旧隐私代次结果。
-     * @param <T> result type / 结果类型
-     * @param operation original read or explicit action / 原读取或明确操作
-     * @param success current-view rendering / 当前视图呈现 */
-    private <T> void work(Callable<T> operation, Consumer<T> success) {
-        if (locked || busy || closed || confirmation != null)
-            return;
-        long observed = epoch;
-        busy = true;
-        controls();
-        status.setText(messages.text("tasks.working"));
-        DesktopTaskRunner.run(operation, result -> {
-            if (!returned(observed))
-                return;
-            success.accept(result);
-            controls();
-        }, failure -> {
-            if (!returned(observed))
-                return;
-            display(java.util.List.of(), null);
-            status.setText(messages.safe(failure));
-            controls();
+    private void showLogs() {
+        if (history != null) { history.run(); return; }
+        var entry = selected(); if (entry == null) return;
+        work(() -> service.readLogs(entry.snapshot().id()), value -> {
+            String text = value.records().stream().map(record -> record.recordedAt() + " " + record.event().level()
+                + " " + record.event().message()).collect(java.util.stream.Collectors.joining("\n"));
+            if (value.problem().isPresent()) text += "\n" + messages.safe(value.problem().get());
+            var pane = new JOptionPane(new JScrollPane(prose(text)), JOptionPane.INFORMATION_MESSAGE);
+            logWindow = DesktopDialogs.create(pane, this, messages.text("tasks.history"));
+            logWindow.setName("tasks.logs"); logWindow.setSize(UIScale.scale(new Dimension(700, 440)));
+            logWindow.setVisible(true); if (logWindow != null) logWindow.dispose(); logWindow = null;
         });
     }
 
-    /** Releases UI work ownership and refreshes after a lock changed during the operation. / 释放界面工作归属，在操作期间锁定状态变化后刷新。
-     * @param observed starting privacy generation / 开始时的隐私代次
-     * @return whether this result still belongs to the unlocked view / 结果是否仍属于已解锁视图 */
-    private boolean returned(long observed) {
-        busy = false;
-        if (closed)
-            return false;
-        controls();
-        if (locked || observed != epoch) {
-            if (!locked)
-                refresh();
-            return false;
-        }
-        return true;
+    private <T> void work(Callable<T> operation, Consumer<T> success) {
+        if (locked || busy || closed || confirmation != null) return;
+        long observed = epoch; busy = true; controls();
+        DesktopTaskRunner.run(operation, result -> {
+            busy = false;
+            if (closed) return;
+            if (locked || observed != epoch) { controls(); if (!locked) refresh(); return; }
+            success.accept(result); controls();
+            if (requestedSelection != null) refresh();
+        }, failure -> {
+            busy = false; if (closed) return;
+            if (!locked && observed == epoch) status.setText(messages.safe(failure));
+            controls(); if (!locked && observed != epoch) refresh();
+        });
     }
 
-    /** Displays only received observations and restores selection by original UUID. / 仅显示收到的观察，并按原 UUID 恢复选择。
-     * @param values current task observations / 当前任务观察
-     * @param selected original selection, if any / 可选的原选择 */
-    private void display(java.util.List<Entry> values, UUID selected) {
-        entries = java.util.List.copyOf(values);
-        var model = new DefaultTableModel(new String[]{messages.text("tasks.owner"), messages.text("tasks.version"),
-            messages.text("tasks.type"), messages.text("tasks.state"), messages.text("tasks.availability")}, 0) {
-            /** Keeps task observations read-only. / 保持任务观察只读。
-             * @param row observed row / 观察行
-             * @param column observed column / 观察列
-             * @return always false / 始终为假 */
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-        };
-        for (var entry : entries) {
-            var snapshot = entry.snapshot();
-            model.addRow(new Object[]{snapshot.ownerId(), snapshot.ownerVersion(), snapshot.type(),
-                messages.text("tasks.state." + snapshot.state().name()),
-                messages.text("tasks.recovery." + entry.recovery().name())});
-        }
-        table.setModel(model);
-        for (int index = 0; index < entries.size(); index++)
-            if (entries.get(index).snapshot().id().equals(selected))
-                table.setRowSelectionInterval(index, index);
-        showSelection();
-    }
-
-    /** Returns only a valid row from the current observation set. / 仅返回当前观察集合中的有效行。
-     * @return selected task or null / 已选任务或空 */
-    private Entry selected() {
-        int row = table.getSelectedRow();
-        return row >= 0 && row < entries.size() ? entries.get(row) : null;
-    }
-
-    /** Shows original identifiers and retained resource blockers without recovery payloads. / 显示原标识及保留资源阻塞，不显示恢复载荷。 */
-    private void showSelection() {
-        var entry = selected();
-        details.setText(entry == null || locked
-            ? ""
-            : identity(entry.snapshot()) + "\n\n" + entry.snapshot().progressText() + "\n\n"
-            + messages.text("tasks.blockers") + "\n" + String.join("\n", entry.snapshot().blockers()));
-        details.setCaretPosition(0);
-        controls();
-    }
-
-    /** Formats exact original ownership for details and confirmation. / 为详情及确认格式化精确原归属。
-     * @param task original task / 原任务
-     * @return readable original identity / 可读原身份 */
-    private String identity(TaskSnapshot task) {
-        return task.id() + "\n" + task.ownerId() + " @ " + task.ownerVersion() + "\n" + task.type() + "\n"
-            + messages.text("tasks.started") + ": " + task.startedAt();
-    }
-
-    /** Checks only displayed availability; the service revalidates before execution. / 仅检查显示的可用性，服务在执行前重新核验。
-     * @param entry current observation / 当前观察
-     * @return whether a recovery action can be offered / 是否可提供恢复操作 */
-    private static boolean recoverable(Entry entry) {
-        return Set.of(RecoveryState.RECONCILE, RecoveryState.ARCHIVE_ONLY, RecoveryState.CONFIRM_RESCUE)
-            .contains(entry.recovery());
-    }
-
-    /** Keeps unavailable and stale actions disabled. / 禁用不可用及过期操作。 */
-    private void controls() {
-        boolean available = !locked && !closed && !busy && confirmation == null;
-        var entry = selected();
-        reload.setEnabled(available);
-        history.setEnabled(available);
-        table.setEnabled(available);
-        cancel.setEnabled(available && entry != null && entry.cancellable());
-        continueTask.setEnabled(available && entry != null && entry.snapshot().state()
-            == gold.debug.windowstolinux.appapi.task.model.TaskState.WAITING);
-        reconcile.setEnabled(available && entry != null && recoverable(entry));
-        messages.bind(reconcile,
-            entry != null && entry.recovery() == RecoveryState.ARCHIVE_ONLY ? "tasks.archive" : "tasks.reconcile");
-    }
-
-    /** Re-renders the same immutable task observations without fetching or reconciling tasks. / 重绘同一不可变任务观察，不重新读取或核对任务。 */
     public void localize() {
-        if (!closed) {
-            var selected = selected();
-            display(entries, selected == null ? null : selected.snapshot().id());
+        if (closed) return;
+        search.putClientProperty("JTextField.placeholderText", messages.text("tasks.search"));
+        filter();
+    }
+
+    private static String title(Entry entry) { return entry.title().isBlank() ? entry.snapshot().type() : entry.title(); }
+    private static String time(java.time.Instant instant) {
+        return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(instant);
+    }
+    private record Group(Category category, int count) {}
+
+    private static final class WrappingText extends JTextArea {
+        WrappingText(String text) { super(text); }
+        @Override public Dimension getPreferredSize() {
+            int width = getWidth() > 0 ? getWidth() : UIScale.scale(320);
+            var insets = getInsets();
+            var view = getUI().getRootView(this);
+            view.setSize(Math.max(1, width - insets.left - insets.right), Integer.MAX_VALUE);
+            return new Dimension(Math.min(width, UIScale.scale(320)),
+                (int) Math.ceil(view.getPreferredSpan(javax.swing.text.View.Y_AXIS)) + insets.top + insets.bottom);
+        }
+        @Override public void setBounds(int x, int y, int width, int height) {
+            boolean changed = width != getWidth();
+            super.setBounds(x, y, width, height);
+            if (changed && getParent() != null) SwingUtilities.invokeLater(() -> { if (getParent() != null) getParent().revalidate(); });
         }
     }
 
-    /** Disposes the exact confirmation without accepting its decision. / 销毁精确确认窗口，不接受其决定。 */
-    private void dismissConfirmation() {
-        if (confirmation != null) {
-            confirmation.dispose();
-            confirmation = null;
-        }
+    private static final class DetailContent extends JPanel implements Scrollable {
+        DetailContent() { super(new BorderLayout()); setOpaque(false); }
+        public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
+        public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) { return UIScale.scale(20); }
+        public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction) { return Math.max(20, visible.height - 20); }
+        public boolean getScrollableTracksViewportWidth() { return true; }
+        public boolean getScrollableTracksViewportHeight() { return getPreferredSize().height < getParent().getHeight(); }
     }
 
-    /** Clears observations and invalidates pending UI callbacks without cancelling business. / 清空观察并使待处理界面回调失效，不取消业务。 */
-    @Override
-    public void close() {
-        closed = true;
-        epoch++;
-        dismissConfirmation();
-        display(java.util.List.of(), null);
-        status.setText("");
+    private void dismissDialogs() {
+        if (confirmation != null) { confirmation.dispose(); confirmation = null; }
+        if (logWindow != null) { logWindow.dispose(); logWindow = null; }
     }
-
-    /** Original action result with a refreshed inventory. / 原操作结果及已刷新清单。
-     * @param snapshot actual original-task result / 实际原任务结果
-     * @param entries current retained tasks / 当前保留任务 */
-    private record ActionResult(TaskSnapshot snapshot, java.util.List<Entry> entries) {
+    @Override public void close() {
+        closed = true; epoch++; timer.stop(); progress.setIndeterminate(false); dismissDialogs();
+        entries = List.of(); model.clear(); selection = null; detail.setVisible(false); controls();
     }
 }

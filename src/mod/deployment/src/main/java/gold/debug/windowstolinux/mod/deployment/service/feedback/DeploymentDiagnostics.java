@@ -60,6 +60,12 @@ public final class DeploymentDiagnostics {
         return context.logs().read(target(), Optional.of(Objects.requireNonNull(taskId)), 100);
     }
 
+    /** Records a safe control transition without replacing the real business stage or fraction. */
+    public static void taskControl(ModContext context, TaskContext task, boolean paused) {
+        String event = paused ? "DEPLOYMENT_TASK_PAUSED" : "DEPLOYMENT_TASK_CONTINUED";
+        new DeploymentDiagnostics(context).event(task.id(), LogLevel.INFO, event, event, Optional.empty());
+    }
+
     /** Records an observed completion without storing result payloads or problem details. / 记录已观测完成，不存结果载荷或问题详情。
      * @param taskId exact completed task / 精确已完成任务
      * @param result actual completion after host cleanup / 宿主收尾后的实际完成 */

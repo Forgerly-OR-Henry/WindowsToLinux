@@ -262,8 +262,10 @@ public final class ApplicationLauncher {
             }
         });
         window.installLogs(runtime.logs());
-        window.installTasks(new gold.debug.windowstolinux.app.service.task.PlatformTaskManagement(runtime.tasks(),
-            runtime.security(), id -> recovery.reconcile(id, true), runtime.modRecovery()::release));
+        var taskManagement = new gold.debug.windowstolinux.app.service.task.PlatformTaskManagement(runtime.tasks(),
+            runtime.security(), id -> recovery.reconcile(id, true), runtime.modRecovery()::release);
+        window.installTasks(taskManagement);
+        window.installModTaskPages(taskManagement);
         window.installNavigationOrder(new gold.debug.windowstolinux.app.service.setting.NavigationOrderService(
             runtime.persistence().navigation(), runtime.security()));
         return window;

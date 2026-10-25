@@ -79,12 +79,14 @@ public final class Mod implements ModEntrypoint {
         DeploymentSchemaIdentity.requireIdentity(context.db().identity());
         context.logs().register(new LogCategory("deployment", "Deployment", Optional.of("deployment_log")));
         var assembly = new DeploymentStandardAssembly();
-        var flow = new DeploymentRefFlow(context, assembly.publication(context));
+        var taskControls = new gold.debug.windowstolinux.mod.deployment.service.agent.control.DeploymentTaskControls(context);
+        var flow = new DeploymentRefFlow(context, assembly.publication(context), taskControls);
         var gitFlow = new DeploymentGitSourceFlow(context);
         var secretFlow = new DeploymentSecretProvisionFlow(context);
         var workflow = new DeploymentStaticWorkflow(context, flow, assembly);
         var assisted = new DeploymentAssistedWorkflow(context, flow, assembly);
         var pageTasks = new DeploymentStandardPageService(context, workflow, assisted);
+        pageTasks.taskWaiting(taskControls::waiting);
         var autonomous = new DeploymentAgentWorkflow(context);
         var autonomousPageTasks = new DeploymentAgentPageService(context, autonomous);
         var applicationTasks = new DeploymentApplicationsService(context);
@@ -110,6 +112,12 @@ public final class Mod implements ModEntrypoint {
                 gold.debug.windowstolinux.mod.deployment.service.environment.DeploymentEnvironmentWorkflow.TASK_TYPE,
                 environmentTasks::reconcile));
             registrations.add(context.tasks().registerRecovery(DeploymentAgentWorkflow.TASK_TYPE, autonomous));
+            registrations.add(context.tasks().registerController(DeploymentAgentWorkflow.TASK_TYPE,
+                new gold.debug.windowstolinux.mod.deployment.service.agent.control.DeploymentTaskController(
+                    context, autonomous::controlState, autonomous::control)));
+            registrations.add(context.tasks().registerController(DeploymentRefFlow.TASK_TYPE,
+                new gold.debug.windowstolinux.mod.deployment.service.agent.control.DeploymentTaskController(
+                    context, taskControls::state, taskControls::request, taskControls::waiting)));
             registrations.add(
                 context.tasks().registerRecovery(DeploymentAgentPageService.SERVER_LIST_TASK, autonomousPageTasks));
             registrations
@@ -133,9 +141,9 @@ public final class Mod implements ModEntrypoint {
                         () -> new gold.debug.windowstolinux.mod.deployment.ui.standard.DeploymentDialogPreview(kind)));
 
                 registrations.add(context.ui().register(new PageSpec("workspace", "deployment.workspace.title",
-                    "Deployment", false), () -> new gold.debug.windowstolinux.mod.deployment.ui.DeploymentWorkspace(
+                    "Deployment", false), () -> gold.debug.windowstolinux.mod.deployment.ui.DeploymentWorkspace.withTasks(
                     () -> new DeploymentFlowPage(pageTasks, autonomousPageTasks),
-                    () -> new DeploymentApplicationsPage(applicationTasks))));
+                    () -> new DeploymentApplicationsPage(applicationTasks), context.ui()::createTaskPage)));
             }
         } catch (Exception failure) {
             closeRegistrations(failure);
