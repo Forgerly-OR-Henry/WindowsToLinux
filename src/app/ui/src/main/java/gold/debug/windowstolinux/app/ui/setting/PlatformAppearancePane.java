@@ -36,6 +36,8 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
     private final JCheckBox animation = new JCheckBox();
     private Boolean pendingMotion;
     private boolean savingMotion;
+    private boolean motionNotSaved, motionNoticePending;
+    private Exception motionWriteFailure;
 
     /** Form labels whose explicit sizes follow live zoom. / 明确尺寸跟随实时缩放的表单标签。 */
     private JPanel fields;
@@ -194,6 +196,7 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
             if (!closed) {
                 applied.accept(value.withAnimation(gold.debug.windowstolinux.app.ui.display.DesktopMotion.preference()));
                 messages.bind(status, "appearance.saved");
+                if (motionNotSaved) showMotionNotice();
                 controls();
             }
         }, failure -> {
@@ -219,9 +222,17 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
     private void motionSaved(Exception failure) {
         savingMotion = false;
         if (pendingMotion != null) { persistMotion(); return; }
-        if (closed || locked) return;
-        messages.bind(status, failure == null ? "appearance.animation.saved" : "appearance.animation.notSaved");
-        status.setToolTipText(failure == null ? null : messages.safe(failure));
+        motionNotSaved = failure != null;
+        motionWriteFailure = failure;
+        showMotionNotice();
+    }
+
+    private void showMotionNotice() {
+        if (closed) return;
+        if (locked) { motionNoticePending = true; return; }
+        motionNoticePending = false;
+        messages.bind(status, motionNotSaved ? "appearance.animation.notSaved" : "appearance.animation.saved");
+        status.setToolTipText(motionWriteFailure == null ? null : messages.safe(motionWriteFailure));
     }
 
     /** Updates privacy without discarding drafts or cancelling accepted writes. / 更新隐私状态，不丢弃草稿或取消已接纳写入。
@@ -229,6 +240,7 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
     public void setLocked(boolean locked) {
         this.locked = locked;
         controls();
+        if (!locked && motionNoticePending) showMotionNotice();
     }
 
     /** Applies the original write and privacy gates. / 应用原写入及隐私门禁。 */

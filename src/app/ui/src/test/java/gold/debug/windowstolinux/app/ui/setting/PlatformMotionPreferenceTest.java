@@ -133,4 +133,59 @@ class PlatformMotionPreferenceTest {
             });
         }
     }
+
+    @Test
+    void lockedSaveOutcomeAppearsAfterUnlockAndOtherDraftSavesCannotMaskFailure() throws Exception {
+        boolean previous = DesktopMotion.preference();
+        var pane = new AtomicReference<PlatformAppearancePane>();
+        var formWrites = new AtomicInteger();
+        SwingUtilities.invokeAndWait(() -> {
+            DesktopThemeService.install(ThemeMode.LIGHT, 100);
+            DesktopMotion.preference(true);
+            pane.set(new PlatformAppearancePane(DesktopDisplayConfig.defaults(), new PlatformAppearancePane.Preferences() {
+                public void save(DesktopDisplayConfig value) {
+                    formWrites.incrementAndGet();
+                }
+
+                public void saveMotion(boolean value) throws Exception {
+                    if (!value) throw new java.io.IOException("fixture write rejected while locking");
+                }
+            }, ignored -> {
+            }, new DesktopPartFactory(ThemePalette.light()),
+                new PageMessagePresenter(MessageCatalog.forLanguageTag("zh-CN"))));
+            ((JCheckBox) named(pane.get(), "appearance.animation")).doClick(0);
+            pane.get().setLocked(true);
+        });
+        try {
+            idle();
+            SwingUtilities.invokeAndWait(() -> {
+                pane.get().setLocked(false);
+                assertEquals(MessageCatalog.forLanguageTag("zh-CN").text("appearance.animation.notSaved"),
+                    ((JLabel) named(pane.get(), "appearance.status")).getText());
+                ((JButton) named(pane.get(), "appearance.save")).doClick(0);
+            });
+            idle();
+            SwingUtilities.invokeAndWait(() -> {
+                assertEquals(1, formWrites.get());
+                assertFalse(DesktopMotion.preference());
+                assertEquals(MessageCatalog.forLanguageTag("zh-CN").text("appearance.animation.notSaved"),
+                    ((JLabel) named(pane.get(), "appearance.status")).getText());
+                ((JCheckBox) named(pane.get(), "appearance.animation")).doClick(0);
+                pane.get().setLocked(true);
+            });
+            idle();
+            SwingUtilities.invokeAndWait(() -> {
+                pane.get().setLocked(false);
+                assertTrue(DesktopMotion.preference());
+                assertEquals(MessageCatalog.forLanguageTag("zh-CN").text("appearance.animation.saved"),
+                    ((JLabel) named(pane.get(), "appearance.status")).getText());
+                assertNull(((JLabel) named(pane.get(), "appearance.status")).getToolTipText());
+            });
+        } finally {
+            SwingUtilities.invokeAndWait(() -> {
+                pane.get().close();
+                DesktopMotion.preference(previous);
+            });
+        }
+    }
 }
