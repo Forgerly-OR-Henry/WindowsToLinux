@@ -1,12 +1,12 @@
 # 2026-10-27 ASSISTED 测试与失败修复
 
-本轮仍在进行，未达成首轮通过。task-board、file-transfer 首次有效尝试均在来源分析后失败。修复后task-board第五次、file-transfer第二次均通过真实部署和业务验收，并经产品确认STOPPED/DISABLED；asset-lending首次UNKNOWN已由产品核对为FAILED，契约修复后待复验，其余五项尚未运行。不能据此记为八项通过或把重试并入首轮。
+本轮仍在进行，未达成首轮通过。task-board、file-transfer首次来源失败，asset-lending首次UNKNOWN由产品核对为FAILED。修复后task-board第五次、file-transfer第二次、asset-lending第二次均通过真实部署和业务验收，最终STOPPED/DISABLED；其余五项尚未运行。不能据此记为八项通过或把重试并入首轮。
 
 | 项目 | 首次有效尝试 | 当前证据 |
 | --- | --- | --- |
 | task-board | FAILED | 第五次尝试部署/业务通过，产品最终STOPPED/DISABLED；前四次结果保留 |
 | file-transfer | FAILED | 第二次尝试部署/完整文件业务通过，产品最终STOPPED/DISABLED；首轮来源拒绝保留 |
-| asset-lending | UNKNOWN→FAILED（产品核对） | .NET准备的独立审批拒绝；该prepare未派发，原任务已正常收尾，修复后待复验 |
+| asset-lending | UNKNOWN→FAILED（产品核对） | 第二次部署/借还与重启持久化通过，产品最终STOPPED/DISABLED；首轮拒绝保留 |
 | csv-inspector、survey-scoring | 未运行 | 等待本轮前置问题处理 |
 | log-analyzer、directory-diff、binary-inspector | 未运行 | 等待共同阻断定位 |
 
@@ -134,3 +134,11 @@ finally停止、delivery再次启动导出后，又经产品精确绑定原应�
 本地新增实测从完整renderScript提取实际wrapper，仅把解释器换成受控shell reader：正例673字节及SHA一致，删除3<&0和移到here-doc之后两个负控均不一致；契约还须包含真实header。旧契约反例失败已保留，直接ContractTest两项通过；最终措辞限定JSON request verbs后仅复验受影响新方法1项通过，均0skip。未运行生产Python或安装器，Maven/Bash正常退出。修复已本地提交 `926c8875`，未推送。
 
 随后 `reconcilesOriginalTaskThroughProduct` 对原任务核对1项通过（31.68秒，进程退出0），最终原任务ENDED/FAILED、blockers为空，恢复会话正常释放。没有重放.NET准备或删除原状态，也不将核对成功记为部署成功。下一次部署仍为新的重试。
+
+## asset-lending 第二次尝试：真实准备与借还业务通过
+
+`asset-lending-retry-02` 基于 `f9629edc`（实现含 `926c8875` 契约修复），启动时Git干净。原任务 `5044bc2d-1d75-4fef-9cdc-ed8c3011ae45`、state `assisted-live-asset-lending-15ad65cf0s`、应用 `wtl-assisted-asset-lending-15ad676ml4`。同类.NET准备经正常独立审批后，由程序取得SDK10.0.300成功回执，未增加外部fd重定向；随后完成双组件构建、发布及整应用健康门槛。
+
+HTTP业务验证分类和资产创建、借用submit/approve/checkout/return，确认closed，再由产品RESTART后确认closed持久化。JUnit1项通过、Maven0，部署/审批调用23/56，已知Token81524+686959=768483，四项探测不含。精确耗时和generation ID数量见对应assessment。没有改执行脚本、helper pin、审批规则、测试负载或期限。
+
+交付导出后额外产品STOP和inspect核验最终STOPPED/DISABLED，清理进程退出0。首轮UNKNOWN及正常核对FAILED分别保留；本轮已完成3个项目的修复后部署/业务/收尾，其余五项继续，不能称为首轮全通过。
