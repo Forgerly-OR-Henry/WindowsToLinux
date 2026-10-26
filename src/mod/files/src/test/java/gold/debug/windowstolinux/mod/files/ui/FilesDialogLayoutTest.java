@@ -281,7 +281,7 @@ class FilesDialogLayoutTest {
                     assertSame(model, choices.getModel());
                     assertEquals("/unsubmitted/draft", input.getText());
                     assertEquals(0, choices.getSelectedIndex());
-                    assertEquals(FilesDialogLayout.scale(20), ((JComponent) remoteDialog.getContentPane()).getInsets().left);
+                    assertEquals(FilesDialogLayout.scale(20), ((JComponent) named(remoteDialog, "files.dialog.content")).getInsets().left);
                     assertLayout(remoteDialog, FilesDialogLayout.workArea(owner));
                 }
                 ((JButton) named(remoteDialog, "files.dialog.ok")).doClick(0);
@@ -335,7 +335,7 @@ class FilesDialogLayoutTest {
         Rectangle safe = new Rectangle(area);
         safe.grow(-20, -20);
         assertTrue(safe.contains(dialog.getBounds()), "whole decorated dialog: " + dialog.getBounds() + " safe: " + safe);
-        var content = (JComponent) dialog.getContentPane();
+        var content = (JComponent) named(dialog, "files.dialog.content");
         assertEquals(FilesDialogLayout.scale(20), content.getInsets().top);
         assertEquals(FilesDialogLayout.scale(20), content.getInsets().bottom);
         for (String name : new String[]{"files.dialog.ok", "files.dialog.cancel"}) {

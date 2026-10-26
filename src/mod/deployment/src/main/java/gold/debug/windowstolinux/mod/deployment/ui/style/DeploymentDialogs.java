@@ -47,6 +47,7 @@ public final class DeploymentDialogs {
      * @param width logical preferred width / 逻辑首选宽
      * @param height logical preferred height / 逻辑首选高 */
     private static void mount(JDialog dialog, JComponent body, JComponent actions, int width, int height) {
+        dialog.getRootPane().putClientProperty("desktop.motion", true);
         var shell = new JPanel(new BorderLayout());
         shell.setName("deployment.dialog.shell");
         JComponent view = Boolean.TRUE.equals(body.getClientProperty("deployment.dialog.scrollManaged"))
@@ -99,9 +100,11 @@ public final class DeploymentDialogs {
      * @param messages current catalog / 当前文案 */
     public static void refresh(JDialog dialog, ResourceBundle messages) {
         SwingUtilities.updateComponentTreeUI(dialog);
-        DeploymentPageStyle.refresh((JComponent) dialog.getContentPane(), messages);
-        refreshFacts((Container) dialog.getContentPane());
-        spacing((JComponent) dialog.getContentPane());
+        var current = (JComponent) dialog.getContentPane();
+        var content = current.getClientProperty("desktop.motion.content") instanceof JComponent original ? original : current;
+        DeploymentPageStyle.refresh(content, messages);
+        refreshFacts(content);
+        spacing(content);
         fit(dialog, false);
     }
 

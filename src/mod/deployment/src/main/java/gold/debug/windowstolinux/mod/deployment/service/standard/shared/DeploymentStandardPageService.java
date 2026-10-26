@@ -151,6 +151,12 @@ public final class DeploymentStandardPageService implements TaskRecovery {
             "tasks", java.util.UUID.class, original));
     }
 
+    /** Optional activation-owned presentation clock. / 可选的启用所属展示时钟。
+     * @return host motion capability / 宿主动效能力 */
+    public Optional<gold.debug.windowstolinux.appapi.ui.page.UiMotion> motion() {
+        return context.ui().motion();
+    }
+
     /** Loads the owned page selection off the EDT, filling only missing defaults. / 在EDT外加载所属页面选择，仅补缺失默认值。
      * @return original preference query / 原偏好查询
      * @throws ApiException if original query admission fails / 原查询准入失败时 */

@@ -42,6 +42,7 @@ final class FilesDialogLayout {
      * @param ok original accept action / 原接受操作
      * @param cancel original cancel action / 原取消操作 */
     static void install(JDialog dialog, JComponent body, JButton ok, JButton cancel) {
+        dialog.getRootPane().putClientProperty("desktop.motion", true);
         var buttons = new JPanel(new GridBagLayout());
         buttons.setName("files.dialog.actions");
         var action = new GridBagConstraints();
@@ -73,8 +74,9 @@ final class FilesDialogLayout {
     /** Recomputes from logical baselines without replacing input documents or models. / 从逻辑基准重算而不替换输入文档或模型。
      * @param dialog original visible or opening window / 原已显示或正在打开的窗口 */
     static void refresh(JDialog dialog) {
-        style(dialog.getContentPane());
-        var content = (JPanel) dialog.getContentPane();
+        var current = (JComponent) dialog.getContentPane();
+        var content = current.getClientProperty("desktop.motion.content") instanceof JPanel original ? original : (JPanel) current;
+        style(content);
         int padding = scale(20);
         content.setBorder(BorderFactory.createEmptyBorder(padding, padding, padding, padding));
         ((BorderLayout) content.getLayout()).setVgap(scale(12));

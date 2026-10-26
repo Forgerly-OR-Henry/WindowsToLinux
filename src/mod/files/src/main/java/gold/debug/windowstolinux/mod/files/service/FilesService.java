@@ -184,6 +184,12 @@ public final class FilesService {
         context.ui().openPlatform(PlatformPageKind.TASKS);
     }
 
+    /** Optional activation-owned presentation clock. / 可选的启用所属展示时钟。
+     * @return host motion capability / 宿主动效能力 */
+    public Optional<gold.debug.windowstolinux.appapi.ui.page.UiMotion> motion() {
+        return context.ui().motion();
+    }
+
     /** Returns the original recovery implementation for owner registration. / 返回供所属登记的原恢复实现。
      * @return original non-replaying recovery / 原不重放恢复 */
     public FilesRecovery recovery() {

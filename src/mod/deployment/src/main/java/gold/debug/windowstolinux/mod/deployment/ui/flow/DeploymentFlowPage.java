@@ -42,7 +42,7 @@ public final class DeploymentFlowPage implements ModPage {
 
     private final JPanel root = new JPanel(new BorderLayout()), sourceContent = new JPanel(new BorderLayout(0, 12));
 
-    private final JPanel sourceRoutes = new JPanel(new CardLayout()), results = new JPanel(new CardLayout());
+    private final DeploymentContentCards sourceRoutes, results;
 
     private final JPanel agentAdvanced = DeploymentPageStyle.form();
 
@@ -96,6 +96,8 @@ public final class DeploymentFlowPage implements ModPage {
     public DeploymentFlowPage(DeploymentStandardPageService standard, DeploymentAgentPageService agent) {
         standardService = Objects.requireNonNull(standard);
         agentService = Objects.requireNonNull(agent);
+        sourceRoutes = new DeploymentContentCards(standardService::motion);
+        results = new DeploymentContentCards(standardService::motion);
     }
 
     @Override
@@ -457,11 +459,11 @@ public final class DeploymentFlowPage implements ModPage {
         observedTask = id;
         if (agentService.controlState(id).isPresent()) {
             observedMode = "AGENT";
-            ((CardLayout) results.getLayout()).show(results, "AGENT");
+            results.showCard("AGENT");
             agent.focusOriginalTask(id);
         } else {
             observedMode = "STATIC";
-            ((CardLayout) results.getLayout()).show(results, "STANDARD");
+            results.showCard("STANDARD");
             standard.focusOriginalTask(id);
         }
     }
@@ -493,7 +495,7 @@ public final class DeploymentFlowPage implements ModPage {
 
     private void selectSurface() {
         if (standard == null || agent == null) return;
-        ((CardLayout) results.getLayout()).show(results, draft.mode.equals("AGENT") ? "AGENT" : "STANDARD");
+        results.showCard(draft.mode.equals("AGENT") ? "AGENT" : "STANDARD");
         standard.flowMode(draft.mode);
         agentAdvanced.setVisible(draft.mode.equals("AGENT"));
     }
@@ -524,7 +526,7 @@ public final class DeploymentFlowPage implements ModPage {
         clearGit.setEnabled(edit && draft.gitSelected());
         draft.local.availability(edit, edit, !draft.gitSelected());
         gitLocation.setText(draft.remote.getText());
-        ((CardLayout) sourceRoutes.getLayout()).show(sourceRoutes, draft.gitSelected() ? "GIT" : "LOCAL");
+        sourceRoutes.showCard(draft.gitSelected() ? "GIT" : "LOCAL");
         boolean unavailable = environment.locked() || draft.frozen;
         if (advanced != null && !Objects.equals(advancedUnavailable, unavailable)) {
             advanced.environment(messages, unavailable);
@@ -683,6 +685,8 @@ public final class DeploymentFlowPage implements ModPage {
         this.environment = environment;
         catalog();
         if (environment.locked()) {
+            sourceRoutes.reset();
+            results.reset();
             generation.incrementAndGet();
             draft.local.revoke();
             if (serverPicker != null) serverPicker.dispose();
@@ -794,6 +798,8 @@ public final class DeploymentFlowPage implements ModPage {
         requireEdt();
         if (closed) return;
         closed = true;
+        sourceRoutes.close();
+        results.close();
         generation.incrementAndGet();
         if (observer != null) observer.stop();
         if (serverPicker != null) serverPicker.dispose();

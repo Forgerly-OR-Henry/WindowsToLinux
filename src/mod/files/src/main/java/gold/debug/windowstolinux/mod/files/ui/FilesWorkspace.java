@@ -34,7 +34,7 @@ public final class FilesWorkspace implements ModPage {
     };
 
     /** Symmetric browser slot container. / 对称浏览栏容器。 */
-    private final JPanel browsers = new JPanel(new java.awt.GridLayout(1, 1, 6, 0));
+    private final FilesBrowserRegion browsers;
 
     /** Explicit right-pane toggle. / 明确右栏切换。 */
     private final JButton second = new JButton();
@@ -82,6 +82,7 @@ public final class FilesWorkspace implements ModPage {
      * @param service original platform-backed files service / 原平台文件服务 */
     public FilesWorkspace(FilesService service) {
         this.service = java.util.Objects.requireNonNull(service);
+        browsers = new FilesBrowserRegion(service::motion);
     }
 
     /** Creates an initially empty single-pane author root on the EDT. / 在 EDT 创建初始为空的单栏作者根。
@@ -102,7 +103,7 @@ public final class FilesWorkspace implements ModPage {
         left = new FilesPane("left", messages, this);
         active = left;
         actions.bind(left.table());
-        browsers.add(left);
+        browsers.left(left);
         popup = actions.popup();
         second.setName("files.second");
         second.addActionListener(event -> toggle());
@@ -153,13 +154,10 @@ public final class FilesWorkspace implements ModPage {
                 right = new FilesPane("right", messages, this);
                 actions.bind(right.table());
             }
-            browsers.setLayout(new java.awt.GridLayout(1, 2, 6, 0));
-            browsers.add(right);
         } else {
-            browsers.remove(right);
-            browsers.setLayout(new java.awt.GridLayout(1, 1));
             active = left;
         }
+        browsers.expanded(dual, right);
         update();
         browsers.revalidate();
         browsers.repaint();
@@ -273,6 +271,7 @@ public final class FilesWorkspace implements ModPage {
         dialogs.environmentChanged();
         if (lockChanged) {
             if (environment.locked()) {
+                browsers.reset();
                 dialogs.revoke();
                 popup.setVisible(false);
             }
@@ -292,6 +291,7 @@ public final class FilesWorkspace implements ModPage {
         if (!created) return;
         dialogs.revoke();
         popup.setVisible(false);
+        browsers.close();
         commands.clear();
         tasks.close();
         root.removeAll();
