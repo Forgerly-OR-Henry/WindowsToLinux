@@ -769,11 +769,6 @@ public final class TaskLedger {
                                                  gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity identity) throws SQLException {
         locked(() -> {
             try (var c = connections.open()) {
-                new gold.debug.windowstolinux.app.db.schema.SchemaCoordinates(identity)
-                    .requireRegistered(c, Set.of("READY"));
-                if (!queries.holds(taskId, new TaskResource("MOD", identity.ownerId(), identity.ownerId(), false))
-                    || !queries.holds(taskId, new TaskResource("SCHEMA", identity.generation().toString(), identity.ownerId(), false)))
-                    throw new SQLException("Original JDBC schema was not admitted");
                 try (var p = c.prepareStatement("SELECT boot_id,state FROM platform_task WHERE task_id=?")) {
                     p.setObject(1, taskId);
                     try (var row = p.executeQuery()) {
@@ -816,6 +811,12 @@ public final class TaskLedger {
                         }
                     }
                 }
+                if (leases.isEmpty()) return null;
+                new gold.debug.windowstolinux.app.db.schema.SchemaCoordinates(identity)
+                    .requireRegistered(c, Set.of("READY"));
+                if (!queries.holds(taskId, new TaskResource("MOD", identity.ownerId(), identity.ownerId(), false))
+                    || !queries.holds(taskId, new TaskResource("SCHEMA", identity.generation().toString(), identity.ownerId(), false)))
+                    throw new SQLException("Original JDBC schema was not admitted");
                 try (var p = c.prepareStatement("UPDATE platform_task_resource SET released_at=? WHERE task_id=? AND lease_id=? AND released_at IS NULL")) {
                     for (var lease : leases) {
                         p.setLong(1, System.currentTimeMillis());

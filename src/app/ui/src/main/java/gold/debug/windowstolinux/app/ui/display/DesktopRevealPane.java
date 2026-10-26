@@ -54,7 +54,8 @@ public final class DesktopRevealPane extends JPanel implements AutoCloseable {
     @Override
     public void doLayout() {
         super.doLayout();
-        content.setLocation(content.getX(), content.getY() + offset);
+        // Keep local bounds: JPopupMenu.setLocation recreates the popup in screen coordinates.
+        content.setBounds(content.getX(), content.getY() + offset, content.getWidth(), content.getHeight());
     }
 
     @Override

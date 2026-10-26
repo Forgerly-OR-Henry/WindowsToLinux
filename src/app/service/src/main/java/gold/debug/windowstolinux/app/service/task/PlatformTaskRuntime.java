@@ -1250,6 +1250,15 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                         fatal = TaskConclusion.fatal(failure);
                         result = TaskConclusion.unknown("TASK_RECOVERY_FAILED",
                             "Recovery did not establish a known result");
+                        if (fatal == null) {
+                            try {
+                                var problem = capabilityCallbacks.recordFailure(task.context, failure, ProblemCode.UNKNOWN,
+                                    "TASK_RECOVERY_FAILED", "Recovery did not establish a known result");
+                                result = new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(problem));
+                            } catch (VirtualMachineError | ThreadDeath diagnosticFailure) {
+                                fatal = diagnosticFailure;
+                            }
+                        }
                     } finally {
                         try {
                             boolean ended;

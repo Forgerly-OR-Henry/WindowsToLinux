@@ -76,7 +76,12 @@ public final class DesktopUncaughtFailureBoundary implements Thread.UncaughtExce
     public void uncaughtException(Thread thread, Throwable failure) {
         if (failure instanceof VirtualMachineError || failure instanceof LinkageError) {
             reports.record(failure);
-            exitProcess.accept(70);
+            // Shutdown hooks drain Mod pages on the EDT; leave it free to complete that cleanup.
+            if (SwingUtilities.isEventDispatchThread()) {
+                Thread exit = new Thread(() -> exitProcess.accept(70), "windowstolinux-fatal-exit");
+                exit.setDaemon(false);
+                exit.start();
+            } else exitProcess.accept(70);
             return;
         }
         Runnable show = () -> {
