@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
 import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,6 +21,9 @@ import gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.part.Disc
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentStandardRuntimeResolver;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,6 +31,78 @@ import static org.junit.jupiter.api.Assertions.*;
 class DeploymentLiveReviewerWiringTest {
     private static final String HOST = "192.0.2.10";
     private static final ServerId SERVER = new ServerId("review-fixture");
+
+    @TempDir
+    Path temporary;
+
+    @ParameterizedTest
+    @ValueSource(strings = {"task-board", "file-transfer", "asset-lending", "csv-inspector", "survey-scoring",
+        "log-analyzer", "directory-diff", "binary-inspector"})
+    void allRealRuntimeInputRolesRemainCompleteReviewedAnswers(String project) throws Exception {
+        var fixture = new DeploymentStaticLiveAcceptanceTest();
+        Path original = Path.of("../../../test/multi-language/success-" + project).toAbsolutePath().normalize();
+        Path source = temporary.resolve(project);
+        try (var paths = Files.walk(original)) {
+            for (var path : paths.toList()) {
+                Path copied = source.resolve(original.relativize(path));
+                if (Files.isDirectory(path)) Files.createDirectories(copied);
+                else Files.copy(path, copied);
+            }
+        }
+        int port = DeploymentStaticLiveAcceptanceTest.standardWebsitePort(project);
+        var inputs = fixture.runtimeInputs(project, source, HOST, port);
+        var expectedRoles = switch (project) {
+            case "task-board" -> Set.of("frontend", "backend");
+            case "survey-scoring" -> Set.of("frontend", "backend", "scorer");
+            case "file-transfer", "asset-lending" -> Set.of("web", "backend");
+            case "csv-inspector" -> Set.of("web", "analyzer");
+            default -> Set.of("app");
+        };
+        assertEquals(expectedRoles, inputs.keySet());
+        for (var role : inputs.entrySet()) {
+            var expectedKeys = new java.util.HashSet<String>();
+            if (role.getKey().equals("app")) expectedKeys.add("timeout");
+            else if (role.getKey().equals("analyzer") || role.getKey().equals("scorer")) expectedKeys.add("configuration");
+            else {
+                expectedKeys.addAll(Set.of("port", "healthMode", "healthEndpoint", "exposure"));
+                if (role.getKey().equals("backend")) expectedKeys.addAll(Set.of("bindAddress", "configuration"));
+                else expectedKeys.add("version");
+                if (role.getKey().equals("web")) expectedKeys.add("configuration");
+                if (role.getKey().equals("backend") && project.equals("task-board")) expectedKeys.add("version");
+            }
+            assertEquals(expectedKeys, role.getValue().keySet(), project + "/" + role.getKey());
+        }
+        var reviewer = fixture.reviewer(project, "fixture-app", inputs);
+        var parts = inputs.keySet().stream().map(role -> new DiscoveredProjectPart("actual-" + role,
+            Path.of(role.equals("app") ? "" : role), List.of(DeploymentProjectKind.NODE_SERVICE))).toList();
+        assertEquals(TaskResult.SUCCEEDED, reviewer.select(SERVER, "0".repeat(64), parts, null).outcome());
+        var prompts = parts.stream().map(part -> new DeploymentStandardInputs.Prompt(part.id(), "fixture-" + part.id(),
+            part.types().getFirst(), part.id().equals("actual-app")
+                ? Map.of("applicationDeclaration", "unchanged-cli-default", "primary", "preserved-cli")
+                : Map.of("port", "8080", "healthMode", "HTTP", "exposure", "EXTERNAL",
+                    "healthEndpoint", "http://127.0.0.1:8080/", "accessUrl", "http://" + HOST + ":8080/"), List.of())).toList();
+        var reviewed = reviewer.review(SERVER, "0".repeat(64), prompts, null);
+        assertEquals(TaskResult.SUCCEEDED, reviewed.outcome());
+        var answers = reviewed.value().orElseThrow();
+        for (var role : inputs.entrySet()) {
+            var values = answers.get("actual-" + role.getKey()).values();
+            role.getValue().forEach((key, value) -> assertEquals(value, values.get(key), project + "/" + role.getKey() + "/" + key));
+            if (role.getValue().containsKey("port")) {
+                assertEquals("http://" + HOST + ":" + role.getValue().get("port") + "/", values.get("accessUrl"));
+                assertEquals(URI.create(role.getValue().get("healthEndpoint")), assertInstanceOf(DeploymentHealthCheck.Http.class,
+                    new DeploymentStandardRuntimeResolver().health(values)).endpoint());
+            }
+            if (role.getKey().equals("backend")) {
+                assertEquals(project.equals("task-board") || project.equals("survey-scoring") ? "0.0.0.0" : "127.0.0.1",
+                    values.get("bindAddress"));
+            }
+            if (role.getKey().equals("app")) {
+                var expected = new LinkedHashMap<>(prompts.getFirst().defaults());
+                expected.putAll(role.getValue());
+                assertEquals(expected, values, "Timeout-only CLI review must preserve all source defaults");
+            }
+        }
+    }
 
     @Test
     void selectedFrontendReviewUpdatesPortHealthAndAccessTogether() throws Exception {
@@ -47,9 +123,20 @@ class DeploymentLiveReviewerWiringTest {
         String proxy = "https://proxy.example.test/task-board/";
         var answer = reviewFrontend(Map.of("port", "46100", "accessUrl", proxy));
         assertEquals(proxy, answer.values().get("accessUrl"));
+        assertEquals(proxy, answer.values().get("application.endpoint.service.url"));
         assertEquals("46100", answer.values().get("port"));
         assertEquals(URI.create("http://127.0.0.1:46100/"), assertInstanceOf(DeploymentHealthCheck.Http.class,
             new DeploymentStandardRuntimeResolver().health(answer.values())).endpoint());
+    }
+
+    @Test
+    void selectedFrontendReviewKeepsProxyPortEqualToOldListeningPort() throws Exception {
+        String proxy = "http://proxy.example.test:8080/task-board/";
+        var values = reviewFrontend(Map.of("port", "46100", "accessUrl", proxy)).values();
+        assertEquals(proxy, values.get("accessUrl"));
+        assertEquals(proxy, values.get("application.endpoint.service.url"));
+        assertEquals("46100", values.get("application.endpoint.service.port"));
+        assertEquals("46100", values.get("application.endpoint.service.targetPort"));
     }
 
     @Test
@@ -81,6 +168,13 @@ class DeploymentLiveReviewerWiringTest {
         defaults.put("healthEndpoint", "http://127.0.0.1:8080/");
         defaults.put("exposure", "EXTERNAL");
         defaults.put("primary", "preserved-default");
+        defaults.put("application.endpoints", "service");
+        defaults.put("application.endpoint.service.protocol", "HTTP");
+        defaults.put("application.endpoint.service.bind", "0.0.0.0");
+        defaults.put("application.endpoint.service.exposure", "EXTERNAL");
+        defaults.put("application.endpoint.service.port", "8080");
+        defaults.put("application.endpoint.service.targetPort", "8080");
+        defaults.put("application.endpoint.service.url", "http://" + HOST + ":8080/");
         var prompt = new DeploymentStandardInputs.Prompt("actual-frontend", "fixture-app-frontend",
             DeploymentProjectKind.STATIC_SITE, defaults, List.of());
         var reviewed = reviewer.review(SERVER, "0".repeat(64), List.of(prompt), null);

@@ -9447,7 +9447,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         return copy;
     }
 
-    private Map<String, Map<String, String>> runtimeInputs(String project, Path source, String host, int port) throws Exception {
+    Map<String, Map<String, String>> runtimeInputs(String project, Path source, String host, int port) throws Exception {
         if (List.of("log-analyzer", "directory-diff", "binary-inspector").contains(project)) {
             Path declaration = source.resolve("windowstolinux-application.properties");
             String original = Files.readString(declaration).replaceAll("(?m)^verification\\.arg\\.[0-9]+=.*\\R?", "")
@@ -9566,8 +9566,18 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                                                                                          List<DeploymentStandardInputs.Prompt> prompts, TaskContext task) {
                 var answers = new LinkedHashMap<String, DeploymentStandardInputs.Answers>();
                 for (var prompt : prompts) {
-                    var values = gold.debug.windowstolinux.mod.deployment.service.standard.shared.DeploymentStandardRuntimeDraft
-                        .apply(prompt, inputs.get(componentRoles.get(prompt.componentId()))).defaults();
+                    var roleInputs = inputs.get(componentRoles.get(prompt.componentId()));
+                    var values = new LinkedHashMap<>(roleInputs.containsKey("port")
+                        ? gold.debug.windowstolinux.mod.deployment.service.standard.shared.DeploymentStandardRuntimeDraft
+                            .apply(prompt, Map.of("port", roleInputs.get("port"))).defaults()
+                        : prompt.defaults());
+                    values.putAll(roleInputs);
+                    if (roleInputs.containsKey("accessUrl")) {
+                        var complete = new DeploymentStandardInputs.Prompt(prompt.componentId(), prompt.applicationId(),
+                            prompt.projectType(), values, prompt.fields());
+                        values = new LinkedHashMap<>(gold.debug.windowstolinux.mod.deployment.service.standard.shared.DeploymentStandardRuntimeDraft
+                            .apply(complete, Map.of("accessUrl", roleInputs.get("accessUrl"))).defaults());
+                    }
                     System.out.println("STATIC_LIVE_REVIEW " + project + "/" + prompt.componentId() + " " + values);
                     List<DeploymentFileBinding> files = List.of();
                     if (project.equals("file-transfer") && componentRoles.get(prompt.componentId()).equals("backend")

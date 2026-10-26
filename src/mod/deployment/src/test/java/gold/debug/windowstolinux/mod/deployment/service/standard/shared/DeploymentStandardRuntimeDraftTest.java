@@ -11,9 +11,41 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentReviewFieldException;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentStandardRuntimeResolver;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Keeps explicit runtime draft values ahead of suggestions while preserving mandatory review and resource scope. / 保持明确运行草稿优先于建议，同时保留必需审阅及资源范围。 */
 class DeploymentStandardRuntimeDraftTest {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void explicitProxyUrlKeepsItsPortWhenTheServicePortChanges(boolean declared) {
+        var values = new LinkedHashMap<String, String>();
+        values.put("port", "8080");
+        values.put("accessUrl", "http://source.example.test:8080/");
+        values.put("healthMode", "HTTP");
+        values.put("healthEndpoint", "http://127.0.0.1:8080/health");
+        values.put("exposure", "EXTERNAL");
+        if (declared) {
+            values.put("application.endpoints", "public");
+            values.put("application.endpoint.public.protocol", "HTTP");
+            values.put("application.endpoint.public.port", "8080");
+            values.put("application.endpoint.public.exposure", "EXTERNAL");
+            values.put("application.endpoint.public.url", values.get("accessUrl"));
+        }
+        var prompt = new DeploymentStandardInputs.Prompt("web", "app", DeploymentProjectKind.STATIC_SITE, values, List.of());
+        String proxy = "http://proxy.example.test:8080/site/";
+        var actual = DeploymentStandardRuntimeDraft.apply(prompt, Map.of("port", "46100", "accessUrl", proxy));
+        assertEquals(proxy, actual.defaults().get("accessUrl"));
+        assertEquals("46100", actual.defaults().get("port"));
+        assertEquals("http://127.0.0.1:46100/health", actual.defaults().get("healthEndpoint"));
+        var endpoints = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.ApplicationSpec
+            .resolve(actual.defaults()).endpoints();
+        assertEquals(1, endpoints.size());
+        assertEquals(46100, endpoints.getFirst().hostPort());
+        assertEquals(proxy, endpoints.getFirst().accessUrl());
+        assertEquals("8080", prompt.defaults().get("port"));
+    }
+
     @Test
     void explicitMultilineAndPreviouslyAbsentRuntimeValuesBecomeActualEditableReviewFields() {
         var resolver = new DeploymentStandardRuntimeResolver();

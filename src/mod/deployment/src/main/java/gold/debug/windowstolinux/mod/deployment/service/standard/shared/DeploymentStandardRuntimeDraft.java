@@ -39,10 +39,12 @@ public final class DeploymentStandardRuntimeDraft {
                 values.put("application.command.arg." + index, arguments.get(index));
         }
         String port = values.getOrDefault("port", "");
+        boolean explicitAccess = overrides.containsKey("accessUrl");
         if (!port.isBlank() && !port.equals(oldPort)) {
             values.replaceAll((key, value) -> key.matches("application\\.endpoint\\.[a-z0-9-]+\\.(port|targetPort)")
                 && value.equals(oldPort) ? port : value);
-            values.replaceAll((key, value) -> key.matches("application\\.endpoint\\.[a-z0-9-]+\\.url") || key.equals("accessUrl")
+            values.replaceAll((key, value) -> key.matches("application\\.endpoint\\.[a-z0-9-]+\\.url")
+                || key.equals("accessUrl") && !explicitAccess
                 ? withPort(value, oldPort, port) : value);
             if (!overrides.containsKey("healthEndpoint") && values.containsKey("healthEndpoint")) {
                 var endpoint = java.net.URI.create(values.get("healthEndpoint"));
@@ -62,7 +64,7 @@ public final class DeploymentStandardRuntimeDraft {
                 .collect(java.util.stream.Collectors.joining("\n"));
             values.put("configuration", configuration);
         }
-        if (overrides.containsKey("accessUrl")) {
+        if (explicitAccess) {
             String access = overrides.get("accessUrl");
             var endpoint = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.ApplicationSpec.resolve(values)
                 .endpoints().stream().filter(value -> value.exposure() == gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentEndpoint.ExposureType.EXTERNAL
