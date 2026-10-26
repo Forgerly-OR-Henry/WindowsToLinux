@@ -1,13 +1,13 @@
 # 2026-10-27 ASSISTED 测试与失败修复
 
-本轮仍在进行，未达成首轮通过。task-board、file-transfer首次来源失败，asset-lending首次UNKNOWN由产品核对为FAILED。修复后上述三项均通过真实部署和业务验收，最终STOPPED/DISABLED；CSV首次PHP准备失去SSH退出证据，附件确认准备成功后原任务已核对FAILED，待新任务复验；其余四项尚未运行。不能据此记为八项通过或把重试并入首轮。
+本轮仍在进行，未达成首轮通过。task-board、file-transfer首次来源失败，asset-lending首次UNKNOWN由产品核对为FAILED。上述三项及CSV均在后续重试通过真实部署和业务验收，最终STOPPED/DISABLED；CSV首次PHP准备失去SSH退出证据，附件确认准备成功后原任务已核对FAILED，断连原因仍未知；其余四项尚未运行。不能据此记为八项通过或把重试并入首轮。
 
 | 项目 | 首次有效尝试 | 当前证据 |
 | --- | --- | --- |
 | task-board | FAILED | 第五次尝试部署/业务通过，产品最终STOPPED/DISABLED；前四次结果保留 |
 | file-transfer | FAILED | 第二次尝试部署/完整文件业务通过，产品最终STOPPED/DISABLED；首轮来源拒绝保留 |
 | asset-lending | UNKNOWN→FAILED（产品核对） | 第二次部署/借还与重启持久化通过，产品最终STOPPED/DISABLED；首轮拒绝保留 |
-| csv-inspector | UNKNOWN→FAILED（产品核对） | 原PHP附件成功，SSH未观察退出；原任务已正常收尾，待新任务复验 |
+| csv-inspector | UNKNOWN→FAILED（产品核对） | 第二次部署、分析业务及重启持久化通过，最终STOPPED/DISABLED；首次SSH原因未知 |
 | survey-scoring | 未运行 | 等待本轮前置问题处理 |
 | log-analyzer、directory-diff、binary-inspector | 未运行 | 等待共同阻断定位 |
 
@@ -159,3 +159,11 @@ HTTP业务验证分类和资产创建、借用submit/approve/checkout/return，�
 修复本地提交 `91788df2` 后，原任务只读诊断1项通过（26.98秒/Maven0）。精确operation/request SHA/plan绑定相符，附件未截断，读取session正常关闭；原graph/unit/file与UNKNOWN保留，未结清。附件确认preparationStatus=SUCCEEDED、failureCategory=null、最后stage=installation-command、executable=php、actualExitCode=0、timedOut/cancelled=false，stdout/stderr均空。这是原PHP准备最终成功的独立证据，不是原SSH已观察到退出，也不能确定断开原因。
 
 随后以成功空白选择进入普通原任务恢复，1项通过（29.43秒/Maven0），最终ENDED/FAILED、blockers为空，正常释放原资源，没有重放PHP准备。初次UNKNOWN、只读附件成功、常规核对FAILED三者分别保留。下一次为新的CSV重试；不调整SSH心跳或超时参数，也不将这次证据丢失宣称为已修复的网络根因。
+
+## CSV 第二次尝试：部署、分析与重启持久化通过
+
+`csv-inspector-retry-02` 基于 `697818e3`（实现含 `91788df2` 原图诊断修复），启动时Git干净。原任务 `58faa55d-9f6a-4321-97ff-a2a47b914525`、state `assisted-live-csv-inspector-16jpu2pa48`、应用 `wtl-assisted-csv-inspector-16jpu4o6cs`。程序完成Python/PHP工具链准备与绑定、双组件构建、发布及整应用健康门槛；原PHP准备已有成功附件，本次重试环境不等于全新未安装PHP的主机。
+
+HTTP业务检查worker有效、创建demo/basic分析任务并完成，断言3行、6个问题、1个有效行；经产品整应用RESTART后worker PID变化，任务仍为completed，导出包含issueCount。JUnit1项通过、0skip、Maven0，耗时1008.261秒。66个监控generation attempt ID，已知部署/审批Token59461+648566=708027，四项能力探测不含，未提高预算或期限。
+
+导出后由产品精确绑定原应用、revision与ownership再次STOP并inspect，最终STOPPED/DISABLED，清理进程退出0，assessment为COMPLETE。首次UNKNOWN、附件SUCCEEDED、原任务核对FAILED均保留；本次成功不能证明原SSH断连根因已修复。本轮四项网站重试通过，survey-scoring及三个CLI尚未运行。
