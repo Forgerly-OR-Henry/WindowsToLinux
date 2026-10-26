@@ -72,7 +72,7 @@ final class ModCatalogSurface extends JPanel {
         count.setName(storeMode ? "store.count" : "mods.count");
         caption.add(count);
         titleLine.add(caption, BorderLayout.CENTER);
-        var modes = components.transparent(new java.awt.GridLayout(1, 2, 0, 0));
+        var modes = components.transparent(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 0, 0));
         modes.setName("modui.modes");
         messages.bind(installed, "mods.installed");
         messages.bind(store, "store.title");
@@ -87,7 +87,7 @@ final class ModCatalogSurface extends JPanel {
         store.putClientProperty("JButton.buttonType", "roundRect");
         for (var mode : new JToggleButton[]{installed, store})
             mode.putClientProperty("FlatLaf.style", "selectedBackground: $Table.background; "
-                + "selectedForeground: $Component.accentColor; margin: 6,12,6,12");
+                + "selectedForeground: $Component.accentColor; margin: 8,14,8,14");
         installed.addActionListener(event -> switchMode(false));
         store.addActionListener(event -> switchMode(true));
         modes.add(installed);
@@ -100,6 +100,7 @@ final class ModCatalogSurface extends JPanel {
             () -> UIManager.getColor("Label.disabledForeground")));
         searchLine = components.transparent(new BorderLayout(UIScale.scale(8), 0));
         searchLine.add(search, BorderLayout.CENTER);
+        refresh.setMargin(new java.awt.Insets(8, 14, 8, 14));
         searchLine.add(refresh, BorderLayout.EAST);
         catalogHeader.add(searchLine, BorderLayout.SOUTH);
         leftBody.add(catalogHeader, BorderLayout.NORTH);
@@ -211,7 +212,6 @@ final class ModCatalogSurface extends JPanel {
         int footerWidth = Math.max(0, owner.getWidth() - cardInsets.left - cardInsets.right);
         footerHost.setSize(footerWidth, Math.max(1, footerHost.getHeight()));
         footerHost.doLayout();
-        heading.setPreferredSize(new Dimension(0, catalogHeader.getPreferredSize().height));
     }
 
     private void updateGaps() {

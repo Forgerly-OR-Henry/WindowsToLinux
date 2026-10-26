@@ -57,6 +57,7 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         reload = button("tasks.reload", "tasks.reload", "action/refresh-cw");
         logs = button("tasks.history", "tasks.history", "mod/archive");
         primary = components.primaryButton("");
+        primary.setMargin(new Insets(8, 14, 8, 14));
         primary.setName("tasks.primary");
         intervene = button("tasks.intervene", "tasks.intervene", "security/hand");
         collapse = button("tasks.collapse", "tasks.collapse", "navigation/chevron-right");
@@ -137,6 +138,7 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
 
     private JButton button(String name, String key, String icon) {
         var button = messages.bind(components.secondaryButton(""), key);
+        button.setMargin(new Insets(8, 14, 8, 14));
         button.setName(name);
         button.setIcon(DesktopIcons.icon(icon, 16, button::getForeground));
         return button;

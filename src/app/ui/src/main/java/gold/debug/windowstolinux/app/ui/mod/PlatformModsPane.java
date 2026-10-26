@@ -312,6 +312,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
      * @return themed named button / 主题命名按钮 */
     private JButton button(String key, Runnable action) {
         var button = messages.bind(components.secondaryButton(""), "mods." + key);
+        button.setMargin(new Insets(8, 14, 8, 14));
         button.setName("mods." + key);
         button.addActionListener(event -> {
             if (!locked && !closed && !busy)
@@ -562,6 +563,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                     : messages.text("modui.dependencyMissing", Map.of("range", dependency.range())), 12, false, true));
                 row.add(copy);
                 var jump = messages.bind(components.secondaryButton(""), target.isPresent() ? "modui.viewDetails" : "modui.visitStore");
+                jump.setMargin(new Insets(8, 14, 8, 14));
                 jump.setName("mods.dependency." + dependency.id());
                 jump.setEnabled(!locked && !closed && !busy);
                 jump.addActionListener(event -> {
@@ -1417,6 +1419,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                 if (!locked && !closed && !busy) showChanges();
             });
             saveRestart = messages.bind(components.primaryButton(""), "modui.saveRestart");
+            for (var button : List.of(more, changes, saveRestart)) button.setMargin(new Insets(8, 14, 8, 14));
             saveRestart.setName("mods.saveRestart");
             saveRestart.addActionListener(event -> {
                 if (!locked && !closed && !busy) saveAndRestart();

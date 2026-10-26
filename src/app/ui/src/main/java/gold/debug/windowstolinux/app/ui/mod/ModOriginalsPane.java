@@ -155,6 +155,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
      * @return named control / 命名控件 */
     private JButton button(DesktopPartFactory components, String key, Runnable action) {
         var button = messages.bind(components.secondaryButton(""), "originals." + key);
+        button.setMargin(new java.awt.Insets(8, 14, 8, 14));
         button.setName("originals." + key);
         button.addActionListener(event -> {
             if (!locked && !closed && !busy)

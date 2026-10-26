@@ -653,6 +653,8 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
             cancel.setName("store.cancel");
             check = messages.bind(components.secondaryButton(""), "store.check");
             check.setName("store.check");
+            for (var button : List.of(retry, download, cancel, check))
+                button.setMargin(new java.awt.Insets(8, 14, 8, 14));
             row = components.transparent(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, UIScale.scale(8), UIScale.scale(4)));
             row.add(check);
             row.add(cancel);
