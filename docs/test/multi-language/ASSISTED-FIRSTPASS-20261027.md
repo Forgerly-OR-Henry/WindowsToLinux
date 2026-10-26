@@ -1,11 +1,11 @@
 # 2026-10-27 ASSISTED 测试与失败修复
 
-本轮仍在进行，未达成首轮通过。task-board、file-transfer 首次有效尝试均在来源分析后失败。修复后task-board第五次尝试已通过真实部署和业务验收，并经产品确认STOPPED/DISABLED；file-transfer待复验，其余六项尚未运行。不能据此记为八项通过或把重试并入首轮。
+本轮仍在进行，未达成首轮通过。task-board、file-transfer 首次有效尝试均在来源分析后失败。修复后task-board第五次、file-transfer第二次均通过真实部署和业务验收，并经产品确认STOPPED/DISABLED；其余六项尚未运行。不能据此记为八项通过或把重试并入首轮。
 
 | 项目 | 首次有效尝试 | 当前证据 |
 | --- | --- | --- |
 | task-board | FAILED | 第五次尝试部署/业务通过，产品最终STOPPED/DISABLED；前四次结果保留 |
-| file-transfer | FAILED | 同一来源拒绝，应用未发布 |
+| file-transfer | FAILED | 第二次尝试部署/完整文件业务通过，产品最终STOPPED/DISABLED；首轮来源拒绝保留 |
 | asset-lending、csv-inspector、survey-scoring | 未运行 | 等待共同阻断定位 |
 | log-analyzer、directory-diff、binary-inspector | 未运行 | 等待共同阻断定位 |
 
@@ -109,3 +109,13 @@ helper既有绝对期限为1713秒，Java外层1728秒，但APT参数固定只�
 实际业务为HTTP首页、新建任务，以及由产品执行STOP、START、RESTART后读取任务确认持久化；没有真实界面或浏览器验收。AI_LIVE_PASS记录部署模型调用27、审批调用59；监控已知Token为78697+861391=940088，86个generation attempt ID，能力探测用量仍不含在内，不是完整账单。
 
 原夹具finally已STOP，delivery随后再次启动网站并导出；因此又由产品按精确application/revision/ownership执行STOP和检查。最终 `PRODUCT_CLEANUP_VERIFIED` 为STOPPED/DISABLED，清理进程退出0，未手动SSH部署或启停。交付摘要与最终停止证据分别保留，不把中途停止或RUNNING导出当作最终状态。本轮首轮FAILED保持，原第四次UNKNOWN核对仍为FAILED；其余项目验收继续。
+
+## file-transfer 第二次尝试：完整文件业务通过
+
+`file-transfer-retry-02` 基于 `dca48414`（实现同 `1c69ac29`，前一提交只更新报告），启动时Git干净。原任务 `158141e6-02df-435f-8874-ba86694ad9b1`、state `assisted-live-file-transfer-1401ui3fnk`、应用 `wtl-assisted-file-transfer-1401ujpa7s`。程序完成Go1.24.13等工具链准备、双组件构建/发布与整应用健康检查；JUnit1项通过，2511.937秒，Maven退出0，没有新增代码修正或放宽测试期限/负载。
+
+完整v2业务通过：两个64MiB版本、1MiB分块、首16块重启后续传、重复/冲突分块及提前完成拒绝、10路并发complete只生成同一版本、取消状态重启持久化、错误SHA拒绝。通过正式gateway依赖选择独立Go后端，由产品只STOP后端，确认Node继续服务且真实下游请求返回502；原STOP已ENDED后才START恢复，未完成上传分块与版本状态保持。故障前后共5次完整64MiB下载，字节数/SHA全部正确，耗时61186/56324/59262/73818/82891毫秒。共用QA日志仍含AGENT前缀，本次实际部署模式为ASSISTED，没有切换Agent。
+
+监控已知Token为104514+1016318=1120832，部署/审批调用32/108，140个generation attempt ID；每次四项能力探测用量仍未包含，不是完整账单。组件独立管理审批和状态核对耗时已计入本次实际验收；原AI管理任务期限为max(调用值,15)分钟，未在本轮提高。
+
+finally停止、delivery再次启动导出后，又经产品精确绑定原应用/revision/ownership执行STOP。最终STOPPED/DISABLED，清理进程退出0。首轮FAILED仍保留；其余六项目继续，未执行真实界面、浏览器或全套测试。
