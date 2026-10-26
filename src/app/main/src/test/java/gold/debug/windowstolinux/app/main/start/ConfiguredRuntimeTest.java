@@ -31,14 +31,8 @@ class ConfiguredRuntimeTest {
         return new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS, root, root.resolve("data"));
     }
 
-    public static final class RejectModRecovery implements org.h2.api.Trigger {
-        public void fire(java.sql.Connection connection, Object[] before, Object[] after) throws java.sql.SQLException {
-            throw new java.sql.SQLException("Disabled Mod boot must not run dedicated recovery updates");
-        }
-    }
-
     @Test
-    void releaseModesRejectDisabledModCompositionBeforeCreatingData() {
+    void releaseModesRejectDisabledAutomaticLoadingBeforeCreatingData() {
         for (var mode : List.of(RunModeResolver.RunMode.RUN_JAR, RunModeResolver.RunMode.RUN_APP)) {
             var data = root.resolve(mode.name());
             var release = new RunModeResolver.RuntimeLayout(mode, root, data);
@@ -48,28 +42,35 @@ class ConfiguredRuntimeTest {
     }
 
     @Test
-    void disabledModeDefersDedicatedDatabaseRecoveryQueriesUntilEnabledBoot() throws Exception {
+    void disabledAutomaticLoadingKeepsRegisteredChoicesAndHostLedgerRecovery() throws Exception {
         try (var runtime = PlatformRuntime.open(layout(), PlatformStartupTest.PROTECTION, config())) {
+            PlatformModIntentsTest.add(runtime, "example.saved", false, Map.of(), null);
             PlatformTaskAdmissionIntegrationTest.sql(runtime.persistence().database(),
-                "CREATE TRIGGER config_no_mod_recovery BEFORE UPDATE ON mod_operation CALL '" + RejectModRecovery.class.getName() + "'");
+                "INSERT INTO mod_operation(operation_id,mod_id,operation_type,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,'example.saved','INSTALL','RUNNING','PREPARING','{}','{}',?,1,1)",
+                UUID.randomUUID(), UUID.randomUUID().toString());
         }
         try (var runtime = PlatformRuntime.open(layout(), PlatformStartupTest.PROTECTION, config())) {
             assertFalse(runtime.startup().config().modLoad());
-        }
-        assertThrows(Exception.class, () -> PlatformRuntime.open(layout(), PlatformStartupTest.PROTECTION, AppConfig.defaultsConfig()));
-        try (var runtime = PlatformRuntime.open(layout(), PlatformStartupTest.PROTECTION, config())) {
-            PlatformTaskAdmissionIntegrationTest.sql(runtime.persistence().database(), "DROP TRIGGER config_no_mod_recovery");
+            runtime.security().setupAndUnlock("isolated-config-password".toCharArray(), "isolated-config-password".toCharArray());
+            runtime.started();
+            var saved = runtime.modIntents().list().getFirst();
+            assertEquals("example.saved", saved.owner());
+            assertFalse(saved.choice().enabled());
+            assertEquals(Optional.of("1.0.0"), saved.choice().version());
+            assertEquals("UNKNOWN", saved.operations().getFirst().state());
+            assertTrue(runtime.modContexts().isEmpty());
+            assertTrue(runtime.modSessions().isEmpty());
         }
     }
 
     @Test
-    void disabledModSkipsDamagedSourcesCatalogPreferencesServicesAndClosesNormally() throws Exception {
+    void disabledAutomaticLoadingSkipsDamagedSourcesButKeepsManagementServices() throws Exception {
         Files.createDirectories(root.resolve("src/mod/broken/target"));
         Files.writeString(root.resolve("src/mod/broken/mod.json"), "broken manifest");
         Files.writeString(root.resolve("src/mod/broken/target/dev-info.json"), "broken build");
         try (var runtime = PlatformRuntime.open(layout(), PlatformStartupTest.PROTECTION, config())) {
             runtime.security().setupAndUnlock("isolated-config-password".toCharArray(), "isolated-config-password".toCharArray());
-            runtime.persistence().preferences().save("mod_navigation_pins", "corrupt unused pins");
+            runtime.persistence().preferences().save("mod_navigation_pins", "[]");
             runtime.started();
             assertEquals(45, runtime.transfers().read().connectSeconds());
             assertFalse(runtime.fileSettings().enabled());
@@ -79,13 +80,14 @@ class ConfiguredRuntimeTest {
             assertTrue(report.problems().isEmpty());
             assertTrue(runtime.modContexts().isEmpty());
             assertTrue(runtime.modSessions().isEmpty());
-            assertThrows(IllegalStateException.class, runtime::services);
-            assertThrows(IllegalStateException.class, runtime::modIntents);
+            assertNotNull(runtime.services());
+            assertTrue(runtime.modIntents().list().isEmpty());
+            assertThrows(IllegalStateException.class, runtime::modInstallation);
             assertEquals(before, Files.readString(root.resolve("src/mod/broken/mod.json")));
             assertEquals(0, PlatformTaskAdmissionIntegrationTest.count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_registry"));
         }
         try (var runtime = PlatformRuntime.open(layout(), PlatformStartupTest.PROTECTION, config())) {
-            assertEquals("corrupt unused pins", runtime.persistence().preferences().find("mod_navigation_pins").orElseThrow());
+            assertEquals("[]", runtime.persistence().preferences().find("mod_navigation_pins").orElseThrow());
         }
     }
 
@@ -108,8 +110,10 @@ class ConfiguredRuntimeTest {
     }
 
     @Test
-    void bothUiInitialStatesApplyWithoutMountingAnyModSurfaces() throws Exception {
+    void bothUiInitialStatesApplyWithModSurfacesWhenAutomaticLoadingIsDisabled() throws Exception {
         try (var runtime = PlatformRuntime.open(layout(), PlatformStartupTest.PROTECTION, config())) {
+            runtime.security().setupAndUnlock("isolated-config-password".toCharArray(), "isolated-config-password".toCharArray());
+            runtime.started();
             var window = onEdt(() -> {
                 DesktopThemeService.install(ThemeMode.LIGHT);
                 var frame = new PlatformFrame(runtime.security(), MessageCatalog.forLanguageTag("zh-CN"), ThemePalette.light(),
@@ -119,20 +123,35 @@ class ConfiguredRuntimeTest {
                 return frame;
             });
             try {
+                var report = ApplicationLauncher.startMods(runtime, layout(), window.pages());
+                ApplicationLauncher.installModManagement(runtime, window);
                 onEdt(() -> {
+                    window.showModStartup(report.running().size(), report.problems());
                     var tabs = (JTabbedPane) named(window, "platform.pages");
-                    assertEquals(2, tabs.getTabCount());
+                    assertEquals(5, tabs.getTabCount());
                     assertEquals(List.of(MessageCatalog.forLanguageTag("zh-CN").text("shell.home"),
-                            MessageCatalog.forLanguageTag("zh-CN").text("security.settings")),
+                            MessageCatalog.forLanguageTag("zh-CN").text("platform.pages"),
+                            MessageCatalog.forLanguageTag("zh-CN").text("security.settings"),
+                            MessageCatalog.forLanguageTag("zh-CN").text("platform.modSettings"), "Mod"),
                         java.util.stream.IntStream.range(0, tabs.getTabCount()).mapToObj(tabs::getTitleAt).toList());
                     assertEquals("展开导航", ((JButton) named(window, "navigation.collapse")).getToolTipText());
                     tabs.setSelectedIndex(tabs.indexOfTab(MessageCatalog.forLanguageTag("zh-CN").text("security.settings")));
                     assertTrue(((JToggleButton) named(window, "settings.advanced")).isSelected());
                     assertTrue(named(window, "settings.uiDebug").isShowing());
-                    assertTrue(descendants(window).noneMatch(c -> "mods.store".equals(c.getName()) || "mods.management".equals(c.getName()) || "mods.navigation".equals(c.getName())));
-                    capture(window, "configured-app-only.png");
+                    assertNotNull(named(window, "mods.store"));
+                    assertNotNull(named(window, "mods.navigation"));
+                    var management = (JTabbedPane) named(window, "mods.management");
+                    assertEquals(3, management.getTabCount());
+                    assertNotNull(named(window, "originals.classMode"));
+                    ((JButton) named(window, "navigation.shell.mods")).doClick(0);
+                    assertEquals("shell.mods", window.currentPage().platformId());
+                    assertTrue(management.isShowing());
+                    capture(window, "configured-manual-mod.png");
                     return null;
                 });
+                assertTrue(report.running().isEmpty());
+                assertTrue(report.problems().isEmpty());
+                assertTrue(runtime.modSessions().isEmpty());
             } finally {
                 onEdt(() -> {
                     window.dispose();

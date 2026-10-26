@@ -79,7 +79,8 @@ final class PlatformModRecovery {
                 var builds = new LinkedHashMap<String, PlatformModPrograms.Program>();
                 for (var release : graph.releases()) {
                     var build = programs.read(release.owner(), release.version());
-                    if (!release.digest().equals(build.contentDigest())
+                    if (!release.owner().equals(build.manifest().id())
+                        || !release.version().equals(build.manifest().version().toString())
                         || !release.schema().map(s -> s.schemaVersion()).equals(build.manifest().schemaVersion()))
                         throw new SQLException("Original recovery program differs");
                     builds.put(release.owner(), build);
@@ -95,8 +96,9 @@ final class PlatformModRecovery {
                     receipt = ledger.retain(graph);
                 else {
                     var old = candidate.retained().getFirst();
-                    if (candidate.retained().size() != 1
-                        || !new HashSet<>(old.graph().releases()).equals(new HashSet<>(graph.releases())))
+                    if (candidate.retained().size() != 1 || old.graph().releases().size() != graph.releases().size()
+                        || old.graph().releases().stream().anyMatch(saved -> graph.releases().stream()
+                        .noneMatch(saved::sameIdentity)))
                         throw new SQLException("Persisted recovery groups overlap or changed");
                     receipt = ledger.resume(old);
                 }
@@ -152,15 +154,12 @@ final class PlatformModRecovery {
                 for (var dependency : tasks.queries().dependencies(task).keySet()) {
                     var original = graph.release(dependency.provider());
                     if (!original.version().equals(dependency.version())
-                        || !original.schema().equals(dependency.schema())
-                        || !dependency.digest().isEmpty() && !original.digest().equals(dependency.digest()))
+                        || !original.schema().equals(dependency.schema()))
                         throw new SQLException("Retained dependency differs from original graph");
-                    if (!dependency.caller().isEmpty()) {
-                        if (!graph.release(dependency.caller()).version().equals(dependency.callerVersion())
-                            || !graph.legacy() && graph.edges().stream().noneMatch(e -> e.caller().equals(dependency.caller())
-                            && e.provider().equals(dependency.provider())))
-                            throw new SQLException("Retained call differs from original edge");
-                    }
+                    if (!graph.release(dependency.caller()).version().equals(dependency.callerVersion())
+                        || graph.edges().stream().noneMatch(e -> e.caller().equals(dependency.caller())
+                        && e.provider().equals(dependency.provider())))
+                        throw new SQLException("Retained call differs from original edge");
                 }
                 candidates.add(new Candidate(List.of(graph), graph.releases(), List.of(), false));
             } catch (SQLException | IllegalArgumentException | NoSuchElementException failure) {
@@ -284,10 +283,8 @@ final class PlatformModRecovery {
             if (build == null)
                 throw new SQLException("Original provider is absent");
             for (var dependency : build.manifest().dependencies()) {
-                if (graph.legacy() && dependency.optional())
-                    throw new SQLException("Legacy graph cannot reinterpret optional declarations");
                 var kind = dependency.optional() ? TaskRecoveryGraph.EdgeKind.OPTIONAL_USED : TaskRecoveryGraph.EdgeKind.REQUIRED;
-                boolean recorded = graph.legacy() || graph.edges().contains(new TaskRecoveryGraph.Edge(owner, dependency.id(), kind));
+                boolean recorded = graph.edges().contains(new TaskRecoveryGraph.Edge(owner, dependency.id(), kind));
                 if (!dependency.optional() && !recorded) throw new SQLException("Original required edge is missing");
                 if (!recorded) continue;
                 var provider = graph.release(dependency.id());
@@ -295,11 +292,10 @@ final class PlatformModRecovery {
                     throw new SQLException("Original provider version is incompatible");
                 queue.add(dependency.id());
             }
-            if (!graph.legacy())
-                for (var edge : graph.edges().stream().filter(e -> e.caller().equals(owner)).toList())
-                    if (build.manifest().dependencies().stream().noneMatch(d -> d.id().equals(edge.provider())
-                        && (d.optional() ? TaskRecoveryGraph.EdgeKind.OPTIONAL_USED : TaskRecoveryGraph.EdgeKind.REQUIRED) == edge.kind()))
-                        throw new SQLException("Original used edge is undeclared");
+            for (var edge : graph.edges().stream().filter(e -> e.caller().equals(owner)).toList())
+                if (build.manifest().dependencies().stream().noneMatch(d -> d.id().equals(edge.provider())
+                    && (d.optional() ? TaskRecoveryGraph.EdgeKind.OPTIONAL_USED : TaskRecoveryGraph.EdgeKind.REQUIRED) == edge.kind()))
+                    throw new SQLException("Original used edge is undeclared");
         }
         if (!reached.equals(graph.releases().stream().map(TaskRecoveryGraph.Release::owner)
             .collect(java.util.stream.Collectors.toSet())))
@@ -325,7 +321,7 @@ final class PlatformModRecovery {
                         continue;
                     for (var release : previous.releases()) {
                         var old = releases.putIfAbsent(release.owner(), release);
-                        if (old != null && !old.equals(release))
+                        if (old != null && !old.sameIdentity(release))
                             conflict = true;
                     }
                     conflict |= previous.conflict();

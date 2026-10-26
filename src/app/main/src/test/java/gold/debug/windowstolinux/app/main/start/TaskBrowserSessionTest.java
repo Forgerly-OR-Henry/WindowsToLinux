@@ -178,6 +178,7 @@ class TaskBrowserSessionTest {
                     + (beforeCreation ? "STARTING" : "STARTED") + "%')");
                 var owned = new AtomicReference<TaskBrowserSession>();
                 var original = new AtomicReference<TaskContext>();
+                var callbackFinished = new CountDownLatch(1);
                 var binding = runtime.tasks().bind(OWNER, VERSION, false);
                 var handle = binding.submit(request(), task -> {
                     original.set(task);
@@ -188,11 +189,14 @@ class TaskBrowserSessionTest {
                         assertEquals(beforeCreation ? 0 : 1, actual(browser).processes().size());
                         assertThrows(BrowserRecoveryException.class, browser::targets);
                         assertEquals(beforeCreation ? 0 : 1, claims(runtime));
+                    } finally {
+                        callbackFinished.countDown();
                     }
                     return success(null);
                 });
                 try {
                     state(handle, TaskState.UNKNOWN);
+                    assertTrue(callbackFinished.await(20, TimeUnit.SECONDS), "Original bounded browser cleanup must return");
                     PlatformProcessServiceTest.returned(runtime, original.get());
                     assertTrue(actual(owned.get()).resourcesClosed());
                     assertEquals(0, claims(runtime));

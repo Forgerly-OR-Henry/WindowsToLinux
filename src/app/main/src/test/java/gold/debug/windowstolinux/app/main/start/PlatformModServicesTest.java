@@ -159,7 +159,7 @@ class PlatformModServicesTest {
     ModClassLoader loader(String owner, Path classes, boolean dependency, Map<String, ModClassLoader> exports,
                           boolean optional) throws Exception {
         String json = """
-            {"formatVersion":1,"id":"%s","name":"fixture","version":"1.0.0","platformApiRange":"1.0.0-dev.1","minJavaVersion":21,"mainJar":"main/fixture.jar","entryClass":"%s.Mod"%s%s}
+            {"formatVersion":1,"id":"%s","name":"fixture","version":"1.0.0","platformApiRange":"1.0.0","minJavaVersion":21,"mainJar":"main/fixture.jar","entryClass":"%s.Mod"%s%s}
             """
             .formatted(owner, owner,
                 owner.equals(PROVIDER) ? ",\"schemaVersion\":\"1\",\"exports\":[\"example.provider.api\"]" : "",
@@ -902,10 +902,18 @@ class PlatformModServicesTest {
         }
         try (var db = PlatformDatabase.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             var ledger = new TaskLedger(db);
-            taskId = ledger.enqueue(UUID.randomUUID(), OWNER, VERSION, request(),
-                List.of(new TaskResource("MOD", OWNER, OWNER, false)));
+            var graph = new gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph(OWNER,
+                List.of(new gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph.Release(OWNER, VERSION, "a".repeat(64), Optional.empty()),
+                    new gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph.Release(PROVIDER, VERSION, "b".repeat(64), Optional.of(schema))),
+                List.of(new gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph.Edge(OWNER, PROVIDER,
+                    gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph.EdgeKind.REQUIRED)));
+            taskId = ledger.enqueue(UUID.randomUUID(), OWNER, VERSION, request(), new TaskLedger.InitialClaims() {
+                public List<TaskResource> resolve(java.sql.Connection c) { return graph.claims(); }
+                public Optional<gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph> recoveryGraph(java.sql.Connection c) { return Optional.of(graph); }
+            });
             assertTrue(ledger.tryStart(taskId));
-            var old = new DependencyRecovery(db.bootId(), UUID.randomUUID(), PROVIDER, VERSION, Optional.of(schema));
+            var old = new DependencyRecovery(db.bootId(), UUID.randomUUID(), PROVIDER, VERSION, Optional.of(schema),
+                graph.owner(), graph.release(graph.owner()).version(), graph.release(PROVIDER).digest());
             ledger.dependencies().retainDependency(taskId, old, c -> old.claims());
             sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,'2.0.0','next',?,'1','{}','CLASS',1,'READY')",
                 PROVIDER, "1".repeat(64));

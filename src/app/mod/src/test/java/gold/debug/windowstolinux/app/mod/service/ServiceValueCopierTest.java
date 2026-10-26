@@ -15,6 +15,27 @@ class ServiceValueCopierTest {
     }
 
     @Test
+    void copiesOptionalAiRequestAndEffectiveResponseBudgetsAcrossThePublicBoundary() throws Exception {
+        var messages = List.of(new gold.debug.windowstolinux.appapi.ai.model.AiMessage(
+            gold.debug.windowstolinux.appapi.ai.model.AiRole.USER, "hello", List.of()));
+        for (Optional<Integer> tokens : List.of(Optional.<Integer>empty(), Optional.of(65536))) {
+            var request = new gold.debug.windowstolinux.appapi.ai.model.AiRequest(
+                gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, messages, tokens, java.time.Duration.ofSeconds(10), false);
+            var copied = (gold.debug.windowstolinux.appapi.ai.model.AiRequest) ServiceValueCopier.copy(request,
+                type -> type.getPackageName().startsWith("gold.debug.windowstolinux.appapi.ai"));
+            assertEquals(request, copied);
+            assertNotSame(request, copied);
+        }
+        var response = new gold.debug.windowstolinux.appapi.ai.model.AiResponse("ok", "model", "stop",
+            new gold.debug.windowstolinux.appapi.ai.model.AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
+            List.of(), Optional.empty(), Optional.of(128), Optional.of(32768));
+        var copied = (gold.debug.windowstolinux.appapi.ai.model.AiResponse) ServiceValueCopier.copy(response,
+            type -> type.getPackageName().startsWith("gold.debug.windowstolinux.appapi.ai"));
+        assertEquals(response, copied);
+        assertEquals(Optional.of(32768), copied.effectiveMaxOutputTokens());
+    }
+
+    @Test
     void copiesNestedRecordsAndCollectionsBeforeOriginalMutation() throws Exception {
         var values = new ArrayList<>(List.of("before"));
         var original = new Snapshot(values);

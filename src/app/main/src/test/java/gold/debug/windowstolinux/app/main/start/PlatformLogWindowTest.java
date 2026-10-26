@@ -79,12 +79,14 @@ class PlatformLogWindowTest {
                     var emergency = logger.write(handle, event("fallback record"));
                     assertEquals(LogStorage.EMERGENCY_FILE, emergency.storage());
                     await(() -> ((JLabel) named(frame, "platform.logIssue")).getText().contains("应急文件"));
+                    assertEquals(30, onEdt(() -> named(frame, "platform.statusBar").getHeight()));
                     byte[] original = Files.readAllBytes(file(root, handle));
                     Files.writeString(file(root, handle), "broken tail");
                     try {
                         assertEquals(LogStorage.NOT_SAVED,
                             logger.write(handle, event("lost and not replayed")).storage());
                         await(() -> ((JLabel) named(frame, "platform.logIssue")).getText().contains("日志保存失败"));
+                        assertEquals(30, onEdt(() -> named(frame, "platform.statusBar").getHeight()));
                         onEdt(() -> {
                             ((JButton) named(frame, "logs.reload")).doClick(0);
                             return null;
@@ -115,6 +117,15 @@ class PlatformLogWindowTest {
                     return null;
                 });
                 await(() -> !named(frame, "logs.clean").isEnabled());
+                onEdt(() -> {
+                    var logs = (JButton) named(frame, "platform.viewLogs");
+                    assertTrue(logs.isEnabled(), "Log navigation remains available while locked");
+                    logs.doClick(0);
+                    assertTrue(named(frame, "platform.logs").isShowing());
+                    assertFalse(named(frame, "logs.clean").isEnabled());
+                    assertEquals(30, named(frame, "platform.statusBar").getHeight());
+                    return null;
+                });
                 assertThrows(gold.debug.windowstolinux.app.service.error.ApplicationServiceException.class,
                     runtime.logs()::cleanHistory);
                 runtime.security().unlock(PASSWORD.toCharArray());

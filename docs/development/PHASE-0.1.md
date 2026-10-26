@@ -1,4 +1,5 @@
 # WindowsToLinux 0.1 期开发文档
+> 阅读边界：本文保留所属开发期的规格、结果与证据；当时版本和未验证范围不改写。现行合同见 [开发总纲](DEVELOPMENT.md#documentation)，历史构建或全量命令不作为默认验证要求。
 
 > 编号说明：本文原称一期工程，现为 **0.1 期工程**。工程编号不改变软件版本、数据库 schema、helper 协议或历史验收结论。
 > 承接状态：本文保留旧工程的实现、设计原因和证据；顶层 `shared`、Web 功能服务台及生产登录等被新方向替代的规划，**已由 1.1 工程取代**。源码仍保持旧结构，历史 `RUNTIME-PENDING` 不因此关闭。新开发依据见 [1.1 主文档](PHASE-1.1.md)，编号映射见[开发总纲](DEVELOPMENT.md#phase-numbering)。
@@ -68,7 +69,7 @@
 
 **涉及模块与分工：** `shared/standard/analyze` 产生事实，`shared/source` 归档，`shared/model` 表达输入与边界；`app/service` 组织审阅。
 
-现行入口：[SourcePreparationUseCase.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/source/SourcePreparationUseCase.java) → [DeploymentAnalysisCoordinator.java](../../src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/core/DeploymentAnalysisCoordinator.java)；Windows 仅做静态读取和打包。
+现行入口：[SourcePreparationUseCase.java](../../history-src/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/source/SourcePreparationUseCase.java) → [DeploymentAnalysisCoordinator.java](../../history-src/src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/core/DeploymentAnalysisCoordinator.java)；Windows 仅做静态读取和打包。
 
 #### 必需输入
 
@@ -112,7 +113,7 @@
 
 **涉及模块与分工：** `shared/deploy` 编排事务，`shared/linux` 定义窄端口，`shared/linux-sshd` 执行受控协议；`app/service` 登记结果。
 
-现行执行入口：[ReviewedDeploymentService.java](../../src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/execution/transaction/ReviewedDeploymentService.java)；请求不得使用 `runAsRoot`，新部署管理连接要求 root。
+现行执行入口：[ReviewedDeploymentService.java](../../history-src/src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/execution/transaction/ReviewedDeploymentService.java)；请求不得使用 `runAsRoot`，新部署管理连接要求 root。
 
 1. 在 WindowsToLinux 受管工作根下创建绑定应用标识和源码摘要的候选目录。
 2. SFTP 上传受控源码归档，在候选目录内安全解压并复核文件清单。

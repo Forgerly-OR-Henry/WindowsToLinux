@@ -101,13 +101,24 @@ class ModRecoveryLedgerTest {
         try (var db = open()) {
             var graph = graph(db);
             var ledger = new ModRecoveryLedger(db);
-            sql(db, "UPDATE mod_version SET content_sha256=? WHERE mod_id=?", "2".repeat(64), PROVIDER);
+            sql(db, "UPDATE mod_version SET version=? WHERE mod_id=?", "2.0.0", PROVIDER);
             assertThrows(SQLException.class, () -> ledger.retain(graph));
             assertEquals(0, count(db, "mod_operation"));
-            sql(db, "UPDATE mod_version SET content_sha256=? WHERE mod_id=?", "1".repeat(64), PROVIDER);
+            sql(db, "UPDATE mod_version SET version=? WHERE mod_id=?", VERSION, PROVIDER);
             sql(db, "UPDATE mod_registry SET last_boot_id=? WHERE mod_id=?", db.bootId(), PROVIDER);
             assertThrows(SQLException.class, () -> ledger.retain(graph));
             assertEquals(0, count(db, "mod_operation"));
+        }
+    }
+
+    @Test
+    void sameVersionReceiptDriftDoesNotChangeRetainedGraph() throws Exception {
+        try (var db = open()) {
+            var graph = graph(db);
+            sql(db, "UPDATE mod_version SET content_sha256=? WHERE mod_id=?", "2".repeat(64), PROVIDER);
+            var retained = new ModRecoveryLedger(db).retain(graph);
+            assertEquals(graph, retained.graph());
+            assertEquals("1".repeat(64), retained.graph().release(PROVIDER).digest());
         }
     }
 

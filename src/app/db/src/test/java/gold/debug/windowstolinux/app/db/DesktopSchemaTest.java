@@ -47,7 +47,7 @@ class DesktopSchemaTest {
         for (int version : List.of(0, 2)) {
             var path = directory.resolve("v" + version);
             try (var db = DatabaseTestFixture.open(path); var c = db.database().openConnection(); var s = c.createStatement()) {
-                s.execute("INSERT INTO desktop_preference VALUES('sentinel','retained')");
+                s.execute("INSERT INTO desktop_preference(preference_key,preference_value) VALUES('sentinel','retained')");
                 if (version == 0) s.execute("DELETE FROM app_schema_history");
                 else s.execute("UPDATE app_schema_history SET schema_version=" + version);
             }
@@ -75,7 +75,7 @@ class DesktopSchemaTest {
             assertThrows(SQLException.class, () -> s.execute("DELETE FROM security_profile"));
             assertThrows(SQLException.class, () -> s.execute("UPDATE server_profile SET host_key_format=NULL"));
             assertThrows(SQLException.class, () -> s.execute("UPDATE security_profile SET is_encryption_enabled=2"));
-            try (var p = c.prepareStatement("INSERT INTO credential VALUES(?,1,?,?,?)")) {
+            try (var p = c.prepareStatement("INSERT INTO credential(credential_id,security_profile_id,storage_format,payload,nonce) VALUES(?,1,?,?,?)")) {
                 p.setString(1, "encrypted-a");
                 p.setString(2, "AES256_GCM_V1");
                 p.setBytes(3, new byte[24]);

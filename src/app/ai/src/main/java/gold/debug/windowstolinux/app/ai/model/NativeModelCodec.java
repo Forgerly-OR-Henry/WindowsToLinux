@@ -19,6 +19,36 @@ abstract class NativeModelCodec implements ModelProtocolCodec {
         .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
         .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
+    /** Stable diagnostic wire codes: never reorder, reuse, or derive them from ordinal. */
+    enum ValidationCode {
+        OTHER(0), RESPONSE_SIZE(1), RESPONSE_JSON(2), RESPONSE_ROOT(3), CHOICES(4), MESSAGE(5),
+        TOOL_ARRAY(6), TOOL_TYPE(7), CALL_ID_FIELD(8), CALL_NAME_FIELD(9), CALL_ARGUMENTS_FIELD(10),
+        CALL_IDENTITY(11), NATIVE_BATCH(12), CONTENT(13), FINISH(14), OBJECT_FORMAT(15);
+
+        private final String wire;
+
+        ValidationCode(int value) {
+            wire = Integer.toString(value);
+        }
+    }
+
+    private static final class ValidationFailure extends IOException {
+        private final ValidationCode code;
+
+        private ValidationFailure(ValidationCode code) {
+            super("Invalid native model response");
+            this.code = code;
+        }
+    }
+
+    static IOException invalid(ValidationCode code) {
+        return new ValidationFailure(code);
+    }
+
+    static String validationCode(IOException failure) {
+        return failure instanceof ValidationFailure invalid ? invalid.code.wire : ValidationCode.OTHER.wire;
+    }
+
     abstract ObjectNode body(String model, AiRequest request, int effectiveMaxOutputTokens, ModelReasoningLevel effort, Map<UUID, String> states);
 
     @Override
@@ -107,16 +137,27 @@ abstract class NativeModelCodec implements ModelProtocolCodec {
 
     static JsonNode root(byte[] bytes) throws IOException {
         if (bytes.length > ModelMessageCodec.MAX_RESPONSE_BYTES)
-            throw new IOException("Model response exceeds its byte limit");
-        var value = JSON.readTree(bytes);
-        if (value == null || !value.isObject()) throw new IOException("Invalid provider response envelope");
+            throw invalid(ValidationCode.RESPONSE_SIZE);
+        JsonNode value;
+        try {
+            value = JSON.readTree(bytes);
+        } catch (IOException rejected) {
+            throw invalid(ValidationCode.RESPONSE_JSON);
+        }
+        if (value == null || !value.isObject()) throw invalid(ValidationCode.RESPONSE_ROOT);
         return value;
     }
 
     static String text(JsonNode node, String field) throws IOException {
         var value = node.path(field);
         if (!value.isTextual() || value.textValue().isBlank())
-            throw new IOException("Provider field is incomplete: " + field);
+            throw invalid(switch (field) {
+                case "id" -> ValidationCode.CALL_ID_FIELD;
+                case "name" -> ValidationCode.CALL_NAME_FIELD;
+                case "arguments" -> ValidationCode.CALL_ARGUMENTS_FIELD;
+                case "finish_reason" -> ValidationCode.FINISH;
+                default -> ValidationCode.OTHER;
+            });
         return value.textValue();
     }
 
@@ -130,22 +171,27 @@ abstract class NativeModelCodec implements ModelProtocolCodec {
         try {
             return new AiToolCall(id, name, arguments);
         } catch (IllegalArgumentException invalid) {
-            throw new IOException("Invalid provider native call identity", invalid);
+            throw invalid(ValidationCode.CALL_IDENTITY);
         }
     }
 
     static ModelDecodedResponse result(String content, String modelId, String finish, AiUsage usage,
                                        List<AiToolCall> calls, JsonNode state, boolean object) throws IOException {
-        if (finish.isBlank() || finish.length() > 128) throw new IOException("Invalid provider finish reason");
+        if (finish.isBlank() || finish.length() > 128) throw invalid(ValidationCode.FINISH);
         if (object) {
-            var value = JSON.readTree(content);
-            if (value == null || !value.isObject()) throw new IOException("Model response is not a JSON object");
+            JsonNode value;
+            try {
+                value = JSON.readTree(content);
+            } catch (IOException rejected) {
+                throw invalid(ValidationCode.OBJECT_FORMAT);
+            }
+            if (value == null || !value.isObject()) throw invalid(ValidationCode.OBJECT_FORMAT);
         }
         try {
             return new ModelDecodedResponse(new AiResponse(content, modelId, finish, usage, calls, Optional.empty()),
                 JSON.writeValueAsString(state));
         } catch (IllegalArgumentException invalid) {
-            throw new IOException("Invalid provider native call batch", invalid);
+            throw invalid(ValidationCode.NATIVE_BATCH);
         }
     }
 

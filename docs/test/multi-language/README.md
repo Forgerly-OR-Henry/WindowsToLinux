@@ -20,6 +20,20 @@
 
 ## 仓库验收入口
 
+指定 API 模型的分阶段部署验收见 [AI-LIVE-VERIFICATION.md](AI-LIVE-VERIFICATION.md)，其中区分真实部署、纯 API 审批诊断和受控回归。
+
+当前真机入口为 `DeploymentStaticLiveAcceptanceTest`。AI辅助网站选择方法 `deploysWebsitesThroughAssistedEntry`，CLI选择 `deploysCliThroughAssistedEntry`；全Agent分别选择 `deploysWebsitesThroughAgentEntry` 和 `deploysCliThroughAgentEntry`。使用 `managed.live.projects` 限定本轮项目；默认网站五项、CLI三项。三个模式共用业务HTTP、持久化及产品生命周期核验，Agent直接提交 `DeploymentAgentWorkflow`，不调用静态识别、参数审阅或标准部署入口。测试只提供应用标识、访问地址和真实业务验收要求，模型独立生成部署命令。
+
+所有真机方法默认关闭，须明确设置 `managed.runtime.staticLive=true`；Agent方法还须设置 `managed.runtime.agentLive=true`。Maven从根目录使用 `-pl src/mod/deployment -am test`、`-Dsurefire.failIfNoSpecifiedTests=false`，并用 `-Dtest=DeploymentStaticLiveAcceptanceTest#方法名` 精确选择方法。未打开所需开关会跳过，不能计作真机通过。服务器参数为 `managed.ssh.host`、`managed.ssh.port`、`managed.ssh.user`，密码只从进程环境 `WINDOWSTOLINUX_TEST_SSH_PASSWORD` 读取；API配置使用 `test/apikey.txt`，不把凭据放进命令行或报告。当前用户已授权八样例全Agent重测及一次性服务器最高权限；每轮实际范围与结果见验证记录，不把旧辅助轮次的停点当成新轮次授权。
+
+`managed.live.reasoningEffort`控制部署与识别角色，`managed.live.approvalReasoningEffort`控制独立审批角色，未指定时采用前者。两种角色使用同一用户配置的API模型，分别保存配置并经产品验证；这两个参数只选择模型推理强度，不替代实际审批结论。2026-10-10缓存修正后的继续测试使用两角色LOW、单次输出8192，具体批次以日志为准。
+
+`managed.live.agentApproval`选择MANUAL_REVIEW/AUTOMATIC/FULL_CONTROL，`managed.live.rememberAuthorization`控制记住授权；夹具断言真实人工问题数量，不按策略名称推断已通过。监督分别记录部署与审批的输入＋输出Token、缓存及推理子集；输出耗尽和`managed.live.observedTokenLimit`会同步请求原任务取消。该监督阈值不修改产品尝试预算，也不按低缓存命中率单独取消；当前500000是本轮监督选择。配置探测和结果未知请求的未捕获用量另列，不能作为0。
+
+`managed.live.deploymentWaitMinutes`仅控制真机测试入口等待原部署任务的窗口，默认60分钟，允许1～180分钟；无效值在连接服务器前拒绝。它不改变产品单步命令、模型调用、工具选择或审批预算。本轮两个组件的完整验收已耗时约50分钟，三个组件的问卷评分使用90分钟等待窗口，避免测试入口在正常逐项审批中提前终止；CSV是两组件、三语言，继续使用60分钟。实际耗时和结果仍逐次记录。
+
+AI辅助校准仍未确定时，测试入口选择STATIC并留痕；其他未预期补充输入停止，保留问题等待监督者核对，不编造业务要求。全Agent的CLI验收同时核对模型实际登记的ON_DEMAND与精确业务输出要求，再使用已完成的产品健康验证结果；网页继续执行真实HTTP操作及重启后持久化检查。原任务UNKNOWN时，先通过 `reconcilesOriginalTaskThroughProduct` 对同一状态目录和原任务核验，不重新部署；该入口识别当前三种模式的任务目录。
+
 样例独立于根 Maven reactor。Python 运行器位于 `src/app/main/src/test/python/polyglot_runner.py`；浏览器测试位于相邻 `browser/`，Playwright 1.62.1 与产品前端版本一致，但依赖独立管理。
 
 在仓库根目录准备浏览器测试依赖：
@@ -82,4 +96,8 @@ Web 数据采用 HTTP 与 UTF-8 JSON，文件收发和 CSV 上传使用文件流
 
 ## 验证范围
 
-实际结果见 [VERIFICATION.md](VERIFICATION.md)。Windows 标准业务验收与 2026-09-20 Ubuntu 产品部署验收分别记录；后者覆盖八项目发布、代表性业务和按需入口，恢复、跨机迁移及其他平台仍待验证。原有 125 个单语言场景及历史验证记录见 [single-language](../single-language/README.md)。
+历史实际结果见 [VERIFICATION.md](VERIFICATION.md)。Windows 标准业务验收与 2026-09-20 Ubuntu 产品部署验收分别记录；后者覆盖八项目发布、代表性业务和按需入口，恢复、跨机迁移及其他平台仍待验证。[当前 MOD 静态真机验收](STATIC-LIVE-VERIFICATION.md)独立记录五网站最终真实结果与范围，不复用旧源码通过结论。原有 125 个单语言场景及历史验证记录见 [single-language](../single-language/README.md)。
+
+[AI 辅助与 Agent 验收记录](AI-LIVE-VERIFICATION.md)分别汇总旧辅助 6/8、旧 Agent 0 完整成功及新版原生协议的本地受控验证；各轮按版本和环境独立，失败与 UNKNOWN 保留，不复用历史成功作为新版验收。
+
+[八项目 Agent 失败分析与修正方案](AGENT-FAILURE-ANALYSIS.md)对照 2026-10-10 八项最后尝试、代码和定点复现，区分取证循环、识别/计划合同缺口及未留存的末次原因；核心方案已获用户确认，修正与真实复验结果独立记录，本地通过不计部署验收通过。

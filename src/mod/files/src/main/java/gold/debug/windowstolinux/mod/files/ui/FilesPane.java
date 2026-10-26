@@ -188,6 +188,12 @@ final class FilesPane extends JPanel {
         return path.getText();
     }
 
+    /** Detects only unsubmitted path input. / 仅检测未提交的路径输入。
+     * @return whether location switching would discard a draft / 切换位置是否会丢弃草稿 */
+    boolean hasPathDraft() {
+        return !path.getText().equals(location == null ? "" : location.path());
+    }
+
     /** Returns the original table for shared keyboard actions. / 返回用于共享键盘动作的原表格。
      * @return original display / 原展示 */
     JTable table() {

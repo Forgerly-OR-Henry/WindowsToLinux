@@ -1,4 +1,5 @@
 # WindowsToLinux 0.5 期开发文档
+> 阅读边界：本文保留所属开发期的规格、结果与证据；当时版本和未验证范围不改写。现行合同见 [开发总纲](DEVELOPMENT.md#documentation)，历史构建或全量命令不作为默认验证要求。
 
 > 编号说明：本文原称五期工程，现为 **0.5 期工程**。工程编号不改变软件版本、数据库 schema、helper 协议或历史验收结论。
 > 承接状态：本文保留旧工程的实现、设计原因和证据；顶层 `shared`、Web 功能服务台及生产登录等被新方向替代的规划，**已由 1.1 工程取代**。源码仍保持旧结构，历史 `RUNTIME-PENDING` 不因此关闭。新开发依据见 [1.1 主文档](PHASE-1.1.md)，编号映射见[开发总纲](DEVELOPMENT.md#phase-numbering)。
@@ -103,7 +104,7 @@ Web 后端可以读取上传或 Git 快照做静态分析，但不得在 Web 主
 
 **涉及模块与分工：** `web/api` 提供接口和 SSE，`web/service` 组织用例并调用共享业务。
 
-内部 API 使用 `/api/v1/` 前缀；本期请求契约见 [OpenAPI 3.1](../../src/web/api/src/main/resources/openapi.json)。浏览器使用相同源的 HTTP 与 SSE：
+内部 API 使用 `/api/v1/` 前缀；本期请求契约见 [OpenAPI 3.1](../../history-src/src/web/api/src/main/resources/openapi.json)。浏览器使用相同源的 HTTP 与 SSE：
 
 - 服务器、AI、上传/Git、分析、部署、受管应用、生命周期、备份、恢复、迁移、设置和任务查询；不包含认证、会话或管理员接口。
 - 分析、部署、生命周期修改、备份、恢复和迁移提交后返回任务 ID；后台执行，SSE 只传输结构化脱敏事件。

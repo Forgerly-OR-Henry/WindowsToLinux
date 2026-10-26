@@ -9,6 +9,9 @@ import gold.debug.windowstolinux.appapi.file.action.FileOperation;
 import gold.debug.windowstolinux.appapi.file.model.FileInfo;
 import gold.debug.windowstolinux.appapi.ui.page.ModPage;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
+import gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
 import gold.debug.windowstolinux.mod.files.service.FilesService;
 
 /** Owns one lazy file workspace and its symmetric optional second pane. / 持有一个按需文件工作区及对称可选第二栏。 */
@@ -279,6 +282,25 @@ public final class FilesWorkspace implements ModPage {
         }
         feedback.render();
         update();
+    }
+
+    /** Browses an explicitly clicked server root in the original active pane. / 在原活动栏浏览明确点击的服务器根目录。
+     * @param request original detached navigation / 原分离导航
+     * @throws Exception if unsupported, locked or busy / 不支持、锁定或忙碌时 */
+    @Override
+    public void navigate(UiNavigationRequest<?> request) throws Exception {
+        requireEdt();
+        if (!request.destination().equals("remote-root") || request.contextType() != ServerId.class
+            || !(request.context().orElse(null) instanceof ServerId server))
+            throw new UnsupportedOperationException("Unsupported file navigation");
+        if (!available()) throw new gold.debug.windowstolinux.appapi.task.result.ApiException(
+            new gold.debug.windowstolinux.appapi.task.result.Problem(
+                gold.debug.windowstolinux.appapi.task.result.ProblemCode.BUSY, "FILES_NAVIGATION_BUSY",
+                messages.text("navigationBusy"), java.util.Map.of(), Optional.empty()));
+        var pane = active;
+        if (pane.hasPathDraft() && !dialogs.replaceLocation()) return;
+        if (!available()) return;
+        commands.browse(pane, FilePath.remote(server, "/"));
     }
 
     /** Releases actual view observation and unsubmitted input, preserving accepted tasks. / 释放实际视图观测及未提交输入，保留已接受任务。

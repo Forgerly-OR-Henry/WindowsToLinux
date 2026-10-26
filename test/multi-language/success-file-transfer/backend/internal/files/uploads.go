@@ -6,14 +6,113 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
+
+type chunkObservationKey struct{}
+
+type chunkObservation struct {
+	ctx                      context.Context
+	id                       string
+	number, sequence, status int
+	started                  time.Time
+	expected, copied         int64
+	readBytes, writeBytes    int64
+	readCalls, writeCalls    int
+	readTime, writeTime      time.Duration
+	firstRead, lastRead      time.Duration
+}
+
+func newChunkObservation(ctx context.Context, id string, number int) *chunkObservation {
+	raw, err := hex.DecodeString(id)
+	if err != nil || len(raw) != 16 || id != strings.ToLower(id) || number < 0 || int64(number) > 9007199254740991 {
+		return nil
+	}
+	o := &chunkObservation{ctx: ctx, id: id, number: number, started: time.Now(), expected: -1, firstRead: -time.Millisecond, lastRead: -time.Millisecond}
+	o.emit("ACCEPTED", nil)
+	return o
+}
+
+func (o *chunkObservation) emit(stage string, err error) {
+	if o == nil || o.sequence >= 32 {
+		return
+	}
+	// Observation failures must not replace the upload's original result.
+	defer func() { _ = recover() }()
+	o.sequence++
+	line, marshalErr := json.Marshal(map[string]any{
+		"uploadId": o.id, "chunkIndex": o.number, "requestId": strconv.FormatInt(o.started.UnixNano(), 10),
+		"sequence": o.sequence, "stage": stage, "startedAtUtc": o.started.UTC().Format(time.RFC3339Nano),
+		"elapsedMillis":     float64(time.Since(o.started)) / float64(time.Millisecond),
+		"expectedBodyBytes": o.expected, "copiedBytes": o.copied, "sourceReadBytes": o.readBytes,
+		"stagingWrittenBytes": o.writeBytes, "sourceReadCalls": o.readCalls, "stagingWriteCalls": o.writeCalls,
+		"sourceReadCallMillis":   float64(o.readTime) / float64(time.Millisecond),
+		"stagingWriteCallMillis": float64(o.writeTime) / float64(time.Millisecond),
+		"firstReadElapsedMillis": float64(o.firstRead) / float64(time.Millisecond),
+		"lastReadElapsedMillis":  float64(o.lastRead) / float64(time.Millisecond),
+		"contextCancelled":       o.ctx.Err() != nil, "errorType": fmt.Sprintf("%T", err), "timeout": os.IsTimeout(err),
+		"responseStatus": o.status, "timingMeaning": "CALL_DURATION_NOT_PURE_NETWORK_TIME_OR_PEER_RECEIPT",
+	})
+	if marshalErr == nil {
+		log.Printf("FILE_TRANSFER_UPLOAD_DIAGNOSTIC %s", line)
+	}
+}
+
+type chunkObservedReader struct {
+	io.Reader
+	o *chunkObservation
+}
+
+func (r chunkObservedReader) Read(p []byte) (int, error) {
+	if r.o.readCalls == 0 {
+		r.o.emit("BODY_FIRST_READ_BEGIN", nil)
+	}
+	started := time.Now()
+	n, err := r.Reader.Read(p)
+	r.o.readTime += time.Since(started)
+	r.o.readCalls++
+	r.o.readBytes += int64(n)
+	if n > 0 {
+		r.o.lastRead = time.Since(r.o.started)
+		if r.o.firstRead < 0 {
+			r.o.firstRead = r.o.lastRead
+		}
+	}
+	if r.o.readCalls == 1 {
+		r.o.emit("BODY_FIRST_READ_END", err)
+	}
+	return n, err
+}
+
+type chunkObservedWriter struct {
+	io.Writer
+	o *chunkObservation
+}
+
+func (w chunkObservedWriter) Write(p []byte) (int, error) {
+	if w.o.writeCalls == 0 {
+		w.o.emit("STAGING_FIRST_WRITE_BEGIN", nil)
+	}
+	started := time.Now()
+	n, err := w.Writer.Write(p)
+	w.o.writeTime += time.Since(started)
+	w.o.writeCalls++
+	w.o.writeBytes += int64(n)
+	if w.o.writeCalls == 1 {
+		w.o.emit("STAGING_FIRST_WRITE_END", err)
+	}
+	return n, err
+}
 
 type UploadInput struct {
 	FolderID  int64  `json:"folderId"`
@@ -99,10 +198,19 @@ func (s *Store) Create(v UploadInput) (any, error) {
 	}
 	return s.Get(id)
 }
-func (s *Store) Chunk(ctx context.Context, id string, number int, source io.Reader) (any, error) {
+func (s *Store) Chunk(ctx context.Context, id string, number int, source io.Reader) (result any, returnedErr error) {
+	o, _ := ctx.Value(chunkObservationKey{}).(*chunkObservation)
+	if o == nil {
+		o = newChunkObservation(ctx, id, number)
+	}
+	defer func() { o.emit("CHUNK_RETURN", returnedErr) }()
+	o.emit("LOCK_WAIT_BEGIN", nil)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	o.emit("LOCK_ACQUIRED", nil)
+	o.emit("SESSION_LOOKUP_BEGIN", nil)
 	u, e := s.load(id)
+	o.emit("SESSION_LOOKUP_END", e)
 	if e != nil {
 		return nil, e
 	}
@@ -117,15 +225,35 @@ func (s *Store) Chunk(ctx context.Context, id string, number int, source io.Read
 	if int64(number) == count-1 {
 		expected = u.Size - int64(number)*u.ChunkSize
 	}
+	if o != nil {
+		o.expected = expected
+	}
+	o.emit("STAGING_CREATE_BEGIN", nil)
 	tmp, e := os.CreateTemp(filepath.Join(s.dir, "staging"), "chunk-")
+	o.emit("STAGING_CREATE_END", e)
 	if e != nil {
 		return nil, e
 	}
 	defer os.Remove(tmp.Name())
 	digest := sha256.New()
-	n, e := io.Copy(io.MultiWriter(tmp, digest), io.LimitReader(source, expected+1))
+	var destination io.Writer = tmp
+	limited := io.LimitReader(source, expected+1)
+	var input io.Reader = limited
+	if o != nil {
+		input, destination = chunkObservedReader{limited, o}, chunkObservedWriter{tmp, o}
+	}
+	o.emit("BODY_COPY_BEGIN", nil)
+	n, e := io.Copy(io.MultiWriter(destination, digest), input)
+	if o != nil {
+		o.copied = n
+	}
+	o.emit("BODY_COPY_END", e)
+	o.emit("SYNC_BEGIN", nil)
 	syncErr := tmp.Sync()
+	o.emit("SYNC_END", syncErr)
+	o.emit("STAGING_CLOSE_BEGIN", nil)
 	closeErr := tmp.Close()
+	o.emit("STAGING_CLOSE_END", closeErr)
 	if e != nil || n != expected || ctx.Err() != nil {
 		return nil, reject(400, "分块中断或长度不匹配")
 	}
@@ -137,7 +265,9 @@ func (s *Store) Chunk(ctx context.Context, id string, number int, source io.Read
 	}
 	hash := hex.EncodeToString(digest.Sum(nil))
 	var previous string
+	o.emit("METADATA_LOOKUP_BEGIN", nil)
 	e = s.db.QueryRow("SELECT sha256 FROM chunks WHERE upload_id=? AND number=?", id, number).Scan(&previous)
+	o.emit("METADATA_LOOKUP_END", e)
 	if e == nil {
 		if previous != hash {
 			return nil, reject(409, "相同分块编号的内容冲突")
@@ -148,6 +278,7 @@ func (s *Store) Chunk(ctx context.Context, id string, number int, source io.Read
 		return nil, e
 	}
 	dest := filepath.Join(s.dir, "chunks", id, strconv.Itoa(number))
+	o.emit("CHUNK_RENAME_BEGIN", nil)
 	if _, e = os.Stat(dest); e == nil {
 		if e = os.Remove(dest); e != nil {
 			return nil, e
@@ -156,10 +287,16 @@ func (s *Store) Chunk(ctx context.Context, id string, number int, source io.Read
 	if e = os.Rename(tmp.Name(), dest); e != nil {
 		return nil, e
 	}
+	o.emit("CHUNK_RENAME_END", nil)
+	o.emit("FAULT_GATE_BEGIN", nil)
 	if e = fault("chunk-written"); e != nil {
+		o.emit("FAULT_GATE_END", e)
 		return nil, e
 	}
+	o.emit("FAULT_GATE_END", nil)
+	o.emit("METADATA_COMMIT_BEGIN", nil)
 	_, e = s.db.Exec("INSERT INTO chunks(upload_id,number,size,sha256) VALUES(?,?,?,?)", id, number, n, hash)
+	o.emit("METADATA_COMMIT_END", e)
 	if e != nil {
 		return nil, e
 	}

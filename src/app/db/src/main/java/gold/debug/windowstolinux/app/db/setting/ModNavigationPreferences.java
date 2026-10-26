@@ -30,7 +30,7 @@ public final class ModNavigationPreferences {
         }
     }
 
-    /** Merges legacy page order into one current root per published owner, retaining unpublished owners. / 将旧页面顺序归并为每个已发布所有者一个当前根，保留暂未发布所有者。
+    /** Appends new workspace roots without rewriting saved identities. / 追加新工作区根，不改写已存身份。
      * @param saved original complete preference / 原完整偏好
      * @param roots current unique root metadata / 当前唯一根元数据
      * @return merged complete order / 归并后完整顺序 */
@@ -43,8 +43,9 @@ public final class ModNavigationPreferences {
         var seen = new HashSet<String>();
         for (var pin : saved) {
             var root = current.get(pin.ownerId());
-            if (root == null) result.add(pin);
-            else if (seen.add(pin.ownerId())) result.add(root);
+            if (!seen.add(pin.ownerId()) || root != null && !root.equals(pin))
+                throw new IllegalArgumentException("Saved workspace root differs from current publication");
+            result.add(pin);
         }
         for (var root : roots)
             if (seen.add(root.ownerId())) result.add(root);

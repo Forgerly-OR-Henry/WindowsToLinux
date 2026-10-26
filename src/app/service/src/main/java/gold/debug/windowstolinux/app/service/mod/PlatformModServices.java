@@ -563,9 +563,8 @@ public final class PlatformModServices implements AutoCloseable {
         throws SQLException, ApiException {
         if (provider.mode == ModLaunchMode.NORMAL) {
             var actualRelease = new PlatformTaskAdmission(database).requireRunningGraph(connection, provider.owner(), provider.version()).release(provider.owner());
-            var actual = new DependencyRecovery(database.bootId(), UUID.randomUUID(), provider.owner(), actualRelease.version(), actualRelease.schema()).claims();
-            var expected = new DependencyRecovery(database.bootId(), UUID.randomUUID(), provider.owner(),
-                provider.version(), provider.schema).claims();
+            var actual = providerClaims(provider.owner(), actualRelease.schema());
+            var expected = providerClaims(provider.owner(), provider.schema);
             if (!new HashSet<>(actual).equals(new HashSet<>(expected)))
                 throw error(ProblemCode.UNAVAILABLE, "SERVICE_SCHEMA_CHANGED",
                     "Provider data generation differs from its activation");
@@ -574,13 +573,10 @@ public final class PlatformModServices implements AutoCloseable {
         if (!tasks.reconciling(task))
             throw error(ProblemCode.ACCESS_DENIED, "SERVICE_RECOVERY_ONLY",
                 "Recovery graph requires explicit reconciliation");
-        var originalGraph = new TaskLedger(database).queries().recoveryGraph(task.id());
-        boolean matches = originalGraph.isPresent()
-            ? originalGraph.get().release(provider.owner()).version().equals(provider.version())
-            && originalGraph.get().release(provider.owner()).schema().equals(provider.schema)
-            : TaskLedger.TaskLedgerQueries.readDependencies(connection, task.id()).keySet().stream()
-            .anyMatch(call -> call.provider().equals(provider.owner()) && call.version().equals(provider.version())
-                && call.schema().equals(provider.schema));
+        var originalGraph = new TaskLedger(database).queries().recoveryGraph(task.id())
+            .orElseThrow(() -> new SQLException("Original Mod task graph is absent"));
+        boolean matches = originalGraph.release(provider.owner()).version().equals(provider.version())
+            && originalGraph.release(provider.owner()).schema().equals(provider.schema);
         if (!matches) throw error(ProblemCode.ACCESS_DENIED, "SERVICE_RECOVERY_VERSION", "Original provider differs");
         try (var p = connection
             .prepareStatement("SELECT state,schema_version FROM mod_version WHERE mod_id=? AND version=?")) {
@@ -595,8 +591,12 @@ public final class PlatformModServices implements AutoCloseable {
         }
         if (provider.schema.isPresent())
             new SchemaCoordinates(provider.schema.get()).requireRegistered(connection, Set.of("READY"));
-        return new DependencyRecovery(database.bootId(), UUID.randomUUID(), provider.owner(), provider.version(),
-            provider.schema).claims();
+        return providerClaims(provider.owner(), provider.schema);
+    }
+
+    private static List<TaskResource> providerClaims(String owner, Optional<SchemaIdentity> schema) {
+        return java.util.stream.Stream.concat(java.util.stream.Stream.of(new TaskResource("MOD", owner, owner, false)),
+            schema.stream().map(value -> new TaskResource("SCHEMA", value.generation().toString(), owner, false))).toList();
     }
 
     /** Checks actual normal or recorded recovery provider required closure. / 检查实际普通或已记录恢复提供方必需闭包。
@@ -611,44 +611,11 @@ public final class PlatformModServices implements AutoCloseable {
         if (provider.mode == ModLaunchMode.NORMAL)
             return new PlatformTaskAdmission(database).requireRunningGraph(c, provider.owner(), provider.version());
         var original = new TaskLedger(database).queries().recoveryGraph(task.id()).orElseThrow(() -> new SQLException("Original graph absent"));
-        TaskRecoveryGraph graph;
-        if (!original.legacy()) graph = original.requiredClosure(provider.owner());
-        else {
-            var owners = new HashSet<String>();
-            var queue = new ArrayDeque<String>();
-            var edges = new ArrayList<TaskRecoveryGraph.Edge>();
-            queue.add(provider.owner());
-            while (!queue.isEmpty()) {
-                String owner = queue.removeFirst();
-                if (!owners.add(owner)) continue;
-                var release = original.release(owner);
-                try (var p = c.prepareStatement("SELECT manifest_json FROM mod_version WHERE mod_id=? AND version=? AND content_sha256=? AND state='READY'")) {
-                    p.setString(1, owner);
-                    p.setString(2, release.version());
-                    p.setString(3, release.digest());
-                    try (var r = p.executeQuery()) {
-                        if (!r.next()) throw new SQLException("Original provider code is absent");
-                        try {
-                            var manifest = gold.debug.windowstolinux.app.mod.config.ManifestReader.read(r.getString(1).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                            for (var d : manifest.dependencies()) {
-                                if (d.optional())
-                                    throw new SQLException("Legacy graph cannot reinterpret optional dependencies");
-                                edges.add(new TaskRecoveryGraph.Edge(owner, d.id(), TaskRecoveryGraph.EdgeKind.REQUIRED));
-                                queue.add(d.id());
-                            }
-                        } catch (java.io.IOException invalid) {
-                            throw new SQLException("Original manifest invalid", invalid);
-                        }
-                    }
-                }
-            }
-            graph = new TaskRecoveryGraph(provider.owner(), original.releases().stream().filter(r -> owners.contains(r.owner())).toList(), edges);
-        }
+        var graph = original.requiredClosure(provider.owner());
         for (var release : graph.releases()) {
-            try (var p = c.prepareStatement("SELECT schema_version FROM mod_version WHERE mod_id=? AND version=? AND content_sha256=? AND state='READY'")) {
+            try (var p = c.prepareStatement("SELECT schema_version FROM mod_version WHERE mod_id=? AND version=? AND state='READY'")) {
                 p.setString(1, release.owner());
                 p.setString(2, release.version());
-                p.setString(3, release.digest());
                 try (var r = p.executeQuery()) {
                     if (!r.next() || !Optional.ofNullable(r.getString(1)).equals(release.schema().map(SchemaIdentity::schemaVersion)))
                         throw new SQLException("Original provider release is missing");

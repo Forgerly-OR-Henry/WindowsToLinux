@@ -15,7 +15,13 @@
 
 Maven 默认不执行 IDEA 格式检查，普通 `mvn clean verify` 不依赖本机 IDEA 或格式启动器所需的 Python。手动运行格式工具或启用 `idea-check` Profile 时，需要 Git、Python 3 和带运行时的 IntelliJ IDEA。把 `idea64.exe` 放入 `PATH`，或者仅在当前终端设置 `IDEA_HOME` 指向 IDEA 安装目录，无须安装额外格式工具。
 
-在仓库根目录执行：
+默认按变更文件选择格式检查；以下以根 POM 为例。Markdown 文档不在本工具范围内，使用阅读、链接、结构与差异检查：
+
+```powershell
+python .mvn/formatting/format.py --check --path pom.xml
+```
+
+以下保留工具完整入口；无 `--path` 的检查覆盖完整工程，`--write` 会改写文件，仅在明确授权的对应范围使用。`mvn clean verify -Pidea-check` 包含全项目测试，只供明确要求全量验证时使用：
 
 ```powershell
 python .mvn/formatting/format.py --list

@@ -313,8 +313,10 @@ class PlatformModFlowTest {
             assertTrue(entered.await(5, TimeUnit.SECONDS));
             Path flag = workspace.resolve(P + ".stop.fail");
             Files.writeString(flag, "retain actual original provider");
-            assertThrows(IllegalStateException.class, () -> runtime.modSessions().get(P)
+            var blocked = assertThrows(ApiException.class, () -> runtime.modSessions().get(P)
                 .stop(gold.debug.windowstolinux.appapi.mod.lifecycle.StopReason.APPLICATION_EXIT));
+            assertEquals(gold.debug.windowstolinux.appapi.task.result.ProblemCode.BUSY, blocked.problem().code());
+            assertEquals("MOD_STOP_BLOCKED", blocked.problem().eventCode());
             assertEquals("MOD_PROVIDER_NOT_RUNNING",
                 assertThrows(ApiException.class, () -> binding.submit(work(), t -> success(null))).problem()
                     .eventCode());

@@ -156,7 +156,7 @@ public final class ModDeletionLedger {
         /** Lists exact installed releases in the requested scope. / 列出请求范围中的精确安装版本。
          * @return immutable version identities / 不可变版本身份 */
         public List<String> versions() {
-            return request.selected().stream().map(Release::version).toList();
+            return request.installed().stream().map(Release::version).toList();
         }
 
         /** Lists remaining versions that protect the same data. / 列出保护同一数据的保留版本。
@@ -268,7 +268,7 @@ public final class ModDeletionLedger {
             evidence.unchanged(c, row);
             var request = row.request();
             return new Execution(operation, request.owner(), request.version(), request.program(), row.phase(),
-                row.state(), request.files(), request.selected().stream().map(Release::version).toList(),
+                row.state(), request.files(), request.installed().stream().map(Release::version).toList(),
                 request.targets());
         });
     }
@@ -791,6 +791,11 @@ public final class ModDeletionLedger {
             return versions.stream().filter(this::selects).toList();
         }
 
+        /** CLASS removal unregisters source builds; source paths never enter file cleanup. / CLASS 清理仅注销源码构建，源码路径不进入文件删除范围。 */
+        List<Release> installed() {
+            return selected().stream().filter(release -> !release.origin().equals("CLASS")).toList();
+        }
+
         /** Lists data with no remaining release reference, or all data for a whole-owner request. / 列出无剩余版本引用的数据，整所有者请求则包含全部数据。
          * @return exact removable data / 精确可移除数据 */
         List<Schema> removals() {
@@ -1084,11 +1089,18 @@ public final class ModDeletionLedger {
                 require(request.versions().stream().map(Release::version).distinct().count() == request.versions()
                     .size() && request.versions().stream().allMatch(v -> "READY".equals(v.state()))
                     && (whole || request.release() != null), "Invalid original releases");
-                for (var release : request.selected())
+                for (var release : request.selected()) {
+                    if (whole && release.origin().equals("CLASS")) {
+                        Path source = Path.of(release.path());
+                        require(segment(release.version()) && source.isAbsolute() && source.normalize().equals(source)
+                            && !source.startsWith(request.program()), "Invalid CLASS source registration");
+                        continue;
+                    }
                     require(segment(release.version()) && Set.of("LOCAL", "BUNDLED", "STORE").contains(release.origin())
                             && home.resolve("mod").resolve(request.owner()).resolve(release.version()).toString()
                             .equals(release.path()),
                         "Only registered ordinary installed programs can be removed; CLASS sources are not install directories");
+                }
                 require(request.schemas().stream().map(Schema::version).distinct().count() == request.schemas().size(),
                     "Duplicate owned data");
                 for (var data : request.schemas()) {

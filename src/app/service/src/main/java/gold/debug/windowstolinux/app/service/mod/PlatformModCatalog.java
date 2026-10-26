@@ -1,11 +1,7 @@
 package gold.debug.windowstolinux.app.service.mod;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.security.*;
 import java.sql.*;
 import java.util.*;
 
@@ -36,7 +32,7 @@ public final class PlatformModCatalog {
 
     /** Current verified build registered for later selection and loading. / 已登记且供后续选择及加载的当前核验构建。
      * @param candidate exact discovered source / 精确发现来源
-     * @param contentDigest digest of actual compiled content and build evidence / 实际编译内容及构建证据摘要 */
+     * @param contentDigest build-supplied input receipt retained for storage / 为存储保留的构建输入凭据 */
     public record Build(DevelopmentModFinder.Candidate candidate, String contentDigest) {
     }
 
@@ -73,7 +69,7 @@ public final class PlatformModCatalog {
         var rejected = new ArrayList<>(discovered.rejections());
         for (var candidate : discovered.candidates()) {
             try {
-                var build = new Build(candidate, fingerprint(candidate));
+                var build = new Build(candidate, candidate.descriptor().inputDigest());
                 verify(workspace, build);
                 register(build, enableNew);
                 builds.add(build);
@@ -84,16 +80,16 @@ public final class PlatformModCatalog {
         return new Result(builds, rejected);
     }
 
-    /** Revalidates both build provenance and actual code immediately before a later load. / 在后续加载前重新核验构建来源及实际代码。
+    /** Revalidates declaration identity and source paths without hashing code. / 不摘要代码地重新核对声明身份和来源路径。
      * @param workspace original verified root / 原已验证根
      * @param build previously registered build / 之前登记的构建
-     * @throws IOException if metadata, output or compiled content changed / 元数据、输出或编译内容变化时 */
+     * @throws IOException if metadata or declared source paths changed / 元数据或声明来源路径变化时 */
     public static void verify(Path workspace, Build build) throws IOException {
         requireWorker();
         var before = build.candidate();
         var current = DevelopmentInfo.read(workspace, before.module().resolve("target/wtlmod-development.json"));
-        if (!current.equals(before.descriptor()) || !current.manifest().json().equals(before.manifest().json())
-            || !fingerprint(before).equals(build.contentDigest()))
+        if (!current.sources().equals(before.descriptor().sources())
+            || !current.manifest().json().equals(before.manifest().json()))
             throw new IOException("The registered CLASS build changed before loading");
     }
 
@@ -141,89 +137,6 @@ public final class PlatformModCatalog {
         }
     }
 
-    /** Hashes actual output bytes, not merely the input marker copied by compilation. / 对实际输出字节求摘要，而非只检查编译复制的输入标记。
-     * @param candidate validated source and ordered outputs / 已校验来源及有序输出
-     * @return canonical content SHA-256 / 规范内容 SHA-256
-     * @throws IOException if an output is redirected, unreadable or changes during hashing / 输出重定向、不可读或求摘要期间变化时 */
-    private static String fingerprint(DevelopmentModFinder.Candidate candidate) throws IOException {
-        var files = new TreeMap<String, Path>((a, b) -> Arrays.compareUnsigned(a.getBytes(StandardCharsets.UTF_8),
-            b.getBytes(StandardCharsets.UTF_8)));
-        add(files, candidate.descriptor().manifestPath());
-        add(files, candidate.module().resolve("target/wtlmod-development.json"));
-        for (Path source : candidate.descriptor().sources()) {
-            if (Files.isDirectory(source, LinkOption.NOFOLLOW_LINKS)) {
-                Files.walkFileTree(source, new SimpleFileVisitor<>() {
-                    /** Rejects redirected descendants before visiting their contents. / 访问内容前拒绝重定向后代。
-                     * @param directory current output directory / 当前输出目录
-                     * @param attrs observed attributes / 已观察属性
-                     * @return continue traversal / 继续遍历
-                     * @throws IOException if directory is redirected / 目录重定向时 */
-                    @Override
-                    public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attrs)
-                        throws IOException {
-                        if (!directory.toRealPath().equals(directory))
-                            throw new IOException("Compiled directory is redirected");
-                        return FileVisitResult.CONTINUE;
-                    }
-
-                    /** Registers regular output bytes, including processed resources. / 登记普通输出字节，包括处理后资源。
-                     * @param file compiled file / 编译文件
-                     * @param attrs observed attributes / 已观察属性
-                     * @return continue traversal / 继续遍历
-                     * @throws IOException if file is not an owned regular file / 文件不是归属内普通文件时 */
-                    @Override
-                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                        add(files, file);
-                        return FileVisitResult.CONTINUE;
-                    }
-                });
-            } else {
-                add(files, source);
-            }
-        }
-        try {
-            var digest = MessageDigest.getInstance("SHA-256");
-            digest.update("WTL-CLASS-CONTENT-1\n".getBytes(StandardCharsets.UTF_8));
-            for (var entry : files.entrySet()) {
-                var before = Files.readAttributes(entry.getValue(), BasicFileAttributes.class,
-                    LinkOption.NOFOLLOW_LINKS);
-                var content = MessageDigest.getInstance("SHA-256");
-                long length = 0;
-                try (var input = Files.newInputStream(entry.getValue())) {
-                    byte[] buffer = new byte[8192];
-                    for (int n; (n = input.read(buffer)) != -1; ) {
-                        content.update(buffer, 0, n);
-                        length += n;
-                    }
-                }
-                var after = Files.readAttributes(entry.getValue(), BasicFileAttributes.class,
-                    LinkOption.NOFOLLOW_LINKS);
-                if (length != before.size() || before.size() != after.size()
-                    || !before.lastModifiedTime().equals(after.lastModifiedTime())
-                    || !Objects.equals(before.fileKey(), after.fileKey()))
-                    throw new IOException("Compiled file changed during inspection");
-                byte[] name = entry.getKey().getBytes(StandardCharsets.UTF_8);
-                digest.update(ByteBuffer.allocate(4).putInt(name.length).array());
-                digest.update(name);
-                digest.update(ByteBuffer.allocate(8).putLong(length).array());
-                digest.update(content.digest());
-            }
-            return HexFormat.of().formatHex(digest.digest());
-        } catch (NoSuchAlgorithmException unavailable) {
-            throw new IOException("SHA-256 is unavailable", unavailable);
-        }
-    }
-
-    /** Adds one canonical regular output without following links. / 添加一个规范普通输出，不跟随链接。
-     * @param files ordered content entries / 有序内容条目
-     * @param file exact output / 精确输出
-     * @throws IOException if redirected or irregular / 重定向或不是普通文件时 */
-    private static void add(Map<String, Path> files, Path file) throws IOException {
-        if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS) || !file.toRealPath().equals(file))
-            throw new IOException("Compiled content must be an original regular file");
-        files.put(file.toString().replace('\\', '/'), file);
-    }
-
     /** Carries a known rejection through the original rollback boundary. / 通过原回滚边界携带已知拒绝。
      * @param code safe failure category / 安全失败类别
      * @param event stable event / 稳定事件
@@ -249,7 +162,7 @@ public final class PlatformModCatalog {
             Optional.of(UUID.randomUUID()));
     }
 
-    /** Keeps traversal, hashing and registration away from Swing input. / 使遍历、摘要及登记远离 Swing 输入线程。 */
+    /** Keeps traversal and registration away from Swing input. / 使遍历及登记远离 Swing 输入线程。 */
     private static void requireWorker() {
         if (SwingUtilities.isEventDispatchThread())
             throw new IllegalStateException("Development catalog requires a worker thread");
@@ -302,7 +215,6 @@ public final class PlatformModCatalog {
                         throw rejected(ProblemCode.CONTRACT_VIOLATION, "MOD_CATALOG_SOURCE_CONFLICT",
                             "Existing release belongs to another source or maintenance");
                     identical = candidate.module().toString().equals(r.getString(1))
-                        && build.contentDigest().equals(r.getString(2))
                         && manifest.schemaVersion().equals(Optional.ofNullable(r.getString(3)))
                         && manifest.json().equals(r.getString(4));
                 }

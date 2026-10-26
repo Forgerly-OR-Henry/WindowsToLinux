@@ -85,7 +85,7 @@ public record DevelopmentInfo(Path manifestPath, Path mainOutput, List<Path> aut
         throw new IOException("Author modules must belong to the Mod or ModDev region");
     }
 
-    /** Reads and checks the description, compiled marker, current inputs and exact main entry file. / 读取并核对描述、编译标记、当前输入及精确主入口文件。
+    /** Checks description paths, paired compiled marker and the main entry without hashing code. / 不摘要代码地检查描述路径、配对编译标记和主入口。
      * @param workspace explicit workspace / 明示工作区
      * @param descriptor fixed generated description path / 固定生成描述路径
      * @return validated current compiled sources / 已校验的当前编译来源
@@ -109,7 +109,7 @@ public record DevelopmentInfo(Path manifestPath, Path mainOutput, List<Path> aut
                 paths(node.get("authorOutputs")), paths(node.get("buildInputs")), paths(node.get("libraries")),
                 text(node.get("inputDigest")));
             value.validate(root, file);
-            if (!value.inputDigest.matches("[0-9a-f]{64}") || !value.inputDigest.equals(value.digest())
+            if (!value.inputDigest.matches("[0-9a-f]{64}")
                 || !utf8(localFile(root, value.mainOutput.resolve(MARKER)), 65).equals(value.inputDigest + "\n"))
                 throw new IOException("Mod inputs or compiled marker changed; compile the development Mod again");
             return value;

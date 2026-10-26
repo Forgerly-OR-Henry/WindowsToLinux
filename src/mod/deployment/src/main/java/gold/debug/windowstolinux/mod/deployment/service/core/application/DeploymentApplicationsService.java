@@ -538,7 +538,8 @@ public final class DeploymentApplicationsService implements TaskRecovery {
             var target = context.servers().get(application.server(), task);
             var evidence = new ManagementEvidence(application, data, target, selected, action, policy, task, journal);
             String frozen = "application=" + application.id() + "\nrelease=" + data.snapshot().revisionSha256()
-                + "\nownership=" + data.snapshot().ownershipSha256() + "\nscope=" + (selected.isPresent() ? "SINGLE_COMPONENT" : "WHOLE_APPLICATION")
+                + "\nownership=" + data.snapshot().ownershipSha256() + "\nlifecycleEffectScope=" + (selected.isPresent() ? "SINGLE_COMPONENT" : "WHOLE_APPLICATION")
+                + "\nreadOnlyObservationComponents=" + data.graph().components().stream().map(part -> part.componentId()).toList()
                 + "\ncomponent=" + selected.orElse("ALL") + "\naction=" + action + "\nmodelRevision=" + policy.configurationRevision()
                 + "\ntarget=" + target.ref().id() + " " + target.host() + ":" + target.port() + " " + target.username();
             try (var workflow = recovery
@@ -584,6 +585,12 @@ public final class DeploymentApplicationsService implements TaskRecovery {
             value.put("applicationReleaseSha256", original.snapshot().revisionSha256());
             value.put("applicationOwnershipSha256", original.snapshot().ownershipSha256());
             value.put("scope", selected.isPresent() ? "SINGLE_COMPONENT" : "WHOLE_APPLICATION");
+            value.put("scopeAppliesTo", "LIFECYCLE_EFFECTS");
+            var componentIds = original.graph().components().stream().map(part -> part.componentId()).toList();
+            value.put("lifecycleEffectComponentIds", action.equals("INSPECT") ? List.of()
+                : selected.map(List::of).orElse(componentIds));
+            value.put("readOnlyObservationComponentIds", componentIds);
+            value.put("readOnlyObservationPurpose", "Verify complete application ownership and raw runtime/autostart before and after the action, including unchanged non-target components. These reads do not authorize lifecycle effects outside lifecycleEffectComponentIds.");
             value.put("selectedComponentId", selected.orElse("")); value.put("action", action);
             value.put("review", Map.of("approval", "AUTOMATIC", "rememberAuthorization", false,
                 "configurationRevision", policy.configurationRevision()));

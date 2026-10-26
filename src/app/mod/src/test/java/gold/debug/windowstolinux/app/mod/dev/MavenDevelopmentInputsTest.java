@@ -167,7 +167,7 @@ class MavenDevelopmentInputsTest {
         write(root.resolve("src/mod/main/pom.xml"),
             """
                 <project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>
-                <parent><groupId>gold.debug.windowstolinux</groupId><artifactId>wtlmod-author-parent</artifactId><version>0.1.0-SNAPSHOT</version><relativePath>../../../.mvn/wtlmod-author-parent/pom.xml</relativePath></parent>
+                <parent><groupId>gold.debug.windowstolinux</groupId><artifactId>wtlmod-author-parent</artifactId><version>1.0.0</version><relativePath>../../../.mvn/wtlmod-author-parent/pom.xml</relativePath></parent>
                 <artifactId>main</artifactId><version>1.0.0</version>
                 <properties><wtl.authorArtifacts>gold.debug.windowstolinux:windowstolinux-mod-helper:jar:1.0.0</wtl.authorArtifacts></properties>
                 <dependencies>
@@ -182,7 +182,7 @@ class MavenDevelopmentInputsTest {
                 """);
         write(root.resolve("src/mod/main/mod.json"),
             """
-                {"formatVersion":1,"id":"fixture.main","name":"Maven build","version":"1.0.0","platformApiRange":"1.0.0-dev.1","minJavaVersion":21,"mainJar":"main/main.jar","entryClass":"fixture.main.Mod"}
+                {"formatVersion":1,"id":"fixture.main","name":"Maven build","version":"1.0.0","platformApiRange":"1.0.0","minJavaVersion":21,"mainJar":"main/main.jar","entryClass":"fixture.main.Mod"}
                 """);
         write(root.resolve("src/mod/main/src/main/filters/build.properties"), "token=processed resource\n");
         write(root.resolve("src/mod/main/src/main/resources/example.txt"), "${token}");

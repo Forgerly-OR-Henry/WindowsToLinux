@@ -188,7 +188,7 @@ class PlatformModRecoveryGraphTest {
     void defaultClassStartupUsesOldGraphWhileIndependentModsRunAndExplicitRecoveryReleasesIt() throws Exception {
         retained(C);
         try (var db = PlatformDatabase.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
-            sql(db, "INSERT INTO mod_version SELECT mod_id,'2.0.0',install_path,content_sha256,archive_sha256,schema_version,manifest_json,origin_kind,installed_at,state FROM mod_version WHERE mod_id=?",
+            sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,archive_sha256,schema_version,manifest_json,origin_kind,installed_at,state) SELECT mod_id,'2.0.0',install_path,content_sha256,archive_sha256,schema_version,manifest_json,origin_kind,installed_at,state FROM mod_version WHERE mod_id=?",
                 C);
             sql(db, "UPDATE mod_registry SET enabled=FALSE,selected_version='2.0.0',revision=revision+1 WHERE mod_id=?",
                 C);
@@ -246,10 +246,37 @@ class PlatformModRecoveryGraphTest {
     }
 
     @Test
-    void changedProgramBlocksWholeOriginalGroupWithoutConstructingConsumers() throws Exception {
+    void sameVersionRecompiledRecoveryRunsAgainstOriginalTaskWithoutChangingItsGraph() throws Exception {
         retained(C);
-        Files.write(fixture.workspace.resolve("src/mod/" + P + "/target/classes/" + P.replace('.', '/') + "/Mod.class"),
-            new byte[]{1}, StandardOpenOption.APPEND);
+        Path module = fixture.workspace.resolve("src/mod/" + C);
+        Path source = module.resolve("Mod.java");
+        Files.writeString(source, Files.readString(source).replace("record(\"recover:\"", "record(\"repaired:\""));
+        String cp = Path.of(ModContext.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toString();
+        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, "--release", "21", "-proc:none",
+            "-encoding", "UTF-8", "-classpath", cp, "-d", module.resolve("target/classes").toString(), source.toString()));
+        var runtime = fixture.open(true);
+        try {
+            assertEquals(Set.of(F), fixture.start(runtime).running());
+            assertEquals(Set.of(P, C, F), runtime.modContexts().keySet());
+            UUID original = originals.keySet().iterator().next();
+            assertEquals(Optional.of(originals.get(original)), new TaskLedger(runtime.persistence().database()).queries().recoveryGraph(original));
+            assertEquals(TaskState.ENDED, reconcile(runtime, original).state());
+            assertTrue(fixture.actions().contains(C + ":repaired:" + original));
+            assertEquals(Set.of(F), runtime.modContexts().keySet());
+            assertFalse(fixture.actions().contains(C + ":start:NORMAL"));
+        } finally {
+            cleanup(runtime);
+        }
+    }
+
+    @Test
+    void changedVersionBlocksWholeOriginalGroupWithoutConstructingConsumers() throws Exception {
+        retained(C);
+        Path module = fixture.workspace.resolve("src/mod/" + P);
+        Path manifest = module.resolve("mod.json");
+        Files.writeString(manifest, Files.readString(manifest).replace("\"version\":\"1.0.0\"", "\"version\":\"2.0.0\""));
+        DevelopmentInfo.generate(fixture.workspace, manifest, module.resolve("target/classes"), List.of(),
+            List.of(fixture.workspace.resolve("pom.xml"), fixture.workspace.resolve("src/mod/pom.xml"), module.resolve("pom.xml")), List.of());
         var runtime = fixture.open(true);
         try {
             assertEquals(Set.of(F), fixture.start(runtime).running());

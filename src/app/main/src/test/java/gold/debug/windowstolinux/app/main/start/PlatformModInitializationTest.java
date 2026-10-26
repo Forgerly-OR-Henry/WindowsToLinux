@@ -326,9 +326,9 @@ class PlatformModInitializationTest {
             var intent = UUID.fromString(text(runtime, "SELECT operation_id FROM mod_operation"));
             var manifest = text(runtime, "SELECT manifest_json FROM mod_version");
             var digest = text(runtime, "SELECT content_sha256 FROM mod_version");
-            assertThrows(SQLException.class, () -> ledger.beginInitialization(intent, manifest, "0".repeat(64)));
+            assertThrows(SQLException.class, () -> ledger.beginInitialization(intent, "{}", digest));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_schema"));
-            var plan = ledger.beginInitialization(intent, manifest, digest);
+            var plan = ledger.beginInitialization(intent, manifest, "0".repeat(64));
             new gold.debug.windowstolinux.app.db.schema.SchemaProvisioner(runtime.persistence().database())
                 .create(plan.target());
             ledger.preparationPhase(plan, false);

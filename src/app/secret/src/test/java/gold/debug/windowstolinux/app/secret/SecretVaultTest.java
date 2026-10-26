@@ -125,7 +125,7 @@ class SecretVaultTest {
                     s.execute(
                         "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at,validated_at) VALUES('fixture.mod','1',RANDOM_UUID(),'fixture_schema','fixture_user','READY',0,0)");
                     s.execute(
-                        "INSERT INTO mod_credential_reference SELECT RANDOM_UUID(),'a',mod_id,schema_version,generation,'business','fixture','ACTIVE',0 FROM mod_schema WHERE mod_id='fixture.mod'");
+                        "INSERT INTO mod_credential_reference(reference_id,credential_id,mod_id,schema_version,schema_generation,business_key,purpose,state,updated_at) SELECT RANDOM_UUID(),'a',mod_id,schema_version,generation,'business','fixture','ACTIVE',0 FROM mod_schema WHERE mod_id='fixture.mod'");
                 }
                 assertThrows(SecretStoreException.class, () -> session.save("a", "changed".toCharArray()));
                 try (var c = db.database().openConnection(); var s = c.createStatement()) {

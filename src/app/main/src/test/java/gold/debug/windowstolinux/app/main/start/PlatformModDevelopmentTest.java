@@ -105,7 +105,7 @@ class PlatformModDevelopmentTest {
                 "package example." + helper + "; public final class Helper { public static String value() { return \"real maven\"; } }");
         }
         write(project.resolve("main/pom.xml"), pom("""
-            <parent><groupId>gold.debug.windowstolinux</groupId><artifactId>wtlmod-author-parent</artifactId><version>0.1.0-SNAPSHOT</version><relativePath>../../../../.mvn/wtlmod-author-parent/pom.xml</relativePath></parent>
+            <parent><groupId>gold.debug.windowstolinux</groupId><artifactId>wtlmod-author-parent</artifactId><version>1.0.0</version><relativePath>../../../../.mvn/wtlmod-author-parent/pom.xml</relativePath></parent>
             <artifactId>main</artifactId><properties><maven.compiler.release>21</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding><wtl.authorArtifacts>gold.debug.windowstolinux:windowstolinux-mod-helper:jar:1.0.0,gold.debug.windowstolinux:windowstolinux-mod-extra:jar:1.0.0</wtl.authorArtifacts></properties>
             <dependencies><dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-appapi</artifactId><scope>provided</scope></dependency>
             <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-mod-helper</artifactId><version>1.0.0</version></dependency>
@@ -114,7 +114,7 @@ class PlatformModDevelopmentTest {
             <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency></dependencies>
             """, ""));
         write(project.resolve("main/mod.json"), """
-            {"formatVersion":1,"id":"example.development","name":"Independent development","version":"1.0.0","platformApiRange":"[1.0.0-dev.1,1.0.0)","minJavaVersion":21,"mainJar":"main/main.jar","entryClass":"example.development.Mod"}
+            {"formatVersion":1,"id":"example.development","name":"Independent development","version":"1.0.0","platformApiRange":"1.0.0","minJavaVersion":21,"mainJar":"main/main.jar","entryClass":"example.development.Mod"}
             """);
         write(project.resolve("main/src/main/resources/location.txt"), "moddev");
         String trace = new ObjectMapper().writeValueAsString(fixture.trace.toString());

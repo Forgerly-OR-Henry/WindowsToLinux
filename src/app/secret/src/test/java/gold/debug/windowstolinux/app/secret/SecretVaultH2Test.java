@@ -123,7 +123,7 @@ class SecretVaultH2Test {
                         p.executeUpdate();
                     }
                     try (var p = c.prepareStatement(
-                        "INSERT INTO mod_credential_reference VALUES(?,'a','fixture.mod','1',?,'record','fixture','UNKNOWN',0)")) {
+                        "INSERT INTO mod_credential_reference(reference_id,credential_id,mod_id,schema_version,schema_generation,business_key,purpose,state,updated_at) VALUES(?,'a','fixture.mod','1',?,'record','fixture','UNKNOWN',0)")) {
                         p.setObject(1, UUID.randomUUID());
                         p.setObject(2, generation);
                         p.executeUpdate();

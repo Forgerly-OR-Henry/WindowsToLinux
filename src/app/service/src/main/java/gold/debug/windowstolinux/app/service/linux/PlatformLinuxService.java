@@ -997,8 +997,12 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                     throw error(ProblemCode.UNAVAILABLE, "SSH_SESSION_CLOSING", "The owned session is not available");
                 tasks.requireServer(task, owner, version, server.id());
                 var result = work.run();
-                if (result.outcome() == TaskResult.UNKNOWN)
+                if (result.outcome() == TaskResult.UNKNOWN) {
+                    tasks.callbacks().recordFailure(task, new ApiException(result.problem().orElseThrow()),
+                        ProblemCode.UNKNOWN, "SSH_OPERATION_UNCERTAIN",
+                        "The original SSH operation returned an uncertain result");
                     tasks.reportUncertainEffect(task);
+                }
                 return result;
             } catch (RuntimeException failure) {
                 tasks.reportUncertainEffect(task);

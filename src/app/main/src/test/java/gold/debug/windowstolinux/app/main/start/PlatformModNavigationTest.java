@@ -227,16 +227,15 @@ class PlatformModNavigationTest {
     }
 
     @Test
-    void rootOrderMergesOldPagesPreservesUnpublishedOwnersAndRejectsStaleWrites() throws Exception {
+    void rootOrderPreservesExactUnpublishedOwnersAndRejectsStaleWrites() throws Exception {
         var service = runtime.modIntents();
         var first = new PagePin(P, "main");
         var second = new PagePin(FREE, "main");
         var absent = new PagePin("example.absent", "legacy");
         runtime.persistence().preferences().save("mod_navigation_pins", "{\"formatVersion\":1,\"pages\":["
-            + "{\"ownerId\":\"" + FREE + "\",\"pageId\":\"old-applications\"},"
+            + "{\"ownerId\":\"" + FREE + "\",\"pageId\":\"main\"},"
             + "{\"ownerId\":\"example.absent\",\"pageId\":\"legacy\"},"
-            + "{\"ownerId\":\"" + P + "\",\"pageId\":\"old-static\"},"
-            + "{\"ownerId\":\"" + FREE + "\",\"pageId\":\"old-agent\"}]}");
+            + "{\"ownerId\":\"" + P + "\",\"pageId\":\"main\"}]}");
         var before = service.workspacePins(List.of(first, second));
         assertEquals(List.of(second, absent, first), before);
         assertEquals(List.of(first, absent, second), service.reorderPins(before, List.of(first, second)));
@@ -245,6 +244,9 @@ class PlatformModNavigationTest {
         assertThrows(ApiException.class, () -> service.reorderPins(current, List.of(first, first)));
         assertEquals(current, service.pins());
         assertEquals(current, service.workspacePins(List.of(first, second)));
+        assertThrows(IllegalArgumentException.class,
+            () -> service.workspacePins(List.of(new PagePin(P, "old-static"), second)));
+        assertEquals(current, service.pins());
     }
 
     @Test
@@ -308,6 +310,118 @@ class PlatformModNavigationTest {
         click("mods.openPage");
         assertTrue(onEdt(() -> named(frame, P + ".settings").isShowing()));
         assertEquals(2, pins());
+    }
+
+    @Test
+    void collapseReusesPublishedRootButtonsAndKeepsTheirFullAccessibleCaptions() throws Exception {
+        var navigation = onEdt(() -> (gold.debug.windowstolinux.app.ui.mod.ModNavigationPane) named(frame, "mods.navigation"));
+        var original = onEdt(() -> rootButton(P));
+        String title = onEdt(original::getText);
+        onEdt(() -> {
+            for (int sample = 0; sample <= 120; sample++) {
+                navigation.presentation(sample / 120d);
+                assertSame(original, rootButton(P), "Caption animation must retain the original root action");
+                assertEquals(title, original.getText());
+                assertEquals(title, original.getAccessibleContext().getAccessibleName());
+            }
+            for (int sample = 120; sample >= 0; sample--) {
+                navigation.presentation(sample / 120d);
+                assertSame(original, rootButton(P));
+            }
+            return null;
+        });
+        assertTrue(fixture.actions().isEmpty(), "Animating navigation must not create an author view");
+        String previousAnimation = System.getProperty("flatlaf.animation");
+        try {
+            System.setProperty("flatlaf.animation", "false");
+            int iconX = onEdt(() -> original.getLocationOnScreen().x + original.getInsets().left);
+            onEdt(() -> {
+                capture(frame, "navigation-fixed-expanded.png");
+                ((JButton) named(frame, "navigation.collapse")).doClick(0);
+                capture(frame, "navigation-fixed-collapsed.png");
+                assertSame(original, rootButton(P));
+                assertEquals(iconX, original.getLocationOnScreen().x + original.getInsets().left,
+                    "Actual sidebar collapse must keep the root icon at its original horizontal position");
+                ((JButton) named(frame, "navigation.collapse")).doClick(0);
+                frame.validate();
+                assertSame(original, rootButton(P));
+                return null;
+            });
+        } finally {
+            if (previousAnimation == null) System.clearProperty("flatlaf.animation");
+            else System.setProperty("flatlaf.animation", previousAnimation);
+        }
+        clickRoot(P);
+        assertTrue(onEdt(() -> named(frame, P + ".main").isShowing()));
+    }
+
+    @Test
+    void fixedShellBudgetsResizeOnlyTheInnerWorkspaceAndKeepTheSingleStatusLine() throws Exception {
+        clickRoot(P);
+        var original = onEdt(() -> (JTextField) named(frame, P + ".main"));
+        onEdt(() -> {
+            original.setText("Retained resize draft");
+            assertFalse(named(frame, "platform.viewLogs").isEnabled());
+            frame.installLogs(runtime.logs());
+            frame.showModStartup(2, List.of());
+            assertEquals("就绪", ((JLabel) named(frame, "platform.logIssue")).getText());
+            assertTrue(SwingUtilities.isDescendingFrom(named(frame, "mods.workspace.close"),
+                named(frame, "platform.header")));
+            return null;
+        });
+        for (var size : new java.awt.Dimension[]{new java.awt.Dimension(1600, 900),
+            new java.awt.Dimension(1280, 720), new java.awt.Dimension(1920, 1080)}) {
+            resizeContent(size.width, size.height);
+            onEdt(() -> {
+                capture(frame, "fixed-shell-" + size.width + "x" + size.height + ".png");
+                assertEquals(size, frame.getContentPane().getSize());
+                assertEquals(160, named(frame, "platform.sidebar").getWidth());
+                assertEquals(60, named(frame, "platform.header").getHeight());
+                assertEquals(30, named(frame, "platform.statusBar").getHeight());
+                assertEquals(new java.awt.Dimension(size.width - 160, size.height - 90), original.getSize());
+                assertSame(original, named(frame, P + ".main"));
+                assertEquals("Retained resize draft", original.getText());
+                return null;
+            });
+        }
+        resizeContent(1600, 900);
+        String previousAnimation = System.getProperty("flatlaf.animation");
+        try {
+            System.setProperty("flatlaf.animation", "false");
+            onEdt(() -> {
+                ((JButton) named(frame, "navigation.collapse")).doClick(0);
+                capture(frame, "fixed-shell-collapsed.png");
+                assertEquals(60, named(frame, "platform.header").getHeight());
+                assertEquals(30, named(frame, "platform.statusBar").getHeight());
+                assertEquals(frame.getContentPane().getWidth() - named(frame, "platform.sidebar").getWidth(), original.getWidth());
+                assertEquals(810, original.getHeight());
+                ((JButton) named(frame, "navigation.collapse")).doClick(0);
+                ((JLabel) named(frame, "platform.logIssue")).setText("Long safe status ".repeat(200));
+                frame.showModStartup(123456, List.of());
+                capture(frame, "fixed-shell-long-status.png");
+                assertEquals(30, named(frame, "platform.statusBar").getHeight());
+                assertEquals(new java.awt.Dimension(1440, 810), original.getSize());
+                assertTrue(((JLabel) named(frame, "platform.logIssue")).getToolTipText().startsWith("Long safe status"));
+                ((JButton) named(frame, "platform.viewLogs")).doClick(0);
+                assertTrue(named(frame, "platform.logs").isShowing());
+                assertEquals(30, named(frame, "platform.statusBar").getHeight());
+                assertEquals(60, named(frame, "platform.header").getHeight());
+                return null;
+            });
+        } finally {
+            if (previousAnimation == null) System.clearProperty("flatlaf.animation");
+            else System.setProperty("flatlaf.animation", previousAnimation);
+        }
+    }
+
+    private void resizeContent(int width, int height) throws Exception {
+        onEdt(() -> {
+            frame.setSize(width + frame.getWidth() - frame.getContentPane().getWidth(),
+                height + frame.getHeight() - frame.getContentPane().getHeight());
+            frame.validate();
+            return null;
+        });
+        await(() -> frame.getContentPane().getWidth() == width && frame.getContentPane().getHeight() == height);
     }
 
     @Test
@@ -423,9 +537,9 @@ class PlatformModNavigationTest {
                 assertThrows(ApiException.class, () -> runtime.modIntents().pin(new PagePin(P, "settings"), true))
                     .problem().eventCode());
             assertEquals(original, runtime.modIntents().pins());
-            assertEquals("MOD_DELETE_PENDING", assertThrows(ApiException.class,
-                () -> runtime.modIntents().workspacePins(List.of(new PagePin(P, "replacement"), new PagePin(FREE, "main"))))
-                .problem().eventCode());
+            assertThrows(IllegalArgumentException.class,
+                () -> runtime.modIntents().workspacePins(List.of(new PagePin(P, "replacement"), new PagePin(FREE, "main"))));
+            assertEquals(original, runtime.modIntents().workspacePins(List.of(new PagePin(P, "main"), new PagePin(FREE, "main"))));
             assertEquals(original, runtime.modIntents().pins());
             runtime.modIntents().pin(new PagePin(FREE, "main"), true);
             assertTrue(runtime.modIntents().pins().contains(new PagePin(FREE, "main")));

@@ -445,8 +445,7 @@ public final class ModSchemaReconciliation {
                                 "contentDigest", "target", "data"))
                             && "RETRY".equals(parent.path("mode").asText())
                             && !target.generation().equals(uuid(parent, "previousGeneration"))
-                            && r.getString(8).equals(parent.path("manifest").asText())
-                            && r.getString(9).equals(parent.path("contentDigest").asText()),
+                            && r.getString(8).equals(parent.path("manifest").asText()),
                         "Original retry evidence changed");
                     require(!node.path("facts").has("created")
                             || node.path("facts").path("retryResetComplete").asBoolean(),
@@ -480,7 +479,7 @@ public final class ModSchemaReconciliation {
     private void unchanged(Connection c, Review review) throws SQLException {
         var current = read(c, review.plan.operation());
         require(current.plan.equals(review.plan) && current.version.equals(review.version)
-                && current.manifest.equals(review.manifest) && current.digest.equals(review.digest)
+                && current.manifest.equals(review.manifest)
                 && current.recovery.equals(review.recovery) && current.request.equals(review.request)
                 && current.revision == review.revision && current.boot.equals(review.boot),
             "Reconciliation review is stale");

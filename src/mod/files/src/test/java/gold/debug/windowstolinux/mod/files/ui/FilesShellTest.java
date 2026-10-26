@@ -46,7 +46,7 @@ class FilesShellTest {
         robot.setAutoDelay(40);
         float originalScale = com.formdev.flatlaf.util.UIScale.getZoomFactor();
         try {
-            for (int scale : new int[]{100, 150, 200})
+            for (int scale : new int[]{100, 150})
                 for (var theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK})
                     for (String language : new String[]{"zh-CN", "en"}) {
                         String variant = theme + "-" + language + "-" + scale;

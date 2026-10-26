@@ -15,10 +15,10 @@ mvn -pl src/app/mod -am install -DskipTests
 JUnit 单元测试只需声明 `junit-jupiter` 为 `test`，作者父 POM 提供版本及 Surefire。
 将本项目作为独立 Maven 工程导入 IDEA；不要为开发验证导入全部 APP 或所有开发项目。
 
-从仓库根目录执行本项目的真实独立构建、单元测试和静态代码准入：
+从仓库根目录独立构建本项目并执行静态代码准入，不附带业务测试：
 
 ```powershell
-mvn -f src/moddev/<project>/pom.xml verify
+mvn -f src/moddev/<project>/pom.xml verify -DskipTests
 ```
 
 `process-classes` 会通过作者工具捕获 Maven 实际解析的依赖和构建输入，执行生产字节码安全准入，
@@ -36,3 +36,5 @@ mvn -f src/moddev/<project>/pom.xml verify
 才可首次建立启用及版本选择。已保存的禁用、版本和待重启决定保留。需数据库初始化、迁移或授权
 的项目仍通过原平台界面明确确认；未完成时显示待处理原因，准备完成后下次启动接入。关闭自动
 加载时不扫描、不启用；没有目录监听或热加载。发行安装仍按原安装和启用流程处理。
+
+变更验证使用 `-Dtest=相关测试类或方法` 显式选择范围；只有用户明确要求该项目全量验证时，才去掉 `-DskipTests` 并不设置测试筛选。准备依赖或独立作者构建不要求运行整个 APP 的测试。

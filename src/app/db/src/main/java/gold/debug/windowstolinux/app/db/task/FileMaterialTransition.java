@@ -69,7 +69,7 @@ final class FileMaterialTransition {
      */
     private static void release(TaskRecoveryGraph graph, Map<String, String> f, String prefix) {
         var r = graph.release(f.get(prefix + "Id"));
-        if (!r.version().equals(f.get(prefix + "Version")) || !r.digest().equals(f.get(prefix + "Digest"))
+        if (!r.version().equals(f.get(prefix + "Version"))
             || !r.schema().map(s -> s.schemaVersion()).orElse("").equals(f.get(prefix + "SchemaVersion"))
             || !r.schema().map(s -> s.generation().toString()).orElse("").equals(f.get(prefix + "SchemaGeneration")))
             throw new IllegalArgumentException("Original release changed");

@@ -27,6 +27,31 @@ class PlatformHomeStartupWindowTest {
     Path root;
 
     @Test
+    void emptyModSettingsIdentityCanBeCapturedAndRestoredWithoutRelaxingOtherIds() throws Exception {
+        var location = StartupPageLocation.platform("platform.modSettings");
+        assertThrows(IllegalArgumentException.class, () -> StartupPageLocation.platform("platform.otherSettings"));
+        assertEquals("settings", new StartupPageLocation("platform.modSettings", "home.fixture", "settings", "").pageId());
+        try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            var frame = open(runtime, new DesktopDisplayConfig("en", ThemeMode.LIGHT));
+            try {
+                onEdt(() -> {
+                    frame.resumePage(location);
+                    assertEquals(location, frame.currentPage());
+                    frame.showHome();
+                    frame.resumePage(location);
+                    assertEquals(location, frame.currentPage());
+                    return null;
+                });
+            } finally {
+                onEdt(() -> {
+                    frame.dispose();
+                    return null;
+                });
+            }
+        }
+    }
+
+    @Test
     void realCloseRemembersThePageAndRestartOnlyRestoresAnEnabledChoice() throws Exception {
         for (var theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK}) {
             Path data = root.resolve(theme.name());
@@ -41,7 +66,7 @@ class PlatformHomeStartupWindowTest {
                     assertEquals("shell.home", onEdt(frame::currentPage).platformId());
                     runtime.security().setupAndUnlock("home-test".toCharArray(), "home-test".toCharArray());
                     await(() -> named(frame, "appearance.save").isEnabled());
-                    for (int scale : new int[]{100, 150, 200}) {
+                    for (int scale : new int[]{100, 150}) {
                         onEdt(() -> {
                             ((JTabbedPane) named(frame, "platform.pages")).setSelectedComponent(named(frame, "platform.appearance"));
                             ((JComboBox<?>) named(frame, "appearance.scale")).setSelectedItem(scale);
@@ -105,7 +130,8 @@ class PlatformHomeStartupWindowTest {
                     robot.keyRelease(KeyEvent.VK_SPACE);
                     robot.waitForIdle();
                     await(() -> frame.currentPage().platformId().equals("shell.home"));
-                    assertEquals("", onEdt(() -> ((JButton) named(frame, "navigation.logo")).getText()));
+                    assertEquals(MessageCatalog.forLanguageTag("zh-CN").text("home.open"),
+                        onEdt(() -> named(frame, "navigation.logo").getAccessibleContext().getAccessibleName()));
                     runtime.security().unlock("home-test".toCharArray());
                     await(() -> named(frame, "appearance.save").isEnabled());
                     saveRestore(frame, false);

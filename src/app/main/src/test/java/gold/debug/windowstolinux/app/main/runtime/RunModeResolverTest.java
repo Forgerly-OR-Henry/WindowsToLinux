@@ -92,7 +92,7 @@ class RunModeResolverTest {
     @Test
     void acceptsTheVersionedDbModuleJarName() throws Exception {
         Path dbDirectory = Files.createDirectories(temporaryDirectory.resolve("lib"));
-        Path jar = Files.createFile(dbDirectory.resolve("windowstolinux-app-db-0.1.0-SNAPSHOT.jar"));
+        Path jar = Files.createFile(dbDirectory.resolve("windowstolinux-app-db-1.0.0.jar"));
 
         RunModeResolver.RuntimeLayout layout = resolve(Optional.empty(), Optional.of(jar));
 

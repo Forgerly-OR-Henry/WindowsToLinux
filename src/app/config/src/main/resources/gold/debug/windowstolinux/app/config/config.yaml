@@ -40,6 +40,6 @@ class: # 类目录开发运行模式，仅覆盖以下字段，其余继承 comm
   database: # 开发运行模式的数据目录覆盖
     data-directory: src/app/db/data # 开发数据文件目录，相对工作目录
   mod: # 开发运行模式的 Mod 加载策略覆盖
-    auto-load: false # 是否启动时自动加载 Mod
+    auto-load: true # 是否启动时自动加载 Mod
 jar: {} # JAR 运行模式无额外覆盖，全部继承 common
 app: {} # 应用包运行模式无额外覆盖，全部继承 common

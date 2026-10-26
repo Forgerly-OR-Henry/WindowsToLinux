@@ -48,22 +48,22 @@ final class ChatCompletionsCodec extends NativeModelCodec {
     public ModelDecodedResponse decode(byte[] bytes, String modelId, boolean object) throws IOException {
         var root = root(bytes);
         var choices = root.path("choices");
-        if (!choices.isArray() || choices.isEmpty()) throw new IOException("Model response has no complete choice");
+        if (!choices.isArray() || choices.isEmpty()) throw invalid(ValidationCode.CHOICES);
         var choice = choices.get(0);
         var message = choice.path("message");
-        if (!message.isObject()) throw new IOException("Model response choice is incomplete");
+        if (!message.isObject()) throw invalid(ValidationCode.MESSAGE);
         var calls = new ArrayList<AiToolCall>();
         var wireCalls = message.path("tool_calls");
         if (!wireCalls.isMissingNode() && !wireCalls.isNull() && !wireCalls.isArray())
-            throw new IOException("Invalid tool call array");
+            throw invalid(ValidationCode.TOOL_ARRAY);
         for (var item : wireCalls) {
-            if (!item.path("type").asText().equals("function")) throw new IOException("Unsupported tool call type");
+            if (!item.path("type").asText().equals("function")) throw invalid(ValidationCode.TOOL_TYPE);
             var function = item.path("function");
             calls.add(call(text(item, "id"), text(function, "name"), text(function, "arguments")));
         }
         var content = message.path("content");
         if (!content.isTextual() && !(content.isNull() && !calls.isEmpty()))
-            throw new IOException("Model response choice is incomplete");
+            throw invalid(ValidationCode.CONTENT);
         String finish = text(choice, "finish_reason");
         if (message.path("refusal").isTextual() && !message.path("refusal").asText().isBlank()) finish = "refusal";
         return result(content.isTextual() ? content.asText() : "", modelId, finish, ModelMessageCodec.usage(root), calls, message, object);

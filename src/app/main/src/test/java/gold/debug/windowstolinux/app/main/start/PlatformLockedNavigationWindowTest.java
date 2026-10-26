@@ -33,6 +33,7 @@ class PlatformLockedNavigationWindowTest {
                     var result = new PlatformFrame(runtime.security(), MessageCatalog.forLanguageTag("zh-CN"),
                         theme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light(),
                         new UiEnvironment(Locale.SIMPLIFIED_CHINESE, theme.name(), false), FailureReportStore.disabled());
+                    result.setAlwaysOnTop(true);
                     result.setVisible(true);
                     return result;
                 });
@@ -144,7 +145,7 @@ class PlatformLockedNavigationWindowTest {
                     await(tabs::isShowing);
                     onEdt(() -> {
                         capture(frame, "idea-" + theme + "-locked.png");
-                        frame.setSize(800, 560);
+                        frame.setSize(frame.getMinimumSize());
                         return null;
                     });
                     onEdt(() -> {
@@ -152,28 +153,9 @@ class PlatformLockedNavigationWindowTest {
                         return null;
                     });
                     click(robot, named(frame, "navigation.settings"));
-                    var category = onEdt(() -> (JComboBox<?>) named(frame, "settings.category"));
-                    await(category::isShowing);
-                    onEdt(() -> {
-                        category.setLightWeightPopupEnabled(false);
-                        return null;
-                    });
-                    click(robot, category);
-                    await(category::isPopupVisible);
-                    var popup = onEdt(() -> (javax.swing.plaf.basic.ComboPopup)
-                        category.getAccessibleContext().getAccessibleChild(0));
-                    var list = popup.getList();
-                    int categoryIndex = onEdt(() -> (category.getSelectedIndex() + 1) % category.getItemCount());
-                    Point choice = onEdt(() -> {
-                        Point location = list.getLocationOnScreen();
-                        Rectangle bounds = list.getCellBounds(categoryIndex, categoryIndex);
-                        return new Point(location.x + bounds.x + bounds.width / 2,
-                            location.y + bounds.y + bounds.height / 2);
-                    });
-                    robot.mouseMove(choice.x, choice.y);
-                    robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
-                    robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
-                    await(() -> !category.isPopupVisible() && category.getSelectedIndex() == categoryIndex);
+                    await(() -> named(frame, "navigation.platform.modSettings").isShowing());
+                    click(robot, named(frame, "navigation.platform.modSettings"));
+                    await(() -> frame.currentPage().platformId().equals("platform.modSettings"));
                     click(robot, workspaceButton(frame, "ui.fixture"));
                     await(tabs::isShowing);
                     click(robot, named(frame, "navigation.collapse"));
@@ -241,8 +223,12 @@ class PlatformLockedNavigationWindowTest {
 
     private static void click(Robot robot, Component component) throws Exception {
         Point point = onEdt(() -> {
+            SwingUtilities.getWindowAncestor(component).validate();
             Point location = component.getLocationOnScreen();
-            return new Point(location.x + component.getWidth() / 2, location.y + component.getHeight() / 2);
+            Rectangle visible = component instanceof JComponent control ? control.getVisibleRect()
+                : new Rectangle(0, 0, component.getWidth(), component.getHeight());
+            assertTrue(visible.width > 0 && visible.height > 0, "Actual input target must be visible");
+            return new Point(location.x + visible.x + visible.width / 2, location.y + visible.y + visible.height / 2);
         });
         robot.mouseMove(point.x, point.y);
         robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);

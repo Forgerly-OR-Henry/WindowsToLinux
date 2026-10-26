@@ -11,12 +11,19 @@ import org.junit.jupiter.api.Test;
 class DesktopDisplayConfigTest {
     @Test
     void restoresSupportedZoomAndDefaultsMissingPreferencesToNormalSize() {
-        for (int scale : new int[]{100, 150, 200}) {
+        for (int scale : new int[]{100, 150}) {
             var saved = DesktopDisplayConfig.fromStoredValues("zh-CN", "DARK", Integer.toString(scale), Locale.ENGLISH);
             assertEquals(scale, saved.scalePercent());
         }
         assertEquals(100, DesktopDisplayConfig.fromStoredValues("en", "LIGHT", Locale.ENGLISH).scalePercent());
         assertEquals(100, DesktopDisplayConfig.defaults(Locale.ENGLISH).scalePercent());
+    }
+
+    @Test
+    void removedDoubleZoomRestoresAt150WithoutChangingOtherPreferences() {
+        assertEquals(new DesktopDisplayConfig("en", ThemeMode.DARK, 150, true),
+            DesktopDisplayConfig.fromStoredValues("en", "DARK", "200", "true", Locale.SIMPLIFIED_CHINESE));
+        assertThrows(IllegalArgumentException.class, () -> new DesktopDisplayConfig("en", ThemeMode.DARK, 200));
     }
 
     @Test

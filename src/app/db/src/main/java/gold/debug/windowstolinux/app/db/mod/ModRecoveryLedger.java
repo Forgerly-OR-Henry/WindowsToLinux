@@ -199,7 +199,7 @@ public final class ModRecoveryLedger {
         });
     }
 
-    /** Validates exact registered code and data in the same ownership transaction. / 在同一归属事务中核验精确登记代码及数据。
+    /** Validates registered ID, version and data in the same ownership transaction. / 在同一归属事务中核验登记 ID、版本及数据。
      * @param c serialized connection / 串行连接
      * @param release original release / 原发布
      * @throws SQLException if original registration changed / 原登记变化时 */
@@ -209,7 +209,7 @@ public final class ModRecoveryLedger {
             p.setString(1, release.owner());
             p.setString(2, release.version());
             try (var r = p.executeQuery()) {
-                require(r.next() && release.digest().equals(r.getString(1)) && "READY".equals(r.getString(3)) && Objects
+                require(r.next() && "READY".equals(r.getString(3)) && Objects
                         .equals(release.schema().map(SchemaIdentity::schemaVersion).orElse(null), r.getString(2)),
                     "Original release changed");
             }

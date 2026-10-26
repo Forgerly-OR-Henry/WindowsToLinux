@@ -1,6 +1,6 @@
 # WindowsToLinux 发布与安装布局
 
-- 状态：本文描述 **1.1 已确认发布目标**；S1～S5 活动源码及 CLASS 本机适用合同已验证，完整根测试编译通过。按本次最终范围，S6 备份与迁移、S7 JAR/APP/SDK 正式发行及真实远端暂缓；本文发布布局仍是发行目标，不是已生成交付物。
+- 状态：本文维护 APP/JAR/SDK 的已确认发行目标；当前 CLASS 源码与适用本机合同已有验证。备份与迁移 Mod、正式发行打包及独立更新器仍未交付；具体范围见开发记录。目录布局不表示已生成正式交付物。
 - 职责：维护 APP/JAR 交付物、发布目录、启动配置、更新边界和官网服务范围；源码模块、包和命名由 [File.md](File.md) 维护，三种模式的 Mod 加载规则见 [Mod 文档](Mod.md#loading-modes)。
 - 产品方向：WindowsToLinux 是在 Windows 上操作 Linux 的开放 APP 平台，主体提供界面、连接、AI、任务、安全和 Mod 管理；部署与备份由官方 Mod 提供。
 - [开发总纲](../development/DEVELOPMENT.md) · [1.1 工程](../development/PHASE-1.1.md) · [Mod 包格式](Mod.md)
@@ -124,9 +124,9 @@ app.mainclass=example.Main
 
 ### 8.1 构建身份与依赖
 
-本节描述尚待交付的发行装配，不能作为当前安装包或 SDK 已发布的证据。当前活动根 POM 的工程版本为 `0.1.0-SNAPSHOT`，平台 API 开发契约为 `1.0.0-dev.4`（1.3 可选服务、原任务依赖图、受管素材与审批流程授权）；阶段验收状态见 [1.3 执行计划](../development/PHASE-1.3.md)。工程阶段编号不自动修改版本，备份 Mod 仍属后续范围。
+本节描述尚待交付的发行装配，不能作为安装包或 SDK 已发布的证据。当前工程、平台 API 和官方 Mod 统一保持 1.0，Maven 与 SemVer 配置使用规范值 `1.0.0`，不增加 dev 或阶段版号。阶段验收状态见 [1.3 执行计划](../development/PHASE-1.3.md)，备份 Mod 仍属后续范围。
 
-发行规格沿用 `gold.debug.windowstolinux` groupId，原规划工程开发版本为 `1.1.0-SNAPSHOT`，不是当前 POM 或公开版本承诺。平台 API 契约独立于 Maven 工程版本；规划中的两个官方 Mod 清单版本为 `1.1.0-dev.1`、schemaVersion 为 `1`，platformApiRange 为 `[1.0.0-dev.1,1.0.0)`，备份依赖部署的范围为 `[1.1.0-dev.1,1.1.0)`。正式发行前需核对实际声明和测试，不能由字符串相似推断兼容。
+发行规格沿用 `gold.debug.windowstolinux` groupId。正式发布前只维护当前实现，不增加旧开发版兼容代码；Schema 与远端线协议的结构标识独立于发行版本。正式 SDK 发布仍需完成装配和验证。
 
 | 构建项         | artifactId / 最终文件                                                                          | 装配关系                                                                                |
 | -------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -143,7 +143,7 @@ app.mainclass=example.Main
 
 ### 8.2 作者构建和校验工具
 
-当前源码已提供 `.mvn/wtlmod-author-parent/pom.xml` 的 CLASS 构建接线，版本暂随现有工程为 `0.1.0-SNAPSHOT`。Mod 主模块通过相对路径继承该独立 POM，并显式声明平台 API 的 provided 依赖；配套模块保持普通 Maven 配置。`initialize` 的 `development-inputs` 目标使用 Maven 原会话捕获解析结果并撤销旧描述，`process-classes` 的 exec 子进程调用 `ModPackageTool describe`。真实 reactor 已验证可直接使用 app/mod 的编译输出，不要求预先打包或安装工具 JAR；工具不进入业务 Mod 运行依赖。当前仅 describe 已实现，下面 pack/verify、SDK 分发与 package 绑定仍是 S7 目标。
+当前源码已提供 `.mvn/wtlmod-author-parent/pom.xml` 的 CLASS 构建接线，版本与现有工程统一为 `1.0.0`。Mod 主模块通过相对路径继承该独立 POM，并显式声明平台 API 的 provided 依赖；配套模块保持普通 Maven 配置。`initialize` 的 `development-inputs` 目标使用 Maven 原会话捕获解析结果并撤销旧描述，`process-classes` 的 exec 子进程调用 `ModPackageTool describe`。真实 reactor 已验证可直接使用 app/mod 的编译输出，不要求预先打包或安装工具 JAR；工具不进入业务 Mod 运行依赖。当前仅 describe 已实现，下面 pack/verify、SDK 分发与 package 绑定仍是 S7 目标。
 
 `wtl.workspace` 是构建属性，默认采用 Maven 明确的多模块根，也可用同名 Maven 属性指定。CLASS 运行时无需该 VM 参数：开启 Mod 自动加载后，使用平台根据 AppMain 与 DB 实际代码来源验证得到的工作区根，发现与 `src/app` 并列的 `src/mod`；关闭时不进行 Mod 来源发现。CLASS 的父 POM、主/从模块 POM、Maven 配置和资源过滤文件均须位于该工作区，额外维护的构建配置可用 `wtl.buildInputs` 逗号列表声明。`wtl.authorArtifacts` 使用完整 `groupId:artifactId:jar:version` 坐标；CLASS 配套必须是同 groupId、当前 reactor 中无独立 mod.json 的普通模块，不接受 classifier 猜测输出。provided/test 依赖不进入私有库，API 非 provided、H2/宿主运行依赖、其他 Mod 运行依赖及未声明配套均失败。需执行 `process-classes`；仅 compile 或编译失败时不会留下可用的旧开发描述。
 

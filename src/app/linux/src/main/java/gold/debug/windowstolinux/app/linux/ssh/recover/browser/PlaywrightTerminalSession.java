@@ -632,6 +632,14 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
 
     /** Closes original objects in order and retains the first unfinished physical owner for retry. / 按顺序关闭原对象并保留首个未完成物理所有者供重试。 */
     private void closeOnOwnerThread() {
+        if (context == null && driver != null && !processes.isEmpty()) {
+            // A rejected launch has no context; retire its original connection and prove native exit before release.
+            // 被拒绝的启动尚无上下文；关闭原连接，确认原生退出后才释放对象。
+            driver.close();
+            awaitBrowserExit();
+            driver = null;
+            browser = null;
+        }
         if (context != null) {
             try {
                 context.close();
@@ -654,6 +662,13 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
             driver.close();
             driver = null;
         }
+        awaitBrowserExit();
+        bound = null;
+        candidates.clear();
+    }
+
+    /** Waits for captured original processes to exit without signaling or replacing them. / 等待已捕获原进程退出，不向其发信号或替换身份。 */
+    private void awaitBrowserExit() {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (processes.stream().anyMatch(BrowserProcess::alive)) {
             if (System.nanoTime() >= deadline)
@@ -665,8 +680,6 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
                 throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.CLEANUP_FAILED, failure);
             }
         }
-        bound = null;
-        candidates.clear();
     }
 
     /** Accepts stale browser object failures only after its original native processes are gone. / 仅在原原生进程均已消失后接受失效浏览器对象的关闭错误。

@@ -35,7 +35,7 @@ class DesktopTextArchitectureTest {
         var english = gold.debug.windowstolinux.app.ui.language.MessageCatalog.forLanguageTag("en");
         var chinese = gold.debug.windowstolinux.app.ui.language.MessageCatalog.forLanguageTag("zh-CN");
         String helper = Files.readString(repositoryRoot().resolve(
-            "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/database/10-native-instances.sh"));
+            "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/helper/database/10-native-instances.sh"));
         var codes = Pattern.compile("conflicts\\.append\\('([^']+)'").matcher(helper);
         while (codes.find()) {
             String code = codes.group(1).split("\\|", 2)[0];

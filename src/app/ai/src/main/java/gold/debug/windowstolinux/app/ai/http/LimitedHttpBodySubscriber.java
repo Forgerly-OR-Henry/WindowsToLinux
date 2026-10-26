@@ -34,10 +34,10 @@ public final class LimitedHttpBodySubscriber implements HttpResponse.BodySubscri
     private Flow.Subscription subscription;
 
     /**
-     * Bytes received so far against the output bound.
-     * <p>当前已计入输出边界的接收字节数。
+     * Bytes in complete batches accepted within the output bound, visible to observers.
+     * <p>完整批次通过输出边界后接受的累计字节数，对观察线程可见。
      */
-    private int received;
+    private volatile int received;
 
     /**
      * Binds the supplied dependencies and state for limited http body subscriber.
@@ -66,6 +66,12 @@ public final class LimitedHttpBodySubscriber implements HttpResponse.BodySubscri
         return body;
     }
 
+    /** Returns accepted body bytes, excluding headers and rejected batches; completion is not implied. / 返回已接受正文字节，不含响应头或被拒批次，不表示正文已完整。
+     * @return cumulative bytes accepted by the bounded subscriber / 有界接收器已接受的累计字节数 */
+    public int acceptedBytes() {
+        return received;
+    }
+
     /**
      * Connects upstream cancellation to the delegate. / 将上游取消连接到接收器。
      *
@@ -86,14 +92,16 @@ public final class LimitedHttpBodySubscriber implements HttpResponse.BodySubscri
     public void onNext(List<ByteBuffer> buffers) {
         if (body.isDone())
             return;
+        int batchBytes = 0;
         for (ByteBuffer buffer : buffers) {
-            if (buffer.remaining() > maxBytes - received) {
+            if (buffer.remaining() > maxBytes - received - batchBytes) {
                 subscription.cancel();
                 delegate.onError(new IOException("AI response exceeded the configured transport limit"));
                 return;
             }
-            received += buffer.remaining();
+            batchBytes += buffer.remaining();
         }
+        received += batchBytes;
         delegate.onNext(buffers);
     }
 

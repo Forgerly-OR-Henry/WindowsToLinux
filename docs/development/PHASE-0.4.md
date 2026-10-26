@@ -1,4 +1,5 @@
 # WindowsToLinux 0.4 期开发文档
+> 阅读边界：本文保留所属开发期的规格、结果与证据；当时版本和未验证范围不改写。现行合同见 [开发总纲](DEVELOPMENT.md#documentation)，历史构建或全量命令不作为默认验证要求。
 
 > 编号说明：本文原称四期工程，现为 **0.4 期工程**。工程编号不改变软件版本、数据库 schema、helper 协议或历史验收结论。
 > 承接状态：本文保留旧工程的实现、设计原因和证据；顶层 `shared`、Web 功能服务台及生产登录等被新方向替代的规划，**已由 1.1 工程取代**。源码仍保持旧结构，历史 `RUNTIME-PENDING` 不因此关闭。新开发依据见 [1.1 主文档](PHASE-1.1.md)，编号映射见[开发总纲](DEVELOPMENT.md#phase-numbering)。
@@ -182,7 +183,7 @@
 
 **涉及模块与分工：** `app/service.deployment.automatic` 统一编排；共享分析、计划、事务和远程执行复用已有类型化契约。
 
-代码路径：[DesktopApplicationFacade.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/DesktopApplicationFacade.java) 的 `deployAutomatically` → `AutomaticDeploymentTaskService` 分流三模式 → [AutomaticDeploymentUseCase.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/automatic/AutomaticDeploymentUseCase.java)。获取服务器操作锁，固定本地/Git 快照，发现组件、补齐及校验输入，验证受信服务器，再选择单组件或整应用事务。自动准备数据库和环境仍受审阅与批准约束；最终状态来自事务结果。
+代码路径：[DesktopApplicationFacade.java](../../history-src/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/DesktopApplicationFacade.java) 的 `deployAutomatically` → `AutomaticDeploymentTaskService` 分流三模式 → [AutomaticDeploymentUseCase.java](../../history-src/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/automatic/AutomaticDeploymentUseCase.java)。获取服务器操作锁，固定本地/Git 快照，发现组件、补齐及校验输入，验证受信服务器，再选择单组件或整应用事务。自动准备数据库和环境仍受审阅与批准约束；最终状态来自事务结果。
 
 环境准备与语言版本选择遵循[动态工具链](#toolchains)。单/多组件及 DB 参与流程传递相同的版本需求和解析结果；安装、源码或运行失败保留实际原因，不能统一改为版本不支持。
 
@@ -222,7 +223,7 @@
 
 **涉及模块与分工：** `shared/standard/analyze` 提取声明，`shared/model` 表达需求与审阅；`app/service` 补全认证、审批和保存绑定；`shared/linux-sshd.execution.protocol.database` 执行原生数据库协议。
 
-现行入口：[AutomaticDatabaseUseCase.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/automatic/AutomaticDatabaseUseCase.java)，由桌面门面调用并把 `NativeDatabaseException` 转为应用服务失败。凭据标识的 SHA-256 用作内部合法键段，外部秘密引用和修订保持原义。数据库安装/复用、版本替换与结构变化必须分别确认；数据库可准备不代表完整备份可用。
+现行入口：[AutomaticDatabaseUseCase.java](../../history-src/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/automatic/AutomaticDatabaseUseCase.java)，由桌面门面调用并把 `NativeDatabaseException` 转为应用服务失败。凭据标识的 SHA-256 用作内部合法键段，外部秘密引用和修订保持原义。数据库安装/复用、版本替换与结构变化必须分别确认；数据库可准备不代表完整备份可用。
 
 #### 结构与范围
 
@@ -391,7 +392,7 @@ JVM 构建按用户资源上限生成堆、元空间、压缩类空间和代码�
 
 **涉及模块与分工：** `shared/deploy` 拒绝 root 构建请求并组织事务；SSHD 工作卷和运行协议实施边界；配置及持久化记录精确身份。
 
-现行门禁：[ReviewedDeploymentService.java](../../src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/execution/transaction/ReviewedDeploymentService.java) 在远端修改前拒绝 `runAsRoot` 或非 root 管理连接。普通构建使用 DynamicUser；容器构建使用临时账号和受限 UID/GID 映射；普通运行与构建身份独立，容器应用显式使用非 root 用户。代表性部署已实测，完整资源攻击/UID 复用/故障注入矩阵仍未执行。
+现行门禁：[ReviewedDeploymentService.java](../../history-src/src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/execution/transaction/ReviewedDeploymentService.java) 在远端修改前拒绝 `runAsRoot` 或非 root 管理连接。普通构建使用 DynamicUser；容器构建使用临时账号和受限 UID/GID 映射；普通运行与构建身份独立，容器应用显式使用非 root 用户。代表性部署已实测，完整资源攻击/UID 复用/故障注入矩阵仍未执行。
 
 root 负责环境、发布和生命周期管理。普通构建使用 systemd 动态身份；容器 rootless 构建使用任务专属临时账号及 UID/GID 授权，完成后撤销。原生应用使用每组件固定、不可登录、无管理权限的系统账号；容器应用必须明确以非 root 身份运行。构建临时身份不持有 sudo、登录权限或永久应用归属，不删除用户已有账号。应用运行账号随其数据保留；数据库等系统包自带服务账号遵循其安装机制。
 
@@ -468,7 +469,7 @@ Linux 会话直接返回已有备份、恢复和数据库端口，移除重复�
 
 **涉及模块与分工：** `shared/backup` 定义归档和一致性；`app/db` 保存精确输入，`app/secret` 处理秘密，`app/windows` 管理材料及最终文件；服务层调用远程取材。
 
-真实产品链：备份页 → 桌面门面 `createManagedBackup` → [RemoteBackupCreationUseCase.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/backup/RemoteBackupCreationUseCase.java) → Linux 备份/数据库窄端口。当前 [BackupConfigurationCodec.java](../../src/shared/backup/src/main/java/gold/debug/windowstolinux/shared/backup/format/BackupConfigurationCodec.java) 写激活配置 v5，运行时编码器也为 v5。SQLite 保存受管物理绑定并使用独立一致性制品；多数据库超出归档单数据库范围，Redis 等管理能力不能推导为已有一致性备份。
+真实产品链：备份页 → 桌面门面 `createManagedBackup` → [RemoteBackupCreationUseCase.java](../../history-src/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/backup/RemoteBackupCreationUseCase.java) → Linux 备份/数据库窄端口。当前 [BackupConfigurationCodec.java](../../history-src/src/shared/backup/src/main/java/gold/debug/windowstolinux/shared/backup/format/BackupConfigurationCodec.java) 写激活配置 v5，运行时编码器也为 v5。SQLite 保存受管物理绑定并使用独立一致性制品；多数据库超出归档单数据库范围，Redis 等管理能力不能推导为已有一致性备份。
 
 #### 备份输入
 
@@ -554,7 +555,7 @@ secrets.enc            # 用户选择包含秘密时的独立认证加密成员
 
 **涉及模块与分工：** `shared/backup` 定义状态机，`shared/deploy` 处理候选和正式提交；`app/service` 连接备份、秘密、数据库、远端恢复与本地接管。
 
-桌面 `restoreManagedBackup` 已调用 [ManagedRestoreUseCase.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/backup/ManagedRestoreUseCase.java)；离线迁移由 [ManagedOfflineMigrationUseCase.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/backup/ManagedOfflineMigrationUseCase.java) 组织初始备份、明确停写批准、最终备份和目标恢复。成功后等待人工切流，保留源端，不自动删除或切换流量。真实数据库恢复与双服务器迁移仍为 RUNTIME-PENDING。
+桌面 `restoreManagedBackup` 已调用 [ManagedRestoreUseCase.java](../../history-src/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/backup/ManagedRestoreUseCase.java)；离线迁移由 [ManagedOfflineMigrationUseCase.java](../../history-src/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/backup/ManagedOfflineMigrationUseCase.java) 组织初始备份、明确停写批准、最终备份和目标恢复。成功后等待人工切流，保留源端，不自动删除或切换流量。真实数据库恢复与双服务器迁移仍为 RUNTIME-PENDING。
 
 #### 前置检查
 

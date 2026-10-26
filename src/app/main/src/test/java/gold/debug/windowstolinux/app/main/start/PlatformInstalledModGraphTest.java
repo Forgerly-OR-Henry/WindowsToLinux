@@ -43,7 +43,7 @@ class PlatformInstalledModGraphTest {
 
     PlatformModInstallation installer(PlatformRuntime runtime) throws Exception {
         return new PlatformModInstallation(runtime.persistence().database(), runtime.security(), home, runtime.logs(),
-            SemanticVersion.parse("1.0.0-dev.1"));
+            SemanticVersion.parse("1.0.0"));
     }
 
     Path archive(String owner, String version) throws Exception {
@@ -129,14 +129,14 @@ class PlatformInstalledModGraphTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"bytes", "extra", "path", "origin", "missing", "state"})
+    @ValueSource(strings = {"invalidJar", "extra", "path", "origin", "missing", "state"})
     void alteredSelectedProgramNeverExecutesAndIndependentModStillRuns(String alteration) throws Exception {
         fixture.module(P, Map.of(), false);
         fixture.module(F, Map.of(), false);
         installAndEnable(P, F);
         Path program = home.resolve("mod/" + P + "/" + VERSION);
-        if (alteration.equals("bytes"))
-            Files.writeString(program.resolve("README.md"), "changed");
+        if (alteration.equals("invalidJar"))
+            Files.writeString(program.resolve("main/fixture.jar"), "invalid JAR");
         if (alteration.equals("extra"))
             Files.writeString(program.resolve("extra.txt"), "unexpected");
         if (alteration.equals("missing"))
@@ -158,6 +158,17 @@ class PlatformInstalledModGraphTest {
                     "SELECT COUNT(*) FROM mod_operation WHERE mod_id='" + P + "'"));
             assertFalse(fixture.actions().stream().anyMatch(s -> s.startsWith(P)));
             assertEquals("TRUE", text(runtime, "SELECT enabled FROM mod_registry WHERE mod_id='" + P + "'"));
+        }
+    }
+
+    @Test
+    void sameVersionReadmeRepairKeepsSelectedProgramIdentity() throws Exception {
+        fixture.module(P, Map.of(), false);
+        installAndEnable(P);
+        Files.writeString(home.resolve("mod/" + P + "/" + VERSION + "/README.md"), "repaired documentation");
+        try (var runtime = fixture.open(false)) {
+            assertEquals(Set.of(P), start(runtime, false).running());
+            assertEquals("RUNNING", state(runtime, P));
         }
     }
 

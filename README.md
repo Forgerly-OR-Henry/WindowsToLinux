@@ -41,7 +41,18 @@ APP 按实际功能使用浅层包，Linux 保留 `ssh/connect`、`ssh/recover` 
 
 需要 Windows、JDK 21、系统 Maven 和 Git。当前根不包含旧 Web 前端模块，不需要为当前 APP 安装 Node.js 前端构建链。
 
-在仓库根使用 PowerShell：
+默认只运行与本次改动相关的定点测试和必要检查；只有用户明确要求时才执行全量测试。项目协作规则见 [AGENTS.md](AGENTS.md)。
+
+例如，只核对文档结构与文档声明的模块依赖：
+
+```powershell
+mvn.cmd -B -ntp -pl src/app/main -am '-Dtest=DocumentStructureArchitectureTest#everyProductionPackageHasADocumentedCurrentNode,ModuleDependencyArchitectureTest#productionDependenciesMatchDocumentationAndDirectPomDeclarations' -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+此命令只筛选两个相关检查，不代表全项目测试通过。编译或打包不需要业务测试时显式使用 `-DskipTests`。
+
+
+明确要求执行全项目验证时，在仓库根使用 PowerShell：
 
 ```powershell
 mvn.cmd -version
@@ -55,7 +66,7 @@ Windows 的部署辅助脚本测试需要可运行的 Git Bash 和 Python 3。�
 若本机 JDK 21 的回环初始化在 `PipeImpl` / `UnixDomainSockets` 报 `Invalid argument`，为单次验证进程设置 `JAVA_TOOL_OPTIONS`，将 `java.io.tmpdir` 和 `jdk.net.unixdomain.tmpdir` 指向已创建的短路径、可写临时目录。验证后清理本次目录；不写入产品或系统配置。
 
 ```powershell
-mvn.cmd -B -ntp clean verify -Pidea-check '-Dmanaged.test.bash=E:/Program/Git/bin/bash.exe' '-Dmanaged.test.python=E:/Program/Python/Python3.12/python.exe'
+mvn.cmd -B -ntp -pl src/mod/deployment -am '-Dtest=DeploymentHelperBehaviorTest' -Dsurefire.failIfNoSpecifiedTests=false test '-Dmanaged.test.bash=E:/Program/Git/bin/bash.exe' '-Dmanaged.test.python=E:/Program/Python/Python3.12/python.exe'
 ```
 
 <a id="运行桌面端"></a>
@@ -66,8 +77,8 @@ mvn.cmd -B -ntp clean verify -Pidea-check '-Dmanaged.test.bash=E:/Program/Git/bi
 
 1. 用 JDK 21 打开根 `pom.xml` 并完成 Maven 导入。
 2. 创建 Application 配置，主类为 `gold.debug.windowstolinux.app.main.AppMain`，模块为 `windowstolinux-app-main`。
-3. Config 模块资源目录中的 [config.yaml](src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml) 默认在 CLASS 关闭 Mod，仅运行主 APP；填写说明见 [Config.md](docs/reference/Config.md)。需要开发 Mod 时把 class.mod.auto-load 改为 true，重新构建并重启；IDEA 无需添加 `-Dwtl.workspace` VM 参数。平台根据 AppMain 与 DB 的实际代码来源验证工作区，自动发现该工作区中与 `src/app` 并列的 `src/mod`，不从启动目录或其他工作区搜索。自动加载开关仅允许 class 区填写，JAR/APP 固定执行 Mod 加载流程。
-4. 只启动主 APP 时，启动前运行 Maven `-pl src/app/main -am process-classes`；开启 Mod 调试时还须构建 `src/mod` 中本次参与集成的项目及其依赖，也可在根执行 `process-classes` 生成默认集成区的有效描述。`src/moddev` 不随根构建或运行发现参与。使用此 Maven 前置任务时，可以关闭该运行配置的 IDEA Build 前置任务。
+3. Config 模块资源目录中的 [config.yaml](src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml) 默认在 CLASS 关闭 Mod 自动加载，保留 Mod 管理、工作区及设置入口；填写说明见 [Config.md](docs/reference/Config.md)。该开关仅控制启动时是否主动读取、发现和加载 Mod。需要自动加载开发 Mod 时把 class.mod.auto-load 改为 true，重新构建并重启；IDEA 无需添加 `-Dwtl.workspace` VM 参数。平台根据 AppMain 与 DB 的实际代码来源验证工作区，自动发现该工作区中与 `src/app` 并列的 `src/mod`，不从启动目录或其他工作区搜索。自动加载开关仅允许 class 区填写，JAR/APP 固定执行 Mod 加载流程。
+4. 不自动加载 Mod 时，启动前运行 Maven `-pl src/app/main -am process-classes`；开启 Mod 调试时还须构建 `src/mod` 中本次参与集成的项目及其依赖，也可在根执行 `process-classes` 生成默认集成区的有效描述。`src/moddev` 不随根构建或运行发现参与。使用此 Maven 前置任务时，可以关闭该运行配置的 IDEA Build 前置任务。
 
 CLASS 数据根默认 `src/app/db/data/`，通过 Config 模块的 classpath YAML 及已验证路径锚点解析；YAML 随 Config JAR 发布，程序根不用放配置文件。程序根来自已验证工作区，不由任意启动目录或数据目录覆盖参数决定。CLASS/JAR 混合来源会被拒绝；JAR 与 APP 的正式布局见 [APP.md](docs/reference/APP.md)。
 
@@ -103,11 +114,13 @@ helper v9 曾在 Ubuntu 24 上完成八个多语言原生项目的代表性部�
 
 - [产品说明书](docs/reference/PRODUCT-MANUAL.md)：功能、使用流程和边界。
 - [1.2 期开发文档](docs/development/PHASE-1.2.md)：文件、语音、救援、数据库调整及逐项验收。
-- [1.3 期执行计划](docs/development/PHASE-1.3.md)：窗口与工作区先在 P0 独立处理，再按 S0～S6 承接 ModDev、可选依赖与 Git、部署完整迁移、文件管理、商店连同下载及集成验收；完整本地验收通过即可交付，真机验证独立安排。P0、正式 S0～S6 已完成适用本地验收与收尾，独立可选 Git、受管素材交接、部署迁移、文件管理、商店客户端及真实联合入口已有有效证据；分阶段本地提交，未推送。
+- [1.3 实施与验收](docs/development/PHASE-1.3.md)：P0 和 S0～S6 的范围、关键决定、功能规格及本机验收；本期已结轮，真实验证按版本独立记录。
 - [APP 智能助手开发规划](docs/development/APP-ASSISTANT-DEVELOPMENT.md)：全软件操作助手与 APP/Mod 业务操作 API 的独立后期规划；不纳入 1.3，尚未排期或实施。
-- [开发总纲](docs/development/DEVELOPMENT.md)：各期导航、工程演进和通用规则。
-- [File.md](docs/reference/File.md)、[Mod.md](docs/reference/Mod.md)、[APP.md](docs/reference/APP.md)、[Runtime.md](docs/reference/Runtime.md)：结构、作者、交付和运行合同。
+- [开发总纲](docs/development/DEVELOPMENT.md)：当前状态、分期导航和文档职责。
+- [File.md](docs/reference/File.md)、[Mod.md](docs/reference/Mod.md)、[APP.md](docs/reference/APP.md)、[Runtime.md](docs/reference/Runtime.md)：源码与数据库列序、作者、交付和运行合同。
+- [Config.md](docs/reference/Config.md)：配置字段与填写方式。
 - [AllFile.md](docs/reference/AllFile.md)：当前非测试生产文件索引。
+- [数据库字段列序与中文示例](docs/reference/File.md#database-structure) · [Agent 原生工具合同](docs/reference/Runtime.md#agent-tools) · [真实部署验证记录](docs/test/multi-language/README.md#验证范围)。
 
 欢迎提交 Issue、修复、测试和设计建议。贡献代码时从 `main` 创建范围明确的分支，遵守模块职责，运行受影响验证，并区分本机、受控协议与真实环境结果。
 

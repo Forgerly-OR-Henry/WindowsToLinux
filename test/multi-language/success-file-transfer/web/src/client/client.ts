@@ -1,5 +1,6 @@
 import { api, element, cell, action, showError } from "./ui.js";
 import { sha256Blob } from "./sha256.js";
+import { downloadVersion } from "./download.js";
 type Version = {
   id: string;
   number: number;
@@ -36,11 +37,22 @@ function remember(id: string) {
   sessionInput.value = id;
   localStorage.setItem("file-session", id);
 }
-function download(id: string) {
-  const a = document.createElement("a");
-  a.href = `/api/versions/${id}/download`;
-  a.textContent = "下载";
-  return a;
+function download(id: string, name: string, size: number, sha256: string) {
+  return action("下载", async () => {
+    const blob = await downloadVersion({ id, name, size, sha256 });
+    const a = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    try {
+      a.href = url;
+      a.download = name;
+      document.body.append(a);
+      a.click();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    } finally {
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+  });
 }
 async function folders(selected?: number) {
   const list = await api<{ id: number; name: string }[]>("/api/folders");
@@ -64,7 +76,7 @@ async function files() {
     const row = document.createElement("tr"),
       buttons = cell("");
     buttons.append(
-      download(f.versionId),
+      download(f.versionId, f.name, f.size, f.sha256),
       action("版本详情", async () => {
         element("detail-title").textContent = f.name + " / 历史版本";
         const versions = await api<Version[]>(`/api/files/${f.id}/versions`);
@@ -72,7 +84,7 @@ async function files() {
           ...versions.map((v) => {
             const r = document.createElement("tr"),
               d = cell("");
-            d.append(download(v.id));
+            d.append(download(v.id, f.name, v.size, v.sha256));
             r.append(cell(v.number), cell(v.size), cell(v.sha256), cell(v.created), d);
             return r;
           }),

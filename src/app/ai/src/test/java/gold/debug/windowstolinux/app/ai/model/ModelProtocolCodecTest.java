@@ -12,6 +12,94 @@ import gold.debug.windowstolinux.appapi.ai.vision.AiImage;
 
 class ModelProtocolCodecTest {
     @Test
+    void chatNativeValidationCodesIdentifyOnlyOriginalFailingGuards() throws Exception {
+        record Rejected(String name, String code, byte[] body, boolean object) {
+        }
+        var cases = new ArrayList<Rejected>();
+        cases.add(new Rejected("response limit", "1", new byte[ModelMessageCodec.MAX_RESPONSE_BYTES + 1], false));
+        cases.add(new Rejected("malformed envelope", "2", bytes("{"), false));
+        cases.add(new Rejected("duplicate envelope keys", "2", bytes("{\"choices\":[],\"choices\":[]}"), false));
+        cases.add(new Rejected("trailing envelope token", "2", bytes("{} {}"), false));
+        cases.add(new Rejected("non-object envelope", "3", bytes("[]"), false));
+        cases.add(new Rejected("missing choices", "4", bytes("{}"), false));
+        cases.add(new Rejected("empty choices", "4", bytes("{\"choices\":[]}"), false));
+        cases.add(new Rejected("message type", "5", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0")).putArray("message")), false));
+        cases.add(new Rejected("tool array type", "6", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message")).putObject("tool_calls")), false));
+        cases.add(new Rejected("tool type", "7", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message/tool_calls/0")).put("type", "secretmarker")), false));
+        cases.add(new Rejected("id field", "8", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message/tool_calls/0")).put("id", 123)), false));
+        cases.add(new Rejected("name field", "9", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message/tool_calls/0/function")).put("name", " ")), false));
+        cases.add(new Rejected("arguments type", "10", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message/tool_calls/0/function")).putArray("arguments")), false));
+        cases.add(new Rejected("arguments empty", "10", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message/tool_calls/0/function")).put("arguments", "")), false));
+        cases.add(new Rejected("call identity", "11", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message/tool_calls/0")).put("id", "secretmarker/path")), false));
+        cases.add(new Rejected("duplicate call ids", "12", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ArrayNode) root.at("/choices/0/message/tool_calls"))
+            .add(root.at("/choices/0/message/tool_calls/0").deepCopy())), false));
+        cases.add(new Rejected("content type", "13", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message")).putObject("content")), false));
+        cases.add(new Rejected("null content without calls", "13", chatResponse(root -> {
+            var message = (com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message");
+            message.putNull("content");
+            message.remove("tool_calls");
+        }), false));
+        cases.add(new Rejected("finish field", "14", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0")).remove("finish_reason")), false));
+        cases.add(new Rejected("finish length", "14", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0")).put("finish_reason", "x".repeat(129))), false));
+        cases.add(new Rejected("object content shape", "15", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message")).put("content", "[]")), true));
+        cases.add(new Rejected("object content parse", "15", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message")).put("content", "{")), true));
+        cases.add(new Rejected("unclassified usage", "0", chatResponse(root -> {
+            var usage = (com.fasterxml.jackson.databind.node.ObjectNode) root.get("usage");
+            usage.putObject("prompt_tokens_details").put("cached_tokens", 1);
+            usage.put("prompt_cache_hit_tokens", 2);
+        }), false));
+        assertEquals(23, cases.size(), "These are table scenarios inside one JUnit case");
+        var codec = ModelProtocolCodec.forProtocol(ModelProtocol.OPENAI_CHAT_COMPLETIONS);
+        for (var example : cases) {
+            var invalid = assertThrows(java.io.IOException.class, () -> codec.decode(example.body(), "fixture", example.object()), example.name());
+            assertEquals(example.code(), NativeModelCodec.validationCode(invalid), example.name());
+            assertFalse(invalid.getMessage().contains("secretmarker"));
+            assertEquals("0", NativeModelCodec.validationCode(new java.io.IOException("secretmarker", invalid)), "No message or cause-chain guessing");
+        }
+        assertEquals("0", NativeModelCodec.validationCode(new java.io.IOException("secretmarker")));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    void chatNativeCallsAcceptNullOrEmptyContentWithoutJsonObjectCoercion(boolean nullContent) throws Exception {
+        byte[] body = chatResponse(root -> {
+            var message = (com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message");
+            if (nullContent) message.putNull("content");
+            else message.put("content", "");
+        });
+        var codec = ModelProtocolCodec.forProtocol(ModelProtocol.OPENAI_CHAT_COMPLETIONS);
+        var decoded = codec.decode(body, "fixture", false);
+        assertEquals("tool_calls", decoded.response().finishReason());
+        assertEquals("", decoded.response().text());
+        assertEquals(List.of(new AiToolCall("call_1", "echo", "{}")), decoded.response().toolCalls());
+        assertEquals(Optional.of(7L), decoded.response().usage().inputTokens());
+        assertEquals(Optional.of(3L), decoded.response().usage().outputTokens());
+        var original = json.readTree(body).at("/choices/0/message");
+        assertEquals(original, json.readTree(decoded.continuation()));
+        var handle = new AiContinuation(UUID.randomUUID(), bytes(decoded.continuation()).length);
+        var response = decoded.response();
+        var retained = new AiResponse(response.text(), response.modelId(), response.finishReason(), response.usage(), response.toolCalls(), Optional.of(handle));
+        var messages = List.of(new AiMessage(AiRole.USER, "public request", List.of()), AiMessage.assistant(retained),
+            AiMessage.result(new AiToolResult("call_1", "public result", false)));
+        var wire = json.readTree(codec.encode("fixture", request(messages), 128, ModelReasoningLevel.DEFAULT, Map.of(handle.id(), decoded.continuation())));
+        assertEquals(original, wire.at("/messages/1"));
+        if (!nullContent)
+            assertEquals("NON_OBJECT", ModelProtocolDiagnostics.shape(ModelProtocol.OPENAI_CHAT_COMPLETIONS, body).get("jsonFailureKind"),
+                "A content-shape projection is not a native decoder rejection");
+    }
+
+    private byte[] chatResponse(java.util.function.Consumer<com.fasterxml.jackson.databind.node.ObjectNode> change) throws Exception {
+        var root = json.createObjectNode();
+        var message = root.putArray("choices").addObject().put("finish_reason", "tool_calls").putObject("message")
+            .put("role", "assistant").put("content", "");
+        message.putArray("tool_calls").addObject().put("type", "function").put("id", "call_1")
+            .putObject("function").put("name", "echo").put("arguments", "{}");
+        root.putObject("usage").put("prompt_tokens", 7).put("completion_tokens", 3);
+        change.accept(root);
+        return json.writeValueAsBytes(root);
+    }
+
+    @Test
     void explicitNoneUsesEachProtocolsDisabledReasoningFieldWithoutChangingDefault() throws Exception {
         var request = new AiRequest(AiPurpose.APPROVAL,
             List.of(new AiMessage(AiRole.USER, "Review the current command", List.of())),

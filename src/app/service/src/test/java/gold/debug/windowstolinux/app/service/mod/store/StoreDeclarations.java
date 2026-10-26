@@ -10,7 +10,7 @@ import gold.debug.windowstolinux.app.service.mod.store.ModStoreSelection.*;
 
 /** Strict author declarations for finite pure-data counterexamples. / 有限纯数据反例的严格作者声明。 */
 final class StoreDeclarations {
-    static final SemanticVersion API = SemanticVersion.parse("1.0.0-dev.4");
+    static final SemanticVersion API = SemanticVersion.parse("1.0.0");
 
     static final URI BASE = URI.create("http://127.0.0.1:12345/store/");
 
@@ -27,7 +27,7 @@ final class StoreDeclarations {
         json.put("id", owner);
         json.put("name", owner);
         json.put("version", version);
-        json.put("platformApiRange", "[1.0.0-dev.1,2.0.0)");
+        json.put("platformApiRange", "[1.0.0,2.0.0)");
         json.put("minJavaVersion", javaVersion);
         json.put("mainJar", "main/fixture.jar");
         json.put("entryClass", owner + ".Mod");

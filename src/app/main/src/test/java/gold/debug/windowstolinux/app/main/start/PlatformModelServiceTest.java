@@ -390,7 +390,13 @@ class PlatformModelServiceTest {
             ledger.retain(known, new TaskResource("CONNECTION", "ai-voice-" + UUID.randomUUID(),
                 PlatformTaskAdmission.PLATFORM_OWNER, false));
             ledger.retain(known, new TaskResource("CUSTOM", "ai-access-" + UUID.randomUUID(),
-                PlatformTaskAdmission.PLATFORM_OWNER, false));
+                    PlatformTaskAdmission.PLATFORM_OWNER, false),
+                new gold.debug.windowstolinux.app.db.task.ResourceRecovery("ai-process.v1",
+                    Map.of("bootId", db.bootId().toString(), "kind", "access")), false);
+            ledger.retain(known, new TaskResource("CONNECTION", "ai-http-" + UUID.randomUUID(),
+                    PlatformTaskAdmission.PLATFORM_OWNER, false),
+                new gold.debug.windowstolinux.app.db.task.ResourceRecovery("ai-process.v1",
+                    Map.of("bootId", db.bootId().toString(), "kind", "http")), false);
         }
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             runtime.security().unlock(PASSWORD.toCharArray());

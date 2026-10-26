@@ -1,4 +1,5 @@
 # WindowsToLinux 0.3 期开发文档
+> 阅读边界：本文保留所属开发期的规格、结果与证据；当时版本和未验证范围不改写。现行合同见 [开发总纲](DEVELOPMENT.md#documentation)，历史构建或全量命令不作为默认验证要求。
 
 > 编号说明：本文原称三期工程，现为 **0.3 期工程**。工程编号不改变软件版本、数据库 schema、helper 协议或历史验收结论。
 > 承接状态：本文保留旧工程的实现、设计原因和证据；顶层 `shared`、Web 功能服务台及生产登录等被新方向替代的规划，**已由 1.1 工程取代**。源码仍保持旧结构，历史 `RUNTIME-PENDING` 不因此关闭。新开发依据见 [1.1 主文档](PHASE-1.1.md)，编号映射见[开发总纲](DEVELOPMENT.md#phase-numbering)。
@@ -83,7 +84,7 @@
 
 **涉及模块与分工：** `shared/model` 定义支持目录与构建身份；`shared/standard/analyze` 提取架构事实；`shared/linux-sshd` 完成探测、受控构建和制品校验。
 
-代码依据：[DeploymentSupportCatalog.java](../../src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/project/DeploymentSupportCatalog.java)、[DeploymentAdapterRegistry.java](../../src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/extension/registry/DeploymentAdapterRegistry.java)。当前 Spring Boot 的 Maven/Gradle、纯 JDK、六类高级语言和 CMake 仍标为试验适配；预构建 JAR、npm、pip、静态站点和单 Dockerfile 容器的正式标记只覆盖目录列明的历史 Ubuntu 矩阵。工具链目录准入与真实运行证据是不同维度。0.3 期原生 JDK 基线是 Java 21；0.4 期扩展 JDK 8 等版本后使用相应原生参数，不再把 `--release 21` 当成全版本命令。
+代码依据：[DeploymentSupportCatalog.java](../../history-src/src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/project/DeploymentSupportCatalog.java)、[DeploymentAdapterRegistry.java](../../history-src/src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/extension/registry/DeploymentAdapterRegistry.java)。当前 Spring Boot 的 Maven/Gradle、纯 JDK、六类高级语言和 CMake 仍标为试验适配；预构建 JAR、npm、pip、静态站点和单 Dockerfile 容器的正式标记只覆盖目录列明的历史 Ubuntu 矩阵。工具链目录准入与真实运行证据是不同维度。0.3 期原生 JDK 基线是 Java 21；0.4 期扩展 JDK 8 等版本后使用相应原生参数，不再把 `--release 21` 当成全版本命令。
 
 | 等级     | 可以提供                                         | 禁止声称                       |
 | -------- | ------------------------------------------------ | ------------------------------ |
@@ -175,7 +176,7 @@
 
 **涉及模块与分工：** `shared/standard/analyze` 发现组件和依赖，`shared/model` 保存稳定身份与冲突；`app/service`、`app/ui` 组织审阅。
 
-代码入口：[ProjectComponentDiscovery.java](../../src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/component/ProjectComponentDiscovery.java)、[MultiComponentDeploymentPlanner.java](../../src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/plan/MultiComponentDeploymentPlanner.java)；多组件不等于任意 Docker Compose 自动执行。
+代码入口：[ProjectComponentDiscovery.java](../../history-src/src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/component/ProjectComponentDiscovery.java)、[MultiComponentDeploymentPlanner.java](../../history-src/src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/plan/MultiComponentDeploymentPlanner.java)；多组件不等于任意 Docker Compose 自动执行。
 
 #### 输入
 
@@ -199,7 +200,7 @@
 
 **涉及模块与分工：** `shared/deploy` 编排整应用事务及依赖顺序；Linux 端执行受管步骤；`app/db` 保存成功图，服务层重载和管理。
 
-现行入口：[MultiComponentDeploymentUseCase.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/MultiComponentDeploymentUseCase.java) → [ReviewedMultiComponentDeploymentService.java](../../src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/execution/transaction/ReviewedMultiComponentDeploymentService.java)；[MultiComponentLifecycleUseCase.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/MultiComponentLifecycleUseCase.java) 管理成功图。SQLite v7 是 0.3 期历史图语义，当前 SQLite v15 中的资源、身份及桌面清单增强归 0.4 期。
+现行入口：[MultiComponentDeploymentUseCase.java](../../history-src/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/MultiComponentDeploymentUseCase.java) → [ReviewedMultiComponentDeploymentService.java](../../history-src/src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/execution/transaction/ReviewedMultiComponentDeploymentService.java)；[MultiComponentLifecycleUseCase.java](../../history-src/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/MultiComponentLifecycleUseCase.java) 管理成功图。SQLite v7 是 0.3 期历史图语义，当前 SQLite v15 中的资源、身份及桌面清单增强归 0.4 期。
 
 #### 计划
 

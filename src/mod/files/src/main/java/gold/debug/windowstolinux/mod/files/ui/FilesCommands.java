@@ -192,7 +192,7 @@ final class FilesCommands {
     /** Browses using a new original authorization task and ordered callback generation. / 使用新原授权任务及有序回调代次浏览。
      * @param pane target pane / 目标栏
      * @param location explicit location metadata / 明确位置元数据 */
-    private void browse(FilesPane pane, FilePath location) {
+    void browse(FilesPane pane, FilePath location) {
         long revision = pane.request();
         tasks.read(() -> service.browse(location), value -> display(pane, revision, value));
     }

@@ -133,7 +133,7 @@ class PlatformStorageTest {
                     q.executeUpdate();
                 }
                 try (var q = c.prepareStatement(
-                    "INSERT INTO mod_server_reference VALUES(?,'server','fixture.mod','1',?,'record','RESERVED',0)")) {
+                    "INSERT INTO mod_server_reference(reference_id,server_profile_id,mod_id,schema_version,schema_generation,business_key,state,updated_at) VALUES(?,'server','fixture.mod','1',?,'record','RESERVED',0)")) {
                     q.setObject(1, UUID.randomUUID());
                     q.setObject(2, generation);
                     q.executeUpdate();

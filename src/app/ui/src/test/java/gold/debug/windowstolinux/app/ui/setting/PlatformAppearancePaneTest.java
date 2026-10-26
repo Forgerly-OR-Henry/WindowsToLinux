@@ -41,7 +41,11 @@ class PlatformAppearancePaneTest {
         });
         try {
             SwingUtilities.invokeAndWait(() -> {
-                ((JComboBox<?>) named(pane.get(), "appearance.scale")).setSelectedItem(200);
+                var choices = (JComboBox<?>) named(pane.get(), "appearance.scale");
+                assertEquals(2, choices.getItemCount());
+                assertEquals(100, choices.getItemAt(0));
+                assertEquals(150, choices.getItemAt(1));
+                choices.setSelectedItem(150);
                 ((javax.swing.JCheckBox) named(pane.get(), "appearance.restoreLastPage")).setSelected(true);
                 assertEquals(1f, com.formdev.flatlaf.util.UIScale.getZoomFactor(), "A draft must not zoom the window");
                 ((JButton) named(pane.get(), "appearance.save")).doClick(0);
@@ -51,7 +55,7 @@ class PlatformAppearancePaneTest {
             SwingUtilities.invokeAndWait(() -> {
                 assertEquals(0, applied.get());
                 assertEquals(1f, com.formdev.flatlaf.util.UIScale.getZoomFactor());
-                assertEquals(200, ((JComboBox<?>) named(pane.get(), "appearance.scale")).getSelectedItem());
+                assertEquals(150, ((JComboBox<?>) named(pane.get(), "appearance.scale")).getSelectedItem());
                 pane.get().setLocked(true);
                 assertFalse(named(pane.get(), "appearance.scale").isEnabled());
                 assertFalse(named(pane.get(), "appearance.save").isEnabled());
@@ -63,9 +67,9 @@ class PlatformAppearancePaneTest {
             idle();
             SwingUtilities.invokeAndWait(() -> {
                 assertEquals(1, applied.get());
-                assertEquals(200, saved.get().scalePercent());
+                assertEquals(150, saved.get().scalePercent());
                 assertTrue(saved.get().restoreLastPage());
-                assertEquals(2f, com.formdev.flatlaf.util.UIScale.getZoomFactor());
+                assertEquals(1.5f, com.formdev.flatlaf.util.UIScale.getZoomFactor());
                 assertTrue(named(pane.get(), "appearance.scale").isEnabled());
             });
         } finally {

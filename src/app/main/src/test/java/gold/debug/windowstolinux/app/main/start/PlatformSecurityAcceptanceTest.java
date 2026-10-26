@@ -38,6 +38,8 @@ class PlatformSecurityAcceptanceTest {
                 FailureReportStore.disabled());
             frame.onExit(runtime);
             frame.setVisible(true);
+            ((JButton) named(frame, "navigation.settings")).doClick(0);
+            ((JButton) named(frame, "navigation.security.settings")).doClick(0);
             return frame;
         });
     }

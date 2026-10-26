@@ -30,7 +30,7 @@ public final class TaskCancellationDocument {
                 throw new IllegalArgumentException("Invalid task metadata size");
             var node = JSON.readTree(value);
             if (!(node instanceof ObjectNode object) || !object.path("formatVersion").isInt()
-                || !Set.of(1, 2, 3).contains(object.path("formatVersion").intValue())
+                || !Set.of(1, 3).contains(object.path("formatVersion").intValue())
                 || !object.path("initialClaims").isArray()
                 || object.has("cancelRequested") && !object.path("cancelRequested").isBoolean()
                 || object.size() != (object.path("formatVersion").intValue() == 1 ? 2 : 3)

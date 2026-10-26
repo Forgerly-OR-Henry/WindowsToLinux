@@ -75,7 +75,7 @@ class ConfigFeaturesWindowTest {
         };
         try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
             var service = new ModStoreService(Optional.of(java.net.URI.create("https://mods.example.com")), gateway, Optional.of(installer), runtime.security(),
-                runtime.persistence().database(), root, gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse("1.0.0-dev.1"));
+                runtime.persistence().database(), root, gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse("1.0.0"));
             var frame = onEdt(() -> {
                 DesktopThemeService.install(ThemeMode.LIGHT);
                 var host = new JFrame("Simulated store acceptance");
@@ -84,6 +84,7 @@ class ConfigFeaturesWindowTest {
                 });
                 host.add(pane);
                 host.setSize(900, 600);
+                host.setAlwaysOnTop(true);
                 host.setVisible(true);
                 pane.setLocked(false);
                 return host;
@@ -94,7 +95,8 @@ class ConfigFeaturesWindowTest {
                 robot.setAutoDelay(35);
                 var list = (JList<?>) named(frame, "store.results");
                 ModStoreWindowTest.clickArea(robot, list, onEdt(() -> list.getCellBounds(0, 0)));
-                idle();
+                await(() -> ((JTextArea) named(frame, "store.details")).getText().contains("sample.bundle")
+                    && named(frame, "store.install").isEnabled());
                 onEdt(() -> {
                     assertTrue(((JTextArea) named(frame, "store.details")).getText().contains("sample.bundle"));
                     return null;
@@ -178,7 +180,7 @@ class ConfigFeaturesWindowTest {
             var password = "isolated-store-window-password".toCharArray();
             runtime.security().setupAndUnlock(password, password.clone());
             var service = new ModStoreService(Optional.empty(), new UnavailableModStoreGateway(), Optional.empty(), runtime.security(),
-                runtime.persistence().database(), root, gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse("1.0.0-dev.1"));
+                runtime.persistence().database(), root, gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse("1.0.0"));
             var frame = onEdt(() -> {
                 DesktopThemeService.install(ThemeMode.LIGHT);
                 var host = new JFrame("Store acceptance");

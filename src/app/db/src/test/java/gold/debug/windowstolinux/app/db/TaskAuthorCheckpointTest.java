@@ -37,6 +37,90 @@ class TaskAuthorCheckpointTest {
     }
 
     @Test
+    void recoveryCheckpointRetainsDistinctProtocolAndExactCasAcrossReopen() throws Exception {
+        UUID task;
+        UUID authorLease;
+        UUID recoveryLease;
+        var json = new ObjectMapper();
+        try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
+            task = started(db);
+            var author = new TaskAuthorCheckpoint(db);
+            var recovery = TaskAuthorCheckpoint.recovery(db);
+            authorLease = author.begin(task, OWNER, VERSION, "progress", "{\"origin\":\"author\"}").lease();
+            assertTrue(recovery.find(task, OWNER, VERSION, "progress").isEmpty());
+            var entry = recovery.begin(task, OWNER, VERSION, "progress", "{\"phase\":\"INTENT\"}");
+            recoveryLease = entry.lease();
+            assertNotEquals(authorLease, recoveryLease);
+            var committed = recovery.advance(task, OWNER, VERSION, "progress", recoveryLease, entry.snapshot(), "{\"phase\":\"DISPATCHED\"}");
+            assertEquals(1, committed.revision());
+            assertThrows(TaskAuthorCheckpoint.RejectedException.class,
+                () -> recovery.advance(task, OWNER, VERSION, "progress", recoveryLease, entry.snapshot(), "{}"));
+            assertThrows(SQLException.class,
+                () -> recovery.advance(task, OWNER, VERSION, "progress", authorLease, committed, "{}"));
+            assertThrows(SQLException.class, () -> recovery.find(task, OWNER, "2.0.0", "progress"));
+            assertThrows(SQLException.class, () -> recovery.begin(task, "foreign.owner", VERSION, "progress", "{}"));
+            assertThrows(SQLException.class, () -> recovery.release(task, OWNER, VERSION, "progress", authorLease));
+            for (String invalid : List.of("{\"x\":1,\"x\":2}", "{} {}", "{\"x\":\"" + "中".repeat(4001) + "\"}"))
+                assertThrows(TaskAuthorCheckpoint.RejectedException.class,
+                    () -> recovery.begin(task, OWNER, VERSION, "invalid", invalid));
+            try (var connection = db.openConnection();
+                 var query = connection.prepareStatement("SELECT resource_id,recovery_json FROM platform_task_resource WHERE lease_id=?")) {
+                for (UUID lease : List.of(authorLease, recoveryLease)) {
+                    query.setObject(1, lease);
+                    try (var row = query.executeQuery()) {
+                        assertTrue(row.next());
+                        boolean original = lease.equals(authorLease);
+                        assertEquals(OWNER + (original ? "/checkpoint/" : "/recovery-checkpoint/") + "progress", row.getString(1));
+                        assertEquals(original ? "author-checkpoint.v1" : "recovery-checkpoint.v1", ResourceRecovery.decode(row.getString(2)).protocol());
+                    }
+                }
+            }
+            new TaskLedger(db).retain(task, new TaskResource("CUSTOM", OWNER + "/recovery-checkpoint/impostor", OWNER, false));
+            assertThrows(SQLException.class, () -> recovery.find(task, OWNER, VERSION, "impostor"), "Raw EXPLICIT is not a host envelope or absence");
+        }
+        try (var reopened = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
+            var author = new TaskAuthorCheckpoint(reopened);
+            var recovery = TaskAuthorCheckpoint.recovery(reopened);
+            var entry = recovery.find(task, OWNER, VERSION, "progress").orElseThrow();
+            assertEquals(recoveryLease, entry.lease());
+            assertEquals(new TaskCheckpoint.Snapshot(1, "{\"phase\":\"DISPATCHED\"}", false), entry.snapshot());
+            assertEquals(authorLease, author.find(task, OWNER, VERSION, "progress").orElseThrow().lease());
+            assertEquals("{\"origin\":\"author\"}", author.find(task, OWNER, VERSION, "progress").orElseThrow().snapshot().payload());
+            String encoded;
+            try (var connection = reopened.openConnection(); var query = connection.prepareStatement("SELECT recovery_json FROM platform_task_resource WHERE lease_id=?")) {
+                query.setObject(1, recoveryLease);
+                try (var row = query.executeQuery()) {
+                    assertTrue(row.next());
+                    encoded = row.getString(1);
+                }
+            }
+            var extra = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(encoded);
+            ((com.fasterxml.jackson.databind.node.ObjectNode) extra.path("fields")).put("authority", "APPROVE");
+            for (String invalid : List.of(encoded.replace("recovery-checkpoint.v1", "author-checkpoint.v1"),
+                "{\"release\":\"EXPLICIT\"}", encoded + " {}", encoded.replace("\"release\":", "\"release\":\"EXPLICIT\",\"release\":"), extra.toString())) {
+                try (var connection = reopened.openConnection(); var update = connection.prepareStatement("UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=?")) {
+                    update.setString(1, invalid);
+                    update.setObject(2, recoveryLease);
+                    assertEquals(1, update.executeUpdate());
+                }
+                assertThrows(SQLException.class, () -> recovery.find(task, OWNER, VERSION, "progress"));
+                assertThrows(SQLException.class, () -> recovery.release(task, OWNER, VERSION, "progress", recoveryLease));
+            }
+            try (var connection = reopened.openConnection(); var update = connection.prepareStatement("UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=?")) {
+                update.setString(1, encoded);
+                update.setObject(2, recoveryLease);
+                assertEquals(1, update.executeUpdate());
+            }
+            recovery.release(task, OWNER, VERSION, "progress", recoveryLease);
+            var released = recovery.find(task, OWNER, VERSION, "progress").orElseThrow().snapshot();
+            assertTrue(released.released());
+            assertThrows(SQLException.class, () -> recovery.advance(task, OWNER, VERSION, "progress", recoveryLease, released, "{}"));
+            assertThrows(SQLException.class, () -> recovery.begin(task, OWNER, VERSION, "progress", "{}"));
+            assertFalse(author.find(task, OWNER, VERSION, "progress").orElseThrow().snapshot().released());
+        }
+    }
+
+    @Test
     void exactValueCasAndSingleUseKeySurviveRelease() throws Exception {
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             UUID task = started(db);

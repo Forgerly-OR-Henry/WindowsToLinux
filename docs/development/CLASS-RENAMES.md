@@ -1,8 +1,8 @@
-# 类名调整清单（2026-10-03）
+# 类名调整历史映射（2026-10-03）
 
 采用“对象＋职责／用途”，包名、字段、协议与存储格式保持现状。公开类型改名后，旧编译 Mod 需要重新编译。
 
-本次调整 252 个生产 Java 文件名；86 个测试／夹具文件名及调用引用同时同步。
+此表保存当时的改名映射，用于旧调用方源码升级和历史追溯；路径表示当时调整的位置，不作为当前全文件索引。现行命名见 [File.md](../reference/File.md#package-rules)，当前实际文件见 [AllFile.md](../reference/AllFile.md)。当时共调整 252 个生产 Java 文件名及 86 个测试／夹具文件名。
 
 ## 生产文件
 
@@ -118,12 +118,12 @@
 | `DeploymentConfigurationException` | `DeploymentConfigException` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/DeploymentConfigException.java` |
 | `DeploymentSecretReference` | `DeploymentSecretRef` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/DeploymentSecretRef.java` |
 | `DeploymentUnitRuntimeConfiguration` | `DeploymentUnitRuntimeConfig` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/DeploymentUnitRuntimeConfig.java` |
-| `DeploymentProjectAssessment` | `DeploymentProjectReport` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/assessment/DeploymentProjectReport.java` |
-| `MultiComponentProjectAssessment` | `MultiPartProjectReport` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/assessment/MultiPartProjectReport.java` |
-| `ComponentIssue` | `PartIssue` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/assessment/PartIssue.java` |
+| `DeploymentProjectAssessment` | `DeploymentProjectReport` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/report/DeploymentProjectReport.java` |
+| `MultiComponentProjectAssessment` | `MultiPartProjectReport` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/report/MultiPartProjectReport.java` |
+| `ComponentIssue` | `PartIssue` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/report/PartIssue.java` |
 | `DeploymentRuntimeAssessment` | `DeploymentRuntimeReport` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/project/DeploymentRuntimeReport.java` |
-| `DeploymentComponent` | `DeploymentPart` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/project/component/DeploymentPart.java` |
-| `ComponentIsolationSpecification` | `PartIsolationSpec` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/project/component/PartIsolationSpec.java` |
+| `DeploymentComponent` | `DeploymentPart` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/project/part/DeploymentPart.java` |
+| `ComponentIsolationSpecification` | `PartIsolationSpec` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/project/part/PartIsolationSpec.java` |
 | `DeploymentDatabasePlanJournal` | `DeploymentDatabasePlanActionLog` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentDatabasePlanActionLog.java` |
 | `DeploymentNativeDatabaseJournal` | `DeploymentNativeDatabaseActionLog` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentNativeDatabaseActionLog.java` |
 | `DeploymentNativeDatabasePreparation` | `DeploymentNativeDatabaseSetup` | `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentNativeDatabaseSetup.java` |

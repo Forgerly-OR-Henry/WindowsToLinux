@@ -18,7 +18,8 @@ public record StartupPageLocation(String platformId, String ownerId, String page
         Objects.requireNonNull(ownerId);
         Objects.requireNonNull(pageId);
         Objects.requireNonNull(detailId);
-        if (!platformId.matches("[a-z][a-z0-9_.-]{0,127}") || ownerId.length() > 512 || pageId.length() > 1024
+        if (!platformId.matches("[a-z][a-z0-9_.-]{0,127}") && !platformId.equals("platform.modSettings")
+            || ownerId.length() > 512 || pageId.length() > 1024
             || ownerId.indexOf('\0') >= 0 || pageId.indexOf('\0') >= 0 || ownerId.isEmpty() != pageId.isEmpty()
             || !ownerId.isEmpty() && (ownerId.isBlank() || pageId.isBlank()
             || !java.util.Set.of("shell.workspace", "platform.modSettings").contains(platformId))

@@ -127,7 +127,7 @@ class PlatformModContextTest {
             ToolProvider.getSystemJavaCompiler().run(null, null, null, "--release", "21", "-proc:none", "-encoding",
                 "UTF-8", "-classpath", cp, "-d", classes.toString(), entry.toString(), contract.toString()));
         String json = """
-            {"formatVersion":1,"id":"example.admission","name":"Fixture","version":"1.0.0","platformApiRange":"1.0.0-dev.1","minJavaVersion":21,"mainJar":"main/fixture.jar","entryClass":"example.admission.Mod","exports":["example.admission.api"]%s}
+            {"formatVersion":1,"id":"example.admission","name":"Fixture","version":"1.0.0","platformApiRange":"1.0.0","minJavaVersion":21,"mainJar":"main/fixture.jar","entryClass":"example.admission.Mod","exports":["example.admission.api"]%s}
             """
             .formatted(schema ? ",\"schemaVersion\":\"1\"" : "");
         Files.writeString(code.resolve("mod.json"), json, StandardCharsets.UTF_8);
@@ -141,7 +141,7 @@ class PlatformModContextTest {
         var sources = new ArrayList<java.net.URL>();
         for (Path source : candidate.descriptor().sources())
             sources.add(source.toUri().toURL());
-        var plan = ModDependencyPlan.resolve(List.of(candidate.manifest()), SemanticVersion.parse("1.0.0-dev.1"),
+        var plan = ModDependencyPlan.resolve(List.of(candidate.manifest()), SemanticVersion.parse("1.0.0"),
             Runtime.version().feature());
         assertTrue(plan.failures().isEmpty());
         return plan.createLoader(candidate.manifest().id(), sources, Map.of());
@@ -226,7 +226,7 @@ class PlatformModContextTest {
             entry = loader.loadClass("example.admission.Mod");
             entry.getFields();
             session = runtime.modSession(loader, Optional.ofNullable(identity), mode, pages,
-                SemanticVersion.parse("1.0.0-dev.1"));
+                SemanticVersion.parse("1.0.0"));
             assembly = runtime.modContexts().get(OWNER);
         }
 
@@ -453,7 +453,7 @@ class PlatformModContextTest {
                     assertThrows(IllegalStateException.class,
                         () -> f.runtime.capabilities().modContext(duplicate, Optional.empty(), ModLaunchMode.NORMAL, f.pages));
                     assertThrows(IllegalStateException.class, () -> f.runtime.modSession(duplicate, Optional.empty(),
-                        ModLaunchMode.NORMAL, f.pages, SemanticVersion.parse("1.0.0-dev.1")));
+                        ModLaunchMode.NORMAL, f.pages, SemanticVersion.parse("1.0.0")));
                 }
                 assertEquals(1, f.entry.getField("stops").getInt(null));
             } finally {
@@ -541,7 +541,7 @@ class PlatformModContextTest {
             try {
                 prepareActivation(runtime);
                 session = runtime.modSession(loader, Optional.of(schema), ModLaunchMode.NORMAL, frame.pages(),
-                    SemanticVersion.parse("1.0.0-dev.1"));
+                    SemanticVersion.parse("1.0.0"));
                 var assembly = runtime.modContexts().get(OWNER);
                 session.start();
                 var entry = loader.loadClass("example.admission.Mod");

@@ -1,4 +1,5 @@
 # WindowsToLinux 0.2 期开发文档
+> 阅读边界：本文保留所属开发期的规格、结果与证据；当时版本和未验证范围不改写。现行合同见 [开发总纲](DEVELOPMENT.md#documentation)，历史构建或全量命令不作为默认验证要求。
 
 > 编号说明：本文原称二期工程，现为 **0.2 期工程**。工程编号不改变软件版本、数据库 schema、helper 协议或历史验收结论。
 > 承接状态：本文保留旧工程的实现、设计原因和证据；顶层 `shared`、Web 功能服务台及生产登录等被新方向替代的规划，**已由 1.1 工程取代**。源码仍保持旧结构，历史 `RUNTIME-PENDING` 不因此关闭。新开发依据见 [1.1 主文档](PHASE-1.1.md)，编号映射见[开发总纲](DEVELOPMENT.md#phase-numbering)。
@@ -64,7 +65,7 @@
 
 **涉及模块与分工：** `shared/git` 固定来源，`shared/source` 归档，`app/service` 合并本地/Git 准备路径。
 
-代码依据：[GitSnapshotPreparer.java](../../src/shared/git/src/main/java/gold/debug/windowstolinux/shared/git/snapshot/GitSnapshotPreparer.java)、[GitRemote.java](../../src/shared/git/src/main/java/gold/debug/windowstolinux/shared/git/GitRemote.java)、[GitRepositoryFeaturePolicy.java](../../src/shared/git/src/main/java/gold/debug/windowstolinux/shared/git/snapshot/GitRepositoryFeaturePolicy.java)。URI 解析接受 https/ssh/file，但实际产品准入和认证仍受请求及执行器限制，不能据此声称私有仓库可用。
+代码依据：[GitSnapshotPreparer.java](../../history-src/src/shared/git/src/main/java/gold/debug/windowstolinux/shared/git/snapshot/GitSnapshotPreparer.java)、[GitRemote.java](../../history-src/src/shared/git/src/main/java/gold/debug/windowstolinux/shared/git/GitRemote.java)、[GitRepositoryFeaturePolicy.java](../../history-src/src/shared/git/src/main/java/gold/debug/windowstolinux/shared/git/snapshot/GitRepositoryFeaturePolicy.java)。URI 解析接受 https/ssh/file，但实际产品准入和认证仍受请求及执行器限制，不能据此声称私有仓库可用。
 
 #### 输入和准备
 

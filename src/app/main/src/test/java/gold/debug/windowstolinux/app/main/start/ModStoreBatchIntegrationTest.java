@@ -258,7 +258,7 @@ class ModStoreBatchIntegrationTest {
             var root = fixture.publish("sample.root", "1.0.0", Map.of(), Map.of(), Map.of());
             assertEquals(TaskResult.SUCCEEDED, install(fixture, root, Set.of()).outcome());
             String original = Files.readString(home.resolve("mod/sample.root/1.0.0/mod.json"));
-            fixture.differentDeclaration(root, Map.of(), Map.of(), 21, "[1.0.0-dev.4,3.0.0)");
+            fixture.differentDeclaration(root, Map.of(), Map.of(), 21, "[1.0.0,3.0.0)");
             var rejected = plan(fixture.service(), root, Set.of());
             assertFalse(rejected.valid());
             assertEquals("MOD_STORE_DECLARATION_CONFLICT", rejected.conflicts().getFirst().code());
@@ -285,7 +285,7 @@ class ModStoreBatchIntegrationTest {
     }
 
     @Test
-    void actualInstalledBytesChangedAfterPlanFailBeforeAnyAdditionalHttpOrOverwrite() throws Exception {
+    void invalidInstalledProgramAfterPlanFailsBeforeAnyAdditionalHttpOrOverwrite() throws Exception {
         try (var fixture = new ModStoreFixture(home)) {
             var provider = fixture.publish("sample.provider", "1.0.0", Map.of(), Map.of(), Map.of());
             assertEquals(TaskResult.SUCCEEDED, install(fixture, provider, Set.of()).outcome());
@@ -293,8 +293,8 @@ class ModStoreBatchIntegrationTest {
             var original = plan(fixture.service(), root, Set.of());
             assertTrue(original.valid());
             assertEquals(ModStorePlan.Source.INSTALLED, original.items().stream().filter(item -> item.key().equals(provider)).findFirst().orElseThrow().source());
-            Path readme = home.resolve("mod/sample.provider/1.0.0/README.md");
-            Files.writeString(readme, "Actually changed after confirmation");
+            Path jar = home.resolve("mod/sample.provider/1.0.0/main/fixture.jar");
+            Files.writeString(jar, "Invalid JAR after confirmation");
             var rejected = fixture.service().install(original.revision(), () -> false, ignored -> {
             });
             assertEquals(TaskResult.FAILED, rejected.outcome());
@@ -303,7 +303,7 @@ class ModStoreBatchIntegrationTest {
             assertTrue(rejected.packages().stream().allMatch(report -> report.state() == State.UNATTEMPTED && report.problem().isPresent()));
             assertEquals(1, fixture.requests(provider));
             assertEquals(0, fixture.requests(root));
-            assertEquals("Actually changed after confirmation", Files.readString(readme));
+            assertEquals("Invalid JAR after confirmation", Files.readString(jar));
             assertEquals(1, fixture.count("SELECT COUNT(*) FROM mod_version"));
             assertFalse(Files.exists(home.resolve("mod/sample.root/1.0.0")));
             var actual = fixture.service().catalog(() -> false);

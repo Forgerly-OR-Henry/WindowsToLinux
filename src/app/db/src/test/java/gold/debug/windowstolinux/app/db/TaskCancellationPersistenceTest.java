@@ -57,7 +57,7 @@ class TaskCancellationPersistenceTest {
     }
 
     @Test
-    void knownLegacyCancellationIsRetainedBeforeStartupMakesTasksUnknown() throws Exception {
+    void currentCancellationIntentSurvivesStartupMakingTasksUnknown() throws Exception {
         UUID cancelled, untouched;
         try (var database = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(database);
@@ -66,9 +66,7 @@ class TaskCancellationPersistenceTest {
             assertTrue(ledger.tryStart(cancelled));
             assertTrue(ledger.tryStart(untouched));
             assertFalse(ledger.cancel(cancelled));
-            var legacy = metadata(database, cancelled);
-            legacy.remove("cancelRequested");
-            TaskRecoveryGraphTest.metadata(database, cancelled, JSON.writeValueAsString(legacy));
+            assertTrue(metadata(database, cancelled).path("cancelRequested").booleanValue());
             assertEquals(TaskState.CANCEL_REQUESTED, ledger.queries().snapshot(cancelled).state());
         }
         try (var database = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {

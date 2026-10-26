@@ -75,7 +75,7 @@ class PlatformDatabaseTest {
             byte[] wrapped = "中".repeat(16).getBytes(java.nio.charset.StandardCharsets.UTF_8);
             byte[] nonce = "中".repeat(4).getBytes(java.nio.charset.StandardCharsets.UTF_8);
             try (var p = c.prepareStatement(
-                "INSERT INTO security_profile VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)")) {
+                "INSERT INTO security_profile(security_profile_id,is_encryption_enabled,password_verifier,wrapped_data_key,key_wrap_algorithm,key_wrap_nonce,key_derivation_algorithm,key_derivation_salt,key_derivation_parameters,format_version) VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)")) {
                 p.setBytes(1, wrapped);
                 p.setBytes(2, nonce);
                 p.setBytes(3, new byte[16]);
@@ -110,7 +110,7 @@ class PlatformDatabaseTest {
             assertEquals(23, count(database,
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='app' AND table_type='BASE TABLE'"));
             try (var c = database.openConnection(); var s = c.createStatement()) {
-                s.execute("INSERT INTO desktop_preference VALUES('test','retained')");
+                s.execute("INSERT INTO desktop_preference(preference_key,preference_value) VALUES('test','retained')");
             }
             assertEquals(0, database.openConnections());
         }
@@ -129,7 +129,7 @@ class PlatformDatabaseTest {
         try (var database = PlatformDatabase.open(root, TEST_PROTECTION);
              var connection = database.openConnection(); var statement = connection.createStatement()) {
             generation = database.generation();
-            statement.execute("INSERT INTO desktop_preference VALUES('rename-sentinel','retained')");
+            statement.execute("INSERT INTO desktop_preference(preference_key,preference_value) VALUES('rename-sentinel','retained')");
         }
         var access = Files.readAllBytes(root.resolve("db-access.bin"));
         var current = root.resolve("windowstolinux.mv.db");
@@ -236,7 +236,7 @@ class PlatformDatabaseTest {
     void priorUnfinishedTasksRemainUnknownAfterRestart() throws Exception {
         try (var database = PlatformDatabase.open(root, TEST_PROTECTION);
              var c = database.openConnection();
-             var p = c.prepareStatement("INSERT INTO platform_task VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
+             var p = c.prepareStatement("INSERT INTO platform_task(task_id,owner_id,owner_version,task_type,state,outcome,cancellable,boot_id,request_json,result_json,recovery_json,archive_log_id,progress_text,started_at,ended_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
             p.setObject(1, UUID.randomUUID());
             p.setString(2, "example.mod");
             p.setString(3, "1.0.0");

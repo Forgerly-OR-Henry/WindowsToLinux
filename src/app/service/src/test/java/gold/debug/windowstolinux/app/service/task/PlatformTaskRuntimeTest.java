@@ -12,6 +12,7 @@ import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
@@ -81,6 +82,238 @@ class PlatformTaskRuntimeTest {
 
     static <T> OperationResult<T> result(TaskHandle<T> task) throws Exception {
         return task.completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void checkpointExclusionsRequireOriginalRootRecoveryAndDoNotReleaseResources() throws Exception {
+        try (var db = PlatformDatabase.open(root, PROTECTION);
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+            var service = runtime.bind("example.owner", "1.0.0", false);
+            var recovery = runtime.bind("example.owner", "1.0.0", true);
+            var provider = runtime.bind("example.provider", "1.0.0", true);
+            var otherVersion = runtime.bind("example.owner", "2.0.0", true);
+            var originalContext = new AtomicReference<TaskContext>();
+            var checkpoint = new AtomicReference<TaskCheckpoint>();
+            var extra = new AtomicReference<ResourceLease>();
+            var failure = new AtomicReference<Throwable>();
+            var calls = new AtomicInteger();
+            var keys = Set.of("policy");
+            var original = service.submit(request("server"), task -> {
+                calls.incrementAndGet(); originalContext.set(task);
+                checkpoint.set(service.beginCheckpoint(task, "policy", "{}"));
+                extra.set(task.retain("fixture", "extra", "Unsettled original resource"));
+                try {
+                    assertThrows(ApiException.class, () -> service.resourcesReleasedExceptCheckpoints(task, keys));
+                    assertThrows(ApiException.class, () -> service.resourcesReleasedExceptCheckpoints(task, keys, keys));
+                } catch (Throwable unexpected) { failure.set(unexpected); }
+                return recoveryUncertain();
+            });
+            state(original, TaskState.UNKNOWN);
+            assertThrows(ApiException.class, () -> recovery.resourcesReleasedExceptCheckpoints(originalContext.get(), keys));
+            assertThrows(ApiException.class, () -> recovery.resourcesReleasedExceptCheckpoints(originalContext.get(), keys, keys));
+            var blocked = service.submit(request("server"), task -> success(null));
+            state(blocked, TaskState.QUEUED);
+            try (var registration = recovery.registerRecovery("fixture", (previous, task) -> {
+                try {
+                    var copied = (TaskContext) java.lang.reflect.Proxy.newProxyInstance(TaskContext.class.getClassLoader(),
+                        new Class<?>[]{TaskContext.class}, (proxy, method, args) -> method.getName().equals("id") ? task.id() : null);
+                    assertThrows(ApiException.class, () -> recovery.resourcesReleasedExceptCheckpoints(copied, keys));
+                    assertThrows(ApiException.class, () -> recovery.resourcesReleasedExceptCheckpoints(copied, keys, keys));
+                    assertThrows(ApiException.class, () -> provider.resourcesReleasedExceptCheckpoints(task, keys));
+                    assertThrows(ApiException.class, () -> provider.resourcesReleasedExceptCheckpoints(task, keys, keys));
+                    assertThrows(ApiException.class, () -> otherVersion.resourcesReleasedExceptCheckpoints(task, keys));
+                    assertThrows(ApiException.class, () -> otherVersion.resourcesReleasedExceptCheckpoints(task, keys, keys));
+                    assertFalse(recovery.resourcesReleasedExceptCheckpoints(task, keys));
+                    assertFalse(recovery.resourcesReleasedExceptCheckpoints(task, keys, keys));
+                    assertFalse(checkpoint.get().snapshot().released());
+                    extra.get().close();
+                    assertTrue(recovery.resourcesReleasedExceptCheckpoints(task, keys));
+                    assertTrue(recovery.resourcesReleasedExceptCheckpoints(task, keys, keys));
+                    assertFalse(checkpoint.get().snapshot().released(), "Observation never releases an exclusion");
+                    assertFalse(recovery.resourcesReleased(task));
+                    checkpoint.get().close();
+                    assertTrue(recovery.resourcesReleased(task));
+                    return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), recoveryUncertain().problem());
+                } catch (Throwable unexpected) { failure.set(unexpected); return recoveryUncertain(); }
+            })) {
+                var ended = runtime.reconcile(original.id()).toCompletableFuture().get(8, TimeUnit.SECONDS);
+                if (failure.get() != null) throw new AssertionError("Checkpoint exclusion recovery failed", failure.get());
+                assertEquals(TaskState.ENDED, ended.state());
+                assertEquals(Optional.of(TaskResult.FAILED), ended.outcome());
+            }
+            assertEquals(TaskResult.SUCCEEDED, result(blocked).outcome(), "Finalization releases the original SERVER lease");
+            assertEquals(1, calls.get());
+            assertThrows(ApiException.class, () -> recovery.resourcesReleasedExceptCheckpoints(originalContext.get(), keys));
+        }
+    }
+
+    @Test
+    void recoveryCheckpointUsesAuthenticOriginalReconciliationAcrossAttempts() throws Exception {
+        try (var db = PlatformDatabase.open(root, PROTECTION);
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+            var service = runtime.bind("example.owner", "1.0.0", false);
+            var recovery = runtime.bind("example.owner", "1.0.0", true);
+            var context = new AtomicReference<TaskContext>();
+            var lease = new AtomicReference<ResourceLease>();
+            var calls = new AtomicInteger();
+            var first = new AtomicReference<TaskCheckpoint>();
+            var committed = new AtomicReference<TaskCheckpoint.Snapshot>();
+            var failure = new AtomicReference<Throwable>();
+            var task = service.submit(request(), original -> {
+                calls.incrementAndGet();
+                context.set(original);
+                lease.set(original.retain("file", "original", "Original unresolved fixture"));
+                throw new IOException("Controlled original failure");
+            });
+            state(task, TaskState.UNKNOWN);
+            assertThrows(ApiException.class, () -> recovery.beginRecoveryCheckpoint(context.get(), "progress", "{}"));
+            assertThrows(ApiException.class, () -> recovery.findRecoveryCheckpoint(context.get(), "progress"));
+            var attempts = new AtomicInteger();
+            try (var registered = recovery.registerRecovery("fixture", (previous, original) -> {
+                try {
+                    assertSame(context.get(), original);
+                    assertEquals(task.id(), previous.id());
+                    if (attempts.incrementAndGet() == 1) {
+                        assertEquals("MOD_TASK_BINDING_CLOSED", assertThrows(ApiException.class,
+                            () -> recovery.beginCheckpoint(original, "forbidden", "{}")).problem().eventCode());
+                        assertEquals("TASK_CHECKPOINT_RECOVERY_CREATE", assertThrows(ApiException.class,
+                            () -> service.beginCheckpoint(original, "forbidden", "{}")).problem().eventCode());
+                        assertTrue(recovery.findRecoveryCheckpoint(original, "progress").isEmpty());
+                        var value = recovery.beginRecoveryCheckpoint(original, "progress", "{\"phase\":\"INTENT\"}");
+                        first.set(value);
+                        var before = value.snapshot();
+                        // Inject an ACK loss after a real host/DB CAS; no physical SDK is represented by this counter.
+                        var afterPersistence = new TaskCheckpoint() {
+                            public Snapshot snapshot() throws ApiException {
+                                return value.snapshot();
+                            }
+
+                            public Snapshot advance(Snapshot expected, String next) throws ApiException {
+                                value.advance(expected, next);
+                                throw new ApiException(recoveryUncertain().problem().orElseThrow());
+                            }
+
+                            public void close() throws ApiException {
+                                value.close();
+                            }
+                        };
+                        var wouldDispatch = new AtomicInteger();
+                        assertThrows(ApiException.class, () -> {
+                            afterPersistence.advance(before, "{\"phase\":\"DISPATCHED\"}");
+                            wouldDispatch.incrementAndGet();
+                        });
+                        assertEquals(0, wouldDispatch.get());
+                        var after = value.snapshot();
+                        committed.set(after);
+                        assertEquals(1, after.revision());
+                        assertEquals("TASK_CHECKPOINT_COMPARE", assertThrows(ApiException.class,
+                            () -> value.advance(before, "{\"phase\":\"stale\"}")).problem().eventCode());
+                        assertFalse(recovery.resourcesReleased(original));
+                        return recoveryUncertain();
+                    }
+                    assertCheckpointDenied(first.get(), committed.get());
+                    var reopened = recovery.findRecoveryCheckpoint(original, "progress").orElseThrow();
+                    assertEquals(committed.get(), reopened.snapshot());
+                    reopened.close();
+                    assertTrue(reopened.snapshot().released());
+                    assertThrows(ApiException.class, () -> reopened.advance(reopened.snapshot(), "{}"));
+                    assertFalse(recovery.resourcesReleased(original), "Releasing progress does not release the original effect");
+                    lease.get().close();
+                    assertTrue(recovery.resourcesReleased(original));
+                    return success(null);
+                } catch (Exception | AssertionError problem) {
+                    failure.set(problem);
+                    throw problem;
+                }
+            })) {
+                assertEquals(TaskState.UNKNOWN, runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+                if (failure.get() != null) throw new AssertionError("First recovery failed", failure.get());
+                assertCheckpointDenied(first.get(), committed.get());
+                assertEquals(TaskState.ENDED, runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+                if (failure.get() != null) throw new AssertionError("Second recovery failed", failure.get());
+            }
+            assertEquals(2, attempts.get());
+            assertEquals(1, calls.get(), "Explicit reconciliation never replays the original callback");
+        }
+    }
+
+    @Test
+    void recoveryCheckpointRejectsEscapedRevokedForeignAndRawClaims() throws Exception {
+        try (var db = PlatformDatabase.open(root, PROTECTION);
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+            var service = runtime.bind("example.owner", "1.0.0", false);
+            var recovery = runtime.bind("example.owner", "1.0.0", true);
+            var provider = runtime.bind("example.provider", "1.0.0", true);
+            var otherVersion = runtime.bind("example.owner", "2.0.0", true);
+            var originalContext = new AtomicReference<TaskContext>();
+            var retained = new AtomicReference<ResourceLease>();
+            var handle = new AtomicReference<TaskCheckpoint>();
+            var snapshot = new AtomicReference<TaskCheckpoint.Snapshot>();
+            var callbackFailure = new AtomicReference<Throwable>();
+            var task = service.submit(request(), original -> {
+                originalContext.set(original);
+                assertThrows(ApiException.class, () -> service.beginRecoveryCheckpoint(original, "progress", "{}"));
+                assertThrows(ApiException.class, () -> service.findRecoveryCheckpoint(original, "progress"));
+                assertThrows(ApiException.class, () -> original.retain("recovery-checkpoint", "progress", "Cannot claim a host namespace"));
+                retained.set(original.retain("recovery_checkpoint", "progress", "Near spelling remains an ordinary resource"));
+                throw new IOException("Controlled original failure");
+            });
+            state(task, TaskState.UNKNOWN);
+            var attempt = new AtomicInteger();
+            try (var registered = recovery.registerRecovery("fixture", (previous, original) -> {
+                try {
+                    var copied = (TaskContext) java.lang.reflect.Proxy.newProxyInstance(TaskContext.class.getClassLoader(),
+                        new Class<?>[]{TaskContext.class}, (proxy, method, args) -> method.getName().equals("id") ? original.id() : null);
+                    assertThrows(ApiException.class, () -> recovery.beginRecoveryCheckpoint(copied, "progress", "{}"));
+                    assertThrows(ApiException.class, () -> recovery.findRecoveryCheckpoint(copied, "progress"));
+                    assertThrows(ApiException.class, () -> provider.beginRecoveryCheckpoint(original, "progress", "{}"));
+                    assertThrows(ApiException.class, () -> provider.findRecoveryCheckpoint(original, "progress"));
+                    assertThrows(ApiException.class, () -> otherVersion.findRecoveryCheckpoint(original, "progress"));
+                    if (attempt.incrementAndGet() == 1) {
+                        assertTrue(recovery.findRecoveryCheckpoint(original, "progress").isEmpty(), "A raw near-spelling claim is not host progress");
+                        handle.set(recovery.beginRecoveryCheckpoint(original, "progress", "{}"));
+                        snapshot.set(handle.get().snapshot());
+                        return recoveryUncertain();
+                    }
+                    assertCheckpointDenied(handle.get(), snapshot.get());
+                    var current = recovery.findRecoveryCheckpoint(original, "progress").orElseThrow();
+                    current.close();
+                    retained.get().close();
+                    return success(null);
+                } catch (Exception | AssertionError problem) {
+                    callbackFailure.set(problem);
+                    throw problem;
+                }
+            })) {
+                assertEquals(TaskState.UNKNOWN, runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+                if (callbackFailure.get() != null) throw new AssertionError(callbackFailure.get());
+                assertCheckpointDenied(handle.get(), snapshot.get());
+                assertEquals(TaskState.ENDED, runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+                if (callbackFailure.get() != null) throw new AssertionError(callbackFailure.get());
+            }
+            runtime.revokeOwnerServices("example.owner", "1.0.0");
+            assertEquals("MOD_TASK_BINDING_CLOSED", assertThrows(ApiException.class, () -> handle.get().snapshot()).problem().eventCode());
+            assertCheckpointDenied(handle.get(), snapshot.get());
+            assertEquals("MOD_TASK_BINDING_CLOSED", assertThrows(ApiException.class,
+                () -> recovery.beginRecoveryCheckpoint(originalContext.get(), "later", "{}")).problem().eventCode());
+            assertEquals("MOD_TASK_BINDING_CLOSED", assertThrows(ApiException.class,
+                () -> recovery.findRecoveryCheckpoint(originalContext.get(), "progress")).problem().eventCode());
+        }
+    }
+
+    private static OperationResult<Void> recoveryUncertain() {
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(
+            new gold.debug.windowstolinux.appapi.task.result.Problem(ProblemCode.UNKNOWN, "FIXTURE_UNCONFIRMED",
+                "Controlled recovery remains unconfirmed", Map.of(), Optional.empty())));
+    }
+
+    private static void assertCheckpointDenied(TaskCheckpoint checkpoint, TaskCheckpoint.Snapshot expected) {
+        assertThrows(ApiException.class, checkpoint::snapshot);
+        assertThrows(ApiException.class, () -> checkpoint.advance(expected, "{}"));
+        assertThrows(ApiException.class, checkpoint::close);
     }
 
     @Test

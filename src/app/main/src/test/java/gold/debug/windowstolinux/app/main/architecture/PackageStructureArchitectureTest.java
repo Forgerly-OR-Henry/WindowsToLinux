@@ -71,7 +71,7 @@ class PackageStructureArchitectureTest {
         "DebianFamilySetupCatalog.java", "EnterpriseLinuxSetupCatalog.java");
 
     private static final Set<String> ANALYSIS_CORE = Set.of("DeploymentAnalysisFlow.java",
-        "ProjectLanguageChecker.java");
+        "DeploymentTypeCheckerRegistry.java", "ProjectLanguageChecker.java");
 
     private static final Set<String> DESKTOP_SHELL = Set.of("DesktopDisplayChangeHandler.java", "DesktopFrame.java",
         "DesktopPageCoordinator.java", "DesktopViewState.java", "PageNavigationController.java",
@@ -363,10 +363,10 @@ class PackageStructureArchitectureTest {
     void coreShellRepositoriesAndHelperResourcesStayFocused() throws Exception {
         Path root = projectRoot();
         assertEquals(ANALYSIS_CORE, fileNames(root.resolve(
-            "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/analyze/core")));
+            "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/deploy/analyze/core")));
         assertEquals(Set.of("DesktopLockController.java", "PlatformFrame.java", "PlatformNavigationShell.java",
                 "DesktopUnlockDialog.java", "DesktopBrandLabel.java", "DesktopLockStatus.java",
-                "DesktopLockGate.java", "DesktopHomePane.java"),
+                "DesktopLockGate.java", "DesktopHomePane.java", "DesktopWindowGeometry.java"),
             fileNames(root.resolve("src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/window")));
         for (var entry : Map.ofEntries(
             Map.entry("ai/AiModelStore.java", "ai/StoredAiModelProfile.java"),
@@ -392,7 +392,7 @@ class PackageStructureArchitectureTest {
     void deploymentHelperResourcesMatchTheExactMigratedContract() throws Exception {
         Path root = projectRoot();
         Path resources = root
-            .resolve("src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux");
+            .resolve("src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/helper");
         Set<String> expected = new HashSet<>(HELPER_FRAGMENTS);
         expected.addAll(Set.of("53-publication-observation.sh", "58-retained-activation.sh", "59-handoff-restore.sh",
             "59-handoff-database-restore.sh", "59-handoff-restore-cleanup.sh", "68-handoff-database.sh",
@@ -402,9 +402,12 @@ class PackageStructureArchitectureTest {
             "centos-source-repositories.py"));
         assertEquals(58, expected.size());
         assertEquals(expected, fileNamesRecursively(resources));
-        assertEquals(Set.of("source-operations.py"), fileNames(resources.resolve("workspace")));
+        assertEquals(Set.of("20-candidate-workspace.sh", "21-workspace-volume.sh", "22-restricted-build.sh",
+                "23-container-builder.sh", "24-build-entry.sh", "25-workspace-recovery.sh", "26-build-output.sh",
+                "27-agent-workspace.sh", "apparmor-namespace.sh", "source-operations.py"),
+            fileNames(resources.resolve("workspace")));
         assertEquals(Set.of("10-release-metadata.py", "20-installation-boundaries.py", "30-managed-installation.py",
-            "40-binding-protocol.py"), fileNames(resources.resolve("toolchain")));
+            "40-binding-protocol.py", "centos-source-repositories.py"), fileNames(resources.resolve("toolchain")));
         var actual = new HashSet<String>();
         try (var files = Files.walk(resources)) {
             files.filter(Files::isRegularFile)
@@ -412,50 +415,75 @@ class PackageStructureArchitectureTest {
         }
         var packaged = new HashSet<String>();
         String bundle = Files.readString(root.resolve(
-            "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/DeploymentManagedHelperBundle.java"));
+            "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelperBundle.java"));
         String declaredResources = bundle.substring(0, bundle.indexOf("private DeploymentManagedHelperBundle()"));
         var references = Pattern.compile("\"([a-z0-9/.-]+\\.(?:sh|py))\"").matcher(declaredResources);
         while (references.find())
             packaged.add(references.group(1));
         assertEquals(actual, packaged, "Every maintained helper resource must be explicitly assembled or inserted");
         assertMaximumLinesRecursively(resources, 300);
-        Set<String> changed = Set.of("execution/protocol/helper/fragments/00-protocol-foundation.sh",
-            "execution/protocol/helper/fragments/70-command-dispatch.sh",
-            "execution/protocol/helper/fragments/backup/67-managed-backup.sh",
-            "execution/protocol/helper/fragments/backup/69-handoff-backup-status.sh",
-            "execution/protocol/helper/fragments/database/20-native-targets.sh",
-            "execution/protocol/helper/fragments/database/21-native-operations.sh",
-            "execution/protocol/helper/fragments/database/63-database-inspection.sh",
-            "execution/protocol/helper/fragments/database/65-database-backup.sh",
-            "execution/protocol/helper/fragments/database/68-handoff-database.sh",
-            "execution/protocol/helper/fragments/release/52-container-recovery.sh",
-            "execution/protocol/helper/fragments/release/53-publication-observation.sh",
-            "execution/protocol/helper/fragments/release/55-publication-snapshot.sh",
-            "execution/protocol/helper/fragments/release/58-retained-activation.sh",
-            "execution/protocol/helper/fragments/restore/56-restore-commit.sh",
-            "execution/protocol/helper/fragments/restore/56-restore-recovery.sh",
-            "execution/protocol/helper/fragments/restore/59-handoff-database-restore.sh",
-            "execution/protocol/helper/fragments/restore/59-handoff-restore-cleanup.sh",
-            "execution/protocol/helper/fragments/restore/59-handoff-restore.sh",
-            "execution/protocol/helper/fragments/runtime/40-typed-runtime.sh",
-            "execution/protocol/helper/fragments/runtime/41-application-admission.sh",
-            "execution/protocol/helper/fragments/runtime/41-application-runtime.sh");
+        Map<String, String> currentContracts = Map.of(
+            "release/12-container-image-input.sh",
+            "7fd78456756c840b1434267268db0bb8561ada6610fc7b6e357e47d297b8432a",
+            "workspace/22-restricted-build.sh",
+            "bd961c647181677bcc9733335b768a693df3604624bfedbfa0b6daebe188b6ce",
+            "workspace/27-agent-workspace.sh",
+            "ce4a197c1a3195d69e291c0e5c4a6a04dde32e7bba9603cf0507c2601a93f24f",
+            "runtime/systemd/60-lifecycle.sh",
+            "9cd56b9a2f47f8cdd03ae383b1355c5eeb2410c958652561427bc49e9620d510",
+            "toolchain/20-installation-boundaries.py",
+            "f7ac50671997a977e6517cdcdfbace25219a9a9d87717550dc0fb070bf0b691c",
+            "toolchain/30-managed-installation.py",
+            "91f53249624844ea05ed90d179dcea7ecc7a5455464c90ea1f8b90e3069748ba",
+            "toolchain/40-binding-protocol.py",
+            "b65d4bf6b31a911ad9eb0d8c3cb427a566d64c5ebeffebe1ea4f649b4b362228");
+        Set<String> changed = new HashSet<>(Set.of("00-protocol-foundation.sh",
+            "70-command-dispatch.sh",
+            "backup/67-managed-backup.sh",
+            "backup/69-handoff-backup-status.sh",
+            "database/20-native-targets.sh",
+            "database/21-native-operations.sh",
+            "database/63-database-inspection.sh",
+            "database/65-database-backup.sh",
+            "database/68-handoff-database.sh",
+            "release/52-container-recovery.sh",
+            "release/53-publication-observation.sh",
+            "release/55-publication-snapshot.sh",
+            "release/58-retained-activation.sh",
+            "restore/56-restore-commit.sh",
+            "restore/56-restore-recovery.sh",
+            "restore/59-handoff-database-restore.sh",
+            "restore/59-handoff-restore-cleanup.sh",
+            "restore/59-handoff-restore.sh",
+            "runtime/40-typed-runtime.sh",
+            "runtime/41-application-admission.sh",
+            "runtime/41-application-runtime.sh"));
+        changed.addAll(currentContracts.keySet());
         List<Path> unchanged;
         try (Stream<Path> files = Files.walk(resources)) {
             unchanged = files.filter(Files::isRegularFile)
                 .filter(file -> !changed.contains(resources.relativize(file).toString().replace('\\', '/')))
                 .toList();
         }
-        assertEquals(37, unchanged.size());
-        var baseline = new java.util.Properties();
+        assertEquals(30, unchanged.size());
+        var historical = new java.util.Properties();
         try (var input = getClass().getResourceAsStream("/architecture/publication-resource-baseline.properties")) {
             assertTrue(input != null, "Committed baseline resource proofs must be present");
-            baseline.load(input);
+            historical.load(input);
         }
+        var baseline = new java.util.Properties();
+        for (String path : historical.stringPropertyNames())
+            assertNull(baseline.setProperty(relocatedHelperResource(path), historical.getProperty(path)),
+                "Historical resource paths must map one-to-one to the current layout");
         Set<String> unchangedPaths = unchanged.stream()
             .map(file -> resources.relativize(file).toString().replace('\\', '/'))
             .collect(java.util.stream.Collectors.toSet());
-        assertEquals(unchangedPaths, baseline.stringPropertyNames(),
+        assertEquals(37, baseline.size(), "Retain the historical byte evidence without rewriting it");
+        assertEquals(currentContracts.keySet(), baseline.stringPropertyNames().stream()
+                .filter(changed::contains).collect(java.util.stream.Collectors.toSet()),
+            "Only the reviewed existing build, retention and toolchain contracts supersede historical resources");
+        assertEquals(unchangedPaths, baseline.stringPropertyNames().stream().filter(path -> !changed.contains(path))
+                .collect(java.util.stream.Collectors.toSet()),
             "Every unchanged resource requires its committed byte identity");
         for (Path file : unchanged) {
             String relative = resources.relativize(file).toString().replace('\\', '/');
@@ -463,6 +491,21 @@ class PackageStructureArchitectureTest {
                 .formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file)));
             assertEquals(baseline.getProperty(relative), digest, relative);
         }
+        for (var contract : currentContracts.entrySet())
+            assertEquals(contract.getValue(),
+                java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(Files.readAllBytes(resources.resolve(contract.getKey())))),
+                contract.getKey());
+    }
+
+    private static String relocatedHelperResource(String path) {
+        var prefixes = Map.of("execution/protocol/helper/fragments/", "",
+            "runtime/container/helper/", "runtime/container/", "runtime/systemd/helper/", "runtime/systemd/",
+            "distro/dnf/", "toolchain/");
+        for (var entry : prefixes.entrySet())
+            if (path.startsWith(entry.getKey()))
+                return entry.getValue() + path.substring(entry.getKey().length());
+        return path;
     }
 
     @Test
@@ -487,8 +530,8 @@ class PackageStructureArchitectureTest {
             "app/ai/src/main/java/gold/debug/windowstolinux/app/ai/vision",
             "app/ai/src/main/java/gold/debug/windowstolinux/app/ai/voice",
             "app/mod/src/main/java/gold/debug/windowstolinux/app/mod/run",
-            "mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/analyze/core",
-            "mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/ecosystem"))
+            "mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/deploy/analyze/core",
+            "mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/helper/ecosystem"))
             assertTrue(Files.isDirectory(root.resolve("src/" + required)),
                 () -> "current responsibility package is missing: " + required);
     }
@@ -971,7 +1014,7 @@ class PackageStructureArchitectureTest {
             "NodeLanguageChecker", "php", "PhpLanguageChecker", "python", "PythonLanguageChecker", "ruby",
             "RubyLanguageChecker", "rust", "RustLanguageChecker");
         List<String> problems = new ArrayList<>();
-        for (String root : List.of("gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.")) {
+        for (String root : List.of("gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.ecosystem.")) {
             Set<String> found = new HashSet<>();
             for (SourceUnit unit : sourceModel().units) {
                 String file = unit.path.getFileName().toString();
@@ -1376,7 +1419,7 @@ class PackageStructureArchitectureTest {
 
     @Test
     void publicApiPackagesFollowTheDocumentedDependencyDirection() throws Exception {
-        var allowed = Map.of("task", Set.<String>of(), "server", Set.of("task"), "ui", Set.of("task"), "db",
+        var allowed = Map.of("task", Set.<String>of(), "server", Set.of("task"), "ui", Set.of("task", "server"), "db",
             Set.of("task"), "ai", Set.of("task"), "file", Set.of("task", "server", "linux"), "secret", Set.of("task"),
             "linux", Set.of("task", "server"), "mod",
             Set.of("task", "server", "ui", "db", "ai", "file", "secret", "linux"));
@@ -1396,7 +1439,9 @@ class PackageStructureArchitectureTest {
                     .map(name -> name.substring(prefix.length()).split("\\.")[0]).orElse("");
                 if (!unit.packageName.equals(prefix + owner) && target.filter((prefix + owner)::equals).isPresent())
                     violations.add(unit.path + " makes a secondary contract depend on its capability entry: " + imported);
-                if (!materialSchemaIdentity(unit.packageName, imported) && (target.isEmpty() || !target.get().equals(unit.packageName)
+                if (!materialSchemaIdentity(unit.packageName, imported)
+                    && !reviewedCommandRequestContract(unit.packageName, unit.path.getFileName().toString(), imported)
+                    && (target.isEmpty() || !target.get().equals(unit.packageName)
                     && !targetCapability.equals(owner) && !allowed.get(owner).contains(targetCapability)))
                     violations.add(unit.path + " -> " + imported);
             }
@@ -1407,6 +1452,26 @@ class PackageStructureArchitectureTest {
     private static boolean materialSchemaIdentity(String owner, String reference) {
         return owner.equals("gold.debug.windowstolinux.appapi.file.material")
             && reference.equals("gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity");
+    }
+
+    private static boolean reviewedCommandRequestContract(String owner, String sourceFile, String reference) {
+        return owner.equals("gold.debug.windowstolinux.appapi.task.action")
+            && sourceFile.equals("InteractionService.java")
+            && reference.equals("gold.debug.windowstolinux.appapi.linux.command.CommandRequest");
+    }
+
+    @Test
+    void reviewedActionIdentityExceptionCannotExposeLinuxExecution() {
+        String owner = "gold.debug.windowstolinux.appapi.task.action";
+        String command = "gold.debug.windowstolinux.appapi.linux.command.CommandRequest";
+        assertTrue(reviewedCommandRequestContract(owner, "InteractionService.java", command));
+        for (String type : List.of("LinuxService", "session.RemoteSession", "command.CommandResult",
+            "command.*", "transfer.TransferRequest", "action.RemoteActions"))
+            assertFalse(reviewedCommandRequestContract(owner, "InteractionService.java",
+                "gold.debug.windowstolinux.appapi.linux." + type));
+        assertFalse(reviewedCommandRequestContract(owner, "ActionIntent.java", command));
+        assertFalse(reviewedCommandRequestContract("gold.debug.windowstolinux.appapi.task.run",
+            "InteractionService.java", command));
     }
 
     @Test
@@ -1536,6 +1601,28 @@ class PackageStructureArchitectureTest {
         String deployment = "gold.debug.windowstolinux.mod.deployment.service.";
         for (SourceUnit unit : model.units) {
             for (String imported : unit.imports) {
+                if ((unit.packageName.equals(deployment + "deploy")
+                    || unit.packageName.startsWith(deployment + "deploy."))
+                    && (imported.startsWith(deployment + "standard.") || imported.startsWith(deployment + "agent.")
+                    || imported.startsWith("gold.debug.windowstolinux.mod.deployment.ui.")))
+                    problems.add(unit.path + " makes reusable deployment capabilities depend on a mode or UI: " + imported);
+                if (unit.packageName.startsWith(deployment + "standard.shared.")
+                    && (imported.startsWith(deployment + "standard.staticmode.")
+                    || imported.startsWith(deployment + "standard.assisted.")))
+                    problems.add(unit.path + " makes shared standard code depend on a mode implementation: " + imported);
+                if (unit.packageName.startsWith(deployment + "standard.staticmode.")
+                    && (imported.startsWith(deployment + "standard.assisted.")
+                    || imported.equals("gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson")
+                    || imported.startsWith("gold.debug.windowstolinux.mod.deployment.ai.agent.")
+                    || imported.startsWith("gold.debug.windowstolinux.mod.deployment.ai.skill.")))
+                    problems.add(unit.path + " makes static admission depend on assisted execution: " + imported);
+                if (unit.packageName.equals("gold.debug.windowstolinux.mod.deployment.ai.agent")
+                    && (imported.startsWith(deployment) || imported.startsWith("gold.debug.windowstolinux.mod.deployment.ui.")
+                    || imported.startsWith("gold.debug.windowstolinux.mod.deployment.linux.")))
+                    problems.add(unit.path + " makes shared model tools depend on a workflow or executor: " + imported);
+                if (unit.packageName.equals("gold.debug.windowstolinux.mod.deployment.ai.skill") && !imported.startsWith("java.")
+                    && !imported.equals(unit.packageName + "." + unit.path.getFileName().toString().replace(".java", "")))
+                    problems.add(unit.path + " makes bundled instructions depend on a non-JDK implementation: " + imported);
                 if ((unit.packageName.equals(deployment + "core") || unit.packageName.startsWith(deployment + "core."))
                     && (imported.startsWith(deployment + "standard.") || imported.startsWith(deployment + "agent.")
                     || imported.startsWith("gold.debug.windowstolinux.mod.deployment.ui.")))
@@ -1624,7 +1711,7 @@ class PackageStructureArchitectureTest {
     @Test
     void relocatedTestsAndRemovedDirectoriesMatchTheirResponsibilities() throws Exception {
         Path root = projectRoot();
-        for (var entry : Map.of("DeploymentStaticInputTest", "service/standard/deploy/input",
+        for (var entry : Map.of("DeploymentStaticInputTest", "service/standard/shared/deploy/input",
             "DeploymentConfigSnapshotTest", "service/core/config").entrySet()) {
             Path test = root.resolve("src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/"
                 + entry.getValue() + "/" + entry.getKey() + ".java");

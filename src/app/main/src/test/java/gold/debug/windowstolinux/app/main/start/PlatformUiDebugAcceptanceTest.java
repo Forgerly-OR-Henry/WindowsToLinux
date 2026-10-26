@@ -190,7 +190,8 @@ class PlatformUiDebugAcceptanceTest {
                 owner.commit();
                 var before = effectCounts(runtime);
                 onEdt(() -> {
-                    ((JTabbedPane) named(frame, "platform.pages")).setSelectedIndex(1);
+                    ((JButton) named(frame, "navigation.settings")).doClick(0);
+                    ((JButton) named(frame, "navigation.security.settings")).doClick(0);
                     assertFalse(((JToggleButton) named(frame, "settings.advanced")).isSelected());
                     assertFalse(named(frame, "settings.uiDebug").isShowing());
                     ((JToggleButton) named(frame, "settings.advanced")).doClick(0);

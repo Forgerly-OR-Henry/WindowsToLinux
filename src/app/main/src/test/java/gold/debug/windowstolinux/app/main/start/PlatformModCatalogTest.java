@@ -28,8 +28,6 @@ class PlatformModCatalogTest {
         }
         try (var paths = Files.list(root)) {
             Path workspace = paths.filter(p -> p.getFileName().toString().startsWith("workspace-")).findFirst().orElseThrow();
-            Path manifest = module(workspace).resolve("mod.json");
-            Files.writeString(manifest, Files.readString(manifest).replace("\"platformApiRange\":\"1.0.0-dev.1\"", "\"platformApiRange\":\"[1.0.0-dev.1,1.0.0)\""));
             generate(workspace, module(workspace));
             return workspace;
         }
@@ -64,7 +62,7 @@ class PlatformModCatalogTest {
     }
 
     @Test
-    void discoveryRegistersDisabledSelectionAndActualBytesAreCheckedBeforeLoading() throws Exception {
+    void discoveryKeepsSelectionAndAcceptsSameVersionCodeWithoutReplacingRecordedReceipt() throws Exception {
         Path workspace = workspace();
         try (var runtime = runtime()) {
             var catalog = new PlatformModCatalog(runtime.persistence().database());
@@ -80,17 +78,16 @@ class PlatformModCatalogTest {
             assertEquals(original.contentDigest(), text(runtime, "SELECT content_sha256 FROM mod_version"));
             PlatformModCatalog.verify(workspace, original);
             resource(workspace, "changed actual processed output");
-            assertThrows(IOException.class, () -> PlatformModCatalog.verify(workspace, original));
+            PlatformModCatalog.verify(workspace, original);
             var next = registered(catalog, workspace);
-            assertNotEquals(original.contentDigest(), next.contentDigest());
+            assertEquals(original.contentDigest(), next.contentDigest());
             assertEquals(original.candidate().descriptor().inputDigest(), next.candidate().descriptor().inputDigest());
             PlatformModCatalog.verify(workspace, next);
             assertEquals("FALSE", text(runtime, "SELECT enabled FROM mod_registry"));
             assertEquals("0", text(runtime, "SELECT revision FROM mod_registry"));
-            var classFile = module(workspace).resolve("target/classes/example/admission/Mod.class");
-            byte[] bytes = Files.readAllBytes(classFile);
-            bytes[bytes.length - 1] ^= 1;
-            Files.write(classFile, bytes);
+            var manifest = module(workspace).resolve("mod.json");
+            Files.writeString(manifest, Files.readString(manifest).replace("\"version\":\"1.0.0\"", "\"version\":\"2.0.0\""));
+            generate(workspace, module(workspace));
             assertThrows(IOException.class, () -> PlatformModCatalog.verify(workspace, next));
         }
     }
@@ -126,7 +123,7 @@ class PlatformModCatalogTest {
     }
 
     @Test
-    void pendingIntentKeepsItsOriginalContentWhileUnchangedRescanRemainsAvailable() throws Exception {
+    void sameVersionRebuildKeepsPendingIntentAndItsOriginalReceipt() throws Exception {
         Path workspace = workspace();
         try (var runtime = runtime()) {
             var db = runtime.persistence().database();
@@ -139,23 +136,22 @@ class PlatformModCatalogTest {
             assertEquals(operation, text(runtime, "SELECT operation_id FROM mod_operation"));
             assertEquals(original.contentDigest(), registered(catalog, workspace).contentDigest());
             resource(workspace, "recompiled while a request is waiting");
-            var blocked = catalog.refresh(workspace);
-            assertTrue(blocked.builds().isEmpty());
-            assertEquals(1, blocked.rejections().size());
-            assertEquals("MOD_CATALOG_BUILD_IN_USE", blocked.rejections().getFirst().problem().eventCode());
+            var accepted = catalog.refresh(workspace);
+            assertEquals(1, accepted.builds().size());
+            assertTrue(accepted.rejections().isEmpty());
             assertEquals(original.contentDigest(), text(runtime, "SELECT content_sha256 FROM mod_version"));
             assertEquals(operation, text(runtime, "SELECT operation_id FROM mod_operation"));
             assertEquals("TRUE", text(runtime, "SELECT enabled FROM mod_registry"));
             assertEquals("1", text(runtime, "SELECT revision FROM mod_registry"));
             intents.apply(intents.reviewCancellation(group), false);
-            assertNotEquals(original.contentDigest(), registered(catalog, workspace).contentDigest());
+            assertEquals(original.contentDigest(), registered(catalog, workspace).contentDigest());
             assertEquals("FALSE", text(runtime, "SELECT enabled FROM mod_registry"));
             assertEquals("2", text(runtime, "SELECT revision FROM mod_registry"));
         }
     }
 
     @Test
-    void retainedRuntimeAndCrossOwnerClaimsPreventReplacement() throws Exception {
+    void retainedRuntimeAllowsSameVersionBytesButPreventsSourceReplacement() throws Exception {
         Path workspace = workspace();
         try (var runtime = runtime()) {
             var db = runtime.persistence().database();
@@ -163,6 +159,10 @@ class PlatformModCatalogTest {
             var original = registered(catalog, workspace);
             resource(workspace, "new compiled resource");
             sql(db, "UPDATE mod_registry SET last_runtime_state='UNKNOWN',actual_version=?", VERSION);
+            registered(catalog, workspace);
+            Path moved = workspace.resolve("src/mod/renamed");
+            Files.move(module(workspace), moved);
+            generate(workspace, moved);
             assertTrue(catalog.refresh(workspace).builds().isEmpty());
             assertEquals("UNKNOWN", text(runtime, "SELECT last_runtime_state FROM mod_registry"));
             sql(db, "UPDATE mod_registry SET last_runtime_state='STOPPED',actual_version=NULL");
@@ -273,7 +273,7 @@ class PlatformModCatalogTest {
             PlatformModCatalog.verify(workspace, build);
             var ledger = new gold.debug.windowstolinux.app.db.mod.ModRestartLedger(runtime.persistence().database());
             var prepared = ledger.begin(operation);
-            var api = gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse("1.0.0-dev.1");
+            var api = gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse("1.0.0");
             var plan = gold.debug.windowstolinux.app.mod.run.ModDependencyPlan
                 .resolve(List.of(build.candidate().manifest()), api, Runtime.version().feature());
             var urls = new ArrayList<java.net.URL>();

@@ -171,7 +171,7 @@ class ModReinstallationLedgerTest {
             assertThrows(SQLException.class, () -> review(ledger));
             sql(db, "UPDATE platform_task SET owner_id='other.owner' WHERE task_id=?", task);
             UUID resource = UUID.randomUUID();
-            sql(db, "INSERT INTO platform_task_resource VALUES(?,?,'MOD',?,'other.owner','SHARED',1,NULL,'{}')",
+            sql(db, "INSERT INTO platform_task_resource(lease_id,task_id,resource_kind,resource_id,owner_id,access_mode,acquired_at,released_at,recovery_json) VALUES(?,?,'MOD',?,'other.owner','SHARED',1,NULL,'{}')",
                 resource, task, OWNER);
             assertThrows(SQLException.class, () -> review(ledger));
             sql(db, "DELETE FROM platform_task_resource WHERE resource_id=?", OWNER);

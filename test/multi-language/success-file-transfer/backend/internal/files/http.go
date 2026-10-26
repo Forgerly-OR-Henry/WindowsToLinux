@@ -1,6 +1,7 @@
 package files
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,27 +11,50 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"syscall"
+	"time"
 )
 
 func reply(w http.ResponseWriter, status int, v any) {
+	replyObserved(w, status, v, nil)
+}
+func replyObserved(w http.ResponseWriter, status int, v any, o *chunkObservation) {
+	if o != nil {
+		o.status = status
+	}
+	o.emit("HTTP_RESPONSE_BEGIN", nil)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	err := json.NewEncoder(w).Encode(v)
+	o.emit("HTTP_RESPONSE_END", err)
 }
 func route(fn func(*http.Request) (any, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		var observation *chunkObservation
+		if r.Method == http.MethodPut && r.Pattern == "PUT /api/uploads/{id}/chunks/{number}" {
+			if number, err := strconv.Atoi(r.PathValue("number")); err == nil && strconv.Itoa(number) == r.PathValue("number") {
+				observation = newChunkObservation(r.Context(), r.PathValue("id"), number)
+				if observation != nil {
+					r = r.WithContext(context.WithValue(r.Context(), chunkObservationKey{}, observation))
+				}
+			}
+		}
 		v, e := fn(r)
 		if e != nil {
 			var b businessError
 			if errors.As(e, &b) {
-				reply(w, b.status, map[string]string{"error": b.message})
+				replyObserved(w, b.status, map[string]string{"error": b.message}, observation)
 				return
 			}
-			log.Printf("request %s %s: %v", r.Method, r.URL.Path, e)
-			reply(w, 500, map[string]string{"error": "存储操作失败，请检查服务日志"})
+			if observation != nil {
+				observation.emit("HTTP_HANDLER_ERROR", e)
+			} else {
+				log.Printf("request %s %s: %v", r.Method, r.URL.Path, e)
+			}
+			replyObserved(w, 500, map[string]string{"error": "存储操作失败，请检查服务日志"}, observation)
 			return
 		}
-		reply(w, 200, v)
+		replyObserved(w, 200, v, observation)
 	}
 }
 func body(r *http.Request, v any) error {
@@ -132,17 +156,63 @@ func Routes(s *Store) http.Handler {
 			return
 		}
 		defer f.Close()
-		stat, e := f.Stat()
-		if e != nil {
-			reply(w, 500, map[string]string{"error": "读取版本失败"})
-			return
-		}
-		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": record["name"].(string)}))
-		w.Header().Set("X-Content-SHA256", record["sha256"].(string))
-		http.ServeContent(w, r, record["name"].(string), stat.ModTime(), f)
+		serveDownload(w, r, f, record["name"].(string), record["sha256"].(string), record["id"].(string))
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Sample-Protocol", "2")
 		mux.ServeHTTP(w, r)
 	})
+}
+
+type downloadWriter struct {
+	http.ResponseWriter
+	controller *http.ResponseController
+	written    int64
+	err        error
+}
+
+func (w *downloadWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (w *downloadWriter) Write(p []byte) (int, error) {
+	if w.err != nil {
+		return 0, w.err
+	}
+	n, err := w.ResponseWriter.Write(p)
+	w.written += int64(n)
+	if err == nil && n != len(p) {
+		err = io.ErrShortWrite
+	}
+	w.err = err
+	return n, err
+}
+
+func serveDownload(w http.ResponseWriter, r *http.Request, f *os.File, name, digest, version string) {
+	stat, err := f.Stat()
+	if err != nil {
+		reply(w, 500, map[string]string{"error": "读取版本失败"})
+		return
+	}
+	stream := &downloadWriter{ResponseWriter: w, controller: http.NewResponseController(w)}
+	// The final client measures body progress and cancels stalled downloads.
+	// A blocked gateway write does not mean the final client stopped receiving.
+	if stream.err = stream.controller.SetWriteDeadline(time.Time{}); stream.err != nil {
+		reply(w, 500, map[string]string{"error": "无法设置下载期限"})
+	} else {
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+		w.Header().Set("X-Content-SHA256", digest)
+		http.ServeContent(stream, r, name, stat.ModTime(), f)
+		if stream.err == nil && stream.written > 0 {
+			stream.err = stream.controller.Flush()
+		}
+	}
+	if stream.err != nil {
+		declared, err := strconv.ParseInt(w.Header().Get("Content-Length"), 10, 64)
+		if err != nil {
+			declared = -1
+		}
+		var errno syscall.Errno
+		hasErrno := errors.As(stream.err, &errno)
+		log.Printf("FILE_TRANSFER_DOWNLOAD_WRITE_FAILED version=%s objectBytes=%d declaredBodyBytes=%d acceptedBodyBytes=%d errorType=%T errnoPresent=%t errno=%d timeout=%t",
+			version, stat.Size(), declared, stream.written, stream.err, hasErrno, uint64(errno), os.IsTimeout(stream.err))
+	}
 }

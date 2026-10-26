@@ -205,17 +205,16 @@ public final class ModPackageReader {
         return current;
     }
 
-    /** Verifies installed bytes against the registered digest without requiring the original archive. / 无需原包，按登记摘要核验安装字节。
+    /** Resolves installed code by declaration and ordinary bounded paths without code fingerprints. / 无代码指纹地按声明及普通有界路径解析已安装代码。
      * @param directory exact registered program root / 精确登记程序根
      * @param manifest original registered declaration / 原登记声明
-     * @param digest original complete content digest / 原完整内容摘要
      * @return verified JAR paths in loading order / 按加载顺序验证的 JAR 路径
-     * @throws IOException if paths, bytes or code admission changed / 路径、字节或代码准入变化时 */
-    public static List<Path> installedSources(Path directory, ModManifest manifest, String digest) throws IOException {
+     * @throws IOException if paths, declaration or code admission are invalid / 路径、声明或代码准入无效时 */
+    public static List<Path> installedSources(Path directory, ModManifest manifest) throws IOException {
         if (!directory.isAbsolute() || !directory.equals(directory.normalize()))
             throw new IOException("Explicit installed directory required");
         unredirected(directory);
-        var files = new ArrayList<FileEntry>();
+        var files = new ArrayList<String>();
         long[] total = {0};
         int[] count = {0};
         int[] directories = {0};
@@ -234,7 +233,7 @@ public final class ModPackageReader {
                 return FileVisitResult.CONTINUE;
             }
 
-            /** Captures bounded ordinary bytes for comparison with the original registration. / 捕获有界普通字节以比较原登记。
+            /** Checks ordinary path metadata and payload bounds without hashing code. / 检查普通路径元数据与载荷边界，不摘要代码。
              * @param path observed file / 已观察文件
              * @param before original attributes / 原属性
              * @return continued traversal / 继续遍历
@@ -242,25 +241,32 @@ public final class ModPackageReader {
             @Override
             public FileVisitResult visitFile(Path path, BasicFileAttributes before) throws IOException {
                 String name = directory.relativize(path).toString().replace('\\', '/');
-                if ((!ROOT_FILES.contains(name) && !name.matches("(?:main|lib)/[^/]+\\.jar")) || !before.isRegularFile()
+                if ((!ROOT_FILES.contains(name) && !name.matches("(?:main|lib)/[^/\\\\:]+\\.jar")) || !before.isRegularFile()
                     || before.size() > MAX_BYTES || ++count[0] > MAX_ENTRIES
                     || (total[0] += before.size()) > MAX_BYTES)
                     throw new IOException("Unexpected installed file or excessive payload");
                 ordinary(path);
-                String hash;
-                try (var file = FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
-                    hash = hash(file);
-                }
                 var after = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
                 if (!Objects.equals(before.fileKey(), after.fileKey()) || before.size() != after.size()
                     || !before.lastModifiedTime().equals(after.lastModifiedTime()))
                     throw new IOException("Installed file changed during inspection");
                 ordinary(path);
-                files.add(new FileEntry(name, before.size(), hash));
+                files.add(name);
                 return FileVisitResult.CONTINUE;
             }
         });
-        return verifyDirectory(manifest, digest, files, directory);
+        if (!files.containsAll(Set.of("mod.json", "README.md", "LICENSE", manifest.mainJar()))
+            || Files.size(directory.resolve("mod.json")) > ManifestReader.MAX_BYTES
+            || !Files.readString(directory.resolve("mod.json"), StandardCharsets.UTF_8).equals(manifest.json()))
+            throw new IOException("Installed declaration or required paths differ");
+        files.sort(ModPackageReader::comparePaths);
+        var jars = new ArrayList<String>();
+        jars.add(manifest.mainJar());
+        files.stream().filter(name -> name.startsWith("main/") && !name.equals(manifest.mainJar())).forEach(jars::add);
+        files.stream().filter(name -> name.startsWith("lib/")).forEach(jars::add);
+        var sources = jars.stream().map(directory::resolve).toList();
+        ModCodeChecker.read(manifest, sources).validate(false, Map.of());
+        return sources;
     }
 
     /** Verifies the entire extracted tree against retained file evidence without needing the archive. / 无需原包，按保留文件依据核验整个展开目录树。

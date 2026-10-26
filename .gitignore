@@ -53,3 +53,6 @@ coverage/
 ### Python test caches ###
 __pycache__/
 *.pyc
+
+### Local AI credentials ###
+/test/apikey.txt

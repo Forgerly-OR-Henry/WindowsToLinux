@@ -201,8 +201,7 @@ public final class PlatformModFlow implements AutoCloseable {
                     continue;
                 var build = programs.read(selected.owner(), selected.version());
                 if (!Objects.equals(selected.version(), build.manifest().version().toString())
-                    || !selected.manifest().equals(build.manifest().json())
-                    || !selected.digest().equals(build.contentDigest())) {
+                    || !selected.manifest().equals(build.manifest().json())) {
                     reject(prepared,
                         failure(selected.owner(), "MOD_SELECTED_BUILD_UNAVAILABLE",
                             "The selected release has no matching current program",
@@ -251,7 +250,7 @@ public final class PlatformModFlow implements AutoCloseable {
                 throw failure(owner, "MOD_RECONCILIATION_BUSY", "Original Mod session still owns resources",
                     ProblemCode.BUSY);
             var inspection = new ModSchemaChecker(runtime.persistence().database(), ledger, review,
-                maintenanceLoader(owner, review.version(), review.manifest(), review.digest()));
+                maintenanceLoader(owner, review.version(), review.manifest()));
             inspections.put(preparation, inspection);
             try {
                 var outcome = inspection.inspect();
@@ -302,8 +301,7 @@ public final class PlatformModFlow implements AutoCloseable {
                 retries.remove(review);
                 return retained.outcome();
             }
-            var loader = maintenanceLoader(owner, review.manifest().version().toString(), review.manifestJson(),
-                review.contentDigest());
+            var loader = maintenanceLoader(owner, review.manifest().version().toString(), review.manifestJson());
             var preparation = new ModSchemaSetup(runtime.persistence().database(), restarts, loader);
             retries.put(review, preparation);
             try {
@@ -348,15 +346,13 @@ public final class PlatformModFlow implements AutoCloseable {
      * @param owner original owner / 原所有者
      * @param version original version / 原版本
      * @param manifest original declaration / 原声明
-     * @param digest original verified content / 原已验证内容
      * @return isolated maintenance loader / 隔离维护加载器
      * @throws Exception if program or providers are unavailable / 程序或提供方不可用时 */
-    private ModClassLoader maintenanceLoader(String owner, String version, String manifest, String digest)
+    private ModClassLoader maintenanceLoader(String owner, String version, String manifest)
         throws Exception {
         programs.refresh();
         var build = programs.read(owner, version);
-        if (!version.equals(build.manifest().version().toString()) || !manifest.equals(build.manifest().json())
-            || !digest.equals(build.contentDigest()))
+        if (!version.equals(build.manifest().version().toString()) || !manifest.equals(build.manifest().json()))
             throw failure(owner, "MOD_RECONCILIATION_BUILD_CHANGED", "Original validation program is unavailable",
                 ProblemCode.UNAVAILABLE);
         programs.verify(build);

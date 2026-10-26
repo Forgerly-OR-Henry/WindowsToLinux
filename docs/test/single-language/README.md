@@ -107,13 +107,13 @@ uv 使用 `uv sync --locked --no-dev`，以检查清单与锁一致；单独使�
 
 各组合的工具版本、实际检查和待验证项见 [验证记录](VERIFICATION.md)。已有实机入口继续默认关闭；本地检查不代表完成服务器发布或回滚。
 
-JDK 21 下的聚焦验证命令：
+JDK 21 下按受影响场景选择验证；例如仅检查原生架构识别：
 
 ```text
-mvn -B -ntp -o -pl :windowstolinux-app-main -am -Dtest=NativeArchitectureInspectionTest,PythonBuildInspectorTest,DeploymentBuildRendererTest,EcosystemExtensionFixtureMatrixTest,EcosystemExtensionAcceptanceFixtureTest,EcosystemServiceAcceptanceFixtureTest,RepositoryHttpFixtureTest,PackageStructureArchitectureTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn -B -ntp -o -pl src/mod/deployment -am '-Dtest=NativeArchitectureInspectionTest' -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-PowerShell 中将完整的每个 `-D...` 参数放进单引号，避免参数被拆分。实机验收范围和连接参数见 [0.4 期验收](../../development/PHASE-0.4.md#acceptance-methods)。25 种源码代表组合已有各自的真实成功记录，具体管理和回滚范围见[实际覆盖](../../development/PHASE-0.4.md#acceptance-matrix)；125 个场景没有全部执行，不能以代表组合或历史 helper v5 的 17 条路径推定完成。
+PowerShell 中将完整的每个 `-D...` 参数放进单引号，避免参数被拆分。旧实机验收范围和连接参数见 [0.4 期历史验收](../../development/PHASE-0.4.md#acceptance-methods)。25 种源码代表组合已有各自的真实成功记录，具体管理和回滚范围见[实际覆盖](../../development/PHASE-0.4.md#acceptance-matrix)；125 个场景没有全部执行，不能以代表组合或历史 helper v5 的 17 条路径推定完成。
 
 ### Python 标准库构建补充
 

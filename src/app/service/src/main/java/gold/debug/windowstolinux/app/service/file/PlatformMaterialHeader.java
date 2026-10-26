@@ -149,7 +149,7 @@ record PlatformMaterialHeader(ResourceRecovery recovery) {
             throw new IllegalArgumentException("Material root consumer differs");
         for (String prefix : List.of("producer", "consumer")) {
             var original = graph.release(field(prefix + "Id"));
-            if (!original.version().equals(field(prefix + "Version")) || !original.digest().equals(field(prefix + "Digest"))
+            if (!original.version().equals(field(prefix + "Version"))
                 || !original.schema().equals(schema(recovery.fields(), prefix)))
                 throw new IllegalArgumentException("Material original program or data differs");
         }

@@ -9,31 +9,20 @@ import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
  * @param owner original task owner / 原任务所有者
  * @param releases original owner, required closure and actually used optional providers / 原所有者、必需闭包及实际使用的可选提供方
  * @param edges recorded required and actually used optional edges / 记录的必需及实际使用可选边
- * @param legacy whether this retains the format 2 all-required shape / 是否保留格式 2 全必需形状
  */
-public record TaskRecoveryGraph(String owner, List<Release> releases, List<Edge> edges, boolean legacy) {
-    /** Validates and copies the exact original boundary identity. / 校验并复制精确原边界身份。
+public record TaskRecoveryGraph(String owner, List<Release> releases, List<Edge> edges) {
+    /** Collects a recovery session's identity union; each admitted task retains its own edges. / 汇集恢复会话身份，各准入任务独立保留原边。
      * @param owner exact original Mod owner / 精确原 Mod 所有者
      * @param releases exact retained original release identities / 精确保留原发布身份
      */
     public TaskRecoveryGraph(String owner, List<Release> releases) {
-        this(owner, releases, List.of(), true);
-    }
-
-    /** Validates and copies the exact original boundary identity. / 校验并复制精确原边界身份。
-     * @param owner exact original Mod owner / 精确原 Mod 所有者
-     * @param releases exact retained original release identities / 精确保留原发布身份
-     * @param edges recorded required and actually used optional edges / 记录的必需及实际使用可选边
-     */
-    public TaskRecoveryGraph(String owner, List<Release> releases, List<Edge> edges) {
-        this(owner, releases, edges, false);
+        this(owner, releases, List.of());
     }
 
     /** Requires a complete unique identity set containing the original owner. / 要求完整唯一身份集合包含原所有者。
      * @param owner original task owner / 原任务所有者
      * @param releases original release identities / 原发布身份
      * @param edges recorded required and actually used optional edges / 记录的必需及实际使用可选边
-     * @param legacy whether this retains the format 2 all-required shape / 是否保留格式 2 全必需形状
      */
     public TaskRecoveryGraph {
         Objects.requireNonNull(owner);
@@ -45,19 +34,15 @@ public record TaskRecoveryGraph(String owner, List<Release> releases, List<Edge>
                 throw new IllegalArgumentException("Duplicate original Mod identity");
         if (!owners.contains(owner))
             throw new IllegalArgumentException("Original task owner is absent");
-        if (releases.size() > 512 || edges.size() > 32768 || legacy && !edges.isEmpty())
-            throw new IllegalArgumentException("Invalid original graph size or legacy edges");
+        if (releases.size() > 512 || edges.size() > 32768)
+            throw new IllegalArgumentException("Invalid original graph size");
         var pairs = new HashSet<String>();
         for (var edge : edges)
             if (!owners.contains(edge.caller()) || !owners.contains(edge.provider())
                 || !pairs.add(edge.caller() + "\0" + edge.provider()))
                 throw new IllegalArgumentException("Invalid original graph edge");
-        if (!legacy) {
-            var reached = new HashSet<String>();
-            visit(owner, edges, new HashSet<>(), reached);
-            if (!reached.equals(owners))
-                throw new IllegalArgumentException("Original graph contains unrelated releases");
-        }
+        for (String identity : owners)
+            visit(identity, edges, new HashSet<>(), new HashSet<>());
     }
 
     /** Rejects cycles and collects all recorded reachable releases. / 拒绝循环并收集全部记录可达发布。
@@ -109,14 +94,12 @@ public record TaskRecoveryGraph(String owner, List<Release> releases, List<Edge>
      * @return verified original result / 已核验原结果
      */
     public TaskRecoveryGraph extend(String caller, TaskRecoveryGraph provider, EdgeKind kind) {
-        if (legacy || provider.legacy())
-            throw new IllegalArgumentException("Legacy graphs cannot acquire optional edges");
         release(caller);
         var all = new LinkedHashMap<String, Release>();
         releases.forEach(r -> all.put(r.owner(), r));
         for (var r : provider.releases()) {
             var prior = all.putIfAbsent(r.owner(), r);
-            if (prior != null && !prior.equals(r)) throw new IllegalArgumentException("Original release changed");
+            if (prior != null && !prior.sameIdentity(r)) throw new IllegalArgumentException("Original release changed");
         }
         var next = new LinkedHashSet<>(edges);
         var edge = new Edge(caller, provider.owner(), kind);
@@ -144,7 +127,6 @@ public record TaskRecoveryGraph(String owner, List<Release> releases, List<Edge>
      * @return verified original result / 已核验原结果
      */
     public TaskRecoveryGraph requiredClosure(String provider) {
-        if (legacy) throw new IllegalArgumentException("Legacy closure requires original manifests");
         var owners = new HashSet<String>();
         var queue = new ArrayDeque<String>();
         queue.add(provider);
@@ -176,7 +158,11 @@ public record TaskRecoveryGraph(String owner, List<Release> releases, List<Edge>
             || !claims.contains(new TaskResource("MOD", owner, owner, false))
             || !schemas.equals(original.schema().stream().map(value -> value.generation().toString()).toList()))
             throw new IllegalArgumentException("Recovery graph differs from original task identity");
-        if (!legacy && !new HashSet<>(claims.stream().filter(c -> Set.of("MOD", "SCHEMA").contains(c.kind())).toList())
+        var reached = new HashSet<String>();
+        visit(owner, edges, new HashSet<>(), reached);
+        if (!reached.equals(releases.stream().map(Release::owner).collect(java.util.stream.Collectors.toSet())))
+            throw new IllegalArgumentException("Original task graph contains unrelated releases");
+        if (!new HashSet<>(claims.stream().filter(c -> Set.of("MOD", "SCHEMA").contains(c.kind())).toList())
             .equals(new HashSet<>(claims())))
             throw new IllegalArgumentException("Original graph and task-wide pins differ");
     }
@@ -191,9 +177,8 @@ public record TaskRecoveryGraph(String owner, List<Release> releases, List<Edge>
                 "schemaVersion", value.schema().map(SchemaIdentity::schemaVersion).orElse(""),
                 "schemaGeneration", value.schema().map(schema -> schema.generation().toString()).orElse("")))
             .toList());
-        if (!legacy)
-            document.put("edges", edges.stream().map(e -> Map.of("caller", e.caller(), "provider", e.provider(),
-                "kind", e.kind().name())).toList());
+        document.put("edges", edges.stream().map(e -> Map.of("caller", e.caller(), "provider", e.provider(),
+            "kind", e.kind().name())).toList());
         return Collections.unmodifiableMap(document);
     }
 
@@ -201,7 +186,7 @@ public record TaskRecoveryGraph(String owner, List<Release> releases, List<Edge>
      * @param graph original JSON graph / 原 JSON 图
      * @return validated retained identities / 已校验保留身份 */
     public static TaskRecoveryGraph decode(JsonNode graph) {
-        if (!graph.isObject() || (graph.size() != 2 && graph.size() != 3) || !graph.path("owner").isTextual()
+        if (!graph.isObject() || graph.size() != 3 || !graph.path("owner").isTextual()
             || !graph.path("releases").isArray())
             throw new IllegalArgumentException("Invalid original task graph");
         var releases = new ArrayList<Release>();
@@ -224,7 +209,6 @@ public record TaskRecoveryGraph(String owner, List<Release> releases, List<Edge>
             releases.add(
                 new Release(owner, value.path("version").textValue(), value.path("digest").textValue(), schema));
         }
-        if (graph.size() == 2) return new TaskRecoveryGraph(graph.path("owner").textValue(), releases);
         if (!graph.path("edges").isArray()) throw new IllegalArgumentException("Missing original edges");
         var edges = new ArrayList<Edge>();
         for (var e : graph.path("edges")) {
@@ -239,13 +223,13 @@ public record TaskRecoveryGraph(String owner, List<Release> releases, List<Edge>
     /** One exact original release and its optional business generation. / 一个精确原发布及其可选业务代次。
      * @param owner original Mod identity / 原 Mod 身份
      * @param version exact running release / 精确运行发布
-     * @param digest original complete program digest / 原完整程序摘要
+     * @param digest historical registration receipt retained in existing formats / 既有格式保留的历史登记凭据
      * @param schema original optional business generation / 原可选业务代次 */
     public record Release(String owner, String version, String digest, Optional<SchemaIdentity> schema) {
         /** Validates bounded original identity without accepting missing code evidence. / 校验有界原身份，不接受缺失代码依据。
          * @param owner original Mod identity / 原 Mod 身份
          * @param version exact running release / 精确运行发布
-         * @param digest original program digest / 原程序摘要
+         * @param digest historical registration receipt / 历史登记凭据
          * @param schema optional original generation / 可选原代次 */
         public Release {
             Objects.requireNonNull(schema);
@@ -253,6 +237,14 @@ public record TaskRecoveryGraph(String owner, List<Release> releases, List<Edge>
                 || version.length() > 512 || digest == null || !digest.matches("[0-9a-f]{64}")
                 || schema.isPresent() && !schema.get().ownerId().equals(owner))
                 throw new IllegalArgumentException("Invalid original Mod release");
+        }
+
+        /** Compares Mod identity, version and data generation without treating code receipts as identity. / 比较Mod身份、版本和数据代次，不以代码凭据作为身份。
+         * @param other compared release / 待比较发布
+         * @return whether the same Mod version and data are selected / 是否选定同一Mod版本及数据 */
+        public boolean sameIdentity(Release other) {
+            return other != null && owner.equals(other.owner()) && version.equals(other.version())
+                && schema.equals(other.schema());
         }
     }
 }

@@ -46,6 +46,20 @@ public final class HostTaskRecovery {
                         String kind = rows.getString(2), id = rows.getString(3);
                         String prefix = allowedPrefixes.get(kind);
                         boolean explicit = "{\"release\":\"EXPLICIT\"}".equals(rows.getString(5));
+                        if (!explicit && (kind.equals("CUSTOM") && "ai-access-".equals(prefix)
+                            || kind.equals("CONNECTION") && "ai-".equals(prefix) && id.startsWith("ai-http-"))) {
+                            var facts = gold.debug.windowstolinux.app.db.task.ResourceRecovery.decode(rows.getString(5));
+                            try {
+                                String process = facts.fields().get("bootId");
+                                UUID original = UUID.fromString(process);
+                                explicit = facts.protocol().equals("ai-process.v1")
+                                    && facts.fields().keySet().equals(Set.of("bootId", "kind"))
+                                    && facts.fields().get("kind").equals(kind.equals("CUSTOM") ? "access" : "http")
+                                    && original.toString().equals(process) && !database.bootId().equals(original);
+                            } catch (IllegalArgumentException | NullPointerException invalid) {
+                                throw new SQLException("AI physical boot is invalid", invalid);
+                            }
+                        }
                         if (kind.equals("CONNECTION") && "ssh-".equals(prefix)) {
                             var facts = gold.debug.windowstolinux.app.db.task.ResourceRecovery
                                 .decode(rows.getString(5));

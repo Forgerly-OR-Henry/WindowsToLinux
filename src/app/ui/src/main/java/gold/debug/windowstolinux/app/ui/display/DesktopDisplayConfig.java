@@ -32,7 +32,7 @@ public record DesktopDisplayConfig(String localeTag, ThemeMode themeMode, int sc
     public DesktopDisplayConfig {
         localeTag = Objects.requireNonNull(localeTag, "localeTag");
         themeMode = Objects.requireNonNull(themeMode, "themeMode");
-        if (scalePercent != 100 && scalePercent != 150 && scalePercent != 200)
+        if (scalePercent != 100 && scalePercent != 150)
             throw new IllegalArgumentException("invalid ui_scale preference");
     }
 
@@ -107,7 +107,7 @@ public record DesktopDisplayConfig(String localeTag, ThemeMode themeMode, int sc
         return fromStoredValues(storedLocaleTag, storedThemeMode, storedScalePercent, null, systemLocale);
     }
 
-    /** Restores display and explicit startup choices. / 恢复显示及明确启动选择。
+    /** Restores display and startup choices, reducing removed 200% zoom to 150%. / 恢复显示及启动选择，将已移除的 200% 缩放降至 150%。
      * @param storedLocaleTag stored language / 已存语言
      * @param storedThemeMode stored theme / 已存主题
      * @param storedScalePercent stored zoom / 已存缩放
@@ -138,6 +138,7 @@ public record DesktopDisplayConfig(String localeTag, ThemeMode themeMode, int sc
             ? MessageCatalog.defaultLanguageTag(systemLocale)
             : MessageCatalog.normalizeLanguageTag(storedLocaleTag);
         int scalePercent = storedScalePercent == null ? 100 : Integer.parseInt(storedScalePercent);
+        if (scalePercent == 200) scalePercent = 150;
         if (storedRestoreLastPage != null && !storedRestoreLastPage.equals("true") && !storedRestoreLastPage.equals("false"))
             throw new IllegalArgumentException("invalid ui_restore_last_page preference");
         if (storedAnimation != null && !storedAnimation.equals("true") && !storedAnimation.equals("false"))

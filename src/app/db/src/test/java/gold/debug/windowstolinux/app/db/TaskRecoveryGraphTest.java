@@ -33,12 +33,24 @@ class TaskRecoveryGraphTest {
         return new TaskRecoveryGraph(OWNER,
             List.of(new TaskRecoveryGraph.Release(OWNER, VERSION, "a".repeat(64),
                     Optional.of(new SchemaIdentity(OWNER, "1", UUID.randomUUID()))),
-                new TaskRecoveryGraph.Release("example.provider", "2.0.0", "b".repeat(64), Optional.empty())));
+                new TaskRecoveryGraph.Release("example.provider", "2.0.0", "b".repeat(64), Optional.empty())),
+            List.of(new TaskRecoveryGraph.Edge(OWNER, "example.provider", TaskRecoveryGraph.EdgeKind.REQUIRED)));
+    }
+
+    @Test
+    void recoveryIdentityUsesOwnerVersionAndDataGenerationWithoutCodeReceipt() {
+        var original = graph().release(OWNER);
+        var repaired = new TaskRecoveryGraph.Release(OWNER, VERSION, "f".repeat(64), original.schema());
+        assertTrue(original.sameIdentity(repaired));
+        assertNotEquals(original, repaired);
+        assertFalse(original.sameIdentity(new TaskRecoveryGraph.Release(OWNER, "2.0.0", original.digest(), original.schema())));
+        assertFalse(original.sameIdentity(new TaskRecoveryGraph.Release("other.mod", VERSION, original.digest(), Optional.empty())));
+        assertFalse(original.sameIdentity(new TaskRecoveryGraph.Release(OWNER, VERSION, original.digest(),
+            Optional.of(new SchemaIdentity(OWNER, "1", UUID.randomUUID())))));
     }
 
     static List<TaskResource> claims(TaskRecoveryGraph graph) {
-        return List.of(new TaskResource("MOD", OWNER, OWNER, false), new TaskResource("SCHEMA",
-            graph.release(OWNER).schema().orElseThrow().generation().toString(), OWNER, false));
+        return graph.claims();
     }
 
     static UUID enqueue(TaskLedger ledger, TaskRecoveryGraph graph) throws Exception {
@@ -84,9 +96,9 @@ class TaskRecoveryGraphTest {
             var ledger = new TaskLedger(db);
             id = enqueue(ledger, graph);
             assertEquals(Optional.of(graph), ledger.queries().recoveryGraph(id));
-            assertEquals(2, new ObjectMapper().readTree(metadata(db, id)).path("formatVersion").intValue());
+            assertEquals(3, new ObjectMapper().readTree(metadata(db, id)).path("formatVersion").intValue());
             assertTrue(ledger.tryStart(id));
-            assertEquals(2, new TaskLedgerTest().active(db, id));
+            assertEquals(graph.claims().size(), new TaskLedgerTest().active(db, id));
         }
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(db);
@@ -110,7 +122,7 @@ class TaskRecoveryGraphTest {
             document.remove("graph");
             mutations.add(document.toString());
             document = (ObjectNode) json.readTree(original);
-            document.put("formatVersion", 3);
+            document.put("formatVersion", 4);
             mutations.add(document.toString());
             document = (ObjectNode) json.readTree(original);
             ((com.fasterxml.jackson.databind.node.ArrayNode) document.path("initialClaims")).remove(0);
@@ -134,6 +146,10 @@ class TaskRecoveryGraphTest {
                 .add(document.path("graph").path("releases").get(0).deepCopy());
             mutations.add(document.toString());
             mutations.add(original.replaceFirst("\\{", "{\"formatVersion\":2,"));
+            document = (ObjectNode) json.readTree(original);
+            document.put("formatVersion", 2);
+            ((ObjectNode) document.path("graph")).remove("edges");
+            mutations.add(document.toString());
             mutations.add(original + " {}");
             mutations.add(" ".repeat(1024 * 1024) + original);
             for (String value : mutations) {
@@ -176,7 +192,7 @@ class TaskRecoveryGraphTest {
     }
 
     @Test
-    void hostAndEarlierAdmissionRecordsRemainExplicitlyWithoutInventedModGraph() throws Exception {
+    void currentHostAdmissionRemainsWithoutInventedModGraph() throws Exception {
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(db);
             var id = ledger.enqueue(UUID.randomUUID(), OWNER, VERSION, REQUEST,

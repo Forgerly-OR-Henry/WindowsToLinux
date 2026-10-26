@@ -28,7 +28,7 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
     private final JComboBox<ThemeMode> theme = new JComboBox<>(ThemeMode.values());
 
     /** Application zoom choices relative to system scaling. / 相对于系统缩放的应用缩放选项。 */
-    private final JComboBox<Integer> scale = new JComboBox<>(new Integer[]{100, 150, 200});
+    private final JComboBox<Integer> scale = new JComboBox<>(new Integer[]{100, 150});
 
     /** Explicit next-start page restoration choice. / 明确的下次启动页面恢复选择。 */
     private final JCheckBox restoreLastPage = new JCheckBox();
@@ -119,11 +119,6 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
             label.setText(value == null ? "" : value + "%");
             return label;
         });
-        for (var field : new JComboBox<?>[]{language, theme, scale}) {
-            field.putClientProperty("FlatLaf.style", "arc: 8; borderWidth: 0; focusWidth: 1; "
-                + "background: $Panel.background; buttonBackground: $Panel.background; "
-                + "buttonFocusedBackground: $Panel.background; buttonArrowColor: $Label.foreground");
-        }
         save = messages.bind(components.primaryButton(""), "appearance.save");
         save.setName("appearance.save");
         save.addActionListener(event -> save());

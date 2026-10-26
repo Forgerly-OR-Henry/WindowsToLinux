@@ -57,6 +57,12 @@ public final class ModelHttpCall implements AutoCloseable {
     /** Current request future, when created. / 已创建时的当前请求 Future。 */
     private volatile CompletableFuture<HttpResponse<byte[]>> response;
 
+    /** Bounded body observer published before the actual response status. / 在实际响应码之前发布的有界正文观察器。 */
+    private volatile LimitedHttpBodySubscriber responseBody;
+
+    /** Final response status observed by BodyHandler; zero means no such observation yet. / BodyHandler实际观察的最终响应码，零表示尚未观察到。 */
+    private volatile int responseStatus;
+
     /**
      * Takes ownership of prepared request bytes without sending. / 接管准备好的请求字节，不发送。
      * @param endpoint exact configured complete endpoint / 精确配置的完整端点
@@ -127,8 +133,12 @@ public final class ModelHttpCall implements AutoCloseable {
             return failure(TaskResult.FAILED, ProblemCode.TIMEOUT, "AI_BEFORE_SEND_TIMEOUT",
                 "The deadline expired before sending", Map.of());
         try {
-            response = client.sendAsync(request,
-                ignored -> new LimitedHttpBodySubscriber(ModelMessageCodec.MAX_RESPONSE_BYTES));
+            response = client.sendAsync(request, info -> {
+                var subscriber = new LimitedHttpBodySubscriber(ModelMessageCodec.MAX_RESPONSE_BYTES);
+                responseBody = subscriber;
+                responseStatus = info.statusCode();
+                return subscriber;
+            });
             for (; ; ) {
                 if (cancellation.requested() || Thread.currentThread().isInterrupted()) {
                     response.cancel(true);
@@ -157,8 +167,10 @@ public final class ModelHttpCall implements AutoCloseable {
                                 Optional.of(decoded.response()),
                                 Optional.empty());
                         } catch (IOException invalid) {
+                            var details = new HashMap<>(ModelProtocolDiagnostics.shape(protocol, bytes));
+                            details.put("nativeValidationCode", NativeModelCodec.validationCode(invalid));
                             return failure(TaskResult.FAILED, ProblemCode.CONTRACT_VIOLATION, "AI_RESPONSE_INVALID",
-                                "The provider response does not satisfy the requested format", ModelProtocolDiagnostics.shape(protocol, bytes));
+                                "The provider response does not satisfy the requested format", details);
                         }
                     } finally {
                         Arrays.fill(bytes, (byte) 0);
@@ -265,6 +277,11 @@ public final class ModelHttpCall implements AutoCloseable {
     private OperationResult<AiResponse> failure(TaskResult outcome, ProblemCode code, String event, String message,
                                                 Map<String, String> context) {
         var details = new HashMap<>(context);
+        int status = responseStatus;
+        details.put("httpHeadersReceived", Boolean.toString(status != 0));
+        if (status != 0)
+            details.put("httpStatus", Integer.toString(status));
+        details.put("httpBodyBytesAccepted", Integer.toString(status == 0 ? 0 : responseBody.acceptedBytes()));
         details.put("modelId", modelId);
         return new OperationResult<>(outcome, Optional.empty(),
             Optional.of(new Problem(code, event, message, details, Optional.empty())));

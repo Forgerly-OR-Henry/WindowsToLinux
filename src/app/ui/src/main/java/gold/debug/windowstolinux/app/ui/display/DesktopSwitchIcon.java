@@ -42,7 +42,7 @@ public final class DesktopSwitchIcon implements AnimatedIcon, UIResource {
         return UIScale.scale(36);
     }
 
-    /** Includes space for colored keyboard focus. / 包含颜色键盘焦点的空间。
+    /** Keeps the existing vertical switch space. / 保留现有开关纵向空间。
      * @return scaled height / 缩放高度 */
     @Override
     public int getIconHeight() {
@@ -110,7 +110,7 @@ public final class DesktopSwitchIcon implements AnimatedIcon, UIResource {
         paintIconAnimated(component, graphics, x, y, state.value);
     }
 
-    /** Paints only filled round surfaces, preserving disabled and keyboard feedback. / 仅绘制填充圆形表面，保留禁用与键盘反馈。
+    /** Paints filled round surfaces without an outer focus frame. / 绘制填充圆形表面，不绘制外层焦点框。
      * @param component original control / 原控件
      * @param graphics paint context / 绘制上下文
      * @param x icon origin / 图标原点
@@ -127,10 +127,6 @@ public final class DesktopSwitchIcon implements AnimatedIcon, UIResource {
             boolean enabled = button.isEnabled();
             Color off = UIManager.getColor(enabled ? "Button.background" : "Button.disabledBackground");
             Color on = UIManager.getColor("Component.focusColor");
-            if (button.isFocusOwner()) {
-                g.setColor(new Color(on.getRed(), on.getGreen(), on.getBlue(), 65));
-                g.fillRoundRect(0, 0, 36, 24, 24, 24);
-            }
             Color track = blend(off, enabled ? on : UIManager.getColor("Label.disabledForeground"), value);
             if (enabled && button.getModel().isRollover())
                 track = blend(track, UIManager.getColor("Label.foreground"), .1f);

@@ -24,6 +24,7 @@ import gold.debug.windowstolinux.app.config.AppConfig;
 import gold.debug.windowstolinux.app.db.ai.StoredAiModelInfo;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
@@ -32,6 +33,8 @@ import gold.debug.windowstolinux.appapi.ai.*;
 import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
 import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
 import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
+import gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt;
+import gold.debug.windowstolinux.appapi.ai.model.AiUsage;
 import gold.debug.windowstolinux.appapi.ai.voice.VoiceEvent;
 import gold.debug.windowstolinux.appapi.ai.voice.VoiceListener;
 import gold.debug.windowstolinux.appapi.ai.voice.VoiceOptions;
@@ -73,6 +76,9 @@ public final class PlatformAiService implements AiService, AutoCloseable {
     /** Synchronous configuration and callback ownership. / 同步配置及回调归属。 */
     private final TaskCapabilityScope scope;
 
+    /** Original current process identity, never a model-specific setting. / 原当前进程身份，不属于模型配置。 */
+    private final UUID bootId;
+
     /** Actual HTTP clients whose release has not been recorded. / 尚未登记释放的实际 HTTP 客户端。 */
     private final Set<PendingCall> retained = Collections.newSetFromMap(new IdentityHashMap<>());
 
@@ -111,7 +117,9 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         this.profiles = Objects.requireNonNull(profiles);
         this.owner = Objects.requireNonNull(owner);
         this.version = Objects.requireNonNull(version);
-        scope = new TaskCapabilityScope(database, tasks, owner, version, Optional.empty(), "ai-access-");
+        bootId = database.bootId();
+        scope = new TaskCapabilityScope(database, tasks, owner, version, Optional.empty(), "ai-access-",
+            Optional.of(new ResourceRecovery("ai-process.v1", Map.of("bootId", bootId.toString(), "kind", "access"))));
     }
 
     /**
@@ -291,7 +299,8 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @throws ApiException if admission, configuration or cleanup fails / 准入、配置或清理失败时 */
     private OperationResult<VoiceResponse> sendVoice(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
                                                      char[] key, VoiceRequest request, TaskContext task, long start) throws ApiException {
-        ResourceLease lease = tasks.retain(task, new TaskResource("CONNECTION", "ai-http-" + UUID.randomUUID(), owner, false));
+        ResourceLease lease = tasks.retain(task, new TaskResource("CONNECTION", "ai-http-" + UUID.randomUUID(), owner, false),
+            new ResourceRecovery("ai-process.v1", Map.of("bootId", bootId.toString(), "kind", "http")), false);
         var pending = new PendingCall(task, lease);
         synchronized (this) {
             retained.add(pending);
@@ -462,6 +471,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
             throw new ApiException(withOutputBudget(error(ProblemCode.INVALID_INPUT, "AI_TIMEOUT", "Model timeout is too large").problem(), effectiveMaxOutputTokens));
         }
         long start = System.nanoTime();
+        var returnedAttempts = new java.util.concurrent.atomic.AtomicReference<List<AiGenerationAttempt>>(List.of());
         try {
             return scope.call(task, false, () -> {
                 AiPurposeType purpose = mapped(request.purpose());
@@ -494,6 +504,8 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                 for (var candidate : candidates) {
                     try (var prepared = capture(candidate, purpose, task, expectedRevision)) {
                         result = send(candidate.profile(), prepared, request, effectiveMaxOutputTokens, task, start, timeout, false);
+                        returnedAttempts.set(result.value().map(AiResponse::generationAttempts)
+                            .orElse(result.problem().map(AiGenerationAttempt::fromProblem).orElse(List.of())));
                     }
                     if (binding.isPresent() || result.outcome() != TaskResult.FAILED || result.problem().isEmpty()
                         || !result.problem().orElseThrow().eventCode().equals("AI_HTTP_REJECTED"))
@@ -502,7 +514,10 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                 return Objects.requireNonNull(result);
             });
         } catch (ApiException failure) {
-            throw new ApiException(withOutputBudget(failure.problem(), effectiveMaxOutputTokens));
+            var problem = failure.problem();
+            if (!problem.context().containsKey("generationAttemptCount") && !returnedAttempts.get().isEmpty())
+                problem = AiGenerationAttempt.attach(problem, returnedAttempts.get());
+            throw new ApiException(withOutputBudget(problem, effectiveMaxOutputTokens));
         } catch (SQLException failure) {
             throw new ApiException(withOutputBudget(error(ProblemCode.IO_FAILURE, "AI_CONFIGURATION_STORAGE", "Model configuration could not be read").problem(), effectiveMaxOutputTokens));
         }
@@ -544,7 +559,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         return settings.verificationMaxOutputTokens();
     }
 
-    /** Owns encoding, one send and actual cleanup within the original deadline. / 在原始期限内持有编码、单次发送及实际清理。
+    /** Owns bounded logical generation and cleanup within the original deadline; each physical client sends at most once. / 原期限内持有有界逻辑生成和清理；每个物理客户端至多发送一次。
      * @param profile exact captured provider / 精确已捕获提供者
      * @param prepared original credential / 原凭据
      * @param request bounded request / 有界请求
@@ -571,77 +586,151 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                 "Model input, capability or output budget is invalid",
                 metadata, Optional.empty()));
         }
-        boolean transferred = false;
+        var attempts = new ArrayList<AiGenerationAttempt>();
+        UUID generation = UUID.randomUUID();
+        OperationResult<AiResponse> result = null;
+        String continuationValue = null;
         try {
-            ResourceLease lease = tasks.retain(task,
-                new TaskResource("CONNECTION", "ai-http-" + UUID.randomUUID(), owner, false));
-            var pending = new PendingCall(task, lease);
-            synchronized (this) {
-                retained.add(pending);
-            }
-            try {
-                long remaining = timeout - (System.nanoTime() - start);
-                if (remaining <= 0)
-                    return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
-                        Optional.of(new Problem(ProblemCode.TIMEOUT, "AI_BEFORE_SEND_TIMEOUT",
-                            "The request budget ended before another model request was sent", Map.of("effectiveMaxOutputTokens", Integer.toString(effectiveMaxOutputTokens), "maximumOutputTokens", Integer.toString(effectiveMaxOutputTokens)),
-                            Optional.empty())));
-                try {
-                    pending.call = new ModelHttpCall(URI.create(profile.endpoint()), prepared.key(), body,
-                        Duration.ofNanos(remaining), profile.id(), request.jsonObjectResponse(), connectSeconds, profile.protocol());
-                    transferred = true;
-                } catch (IllegalArgumentException invalid) {
-                    throw error(ProblemCode.UNAVAILABLE, "AI_CONFIGURATION_INVALID",
-                        "The configured endpoint or credential is invalid");
-                }
-                var result = pending.call.execute(tasks.operationCancellation(task));
-                if (result.value().isPresent()) {
-                    var response = result.value().orElseThrow();
-                    result = new OperationResult<>(result.outcome(), Optional.of(new AiResponse(response.text(), response.modelId(),
-                        response.finishReason(), response.usage(), response.toolCalls(), response.continuation(), Optional.of(body.length), Optional.of(effectiveMaxOutputTokens))), result.problem());
-                }
-                if (result.outcome() != TaskResult.SUCCEEDED) continuations.stop(task.id(), request.purpose());
-                if (result.outcome() == TaskResult.SUCCEEDED && (!request.tools().isEmpty() || request.messages().stream().anyMatch(m -> m.continuation().isPresent()))) {
-                    if (!revision.equals(nativeRevision(profile, request, task, probe))) {
-                        continuations.stop(task.id(), request.purpose());
-                        throw error(ProblemCode.UNAVAILABLE, "AI_SESSION_REVISION_CHANGED", "Model configuration changed during the native request");
-                    }
-                    var response = result.value().orElseThrow();
-                    gold.debug.windowstolinux.appapi.ai.model.AiContinuation state;
+            for (int number = 1; ; number++) {
+                if (number > 1) {
                     try {
-                        state = continuations.retain(task.id(), request.purpose(), profile,
-                            revision, pending.call.continuation());
-                    } catch (IllegalArgumentException exhausted) {
-                        continuations.stop(task.id(), request.purpose());
-                        throw error(ProblemCode.UNAVAILABLE, "AI_SESSION_STATE_LIMIT", "Native continuation state cannot be retained");
+                        tasks.requireExecuting(task, owner, version);
+                        if (tasks.operationCancellation(task).requested() || Thread.currentThread().isInterrupted())
+                            throw error(ProblemCode.CANCELLED, "AI_RECOVERY_CANCELLED", "Generation recovery was cancelled");
+                        if (timeout - (System.nanoTime() - start) <= 0)
+                            throw error(ProblemCode.TIMEOUT, "AI_BEFORE_SEND_TIMEOUT", "The original generation deadline ended");
+                        if (!revision.equals(nativeRevision(profile, request, task, probe)))
+                            throw error(ProblemCode.UNAVAILABLE, "AI_SESSION_REVISION_CHANGED", "Model configuration changed before generation recovery");
+                    } catch (ApiException stopped) {
+                        var original = result.problem().orElseThrow();
+                        var context = new LinkedHashMap<>(original.context());
+                        context.put("generationRecoveryStoppedBy", stopped.problem().eventCode());
+                        result = new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(
+                            original.code(), original.eventCode(), original.message(), context, original.diagnosticId())));
+                        break;
                     }
+                }
+                ResourceLease lease = tasks.retain(task,
+                    new TaskResource("CONNECTION", "ai-http-" + UUID.randomUUID(), owner, false),
+                    new ResourceRecovery("ai-process.v1", Map.of("bootId", bootId.toString(), "kind", "http")), false);
+                var pending = new PendingCall(task, lease);
+                synchronized (this) {
+                    retained.add(pending);
+                }
+                try {
+                    long remaining = timeout - (System.nanoTime() - start);
+                    if (remaining <= 0)
+                        throw error(ProblemCode.TIMEOUT, "AI_BEFORE_SEND_TIMEOUT", "The original generation deadline ended before sending");
+                    byte[] attemptBody = body.clone();
+                    try {
+                        pending.call = new ModelHttpCall(URI.create(profile.endpoint()), prepared.key(), attemptBody,
+                            Duration.ofNanos(remaining), profile.id(), request.jsonObjectResponse(), connectSeconds, profile.protocol());
+                    } catch (IllegalArgumentException invalid) {
+                        Arrays.fill(attemptBody, (byte) 0);
+                        throw error(ProblemCode.UNAVAILABLE, "AI_CONFIGURATION_INVALID",
+                            "The configured endpoint or credential is invalid");
+                    }
+                    long attemptStart = System.nanoTime();
+                    result = pending.call.execute(tasks.operationCancellation(task));
+                    continuationValue = pending.call.continuation();
+                    var details = result.problem().map(Problem::context).orElse(Map.of());
+                    attempts.add(new AiGenerationAttempt(generation, number, profile.id(), profile.protocol().name(),
+                        result.outcome(), result.problem().map(Problem::eventCode).orElse("AI_GENERATION_COMPLETE"),
+                        details.getOrDefault("transportFailureKind", "NONE"),
+                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - attemptStart), generationUsage(result),
+                        body.length, effectiveMaxOutputTokens));
+                    if (result.value().isPresent()) {
+                        var response = result.value().orElseThrow();
+                        result = new OperationResult<>(result.outcome(), Optional.of(new AiResponse(response.text(), response.modelId(),
+                            response.finishReason(), response.usage(), response.toolCalls(), response.continuation(), Optional.of(body.length), Optional.of(effectiveMaxOutputTokens))), result.problem());
+                    }
+                } finally {
+                    synchronized (pending) {
+                        pending.running = false;
+                    }
+                    try {
+                        pending.close();
+                    } catch (ApiException incomplete) {
+                        tasks.reportUncertainEffect(task);
+                        throw incomplete;
+                    }
+                }
+                // Complete-body codecs expose only client function tools. No partial response is accepted or dispatched.
+                // The old physical client and durable lease have ended before the same frozen input is sent anew.
+                if (number > request.generationRecoveryAttempts() || !recoverableGeneration(profile, result)) break;
+            }
+            if (result.outcome() != TaskResult.SUCCEEDED && attempts.stream().anyMatch(attempt -> attempt.outcome() == TaskResult.UNKNOWN))
+                result = new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), result.problem());
+            if (result.outcome() != TaskResult.SUCCEEDED) continuations.stop(task.id(), request.purpose());
+            if (result.outcome() == TaskResult.SUCCEEDED && (!request.tools().isEmpty() || request.messages().stream().anyMatch(m -> m.continuation().isPresent()))) {
+                if (!revision.equals(nativeRevision(profile, request, task, probe))) {
+                    continuations.stop(task.id(), request.purpose());
+                    throw error(ProblemCode.UNAVAILABLE, "AI_SESSION_REVISION_CHANGED", "Model configuration changed during the native request");
+                }
+                var response = result.value().orElseThrow();
+                try {
+                    var state = continuations.retain(task.id(), request.purpose(), profile,
+                        revision, continuationValue);
                     result = new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(response.text(),
                         response.modelId(), response.finishReason(), response.usage(), response.toolCalls(), Optional.of(state), response.encodedRequestBytes(), response.effectiveMaxOutputTokens())), Optional.empty());
-                }
-                if (result.problem().isPresent())
-                    result = new OperationResult<>(result.outcome(), result.value(), Optional.of(withOutputBudget(result.problem().orElseThrow(), effectiveMaxOutputTokens)));
-                if (result.outcome() == TaskResult.UNKNOWN) {
-                    tasks.callbacks().recordFailure(task, new ApiException(result.problem().orElseThrow()),
-                        ProblemCode.UNKNOWN, "AI_OPERATION_UNCERTAIN",
-                        "The original model request returned an uncertain result");
-                    tasks.reportUncertainEffect(task);
-                }
-                return result;
-            } finally {
-                synchronized (pending) {
-                    pending.running = false;
-                }
-                try {
-                    pending.close();
-                } catch (ApiException incomplete) {
-                    tasks.reportUncertainEffect(task);
-                    throw incomplete;
+                } catch (IllegalArgumentException exhausted) {
+                    continuations.stopAfterRetentionFailure(task.id(), request.purpose());
+                    result = new OperationResult<>(TaskResult.FAILED,
+                        Optional.of(new AiResponse("", response.modelId(), response.finishReason(), response.usage(), List.of(),
+                            Optional.empty(), response.encodedRequestBytes(), response.effectiveMaxOutputTokens())),
+                        Optional.of(error(ProblemCode.UNAVAILABLE, "AI_SESSION_STATE_LIMIT", "Native continuation state cannot be retained").problem()));
                 }
             }
+            if (result.problem().isPresent())
+                result = new OperationResult<>(result.outcome(), result.value(), Optional.of(withOutputBudget(result.problem().orElseThrow(), effectiveMaxOutputTokens)));
+            result = generationTrace(result, attempts);
+            if (result.outcome() == TaskResult.UNKNOWN) {
+                tasks.callbacks().recordFailure(task, new ApiException(result.problem().orElseThrow()),
+                    ProblemCode.UNKNOWN, "AI_OPERATION_UNCERTAIN",
+                    "The original model request returned an uncertain result");
+                tasks.reportUncertainEffect(task);
+            }
+            return result;
+        } catch (ApiException incomplete) {
+            continuations.stop(task.id(), request.purpose());
+            if (incomplete.problem().code() == ProblemCode.UNKNOWN || attempts.stream().anyMatch(attempt -> attempt.outcome() == TaskResult.UNKNOWN))
+                tasks.reportUncertainEffect(task);
+            throw new ApiException(AiGenerationAttempt.attach(incomplete.problem(), attempts));
         } finally {
-            if (!transferred)
-                Arrays.fill(body, (byte) 0);
+            Arrays.fill(body, (byte) 0);
         }
+    }
+
+    /** Allows only explicitly selected incomplete bodies from the current pure client-function protocols. / 仅允许显式选择的当前纯客户端函数协议的不完整正文恢复。 */
+    private static boolean recoverableGeneration(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
+                                                 OperationResult<AiResponse> result) {
+        boolean pure = switch (profile.protocol()) {
+            case OPENAI_CHAT_COMPLETIONS, OPENAI_RESPONSES, ANTHROPIC_MESSAGES -> true;
+        };
+        return pure && result.outcome() == TaskResult.UNKNOWN && result.value().isEmpty()
+            && result.problem().filter(problem -> problem.code() == ProblemCode.IO_FAILURE
+            && problem.eventCode().equals("AI_TRANSPORT_UNKNOWN")
+            && Set.of("HTTP_BODY_INCOMPLETE", "HTTP_CHUNK_INCOMPLETE").contains(problem.context().getOrDefault("transportFailureKind", "NONE"))).isPresent();
+    }
+
+    /** Retains only this physical attempt's reported usage. / 仅保留本次物理尝试的报告用量。 */
+    private static AiUsage generationUsage(OperationResult<AiResponse> result) {
+        if (result.value().isPresent()) return result.value().orElseThrow().usage();
+        var details = result.problem().map(Problem::context).orElse(Map.of());
+        try {
+            return new AiUsage(AiGenerationAttempt.token(details.get("inputTokens")), AiGenerationAttempt.token(details.get("outputTokens")),
+                AiGenerationAttempt.token(details.get("cachedInputTokens")), AiGenerationAttempt.token(details.get("cacheMissInputTokens")),
+                AiGenerationAttempt.token(details.get("reasoningOutputTokens")));
+        } catch (IllegalArgumentException malformed) {
+            return new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
+        }
+    }
+
+    /** Exposes all physical attempts on success or on the original failure without a fabricated response. / 在成功或原失败中暴露所有物理尝试，不编造响应。 */
+    private static OperationResult<AiResponse> generationTrace(OperationResult<AiResponse> result, List<AiGenerationAttempt> attempts) {
+        var response = result.value().map(value -> new AiResponse(value.text(), value.modelId(), value.finishReason(), value.usage(),
+            value.toolCalls(), value.continuation(), value.encodedRequestBytes(), value.effectiveMaxOutputTokens(), attempts));
+        return new OperationResult<>(result.outcome(), response, result.problem().map(problem -> AiGenerationAttempt.attach(problem, attempts)));
     }
 
     private String nativeRevision(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
@@ -812,6 +901,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
             sessions = List.copyOf(voices);
         }
         for (var voice : sessions) if (voice.task == task) voice.drain();
+        tasks.releasePreviousAiResources(task, owner, version);
         continuations.clear(task.id());
     }
 

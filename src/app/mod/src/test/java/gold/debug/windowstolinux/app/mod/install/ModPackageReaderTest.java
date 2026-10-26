@@ -98,10 +98,10 @@ class ModPackageReaderTest {
         for (var entry : values.entrySet())
             Files.write(program.resolve(entry.getKey()), entry.getValue());
         assertEquals(ModPackageReader.MAX_ENTRIES - 3,
-            ModPackageReader.installedSources(program, inspected.manifest(), inspected.contentSha256()).size());
+            ModPackageReader.installedSources(program, inspected.manifest()).size());
         Files.write(program.resolve("lib/over-limit.jar"), library);
         assertThrows(IOException.class,
-            () -> ModPackageReader.installedSources(program, inspected.manifest(), inspected.contentSha256()));
+            () -> ModPackageReader.installedSources(program, inspected.manifest()));
         assertNull(System.getProperty(MARK));
     }
 
@@ -120,6 +120,20 @@ class ModPackageReaderTest {
         assertThrows(IOException.class,
             () -> ModPackageReader.extractIntoEmpty(inspection, root.resolve("absent-stage")));
         assertFalse(Files.exists(root.resolve("absent-stage")));
+        assertNull(System.getProperty(MARK));
+    }
+
+    @Test
+    void installedSameVersionCodeCanChangeWhileExtractionIntegrityAndVersionChecksRemainStrict() throws Exception {
+        var inspection = ModPackageReader.read(archive("original-code.wtlmod", files()));
+        Path program = Files.createDirectory(root.resolve("repaired-program"));
+        ModPackageReader.extractIntoEmpty(inspection, program);
+        Files.write(program.resolve("main/primary.jar"),
+            jar(Map.of("sample/bundle/Mod.class", entryClass, "assets/中文.txt", new byte[]{4, 5, 6})));
+        assertEquals(List.of(program.resolve("main/primary.jar")), ModPackageReader.installedSources(program, inspection.manifest()));
+        assertThrows(IOException.class, () -> ModPackageReader.verifyDirectory(inspection, program));
+        Files.writeString(program.resolve("mod.json"), MANIFEST.replace("\"version\":\"1.0.0\"", "\"version\":\"2.0.0\""));
+        assertThrows(IOException.class, () -> ModPackageReader.installedSources(program, inspection.manifest()));
         assertNull(System.getProperty(MARK));
     }
 

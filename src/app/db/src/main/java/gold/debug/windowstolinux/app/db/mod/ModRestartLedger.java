@@ -295,12 +295,11 @@ public final class ModRestartLedger {
                 }
             }
             try (var p = c.prepareStatement(
-                "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=? AND schema_version=? AND manifest_json=? AND content_sha256=? AND state='READY'")) {
+                "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=? AND schema_version=? AND manifest_json=? AND state='READY'")) {
                 p.setString(1, row.owner());
                 p.setString(2, row.version());
                 p.setString(3, row.targetSchema());
                 p.setString(4, manifest);
-                p.setString(5, digest);
                 try (var r = p.executeQuery()) {
                     r.next();
                     require(r.getLong(1) == 1, "Original migration program changed");
@@ -347,12 +346,11 @@ public final class ModRestartLedger {
                 }
             }
             try (var p = c.prepareStatement(
-                "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=? AND schema_version=? AND manifest_json=? AND content_sha256=? AND state='READY'")) {
+                "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=? AND schema_version=? AND manifest_json=? AND state='READY'")) {
                 p.setString(1, row.owner());
                 p.setString(2, row.version());
                 p.setString(3, row.targetSchema());
                 p.setString(4, manifest);
-                p.setString(5, digest);
                 try (var r = p.executeQuery()) {
                     r.next();
                     require(r.getLong(1) == 1, "Selected initialization source changed");
@@ -1102,12 +1100,11 @@ public final class ModRestartLedger {
                     && previous.schemaVersion().equals(data.path("target").textValue()),
                 "Retry target declaration changed");
             try (var p = c.prepareStatement(
-                "SELECT COUNT(*) FROM mod_schema s JOIN mod_registry r ON r.mod_id=s.mod_id JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=r.selected_version WHERE s.generation=? AND s.state='FAILED' AND NOT s.ever_used AND s.validated_at IS NULL AND s.validation_digest IS NULL AND r.enabled AND r.selected_version=? AND r.revision=? AND r.actual_version IS NULL AND r.last_runtime_state IN ('STOPPED','FAILED') AND v.state='READY' AND v.manifest_json=? AND v.content_sha256=?")) {
+                "SELECT COUNT(*) FROM mod_schema s JOIN mod_registry r ON r.mod_id=s.mod_id JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=r.selected_version WHERE s.generation=? AND s.state='FAILED' AND NOT s.ever_used AND s.validated_at IS NULL AND s.validation_digest IS NULL AND r.enabled AND r.selected_version=? AND r.revision=? AND r.actual_version IS NULL AND r.last_runtime_state IN ('STOPPED','FAILED') AND v.state='READY' AND v.manifest_json=?")) {
                 p.setObject(1, previous.generation());
                 p.setString(2, version);
                 p.setLong(3, revision);
                 p.setString(4, manifest);
-                p.setString(5, digest);
                 try (var r = p.executeQuery()) {
                     r.next();
                     require(r.getLong(1) == 1, "Only the selected failed unused target may be retried");
@@ -1464,11 +1461,10 @@ public final class ModRestartLedger {
                             && !plan.target().generation().equals(IntentEvidence.uuid(request, "previousGeneration")),
                         "Original retry request changed");
                     try (var q = c.prepareStatement(
-                        "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=? AND manifest_json=? AND content_sha256=?")) {
+                        "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=? AND manifest_json=?")) {
                         q.setString(1, plan.target().ownerId());
                         q.setString(2, r.getString(2));
                         q.setString(3, request.path("manifest").asText());
-                        q.setString(4, request.path("contentDigest").asText());
                         try (var v = q.executeQuery()) {
                             v.next();
                             require(v.getLong(1) == 1, "Original retry program changed");

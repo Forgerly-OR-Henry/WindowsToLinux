@@ -152,7 +152,7 @@ class ModLifecycleIntegrationTest {
         }
         var manifest = ManifestReader
             .read("""
-                {"formatVersion":1,"id":"example.stable","name":"fixture","version":"1.0.0","platformApiRange":"1.0.0-dev.1","minJavaVersion":21,"mainJar":"main/fixture.jar","entryClass":"example.fixture.Mod","schemaVersion":"1"}
+                {"formatVersion":1,"id":"example.stable","name":"fixture","version":"1.0.0","platformApiRange":"1.0.0","minJavaVersion":21,"mainJar":"main/fixture.jar","entryClass":"example.fixture.Mod","schemaVersion":"1"}
                 """
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8));
         return new ModClassLoader(manifest, List.of(binary.toUri().toURL()), Map.of());
@@ -260,7 +260,7 @@ class ModLifecycleIntegrationTest {
                     var database = new TaskModDatabase(db, tasks, identity);
                     var session = new ModRuntimeSession(loader,
                         lease(context(scope, authorTasks, database, ModLaunchMode.NORMAL), tasks, scope),
-                        SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
+                        SemanticVersion.parse("1.0.0"), (state, failure, closed) -> {
                     });
                     assertThrows(ApiException.class, () -> authorTasks.submit(
                         new TaskRequest("prestart", "Denied", List.of(), true),
@@ -321,7 +321,7 @@ class ModLifecycleIntegrationTest {
                 var context = context(scope, tasks.bind(identity.ownerId(), "1.0.0", false),
                     new TaskModDatabase(db, tasks, identity), ModLaunchMode.NORMAL);
                 var session = new ModRuntimeSession(loader, lease(context, tasks, scope),
-                    SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
+                    SemanticVersion.parse("1.0.0"), (state, failure, closed) -> {
                 });
                 session.start();
                 scope.open("main");
@@ -363,7 +363,7 @@ class ModLifecycleIntegrationTest {
                 var context = context(scope, authorTasks, new TaskModDatabase(db, tasks, identity),
                     ModLaunchMode.NORMAL);
                 var session = new ModRuntimeSession(loader, lease(context, tasks, scope),
-                    SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
+                    SemanticVersion.parse("1.0.0"), (state, failure, closed) -> {
                 });
                 assertThrows(IllegalStateException.class, session::start);
                 assertTrue(pages.contributions().isEmpty());
@@ -412,7 +412,7 @@ class ModLifecycleIntegrationTest {
             var session = new ModRuntimeSession(loader,
                 lease(context(scope, authorTasks, new TaskModDatabase(db, tasks, identity), ModLaunchMode.RECOVERY),
                     tasks, scope),
-                SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
+                SemanticVersion.parse("1.0.0"), (state, failure, closed) -> {
             });
             session.start();
             assertTrue(pages.contributions().isEmpty());

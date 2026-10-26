@@ -160,14 +160,19 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
             start(runtime, true); server(runtime);
             run(runtime, task -> { publishManaged(runtime, task, reviewedGraph(), 1); return success(); });
             var harness = new ManagedHarness(runtime.modContexts().get(OWNER).context());
+            harness.requireCompleteComponentReviewScopes = true;
             var app = new DeploymentApplicationId("application", new ServerId("server"));
             var stop = harness.service.lifecycleComponent(harness.finished(harness.service.inspect(app)), "worker", DeploymentLifecycleAction.STOP);
             var stopped = harness.finished(stop);
+            int otherReadsAfterStop = harness.otherComponentReadReviews.get();
+            assertTrue(otherReadsAfterStop > 0, "Component STOP must review the unchanged component baseline");
             assertEquals(1, harness.peer.effects.get()); assertTrue(harness.peer.running.get("web"));
             assertEquals(gold.debug.windowstolinux.mod.deployment.api.ApplicationRunState.DEGRADED, stopped.after());
             var snapshot = harness.finished(harness.service.inspect(app));
             var start = harness.service.lifecycleComponent(snapshot, "worker", DeploymentLifecycleAction.START);
             assertEquals(gold.debug.windowstolinux.mod.deployment.api.ApplicationRunState.RUNNING, harness.finished(start).after());
+            assertTrue(harness.otherComponentReadReviews.get() > otherReadsAfterStop,
+                "Component START must independently review the unchanged component baseline");
             assertNotEquals(stop.id(), start.id()); assertEquals(2, harness.peer.effects.get());
             assertTrue(harness.peer.enabled.values().stream().allMatch(Boolean::booleanValue));
             int effects = harness.peer.effects.get();
@@ -419,9 +424,11 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
         final Set<String> reviewed = new HashSet<>();
         final Set<UUID> issued = new HashSet<>();
         final AtomicReference<Throwable> failure = new AtomicReference<>();
+        final AtomicInteger otherComponentReadReviews = new AtomicInteger();
         final Map<UUID, OperationResult<?>> workResults = new java.util.concurrent.ConcurrentHashMap<>();
         String modelRevision = "b".repeat(64), decision = "APPROVE";
         boolean cleanupConfirmed;
+        boolean requireCompleteComponentReviewScopes;
         boolean failWorkflow;
         int waitSeconds = 20;
         ManagedAfter after;
@@ -440,12 +447,35 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
                 assertEquals(task.id().toString(), identity.path("taskId").asText());
                 assertEquals("AUTOMATIC", identity.path("review").path("approval").asText());
                 assertFalse(identity.path("review").path("rememberAuthorization").booleanValue());
-                if (decision.equals("APPROVE")) assertTrue(reviewed.add(task.id() + ":" + facts.path("exactAction").asText()));
+                String verdict = decision;
+                String selected = identity.path("selectedComponentId").asText();
+                if (requireCompleteComponentReviewScopes && !selected.isEmpty()
+                    && facts.path("operation").asText().equals("deployment.publication.inspect.v1")) {
+                    boolean observesOther = false;
+                    for (var component : identity.path("components")) {
+                        if (component.path("componentId").asText().equals(selected)) continue;
+                        for (var target : facts.path("resourceTargets"))
+                            if (target.path("id").asText().equals(component.path("releaseRoot").asText()))
+                                observesOther = true;
+                    }
+                    if (observesOther) {
+                        var effectComponents = new HashSet<String>();
+                        identity.path("lifecycleEffectComponentIds").forEach(value -> effectComponents.add(value.asText()));
+                        var observationComponents = new HashSet<String>();
+                        identity.path("readOnlyObservationComponentIds").forEach(value -> observationComponents.add(value.asText()));
+                        if (!identity.path("scopeAppliesTo").asText().equals("LIFECYCLE_EFFECTS")
+                            || !effectComponents.equals(Set.of(selected))
+                            || !observationComponents.equals(Set.of("web", "worker")))
+                            verdict = "DENY";
+                        else otherComponentReadReviews.incrementAndGet();
+                    }
+                }
+                if (verdict.equals("APPROVE")) assertTrue(reviewed.add(task.id() + ":" + facts.path("exactAction").asText()));
                 reviews.incrementAndGet();
                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", "tool_calls",
                     new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
                     List.of(new AiToolCall("review-" + reviews.get(), "submit_result", json.writeValueAsString(Map.of(
-                        "decision", decision, "requiresUserConfirmation", false, "reason", "Controlled independent management review")))), Optional.empty())), Optional.empty());
+                        "decision", verdict, "requiresUserConfirmation", false, "reason", "Controlled independent management review")))), Optional.empty())), Optional.empty());
             });
             var host = (InteractionService) Proxy.newProxyInstance(InteractionService.class.getClassLoader(), new Class<?>[]{InteractionService.class}, (proxy, method, args) -> {
                 var task = (TaskContext) args[args.length - 1]; actual.tasks().inspect(task);

@@ -191,7 +191,7 @@ class DevelopmentModFinderTest {
     }
 
     @Test
-    void changedManifestBuildInputLibraryAndCompiledMarkerRequireRecompilation() throws Exception {
+    void codeReceiptsAreNotRehashedButCompiledMarkerAndEntryRemainRequired() throws Exception {
         Path root = workspace();
         Path main = module(root, "main", "example.stale");
         Path library = temporary.resolve("dependency.jar");
@@ -204,14 +204,18 @@ class DevelopmentModFinderTest {
             List.of(), List.of(root.resolve("pom.xml"), root.resolve("src/mod/pom.xml"), main.resolve("pom.xml")),
             List.of(library));
         assertNotNull(DevelopmentInfo.read(root, descriptor));
-        for (Path changed : List.of(main.resolve("mod.json"), main.resolve("pom.xml"), library,
-            main.resolve("target/classes/META-INF/wtlmod-development-input.sha256"))) {
+        for (Path changed : List.of(main.resolve("mod.json"), main.resolve("pom.xml"), library)) {
             byte[] original = Files.readAllBytes(changed);
             Files.write(changed, new byte[]{32}, StandardOpenOption.APPEND);
-            assertThrows(IOException.class, () -> DevelopmentInfo.read(root, descriptor), changed.toString());
+            assertNotNull(DevelopmentInfo.read(root, descriptor), changed.toString());
             Files.write(changed, original);
             assertNotNull(DevelopmentInfo.read(root, descriptor));
         }
+        Path marker = main.resolve("target/classes/META-INF/wtlmod-development-input.sha256");
+        byte[] originalMarker = Files.readAllBytes(marker);
+        Files.write(marker, new byte[]{32}, StandardOpenOption.APPEND);
+        assertThrows(IOException.class, () -> DevelopmentInfo.read(root, descriptor));
+        Files.write(marker, originalMarker);
         Files.delete(main.resolve("target/classes/example/stale/Mod.class"));
         assertThrows(IOException.class, () -> DevelopmentInfo.read(root, descriptor));
     }

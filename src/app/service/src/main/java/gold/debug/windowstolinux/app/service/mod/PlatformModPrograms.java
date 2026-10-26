@@ -40,7 +40,7 @@ public final class PlatformModPrograms {
     /** Exact verified program shared by startup and schema maintenance. / 启动及数据维护共用的精确已验证程序。
      * @param manifest original strict metadata / 原严格元数据
      * @param sources ordinary code paths in loading order / 按加载顺序的普通代码路径
-     * @param contentDigest registered complete content hash / 登记完整内容摘要 */
+     * @param contentDigest historical registration receipt, not runtime identity / 历史登记凭据，不作为运行身份 */
     public record Program(ModManifest manifest, List<Path> sources, String contentDigest) {
         /** Freezes verified source order. / 冻结已验证来源顺序。
          * @param manifest original metadata / 原元数据
@@ -112,20 +112,19 @@ public final class PlatformModPrograms {
                 if (!program.toString().equals(r.getString(1)))
                     throw new IOException("Registered program path differs from the explicit application home");
                 String digest = r.getString(3);
-                return new Program(manifest, ModPackageReader.installedSources(program, manifest, digest), digest);
+                return new Program(manifest, ModPackageReader.installedSources(program, manifest), digest);
             }
         }
     }
 
     /** Rechecks original metadata and bytes immediately before allocating a loader. / 分配加载器前立即复核原元数据及字节。
      * @param original original verified program / 原已验证程序
-     * @throws IOException if the original program changed / 原程序变化时
+     * @throws IOException if the original declaration or source paths changed / 原声明或来源路径变化时
      * @throws SQLException if registration cannot be read / 无法读取登记时 */
     public void verify(Program original) throws IOException, SQLException {
         var current = read(original.manifest().id(), original.manifest().version().toString());
         if (!original.manifest().json().equals(current.manifest().json())
-            || !original.sources().equals(current.sources())
-            || !original.contentDigest().equals(current.contentDigest()))
+            || !original.sources().equals(current.sources()))
             throw new IOException("Original program changed before loading");
     }
 

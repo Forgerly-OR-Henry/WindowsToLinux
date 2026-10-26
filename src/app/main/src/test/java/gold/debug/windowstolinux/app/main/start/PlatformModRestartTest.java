@@ -62,7 +62,7 @@ class PlatformModRestartTest {
         var pages = new ModPageRegistry(new PlatformModContextTest.Host(),
             new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
         return runtime.modSession(loader, prepared.schema(), ModLaunchMode.NORMAL, pages,
-            SemanticVersion.parse("1.0.0-dev.1"));
+            SemanticVersion.parse("1.0.0"));
     }
 
     void archive(PlatformRuntime runtime, UUID id, String archive, String outcome) throws Exception {

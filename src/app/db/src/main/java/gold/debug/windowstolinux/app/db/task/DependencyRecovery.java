@@ -16,17 +16,6 @@ import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
  */
 public record DependencyRecovery(UUID boot, UUID call, String provider, String version,
                                  Optional<SchemaIdentity> schema, String caller, String callerVersion, String digest) {
-    /** Retains original service v1 facts without inventing caller proof. / 保留原 service v1 依据，不补造调用方证明。
-     * @param boot boot original identity / boot 原身份
-     * @param call call original identity / call 原身份
-     * @param provider exact original provider / 精确原提供方
-     * @param version exact loaded release / 精确已加载发布
-     * @param schema exact optional original data generation / 精确可选原数据代次
-     */
-    public DependencyRecovery(UUID boot, UUID call, String provider, String version, Optional<SchemaIdentity> schema) {
-        this(boot, call, provider, version, schema, "", "", "");
-    }
-
     /** Validates ownership before any claim can be recorded. / 任一申请登记前校验归属。
      * @param boot current physical boot / 当前物理启动
      * @param call original call UUID / 原调用 UUID
@@ -47,9 +36,8 @@ public record DependencyRecovery(UUID boot, UUID call, String provider, String v
         if (provider == null || provider.isBlank() || provider.length() > 512 || version == null || version.isBlank()
             || version.length() > 512 || schema.isPresent() && !schema.get().ownerId().equals(provider))
             throw new IllegalArgumentException("Invalid dependency identity");
-        if (!(caller.isEmpty() && callerVersion.isEmpty() && digest.isEmpty())
-            && (caller.isBlank() || caller.length() > 512 || callerVersion.isBlank() || callerVersion.length() > 512
-            || !digest.matches("[0-9a-f]{64}"))) throw new IllegalArgumentException("Invalid original caller proof");
+        if (caller.isBlank() || caller.length() > 512 || callerVersion.isBlank() || callerVersion.length() > 512
+            || !digest.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("Invalid original caller proof");
     }
 
     /** Returns the exact shared Mod and Schema claims, with no additional servers. / 返回精确共享 Mod 及 Schema 申请，不增加服务器。
@@ -68,12 +56,10 @@ public record DependencyRecovery(UUID boot, UUID call, String provider, String v
         var fields = new LinkedHashMap<String, String>(Map.of("bootId", boot.toString(), "callId", call.toString(), "providerId", provider, "providerVersion",
             version, "schemaVersion", schema.map(SchemaIdentity::schemaVersion).orElse(""),
             "schemaGeneration", schema.map(value -> value.generation().toString()).orElse("")));
-        if (!caller.isEmpty()) {
-            fields.put("callerId", caller);
-            fields.put("callerVersion", callerVersion);
-            fields.put("providerDigest", digest);
-        }
-        return new ResourceRecovery(caller.isEmpty() ? "service.v1" : "service.v2", fields);
+        fields.put("callerId", caller);
+        fields.put("callerVersion", callerVersion);
+        fields.put("providerDigest", digest);
+        return new ResourceRecovery("service.v2", fields);
     }
 
     /** Decodes the exact supported shape without supplying missing facts. / 解码精确受支持形状，不补造缺失事实。
@@ -82,10 +68,9 @@ public record DependencyRecovery(UUID boot, UUID call, String provider, String v
     public static DependencyRecovery decode(ResourceRecovery value) {
         var f = value.fields();
         var expected = new HashSet<>(Set.of("bootId", "callId", "providerId", "providerVersion", "schemaVersion", "schemaGeneration"));
-        if (value.protocol().equals("service.v2"))
-            expected.addAll(Set.of("callerId", "callerVersion", "providerDigest"));
-        else if (!value.protocol().equals("service.v1"))
+        if (!value.protocol().equals("service.v2"))
             throw new IllegalArgumentException("Invalid dependency protocol");
+        expected.addAll(Set.of("callerId", "callerVersion", "providerDigest"));
         if (!f.keySet().equals(expected))
             throw new IllegalArgumentException("Invalid dependency checkpoint");
         Optional<SchemaIdentity> schema = f.get("schemaVersion").isEmpty()
@@ -93,8 +78,8 @@ public record DependencyRecovery(UUID boot, UUID call, String provider, String v
             : Optional.of(new SchemaIdentity(f.get("providerId"), f.get("schemaVersion"),
             UUID.fromString(f.get("schemaGeneration"))));
         var decoded = new DependencyRecovery(UUID.fromString(f.get("bootId")), UUID.fromString(f.get("callId")),
-            f.get("providerId"), f.get("providerVersion"), schema, f.getOrDefault("callerId", ""),
-            f.getOrDefault("callerVersion", ""), f.getOrDefault("providerDigest", ""));
+            f.get("providerId"), f.get("providerVersion"), schema, f.get("callerId"),
+            f.get("callerVersion"), f.get("providerDigest"));
         if (!decoded.encode().equals(value))
             throw new IllegalArgumentException("Noncanonical dependency checkpoint");
         return decoded;

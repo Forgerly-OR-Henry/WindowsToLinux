@@ -206,7 +206,7 @@ public final class PlatformRuntime implements AutoCloseable {
         this.startup = new Startup(config, layout);
         this.persistence = Objects.requireNonNull(persistence);
         this.security = Objects.requireNonNull(security);
-        initiallyDisabled = config.modLoad() ? gold.debug.windowstolinux.app.db.mod.ModRestartLedger.initiallyDisabled(persistence.database()) : java.util.Map.of();
+        initiallyDisabled = gold.debug.windowstolinux.app.db.mod.ModRestartLedger.initiallyDisabled(persistence.database());
         transfers = new gold.debug.windowstolinux.app.service.setting.TransferSettingsService(persistence, security, config.defaults());
         fileSettings = new gold.debug.windowstolinux.app.service.setting.FileSettingsService(persistence, security, config.defaults().deleteExplanation());
         version = PlatformBuildIdentity.readVersion();
@@ -245,10 +245,10 @@ public final class PlatformRuntime implements AutoCloseable {
      * @throws Exception if bootstrap fails / 引导失败时 */
     public static PlatformRuntime open(gold.debug.windowstolinux.app.main.runtime.RunModeResolver.RuntimeLayout layout, DatabaseProtection protection, gold.debug.windowstolinux.app.config.AppConfig config) throws Exception {
         if (!config.modLoad() && layout.mode() != gold.debug.windowstolinux.app.main.runtime.RunModeResolver.RunMode.RUN_CLASS)
-            throw new IllegalArgumentException("Mod loading may only be disabled in CLASS mode");
+            throw new IllegalArgumentException("Automatic Mod loading may only be disabled in CLASS mode");
         Path dataDirectory = layout.dataDirectory();
         PlatformBuildIdentity.requireWorker();
-        var persistence = new PlatformStorage(PlatformDatabase.open(dataDirectory, protection, java.util.Map.of("file_delete_ai_explanation", Boolean.toString(config.defaults().deleteExplanation())), config.modLoad()));
+        var persistence = new PlatformStorage(PlatformDatabase.open(dataDirectory, protection, java.util.Map.of("file_delete_ai_explanation", Boolean.toString(config.defaults().deleteExplanation()))));
         DesktopSecurityService security = null;
         try {
             security = new DesktopSecurityService(persistence.security());
@@ -333,7 +333,6 @@ public final class PlatformRuntime implements AutoCloseable {
      * @throws Exception if build identity or archive registration is unavailable / 构建身份或归档登记不可用时 */
     public synchronized gold.debug.windowstolinux.app.service.mod.PlatformModIntents modIntents() throws Exception {
         PlatformBuildIdentity.requireWorker();
-        if (!startup.config().modLoad()) throw new IllegalStateException("Mod loading is disabled for this boot");
         if (stopping || closed)
             throw new IllegalStateException("Mod intent management is closing");
         if (modIntents == null) {
@@ -349,7 +348,6 @@ public final class PlatformRuntime implements AutoCloseable {
     public synchronized gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation modInstallation()
         throws Exception {
         PlatformBuildIdentity.requireWorker();
-        if (!startup.config().modLoad()) throw new IllegalStateException("Mod loading is disabled for this boot");
         if (stopping || closed)
             throw new IllegalStateException("Mod installation is closing");
         var layout = startup.layout();
@@ -391,7 +389,6 @@ public final class PlatformRuntime implements AutoCloseable {
     private gold.debug.windowstolinux.app.main.mod.PlatformModFlow.Report startMods(Path root,
                                                                                     boolean development, gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) throws Exception {
         PlatformBuildIdentity.requireWorker();
-        if (!startup.config().modLoad()) throw new IllegalStateException("Mod loading is disabled for this boot");
         final gold.debug.windowstolinux.app.main.mod.PlatformModFlow coordinator;
         synchronized (this) {
             if (stopping || closed || modCoordinator != null || !modContexts.isEmpty() || !modSessions.isEmpty())
@@ -408,7 +405,6 @@ public final class PlatformRuntime implements AutoCloseable {
     public synchronized gold.debug.windowstolinux.app.service.mod.PlatformModServices services() {
         if (stopping || closed)
             throw new IllegalStateException("Platform services are closing");
-        if (!startup.config().modLoad()) throw new IllegalStateException("Mod loading is disabled for this boot");
         if (services == null)
             services = new gold.debug.windowstolinux.app.service.mod.PlatformModServices(persistence.database(), tasks);
         return services;
@@ -729,7 +725,6 @@ public final class PlatformRuntime implements AutoCloseable {
             gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode mode,
             gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages,
             gold.debug.windowstolinux.app.mod.version.SemanticVersion platformApi) throws Exception {
-            if (!startup.config().modLoad()) throw new IllegalStateException("Mod loading is disabled for this boot");
             return PlatformRuntime.this.modSession(loader, schema, mode, pages, platformApi);
         }
 
@@ -1062,8 +1057,11 @@ public final class PlatformRuntime implements AutoCloseable {
                 throws gold.debug.windowstolinux.appapi.task.result.ApiException {
                 linux.closeTaskResources(task);
                 interaction.retryFinishedReleases();
-                if (tasks.reconciling(task))
-                    interaction.closeWorkflowResources(task);
+                if (tasks.reconciling(task)) {
+                    var original = tasks.requireCleanup(task, owner, version);
+                    if (original.ownerId().equals(owner) && original.ownerVersion().equals(version))
+                        interaction.closeWorkflowResources(task);
+                }
             }
 
             /**
