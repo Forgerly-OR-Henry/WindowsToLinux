@@ -73,6 +73,8 @@ public final class DeploymentStandardTaskRecovery implements TaskRecovery {
         var recovery = new DeploymentStandardTaskRecovery(guarded,
             new DeploymentRefFlow(guarded, recoverySupport.publication(guarded)), recoverySupport);
         try {
+            var graphDiagnostic = DeploymentStandardPreparationDiagnosticRecovery.reconcileGraphIfSelected(guarded, task);
+            if (graphDiagnostic.isPresent()) return graphDiagnostic.orElseThrow();
             var diagnostic = DeploymentStandardPreparationDiagnosticRecovery.reconcileIfEligible(guarded, task);
             if (diagnostic.isPresent()) return diagnostic.orElseThrow();
             return recovery.reconcileOriginal(previous, task);

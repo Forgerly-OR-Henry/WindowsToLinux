@@ -28,6 +28,8 @@ public final class DeploymentStandardPreparationDiagnosticRecovery {
     private static final ObjectMapper JSON = new ObjectMapper();
     public static final String SELECTION_TITLE = "Read original toolchain diagnostic";
     public static final String SELECTION_PROMPT = "Enter the original preparation operation UUID. This only selects a retained diagnostic attachment; it does not retry preparation, prove process termination or settle this task. Leave blank to keep the task unknown.";
+    public static final String GRAPH_SELECTION_TITLE = "Read original graph toolchain diagnostic";
+    public static final String GRAPH_SELECTION_PROMPT = "Enter an original preparation operation UUID to read only its retained diagnostic attachment. This does not retry preparation, prove process termination or settle the graph. Leave blank to continue ordinary original-task reconciliation.";
     public static final String CONCLUSION_TITLE = "Conclude original preparation interruption";
     public static final String CONCLUSION_CONFIRMATION = "CONFIRM_FAILED";
 
@@ -38,6 +40,66 @@ public final class DeploymentStandardPreparationDiagnosticRecovery {
     }
 
     private DeploymentStandardPreparationDiagnosticRecovery() { }
+
+    /** Explicit graph observations never release original journals or infer a graph result from one preparation. */
+    static Optional<OperationResult<Void>> reconcileGraphIfSelected(ModContext context, TaskContext task) throws Exception {
+        var checkpoint = context.tasks().findCheckpoint(task, DeploymentStandardGraphPublishActionLog.KEY);
+        if (checkpoint.isEmpty() || checkpoint.orElseThrow().snapshot().released()) return Optional.empty();
+        var details = new LinkedHashMap<String, String>();
+        details.put("originalTask", task.id().toString());
+        details.put("meaning", "An explicitly selected graph diagnostic is independent evidence only; original graph, component and file resources remain unresolved.");
+        try {
+            var graph = DeploymentStandardGraphPublishActionLog.reopen(context, task)
+                .orElseThrow(() -> new IllegalArgumentException("Original graph is absent"));
+            var policy = DeploymentPublishPolicyFacts.find(context, task)
+                .orElseThrow(() -> new IllegalArgumentException("Original graph policy is absent")).facts();
+            if (!policy.executionMode().equals("ASSISTED")) return Optional.empty();
+            if (!graph.facts().path("server").asText().equals(policy.target().server().id())) {
+                details.put("diagnosticObservation", "ORIGINAL_GRAPH_BINDING_DIFFERS");
+                return Optional.of(unknown(details));
+            }
+            var selected = context.interaction().requestText(GRAPH_SELECTION_TITLE, GRAPH_SELECTION_PROMPT, false, task);
+            details.put("diagnosticSelectionOutcome", selected.outcome().name());
+            if (selected.outcome() != TaskResult.SUCCEEDED || selected.value().isEmpty()) return Optional.of(unknown(details));
+            String value = selected.value().orElseThrow().strip();
+            if (value.isEmpty()) return Optional.empty();
+            if (value.length() != 36) return Optional.of(unknown(details));
+            UUID operation = UUID.fromString(value);
+            if (!operation.toString().equals(value)) return Optional.of(unknown(details));
+            details.put("diagnosticOperation", operation.toString());
+            var retained = DeploymentToolchainDiagnostics.retained(context.tasks(), task, operation);
+            if (retained.isEmpty()) {
+                details.put("diagnosticObservation", "ORIGINAL_REQUEST_ABSENT");
+                return Optional.of(unknown(details));
+            }
+            var original = retained.orElseThrow();
+            var layout = DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
+            if (!original.serverId().equals(policy.target().server().id()) || !original.layout().equals(layout)
+                || policy.actualFingerprint().isEmpty()
+                || !original.fingerprintSha256().equals(DeploymentTrackedToolchains.sha256(
+                    policy.actualFingerprint().orElseThrow().getBytes(StandardCharsets.UTF_8)))) {
+                details.put("diagnosticObservation", "ORIGINAL_BINDING_DIFFERS");
+                return Optional.of(unknown(details));
+            }
+            details.put("diagnosticRequestSha256", original.sha256());
+            details.put("diagnosticPlanRevision", original.planRevision());
+            details.put("diagnosticSessionCloseConfirmed", "false");
+            try (RemoteSession session = context.linux().connect(new ServerId(original.serverId()), task)) {
+                var channel = new DeploymentBuildCommandChannel(session, context.interaction(), new ServerId(original.serverId()),
+                    task, original.planRevision(), new DeploymentBuildBudget(60), layout);
+                var observed = channel.toolchainDiagnostic(original);
+                details.put("diagnosticReadOutcome", observed.outcome().name());
+                observed.value().ifPresent(attachment -> retainAttachment(details, attachment));
+                observed.problem().ifPresent(problem -> details.put("diagnosticReadProblem", problem.eventCode()));
+            }
+            details.put("diagnosticSessionCloseConfirmed", "true");
+        } catch (ApiException unavailable) {
+            details.put("diagnosticObservation", unavailable.problem().eventCode());
+        } catch (IllegalArgumentException invalid) {
+            details.put("diagnosticObservation", "ORIGINAL_DIAGNOSTIC_UNCONFIRMED");
+        }
+        return Optional.of(unknown(details));
+    }
 
     /** The absent diagnostic index makes this whole narrow interrupted-assisted branch conservative, including blank input. */
     static Optional<OperationResult<Void>> reconcileIfEligible(ModContext context, TaskContext task) throws Exception {

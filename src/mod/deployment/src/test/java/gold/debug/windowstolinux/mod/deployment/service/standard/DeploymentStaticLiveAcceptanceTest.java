@@ -6189,6 +6189,20 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                     }
                 }
                 if (!secret && title.equals(gold.debug.windowstolinux.mod.deployment.service.standard.shared.recovery
+                    .DeploymentStandardPreparationDiagnosticRecovery.GRAPH_SELECTION_TITLE)) {
+                    assertEquals(System.getProperty("managed.live.originalTask"), task.id().toString());
+                    assertEquals(Path.of(System.getProperty("managed.live.originalState")).toAbsolutePath().normalize(),
+                        root.toAbsolutePath().normalize());
+                    assertEquals(gold.debug.windowstolinux.mod.deployment.service.standard.shared.recovery
+                        .DeploymentStandardPreparationDiagnosticRecovery.GRAPH_SELECTION_PROMPT, prompt);
+                    assertFalse(cancel.requested());
+                    String selected = System.getProperty("managed.live.originalToolchainOperation", "");
+                    if (selected.isBlank()) return new char[0];
+                    String operation = java.util.UUID.fromString(selected).toString();
+                    System.out.println("PRODUCT_ORIGINAL_GRAPH_TOOLCHAIN_SELECTOR task=" + task.id() + " operation=" + operation);
+                    return operation.toCharArray();
+                }
+                if (!secret && title.equals(gold.debug.windowstolinux.mod.deployment.service.standard.shared.recovery
                     .DeploymentStandardPreparationDiagnosticRecovery.SELECTION_TITLE)
                     && System.getProperty("managed.live.originalToolchainOperation") != null) {
                     assertEquals(System.getProperty("managed.live.originalTask"), task.id().toString());
@@ -7913,20 +7927,28 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
     }
 
     private static void printOriginalCallCause(String details) {
-        details.lines()
+        safeOriginalCallCauses(details).forEach(line -> System.out.println("STATIC_LIVE_CALL_CAUSE " + line));
+    }
+
+    static List<String> safeOriginalCallCauses(String details) {
+        return details.lines()
             .filter(line -> line.matches("(?:code|category|problem\\[[0-9]+\\]\\.(?:code|category))=[A-Z0-9_]+")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:contentCharacters|auxiliaryTextCharacters|inputTokens|outputTokens|cachedInputTokens|cacheMissInputTokens|reasoningOutputTokens|jsonErrorLine|jsonErrorColumn|elapsedMillis|timeoutMillis)=[0-9]{1,12}")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.commandPhase=(?:BEFORE_DISPATCH|CREATING_CHANNEL|CHANNEL_OPENING|WAITING_FOR_EXIT)")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.inputState=(?:NOT_STARTED|SENDING|COMPLETED|FAILED)")
-                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.inputThreadState=(?:NEW|RUNNABLE|BLOCKED|WAITING|TIMED_WAITING|TERMINATED)")
-                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.inputStack\\[[0-5]\\]=(?:java|jdk|sun\\.nio|org\\.apache\\.sshd|gold\\.debug\\.windowstolinux\\.app\\.linux\\.ssh\\.connect)\\.[A-Za-z0-9_.$]{1,160}#[A-Za-z0-9_$<>]{1,128}:-?[0-9]{1,10}")
-                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:commandOpenRequested|channelOpenConfirmed|channelClosed|sessionOpen|sessionAuthenticated|outputObserved|exitObserved)=(?:true|false)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:inputThreadState|transportReadThreadState)=(?:NEW|RUNNABLE|BLOCKED|WAITING|TIMED_WAITING|TERMINATED)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:inputStack|transportReadStack)\\[[0-5]\\]=(?:java|jdk|sun\\.nio|org\\.apache\\.sshd|gold\\.debug\\.windowstolinux\\.app\\.linux\\.ssh\\.connect)\\.[A-Za-z0-9_.$]{1,160}#[A-Za-z0-9_$<>]{1,128}:-?[0-9]{1,10}")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:commandOpenRequested|channelOpenConfirmed|channelClosed|sessionOpen|sessionAuthenticated|outputObserved|exitObserved|disconnectInitiatorLocal|sessionCloseObserved|transportReadHandlerActive)=(?:true|false)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.disconnectCode=-?[0-9]{1,10}")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.transportKeyExchangeState=(?:UNKNOWN|INIT|RUN|KEYS|DONE)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.transportReadCallbacks=[0-9]{1,12}")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.transportRead(?:Completed|Handler)AgeMillis=(?:UNKNOWN|[0-9]{1,12})")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.finishReason=(?:stop|length|content_filter|tool_calls|insufficient_system_resource|OTHER)")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:contentForm|jsonObject|responseEnvelope)=(?:OBJECT_PREFIX|CODE_FENCE|OTHER|VALID|INVALID)")
-                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.transportFailureType=(?:(?:java|javax|jdk)\\.[A-Za-z0-9_.$]{1,180}|OTHER)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.transportFailureType=(?:(?:java|javax|jdk|org\\.apache\\.sshd)\\.[A-Za-z0-9_.$]{1,180}|OTHER|-)")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.timeoutPhase=(?:HTTP_CONNECT|HTTP_REQUEST)")
                 || line.matches("frame\\[[0-9]+\\]\\[[0-9]+\\]=gold\\.debug\\.windowstolinux\\.[A-Za-z0-9_.$]+\\([A-Za-z0-9_$]+\\.java:-?[0-9]+\\)"))
-            .forEach(line -> System.out.println("STATIC_LIVE_CALL_CAUSE " + line));
+            .toList();
     }
 
     private static void printPublicOriginalResult(gold.debug.windowstolinux.app.db.connect.PlatformDatabase database,
@@ -8139,11 +8161,14 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         assertTrue(!originalTaskOnly || agentMode, "Exact original-task recovery requires Agent state");
         assertFalse(originalTaskOnly && preparationOnly, "Choose one explicit original recovery scope");
         boolean assistedDiagnostic = stateName.startsWith("assisted-diagnostic-live-csv-");
+        boolean graphDiagnostic = stateName.startsWith("assisted-live-csv-inspector-");
         boolean diagnosticSelected = System.getProperty("managed.live.originalToolchainOperation") != null;
         boolean concludeOriginalDiagnostic = Boolean.getBoolean("managed.live.concludeOriginalToolchainPreparation");
         assertFalse(concludeOriginalDiagnostic && !diagnosticSelected, "Conclusion requires an explicit original operation");
+        assertFalse(concludeOriginalDiagnostic && graphDiagnostic, "A graph diagnostic is observation only");
         boolean diagnosticObservationOnly = diagnosticSelected && !concludeOriginalDiagnostic;
-        assertFalse(diagnosticSelected && !assistedDiagnostic, "Diagnostic recovery is confined to its original fixture state");
+        assertFalse(diagnosticSelected && !assistedDiagnostic && !graphDiagnostic,
+            "Diagnostic recovery is confined to its original fixture state");
         boolean diagnosticObservationCompleted = false;
         assertTrue(stateName.startsWith("static-live-") || stateName.startsWith("assisted-live-") || assistedDiagnostic || agentMode);
         aiEnabled = stateName.startsWith("assisted-live-") || assistedDiagnostic || agentMode;

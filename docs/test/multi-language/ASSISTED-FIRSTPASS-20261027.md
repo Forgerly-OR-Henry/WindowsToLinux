@@ -1,13 +1,14 @@
 # 2026-10-27 ASSISTED 测试与失败修复
 
-本轮仍在进行，未达成首轮通过。task-board、file-transfer首次来源失败，asset-lending首次UNKNOWN由产品核对为FAILED。修复后task-board第五次、file-transfer第二次、asset-lending第二次均通过真实部署和业务验收，最终STOPPED/DISABLED；其余五项尚未运行。不能据此记为八项通过或把重试并入首轮。
+本轮仍在进行，未达成首轮通过。task-board、file-transfer首次来源失败，asset-lending首次UNKNOWN由产品核对为FAILED。修复后上述三项均通过真实部署和业务验收，最终STOPPED/DISABLED；CSV首次在PHP准备失去SSH退出证据，仍UNKNOWN，其余四项尚未运行。不能据此记为八项通过或把重试并入首轮。
 
 | 项目 | 首次有效尝试 | 当前证据 |
 | --- | --- | --- |
 | task-board | FAILED | 第五次尝试部署/业务通过，产品最终STOPPED/DISABLED；前四次结果保留 |
 | file-transfer | FAILED | 第二次尝试部署/完整文件业务通过，产品最终STOPPED/DISABLED；首轮来源拒绝保留 |
 | asset-lending | UNKNOWN→FAILED（产品核对） | 第二次部署/借还与重启持久化通过，产品最终STOPPED/DISABLED；首轮拒绝保留 |
-| csv-inspector、survey-scoring | 未运行 | 等待本轮前置问题处理 |
+| csv-inspector | UNKNOWN | PHP准备已派发，SSH提前关闭而无退出码；原任务只读诊断中 |
+| survey-scoring | 未运行 | 等待本轮前置问题处理 |
 | log-analyzer、directory-diff、binary-inspector | 未运行 | 等待共同阻断定位 |
 
 ## 入口与执行边界
@@ -139,6 +140,18 @@ finally停止、delivery再次启动导出后，又经产品精确绑定原应�
 
 `asset-lending-retry-02` 基于 `f9629edc`（实现含 `926c8875` 契约修复），启动时Git干净。原任务 `5044bc2d-1d75-4fef-9cdc-ed8c3011ae45`、state `assisted-live-asset-lending-15ad65cf0s`、应用 `wtl-assisted-asset-lending-15ad676ml4`。同类.NET准备经正常独立审批后，由程序取得SDK10.0.300成功回执，未增加外部fd重定向；随后完成双组件构建、发布及整应用健康门槛。
 
-HTTP业务验证分类和资产创建、借用submit/approve/checkout/return，确认closed，再由产品RESTART后确认closed持久化。JUnit1项通过、Maven0，部署/审批调用23/56，已知Token81524+686959=768483，四项探测不含。精确耗时和generation ID数量见对应assessment。没有改执行脚本、helper pin、审批规则、测试负载或期限。
+HTTP业务验证分类和资产创建、借用submit/approve/checkout/return，确认closed，再由产品RESTART后确认closed持久化。JUnit1项通过、Maven0，1327.813秒，部署/审批调用23/56，79个generation attempt ID；已知Token81524+686959=768483，四项探测不含。没有改执行脚本、helper pin、审批规则、测试负载或期限。
 
 交付导出后额外产品STOP和inspect核验最终STOPPED/DISABLED，清理进程退出0。首轮UNKNOWN及正常核对FAILED分别保留；本轮已完成3个项目的修复后部署/业务/收尾，其余五项继续，不能称为首轮全通过。
+
+## CSV 首次尝试：已派发准备的退出证据丢失
+
+`csv-inspector-first-01` 基于 `2b11407b`，启动时Git干净；原任务 `2a356645-9bc7-4869-a469-f2e52fb684bd`、state `assisted-live-csv-inspector-15tqk3zo70`、应用候选 `wtl-assisted-csv-inspector-15tqk5tiy8`。来源识别analyzer PIP_LOCKED与web COMPOSER_LOCKED，Python3.12.16准备成功。后续PHP8.3准备在已确认channel打开、输入COMPLETED/frame WRITTEN后失去退出证据；481.444秒后JUnit1项失败、Maven1，根UNKNOWN，没有发布应用。已知Token37854+159921=197775，22个监控generation attempt ID，四探测不含。
+
+原PHP operation为 `0a9d42f4-8d1a-4547-9811-373f4b606c1a`，request SHA `a483b7b40e213065337ef62a10de8fcd7f607f485fd13a94b0f294a1b17ae4f5`，参数PHP/8.3/exact=-/1781秒。`SSH_COMMAND_EXIT_UNKNOWN` 表示260512毫秒时channel/session已关闭，exit/output未观察到，尚未达到1796000毫秒请求期限。不能把没有输出当作没有执行：安装子命令输出被持续排空、仅保留尾部，helper正常长编译也可静默。
+
+真正只读核查保留原库：transportFailureType=-、disconnectCode=-1、sessionCloseObserved=true、KEX=DONE、readCallbacks206、handler不活跃、距最后完成读取48923毫秒。客户端实际为Apache MINA SSHD2.14.0，已有30秒心跳/max3，默认idle10分钟；目前不能归因APT锁、预算、网络、OOM或明确的对端主动断开，未修改心跳或超时参数。
+
+确认两项诊断缺口并修复：live输出遗漏已有Apache异常类型及断连/read安全字段，现以有界类型白名单保留，仍排除消息、对端、路径和凭据。原附件入口只支持未建立图的早期准备，现增加ASSISTED active graph的显式原operation只读选择：原TaskContext、原请求及server/layout/fingerprint守卫保持；仅成功空白选择继续常规核对，其他选择或失败均UNKNOWN。即使附件为SUCCEEDED，也不结清图、不关闭原graph/unit/file、不询问单准备结论，不重放prepare。
+
+该恢复入口由Astra High只读专项核对所有权与边界，Sol实现。直接本地RecoveryTest37项及SSH筛选2项全部通过，0skip，Maven退出0；覆盖17个graph场景、旧early规则、真实宿主/H2/FILE占用保留及只执行一次diagnose-only。未执行本轮新PHP准备，下一步通过产品读取原附件；原SSH断开原因仍未确认。

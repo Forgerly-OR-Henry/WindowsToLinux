@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.*;
@@ -21,11 +22,15 @@ import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.model.*;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.linux.build.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.publish.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.*;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.MultiPartDeploymentPlan;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.graph.DeploymentStandardGraphPublishActionLog;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.cleanup.DeploymentPublishCleanupActionLog;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.policy.DeploymentPublishPolicyFacts;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStandardSetupActionLog;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -38,6 +43,7 @@ class DeploymentStandardPreparationDiagnosticRecoveryTest extends DeploymentRunt
     private static final String REVISION = "b".repeat(64);
     private static final UUID OPERATION = UUID.fromString("11111111-2222-3333-4444-555555555555");
     private String scenario;
+    private boolean graphScenario;
     private final AtomicReference<TaskContext> originalTask = new AtomicReference<>();
     private final AtomicInteger prompts = new AtomicInteger();
     private final AtomicInteger diagnosticReviews = new AtomicInteger();
@@ -57,8 +63,10 @@ class DeploymentStandardPreparationDiagnosticRecoveryTest extends DeploymentRunt
                         return Set.of("CONCLUDE", "EXTRA_RELEASED_OPERATION", "EXTRA_RESOURCE").contains(scenario)
                             ? DeploymentStandardPreparationDiagnosticRecovery.CONCLUSION_CONFIRMATION.toCharArray() : new char[0];
                     }
-                    assertEquals(DeploymentStandardPreparationDiagnosticRecovery.SELECTION_TITLE, args[0]);
-                    assertEquals(DeploymentStandardPreparationDiagnosticRecovery.SELECTION_PROMPT, args[1]);
+                    assertEquals(graphScenario ? DeploymentStandardPreparationDiagnosticRecovery.GRAPH_SELECTION_TITLE
+                        : DeploymentStandardPreparationDiagnosticRecovery.SELECTION_TITLE, args[0]);
+                    assertEquals(graphScenario ? DeploymentStandardPreparationDiagnosticRecovery.GRAPH_SELECTION_PROMPT
+                        : DeploymentStandardPreparationDiagnosticRecovery.SELECTION_PROMPT, args[1]);
                     assertEquals(false, args[2]);
                     assertEquals(originalTask.get().id(), ((TaskSnapshot) args[3]).id());
                     prompts.incrementAndGet();
@@ -77,7 +85,7 @@ class DeploymentStandardPreparationDiagnosticRecoveryTest extends DeploymentRunt
                     "Diagnostic recovery must never approve installation, preparation, helper repair or publication");
                 if (operation.equals("deployment.toolchain.diagnostic.v1")) {
                     diagnosticReviews.incrementAndGet();
-                    assertEquals(scenario.equals("LARGE") ? "d".repeat(64) : REVISION, intent.revision());
+                    assertEquals(graphScenario || scenario.equals("LARGE") ? "d".repeat(64) : REVISION, intent.revision());
                     return !scenario.equals("DENIED");
                 }
                 return true;
@@ -102,6 +110,21 @@ class DeploymentStandardPreparationDiagnosticRecoveryTest extends DeploymentRunt
         originalDiagnosticScenario(selectedScenario);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"UNKNOWN", "SUCCEEDED", "FAILED"})
+    void graphAttachmentStatusesNeverSettleTheOriginalGraphOrItsResources(String selectedScenario) throws Exception {
+        graphScenario = true;
+        originalDiagnosticScenario(selectedScenario);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"EMPTY", "CANCELLED", "INVALID", "MISSING", "FOREIGN", "DENIED", "HOST", "MODEL", "LAYOUT",
+        "ATTACHMENT", "CLOSE", "READ_FAILED", "GRAPH_SERVER", "GRAPH_TASK"})
+    void graphSelectionOnlyFallsThroughOnSuccessfulBlankAndRetainsFailedReads(String selectedScenario) throws Exception {
+        graphScenario = true;
+        originalDiagnosticScenario(selectedScenario);
+    }
+
     private void originalDiagnosticScenario(String selectedScenario) throws Exception {
         scenario = selectedScenario;
         enable();
@@ -118,12 +141,17 @@ class DeploymentStandardPreparationDiagnosticRecoveryTest extends DeploymentRunt
             var connections = new AtomicInteger();
             var closed = new AtomicInteger();
             var authorCalls = new AtomicInteger();
+            var fallthroughCalls = new AtomicInteger();
+            var beforeGraph = new AtomicReference<Map<String, TaskCheckpoint.Snapshot>>();
+            var afterGraph = new AtomicReference<Map<String, TaskCheckpoint.Snapshot>>();
+            var sourceSnapshot = new AtomicReference<gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot>();
             var extraResource = new AtomicReference<gold.debug.windowstolinux.appapi.task.run.ResourceLease>();
             var observation = new AtomicReference<OperationResult<Void>>();
             var failure = new AtomicReference<Throwable>();
             var linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(), new Class<?>[]{LinuxService.class},
                 (proxy, method, args) -> {
                     assertEquals("connect", method.getName());
+                    assertSame(originalTask.get(), args[1]);
                     connections.incrementAndGet();
                     return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(), new Class<?>[]{RemoteSession.class},
                         (session, operation, values) -> switch (operation.getName()) {
@@ -141,15 +169,29 @@ class DeploymentStandardPreparationDiagnosticRecoveryTest extends DeploymentRunt
                                 assertEquals(30, command.timeout().toSeconds());
                                 assertArrayEquals(request.get().bytes(), command.stdin());
                                 commands.incrementAndGet();
+                                if (scenario.equals("READ_FAILED")) yield new OperationResult<>(TaskResult.FAILED,
+                                    Optional.of(new CommandResult(Optional.of(65), "", "", false)), Optional.of(problem("TEST_DIAGNOSTIC_READ_FAILED")));
                                 yield new OperationResult<>(TaskResult.SUCCEEDED,
                                     Optional.of(new CommandResult(Optional.of(0), attachment(request.get()), "", false)), Optional.empty());
                             }
                             default -> throw new AssertionError("Unexpected remote action " + operation.getName());
                         });
                 });
+            var checkedTasks = (gold.debug.windowstolinux.appapi.task.TaskService) Proxy.newProxyInstance(
+                gold.debug.windowstolinux.appapi.task.TaskService.class.getClassLoader(), new Class<?>[]{gold.debug.windowstolinux.appapi.task.TaskService.class},
+                (proxy, method, args) -> {
+                    if (graphScenario && method.getName().equals("findCheckpoint")
+                        && args[1].equals(gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.KEY)) {
+                        assertEquals("EMPTY", scenario, "Only a successful blank graph selection may reach ordinary reconciliation");
+                        fallthroughCalls.incrementAndGet();
+                        throw new GraphReconciliationReached();
+                    }
+                    try { return method.invoke(tasks, args); }
+                    catch (InvocationTargetException failed) { throw failed.getCause(); }
+                });
             var context = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
                 (proxy, method, args) -> {
-                    if (method.getName().equals("tasks")) return tasks;
+                    if (method.getName().equals("tasks")) return checkedTasks;
                     if (method.getName().equals("linux")) return linux;
                     try { return method.invoke(actual, args); }
                     catch (InvocationTargetException failed) { throw failed.getCause(); }
@@ -178,7 +220,13 @@ class DeploymentStandardPreparationDiagnosticRecoveryTest extends DeploymentRunt
                     assertSame(originalTask.get(), task);
                     var observed = recovery.reconcile(previous, task);
                     observation.set(observed);
+                    if (graphScenario) afterGraph.set(graphCheckpoints(tasks, task));
                     return observed;
+                } catch (GraphReconciliationReached expected) {
+                    assertEquals("EMPTY", scenario);
+                    afterGraph.set(graphCheckpoints(tasks, task));
+                    observation.set(unknown());
+                    return observation.get();
                 } catch (Throwable failed) { failure.set(failed); throw failed; }
             })) {
                 var handle = tasks.submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE, "Original interrupted preparation", List.of(server.id()), true), task -> {
@@ -190,11 +238,18 @@ class DeploymentStandardPreparationDiagnosticRecoveryTest extends DeploymentRunt
                         ? new DeploymentRemoteLayout(new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths("/usr/local/lib/other-helper", "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps", "/var/opt/windowstolinux/apps"))
                         : DeploymentRemoteLayout.original();
                     var retained = new DeploymentToolchainDiagnostics.Request(OPERATION, task.id().toString(), server.id(),
-                        DeploymentTrackedToolchains.sha256(FINGERPRINT.getBytes(StandardCharsets.UTF_8)), scenario.equals("LARGE") ? "d".repeat(64) : REVISION, layout,
+                        DeploymentTrackedToolchains.sha256(FINGERPRINT.getBytes(StandardCharsets.UTF_8)), graphScenario || scenario.equals("LARGE") ? "d".repeat(64) : REVISION, layout,
                         List.of("prepare", "PHP", "8.3", "-", "1785", "-"));
+                    if (scenario.equals("FOREIGN")) retained = new DeploymentToolchainDiagnostics.Request(OPERATION,
+                        UUID.randomUUID().toString(), server.id(), retained.fingerprintSha256(), retained.planRevision(), retained.layout(), retained.arguments());
                     request.set(retained);
                     tasks.beginCheckpoint(task, DeploymentToolchainDiagnostics.checkpointKey(OPERATION),
                         new String(retained.bytes(), StandardCharsets.UTF_8)).close();
+                    if (graphScenario) {
+                        sourceSnapshot.set(beginGraph(context, task, server));
+                        tasks.findCheckpoint(task, DeploymentStandardSetupActionLog.KEY).orElseThrow().close();
+                        beforeGraph.set(graphCheckpoints(tasks, task));
+                    }
                     if (scenario.equals("EXTRA_RELEASED_OPERATION")) {
                         var second = new DeploymentToolchainDiagnostics.Request(UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
                             task.id().toString(), server.id(), retained.fingerprintSha256(), retained.planRevision(), retained.layout(), retained.arguments());
@@ -212,15 +267,27 @@ class DeploymentStandardPreparationDiagnosticRecoveryTest extends DeploymentRunt
                 boolean concluded = scenario.equals("CONCLUDE");
                 assertEquals(concluded ? TaskState.ENDED : TaskState.UNKNOWN, recovered.state(), recovered.toString());
                 assertEquals(concluded ? TaskResult.FAILED : TaskResult.UNKNOWN, observation.get().outcome());
-                assertEquals(concluded ? "DEPLOYMENT_STATIC_PREPARATION_INTERRUPTED" : "DEPLOYMENT_PREPARATION_DIAGNOSTIC_OBSERVATION",
+                assertEquals(graphScenario && scenario.equals("EMPTY") ? "TEST_PREPARATION_UNKNOWN"
+                    : concluded ? "DEPLOYMENT_STATIC_PREPARATION_INTERRUPTED" : "DEPLOYMENT_PREPARATION_DIAGNOSTIC_OBSERVATION",
                     observation.get().problem().orElseThrow().eventCode());
-                assertEquals(1, prompts.get());
+                assertEquals(Set.of("GRAPH_SERVER", "GRAPH_TASK").contains(scenario) ? 0 : 1, prompts.get());
                 assertEquals(1, authorCalls.get(), "Preparation is never replayed");
-                assertEquals(concluded ? 0 : 2, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + handle.id()
+                assertEquals(concluded ? 0 : graphScenario ? 1 : 2, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + handle.id()
                     + "' AND resource_id IN ('" + OWNER + "/checkpoint/" + DeploymentStandardSetupActionLog.KEY + "','"
                     + OWNER + "/checkpoint/" + DeploymentPublishPolicyFacts.KEY + "') AND released_at IS NULL"));
                 assertEquals(concluded ? 0 : 1, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + handle.id() + "' AND resource_kind='SERVER' AND released_at IS NULL"));
                 var details = observation.get().problem().orElseThrow().context();
+                if (graphScenario) {
+                    assertEquals(beforeGraph.get(), afterGraph.get(), "Observation cannot mutate or close original graph/component checkpoints");
+                    assertEquals(3, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + handle.id()
+                        + "' AND resource_id IN ('" + OWNER + "/checkpoint/" + DeploymentStandardGraphPublishActionLog.KEY
+                        + "','" + OWNER + "/checkpoint/deployment-publication-unit-00','" + OWNER + "/checkpoint/deployment-publication-unit-01') AND released_at IS NULL"));
+                    assertEquals(1, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + handle.id()
+                        + "' AND resource_kind='FILE' AND released_at IS NULL"));
+                    assertEquals("original source\n", Files.readString(sourceSnapshot.get().directory().resolve("source.txt")));
+                    assertEquals(0, conclusionPrompts.get(), "A graph attachment never offers single-preparation settlement");
+                    assertEquals(scenario.equals("EMPTY") ? 1 : 0, fallthroughCalls.get());
+                }
                 if (Set.of("UNKNOWN", "SUCCEEDED", "FAILED", "CLOSE", "CONCLUDE", "EXTRA_RELEASED_OPERATION", "EXTRA_RESOURCE", "DECLINE", "CONCLUDE_CLOSE").contains(scenario)) {
                     assertEquals("SUCCEEDED", details.get("diagnosticReadOutcome"), "Attachment availability is separate from original preparation status");
                     assertEquals(Set.of("UNKNOWN", "FAILED", "CLOSE").contains(scenario) ? (scenario.equals("CLOSE") ? "UNKNOWN" : scenario) : "SUCCEEDED",
@@ -228,12 +295,17 @@ class DeploymentStandardPreparationDiagnosticRecoveryTest extends DeploymentRunt
                     assertEquals(request.get().sha256(), details.get("diagnosticRequestSha256"));
                     assertEquals(Set.of("CLOSE", "CONCLUDE_CLOSE").contains(scenario) ? "false" : "true", details.get("diagnosticSessionCloseConfirmed"));
                 }
-                if (Set.of("UNKNOWN", "SUCCEEDED", "FAILED", "ATTACHMENT", "CLOSE", "LARGE", "CONCLUDE", "EXTRA_RELEASED_OPERATION", "EXTRA_RESOURCE", "DECLINE", "CONCLUDE_CLOSE").contains(scenario)) {
+                if (Set.of("UNKNOWN", "SUCCEEDED", "FAILED", "ATTACHMENT", "CLOSE", "READ_FAILED", "LARGE", "CONCLUDE", "EXTRA_RELEASED_OPERATION", "EXTRA_RESOURCE", "DECLINE", "CONCLUDE_CLOSE").contains(scenario)) {
                     assertEquals(1, commands.get()); assertEquals(1, diagnosticReviews.get());
                 } else assertEquals(0, commands.get());
-                if (Set.of("EMPTY", "CANCELLED", "INVALID", "MISSING", "MODEL", "LAYOUT").contains(scenario)) assertEquals(0, connections.get());
+                if (Set.of("EMPTY", "CANCELLED", "INVALID", "MISSING", "FOREIGN", "MODEL", "LAYOUT", "GRAPH_SERVER", "GRAPH_TASK").contains(scenario)) assertEquals(0, connections.get());
                 if (scenario.equals("DENIED")) assertEquals(1, diagnosticReviews.get());
                 if (scenario.equals("ATTACHMENT")) assertFalse(details.containsKey("toolchainDiagnostic"));
+                if (scenario.equals("READ_FAILED")) {
+                    assertEquals("FAILED", details.get("diagnosticReadOutcome"));
+                    assertEquals("TEST_DIAGNOSTIC_READ_FAILED", details.get("diagnosticReadProblem"));
+                    assertFalse(details.containsKey("toolchainDiagnostic"));
+                }
                 if (scenario.equals("LARGE")) {
                     assertEquals("SUCCEEDED", details.get("diagnosticReadOutcome"));
                     assertEquals("true", details.get("diagnosticAttachmentExportTruncated"));
@@ -260,12 +332,16 @@ class DeploymentStandardPreparationDiagnosticRecoveryTest extends DeploymentRunt
                     assertEquals(TaskResult.SUCCEEDED, next.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
                     return;
                 }
-                if (Set.of("EXTRA_RELEASED_OPERATION", "EXTRA_RESOURCE", "DECLINE", "SUCCEEDED").contains(scenario)) assertEquals(1, conclusionPrompts.get());
+                if (!graphScenario && Set.of("EXTRA_RELEASED_OPERATION", "EXTRA_RESOURCE", "DECLINE", "SUCCEEDED").contains(scenario)) assertEquals(1, conclusionPrompts.get());
                 if (scenario.equals("CONCLUDE_CLOSE")) assertEquals(0, conclusionPrompts.get());
                 registration.close();
                 // Local fixture teardown only, after production retention assertions; no remote operation is represented.
                 try (var teardown = tasks.registerRecovery(DeploymentRefFlow.TASK_TYPE, (previous, task) -> {
                     if (extraResource.get() != null) extraResource.get().close();
+                    if (graphScenario) {
+                        for (String key : graphCheckpoints(tasks, task).keySet()) tasks.findCheckpoint(task, key).orElseThrow().close();
+                        context.file().closeTaskResources(task);
+                    }
                     tasks.findCheckpoint(task, DeploymentStandardSetupActionLog.KEY).orElseThrow().close();
                     tasks.findCheckpoint(task, DeploymentPublishPolicyFacts.KEY).orElseThrow().close();
                     return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(problem("TEST_FIXTURE_TEARDOWN")));
@@ -275,6 +351,43 @@ class DeploymentStandardPreparationDiagnosticRecoveryTest extends DeploymentRunt
             }
         }
     }
+
+    private gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot beginGraph(ModContext context, TaskContext task, ServerId server) throws Exception {
+        var order = new MultiPartDeploymentPlan("graph-fixture", List.of(List.of("backend"), List.of("web")),
+            List.of("web", "backend"), List.of("backend", "web"), List.of("backend", "web"), List.of("web", "backend"),
+            Map.of("backend", "graph-backend", "web", "graph-web"), Map.of("backend", List.of(), "web", List.of("backend")));
+        var indexes = List.of(new DeploymentStandardGraphPublishActionLog.PartIndex("backend", "graph-backend", "deployment-publication-unit-00", "e".repeat(64)),
+            new DeploymentStandardGraphPublishActionLog.PartIndex("web", "graph-web", "deployment-publication-unit-01", "f".repeat(64)));
+        var graph = DeploymentStandardGraphPublishActionLog.begin(context, task, scenario.equals("GRAPH_SERVER") ? "another-original-server" : server.id(),
+            order, "c".repeat(64), indexes);
+        assertNotEquals(REVISION, graph.facts().path("planSha256").asText());
+        if (scenario.equals("GRAPH_TASK")) {
+            var checkpoint = context.tasks().findCheckpoint(task, DeploymentStandardGraphPublishActionLog.KEY).orElseThrow();
+            var facts = (com.fasterxml.jackson.databind.node.ObjectNode) graph.facts();
+            facts.put("task", UUID.randomUUID().toString());
+            checkpoint.advance(checkpoint.snapshot(), facts.toString());
+        }
+        for (var index : indexes) {
+            var unit = gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitIdentity.forManaged(index.unitId(), server, "a".repeat(64));
+            DeploymentPublishCleanupActionLog.begin(context, task, index.key(), unit, "b".repeat(64), index.planSha256(),
+                new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition.GoService("1.24", "app", "main.go",
+                    new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck.Tcp(8080, 10, 2)));
+        }
+        var source = Files.createDirectories(root.resolve("graph-source"));
+        Files.writeString(source.resolve("source.txt"), "original source\n");
+        var selection = context.file().sources().selectDirectory(source, task);
+        return context.file().snapshots().snapshot(selection,
+            new gold.debug.windowstolinux.appapi.file.snapshot.SnapshotRequest(List.of("source.txt"), 1024), task);
+    }
+
+    private static Map<String, TaskCheckpoint.Snapshot> graphCheckpoints(gold.debug.windowstolinux.appapi.task.TaskService tasks, TaskContext task) throws ApiException {
+        var result = new LinkedHashMap<String, TaskCheckpoint.Snapshot>();
+        for (String key : List.of(DeploymentStandardGraphPublishActionLog.KEY, "deployment-publication-unit-00", "deployment-publication-unit-01"))
+            result.put(key, tasks.findCheckpoint(task, key).orElseThrow().snapshot());
+        return result;
+    }
+
+    private static final class GraphReconciliationReached extends RuntimeException { }
 
     private String attachment(DeploymentToolchainDiagnostics.Request request) {
         String status = Set.of("SUCCEEDED", "FAILED").contains(scenario) ? scenario
