@@ -5892,12 +5892,23 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
     protected PlatformRuntime open() throws Exception {
         if (isolatedInputBridge() || isolatedStopDiagnostics()) return super.open();
         var runtime = PlatformRuntime.open(root.resolve("data"), currentUserProtection());
-        if (runtime.security().securityState().configured()) runtime.security().unlock(PASSWORD.toCharArray());
-        else runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
+        char[] password = liveMasterPassword();
+        try {
+            if (runtime.security().securityState().configured()) runtime.security().unlock(password);
+            else runtime.security().setupAndUnlock(password, password);
+        } finally {
+            Arrays.fill(password, '\0');
+        }
         runtime.setInteractionPresenter(interactionPrompts());
         runtime.setSourcePicker((title, task, cancel) -> selectedSourceDirectory());
         runtime.started();
         return runtime;
+    }
+
+    private static char[] liveMasterPassword() {
+        String configured = Boolean.getBoolean("managed.runtime.staticLive")
+            ? System.getenv("WINDOWSTOLINUX_TEST_MASTER_PASSWORD") : null;
+        return (configured == null || configured.isEmpty() ? PASSWORD : configured).toCharArray();
     }
 
     private static DatabaseProtection currentUserProtection() {
@@ -6225,8 +6236,11 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                 if (intent.type().equals("platform.ssh.trust")) {
                     System.out.println("STATIC_LIVE_HOST_TRUST " + intent.exactAction());
                     String expected = System.getProperty("managed.ssh.fingerprint");
-                    if (expected != null)
-                        assertTrue(intent.exactAction().contains("SSH wire-key fingerprint=" + expected));
+                    if (expected != null && intent.exactAction().lines()
+                        .noneMatch(line -> line.equals("SSH wire-key fingerprint=" + expected))) {
+                        System.out.println("STATIC_LIVE_HOST_TRUST_REFUSED reason=FINGERPRINT_MISMATCH task=" + task.id());
+                        return false;
+                    }
                 }
                 return true;
             }
@@ -6243,7 +6257,12 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             assertTrue(savedRoot.startsWith(dataRoot) && savedRoot.getFileName().toString().startsWith("agent-live-"));
             assertNotEquals(root.toAbsolutePath().normalize(), savedRoot);
             try (var original = PlatformRuntime.open(savedRoot.resolve("data"), currentUserProtection())) {
-                original.security().unlock(PASSWORD.toCharArray());
+                char[] password = liveMasterPassword();
+                try {
+                    original.security().unlock(password);
+                } finally {
+                    Arrays.fill(password, '\0');
+                }
                 var saved = ServerProfile.fromStored(original.persistence().servers().findServerProfile(SERVER).orElseThrow());
                 assertEquals(profile.host(), saved.host());
                 assertEquals(profile.sshPort(), saved.sshPort());
@@ -6275,7 +6294,19 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
     @Test
     void connectsThroughTheRealPlatform() throws Exception {
         try (var runtime = open()) {
-            var result = runtime.servers().check(saveServer(runtime)).completion().toCompletableFuture().get(90, TimeUnit.SECONDS);
+            var connection = runtime.servers().check(saveServer(runtime));
+            gold.debug.windowstolinux.appapi.task.result.OperationResult<?> result;
+            try {
+                result = connection.completion().toCompletableFuture().get(90, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException timeout) {
+                try {
+                    connection.requestCancel();
+                    connection.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
+                } catch (Exception cleanupFailure) {
+                    timeout.addSuppressed(cleanupFailure);
+                }
+                throw timeout;
+            }
             System.out.println("STATIC_LIVE_CONNECTION " + result);
             assertEquals(TaskResult.SUCCEEDED, result.outcome(), result::toString);
         }
