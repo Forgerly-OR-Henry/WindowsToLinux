@@ -27,6 +27,7 @@
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <junit.version>5.11.4</junit.version>
     <maven.compiler.version>3.13.0</maven.compiler.version>
+    <maven.dependency.version>3.8.1</maven.dependency.version>
     <maven.enforcer.version>3.5.0</maven.enforcer.version>
     <maven.jar.version>3.4.2</maven.jar.version>
     <maven.surefire.version>3.5.2</maven.surefire.version>
@@ -75,6 +76,11 @@
   <build>
     <pluginManagement>
       <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-dependency-plugin</artifactId>
+          <version>${maven.dependency.version}</version>
+        </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>
