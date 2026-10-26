@@ -394,19 +394,32 @@ WindowsToLinux/
    │  │  │  └─ UiDebugPreviewHost.java  # 在宿主持有的对话框中挂载隔离作者预览
    │  │  ├─ display/  # 语言、主题和显示设置
    │  │  │  ├─ DesktopComboBoxUi.java  # 固定各下拉框显示后的宽度，保留 FlatLaf 输入及展开列表绘制
+   │  │  │  ├─ DesktopButtonUi.java  # 保留原动作模型的按钮悬停及按下过渡
    │  │  │  ├─ DesktopCardDrag.java  # 列表与表格共用的手柄拖拽、浮动预览、自动滚动和取消
+   │  │  │  ├─ DesktopCardFeedback.java  # 真实清单持有的悬停及按下反馈，不向复用渲染器存状态
    │  │  │  ├─ DesktopCardSelection.java  # 卡片点击切换及原生选择、拖拽手势协调
    │  │  │  ├─ DesktopCardSupport.java  # 卡片适用范围、命中边界及共用尺寸
+   │  │  │  ├─ DesktopColorMotion.java  # 按当前颜色转向最新控件状态
    │  │  │  ├─ DesktopControlDefaults.java  # 统一全局控件形状、主题表面及交互状态
    │  │  │  ├─ DesktopDisplayConfig.java  # 在桌面设置页面选择的可持久化显示偏好
+   │  │  │  ├─ DesktopDrawer.java  # 详情滑入与左栏让位，关闭缓存无命中能力
+   │  │  │  ├─ DesktopFadingPanel.java  # 仅对详情对象变化淡入淡出，刷新不重播
    │  │  │  ├─ DesktopListCard.java  # 共用圆角卡片、选中竖条及draggable手柄
    │  │  │  ├─ DesktopListUi.java  # 保留原模型与渲染器的对象列表绘制及行高缩放
    │  │  │  ├─ DesktopMotion.java  # 共用实际时间运动时钟及系统动画偏好
+   │  │  │  ├─ DesktopMotionScope.java  # 启用所属动画句柄、最终帧与取消回调
+   │  │  │  ├─ DesktopPopupFactory.java  # 保留原菜单选择及关闭语义的弹层内容适配
+   │  │  │  ├─ DesktopProgressBarUi.java  # 平滑真实比例，关闭动画后使用静态未知进度
+   │  │  │  ├─ DesktopRevealPane.java  # 弹窗与菜单内容淡入并轻微上移
+   │  │  │  ├─ DesktopRootPaneUi.java  # 自动接入主 App 与官方 Mod 的 Swing 弹窗
+   │  │  │  ├─ DesktopSplitPane.java  # 保留最终比例和留白的列表与详情布局
    │  │  │  ├─ DesktopSwitchIcon.java  # 普通复选组件的圆形滑块及鼠标键盘状态反馈
    │  │  │  ├─ DesktopScrollBarUi.java  # 卡片专用细滚动条及无溢出满轨道绘制
    │  │  │  ├─ DesktopScrollPaneUi.java  # 卡片滚动视口、常驻策略及主题重装清理
    │  │  │  ├─ DesktopTableUi.java  # 保留列与操作的表格多选标记绘制
+   │  │  │  ├─ DesktopTabbedPaneUi.java  # 保留页签组件身份的局部内容淡出淡入
    │  │  │  ├─ DesktopTextAreaUi.java  # 保留原生正文与选择，仅绘制多行文本的圆角背景
+   │  │  │  ├─ DesktopTextFieldUi.java  # 保留原文档、图标及光标的焦点颜色过渡
    │  │  │  ├─ DesktopThemeService.java  # 受管部署 Swing 桌面客户端共用的 FlatLaf 设置
    │  │  │  ├─ SystemThemeResolver.java  # 读取 Windows 应用外观偏好，但不写入系统注册表
    │  │  │  ├─ ThemeMode.java  # 用户可选择的桌面外观偏好
@@ -773,6 +786,9 @@ WindowsToLinux/
    │  │     ├─ PageSpec.java  # 唯一根工作区身份或主导航之外的设置/预览扩展
    │  │     ├─ PlatformPageKind.java  # 不含私有控件或配置权限的固定平台目的地
    │  │     ├─ UiEnvironment.java  # 当前宿主语言、主题及锁定状态
+   │  │     ├─ UiMotion.java  # 可选的宿主统一视觉帧服务
+   │  │     ├─ UiMotionHandle.java  # 可结束或取消的所属过渡句柄
+   │  │     ├─ UiMotionKind.java  # 与缩放无关的统一交互时长
    │  │     └─ UiNavigationRequest.java  # 不写启动偏好的明确功能标识及临时公开上下文
    │  └─ resources/  # 随公开 API 发布的版本资源
    │     └─ gold/  # 所属运行资源分组
@@ -1485,6 +1501,8 @@ WindowsToLinux/
    │  │  │  ├─ feedback/  # 原句柄持续观察及成功后精确交付查询
    │  │  │  │  ├─ DeploymentTaskDelivery.java  # 仅在原宿主完成后读取精确交付
    │  │  │  │  └─ DeploymentTaskFeedback.java  # 持续观察一个原句柄，不提交轮询任务
+   │  │  │  ├─ flow/  # 统一部署流程与原页面内容适配
+   │  │  │  │  └─ DeploymentContentCards.java  # 公开动效时钟驱动的内容切换，同卡刷新不重播
    │  │  │  ├─ preference/  # 共用模式、审核和模型偏好控件
    │  │  │  │  └─ DeploymentPreferenceSelection.java  # 持久化明确视图编辑，不写初始化或语言变化
    │  │  │  ├─ runtime/  # 运行预填、原字段校验与键盘帮助
@@ -1673,6 +1691,7 @@ WindowsToLinux/
    │  │  │  └─ FilesService.java  # 原任务文件管理及启用所属实际观测
    │  │  ├─ ui/  # 文件工作区、列表、交互、反馈和原任务控制
    │  │  │  ├─ FilesActions.java  # 共享工具栏、菜单及实际键盘动作
+   │  │  │  ├─ FilesBrowserRegion.java  # 经公开动画时钟驱动的文件第二栏与缓存清理
    │  │  │  ├─ FilesCommands.java  # 将共享视图动作转换为原平台服务任务
    │  │  │  ├─ FilesDialogLayout.java  # 文件弹窗的自然表单、固定操作与工作区约束
    │  │  │  ├─ FilesDialogs.java  # 持有未提交的模态输入，以供锁定及关闭撤销

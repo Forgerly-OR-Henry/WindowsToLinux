@@ -315,6 +315,7 @@ public final class DesktopDialogs {
      * @param dialog opted-in window / 接入的窗口
      * @param logicalSize unscaled preferred size or absence / 未缩放首选尺寸或空值 */
     private static void manage(JDialog dialog, Dimension logicalSize) {
+        dialog.getRootPane().putClientProperty("desktop.motion", true);
         dialog.getRootPane().putClientProperty(SIZE, logicalSize);
         if (Boolean.TRUE.equals(dialog.getRootPane().getClientProperty(MANAGED))) return;
         dialog.getRootPane().putClientProperty(MANAGED, true);
@@ -329,8 +330,10 @@ public final class DesktopDialogs {
     /** Recomputes geometry from logical baselines while retaining authored controls. / 从逻辑基准重算几何并保留作者控件。
      * @param dialog opted-in window / 接入的窗口 */
     private static void refresh(JDialog dialog) {
-        if ("desktop.dialog.body".equals(dialog.getContentPane().getName())) {
-            var body = (JComponent) dialog.getContentPane();
+        var content = dialog.getContentPane() instanceof gold.debug.windowstolinux.app.ui.display.DesktopRevealPane reveal
+            ? reveal.content() : dialog.getContentPane();
+        if ("desktop.dialog.body".equals(content.getName())) {
+            var body = (JComponent) content;
             surface(body);
             body.setBorder(BorderFactory.createEmptyBorder(UIScale.scale(20), UIScale.scale(20),
                 UIScale.scale(20), UIScale.scale(20)));

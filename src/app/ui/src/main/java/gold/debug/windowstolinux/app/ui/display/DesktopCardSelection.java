@@ -18,6 +18,7 @@ final class DesktopCardSelection extends MouseInputAdapter implements AutoClosea
     private final JComponent view;
 
     private final MouseInputListener original;
+    private final DesktopCardFeedback feedback;
 
     private Point pressedAt;
 
@@ -33,6 +34,7 @@ final class DesktopCardSelection extends MouseInputAdapter implements AutoClosea
         @Override
         public void focusLost(FocusEvent event) {
             cancel();
+            feedback.exit();
         }
     };
 
@@ -82,6 +84,7 @@ final class DesktopCardSelection extends MouseInputAdapter implements AutoClosea
     DesktopCardSelection(JComponent view, MouseInputListener original) {
         this.view = view;
         this.original = original;
+        feedback = new DesktopCardFeedback(view);
     }
 
     void install() {
@@ -128,6 +131,7 @@ final class DesktopCardSelection extends MouseInputAdapter implements AutoClosea
 
     @Override
     public void mousePressed(MouseEvent event) {
+        feedback.pointer(event, true);
         cancel();
         ignoredPress = false;
         if (view.isEnabled() && DesktopCardSupport.isCardView(view) && SwingUtilities.isLeftMouseButton(event)
@@ -180,6 +184,7 @@ final class DesktopCardSelection extends MouseInputAdapter implements AutoClosea
                 && view.getClientProperty("desktop.cardClick") instanceof Runnable action) action.run();
         } finally {
             cancel();
+            feedback.pointer(event, false);
         }
     }
 
@@ -190,21 +195,25 @@ final class DesktopCardSelection extends MouseInputAdapter implements AutoClosea
 
     @Override
     public void mouseEntered(MouseEvent event) {
+        feedback.pointer(event, false);
         original.mouseEntered(event);
     }
 
     @Override
     public void mouseExited(MouseEvent event) {
+        feedback.exit();
         original.mouseExited(event);
     }
 
     @Override
     public void mouseMoved(MouseEvent event) {
+        feedback.pointer(event, false);
         original.mouseMoved(event);
     }
 
     @Override
     public void close() {
+        feedback.close();
         cancel();
         ignoredPress = false;
         unobserveModel();
@@ -213,4 +222,6 @@ final class DesktopCardSelection extends MouseInputAdapter implements AutoClosea
         view.removeComponentListener(geometry);
         view.removePropertyChangeListener(properties);
     }
+
+    void paintFeedback(java.awt.Graphics graphics) { feedback.paint(graphics); }
 }

@@ -7,9 +7,26 @@ import javax.swing.plaf.UIResource;
 import com.formdev.flatlaf.util.AnimatedIcon;
 import com.formdev.flatlaf.util.Animator;
 import com.formdev.flatlaf.util.UIScale;
+import gold.debug.windowstolinux.appapi.ui.page.*;
 
 /** Global checkbox presentation with a round sliding thumb and unchanged button semantics. / 保留按钮语义的全局复选圆形滑块展示。 */
 public final class DesktopSwitchIcon implements AnimatedIcon, UIResource {
+    private static final String STATE = "desktop.motion.switch";
+
+    private static final class State {
+        private final DesktopMotionScope scope = new DesktopMotionScope(() -> true);
+        private UiMotionHandle motion;
+        private float value, target;
+        private State(JComponent owner, float value) {
+            this.value = this.target = value;
+            owner.addHierarchyListener(event -> {
+                if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0 && !owner.isShowing()) {
+                    if (motion != null) motion.close();
+                    this.value = target;
+                }
+            });
+        }
+    }
     /** Uses the selected model state rather than a separate preference. / 使用原选中模型状态，不持有独立偏好。
      * @param component original control / 原控件
      * @return selected position / 选中位置 */
@@ -43,7 +60,7 @@ public final class DesktopSwitchIcon implements AnimatedIcon, UIResource {
      * @return duration in milliseconds / 毫秒时长 */
     @Override
     public int getAnimationDuration() {
-        return 180;
+        return 120;
     }
 
     /** Uses the shared visual frame cadence. / 使用共用视觉帧节奏。
@@ -67,9 +84,30 @@ public final class DesktopSwitchIcon implements AnimatedIcon, UIResource {
      * @param y icon origin / 图标原点 */
     @Override
     public void paintIcon(Component component, Graphics graphics, int x, int y) {
-        if (component.getParent() instanceof CellRendererPane)
+        if (component.getParent() instanceof CellRendererPane || !(component instanceof JComponent owner)) {
             paintIconAnimated(component, graphics, x, y, getValue(component));
-        else AnimatedIcon.super.paintIcon(component, graphics, x, y);
+            return;
+        }
+        var state = (State) owner.getClientProperty(STATE);
+        if (state == null) {
+            state = new State(owner, getValue(component));
+            owner.putClientProperty(STATE, state);
+        }
+        float target = getValue(component);
+        if (!DesktopMotion.enabled() || !owner.isShowing()) {
+            if (state.motion != null) state.motion.close();
+            state.value = state.target = target;
+        } else if (target != state.target) {
+            if (state.motion != null) state.motion.close();
+            float from = state.value;
+            state.target = target;
+            State current = state;
+            state.motion = state.scope.animate(owner, UiMotionKind.SWITCH, progress -> {
+                current.value = from + (target - from) * (float) progress;
+                owner.repaint();
+            });
+        }
+        paintIconAnimated(component, graphics, x, y, state.value);
     }
 
     /** Paints only filled round surfaces, preserving disabled and keyboard feedback. / 仅绘制填充圆形表面，保留禁用与键盘反馈。

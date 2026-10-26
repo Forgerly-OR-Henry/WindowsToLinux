@@ -11,7 +11,7 @@ public final class DesktopMotion implements AutoCloseable {
     private static volatile boolean preference = true;
     private static boolean suspended;
     private static final Set<DesktopMotion> RUNNING = new LinkedHashSet<>();
-    private static final Map<Runnable, Boolean> OBSERVERS = new WeakHashMap<>();
+    private static final Map<Runnable, Boolean> OBSERVERS = Collections.synchronizedMap(new WeakHashMap<>());
 
     static {
         Toolkit.getDefaultToolkit().addPropertyChangeListener("win.clientAreaAnimation",
@@ -36,21 +36,37 @@ public final class DesktopMotion implements AutoCloseable {
 
     /** Weakly observes policy; the caller retains the listener for its own lifetime. */
     public static void observe(Runnable listener) {
-        requireEdt(); OBSERVERS.put(listener, Boolean.TRUE);
+        OBSERVERS.put(Objects.requireNonNull(listener), Boolean.TRUE);
     }
 
     public static void unobserve(Runnable listener) {
-        requireEdt(); OBSERVERS.remove(listener);
+        OBSERVERS.remove(listener);
     }
 
     private static void refreshPolicy() {
         requireEdt();
+        Throwable failure = null;
         if (!enabled()) for (var clock : List.copyOf(RUNNING)) {
             clock.close();
-            clock.frame.accept(Double.POSITIVE_INFINITY);
+            try { clock.frame.accept(Double.POSITIVE_INFINITY); }
+            catch (RuntimeException | Error problem) {
+                if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
+            }
         }
-        for (var listener : List.copyOf(OBSERVERS.keySet())) listener.run();
+        List<Runnable> observers;
+        synchronized (OBSERVERS) { observers = List.copyOf(OBSERVERS.keySet()); }
+        for (var listener : observers) try { listener.run(); }
+        catch (RuntimeException | Error problem) {
+            if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
+        }
         for (var window : java.awt.Window.getWindows()) if (window.isDisplayable()) window.repaint();
+        if (failure != null) {
+            Throwable reported = failure;
+            SwingUtilities.invokeLater(() -> {
+                Thread thread = Thread.currentThread();
+                thread.getUncaughtExceptionHandler().uncaughtException(thread, reported);
+            });
+        }
     }
 
     public static double ease(double fraction) {
@@ -104,20 +120,6 @@ public final class DesktopMotion implements AutoCloseable {
             && !Boolean.FALSE.equals(Toolkit.getDefaultToolkit().getDesktopProperty("win.clientAreaAnimation"));
     }
 
-    /** Advances a critically damped spring using real elapsed time. / 根据实际经过时间推进临界阻尼弹簧。
-     * @param value current position / 当前位置
-     * @param velocity current velocity / 当前速度
-     * @param target desired position / 目标位置
-     * @param seconds elapsed seconds / 经过的秒数
-     * @return next position and velocity / 下一位置和速度 */
-    public static Sample step(double value, double velocity, double target, double seconds) {
-        if (!Double.isFinite(seconds)) return new Sample(target, 0);
-        double omega = 28, distance = value - target, offset = velocity + omega * distance;
-        double decay = Math.exp(-omega * seconds);
-        return new Sample(target + (distance + offset * seconds) * decay,
-            (velocity - omega * offset * seconds) * decay);
-    }
-
     /** Stops the owned animation. / 停止所属动画。 */
     @Override
     public void close() {
@@ -126,9 +128,4 @@ public final class DesktopMotion implements AutoCloseable {
     }
 
     static int runningCount() { return RUNNING.size(); }
-    /** One continuous motion sample. / 一次连续运动采样。
-     * @param value position / 位置
-     * @param velocity velocity / 速度 */
-    public record Sample(double value, double velocity) {
-    }
 }

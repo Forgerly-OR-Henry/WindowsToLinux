@@ -9,7 +9,7 @@ import javax.swing.AbstractButton;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 
-import com.formdev.flatlaf.ui.FlatButtonUI;
+import gold.debug.windowstolinux.app.ui.display.DesktopButtonUi;
 import com.formdev.flatlaf.ui.FlatUIUtils;
 
 /** Keeps sidebar icons fixed while full captions fade with its width clock. / 侧栏图标固定，完整文案随宽度时钟渐隐。 */
@@ -36,7 +36,7 @@ public final class DesktopNavigationButton extends JButton {
     /** Retains native surfaces and feedback while anchoring icon and text painting. / 保留原生底色及反馈，固定图标和文字绘制起点。 */
     @Override
     public void updateUI() {
-        setUI(new FlatButtonUI(false) {
+        setUI(new DesktopButtonUi() {
             /** Contracts feedback around the anchored icon as captions disappear. / 文案收起时反馈底色围绕固定图标对称收拢。
              * @param graphics paint context / 绘制上下文
              * @param component original button / 原按钮 */

@@ -16,7 +16,7 @@ import com.formdev.flatlaf.util.UIScale;
 /**
  * One shared, scalable rounded surface. / 共用的可缩放圆角表面。
  */
-final class RoundedCard extends JPanel {
+final class RoundedCard extends gold.debug.windowstolinux.app.ui.display.DesktopFadingPanel {
     /** Optional inner outline; ordinary cards keep their existing silhouette. / 可选内轮廓，普通卡片保持原轮廓。 */
     private Color outlineColor;
 

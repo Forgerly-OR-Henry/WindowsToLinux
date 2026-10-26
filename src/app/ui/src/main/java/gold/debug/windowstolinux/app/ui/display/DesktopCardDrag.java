@@ -43,7 +43,7 @@ public final class DesktopCardDrag<E> implements AutoCloseable {
 
     private List<E> snapshot;
 
-    private double[] positions, velocities;
+    private double[] positions, starts, targets, elapsed;
 
     private final Map<Integer, BufferedImage> images = new HashMap<>();
 
@@ -117,7 +117,7 @@ public final class DesktopCardDrag<E> implements AutoCloseable {
     private final HierarchyListener lifetime = this::hierarchyChanged;
 
     private void hierarchyChanged(HierarchyEvent event) {
-        if ((event.getChangeFlags() & HierarchyEvent.DISPLAYABILITY_CHANGED) != 0 && !view.isDisplayable()) clear();
+        if ((event.getChangeFlags() & (HierarchyEvent.DISPLAYABILITY_CHANGED | HierarchyEvent.SHOWING_CHANGED)) != 0 && !view.isShowing()) clear();
     }
 
     private final KeyListener keys = new KeyAdapter() {
@@ -241,8 +241,11 @@ public final class DesktopCardDrag<E> implements AutoCloseable {
     private void begin() {
         snapshot = List.copyOf(rows.values());
         positions = new double[snapshot.size()];
-        velocities = new double[snapshot.size()];
-        for (int i = 0; i < positions.length; i++) positions[i] = rows.bounds(i).y;
+        starts = new double[snapshot.size()];
+        targets = new double[snapshot.size()];
+        elapsed = new double[snapshot.size()];
+        for (int i = 0; i < positions.length; i++)
+            positions[i] = starts[i] = targets[i] = rows.bounds(i).y;
         dragging = true;
         view.putClientProperty("desktop.cardDragActive", true);
         rows.selectDragged(source);
@@ -253,6 +256,11 @@ public final class DesktopCardDrag<E> implements AutoCloseable {
         view.putClientProperty("desktop.cardDragActive", false);
         if (snapshot == null) return;
         returning = true;
+        for (int i = 0; i < positions.length; i++) {
+            starts[i] = positions[i];
+            targets[i] = rows.bounds(i).y;
+            elapsed[i] = 0;
+        }
         motion.start();
     }
 
@@ -304,10 +312,15 @@ public final class DesktopCardDrag<E> implements AutoCloseable {
                 : source < destination && i > source && i <= destination ? i - 1
                 : source > destination && i >= destination && i < source ? i + 1 : i;
             double target = rows.bounds(slot).y;
-            var next = DesktopMotion.step(positions[i], velocities[i], target, seconds);
-            positions[i] = next.value();
-            velocities[i] = next.velocity();
-            settled &= Math.abs(next.value() - target) < .1 && Math.abs(next.velocity()) < .5;
+            if (targets[i] != target) {
+                starts[i] = positions[i];
+                targets[i] = target;
+                elapsed[i] = 0;
+            }
+            elapsed[i] += seconds;
+            double progress = Math.min(1, elapsed[i] / .180);
+            positions[i] = starts[i] + (target - starts[i]) * DesktopMotion.ease(progress);
+            settled &= progress == 1;
         }
         view.repaint();
         if (!dragging && settled) {

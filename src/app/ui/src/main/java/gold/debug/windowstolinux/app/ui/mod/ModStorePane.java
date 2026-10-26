@@ -317,13 +317,13 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
 
     /** Revokes only the unsubmitted selection and its readers, retaining accepted batch facts. / 仅撤销未提交选择及其读取，保留已接纳批次事实。 */
     private void clearSelectionDraft() {
+        surface.expanded(false);
         revision++;
         if (!querying) readToken.set(true);
         confirmation.revoke();
         selection = null;
         plan = null;
         selectionView.display(null, null);
-        surface.expanded(false);
         showStatus(rows.isEmpty() ? "store.empty" : service.canInstall() ? "store.ready" : "store.classMode");
         controls();
     }
@@ -518,6 +518,7 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
         readToken.set(true);
         confirmation.revoke();
         if (locked) {
+            surface.reset();
             catalog = null;
             selection = null;
             plan = null;
@@ -540,6 +541,7 @@ public final class ModStorePane extends JPanel implements AutoCloseable {
     @Override
     public void close() {
         if (closed) return;
+        surface.close();
         closed = true;
         epoch++;
         revision++;

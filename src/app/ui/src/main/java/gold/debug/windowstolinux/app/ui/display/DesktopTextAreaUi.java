@@ -15,6 +15,7 @@ import com.formdev.flatlaf.util.UIScale;
 
 /** Rounds multiline surfaces while retaining FlatLaf's text, selection and caret rendering. / 多行表面使用圆角，保留 FlatLaf 原文字、选择及光标绘制。 */
 public final class DesktopTextAreaUi extends FlatTextAreaUI {
+    private DesktopColorMotion motion;
     /** Creates an independent delegate for each text area. / 为每个多行文本框创建独立绘制器。 */
     private DesktopTextAreaUi() {
     }
@@ -35,6 +36,10 @@ public final class DesktopTextAreaUi extends FlatTextAreaUI {
         if (background instanceof UIResource && focusedBackground != null
             && FlatUIUtils.isPermanentFocusOwner(component))
             background = focusedBackground;
+        if (component.isEnabled() && component.isEditable() && FlatUIUtils.isPermanentFocusOwner(component))
+            background = DesktopColorMotion.blend(background, UIManager.getColor("Component.focusColor"), .06);
+        if (motion == null) motion = new DesktopColorMotion(component);
+        background = motion.color(background, gold.debug.windowstolinux.appapi.ui.page.UiMotionKind.HOVER);
         FlatUIUtils.paintParentBackground(graphics, component);
         var rounded = (Graphics2D) graphics.create();
         try {
@@ -45,5 +50,11 @@ public final class DesktopTextAreaUi extends FlatTextAreaUI {
         } finally {
             rounded.dispose();
         }
+    }
+
+    @Override protected void uninstallDefaults() {
+        if (motion != null) motion.close();
+        motion = null;
+        super.uninstallDefaults();
     }
 }

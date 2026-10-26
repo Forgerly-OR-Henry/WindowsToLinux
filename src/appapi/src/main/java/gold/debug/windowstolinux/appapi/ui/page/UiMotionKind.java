@@ -7,9 +7,13 @@ public enum UiMotionKind {
 
     private final int milliseconds;
 
-    UiMotionKind(int milliseconds) { this.milliseconds = milliseconds; }
+    UiMotionKind(int milliseconds) {
+        this.milliseconds = milliseconds;
+    }
 
     /** Returns logical elapsed milliseconds, unaffected by UI scale. / 返回不受界面缩放影响的经过毫秒数。
      * @return duration / 时长 */
-    public int milliseconds() { return milliseconds; }
+    public int milliseconds() {
+        return milliseconds;
+    }
 }

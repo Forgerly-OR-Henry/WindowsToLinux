@@ -12,9 +12,12 @@ import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
 import gold.debug.windowstolinux.app.ui.language.LocalizedMessage;
+import gold.debug.windowstolinux.app.ui.display.DesktopDrawer;
+import gold.debug.windowstolinux.app.ui.display.DesktopFadingPanel;
 
 /** Fixed catalog controls and independently scrolling details. / 固定清单工具栏及独立滚动详情。 */
-final class ModCatalogSurface extends JPanel {
+final class ModCatalogSurface extends JPanel implements AutoCloseable {
+    private final DesktopDrawer drawer;
     private final DesktopPartFactory components;
 
     private final PageMessagePresenter messages;
@@ -137,6 +140,7 @@ final class ModCatalogSurface extends JPanel {
         rightBody.add(detailScroll, BorderLayout.CENTER);
         add(left);
         add(right);
+        drawer = new DesktopDrawer(this, right);
         expanded(false);
     }
 
@@ -161,6 +165,7 @@ final class ModCatalogSurface extends JPanel {
     }
 
     void detailHeading(String name, String id, Runnable action) {
+        ((DesktopFadingPanel) right).content(id);
         title.setText(name);
         title.setToolTipText(name);
         identity.setText(id);
@@ -177,7 +182,8 @@ final class ModCatalogSurface extends JPanel {
 
     void expanded(boolean value) {
         expanded = value;
-        right.setVisible(value);
+        drawer.expanded(value);
+        if (!value) ((DesktopFadingPanel) right).content(null);
         var owner = value ? right : left;
         if (footerHost.getParent() != owner) {
             if (footerHost.getParent() != null) footerHost.getParent().remove(footerHost);
@@ -196,23 +202,29 @@ final class ModCatalogSurface extends JPanel {
         int width = Math.max(0, getWidth() - insets.left - insets.right);
         int height = Math.max(0, getHeight() - insets.top - insets.bottom);
         int gap = UIScale.scale(18);
-        int leftWidth = expanded ? Math.max(0, (int) Math.round((width - gap) * .4)) : width;
-        if (expanded) {
+        int leftWidth = Math.max(0, (int) Math.round((width - gap) * .4));
+        {
             int maximum = Math.max(0, width - gap - UIScale.scale(280));
             var cardInsets = left.getInsets();
             leftWidth = Math.min(maximum, Math.max(leftWidth,
                 titleLine.getPreferredSize().width + cardInsets.left + cardInsets.right));
         }
-        int rightX = x + leftWidth + gap;
-        int rightWidth = Math.max(0, width - leftWidth - gap);
-        left.setBounds(x, y, leftWidth, height);
-        right.setBounds(rightX, y, rightWidth, height);
+        drawer.layout(left, new Rectangle(x, y, width, height), leftWidth, gap);
         var owner = expanded ? right : left;
         var cardInsets = owner.getInsets();
         int footerWidth = Math.max(0, owner.getWidth() - cardInsets.left - cardInsets.right);
         footerHost.setSize(footerWidth, Math.max(1, footerHost.getHeight()));
         footerHost.doLayout();
     }
+
+    void reset() { drawer.reset(false); ((DesktopFadingPanel) right).content(null); expanded = false; }
+
+    @Override protected void paintChildren(java.awt.Graphics graphics) {
+        super.paintChildren(graphics);
+        drawer.paint(graphics);
+    }
+
+    @Override public void close() { drawer.close(); ((DesktopFadingPanel) right).close(); }
 
     private void updateGaps() {
         ((BorderLayout) left.getLayout()).setVgap(UIScale.scale(18));

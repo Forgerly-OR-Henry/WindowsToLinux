@@ -14,6 +14,8 @@ import gold.debug.windowstolinux.app.service.ai.*;
 import gold.debug.windowstolinux.app.ui.control.*;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
+import gold.debug.windowstolinux.app.ui.display.DesktopDrawer;
+import gold.debug.windowstolinux.app.ui.display.DesktopFadingPanel;
 
 /** Inventory, model details and independent purpose composition. / 清单、模型详情及独立用途编排。 */
 final class AiModelListPane extends JPanel implements PendingCardEdits {
@@ -34,23 +36,33 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
 
     private final JScrollPane inventoryScroll = new JScrollPane(inventory), purposeScroll = new JScrollPane(selected);
 
-    private final JPanel columns = new JPanel(new GridBagLayout()) {
+    private final DesktopFadingPanel detailHost = new DesktopFadingPanel(new BorderLayout());
+
+    private DesktopDrawer drawer;
+
+    private final JPanel columns = new JPanel(null) {
         /** Keeps the fixed purpose controls visible in narrow windows. / 窄窗口中保留用途按钮的完整尺寸。 */
         @Override
         public void doLayout() {
+            if (drawer == null) return;
+            int gap = 24;
+            int leftWidth = (int) ((getWidth() - gap) * .4);
             if (purpose != null) {
-                var grid = (GridBagLayout) getLayout();
-                int available = Math.max(1, getWidth() - arrows.getPreferredSize().width - UIScale.scale(24));
+                int arrowWidth = arrows.getPreferredSize().width + gap;
+                int available = Math.max(1, getWidth() - arrowWidth);
+                int weights = Math.max(1, getWidth() - arrows.getPreferredSize().width - UIScale.scale(24));
                 var inset = editor.getInsets();
-                int right = Math.max(available / 2, roles.getPreferredSize().width + inset.left + inset.right);
-                var leftConstraints = grid.getConstraints(left);
-                leftConstraints.weightx = Math.max(0, available - right);
-                grid.setConstraints(left, leftConstraints);
-                var rightConstraints = grid.getConstraints(editor);
-                rightConstraints.weightx = right;
-                grid.setConstraints(editor, rightConstraints);
+                int right = Math.max(weights / 2, roles.getPreferredSize().width + inset.left + inset.right);
+                int leftWeight = Math.max(0, weights - right);
+                leftWidth = (int) (available * (double) leftWeight / (leftWeight + right));
+                gap = 0;
             }
-            super.doLayout();
+            drawer.layout(left, new Rectangle(0, 0, getWidth(), getHeight()), leftWidth, gap);
+        }
+
+        @Override protected void paintChildren(Graphics graphics) {
+            super.paintChildren(graphics);
+            if (drawer != null) drawer.paint(graphics);
         }
     }, leftTools = new JPanel(new BorderLayout(8, 0)),
         roles = new JPanel(new GridLayout(1, 4, 6, 0)), arrows = new JPanel(new GridLayout(2, 1, 0, 10)),
@@ -97,8 +109,11 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
         left.setName("ai.inventory.surface");
         editor = c.outerCard(new BorderLayout(0, 14));
         editor.setName("ai.purpose.surface");
-        for (var panel : List.of(this, columns, left, leftTools, editor, roles, arrows, heading))
+        for (var panel : List.of(this, columns, left, leftTools, editor, roles, arrows, heading, detailHost))
             panel.setOpaque(false);
+        columns.add(left);
+        columns.add(detailHost);
+        drawer = new DesktopDrawer(columns, detailHost);
         order = new CardOrderSession<>(this, messages, (expected, requested) -> {
             service.reorderAiProviders(expected, requested);
             return requested;
@@ -199,6 +214,8 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
         order.setLocked(value);
         purposes.values().forEach(session -> session.setLocked(value));
         if (value) {
+            detailHost.resetMotion();
+            drawer.reset(purpose != null || detailId != null);
             inventory.cancelInteraction();
             selected.cancelInteraction();
         }
@@ -257,6 +274,8 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
         saving.whenComplete((ok, failure) -> {
             transition = false;
             if (!closed && !locked && failure == null && Boolean.TRUE.equals(ok)) {
+                if (purpose == value) drawer.expanded(false);
+                detailHost.content(purpose == value ? null : value);
                 purpose = purpose == value ? null : value;
                 layoutColumns();
                 render();
@@ -271,6 +290,8 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
     }
 
     private void showDetail(AiModelInfo model) {
+        drawer.expanded(model != null || purpose != null);
+        detailHost.content(model == null ? null : model.profile().id());
         if (detail instanceof AutoCloseable closeable) {
             try {
                 closeable.close();
@@ -289,7 +310,7 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
 
     private void layoutColumns() {
         if (newModel == null) return;
-        columns.removeAll();
+        detailHost.removeAll();
         leftTools.removeAll();
         heading.remove(newModel);
         leftTools.add(heading, BorderLayout.WEST);
@@ -299,11 +320,6 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
             heading.add(newModel);
             leftTools.add(roles, BorderLayout.EAST);
         }
-        GridBagConstraints g = new GridBagConstraints();
-        g.fill = GridBagConstraints.BOTH;
-        g.weighty = 1;
-        g.weightx = detailId == null ? 1 : .4;
-        columns.add(left, g);
         if (purpose != null) {
             editor.removeAll();
             var top = components.transparent(new FlowLayout(FlowLayout.RIGHT, 0, 0));
@@ -318,21 +334,13 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
                 actions.add(button);
             }
             editor.add(actions, BorderLayout.SOUTH);
-            g.gridx = 1;
-            g.weightx = 0;
-            g.fill = GridBagConstraints.NONE;
-            g.insets = new Insets(0, 12, 0, 12);
-            columns.add(arrows, g);
-            g.gridx = 2;
-            g.fill = GridBagConstraints.BOTH;
-            g.weightx = 1;
-            g.insets = new Insets(0, 0, 0, 0);
-            columns.add(editor, g);
+            var controls = components.transparent(new GridBagLayout());
+            controls.setBorder(BorderFactory.createEmptyBorder(0, 12, 0, 12));
+            controls.add(arrows);
+            detailHost.add(controls, BorderLayout.WEST);
+            detailHost.add(editor, BorderLayout.CENTER);
         } else if (detail != null) {
-            g.gridx = 1;
-            g.weightx = .6;
-            g.insets = new Insets(0, 24, 0, 0);
-            columns.add(detail, g);
+            detailHost.add(detail, BorderLayout.CENTER);
         }
         left.setMinimumSize(new Dimension(0, 0));
         left.setPreferredSize(new Dimension(0, 360));
@@ -343,6 +351,7 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
             detail.setPreferredSize(new Dimension(0, 360));
         }
         roles.setVisible(detailId == null);
+        drawer.expanded(expanded);
         columns.revalidate();
         columns.repaint();
         controls();
@@ -531,6 +540,8 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
 
     void close() {
         closed = true;
+        drawer.close();
+        detailHost.close();
         epoch++;
         inventory.cancelInteraction();
         selected.cancelInteraction();

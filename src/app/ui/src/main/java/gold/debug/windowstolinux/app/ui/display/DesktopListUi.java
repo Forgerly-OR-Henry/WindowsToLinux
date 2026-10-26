@@ -10,6 +10,10 @@ import com.formdev.flatlaf.ui.FlatListUI;
 
 /** Decorates standard object lists while preserving models and author renderers. / 装饰标准对象列表，保留模型与作者渲染器。 */
 public final class DesktopListUi extends FlatListUI {
+    @Override public void paint(java.awt.Graphics graphics, JComponent component) {
+        super.paint(graphics, component);
+        if (selection != null) selection.paintFeedback(graphics);
+    }
     /** Scale under which the original fixed row height was set. / 原固定行高设定时的缩放比例。 */
     private float installedScale;
 

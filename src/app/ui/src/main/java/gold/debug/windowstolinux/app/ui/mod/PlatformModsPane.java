@@ -331,6 +331,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         if (pendingDialog != null)
             pendingDialog.dispose();
         if (locked) {
+            surface.reset();
             installed = List.of();
             pending = List.of();
             rows.clear();
@@ -419,6 +420,8 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     /** Displays saved intention, actual state and all retained data separately. / 分开展示已存意图、实际状态及全部保留数据。 */
     private void render() {
         var value = inventory.getSelectedValue();
+        surface.expanded(value != null);
+        if (value != null) surface.detailHeading(name(value), value.owner(), this::leaveDetails);
         draft.bind(value == null ? null : value.owner(), value == null ? null : value.choice());
         updating = true;
         versions.removeAllItems();
@@ -461,10 +464,8 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             versions.setSelectedItem(selectedVersion);
             value.versions().stream().filter(v -> v.manifest().version().equals(selectedVersion)).findFirst()
                 .flatMap(v -> v.manifest().description()).ifPresent(description::setText);
-            surface.detailHeading(name(value), value.owner(), this::leaveDetails);
         }
         updating = false;
-        surface.expanded(value != null);
         renderDependencies();
         renderPages();
         controls();
@@ -1092,6 +1093,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     /** Discards the view without cancelling accepted maintenance owned by the runtime. / 丢弃视图，不取消运行时持有的已接纳维护。 */
     @Override
     public void close() {
+        surface.close();
         closed = true;
         epoch++;
         if (confirmation != null)

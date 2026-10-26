@@ -9,6 +9,22 @@ import com.formdev.flatlaf.ui.FlatComboBoxUI;
 
 /** Keeps each displayed dropdown's width stable while preserving FlatLaf input and popup rendering. / 固定各下拉框显示后的宽度，保留 FlatLaf 输入及展开列表绘制。 */
 public final class DesktopComboBoxUi extends FlatComboBoxUI {
+    private DesktopColorMotion motion;
+
+    @Override protected java.awt.Color getBackground(boolean enabled) {
+        java.awt.Color background = super.getBackground(enabled);
+        if (enabled && (hover || pressed || com.formdev.flatlaf.ui.FlatUIUtils.isPermanentFocusOwner(comboBox)))
+            background = DesktopColorMotion.blend(background, javax.swing.UIManager.getColor("Component.focusColor"), pressed ? .10 : .06);
+        if (motion == null) motion = new DesktopColorMotion(comboBox);
+        return motion.color(background, pressed ? gold.debug.windowstolinux.appapi.ui.page.UiMotionKind.PRESS
+            : gold.debug.windowstolinux.appapi.ui.page.UiMotionKind.HOVER);
+    }
+
+    @Override protected void uninstallDefaults() {
+        if (motion != null) motion.close();
+        motion = null;
+        super.uninstallDefaults();
+    }
     /** Width measured from the initial options, renderer and current scale. / 按初始选项、渲染器及当前缩放测量的宽度。 */
     private int fixedWidth = -1;
 

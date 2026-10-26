@@ -4,22 +4,30 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.util.Objects;
 import javax.swing.JPanel;
+
 import gold.debug.windowstolinux.appapi.ui.page.*;
 
 /** Fades changed identities while ordinary refreshes keep the current surface. */
 public class DesktopFadingPanel extends JPanel implements AutoCloseable {
     private final DesktopMotionScope scope = new DesktopMotionScope(() -> true);
+
     private UiMotionHandle transition;
+
     private Object identity;
+
     private BufferedImage outgoing;
+
     private float opacity;
 
-    public DesktopFadingPanel() { this(new FlowLayout()); }
+    public DesktopFadingPanel() {
+        this(new FlowLayout());
+    }
 
     public DesktopFadingPanel(LayoutManager layout) {
         super(layout);
         addHierarchyListener(event -> {
-            if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0 && !isShowing()) resetMotion();
+            if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0 && !isShowing())
+                resetMotion();
         });
     }
 
@@ -40,11 +48,14 @@ public class DesktopFadingPanel extends JPanel implements AutoCloseable {
 
     public void resetMotion() {
         if (transition != null) transition.close();
-        transition = null; outgoing = null; opacity = 0;
+        transition = null;
+        outgoing = null;
+        opacity = 0;
         repaint();
     }
 
-    @Override protected void paintChildren(Graphics graphics) {
+    @Override
+    protected void paintChildren(Graphics graphics) {
         super.paintChildren(graphics);
         if (outgoing == null) return;
         var paint = (Graphics2D) graphics.create();
@@ -53,5 +64,10 @@ public class DesktopFadingPanel extends JPanel implements AutoCloseable {
         paint.dispose();
     }
 
-    @Override public void close() { resetMotion(); scope.close(); identity = null; }
+    @Override
+    public void close() {
+        resetMotion();
+        scope.close();
+        identity = null;
+    }
 }

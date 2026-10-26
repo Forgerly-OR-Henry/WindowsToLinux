@@ -90,6 +90,15 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         inventory.add(heading, BorderLayout.NORTH);
         list.setName("tasks.list");
         list.putClientProperty("desktop.inventory.cards", false);
+        list.putClientProperty(gold.debug.windowstolinux.app.ui.display.DesktopListCard.FEEDBACK_OUTLINE,
+            (java.util.function.IntFunction<Shape>) index -> {
+                if (index < 0 || index >= model.size() || !(model.get(index) instanceof Entry)) return null;
+                Rectangle bounds = list.getCellBounds(index, index);
+                if (bounds == null) return null;
+                float inset = UIScale.scale(.75f), arc = UIScale.scale(12f);
+                return new java.awt.geom.RoundRectangle2D.Float(bounds.x + inset, bounds.y + inset,
+                    bounds.width - inset * 2, bounds.height - UIScale.scale(8) - inset * 2, arc, arc);
+            });
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         list.setCellRenderer(this::render);
         list.addListSelectionListener(event -> {

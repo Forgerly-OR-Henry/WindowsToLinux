@@ -1331,8 +1331,13 @@ public interface UiService {
     void openPlatform(PlatformPageKind target) throws ApiException;
     UiExtensionService extensions();
     UiEnvironment environment();
+    default java.util.Optional<gold.debug.windowstolinux.appapi.ui.page.UiMotion> motion() {
+        return java.util.Optional.empty();
+    }
 }
 ```
+
+`motion()` 是可选的所属启用动画时钟，第三方 Mod 可不接入。`ui.page.UiMotion.animate(owner, kind, frame)` 在 EDT 接收 `0..1` 缓入缓出值；`UiMotionKind` 统一时长，返回 `UiMotionHandle` 可立即 `finish()` 或 `close()`。帧只用于绘制及布局，不能提交任务、批准、取消或恢复业务；这些动作仍由原入口立即执行。隐藏组件或禁用动画时直接给最终帧；锁定、未发布、停止及过期启用不再获得帧。页面关闭时作者仍须关闭句柄并清理图片缓存，不能等待动画完成才清理业务。部署内容切换及文件第二栏经此接口接入；标准 Swing 控件、页签、弹窗和菜单沿用宿主绘制器。无界面的 Git 不增加接入。
 
 `openPlatform` 在实际 UI 装配中打开已有服务器、AI 模型或任务与恢复页面，返回时仍可复用原 Mod 工作区草稿。只能由已发布、解锁且未停止的普通所属启用调用；RECOVERY、预览、未发布及关闭范围拒绝。导航不授予目标页的数据或操作权限，也不代表自动选中某个任务；原任务身份仍由页面明确展示。
 

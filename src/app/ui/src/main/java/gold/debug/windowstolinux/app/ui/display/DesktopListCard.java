@@ -21,6 +21,9 @@ public final class DesktopListCard extends JPanel {
     /** Explicitly opts a list into the inner-card outline. / 显式启用清单的内层卡片轮廓。 */
     public static final String OUTLINED = "desktop.inventory.outlined";
 
+    /** Optional IntFunction of Shape for hover feedback on author-rendered grouped rows. */
+    public static final String FEEDBACK_OUTLINE = "desktop.inventory.feedbackOutline";
+
     private static final String GRIP = "desktop.inventory.grip";
 
     /** Original selection state for this renderer invocation. / 本次渲染的原选择状态。 */

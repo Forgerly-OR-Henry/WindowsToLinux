@@ -37,6 +37,15 @@ final class DesktopControlDefaults {
         UIManager.put("Button.innerFocusWidth", 0);
         UIManager.put("Button.default.borderWidth", 0);
         UIManager.put("Button.toolbar.focusWidth", 0);
+        UIManager.put("ButtonUI", DesktopButtonUi.class.getName());
+        UIManager.put("ToggleButtonUI", DesktopButtonUi.Toggle.class.getName());
+        UIManager.put("TextFieldUI", DesktopTextFieldUi.class.getName());
+        UIManager.put("PasswordFieldUI", DesktopTextFieldUi.Password.class.getName());
+        UIManager.put("FormattedTextFieldUI", DesktopTextFieldUi.Formatted.class.getName());
+        UIManager.put("ProgressBarUI", DesktopProgressBarUi.class.getName());
+        UIManager.put("RootPaneUI", DesktopRootPaneUi.class.getName());
+        UIManager.put("TabbedPaneUI", DesktopTabbedPaneUi.class.getName());
+        DesktopPopupFactory.install();
         UIManager.put("ComboBoxUI", DesktopComboBoxUi.class.getName());
         UIManager.put("TextAreaUI", DesktopTextAreaUi.class.getName());
         UIManager.put("ListUI", DesktopListUi.class.getName());

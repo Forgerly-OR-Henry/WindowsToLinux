@@ -76,6 +76,7 @@ public final class DesktopTableUi extends FlatTableUI {
         if (table.getClientProperty(DesktopCardTableOrder.PROPERTY) instanceof DesktopCardTableOrder<?> order
             && order.paint(graphics)) return;
         super.paint(graphics, component);
+        if (selection != null) selection.paintFeedback(graphics);
         if (Boolean.TRUE.equals(table.getClientProperty("desktop.inventory.cards")) || table.getColumnCount() == 0
             || SwingUtilities.getAncestorOfClass(JFileChooser.class, table) != null) return;
         var g = (Graphics2D) graphics.create();

@@ -8,12 +8,15 @@ import java.util.function.DoubleConsumer;
 
 import javax.swing.*;
 
-import com.formdev.flatlaf.ui.FlatTabbedPaneUI;
 import com.formdev.flatlaf.util.UIScale;
 import gold.debug.windowstolinux.app.ui.control.DesktopIcons;
 import gold.debug.windowstolinux.app.ui.control.DesktopButtonStyle;
 import gold.debug.windowstolinux.app.ui.control.DesktopNavigationButton;
 import gold.debug.windowstolinux.app.ui.display.DesktopMotion;
+import gold.debug.windowstolinux.app.ui.display.DesktopMotionScope;
+import gold.debug.windowstolinux.app.ui.display.DesktopTabbedPaneUi;
+import gold.debug.windowstolinux.appapi.ui.page.UiMotionHandle;
+import gold.debug.windowstolinux.appapi.ui.page.UiMotionKind;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 
@@ -119,7 +122,7 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
     /** Keeps the sorted first category as the default until settings are actually visited. / 实际访问设置前以排序首项作为默认分类。 */
     private boolean settingsVisited;
 
-    /** Owns the sidebar spring and stops it on disposal. / 持有侧栏弹簧并在释放时停止。 */
+    /** Owns the sidebar transition and stops it on disposal. / 持有侧栏过渡并在释放时停止。 */
     private final SidebarMotion motion = new SidebarMotion();
 
     /** Continuous sidebar motion state. / 连续侧栏运动状态。 */
@@ -129,10 +132,11 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
         }
 
         /** Owned transition, stopped on disposal. / 销毁时停止的所属过渡动画。 */
-        private DesktopMotion clock;
+        private final DesktopMotionScope scope = new DesktopMotionScope(() -> true);
+        private UiMotionHandle transition;
 
         /** Continuous width and velocity retained when reversing a transition. / 反转过渡时保留的连续宽度和速度。 */
-        private double width, velocity, target;
+        private double width, target;
 
     }
 
@@ -153,6 +157,10 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
         utilities.setOpaque(false);
         brand = new DesktopBrandLabel(messages);
         motion.width = motion.target = SIDEBAR_WIDTH;
+        addHierarchyListener(event -> {
+            if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0 && !isShowing())
+                collapse(collapsed, false);
+        });
         setName("platform.shell");
         assembleSidebar();
         heading.title.setName("platform.pageTitle");
@@ -403,9 +411,8 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
      * @param palette effective theme / 生效主题 */
     void appearance(ThemePalette palette) {
         this.palette = palette;
-        if (motion.clock != null) motion.clock.close();
+        if (motion.transition != null) motion.transition.close();
         motion.width = motion.target = collapsed ? UIScale.scale(64) : SIDEBAR_WIDTH;
-        motion.velocity = 0;
         sidebar.setPreferredSize(new Dimension((int) motion.target, 0));
         presentNavigation();
         brand.setIcon(DesktopIcons.logo(36));
@@ -423,35 +430,23 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
         collapsed = value;
         refresh();
         motion.target = value ? UIScale.scale(64) : SIDEBAR_WIDTH;
+        if (motion.transition != null) motion.transition.close();
         if (!animate || !isShowing() || !DesktopMotion.enabled()) {
-            if (motion.clock != null) motion.clock.close();
             motion.width = motion.target;
-            motion.velocity = 0;
             sidebar.setPreferredSize(new Dimension((int) motion.target, 0));
             presentNavigation();
             revalidate();
             sidebar.repaint();
             return;
         }
-        if (motion.clock == null) motion.clock = new DesktopMotion(this::animateWidth);
-        motion.clock.start();
-    }
-
-    /** Advances only width and paint, preserving navigation styles between frames. / 帧间仅推进宽度和绘制，保留导航样式。
-     * @param seconds real frame interval / 实际帧间隔 */
-    private void animateWidth(double seconds) {
-        var next = DesktopMotion.step(motion.width, motion.velocity, motion.target, seconds / 1.2);
-        motion.width = next.value();
-        motion.velocity = next.velocity();
-        if (Math.abs(motion.width - motion.target) < .1 && Math.abs(motion.velocity) < .5) {
-            motion.width = motion.target;
-            motion.velocity = 0;
-            motion.clock.close();
-        }
-        sidebar.setPreferredSize(new Dimension((int) Math.round(motion.width), 0));
-        presentNavigation();
-        revalidate();
-        sidebar.repaint();
+        double from = motion.width, target = motion.target;
+        motion.transition = motion.scope.animate(this, UiMotionKind.SIDEBAR, progress -> {
+            motion.width = from + (target - from) * progress;
+            sidebar.setPreferredSize(new Dimension((int) Math.round(motion.width), 0));
+            presentNavigation();
+            revalidate();
+            sidebar.repaint();
+        });
     }
 
     /** Shares the width clock with fixed navigation icons, captions and footer motion. / 固定导航图标、文案及底部运动共用宽度时钟。 */
@@ -552,8 +547,7 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
     /** Stops the owned animation. / 停止所属动画。 */
     @Override
     public void close() {
-        if (motion.clock != null)
-            motion.clock.close();
+        motion.scope.close();
     }
 
     /** Local presentation metadata. / 本地展示元数据。
@@ -641,7 +635,7 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
         /** Installs a page-only FlatLaf delegate after every theme update. / 每次主题更新安装仅呈现页面的 FlatLaf 委托。 */
         @Override
         public void updateUI() {
-            setUI(new FlatTabbedPaneUI() {
+            setUI(new DesktopTabbedPaneUi() {
                 /** Removes the horizontal tab strip. / 移除水平标签栏。
                  * @param placement tab placement / 标签位置
                  * @param runs tab rows / 标签行数

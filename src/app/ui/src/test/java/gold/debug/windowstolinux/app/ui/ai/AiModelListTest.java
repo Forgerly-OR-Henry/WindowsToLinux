@@ -18,7 +18,8 @@ import gold.debug.windowstolinux.app.ui.display.*;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class AiModelListTest {
     private static final class Store implements AiModelListAccess {
@@ -58,8 +59,9 @@ class AiModelListTest {
             id, order, 1, instant, instant);
     }
 
-    @Test
-    void completedClicksOpenDetailsButHandleDragsAndGapsDoNot() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"zh-CN", "en"})
+    void completedClicksOpenDetailsButHandleDragsAndGapsDoNot(String language) throws Exception {
         for (var theme : List.of(ThemeMode.LIGHT, ThemeMode.DARK))
             for (int scale : new int[]{100, 150}) {
                 var store = new Store();
@@ -67,13 +69,14 @@ class AiModelListTest {
                 var frame = edt(() -> {
                     DesktopThemeService.install(theme, scale);
                     var view = new AiModelListPane(store, new DesktopPartFactory(theme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light()),
-                        new PageMessagePresenter(MessageCatalog.forLanguageTag("zh-CN")), ignored -> {
+                        new PageMessagePresenter(MessageCatalog.forLanguageTag(language)), ignored -> {
                     });
                     pane.set(view);
                     var window = new JFrame();
                     window.add(view);
                     window.setSize(1100, 720);
                     window.setLocation(70, 50);
+                    window.setAlwaysOnTop(true);
                     window.setVisible(true);
                     view.refresh();
                     return window;
@@ -90,6 +93,9 @@ class AiModelListTest {
                     var robot = new Robot();
                     robot.setAutoDelay(40);
                     robot.waitForIdle();
+                    edt(() -> { frame.toFront(); inventory.requestFocusInWindow(); return null; });
+                    robot.waitForIdle();
+                    assertTrue(edt(inventory::isFocusOwner), "Native pointer checks require the actual inventory to own focus");
                     click(robot, inventory, 0);
                     assertNotNull(edt(() -> field(pane.get(), "detailId", String.class)));
                     assertNull(edt(() -> find(pane.get(), "ai.open.DEPLOYMENT", JButton.class)));
