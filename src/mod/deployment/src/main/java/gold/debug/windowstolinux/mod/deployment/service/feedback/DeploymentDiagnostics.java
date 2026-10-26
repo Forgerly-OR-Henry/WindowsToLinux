@@ -72,7 +72,7 @@ public final class DeploymentDiagnostics {
     public void completed(UUID taskId, OperationResult<?> result) {
         if (result == null) return;
         String code = result.problem().map(value -> value.eventCode()).orElse("DEPLOYMENT_RESULT");
-        event(taskId, result.outcome() == TaskResult.SUCCEEDED ? LogLevel.INFO : LogLevel.ERROR,
+        event(taskId, result.outcome() == TaskResult.SUCCEEDED || result.outcome() == TaskResult.CANCELLED ? LogLevel.INFO : LogLevel.ERROR,
             "DEPLOYMENT_RESULT", code, Optional.of(result.outcome()));
     }
 

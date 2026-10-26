@@ -189,6 +189,20 @@ public class DeploymentManagementActionLog {
         context.servers().get(entry.server(), task);
         byte[] payload = bytes(facts);
         validateIntent(entry.server(), entry.action(), entry.targetRevision(), facts, task);
+        if (entry.facts().has("runtimeSettingsKind")) {
+            if (!entry.facts().path("runtimeSettingsKind").equals(facts.path("runtimeSettingsKind"))) throw incompatible();
+            if (!entry.facts().path("runtimeSettingsVersion").equals(facts.path("runtimeSettingsVersion"))) throw incompatible();
+            for (String field : java.util.List.of("sourceTemplate", "targetTemplate", "fingerprint", "targetIdentity"))
+                if (!entry.facts().path(field).equals(facts.path(field))) throw incompatible();
+            if (entry.facts().path("runtimeSettingsKind").asText().equals("REVIEW")
+                && !entry.facts().path("operationId").equals(facts.path("operationId"))) throw incompatible();
+            if (entry.facts().has("runtimeSettingsComponents")
+                && !entry.facts().path("runtimeSettingsComponents").equals(facts.path("runtimeSettingsComponents"))) throw incompatible();
+        }
+        if (entry.facts().path("runtimeSettingsKind").asText().equals("APPLY"))
+            for (String field : java.util.List.of("sourceTemplate", "targetTemplate", "fingerprint", "targetIdentity",
+                "recipeSha256", "port", "beforeCommand", "afterCommand", "executionId", "sourceReleaseId", "runtimeSettingsComponents"))
+                if (!entry.facts().path(field).equals(facts.path(field))) throw incompatible();
         if (entry.facts().has("lifecycleCleanup")) {
             var before = copy(entry); before.remove("lifecycleCleanup");
             var after = (ObjectNode) facts.deepCopy(); after.remove("lifecycleCleanup");

@@ -90,7 +90,7 @@ public final class Mod implements ModEntrypoint {
         var autonomous = new DeploymentAgentWorkflow(context);
         var autonomousPageTasks = new DeploymentAgentPageService(context, autonomous);
         var applicationTasks = new DeploymentApplicationsService(context);
-        var environmentTasks = new gold.debug.windowstolinux.mod.deployment.service.environment.DeploymentEnvironmentWorkflow(context);
+        var environmentTasks = pageTasks.environment();
         var deploymentApi = new DeploymentApiProvider(context);
         try {
             registrations.add(context.tasks().registerRecovery(DeploymentRefFlow.TASK_TYPE,

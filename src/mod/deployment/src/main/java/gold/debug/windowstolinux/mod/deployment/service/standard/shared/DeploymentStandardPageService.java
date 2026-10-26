@@ -74,6 +74,8 @@ public final class DeploymentStandardPageService implements TaskRecovery {
     /** Business revision metadata without plaintext. / 不含明文的业务修订元数据。 */
     private final DeploymentSecretStore revisions;
 
+    private final gold.debug.windowstolinux.mod.deployment.service.environment.DeploymentEnvironmentWorkflow environment;
+
     /** Current accepted publication task, independent of an open page. / 当前已接纳发布任务，独立于开放页面。 */
     private TaskHandle<Void> active;
 
@@ -108,6 +110,15 @@ public final class DeploymentStandardPageService implements TaskRecovery {
         this.feedback = new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(context);
         this.secrets = new DeploymentSecretProvisionFlow(context);
         this.revisions = new DeploymentSecretStore(context.db());
+        this.environment = new gold.debug.windowstolinux.mod.deployment.service.environment.DeploymentEnvironmentWorkflow(
+            context, (target, revision, request, task) -> context.interaction().approve(
+                gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(target.server(), revision, request), task),
+            configuration.environment());
+    }
+
+    /** Shares environment preparation with its registered original-task recovery. / 与已登记的原任务恢复共用环境准备。 */
+    public gold.debug.windowstolinux.mod.deployment.service.environment.DeploymentEnvironmentWorkflow environment() {
+        return environment;
     }
 
     /** Returns fixed defaults for the owning view. / 返回所属视图的固定默认值。

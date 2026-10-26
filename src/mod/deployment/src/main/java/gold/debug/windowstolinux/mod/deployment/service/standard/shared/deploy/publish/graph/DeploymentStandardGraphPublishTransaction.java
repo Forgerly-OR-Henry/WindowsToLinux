@@ -111,6 +111,8 @@ public final class DeploymentStandardGraphPublishTransaction {
             if (cancelled(task) || !journals.get(id).mark("STOP_MAY_HAVE_RUN"))
                 return unknown("DEPLOYMENT_GRAPH_STOP_BOUNDARY_UNCONFIRMED");
             affected.add(id);
+            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
+                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.stopGraphComponent", id));
             var stopped = channels.get(id).stopPrevious(units.get(id), snapshot);
             if (stopped.outcome() == TaskResult.UNKNOWN || stopped.outcome() == TaskResult.CANCELLED)
                 return unknown("DEPLOYMENT_GRAPH_STOP_UNCONFIRMED");
@@ -130,7 +132,7 @@ public final class DeploymentStandardGraphPublishTransaction {
             if (cancelled(task))
                 return unknown("DEPLOYMENT_GRAPH_PUBLISH_BOUNDARY_UNCONFIRMED");
             gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
-                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.publishGraphComponent"));
+                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.publishGraphComponent", id));
             var publishChannel = new DeploymentPublishChannel(session, context.interaction(), units.get(id).server(),
                 task, journals.get(id).facts().path("planSha256").asText(), () -> {
                 if (!journals.get(id).publishing(release))
@@ -148,6 +150,8 @@ public final class DeploymentStandardGraphPublishTransaction {
                     .problem().orElseGet(() -> problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_GRAPH_PUBLISH_FAILED")));
             if (!journals.get(id).mark("PUBLISHED_VERIFIED"))
                 return unknown("DEPLOYMENT_GRAPH_PUBLISH_EVIDENCE_UNCONFIRMED");
+            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
+                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.healthGraphComponent", id));
             var immediate = healthy(id, plans, units, channels);
             if (immediate.outcome() == TaskResult.UNKNOWN || immediate.outcome() == TaskResult.CANCELLED)
                 return unknown("DEPLOYMENT_GRAPH_HEALTH_UNCONFIRMED");
@@ -157,6 +161,8 @@ public final class DeploymentStandardGraphPublishTransaction {
                         () -> problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_COMPONENT_UNHEALTHY")));
         }
         for (var id : ordering.healthOrder()) {
+            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
+                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.healthGraphComponent", id));
             var repeated = healthy(id, plans, units, channels);
             if (repeated.outcome() == TaskResult.UNKNOWN || repeated.outcome() == TaskResult.CANCELLED)
                 return unknown("DEPLOYMENT_GRAPH_RECHECK_UNCONFIRMED");
@@ -230,6 +236,8 @@ public final class DeploymentStandardGraphPublishTransaction {
             if (cancelled(task))
                 return "DEPLOYMENT_GRAPH_STAGE_CANCELLED";
             var request = plans.get(id).request();
+            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
+                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.configureGraphComponent", id));
             var staged = DeploymentPublishStaging.stage(context, request.configuration(), request.secretReferences(), units.get(id), credentials,
                 channels.get(id), task);
             if (staged.outcome() != TaskResult.SUCCEEDED)
@@ -251,7 +259,7 @@ public final class DeploymentStandardGraphPublishTransaction {
      * @param snapshots confirmed original snapshots / 已确认原快照
      * @return absent on success or bounded failure event / 成功为空，否则为有界失败事件
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
-    private static String snapshotAll(MultiPartDeploymentPlan ordering, Map<String, ReviewedDeploymentPlan> plans,
+    private String snapshotAll(MultiPartDeploymentPlan ordering, Map<String, ReviewedDeploymentPlan> plans,
                                       Map<String, DeploymentUnitIdentity> units, Map<String, DeploymentVerifiedBuildResult> builds,
                                       Map<String, DeploymentPublishChannel> channels,
                                       TaskContext task, DeploymentStandardGraphPublishActionLog root,
@@ -262,6 +270,8 @@ public final class DeploymentStandardGraphPublishTransaction {
                 return "DEPLOYMENT_GRAPH_SNAPSHOT_BOUNDARY_UNCONFIRMED";
             var build = builds.get(id);
             var facts = journals.get(id).facts();
+            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
+                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.snapshotGraphComponent", id));
             var saved = build.operation().isEmpty() ? channels.get(id).snapshot(units.get(id), plans.get(id).request().runtime())
                 : channels.get(id).snapshot(units.get(id), plans.get(id).request().runtime(), build.operation().orElseThrow(),
                 facts.path("expectedDigest").asText().isEmpty() ? Optional.empty() : Optional.of(facts.path("expectedDigest").asText()),

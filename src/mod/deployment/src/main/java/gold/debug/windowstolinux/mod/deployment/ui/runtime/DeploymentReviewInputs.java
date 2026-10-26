@@ -13,7 +13,7 @@ import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentDialogs;
 /** Creates real editable inputs with accessible field help and bounded multiline declarations. / 创建带可访问字段帮助及有界多行声明的真实编辑输入。 */
 public final class DeploymentReviewInputs {
     /** Long structured values retain their line boundaries. / 长结构化值保留行边界。 */
-    private static final Set<String> MULTILINE = Set.of("applicationDeclaration", "configuration", "volumes", "databaseDetails");
+    private static final Set<String> MULTILINE = Set.of("applicationDeclaration", "configuration", "volumes", "databaseDetails", "componentOverrides");
 
     /** No instances. / 不创建实例。 */
     private DeploymentReviewInputs() {

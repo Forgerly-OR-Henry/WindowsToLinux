@@ -19,4 +19,8 @@ public interface DeploymentPreparationObserver {
     default void hostObserved(String revision, DeploymentLinuxCapabilityFacts host,
                               DeploymentResolvedToolchains tools, TaskContext task) throws ApiException {
     }
+
+    /** Reports entry into a verified candidate build without authorizing it. / 报告已核候选进入构建阶段，不授予执行权限。 */
+    default void buildStarted(String applicationId, TaskContext task) throws ApiException {
+    }
 }

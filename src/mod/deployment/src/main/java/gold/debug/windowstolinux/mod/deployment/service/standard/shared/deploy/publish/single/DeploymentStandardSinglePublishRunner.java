@@ -32,6 +32,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentP
 import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentAssistedBuildCorrection;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.build.DeploymentStandardCandidateRunner;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.build.DeploymentVerifiedBuildResult;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.plan.ReviewedPlanIdentity;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.cleanup.DeploymentPublishCleanupActionLog;
@@ -199,7 +200,29 @@ public class DeploymentStandardSinglePublishRunner {
             if (correction.isEmpty()) {
                 gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
                     gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.buildCandidate"));
-                var build = new DeploymentStandardCandidateRunner().execute(plan, session, context.interaction(), task);
+                var candidate = new DeploymentStandardCandidateRunner(
+                    new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentPreparationObserver() {
+                        @Override
+                        public void buildStarted(String applicationId, TaskContext original) throws ApiException {
+                            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(
+                                context, original,
+                                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(
+                                    context, "stage.executeCandidateBuild", applicationId));
+                        }
+                    });
+                var prepared = candidate.prepare(plan, session, context.interaction(), task);
+                OperationResult<DeploymentVerifiedBuildResult> build;
+                if (prepared.outcome() == TaskResult.SUCCEEDED) {
+                    references.checkpoint(task);
+                    build = candidate.build(prepared.value().orElseThrow(), session, task);
+                } else {
+                    build = new OperationResult<>(prepared.outcome(), Optional.empty(), prepared.problem());
+                }
+                if (build.outcome() != TaskResult.SUCCEEDED)
+                    new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(context)
+                        .effectResult(task.id(), build);
+                if (build.outcome() == TaskResult.SUCCEEDED)
+                    references.checkpoint(task);
                 result = build.outcome() == TaskResult.SUCCEEDED
                     ? new DeploymentStandardSinglePublishTransaction(context).publish(plan, unit,
                     build.value().orElseThrow(), credentials, session, task, journal)
@@ -235,15 +258,6 @@ public class DeploymentStandardSinglePublishRunner {
                                                                 DeploymentPublishCleanupActionLog journal, DeploymentAssistedBuildCorrection correction) throws Exception {
         throw new IllegalStateException("Static publisher has no assisted extension");
     }
-
-    /** Cleans only an actually known pre-publication build failure. / 仅清理实际已知发布前构建失败。
-     * @param completed actual build result / 实际构建结果
-     * @param unit exact original owner / 精确原归属
-     * @param task authentic original task / 真实原任务
-     * @param journal original cleanup occupancy / 原清理占用
-     * @param owned actual physical session owner / 实际物理会话所有者
-     * @return known cleaned failure or retained unknown / 已知已清理失败或保留未知
-     * @throws Exception if original physical close is unconfirmed / 原物理关闭未确认时 */
 
     /** Reports a known pre-publication metadata rejection. / 报告已知发布前元数据拒绝。
      * @param event stable event / 稳定事件

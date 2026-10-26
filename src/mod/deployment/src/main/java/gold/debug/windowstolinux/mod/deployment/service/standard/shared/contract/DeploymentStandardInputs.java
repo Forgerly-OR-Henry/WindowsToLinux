@@ -72,7 +72,9 @@ public final class DeploymentStandardInputs {
         /** Explicit pre-start runtime keys; resource rememberAuthorization remains per component. / 明确启动前运行键；资源授权仍限定各组件。 */
         public static final List<String> RUNTIME_FIELDS = List.of("applicationDeclaration", "executionMode", "exposure", "port", "primary", "secondary",
             "version", "ports", "healthMode", "healthEndpoint", "expectedStatus", "timeout", "stability", "accessUrl",
-            "configuration", "containerEngine", "volumes", "jvmArguments", "arguments", "jvmTarget");
+            "configuration", "containerEngine", "volumes", "jvmArguments", "arguments", "jvmTarget",
+            "applicationId", "healthComponent", "componentOverrides", "timeoutSeconds", "maxProcesses", "memoryMiB",
+            "maxOutputBytes", "maxWorkspaceBytes", "containerRisk", "adapterRisk", "secrets", "commandEntrypoint", "commandArguments");
 
         /** Captures immutable inputs before task admission. / 任务准入前抓取不可变输入。
          * @param localLocation local metadata / 本地元数据
@@ -279,6 +281,14 @@ public final class DeploymentStandardInputs {
          * @throws Exception if the owned view cannot observe its decision / 所属视图无法观察决定时 */
         OperationResult<Selection> select(ServerId server, String sourceSha256,
                                           List<DiscoveredProjectPart> discovered, TaskContext task) throws Exception;
+
+        /** Reviews the system-resolved graph; non-desktop callers retain their selection boundary. / 审阅系统解析的组件图，非桌面调用方保留自身选择边界。 */
+        default OperationResult<Selection> select(ServerId server, String sourceSha256,
+                                                  List<DiscoveredProjectPart> discovered, Selection automatic,
+                                                  Map<String, Set<gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType>> languages,
+                                                  TaskContext task) throws Exception {
+            return select(server, sourceSha256, discovered, task);
+        }
 
         /** Collects editable typed runtime inputs before archive creation. / 归档前收集可编辑类型化运行输入。
          * @param server exact server / 精确服务器

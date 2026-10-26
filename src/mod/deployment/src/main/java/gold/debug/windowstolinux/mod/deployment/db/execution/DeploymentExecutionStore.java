@@ -415,6 +415,13 @@ public final class DeploymentExecutionStore {
      * @throws ApiException if task access or transaction acknowledgement is uncertain / 任务访问或事务确认不确定时 */
     public void commitApplication(TaskContext task, UUID executionId, DeploymentApplicationGraph graph,
                                   List<DeploymentUnitCommit> publications, Instant observedAt) throws SQLException, ApiException {
+        commitApplication(task, executionId, graph, publications, observedAt, Optional.empty());
+    }
+
+    /** Commits a settings revision only while the reviewed whole application is still current. */
+    public void commitApplication(TaskContext task, UUID executionId, DeploymentApplicationGraph graph,
+                                  List<DeploymentUnitCommit> publications, Instant observedAt,
+                                  Optional<String> expectedCurrent) throws SQLException, ApiException {
         var records = List.copyOf(publications);
         Objects.requireNonNull(graph);
         mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
@@ -424,7 +431,25 @@ public final class DeploymentExecutionStore {
                 || graph.components().stream().anyMatch(c -> !c.unit().server().equals(record.identity().server())))
                 throw new SQLException("Publish differs from the original unfinished operation");
             requireSecretIntents(connection, record.identity(), records, checkpoint);
+            if (expectedCurrent.isPresent()) {
+                DeploymentReleaseStore.lockApplication(connection, graph.applicationId(), record.identity().server().id());
+                try (var current = connection.prepareStatement("SELECT release_sha256 FROM deployment_release WHERE application_id=? AND state='ACTIVE'")) {
+                    current.setString(1, graph.applicationId());
+                    try (var rows = current.executeQuery()) {
+                        if (!rows.next() || !expectedCurrent.orElseThrow().equals(rows.getString(1)) || rows.next())
+                            throw new SQLException("Reviewed active application changed before settings commit");
+                    }
+                }
+            }
             DeploymentPublishStore.save(connection, graph, records, observedAt);
+            if (expectedCurrent.isPresent()) {
+                var owner = graph.components().stream().filter(part -> part.componentId().equals(graph.healthComponentId())).findFirst().orElseThrow();
+                try (var display = connection.prepareStatement("UPDATE deployment_unit SET access_url=? WHERE deployment_unit_id=? AND has_display_override=1")) {
+                    display.setString(1, owner.runtime().userAccessUrl().map(value -> value.url().toString()).orElse(null));
+                    display.setString(2, owner.unit().id());
+                    display.executeUpdate();
+                }
+            }
             var release = DeploymentReleaseStore.activate(connection, record.identity().applicationId(), record.identity().executionId(), record.identity().server(),
                 DeploymentReleaseSnapshot.capture(graph, records), observedAt);
             var result = DeploymentExecutionCodec.result(record.identity(), TaskResult.SUCCEEDED, Optional.empty(), "DEPLOYMENT_PUBLICATION_COMMITTED", records,

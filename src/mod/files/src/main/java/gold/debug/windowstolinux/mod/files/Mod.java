@@ -10,7 +10,6 @@ import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
 import gold.debug.windowstolinux.mod.files.service.FilesRecovery;
 import gold.debug.windowstolinux.mod.files.service.FilesService;
-import gold.debug.windowstolinux.mod.files.ui.FilesWorkspace;
 
 /** Optional file workspace and original file-operation recovery lifecycle. / 可选文件工作区及原文件操作核对生命周期。 */
 public final class Mod implements ModEntrypoint {
@@ -37,7 +36,7 @@ public final class Mod implements ModEntrypoint {
                 registrations.add(context.tasks().registerRecovery(type, candidate.recovery()));
             if (context.launchMode() == ModLaunchMode.NORMAL)
                 registrations.add(context.ui().register(new PageSpec("workspace", "files.workspace.title", "文件 / Files", false),
-                    () -> new FilesWorkspace(candidate)));
+                    () -> new gold.debug.windowstolinux.mod.files.ui.FilesRootWorkspace(candidate, context.ui())));
         } catch (Exception failure) {
             closeRegistrations(failure);
             if (registrations.isEmpty()) service = null;

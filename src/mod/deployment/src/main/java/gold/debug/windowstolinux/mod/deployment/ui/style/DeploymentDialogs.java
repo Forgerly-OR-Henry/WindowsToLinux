@@ -246,6 +246,29 @@ public final class DeploymentDialogs {
         return new Column(8);
     }
 
+    /** Shows labelled, copyable values in two wrapping columns. / 以两列换行表格显示有标签、可复制的值。 */
+    public static JPanel facts(java.util.Map<String, String> values) {
+        var table = new Column(0);
+        int index = 0;
+        for (var entry : values.entrySet()) {
+            var row = new JPanel(new BorderLayout(DeploymentPageStyle.scale(12), DeploymentPageStyle.scale(8)));
+            row.setOpaque(false);
+            row.setBorder(BorderFactory.createEmptyBorder(DeploymentPageStyle.scale(8), 0, DeploymentPageStyle.scale(8), 0));
+            var label = new JLabel(entry.getKey());
+            label.putClientProperty("html.disable", true);
+            label.setVerticalAlignment(SwingConstants.TOP);
+            label.setPreferredSize(new Dimension(DeploymentPageStyle.scale(140), label.getPreferredSize().height));
+            var value = text(entry.getValue());
+            value.getAccessibleContext().setAccessibleName(entry.getKey());
+            label.setLabelFor(value);
+            if (index++ > 0) row.add(new JSeparator(), BorderLayout.NORTH);
+            row.add(label, BorderLayout.WEST);
+            row.add(value, BorderLayout.CENTER);
+            table.add(row);
+        }
+        return table;
+    }
+
     /** Retains a localized fact without touching editable documents. / 保留可本地化的事实，不触碰可编辑文档。
      * @param value current safe fact / 当前安全事实
      * @return wrapping fact / 换行事实 */

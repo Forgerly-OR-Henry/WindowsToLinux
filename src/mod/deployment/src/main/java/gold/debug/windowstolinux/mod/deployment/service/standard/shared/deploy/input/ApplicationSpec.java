@@ -177,7 +177,10 @@ public final class ApplicationSpec {
                 required(values, "companion." + id + ".environment")));
         var workers = ids(values, "workers").stream()
             .map(id -> new DeploymentWorker(id, command(values, "worker." + id))).toList();
-        return new DeploymentWorkload(mode, true, command(values, "command"), get(values, "workingDirectory", ""),
+        var sourceCommand = command(values, "command");
+        var launchCommand = new DeploymentCommand(values.getOrDefault("commandEntrypoint", sourceCommand.entrypoint()),
+            values.containsKey("commandArguments") ? DeploymentCommandText.parse(values.get("commandArguments")) : sourceCommand.arguments());
+        return new DeploymentWorkload(mode, true, launchCommand, get(values, "workingDirectory", ""),
             endpoints, optionalCommand(values, "verification"), get(values, "expectedOutput", ""),
             optionalCommand(values, "client"), inputs, companions, get(values, "buildDirectory", ""), workers);
     }

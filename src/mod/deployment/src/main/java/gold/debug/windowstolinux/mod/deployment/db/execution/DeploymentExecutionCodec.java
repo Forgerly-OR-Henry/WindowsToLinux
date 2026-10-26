@@ -90,7 +90,7 @@ public final class DeploymentExecutionCodec {
      * @param operationType exact persisted operation name / 精确持久操作名
      * @return whether formal publication framing applies / 是否适用正式发布信封 */
     private static boolean publicationOperation(String operationType) {
-        return Set.of("deployment-publication", "deployment-agent", "deployment-restore").contains(operationType);
+        return Set.of("deployment-publication", "deployment-agent", "deployment-restore", "deployment-applications-action").contains(operationType);
     }
 
     /** Records UUIDs only after they have been observed for original indexed intents. / 仅在观察到原索引意图的UUID后记录。

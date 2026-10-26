@@ -105,17 +105,23 @@ public final class DeploymentEnvironmentPage implements ModPage {
         scope.setLineWrap(true);
         scope.setWrapStyleWord(true);
         root.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
-        var controls = new JPanel();
-        controls.add(servers);
-        controls.add(refresh);
-        controls.add(manage);
-        controls.add(prepare);
+        var controls = new JPanel(new BorderLayout(8, 0));
+        controls.add(servers, BorderLayout.CENTER);
+        var buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 6, 0));
+        buttons.add(refresh);
+        buttons.add(manage);
+        buttons.add(prepare);
+        controls.add(buttons, BorderLayout.EAST);
         var north = new JPanel(new BorderLayout(4, 4));
         north.add(controls, BorderLayout.NORTH);
         north.add(scope, BorderLayout.CENTER);
         root.add(gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle.card("environment.title", north), BorderLayout.NORTH);
         feedback = new DeploymentTaskFeedback(lookups.feedback(), actions, () -> navigate(PlatformPageKind.TASKS),
             lookups.configuration().view());
+        feedback.originalTaskNavigation(id -> {
+            try { lookups.openTasks(java.util.Optional.of(id)); }
+            catch (ApiException unavailable) { scope.setText(messages.getString("failed")); }
+        });
         root.add(gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle.card("environment.feedback", feedback.component()), BorderLayout.CENTER);
         refresh.addActionListener(ignored -> refresh());
         prepare.addActionListener(ignored -> prepare());

@@ -244,6 +244,8 @@ final class DeploymentEnvironmentRunner {
             }
             var sent = state.next(dispatched, DeploymentEnvironmentScripts.requestDigest(state, stage), state.observation().orElseThrow());
             journal.advance(state, sent);
+            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
+                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "environment.command." + stage));
             var result = session.execute(request, approval.value().orElseThrow());
             if (result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()
                 || !result.value().orElseThrow().exitCode().equals(Optional.of(0)) || result.value().orElseThrow().truncated())

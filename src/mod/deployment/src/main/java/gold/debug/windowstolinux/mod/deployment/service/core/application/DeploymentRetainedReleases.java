@@ -113,7 +113,9 @@ public final class DeploymentRetainedReleases {
                         return copy(activated);
                     operation = activated.value().orElseThrow();
                 }
-                var verified = verifyTarget(operation, source, target, from, to, channel, publication, task);
+                var verified = verifyTarget(operation, from, to, channel, publication, task,
+                    source.state() == DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE
+                        && target.state() == DeploymentReleaseRecord.DeploymentReleaseState.RETIRED);
                 if (verified.outcome() != TaskResult.SUCCEEDED)
                     return copy(verified);
                 if (operation.phase().equals("FINISHED"))
@@ -222,8 +224,10 @@ public final class DeploymentRetainedReleases {
             if (current.outcome() != TaskResult.SUCCEEDED)
                 return copy(current);
             var observed = publication.observe(component.unit(), component.reviewedRuntime());
-            if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty())
+            if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty()) {
+                retainObservationFailure(operation, component.componentId(), "snapshotSource", observed, task, Optional.empty());
                 return copy(observed);
+            }
             var state = observed.value().orElseThrow().state();
             if (state == DeploymentRemoteRuntimeObservation.StateType.ERROR)
                 return failed("DEPLOYMENT_RETAINED_SOURCE_STATE_FAILED");
@@ -293,19 +297,18 @@ public final class DeploymentRetainedReleases {
 
     /** Verifies full target identity, retained evidence and original health gates. / 核实完整目标身份、保留依据及原健康门槛。
      * @param operation original attempted transition / 原已尝试转换
-     * @param source original formal source state / 原正式源状态
-     * @param target original formal target state / 原正式目标状态
      * @param from complete original source / 完整原源
      * @param to complete selected target / 完整所选目标
      * @param channel original retained helper channel / 原保留helper频道
      * @param publication original runtime observer / 原运行观察器
      * @param task authenticated original task / 已认证原任务
+     * @param rollbackAllowed whether this original uncommitted attempt may compensate a known health failure
      * @return verified target or compensated failure or uncertainty / 已核实目标、已补偿失败或未知
      * @throws ApiException if original evidence or approval fails / 原依据或审批失败时 */
     private OperationResult<Void> verifyTarget(DeploymentManagementActionLog.Entry operation,
-                                               DeploymentReleaseRecord source, DeploymentReleaseRecord target, DeploymentReleaseSnapshot from,
+                                               DeploymentReleaseSnapshot from,
                                                DeploymentReleaseSnapshot to, DeploymentHandoffChannel channel, DeploymentPublishChannel publication,
-                                               TaskContext task) throws ApiException {
+                                               TaskContext task, boolean rollbackAllowed) throws ApiException {
         boolean allRunning = true;
         for (var component : ordered(to.graph())) {
             if (channel.current(component, binding(to, component.componentId()).releaseSha256())
@@ -320,12 +323,14 @@ public final class DeploymentRetainedReleases {
                     return copy(uncertain(operation, task, "DEPLOYMENT_RETAINED_CURRENT_UNKNOWN"));
             }
             var observed = publication.observe(component.unit(), component.reviewedRuntime());
-            if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty())
-                return copy(uncertain(operation, task, "DEPLOYMENT_RETAINED_RUNTIME_UNKNOWN"));
+            if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty()) {
+                retainObservationFailure(operation, component.componentId(), "verifyTarget", observed, task,
+                    Optional.of("DEPLOYMENT_RETAINED_RUNTIME_UNKNOWN"));
+                return copy(unknown("DEPLOYMENT_RETAINED_RUNTIME_UNKNOWN"));
+            }
             String expectedState = targetState(operation, component);
             if (!observed.value().orElseThrow().state().name().equals(expectedState)) {
-                if (source.state() == DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE
-                    && target.state() == DeploymentReleaseRecord.DeploymentReleaseState.RETIRED)
+                if (rollbackAllowed)
                     return copy(rollback(operation, from, to, channel, publication, task,
                         "DEPLOYMENT_RETAINED_RUNTIME_FAILED"));
                 return copy(uncertain(operation, task, "DEPLOYMENT_RETAINED_COMMITTED_RUNTIME_UNKNOWN"));
@@ -335,9 +340,7 @@ public final class DeploymentRetainedReleases {
                 continue;
             }
             var health = publication.healthCheck(component.unit(), component.reviewedRuntime().healthCheck());
-            if (health.outcome() == TaskResult.FAILED
-                && source.state() == DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE
-                && target.state() == DeploymentReleaseRecord.DeploymentReleaseState.RETIRED)
+            if (health.outcome() == TaskResult.FAILED && rollbackAllowed)
                 return copy(
                     rollback(operation, from, to, channel, publication, task, "DEPLOYMENT_RETAINED_HEALTH_FAILED"));
             if (health.outcome() != TaskResult.SUCCEEDED)
@@ -348,9 +351,7 @@ public final class DeploymentRetainedReleases {
         var healthOwner = to.graph().components().stream()
             .filter(value -> value.componentId().equals(to.graph().healthComponentId())).findFirst().orElseThrow();
         var wholeHealth = publication.healthCheck(healthOwner.unit(), to.graph().healthCheck());
-        if (wholeHealth.outcome() == TaskResult.FAILED
-            && source.state() == DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE
-            && target.state() == DeploymentReleaseRecord.DeploymentReleaseState.RETIRED)
+        if (wholeHealth.outcome() == TaskResult.FAILED && rollbackAllowed)
             return copy(rollback(operation, from, to, channel, publication, task,
                 "DEPLOYMENT_RETAINED_APPLICATION_HEALTH_FAILED"));
         if (wholeHealth.outcome() != TaskResult.SUCCEEDED)
@@ -375,6 +376,12 @@ public final class DeploymentRetainedReleases {
                                                      List<DeploymentUnitCommit> publications, DeploymentHandoffChannel channel, TaskContext task)
         throws SQLException, ApiException {
         new DeploymentPublishStore(context.db()).activateRetained(task, expected, target, publications, Instant.now());
+        return finishRemote(operation, target.identity().sha256(), from, to, channel, task);
+    }
+
+    private OperationResult<String> finishRemote(DeploymentManagementActionLog.Entry operation, String targetRevision,
+                                                DeploymentReleaseSnapshot from, DeploymentReleaseSnapshot to,
+                                                DeploymentHandoffChannel channel, TaskContext task) throws ApiException {
         for (var component : ordered(to.graph())) {
             if (!changed(from, to, component.componentId()))
                 continue;
@@ -397,8 +404,168 @@ public final class DeploymentRetainedReleases {
                 return uncertain(operation, task, "DEPLOYMENT_RETAINED_FINISH_UNKNOWN");
         }
         journal.advance(operation, "FINISHED",
-            DeploymentManagementActionLog.copy(operation).put("verifiedRelease", target.identity().sha256()), task);
-        return success(target.identity().sha256());
+            DeploymentManagementActionLog.copy(operation).put("verifiedRelease", targetRevision), task);
+        return success(targetRevision);
+    }
+
+    /** Publishes a derived sealed native tree through the same retained transition and rollback gates. */
+    OperationResult<gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishResult> revise(
+        DeploymentManagementActionLog.Entry operation,
+        gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishProposal source,
+        gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishProposal target,
+        TaskContext task, boolean fresh, boolean committed) throws ApiException {
+        var from = DeploymentReleaseSnapshot.capture(source.graph(), source.units());
+        var to = DeploymentReleaseSnapshot.capture(target.graph(), target.units());
+        requireSameUnits(from, to);
+        var recipes = settingsRecipes(operation, from, to);
+        var server = from.graph().components().getFirst().unit().server();
+        if (fresh && task.cancelToken().requested())
+            return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.of(new gold.debug.windowstolinux.appapi.task.result.Problem(
+                gold.debug.windowstolinux.appapi.task.result.ProblemCode.CANCELLED, "DEPLOYMENT_SETTINGS_CANCELLED_BEFORE_EFFECT",
+                "Settings revision cancelled before remote effects", Map.of(), Optional.empty())));
+        try (var session = context.linux().connect(server, task)) {
+            if (!session.facts().fingerprint().equals(operation.facts().path("fingerprint").asText()))
+                return copy(unknown("DEPLOYMENT_SETTINGS_TARGET_CHANGED"));
+            var channel = new DeploymentHandoffChannel(session, context.interaction(), server, task,
+                operation.targetRevision().orElseThrow(), layout(to));
+            var publication = new DeploymentPublishChannel(session, context.interaction(), server, task,
+                operation.targetRevision().orElseThrow(), layout(to));
+            if (operation.facts().path("compensationAttempted").asBoolean())
+                return copy(verifyRollback(operation, from, to, channel, publication, task));
+            if (fresh) {
+                for (var component : ordered(to.graph())) {
+                    if (!changed(from, to, component.componentId())) continue;
+                    if (task.cancelToken().requested()) return copy(uncertain(operation, task, "DEPLOYMENT_SETTINGS_CANCELLED"));
+                    var commit = target.units().stream().filter(c -> c.unit().equals(component.unit())).findFirst().orElseThrow();
+                    var recipe = recipes.get(component.componentId());
+                    var staged = publication.stageConfiguration(component.unit(), commit.configuration().sha256(), "systemd",
+                        gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentPublishArguments.configuration(commit.configuration(), "systemd"));
+                    if (staged.outcome() != TaskResult.SUCCEEDED) {
+                        if (recipes.size() > 1 && operation.facts().path("components").findValues("deriveAttempted").stream()
+                            .anyMatch(com.fasterxml.jackson.databind.JsonNode::asBoolean))
+                            return copy(uncertain(operation, task, "DEPLOYMENT_SETTINGS_PARTIAL_PREPARATION_UNKNOWN"));
+                        return copy(staged);
+                    }
+                    var facts = DeploymentManagementActionLog.copy(operation);
+                    facts.withObject("components").withObject(component.componentId()).put("deriveAttempted", true);
+                    operation = journal.advance(operation, "EFFECTING", facts, task);
+                    var args = new ArrayList<String>(List.of(component.unit().id(), binding(from, component.componentId()).releaseSha256(),
+                        binding(to, component.componentId()).releaseSha256(), component.unit().ownershipManifestSha256(), task.id().toString(),
+                        gold.debug.windowstolinux.mod.deployment.linux.runtime.DeploymentWorkloadArguments.payload(component.reviewedRuntime()),
+                        commit.configuration().sha256(), recipe.port(), recipe.sha256(), operation.targetRevision().orElseThrow()));
+                    var derived = channel.execute("runtime-settings-derive", args, new byte[0], Duration.ofMinutes(10), 4096);
+                    if (!DeploymentHandoffChannel.receipt(derived, "DERIVED=1\n")) {
+                        var original = new ArrayList<String>(List.of(component.unit().id(), binding(from, component.componentId()).releaseSha256(),
+                            binding(to, component.componentId()).releaseSha256(), component.unit().ownershipManifestSha256(), task.id().toString(),
+                            recipe.sha256(), operation.targetRevision().orElseThrow()));
+                        var status = channel.execute("runtime-settings-status", original, new byte[0], Duration.ofMinutes(2), 4096);
+                        boolean knownRejection = derived.outcome() == TaskResult.FAILED && (derived.value().isEmpty()
+                            || derived.value().filter(value -> value.exitCode().isPresent() && !value.truncated()).isPresent());
+                        if (knownRejection && DeploymentHandoffChannel.receipt(status, "DERIVED=0\n")) {
+                            String event = derived.value().filter(value -> !value.truncated() && value.stderr().contains("MANAGED_HELPER_REJECT=runtime-settings-port-occupied"))
+                                .isPresent() ? "DEPLOYMENT_RUNTIME_SETTINGS_PORT_OCCUPIED" : "DEPLOYMENT_RUNTIME_SETTINGS_DERIVE_REJECTED";
+                            if (recipes.size() > 1) {
+                                facts = DeploymentManagementActionLog.copy(operation);
+                                facts.withObject("components").withObject(component.componentId()).put("deriveRejected", true)
+                                    .put("deriveAbsentVerified", true).put("deriveFailureEvent", event);
+                                operation = journal.advance(operation, "EFFECTING", facts, task);
+                                return copy(uncertain(operation, task, "DEPLOYMENT_SETTINGS_PARTIAL_PREPARATION_UNKNOWN"));
+                            }
+                            journal.advance(operation, "FINISHED", DeploymentManagementActionLog.copy(operation)
+                                .put("terminalOutcome", "FAILED").put("failureEvent", event), task);
+                            return copy(failed(event));
+                        }
+                        return copy(uncertain(operation, task, "DEPLOYMENT_SETTINGS_DERIVE_UNCONFIRMED"));
+                    }
+                    facts = DeploymentManagementActionLog.copy(operation);
+                    facts.withObject("components").withObject(component.componentId()).put("derived", true);
+                    operation = journal.advance(operation, "EFFECTING", facts, task);
+                }
+                var snapshots = snapshotSource(operation, from, to, channel, publication, task);
+                if (snapshots.outcome() != TaskResult.SUCCEEDED) {
+                    if (recipes.size() > 1)
+                        return copy(uncertain(journal.find(task).orElseThrow(), task, "DEPLOYMENT_SETTINGS_PARTIAL_PREPARATION_UNKNOWN"));
+                    return copy(snapshots);
+                }
+                operation = snapshots.value().orElseThrow();
+                var activated = activateTarget(operation, from, to, channel, task);
+                if (activated.outcome() != TaskResult.SUCCEEDED) return copy(activated);
+                operation = activated.value().orElseThrow();
+            }
+            for (var component : ordered(to.graph())) {
+                if (!changed(from, to, component.componentId())) continue;
+                var args = new ArrayList<String>(List.of(component.unit().id(), binding(from, component.componentId()).releaseSha256(),
+                    binding(to, component.componentId()).releaseSha256(), component.unit().ownershipManifestSha256(), task.id().toString(),
+                    recipes.get(component.componentId()).sha256(), operation.targetRevision().orElseThrow()));
+                if (!DeploymentHandoffChannel.receipt(channel.execute("runtime-settings-status", args, new byte[0], Duration.ofMinutes(2), 4096), "DERIVED=1\n"))
+                    return copy(uncertain(operation, task, "DEPLOYMENT_SETTINGS_DERIVED_IDENTITY_UNKNOWN"));
+            }
+            var verified = verifyTarget(operation, from, to, channel, publication, task, !committed && fresh);
+            if (verified.outcome() != TaskResult.SUCCEEDED) return copy(verified);
+            return success(new gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishResult(target.graph(), target.units()));
+        }
+    }
+
+    private record SettingsRecipe(String port, String sha256) { }
+
+    /** Old interrupted single-component tasks retain their original recipe; new tasks require exact component coverage. */
+    private static Map<String, SettingsRecipe> settingsRecipes(DeploymentManagementActionLog.Entry operation,
+                                                               DeploymentReleaseSnapshot from, DeploymentReleaseSnapshot to) {
+        var changed = to.graph().components().stream().filter(part -> changed(from, to, part.componentId())).toList();
+        var result = new LinkedHashMap<String, SettingsRecipe>();
+        var facts = operation.facts();
+        if (!facts.has("runtimeSettingsVersion")) {
+            if (facts.has("runtimeSettingsComponents") || changed.size() != 1)
+                throw new IllegalArgumentException("Legacy settings must have exactly one changed component");
+            result.put(changed.getFirst().componentId(), settingsRecipe(facts, changed.getFirst()));
+            return Map.copyOf(result);
+        }
+        if (!facts.path("runtimeSettingsVersion").isIntegralNumber() || !facts.path("runtimeSettingsVersion").canConvertToInt()
+            || facts.path("runtimeSettingsVersion").asInt() != 2
+            || !facts.path("runtimeSettingsComponents").isObject() || changed.isEmpty())
+            throw new IllegalArgumentException("Settings component format differs");
+        var components = facts.path("runtimeSettingsComponents");
+        var ids = new HashSet<String>();
+        components.fieldNames().forEachRemaining(ids::add);
+        for (var component : changed) {
+            var saved = components.path(component.componentId());
+            if (!ids.remove(component.componentId()) || !saved.isObject()
+                || !component.unit().id().equals(saved.path("unitId").asText())
+                || !binding(from, component.componentId()).releaseSha256().equals(saved.path("sourceReleaseSha256").asText())
+                || !binding(to, component.componentId()).releaseSha256().equals(saved.path("targetReleaseSha256").asText())
+                || !binding(to, component.componentId()).configurationSha256().equals(saved.path("configurationSha256").asText())
+                || !saved.path("beforeCommand").isTextual() || !saved.path("afterCommand").isTextual()
+                || !saved.path("configurationChanges").isArray())
+                throw new IllegalArgumentException("Settings component binding differs");
+            result.put(component.componentId(), settingsRecipe(saved, component));
+        }
+        if (!ids.isEmpty()) throw new IllegalArgumentException("Settings review contains unrelated components");
+        return Map.copyOf(result);
+    }
+
+    private static SettingsRecipe settingsRecipe(com.fasterxml.jackson.databind.JsonNode facts, DeploymentApplicationGraph.Part component) {
+        String port = facts.path("port").asText(), recipe = facts.path("recipeSha256").asText();
+        if (!recipe.matches("[0-9a-f]{64}") || !port.matches("0|[1-9][0-9]{0,4}"))
+            throw new IllegalArgumentException("Settings recipe is invalid");
+        if (!port.equals("0") && (Integer.parseInt(port) > 65535 || component.reviewedRuntime().workload().endpoints().size() != 1
+            || component.reviewedRuntime().workload().endpoints().getFirst().hostPort() != Integer.parseInt(port)))
+            throw new IllegalArgumentException("Settings recipe port differs from target");
+        return new SettingsRecipe(port, recipe);
+    }
+
+    /** Runs only after the formal CAS commit, retaining snapshots if any cleanup reply is lost. */
+    OperationResult<Void> finishRevision(DeploymentManagementActionLog.Entry operation,
+        gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishProposal source,
+        gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishProposal target, TaskContext task) throws ApiException {
+        var from = DeploymentReleaseSnapshot.capture(source.graph(), source.units());
+        var to = DeploymentReleaseSnapshot.capture(target.graph(), target.units());
+        var server = from.graph().components().getFirst().unit().server();
+        try (var session = context.linux().connect(server, task)) {
+            if (!session.facts().fingerprint().equals(operation.facts().path("fingerprint").asText()))
+                return copy(unknown("DEPLOYMENT_SETTINGS_TARGET_CHANGED"));
+            return copy(finishRemote(operation, operation.targetRevision().orElseThrow(), from, to,
+                new DeploymentHandoffChannel(session, context.interaction(), server, task, operation.targetRevision().orElseThrow(), layout(to)), task));
+        }
     }
 
     /** Reconstructs exact retained typed configurations and secret identities. / 重建精确保留类型化配置及秘密身份。
@@ -630,6 +797,28 @@ public final class DeploymentRetainedReleases {
             journal.advance(entry, "UNKNOWN", DeploymentManagementActionLog.copy(entry).put("uncertainEvent", event),
                 task);
         return unknown(event);
+    }
+
+    private void retainObservationFailure(DeploymentManagementActionLog.Entry operation, String componentId,
+                                           String transitionStage, OperationResult<?> result, TaskContext task,
+                                           Optional<String> uncertainEvent) {
+        if (operation.phase().equals("FINISHED")) return;
+        try {
+            var facts = DeploymentManagementActionLog.copy(operation);
+            var diagnostic = facts.putObject("lastObservationFailure");
+            diagnostic.put("componentId", componentId).put("transitionStage", transitionStage)
+                .put("resultOutcome", result.outcome().name()).put("recordedAt", Instant.now().toString());
+            result.problem().ifPresent(problem -> {
+                if (problem.eventCode().matches("[A-Z][A-Z0-9_]{0,119}"))
+                    diagnostic.put("resultEvent", problem.eventCode());
+                DeploymentPublishChannel.runtimeObservationDiagnostics(problem).forEach(diagnostic::put);
+            });
+            if (!facts.has("observationFailure")) facts.set("observationFailure", diagnostic.deepCopy());
+            if (!operation.phase().equals("UNKNOWN")) uncertainEvent.ifPresent(event -> facts.put("uncertainEvent", event));
+            journal.advance(operation, uncertainEvent.isPresent() ? "UNKNOWN" : operation.phase(), facts, task);
+        } catch (ApiException | RuntimeException unavailable) {
+            // Optional diagnostic storage must not replace the original observation outcome.
+        }
     }
 
     /** Preserves an upstream conclusion without fabricating a value. / 保留上游结论且不捏造值。

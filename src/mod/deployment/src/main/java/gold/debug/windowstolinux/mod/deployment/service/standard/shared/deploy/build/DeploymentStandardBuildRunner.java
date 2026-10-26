@@ -339,6 +339,7 @@ final class DeploymentStandardBuildRunner {
         var requirements = prepared.requirements;
         int attempt = prepared.attempt;
         var preparer = new DeploymentToolchainSetup(commands, catalog);
+        preparationObserver.buildStarted(request.facts().applicationId(), task);
         var built = execute(prepared.rendered.buildScript(), request, uploaded, prepared.environment, commands, budget,
             engine, prepared.tools);
         if (fallback && built.outcome() == TaskResult.FAILED
@@ -348,6 +349,7 @@ final class DeploymentStandardBuildRunner {
             if (second.outcome() != TaskResult.SUCCEEDED)
                 return withoutValue(second);
             prepared.executedTools = second.value().orElseThrow();
+            preparationObserver.buildStarted(request.facts().applicationId(), task);
             built = execute(prepared.rendered.buildScript(), request, uploaded, prepared.environment, commands, budget,
                 engine, second.value().orElseThrow());
         }

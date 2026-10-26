@@ -63,6 +63,8 @@ public final class DeploymentComponentEditor {
         this.discovered = List.copyOf(discovered);
         form = new ComponentForm(text, this::invalidate);
         panel.setName("deployment.components.editor");
+        panel.putClientProperty("deployment.dialog.scrollManaged", true);
+        panel.putClientProperty("deployment.dialog.preferredHeight", 700);
         list.setName("deployment.components.list");
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         application.setName("deployment.components.application");
@@ -105,7 +107,7 @@ public final class DeploymentComponentEditor {
             }
         });
         center.add(componentScroll, BorderLayout.WEST);
-        center.add(form.panel, BorderLayout.CENTER);
+        center.add(DeploymentDialogs.scroll(form.panel), BorderLayout.CENTER);
         panel.add(center, BorderLayout.CENTER);
         var actions = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEADING, DeploymentPageStyle.scale(8), 0));
         panel.putClientProperty("deployment.dialog.fixedActions", actions);

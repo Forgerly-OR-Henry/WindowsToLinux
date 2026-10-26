@@ -201,12 +201,34 @@ public final class ServerProfileDialog extends JDialog {
         if (busy)
             return;
         try {
-            var profile = new ServerProfile(id, host.getText().trim(), Integer.parseInt(port.getText().trim()),
-                username.getText().trim(), credentialKey, name.getText());
+            String displayName = name.getText().trim(), serverHost = host.getText().trim(),
+                sshUser = username.getText().trim();
+            if (displayName.isEmpty() || displayName.length() > 120) {
+                status.setText(messages.text("server.name.invalid"));
+                name.requestFocusInWindow();
+                return;
+            }
+            if (serverHost.isBlank() || serverHost.contains(" ")) {
+                status.setText(messages.text("server.host.invalid"));
+                host.requestFocusInWindow();
+                return;
+            }
+            if (sshUser.isBlank() || sshUser.contains("\n")) {
+                status.setText(messages.text("server.username.invalid"));
+                username.requestFocusInWindow();
+                return;
+            }
+            int sshPort = Integer.parseInt(port.getText().trim());
+            if (sshPort < 1 || sshPort > 65535) {
+                status.setText(messages.text("server.port.invalid"));
+                return;
+            }
+            var profile = new ServerProfile(id, serverHost, sshPort, sshUser, credentialKey, displayName);
             char[] secret = password.getPassword();
             password.setText("");
             if (!existing && secret.length == 0) {
-                throw new IllegalArgumentException(messages.text("server.password.required"));
+                status.setText(messages.text("server.password.required"));
+                return;
             }
             busy = true;
             save.setEnabled(false);
@@ -230,6 +252,8 @@ public final class ServerProfileDialog extends JDialog {
                 setInputs(true);
                 status.setText(messages.text("server.saveFailed", Map.of("detail", messages.safe(failure))));
             });
+        } catch (NumberFormatException invalidPort) {
+            status.setText(messages.text("server.port.invalid"));
         } catch (Exception failure) {
             status.setText(messages.safe(failure));
         }

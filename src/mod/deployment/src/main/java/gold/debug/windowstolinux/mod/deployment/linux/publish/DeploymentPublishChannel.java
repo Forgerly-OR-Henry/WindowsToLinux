@@ -6,6 +6,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -45,6 +46,38 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.Deploy
 
 /** Sends fixed managed publication verbs through the original reviewed session. / 经原已审阅会话发送固定受管发布动作。 */
 public final class DeploymentPublishChannel {
+    private static final Map<String, String> OBSERVATION_FACT_PATTERNS = Map.ofEntries(
+        Map.entry("observationStage", "inspect|observe"),
+        Map.entry("observationBranch", "dispatch|dispatch-exception|systemd-query|incomplete|identity|protocol|state"),
+        Map.entry("observationOutcome", "SUCCEEDED|FAILED|CANCELLED|UNKNOWN"),
+        Map.entry("observationProblemEvent", "[A-Z][A-Z0-9_]{0,119}"),
+        Map.entry("exitCode", "-?[0-9]{1,10}"),
+        Map.entry("truncated", "true|false"),
+        Map.entry("valuePresent", "true|false"),
+        Map.entry("helperRejection", "[a-z0-9-]{1,80}"),
+        Map.entry("helperObservation", "SYSTEMD_QUERY_UNAVAILABLE"),
+        Map.entry("commandPhase", "BEFORE_DISPATCH|CREATING_CHANNEL|CHANNEL_OPENING|WAITING_FOR_EXIT"),
+        Map.entry("dispatchState", "BEFORE_DISPATCH|CREATING_CHANNEL|CHANNEL_OPENING|WAITING_FOR_EXIT"),
+        Map.entry("inputState", "NOT_STARTED|SENDING|COMPLETED|FAILED"),
+        Map.entry("authorPayloadState", "NOT_SENT|MAY_HAVE_BEEN_SENT"),
+        Map.entry("authorPayloadSent", "true|false"),
+        Map.entry("commandOpenRequested", "true|false"),
+        Map.entry("channelOpenConfirmed", "true|false"),
+        Map.entry("inputSenderCreated", "true|false"),
+        Map.entry("outputObserved", "true|false"),
+        Map.entry("exitObserved", "true|false"),
+        Map.entry("channelClosed", "true|false"),
+        Map.entry("sessionOpen", "true|false"),
+        Map.entry("sessionAuthenticated", "true|false"),
+        Map.entry("channelPeerAssigned", "true|false"),
+        Map.entry("sessionCloseObserved", "true|false"),
+        Map.entry("disconnectInitiatorLocal", "true|false"),
+        Map.entry("disconnectCode", "-?[0-9]{1,10}"),
+        Map.entry("elapsedMillis", "[0-9]{1,13}"),
+        Map.entry("timeoutMillis", "[0-9]{1,13}"),
+        Map.entry("transportFailureType", "(?:java|org\\.apache\\.sshd)\\.[A-Za-z0-9_.$]{1,160}"),
+        Map.entry("transportKeyExchangeState", "[A-Z_]{1,32}"));
+
     /** Borrowed authenticated connection. / 借用的已认证连接。 */
     private final RemoteSession session;
 
@@ -493,11 +526,11 @@ public final class DeploymentPublishChannel {
         var inspect = send("deployment.publication.inspect.v1", unit, "inspect-runtime",
             List.of(unit.id(), unit.ownershipManifestSha256()), Duration.ofSeconds(20), 4096);
         if (inspect.outcome() == TaskResult.FAILED && inspect.value().isEmpty())
-            return withoutValue(inspect);
+            return observationFailure("inspect", "dispatch", inspect, withoutValue(inspect));
         if (inspect.outcome() == TaskResult.CANCELLED || inspect.outcome() == TaskResult.UNKNOWN)
-            return withoutValue(inspect);
+            return observationFailure("inspect", "dispatch", inspect, withoutValue(inspect));
         if (!complete(inspect))
-            return unknown("DEPLOYMENT_RUNTIME_IDENTITY_UNCONFIRMED");
+            return observationFailure("inspect", "incomplete", inspect, unknown("DEPLOYMENT_RUNTIME_IDENTITY_UNCONFIRMED"));
         String identity = inspect.value().orElseThrow().stdout();
         if (expected != null) {
             String required = expected instanceof DeploymentRuntimeDefinition.Container container
@@ -505,12 +538,12 @@ public final class DeploymentPublishChannel {
                 + "\nMODE=" + expected.workload().mode().name() + "\n"
                 : "KIND=deployment\nMODE=" + expected.workload().mode().name() + "\n";
             if (!required.equals(identity))
-                return unknown("DEPLOYMENT_RUNTIME_IDENTITY_CHANGED");
+                return observationFailure("inspect", "identity", inspect, unknown("DEPLOYMENT_RUNTIME_IDENTITY_CHANGED"));
         }
         var values = DeploymentPublishReceipt.fields(identity);
         String mode = values.get("MODE");
         if (mode == null || !Set.of("DAEMON", "ON_DEMAND").contains(mode))
-            return unknown("DEPLOYMENT_RUNTIME_IDENTITY_CHANGED");
+            return observationFailure("inspect", "protocol", inspect, unknown("DEPLOYMENT_RUNTIME_IDENTITY_CHANGED"));
         if ("deployment".equals(values.get("KIND")) && values.size() == 2)
             return observeNative(unit, "ON_DEMAND".equals(mode));
         if ("container".equals(values.get("KIND")) && values.size() == 3 && values.get("ENGINE") != null
@@ -519,7 +552,7 @@ public final class DeploymentPublishChannel {
                 ? success(new DeploymentRemoteRuntimeObservation(
                 DeploymentRemoteRuntimeObservation.StateType.INSTALLED))
                 : observeContainer(unit, values.get("ENGINE"));
-        return unknown("DEPLOYMENT_RUNTIME_IDENTITY_CHANGED");
+        return observationFailure("inspect", "protocol", inspect, unknown("DEPLOYMENT_RUNTIME_IDENTITY_CHANGED"));
     }
 
     /** Parses the helper's full native service or sparse on-demand observation. / 解析helper完整原生服务或稀疏按需观测。
@@ -532,23 +565,23 @@ public final class DeploymentPublishChannel {
         var observed = send("deployment.publication.observe.v1", unit, "observe-deployment",
             List.of(unit.id(), unit.ownershipManifestSha256()), Duration.ofSeconds(20), 4096);
         if (observed.outcome() == TaskResult.FAILED && observed.value().isEmpty())
-            return withoutValue(observed);
+            return observationFailure("observe", "dispatch", observed, withoutValue(observed));
         if (observed.outcome() == TaskResult.CANCELLED || observed.outcome() == TaskResult.UNKNOWN)
-            return withoutValue(observed);
+            return observationFailure("observe", "dispatch", observed, withoutValue(observed));
         if (!complete(observed))
-            return unknown("DEPLOYMENT_RUNTIME_OBSERVATION_UNCONFIRMED");
+            return observationFailure("observe", "incomplete", observed, unknown("DEPLOYMENT_RUNTIME_OBSERVATION_UNCONFIRMED"));
         String output = observed.value().orElseThrow().stdout();
         if (onDemand)
             return output.equals(
                 "OWNER=1\nINSTALLED=1\nRUNNING=0\nENABLED=not-applicable\nQUERY_OK=1\nActiveState=inactive\nMainPID=0\n")
                 ? success(new DeploymentRemoteRuntimeObservation(
                 DeploymentRemoteRuntimeObservation.StateType.INSTALLED))
-                : unknown("DEPLOYMENT_ON_DEMAND_OBSERVATION_INVALID");
+                : observationFailure("observe", "protocol", observed, unknown("DEPLOYMENT_ON_DEMAND_OBSERVATION_INVALID"));
         var values = DeploymentPublishReceipt.fields(output);
         if (!"1".equals(values.get("OWNER")) || !"1".equals(values.get("QUERY_OK"))
             || !values.keySet().containsAll(Set.of("RUNNING", "ENABLED", "ActiveState", "SubState", "Result",
             "ExecMainCode", "ExecMainStatus", "MainPID")))
-            return unknown("DEPLOYMENT_RUNTIME_OBSERVATION_INVALID");
+            return observationFailure("observe", "protocol", observed, unknown("DEPLOYMENT_RUNTIME_OBSERVATION_INVALID"));
         var autostart = switch (values.get("ENABLED")) {
             case "enabled" -> ApplicationAutostartState.ENABLED;
             case "disabled", "static", "indirect", "masked", "masked-runtime", "enabled-runtime", "generated",
@@ -557,10 +590,10 @@ public final class DeploymentPublishChannel {
         };
         for (String key : List.of("ActiveState", "SubState", "Result", "ExecMainCode", "ExecMainStatus", "MainPID"))
             if (!values.get(key).matches("[A-Za-z0-9_-]{1,64}"))
-                return unknown("DEPLOYMENT_RUNTIME_OBSERVATION_INVALID");
+                return observationFailure("observe", "protocol", observed, unknown("DEPLOYMENT_RUNTIME_OBSERVATION_INVALID"));
         for (String key : List.of("ExecMainCode", "ExecMainStatus", "MainPID"))
             if (!values.get(key).matches("[0-9]{1,10}"))
-                return unknown("DEPLOYMENT_RUNTIME_OBSERVATION_INVALID");
+                return observationFailure("observe", "protocol", observed, unknown("DEPLOYMENT_RUNTIME_OBSERVATION_INVALID"));
         if ("failed".equals(values.get("ActiveState")) || "activating".equals(values.get("ActiveState"))
             && "auto-restart".equals(values.get("SubState")) && !"success".equals(values.get("Result")))
             return success(new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.ERROR,
@@ -574,7 +607,7 @@ public final class DeploymentPublishChannel {
             && "dead".equals(values.get("SubState")) && "0".equals(values.get("MainPID")))
             return success(
                 new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.STOPPED, autostart));
-        return unknown("DEPLOYMENT_RUNTIME_STATE_UNCONFIRMED");
+        return observationFailure("observe", "state", observed, unknown("DEPLOYMENT_RUNTIME_STATE_UNCONFIRMED"));
     }
 
     /** Observes one owned container via the original fixed engine and path checks. / 经原固定引擎和路径检查观测一个所属容器。
@@ -610,15 +643,15 @@ public final class DeploymentPublishChannel {
             new CommandRequest("/bin/bash -lc " + DeploymentBuildCommandChannel.shellQuote(script), new byte[0],
                 Duration.ofSeconds(20), 4096));
         if (observed.outcome() == TaskResult.FAILED && observed.value().isEmpty())
-            return withoutValue(observed);
+            return observationFailure("observe", "dispatch", observed, withoutValue(observed));
         if (observed.outcome() == TaskResult.CANCELLED || observed.outcome() == TaskResult.UNKNOWN)
-            return withoutValue(observed);
+            return observationFailure("observe", "dispatch", observed, withoutValue(observed));
         if (!complete(observed))
-            return unknown("DEPLOYMENT_CONTAINER_OBSERVATION_UNCONFIRMED");
+            return observationFailure("observe", "incomplete", observed, unknown("DEPLOYMENT_CONTAINER_OBSERVATION_UNCONFIRMED"));
         var values = DeploymentPublishReceipt.fields(observed.value().orElseThrow().stdout());
         if (!"1".equals(values.get("OWNER")) || values.get("RUNNING") == null
             || !Set.of("true", "false").contains(values.get("RUNNING")) || !values.containsKey("ENABLED"))
-            return unknown("DEPLOYMENT_CONTAINER_OBSERVATION_INVALID");
+            return observationFailure("observe", "protocol", observed, unknown("DEPLOYMENT_CONTAINER_OBSERVATION_INVALID"));
         var observedAutostart = switch (values.get("ENABLED")) {
             case "enabled", "always", "unless-stopped" -> ApplicationAutostartState.ENABLED;
             case "no", "on-failure" -> ApplicationAutostartState.DISABLED;
@@ -800,6 +833,8 @@ public final class DeploymentPublishChannel {
 
     private OperationResult<CommandResult> dispatch(String operation, DeploymentUnitIdentity unit,
                                                     CommandRequest request, Set<ActionTarget> targets) throws ApiException {
+        String observationStage = operation.equals("deployment.publication.inspect.v1") ? "inspect"
+            : operation.equals("deployment.publication.observe.v1") ? "observe" : null;
         try (request) {
             var intent = RemoteActions.command(server, planRevision, request).withSemantics(new ActionSemantics(
                 operation, targets));
@@ -816,16 +851,66 @@ public final class DeploymentPublishChannel {
                         && authorPayloadNotSent(executed)) continue;
                     if (executed.outcome() == TaskResult.CANCELLED
                         || executed.outcome() == TaskResult.FAILED && executed.value().isEmpty())
-                        return unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED");
-                    return classifySystemdObservation(executed);
+                        return observationStage == null ? unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED")
+                            : observationFailure(observationStage, "dispatch", executed,
+                                unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED"));
+                    var classified = classifySystemdObservation(executed);
+                    return observationStage != null && classified != executed
+                        ? observationFailure(observationStage, "systemd-query", executed, classified) : classified;
                 } catch (ApiException failure) {
                     if (failure.problem().code() == ProblemCode.ACCESS_DENIED
                         || failure.problem().code() == ProblemCode.INVALID_INPUT)
                         throw failure;
-                    return unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED");
+                    return observationStage == null ? unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED")
+                        : observationFailure(observationStage, "dispatch-exception",
+                            new OperationResult<CommandResult>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(failure.problem())),
+                            unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED"));
                 }
             }
         }
+    }
+
+    /** Selects only bounded observation and typed transport facts for durable diagnostics. / 仅选取有界观测与类型化传输事实供持久诊断。
+     * @param problem original observation problem / 原观测问题
+     * @return validated facts without process output or command content / 不含进程输出或命令内容的已校验事实 */
+    public static Map<String, String> runtimeObservationDiagnostics(Problem problem) {
+        var facts = new LinkedHashMap<String, String>();
+        OBSERVATION_FACT_PATTERNS.forEach((key, pattern) -> {
+            String value = problem.context().get(key);
+            if (value != null && value.length() <= 180 && value.matches(pattern)) facts.put(key, value);
+        });
+        return Map.copyOf(facts);
+    }
+
+    private static <T> OperationResult<T> observationFailure(String stage, String branch,
+                                                             OperationResult<CommandResult> observation,
+                                                             OperationResult<T> conclusion) {
+        var facts = new LinkedHashMap<String, String>();
+        observation.problem().ifPresent(problem -> facts.putAll(runtimeObservationDiagnostics(problem)));
+        facts.putIfAbsent("observationStage", stage);
+        facts.putIfAbsent("observationBranch", branch);
+        facts.putIfAbsent("observationOutcome", observation.outcome().name());
+        observation.problem().map(Problem::eventCode).filter(event -> event.matches("[A-Z][A-Z0-9_]{0,119}"))
+            .ifPresent(event -> facts.putIfAbsent("observationProblemEvent", event));
+        facts.putIfAbsent("valuePresent", Boolean.toString(observation.value().isPresent()));
+        observation.value().ifPresent(value -> {
+            value.exitCode().ifPresent(exit -> facts.putIfAbsent("exitCode", Integer.toString(exit)));
+            facts.putIfAbsent("truncated", Boolean.toString(value.truncated()));
+            if (!value.truncated() && value.stderr().length() <= 4096) {
+                var rejections = value.stderr().lines()
+                    .filter(line -> line.matches("MANAGED_HELPER_REJECT=[a-z0-9-]{1,80}")).toList();
+                if (rejections.size() == 1)
+                    facts.putIfAbsent("helperRejection", rejections.getFirst().substring("MANAGED_HELPER_REJECT=".length()));
+                if (value.stderr().lines().filter("MANAGED_HELPER_OBSERVATION_UNAVAILABLE=systemd-query"::equals).count() == 1)
+                    facts.putIfAbsent("helperObservation", "SYSTEMD_QUERY_UNAVAILABLE");
+            }
+        });
+        var problem = conclusion.problem().orElseGet(() -> new Problem(ProblemCode.UNKNOWN,
+            stage.equals("inspect") ? "DEPLOYMENT_RUNTIME_IDENTITY_UNCONFIRMED" : "DEPLOYMENT_RUNTIME_OBSERVATION_UNCONFIRMED",
+            "The original runtime observation was not confirmed", Map.of(), Optional.empty()));
+        return new OperationResult<>(conclusion.outcome(), conclusion.value(), Optional.of(new Problem(problem.code(),
+            problem.eventCode(), problem.message(), Map.copyOf(facts),
+            problem.diagnosticId().or(() -> observation.problem().flatMap(Problem::diagnosticId)))));
     }
 
     /** Separates failed read-only systemd observations from a valid identity conflict. / 区分systemd只读观察失败与有效身份冲突。 */

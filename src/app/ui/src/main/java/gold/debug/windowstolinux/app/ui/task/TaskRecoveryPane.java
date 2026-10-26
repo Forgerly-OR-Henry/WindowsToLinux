@@ -39,9 +39,10 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
     private final JProgressBar progress = new JProgressBar(0, 1000);
     private final javax.swing.Timer timer;
     private List<Entry> entries = List.of();
+    private Entry renderedEntry;
     private UUID selection, requestedSelection, renderedSelection;
     private JDialog confirmation, logWindow;
-    private boolean locked = true, busy, closed, rendering;
+    private boolean locked = true, busy, refreshing, closed, rendering;
     private long epoch;
 
     public TaskRecoveryPane(TaskManagement service, DesktopPartFactory components,
@@ -152,10 +153,21 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
     }
 
     public void refresh() {
-        work(service::list, values -> {
+        if (locked || busy || refreshing || closed || confirmation != null) return;
+        long observed = epoch;
+        refreshing = true;
+        DesktopTaskRunner.run(service::list, values -> {
+            refreshing = false;
+            if (closed || locked || observed != epoch || confirmation != null) return;
+            if (List.of(primary, intervene, collapse).stream().anyMatch(button ->
+                button.getModel().isArmed() || button.getModel().isPressed())) return;
             entries = List.copyOf(values);
             if (requestedSelection != null) { selection = requestedSelection; requestedSelection = null; }
             filter();
+        }, failure -> {
+            refreshing = false;
+            if (!closed && !locked && observed == epoch && confirmation == null)
+                status.setText(messages.safe(failure));
         });
     }
 
@@ -263,9 +275,13 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
 
     private void showSelection() {
         boolean newSelection = !Objects.equals(renderedSelection, selection);
+        var entry = selected();
+        if (!locked && !newSelection && entry != null && entry.equals(renderedEntry)) {
+            controls();
+            return;
+        }
         renderedSelection = selection;
         progress.setIndeterminate(false);
-        var entry = selected();
         workspace.expanded(entry != null && !locked);
         detailBody.content(entry == null || locked ? null : entry.snapshot().id());
         detailBody.removeAll();
@@ -315,6 +331,7 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         }
         controls(); workspace.revalidate(); workspace.repaint();
         if (newSelection) detailScroll.getViewport().setViewPosition(new Point());
+        renderedEntry = locked ? null : entry;
     }
 
     private void field(JPanel parent, String key, String value) {
@@ -433,7 +450,7 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
 
     private <T> void work(Callable<T> operation, Consumer<T> success) {
         if (locked || busy || closed || confirmation != null) return;
-        long observed = epoch; busy = true; controls();
+        long observed = ++epoch; busy = true; controls();
         DesktopTaskRunner.run(operation, result -> {
             busy = false;
             if (closed) return;
@@ -449,6 +466,7 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
 
     public void localize() {
         if (closed) return;
+        renderedEntry = null;
         search.putClientProperty("JTextField.placeholderText", messages.text("tasks.search"));
         filter();
     }
@@ -491,6 +509,6 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
     }
     @Override public void close() {
         closed = true; epoch++; workspace.close(); detailBody.close(); timer.stop(); progress.setIndeterminate(false); dismissDialogs();
-        entries = List.of(); model.clear(); selection = null; detail.setVisible(false); controls();
+        entries = List.of(); renderedEntry = null; model.clear(); selection = null; detail.setVisible(false); controls();
     }
 }

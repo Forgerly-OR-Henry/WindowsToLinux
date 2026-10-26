@@ -18,6 +18,7 @@ import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentPag
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentApprovalPolicyState;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.DeploymentStandardPageService;
 import gold.debug.windowstolinux.mod.deployment.ui.agent.DeploymentAgentPage;
+import gold.debug.windowstolinux.mod.deployment.ui.environment.DeploymentEnvironmentPage;
 import gold.debug.windowstolinux.mod.deployment.ui.preference.DeploymentPreferenceSelection;
 import gold.debug.windowstolinux.mod.deployment.ui.source.DeploymentLocalSourceControls;
 import gold.debug.windowstolinux.mod.deployment.ui.standard.DeploymentStandardPage;
@@ -47,6 +48,12 @@ public final class DeploymentFlowPage implements ModPage {
     private final JPanel agentAdvanced = DeploymentPageStyle.form();
 
     private final JButton mode = new JButton(), approval = new JButton(), models = new JButton(), start = new JButton();
+
+    private final JButton prepareEnvironment = new JButton();
+
+    private DeploymentEnvironmentPage environmentPage;
+
+    private JDialog environmentWindow;
 
     private final JButton server = new JButton(), clearServer = new JButton(), refreshServers = new JButton(), manageServers = new JButton();
 
@@ -87,6 +94,8 @@ public final class DeploymentFlowPage implements ModPage {
 
     private String observedMode = "ASSISTED", navigationMode;
 
+    private String suggestedName = "";
+
     private String capturedPolicy = "AUTOMATIC";
 
     private Boolean advancedUnavailable;
@@ -117,9 +126,7 @@ public final class DeploymentFlowPage implements ModPage {
         draft.local = new DeploymentLocalSourceControls(standardService.sources().selection(), this::text, actions,
             generation::get, view -> !closed && !this.environment.locked() && generation.get() == view,
             value -> {
-                value.ifPresent(location -> {
-                    if (draft.name.getText().isBlank()) draft.name.setText(location.displayName());
-                });
+                suggestName(value.map(location -> location.displayName()).orElse(""));
                 refreshControls();
             }, this::showProblem, this::refreshControls);
         standard = new DeploymentStandardPage(standardService, draft);
@@ -240,6 +247,7 @@ public final class DeploymentFlowPage implements ModPage {
         clearGit.addActionListener(ignored -> {
             if (draft.frozen) return;
             draft.remote.setText("");
+            suggestName("");
             draft.sourceMode.setSelectedItem(DeploymentFlowDraft.SourceMode.LOCAL);
             refreshControls();
         });
@@ -291,10 +299,7 @@ public final class DeploymentFlowPage implements ModPage {
                 DeploymentGitRemote.parse(value);
                 draft.remote.setText(value);
                 draft.sourceMode.setSelectedItem(DeploymentFlowDraft.SourceMode.GIT);
-                if (draft.name.getText().isBlank()) {
-                    String name = value.substring(value.lastIndexOf('/') + 1).replaceFirst("\\.git$", "");
-                    if (!name.isBlank()) draft.name.setText(name);
-                }
+                suggestName(value.substring(value.lastIndexOf('/') + 1).replaceFirst("\\.git$", ""));
             } else if (!draft.local.importSelection(new StringSelection(value))) return false;
             sourceInput.setText("");
             refreshControls();
@@ -303,6 +308,12 @@ public final class DeploymentFlowPage implements ModPage {
             showProblem(text("source.invalid"));
             return false;
         }
+    }
+
+    private void suggestName(String value) {
+        if (draft.name.getText().isBlank() || draft.name.getText().equals(suggestedName))
+            draft.name.setText(value);
+        suggestedName = value;
     }
 
     private JComponent buildTarget() {
@@ -348,6 +359,9 @@ public final class DeploymentFlowPage implements ModPage {
         bar.add(mode);
         bar.add(approval);
         var advancedContent = DeploymentPageStyle.form();
+        prepareEnvironment.setName("deployment.flow.environment");
+        prepareEnvironment.addActionListener(ignored -> openEnvironment());
+        advancedContent.add(prepareEnvironment);
         advancedContent.add(standard.flowAdvanced());
         agentAdvanced.add(agent.flowAdvanced());
         advancedContent.add(agentAdvanced);
@@ -362,6 +376,27 @@ public final class DeploymentFlowPage implements ModPage {
         bar.add(advanced.button());
         bar.add(start);
         return DeploymentPageStyle.outer(bar);
+    }
+
+    private void openEnvironment() {
+        if (!prepareEnvironment.isEnabled()) return;
+        try {
+            if (environmentWindow == null) {
+                environmentPage = new DeploymentEnvironmentPage(standardService, standardService.environment());
+                var body = environmentPage.create(environment);
+                environmentWindow = DeploymentDialogs.window(root, text("workspace.environment"), body, null, 1000, 760);
+                environmentWindow.setName("deployment.flow.environment.window");
+                environmentWindow.setDefaultCloseOperation(WindowConstants.HIDE_ON_CLOSE);
+            }
+            environmentWindow.setVisible(true);
+            environmentWindow.toFront();
+        } catch (RuntimeException failure) {
+            if (environmentWindow == null && environmentPage != null) {
+                environmentPage.close();
+                environmentPage = null;
+            }
+            showProblem(text("target.unavailable"));
+        }
     }
 
     private void showModes() {
@@ -528,6 +563,7 @@ public final class DeploymentFlowPage implements ModPage {
         gitLocation.setText(draft.remote.getText());
         sourceRoutes.showCard(draft.gitSelected() ? "GIT" : "LOCAL");
         boolean unavailable = environment.locked() || draft.frozen;
+        prepareEnvironment.setEnabled(!unavailable);
         if (advanced != null && !Objects.equals(advancedUnavailable, unavailable)) {
             advanced.environment(messages, unavailable);
             advancedUnavailable = unavailable;
@@ -597,7 +633,7 @@ public final class DeploymentFlowPage implements ModPage {
             serverPicker.setTitle(text("flow.target.select"));
             search.putClientProperty("JTextField.placeholderText", text("flow.target.search"));
             choose.setText(text("flow.target.use"));
-            list.setFixedCellHeight(DeploymentPageStyle.scale(62));
+            list.setFixedCellHeight(DeploymentPageStyle.scale(90));
             ((BorderLayout) body.getLayout()).setVgap(DeploymentPageStyle.scale(12));
             DeploymentDialogs.refresh(serverPicker, messages);
         };
@@ -611,7 +647,7 @@ public final class DeploymentFlowPage implements ModPage {
      * @param list original server model / 原服务器模型
      * @return original picker content / 原选择内容 */
     public static JPanel serverPickerBody(JTextField search, JList<ServerInfo> list) {
-        list.setFixedCellHeight(DeploymentPageStyle.scale(62));
+        list.setFixedCellHeight(DeploymentPageStyle.scale(90));
         list.setCellRenderer((view, value, index, selected, focus) -> {
             var label = new JLabel("<html>" + html(value.name()) + "<br>" + html(value.username() + "@" + value.host() + ":" + value.port()) + "</html>", DeploymentPageStyle.icon("server", 30), SwingConstants.LEFT);
             label.setOpaque(true);
@@ -696,6 +732,8 @@ public final class DeploymentFlowPage implements ModPage {
         if (!environment.locked() && serverPicker != null && serverPicker.isDisplayable()) refreshServerPicker.run();
         standard.environmentChanged(environment);
         agent.environmentChanged(environment);
+        if (environmentPage != null) environmentPage.environmentChanged(environment);
+        if (environment.locked() && environmentWindow != null) environmentWindow.setVisible(false);
         localize();
         if (!environment.locked() && !draft.preferences.ready()) loadPreferences();
         if (!environment.locked() && draft.servers.getItemCount() == 0) standard.flowRefreshServers();
@@ -706,6 +744,8 @@ public final class DeploymentFlowPage implements ModPage {
         draft.preferences.localize(this::text);
         draft.local.localize();
         models.setText(text("target.models"));
+        prepareEnvironment.setText(text("workspace.environment"));
+        if (environmentWindow != null) environmentWindow.setTitle(text("workspace.environment"));
         start.setText(text("flow.start"));
         clearServer.setText(text("target.clear"));
         clearGit.setText(text("source.clear"));
@@ -806,6 +846,8 @@ public final class DeploymentFlowPage implements ModPage {
         if (modePopup != null) modePopup.setVisible(false);
         if (approvalPopup != null) approvalPopup.setVisible(false);
         if (advanced != null) advanced.close();
+        if (environmentWindow != null) environmentWindow.dispose();
+        if (environmentPage != null) environmentPage.close();
         if (draft.preferences != null) draft.preferences.close();
         if (draft.local != null) draft.local.revoke();
         if (standard != null) standard.close();

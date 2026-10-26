@@ -39,7 +39,7 @@ public final class DeploymentStandardRuntimeResolver {
         values.put("expectedStatus", "200");
         values.put("timeout", "10");
         values.put("stability", "5");
-        values.put("containerEngine", "PODMAN");
+        if (type == DeploymentProjectKind.DOCKERFILE_CONTAINER) values.put("containerEngine", "PODMAN");
         if (type == DeploymentProjectKind.STATIC_SITE && Files.isRegularFile(root.resolve("package.json")))
             values.put("nodeBuild", "true");
         if (suggested != null) {
@@ -74,7 +74,19 @@ public final class DeploymentStandardRuntimeResolver {
             values.put("healthMode", "PROCESS");
         if (type == DeploymentProjectKind.STATIC_SITE)
             values.put("exposure", "EXTERNAL");
+        var sourceHttpPort = DeploymentSourceRuntimeDefaults.fill(type, root, values);
+        values.putIfAbsent("exposure", values.containsKey("port") ? "EXTERNAL" : "INTERNAL");
         ApplicationSpec.read(root, values);
+        DeploymentSourceRuntimeDefaults.httpEndpoint(sourceHttpPort, values);
+        if (values.containsKey("port")) {
+            String configuration = values.getOrDefault("configuration", "").replaceAll("(?m)^PORT=[0-9]+$", "PORT=" + values.get("port"))
+                .replaceAll("(?m)^SERVER_PORT=[0-9]+$", "SERVER_PORT=" + values.get("port"));
+            if (values.keySet().stream().anyMatch(key -> key.matches("application\\.endpoint\\.[a-z0-9-]+\\.exposure"))
+                && values.entrySet().stream().filter(entry -> entry.getKey().matches("application\\.endpoint\\.[a-z0-9-]+\\.exposure"))
+                    .noneMatch(entry -> entry.getValue().equals("EXTERNAL")))
+                configuration = configuration.replace("HOST=0.0.0.0", "HOST=127.0.0.1").replace("SERVER_ADDRESS=0.0.0.0", "SERVER_ADDRESS=127.0.0.1");
+            if (!configuration.isBlank()) values.put("configuration", configuration);
+        }
         return values;
     }
 
@@ -179,7 +191,7 @@ public final class DeploymentStandardRuntimeResolver {
             "volumes", "jvmArguments", "arguments", "jvmTarget")) {
             boolean missingDatabaseDetails = key.equals("databaseDetails") && values.containsKey("databaseMode")
                 && !Set.of("NONE", "UNREVIEWED").contains(values.get("databaseMode"));
-            if (!values.containsKey(key) && !missingDatabaseDetails && !key.equals("applicationDeclaration"))
+            if (!values.containsKey(key) && !missingDatabaseDetails && !Set.of("applicationDeclaration", "healthEndpoint", "accessUrl").contains(key))
                 continue;
             List<String> choices = switch (key) {
                 case "healthMode" -> List.of("HTTP", "TCP", "UDP", "PROCESS", "COMMAND");

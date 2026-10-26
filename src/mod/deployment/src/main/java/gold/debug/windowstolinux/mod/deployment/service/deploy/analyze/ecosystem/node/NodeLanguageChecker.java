@@ -46,6 +46,8 @@ public final class NodeLanguageChecker {
     private static final Pattern EXACT_NODE = Pattern
         .compile("^\\s*v?([0-9]{1,9})(?:\\.[0-9]{1,9}){0,2}(?:[-+][A-Za-z0-9._-]+)?\\s*$");
 
+    private static final Pattern MAJOR_RANGE = Pattern.compile("^\\s*>=\\s*([0-9]{1,3})(?:\\.0(?:\\.0)?)?\\s+<\\s*([0-9]{1,3})(?:\\.0(?:\\.0)?)?\\s*$");
+
     /**
      * Returns deterministic Node.js ecosystem and source facts. / 返回确定性的 Node.js 生态与源码事实。
      *
@@ -78,10 +80,14 @@ public final class NodeLanguageChecker {
             Matcher engine = NODE_ENGINE.matcher(json);
             if (engine.find()) {
                 Matcher exact = EXACT_NODE.matcher(engine.group(1));
+                Matcher range = MAJOR_RANGE.matcher(engine.group(1));
                 if (exact.matches()) {
                     values.put(LanguageFactKind.NODE_MAJOR_VERSION, exact.group(1));
                     evidence.add(
                         evidence("analysis.deployment.runtime.evidence.nodeVersion", "package.json#engines.node"));
+                } else if (range.matches() && Integer.parseInt(range.group(2)) == Integer.parseInt(range.group(1)) + 1) {
+                    values.put(LanguageFactKind.NODE_MAJOR_VERSION, range.group(1));
+                    evidence.add(evidence("analysis.deployment.runtime.evidence.nodeVersion", "package.json#engines.node"));
                 }
             }
         }

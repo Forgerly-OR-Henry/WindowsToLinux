@@ -236,6 +236,7 @@ render_deployment_unit() {
     application_runtime_kind="$kind"
     render_application_command "$kind" "$root"
     wrap_database_runtime
+    deployment_rendered_command="$command"
     # @compat:selinux-entry@
     local service_type=simple service_restart=on-failure service_command="$command"
     if [ "$application_mode" = ON_DEMAND ]; then

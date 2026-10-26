@@ -628,6 +628,8 @@ public final class DeploymentStandardPage implements ModPage {
                             var problem = recentProblem;
                             String diagnostic = problem == null
                                 ? ""
+                                : problem.eventCode().equals("DEPLOYMENT_STATIC_VIEW_REVOKED")
+                                ? "\n" + text("reviewCancelled")
                                 : "\n" + problem.eventCode() + ": "
                                 + (problem.eventCode().equals("DEPLOYMENT_SCHEMA_REVIEW_REQUIRED")
                                 ? text("schemaReviewRequired")
@@ -747,7 +749,9 @@ public final class DeploymentStandardPage implements ModPage {
             try {
                 DeploymentPageStyle.refresh(panel, messages);
                 var pane = new JOptionPane(null, JOptionPane.QUESTION_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
-                owned = DeploymentDialogs.option(root, title, panel, pane, 760, 480);
+                int height = panel.getClientProperty("deployment.dialog.preferredHeight") instanceof Number preferred
+                    ? preferred.intValue() : 480;
+                owned = DeploymentDialogs.option(root, title, panel, pane, 760, height);
                 DeploymentDialogs.refresh(owned, messages);
                 dialog = owned;
                 if (panel.getClientProperty("deployment.review.focus") instanceof JComponent focus)

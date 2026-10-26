@@ -40,7 +40,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "4b44004b76783ff13c7698d54b19a9af2fda640d20b15841755a504724be0d3c";
+    public static final String EXPECTED_SHA256 = "f00011d5db422c2331ad77eb4c2f31b55c99d78f85780b6e5b60d5b617c90c01";
 
     /**
      * ROOT.
@@ -98,6 +98,7 @@ public final class DeploymentManagedHelperBundle {
         "restore/56-restore-commit.sh",
         "restore/57-application-restore.sh",
         "release/58-retained-activation.sh",
+        "release/58-runtime-settings.sh",
         "restore/59-handoff-restore.sh",
         "restore/59-handoff-database-restore.sh",
         "restore/59-handoff-restore-cleanup.sh",

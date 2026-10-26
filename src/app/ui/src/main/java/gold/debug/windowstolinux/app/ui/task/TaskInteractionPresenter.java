@@ -213,24 +213,10 @@ public final class TaskInteractionPresenter
             String[] options = {messages.text("task.review.allow"), messages.text("task.review.cancel")};
             boolean replacingHostKey = task.ownerId().equals(gold.debug.windowstolinux.app.service.task.PlatformTaskAdmission.PLATFORM_OWNER)
                 && intent.type().equals("platform.ssh.replace-trust");
-            String summaryText = replacingHostKey
-                ? messages.text("server.identity.review") + "\n\n" + intent.exactAction()
-                    .replace("Previous SSH wire-key fingerprint=", messages.text("server.identity.previous") + ": ")
-                    .replace("Observed SSH wire-key fingerprint=", messages.text("server.identity.observed") + ": ")
-                : deletionWarning(intent) + (intent.type().equals("platform.ssh.execute")
-                    ? messages.text("task.review.remoteCommand") + lifecycleAction(intent) : intent.effectSummary())
-                    + intent.semantics().map(meaning -> "\n\n" + messages.text("task.review.semantics") + ": "
-                        + meaning.operation() + "\n" + meaning.targets().stream()
-                            .map(target -> target.serverId() + " / " + target.kind() + " / " + target.id())
-                            .sorted().collect(java.util.stream.Collectors.joining("\n"))).orElse("");
-            var summary = new JTextArea(summaryText, replacingHostKey ? 12 : 8, 60);
+            var summary = reviewSummary(intent, replacingHostKey);
             summary.setName("task.review.summary");
-            summary.setEditable(false);
-            summary.setLineWrap(true);
-            summary.setWrapStyleWord(true);
-            summary.setCaretPosition(0);
-            var summaryScroll = new JScrollPane(summary);
-            summaryScroll.setPreferredSize(UIScale.scale(new Dimension(760, replacingHostKey ? 260 : 180)));
+            var summaryScroll = DesktopDialogs.scroll(summary);
+            summaryScroll.setPreferredSize(UIScale.scale(new Dimension(760, 260)));
             var content = new JPanel(new BorderLayout(0, UIScale.scale(8)));
             var overview = new JPanel(new BorderLayout(0, UIScale.scale(6)));
             overview.add(summaryScroll, BorderLayout.CENTER);
@@ -249,6 +235,122 @@ public final class TaskInteractionPresenter
                 options[1]);
             return options[0].equals(show(pane, messages.text("task.review.title"), cancellation));
         });
+    }
+
+    /** Labels actual paths and identities without altering the reviewed action. / 标注实际路径与编号，不改审核动作。 */
+    private JPanel reviewSummary(ActionIntent intent, boolean replacingHostKey) {
+        var rows = new java.util.ArrayList<JComponent>();
+        rows.add(DesktopDialogs.prose(replacingHostKey ? messages.text("server.identity.review")
+            : deletionWarning(intent) + reviewEffectSummary(intent)));
+        var facts = new java.util.ArrayList<String[]>();
+        if (replacingHostKey) {
+            for (String line : intent.exactAction().split("\\R")) {
+                String previous = "Previous SSH wire-key fingerprint=", observed = "Observed SSH wire-key fingerprint=";
+                if (line.startsWith(previous)) facts.add(new String[]{messages.text("server.identity.previous"), line.substring(previous.length())});
+                else if (line.startsWith(observed)) facts.add(new String[]{messages.text("server.identity.observed"), line.substring(observed.length())});
+                else if (!line.isBlank()) facts.add(new String[]{messages.text("task.review.target"), line});
+            }
+        } else {
+            intent.semantics().ifPresent(meaning -> {
+                facts.add(new String[]{messages.text("task.review.operation"), operationTitle(meaning.operation())});
+                String lifecycle = lifecycleAction(intent).strip();
+                if (!lifecycle.isBlank()) facts.add(new String[]{messages.text("task.review.operation"), lifecycle});
+                facts.add(new String[]{messages.text("task.review.operationId"), meaning.operation()});
+            });
+        }
+        facts.add(new String[]{messages.text("task.review.serverId"), String.join(", ", intent.serverIds())});
+        intent.semantics().ifPresent(meaning -> meaning.targets().stream()
+            .sorted(java.util.Comparator.comparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::serverId)
+                .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::kind)
+                .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::id))
+            .forEach(target -> {
+                facts.add(new String[]{messages.text("task.review.targetKind"), targetTitle(target.kind())});
+                facts.add(new String[]{messages.text(target.id().startsWith("/") || target.id().matches("^[A-Za-z]:[\\\\/].*")
+                    ? "task.review.path" : "task.review.targetId"), target.id()});
+                if (intent.serverIds().size() != 1 || !intent.serverIds().contains(target.serverId()))
+                    facts.add(new String[]{messages.text("task.review.serverId"), target.serverId()});
+            }));
+        if (intent.semantics().isEmpty() && !replacingHostKey)
+            facts.add(new String[]{messages.text("task.review.targetId"), intent.target()});
+        rows.add(factRow(messages.text("task.review.field"), messages.text("task.review.value"), true));
+        for (var fact : facts) rows.add(factRow(fact[0], fact[1], false));
+        return DesktopDialogs.fields(rows.toArray(JComponent[]::new));
+    }
+
+    /** Localizes fixed capability warnings without changing the original reviewed contract. / 本地化固定能力警示，不改变原审核契约。 */
+    private String reviewEffectSummary(ActionIntent intent) {
+        return switch (intent.type()) {
+            case "platform.ssh.execute" -> messages.text("task.review.remoteCommand");
+            case "platform.sftp.upload" -> messages.text("task.review.upload");
+            case "platform.sftp.download" -> messages.text("task.review.download");
+            default -> intent.effectSummary();
+        };
+    }
+
+    private JPanel factRow(String label, String value, boolean heading) {
+        var row = new JPanel(new BorderLayout(UIScale.scale(12), UIScale.scale(6)));
+        row.setOpaque(false);
+        var caption = new JLabel(label);
+        caption.putClientProperty("html.disable", true);
+        caption.setPreferredSize(new Dimension(UIScale.scale(140), caption.getPreferredSize().height));
+        var content = DesktopDialogs.prose(value);
+        content.setFont(UIManager.getFont("Label.font"));
+        content.getAccessibleContext().setAccessibleName(label);
+        caption.setLabelFor(content);
+        if (heading) {
+            caption.setFont(caption.getFont().deriveFont(Font.BOLD));
+            content.setFont(content.getFont().deriveFont(Font.BOLD));
+        } else row.add(new JSeparator(), BorderLayout.NORTH);
+        row.add(caption, BorderLayout.WEST);
+        row.add(content, BorderLayout.CENTER);
+        return row;
+    }
+
+    private String operationTitle(String operation) {
+        String key = switch (operation) {
+            case "deployment.helper.probe.v1", "deployment.helper.install.status.v1" -> "checkHelper";
+            case "deployment.helper.install.tracked.v1" -> "installHelper";
+            case "deployment.handoff.runtime-settings-preview.v1" -> "previewSettings";
+            case "deployment.handoff.runtime-settings-derive.v1" -> "prepareSettings";
+            case "deployment.handoff.runtime-settings-status.v1" -> "checkSettings";
+            case "deployment.handoff.snapshot-retained.v1" -> "saveRecovery";
+            case "deployment.handoff.activate-retained.v1" -> "activateVersion";
+            case "deployment.handoff.retained-status.v1" -> "checkSettings";
+            case "deployment.handoff.finish-retained.v1" -> "finish";
+            case "deployment.handoff.managed-target-status.v1" -> "checkStatus";
+            case "deployment.candidate.host-probe.v1", "deployment.candidate.capacity.v1", "deployment.build.preflight.v1" -> "checkEnvironment";
+            case "deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1" -> "prepareTools";
+            case "deployment.candidate.create.v1", "deployment.candidate.upload.v1", "deployment.candidate.verify.v1", "deployment.candidate.query.v1" -> "prepareSource";
+            case "deployment.build.run.v1" -> "build";
+            case "deployment.publication.config.v1" -> "configure";
+            case "deployment.publication.snapshot.v1" -> "snapshot";
+            case "deployment.publication.publish.v1" -> "publish";
+            case "deployment.publication.health.v1" -> "checkHealth";
+            case "deployment.publication.inspect.v1", "deployment.publication.observe.v1", "deployment.handoff.managed-current-status.v1" -> "checkStatus";
+            case "deployment.application.lifecycle.v1", "deployment.publication.stop-old.v1" -> "manageRuntime";
+            case "deployment.publication.maintenance-end.v1", "deployment.publication.retain.v1", "deployment.publication.candidate-cleanup.v1" -> "finish";
+            default -> "other";
+        };
+        return messages.text("task.review.operation." + key);
+    }
+
+    private String targetTitle(String kind) {
+        String key = switch (kind) {
+            case "deployment-release" -> "application";
+            case "deployment-handoff" -> "runtime";
+            case "directory" -> "directory";
+            case "deployment-candidate" -> "source";
+            case "deployment-snapshot" -> "snapshot";
+            case "deployment-configuration" -> "configuration";
+            case "deployment-secret" -> "credential";
+            case "deployment-build" -> "tools";
+            case "deployment-workspace" -> "workspace";
+            case "deployment-host" -> "server";
+            case "deployment-application-locks" -> "maintenance";
+            case "deployment-helper" -> "helper";
+            default -> "other";
+        };
+        return messages.text("task.review.targetKind." + key) + (key.equals("other") ? " (" + kind + ")" : "");
     }
 
     /** Lets the user choose only an offered exact deletion effect, with refusal selected initially. / 仅允许用户选择已提供的精确删除效果，初始选择暂不处理。

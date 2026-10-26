@@ -105,6 +105,9 @@ case "$verb" in
     managed-current-status) managed_current_status "$@" ;;
     managed-target-status) managed_target_status "$@" ;;
     snapshot-retained) snapshot_retained "$@" ;;
+    runtime-settings-preview) runtime_settings_preview "$@" ;;
+    runtime-settings-derive) runtime_settings_derive "$@" ;;
+    runtime-settings-status) runtime_settings_status "$@" ;;
     snapshot-deployment) snapshot_deployment "$@" ;;
     snapshot-deployment-attempt) snapshot_deployment_attempt "$@" ;;
     snapshot-container-attempt) snapshot_container_attempt "$@" ;;

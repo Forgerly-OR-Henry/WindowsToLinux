@@ -199,6 +199,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         for (var action : DeploymentLifecycleAction.values())
             if (action.autostart()) button(metadata, action.name().toLowerCase(Locale.ROOT), () -> lifecycle(action));
         button(metadata, "edit", this::edit);
+        button(metadata, "editPresentation", this::editPresentation);
         button(metadata, "history", this::history);
         button(metadata, "reattach", () -> {
             more.setVisible(false);
@@ -502,8 +503,72 @@ public final class DeploymentApplicationsPage implements ModPage {
             run(() -> service.externalAction(selected.external().orElseThrow(), action.name()), value -> refresh());
     }
 
-    /** Edits the selected original presentation without granting runtime control. / 编辑所选原展示，不授予运行控制。 */
+    /** Reviews and applies the selected managed runtime settings. / 审阅并应用所选受管应用的运行设置。 */
     private void edit() {
+        var selected = selected();
+        if (selected == null) return;
+        if (selected.managed().isEmpty()) { editPresentation(); return; }
+        var expected = selected;
+        run(() -> service.runtimeSettings(expected.managed().orElseThrow()), form -> {
+            if (!expected.equals(selected())) return;
+            var editor = new DeploymentRuntimeSettingsForm(form, this::text);
+            gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentRuntimeSettings.Values edits = null;
+            while (!closed && !locked && expected.equals(selected())) {
+                var choices = new JOptionPane(null, JOptionPane.QUESTION_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
+                var dialog = DeploymentDialogs.option(root, text("runtimeSettings"), editor.panel, choices, 720, 460);
+                if (!decide(dialog, choices, "runtimeSettings") || !expected.equals(selected())) return;
+                try {
+                    edits = editor.values();
+                    break;
+                } catch (IllegalArgumentException invalid) {
+                    editor.problem(invalid);
+                }
+            }
+            if (edits == null) return;
+            var selectedEdits = edits;
+            run(() -> service.reviewRuntimeSettings(form, selectedEdits), review -> {
+                if (!expected.equals(selected())) return;
+                var facts = new LinkedHashMap<String, String>();
+                facts.put(text("runtimeApplication"), review.form().selected().application().id());
+                facts.put(text("runtimeServer"), review.form().selected().application().server().id());
+                facts.put(text("runtimeComponent"), review.edited().component());
+                if (!review.edited().port().isBlank()) facts.put(text("runtimePort"), review.edited().port());
+                boolean website = review.form().components().stream().anyMatch(value -> value.component().equals(review.edited().component())
+                    && !value.accessUrl().isBlank());
+                if (website || !review.edited().accessUrl().isBlank())
+                    facts.put(text("runtimeUrl"), review.edited().accessUrl().isBlank() ? text("runtimeAutomaticUrl") : review.edited().accessUrl());
+                var summary = DeploymentDialogs.form();
+                summary.add(DeploymentDialogs.facts(facts));
+                summary.add(DeploymentDialogs.fact(() -> text("runtimeAffectedComponents")));
+                for (var component : review.components()) {
+                    var componentFacts = new LinkedHashMap<String, String>();
+                    componentFacts.put(text("runtimeComponent"), component.component());
+                    componentFacts.put(text("runtimeUnit"), component.unitId());
+                    componentFacts.put(text("runtimeBefore"), component.beforeCommand());
+                    componentFacts.put(text("runtimeAfter"), component.afterCommand());
+                    for (var change : component.configurationChanges()) {
+                        String caption = switch (change.key()) {
+                            case "WEB_ORIGIN" -> text("runtimeAllowedOrigin");
+                            case "PORT", "SERVER_PORT" -> text("runtimePort");
+                            default -> text("runtimeConfigChange");
+                        };
+                        componentFacts.put(caption + " (" + change.key() + ")",
+                            change.beforeValue() + " → " + change.afterValue() + "\n"
+                                + text("runtimeConfigSource") + ": " + change.sourceComponent());
+                    }
+                    summary.add(DeploymentDialogs.facts(componentFacts));
+                }
+                summary.add(DeploymentDialogs.fact(() -> text("runtimeReviewHint")));
+                summary.setName("applications.runtime.review");
+                var options = new JOptionPane(null, JOptionPane.QUESTION_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
+                var confirmed = DeploymentDialogs.option(root, text("runtimeSettings"), summary, options, 820, 560);
+                if (decide(confirmed, options, "runtimeSettings") && expected.equals(selected()))
+                    run(() -> service.applyRuntimeSettings(review), value -> refresh());
+            });
+        });
+    }
+
+    private void editPresentation() {
         var selected = selected();
         if (selected == null)
             return;
@@ -907,7 +972,7 @@ public final class DeploymentApplicationsPage implements ModPage {
             button -> button.setEnabled(!closed && !locked && (!busy || keys.get(button).equals("cancel"))));
         var selected = selected();
         keys.forEach((button, key) -> {
-            if (key.equals("inspect") || key.equals("edit"))
+            if (key.equals("inspect") || key.equals("edit") || key.equals("editPresentation"))
                 button.setEnabled(!closed && !locked && !busy && selected != null);
             if (key.equals("history"))
                 button.setEnabled(!closed && !locked && !busy && selected != null && selected.managed().isPresent());

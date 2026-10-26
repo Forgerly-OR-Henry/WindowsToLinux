@@ -16,16 +16,19 @@ public final class DesktopProgressBarUi extends FlatProgressBarUI {
     private double displayed = -1, target = -1;
 
     private final java.awt.event.HierarchyListener lifetime = event -> {
-        if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0 && !progressBar.isShowing()) {
-            if (motion != null) motion.close();
-            displayed = target;
+        if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0) {
+            if (!progressBar.isShowing()) {
+                stopAnimationTimer();
+                if (motion != null) motion.close();
+                displayed = target;
+            } else if (progressBar.isIndeterminate()) startAnimationTimer();
         }
     };
 
     private final Runnable policy = () -> {
         if (progressBar == null) return;
         if (progressBar.isIndeterminate()) {
-            if (DesktopMotion.enabled()) startAnimationTimer();
+            if (DesktopMotion.enabled() && progressBar.isShowing()) startAnimationTimer();
             else {
                 stopAnimationTimer();
                 setAnimationIndex(0);
@@ -55,7 +58,7 @@ public final class DesktopProgressBarUi extends FlatProgressBarUI {
 
     @Override
     protected void startAnimationTimer() {
-        if (DesktopMotion.enabled()) super.startAnimationTimer();
+        if (progressBar != null && progressBar.isShowing() && DesktopMotion.enabled()) super.startAnimationTimer();
     }
 
     @Override

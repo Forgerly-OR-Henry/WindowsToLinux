@@ -223,7 +223,10 @@ public final class DeploymentStandardWorkflow {
             DeploymentDiagnostics.progress(context, task, gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.reviewGraph"));
             if (discovered.size() > 16)
                 return rejected("DEPLOYMENT_STATIC_COMPONENT_LIMIT");
-            var chosen = reviewer.select(server, material.snapshot().sha256(), discovered, task);
+            var automatic = DeploymentStandardAutomaticInputs.selection(logicalName, discovered,
+                draft.sourceOptions().runtimeDraft());
+            var chosen = reviewer.select(server, material.snapshot().sha256(), discovered, automatic,
+                DeploymentStandardAutomaticInputs.languages(material, discovered), task);
             if (chosen.outcome() == TaskResult.CANCELLED)
                 marker.cancelled();
             if (chosen.outcome() != TaskResult.SUCCEEDED) {
@@ -272,6 +275,8 @@ public final class DeploymentStandardWorkflow {
             return priorEffects(cancelled(), task);
         } catch (SQLException readFailure) {
             return priorEffects(ioFailure("DEPLOYMENT_STATIC_METADATA_UNAVAILABLE"), task);
+        } catch (gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStorageDeclarations.InvalidDeclaration invalid) {
+            return priorEffects(rejected("DEPLOYMENT_STORAGE_DECLARATION_INVALID"), task);
         } catch (IOException sourceFailure) {
             return priorEffects(ioFailure("DEPLOYMENT_STATIC_DISCOVERY_UNAVAILABLE"), task);
         } catch (SecurityException sourceRejected) {
@@ -314,7 +319,7 @@ public final class DeploymentStandardWorkflow {
                                                                              Optional<DeploymentProjectRecord> localProject) throws Exception {
         String id = discovered.id();
         var type = selection.choices().get(id).type();
-        var initial = analyzer.analyzeComponent(material, discovered.relativeRoot(), logicalName, type,
+        var initial = analyzer.analyzeComponent(material, discovered.relativeRoot(), selection.applicationId(), type,
             Optional.empty(), true, task);
         if (initial.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(initial);
@@ -331,12 +336,15 @@ public final class DeploymentStandardWorkflow {
             prompt(id, facts, assessed.runtimeSuggestion().orElse(null), databaseLocal.hasBindings()),
             material, task);
         prompt = DeploymentStandardRuntimeDraft.apply(prompt, draft.sourceOptions().runtimeDraft());
+        prompt = accessDefault(prompt, context.servers().get(server, task).host());
         var reviewed = advice.review(server, material.snapshot().sha256(), List.of(prompt), reviewer, task);
         if (reviewed.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(reviewed);
         var supplied = reviewed.value().orElseThrow();
         if (!supplied.keySet().equals(Set.of(id)))
             return rejected("DEPLOYMENT_STATIC_REVIEW_INCOMPLETE");
+        supplied = Map.of(id, gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStorageDeclarations
+            .apply(material, discovered, supplied.get(id)));
         var values = completed(prompt, supplied.get(id));
         validateReview(prompt, supplied.get(id));
         var stages = new DeploymentDatabaseStages(context);
@@ -353,7 +361,7 @@ public final class DeploymentStandardWorkflow {
         var preparedDatabase = prepared.value().orElseThrow();
         if (plan.isPresent() && !stages.releaseKnown(task, plan.orElseThrow()))
             return unknownPreparation();
-        var reanalyzed = analyzer.analyzeComponent(material, discovered.relativeRoot(), logicalName, type,
+        var reanalyzed = analyzer.analyzeComponent(material, discovered.relativeRoot(), selection.applicationId(), type,
             preparedDatabase.schemaReview(), false, task);
         if (reanalyzed.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(reanalyzed);
@@ -420,15 +428,22 @@ public final class DeploymentStandardWorkflow {
             advice);
         if (collected.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(collected);
-        var prompts = collected.value().orElseThrow().stream()
-            .map(prompt -> DeploymentStandardRuntimeDraft.apply(prompt, draft.sourceOptions().runtimeDraft())).toList();
+        String accessHost = context.servers().get(server, task).host();
+        var prompts = automaticOrigins(collected.value().orElseThrow(), selection, accessHost,
+            draft.sourceOptions().runtimeDraft()).stream()
+            .map(prompt -> DeploymentStandardRuntimeDraft.apply(prompt, draft.sourceOptions().runtimeDraft()))
+            .map(prompt -> accessDefault(prompt, accessHost)).toList();
         var reviewed = advice.review(server, material.snapshot().sha256(), List.copyOf(prompts), reviewer,
             task);
         if (reviewed.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(reviewed);
-        var supplied = reviewed.value().orElseThrow();
+        var supplied = reviewedOrigins(prompts, selection, reviewed.value().orElseThrow());
         if (!supplied.keySet().equals(selection.choices().keySet()))
             return rejected("DEPLOYMENT_STATIC_COMPONENT_REVIEW_INCOMPLETE");
+        supplied = new LinkedHashMap<>(supplied);
+        for (var component : discovered)
+            supplied.put(component.id(), gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStorageDeclarations
+                .apply(material, component, supplied.get(component.id())));
         for (var prompt : prompts)
             validateReview(prompt, supplied.get(prompt.componentId()));
         var stages = new DeploymentDatabaseStages(context);
@@ -831,12 +846,75 @@ public final class DeploymentStandardWorkflow {
         defaults.putIfAbsent("secrets", "");
         defaults.putIfAbsent("databaseMode", "NONE");
         defaults.putIfAbsent("databaseDetails", "");
-        var fields = new ArrayList<DeploymentReviewField>(runtime.corrections(component, defaults).stream()
+        defaults.put("buildTool", facts.buildTool().name());
+        defaults.put("requiresAdapterRisk", Boolean.toString(facts.support().level()
+            == gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentSupportLevel.EXPERIMENTAL_ADAPTER
+            || !defaults.getOrDefault("application.companions", "").isBlank()));
+        var fieldsById = new LinkedHashMap<String, DeploymentReviewField>();
+        for (var field : runtime.missing(component, facts.projectType(), defaults)) fieldsById.put(field.id(), field);
+        for (var field : runtime.corrections(component, defaults)) fieldsById.putIfAbsent(field.id(), field);
+        var order = List.of("applicationDeclaration", "executionMode", "exposure", "port", "primary", "secondary",
+            "version", "jvmTarget", "ports", "healthMode", "healthEndpoint", "expectedStatus", "timeout", "stability",
+            "accessUrl", "configuration", "secrets", "databaseMode", "databaseDetails", "containerEngine",
+            "volumes", "jvmArguments", "arguments");
+        var fields = fieldsById.values().stream()
             .filter(field -> !sourceDatabase
                 || !Set.of(component + "/databaseMode", component + "/databaseDetails").contains(field.id()))
-            .toList());
-        fields.addAll(runtime.missing(component, facts.projectType(), defaults));
+            .filter(field -> facts.projectType() == gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind.DOCKERFILE_CONTAINER
+                || !field.id().equals(component + "/containerEngine"))
+            .sorted(java.util.Comparator.comparingInt(field -> order.indexOf(field.id().substring(component.length() + 1))))
+            .toList();
         return new Prompt(component, facts.applicationId(), facts.projectType(), defaults, fields);
+    }
+
+    private List<Prompt> automaticOrigins(List<Prompt> prompts, Selection selection, String host, Map<String, String> advanced) {
+        var front = prompts.stream().filter(prompt -> selection.healthComponent().filter(prompt.componentId()::equals).isPresent())
+            .map(prompt -> DeploymentStandardRuntimeDraft.apply(prompt, advanced))
+            .filter(prompt -> prompt.defaults().containsKey("port")).findFirst();
+        return prompts.stream().map(prompt -> {
+            var values = new LinkedHashMap<>(prompt.defaults());
+            boolean needsOrigin = "true".equals(values.get("automatic.webOrigin"));
+            if (needsOrigin && front.isPresent()) {
+                String origin = "http://" + (host.contains(":") ? "[" + host + "]" : host) + ":" + front.orElseThrow().defaults().get("port");
+                String existing = values.getOrDefault("configuration", "");
+                values.put("configuration", (existing.isBlank() ? "" : existing + "\n") + "WEB_ORIGIN=" + origin);
+            }
+            return new Prompt(prompt.componentId(), prompt.applicationId(), prompt.projectType(), values, prompt.fields());
+        }).toList();
+    }
+
+    private Prompt accessDefault(Prompt prompt, String host) {
+        var values = new LinkedHashMap<>(prompt.defaults());
+        try {
+            runtime.access(values, host).ifPresent(url -> values.put("accessUrl", url.url().toString()));
+        } catch (IllegalArgumentException incomplete) {
+            return prompt;
+        }
+        return new Prompt(prompt.componentId(), prompt.applicationId(), prompt.projectType(), values, prompt.fields());
+    }
+
+    private Map<String, Answers> reviewedOrigins(List<Prompt> prompts, Selection selection, Map<String, Answers> answers) {
+        var front = selection.healthComponent().flatMap(id -> Optional.ofNullable(answers.get(id)));
+        if (front.isEmpty() || front.orElseThrow().values().getOrDefault("accessUrl", "").isBlank()) return answers;
+        var access = java.net.URI.create(front.orElseThrow().values().get("accessUrl"));
+        String origin = access.getScheme() + "://" + access.getRawAuthority();
+        var result = new LinkedHashMap<>(answers);
+        for (var prompt : prompts) {
+            if (!"true".equals(prompt.defaults().get("automatic.webOrigin"))) continue;
+            var before = DeploymentConfigInput.parse(prompt.defaults().getOrDefault("configuration", "")).stream()
+                .filter(entry -> entry.key().equals("WEB_ORIGIN")).findFirst();
+            if (before.isEmpty()) continue;
+            var answer = answers.get(prompt.componentId());
+            var entries = DeploymentConfigInput.parse(answer.values().getOrDefault("configuration", ""));
+            String configuration = entries.stream().map(entry -> entry.scope().name() + ":" + entry.key() + "="
+                + (entry.key().equals("WEB_ORIGIN") && entry.value().equals(before.orElseThrow().value())
+                    ? origin : entry.value().canonicalValue())).collect(java.util.stream.Collectors.joining("\n"));
+            var values = new LinkedHashMap<>(answer.values());
+            values.put("configuration", configuration);
+            result.put(prompt.componentId(), new Answers(values, answer.files(), answer.limits(), answer.containerRisk(),
+                answer.adapterRisk(), answer.workspaceRequest(), answer.workspaceSelection()));
+        }
+        return Map.copyOf(result);
     }
 
     /** Binds an explicit decision to the actual manifest, tar bytes and server. / 将明确决定绑定真实清单、tar字节及服务器。

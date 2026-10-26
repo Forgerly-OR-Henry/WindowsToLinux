@@ -35,6 +35,7 @@ public final class DeploymentHandoffChannel {
         "rollback-retained", "finish-retained", "retained-status", "handoff-database-export",
         "handoff-database-status", "handoff-database-discard", "managed-current-status", "managed-target-status",
         "handoff-restore-create", "handoff-restore-file", "handoff-restore-step", "handoff-restore-step-status",
+        "runtime-settings-preview", "runtime-settings-derive", "runtime-settings-status",
         "handoff-restore-discard", "handoff-restore-discard-status", "handoff-restore-cleanup",
         "handoff-restore-cleanup-status", "handoff-restore-preflight");
 

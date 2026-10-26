@@ -28,6 +28,7 @@ import gold.debug.windowstolinux.mod.deployment.db.project.DeploymentProjectReco
 import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishProposal;
 import gold.debug.windowstolinux.mod.deployment.db.reference.DeploymentRefIntent;
 import gold.debug.windowstolinux.mod.deployment.db.reference.DeploymentRefKey;
+import gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics;
 
 /** Submits a real publication task and reconciles its original references without replaying effects. / 提交真实发布任务，并在不重放副作用的条件下核对原引用。 */
 public final class DeploymentRefFlow implements TaskRecovery {
@@ -113,7 +114,8 @@ public final class DeploymentRefFlow implements TaskRecovery {
         Objects.requireNonNull(plan);
         Objects.requireNonNull(author);
         return context.tasks().submit(
-            new TaskRequest(TASK_TYPE, "Deployment publication", List.of(plan.server().id()), true),
+            new TaskRequest(TASK_TYPE, DeploymentDiagnostics.text(context, "publication.taskTitle"),
+                List.of(plan.server().id()), true),
             task -> execute(plan, author, task));
     }
 
@@ -126,19 +128,25 @@ public final class DeploymentRefFlow implements TaskRecovery {
         throws ApiException {
         Objects.requireNonNull(server);
         Objects.requireNonNull(preparation);
-        return context.tasks().submit(new TaskRequest(TASK_TYPE, "Deployment publication", List.of(server.id()), true),
+        return context.tasks().submit(new TaskRequest(TASK_TYPE,
+            DeploymentDiagnostics.text(context, "publication.taskTitle"), List.of(server.id()), true),
             task -> {
                 try (var boundary = taskBoundary.isPresent() ? taskBoundary.orElseThrow().begin(task) : null) {
                     OperationResult<PreparedPublish> prepared;
                     try {
                         prepared = Objects.requireNonNull(preparation.run(task));
                     } catch (Exception | LinkageError | AssertionError uncertain) {
+                        preparationDiagnostic(task, "preparation", unknown(), uncertain);
                         return unknown();
                     }
-                    if (prepared.outcome() != TaskResult.SUCCEEDED)
+                    if (prepared.outcome() != TaskResult.SUCCEEDED) {
+                        preparationDiagnostic(task, "preparation", prepared, null);
                         return new OperationResult<>(prepared.outcome(), Optional.empty(), prepared.problem());
-                    if (prepared.value().isEmpty())
+                    }
+                    if (prepared.value().isEmpty()) {
+                        preparationDiagnostic(task, "prepared-value-missing", unknown(), null);
                         return unknown();
+                    }
                     var ready = prepared.value().orElseThrow();
                     var closed = new java.util.concurrent.atomic.AtomicBoolean();
                     try {
@@ -169,6 +177,38 @@ public final class DeploymentRefFlow implements TaskRecovery {
                     }
                 }
             });
+    }
+
+    /** Writes original preparation failure facts before later reconciliation replaces the platform summary. */
+    private void preparationDiagnostic(TaskContext task, String stage, OperationResult<?> result, Throwable failure) {
+        try {
+            var facts = new LinkedHashMap<String, String>();
+            facts.put("stage", stage);
+            facts.put("observedOutcome", result.outcome().name());
+            Optional<Problem> source = failure instanceof ApiException api ? Optional.of(api.problem()) : result.problem();
+            source.ifPresent(problem -> {
+                facts.put("problemCode", problem.code().name());
+                if (problem.eventCode().matches("[A-Z][A-Z0-9_]{0,119}")) facts.put("problemEvent", problem.eventCode());
+                facts.putAll(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildCommandChannel.safeFailureFacts(problem));
+                problem.diagnosticId().ifPresent(id -> facts.put("diagnosticId", id.toString()));
+            });
+            if (failure != null) {
+                String type = failure.getClass().getName();
+                if (type.matches("[A-Za-z_$][A-Za-z0-9_.$]{0,199}")) facts.put("exceptionType", type);
+            }
+            var target = context.logs().register(new gold.debug.windowstolinux.appapi.task.log.LogCategory(
+                "deployment", "Deployment", Optional.of("deployment_log")));
+            context.logs().write(target, new gold.debug.windowstolinux.appapi.task.log.LogEvent(
+                result.outcome() == TaskResult.CANCELLED ? gold.debug.windowstolinux.appapi.task.log.LogLevel.INFO
+                    : gold.debug.windowstolinux.appapi.task.log.LogLevel.ERROR,
+                failure == null ? "DEPLOYMENT_PREPARATION_RESULT" : "DEPLOYMENT_PREPARATION_EXCEPTION",
+                "Original publication preparation did not complete successfully",
+                Optional.of(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(facts)),
+                Optional.of(task.id()), Optional.of(task.id()),
+                result.outcome() == TaskResult.UNKNOWN ? Optional.empty() : Optional.of(result.outcome())));
+        } catch (ApiException | java.io.IOException | RuntimeException | LinkageError | AssertionError unavailable) {
+            // Diagnostic storage cannot replace the original preparation outcome or authorize any replay.
+        }
     }
 
     /** Reconciles exact original evidence only; unknown external work is never run again. / 仅核对精确原证据；未知外部工作绝不重跑。
@@ -220,12 +260,28 @@ public final class DeploymentRefFlow implements TaskRecovery {
      * @return observed result / 观测结果 */
     private OperationResult<Void> execute(DeploymentPublishPlan plan, TaskWork<DeploymentPublishResult> author,
                                           TaskContext task) {
+        return executeWithinTask(plan, author, task, Optional.empty(), original -> new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty()));
+    }
+
+    /** Shares publication accounting with a currently admitted management task; never re-admits a retained task. */
+    public OperationResult<Void> executeWithinTask(DeploymentPublishPlan plan, TaskWork<DeploymentPublishResult> author,
+                                                 TaskContext task, Optional<String> expectedCurrent,
+                                                 TaskWork<Void> afterCommit) {
+        try {
+            var actual = context.tasks().inspect(task);
+            if (!actual.id().equals(task.id()) || !actual.ownerId().equals(context.identity().id())
+                || !actual.ownerVersion().equals(context.identity().version()) || actual.state().name().equals("ENDED"))
+                return unknown();
+            context.servers().get(plan.server(), task);
+        } catch (ApiException rejected) {
+            return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(rejected.problem()));
+        }
         var identity = new DeploymentExecutionIdentity(plan.executionId(), task.id(),
             plan.project().map(DeploymentProjectRecord::id), plan.applicationId(), plan.server(), plan.mode(),
             plan.reviewedRevision());
         try {
             gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationUpgrade.prepare(context, task, false);
-            executions.begin(task, identity, TASK_TYPE, plan.references(), plan.project(), plan.createdAt());
+            executions.begin(task, identity, context.tasks().inspect(task).type(), plan.references(), plan.project(), plan.createdAt());
             for (var intent : plan.references())
                 reserveOriginal(task, identity, intent);
             executions.startEffects(task, identity.executionId(), Instant.now());
@@ -242,7 +298,10 @@ public final class DeploymentRefFlow implements TaskRecovery {
                 var publication = result.value().orElseThrow();
                 requirePublication(plan, publication, task);
                 executions.commitApplication(task, identity.executionId(), publication.graph(), publication.units(),
-                    Instant.now());
+                    Instant.now(), expectedCurrent);
+                var finished = afterCommit.run(task);
+                if (finished.outcome() != TaskResult.SUCCEEDED)
+                    return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), finished.problem());
             } else {
                 if (result.outcome() == TaskResult.UNKNOWN) {
                     var uncertainty = result.problem()
@@ -269,6 +328,12 @@ public final class DeploymentRefFlow implements TaskRecovery {
             recordUnknown(task, identity.executionId());
             return unknown();
         }
+    }
+
+    /** Settles only an already persisted execution after its original remote reconciliation. */
+    public OperationResult<Void> settleWithinTask(TaskContext task) throws SQLException, ApiException {
+        context.tasks().inspect(task);
+        return reconcileRecord(task, executions.findForTask(task).orElseThrow());
     }
 
     /** Finds an original reservation first; only new normal execution may reserve. / 先查原预留；仅新的正常执行可以预留。

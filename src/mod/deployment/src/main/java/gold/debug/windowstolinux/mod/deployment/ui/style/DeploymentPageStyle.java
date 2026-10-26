@@ -236,7 +236,7 @@ public final class DeploymentPageStyle {
             if (Boolean.TRUE.equals(area.getClientProperty("deployment.style.log")))
                 area.setFont(UIManager.getFont("Label.font").deriveFont((float) scale(12)));
         }
-        if (root instanceof JButton button) {
+        if (root instanceof JButton button && !(button instanceof javax.swing.plaf.basic.BasicArrowButton)) {
             button.putClientProperty("JButton.buttonType", null);
             button.setMargin(new Insets(8, 14, 8, 14));
             if (Boolean.TRUE.equals(button.getClientProperty("deployment.style.primary"))) {

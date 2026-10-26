@@ -60,7 +60,7 @@ public class DeploymentStandardGraphPublishRunner {
     private final DeploymentRefFlow references;
 
     /** Original candidate implementation with independently prepared uploads. / 可独立准备上传的原候选实现。 */
-    protected final DeploymentStandardCandidateRunner candidates = new DeploymentStandardCandidateRunner();
+    protected final DeploymentStandardCandidateRunner candidates;
 
     /** Binds the original publication capabilities without owning source or session. / 绑定原发布能力且不拥有来源或会话。
      * @param context actual Mod activation / 实际Mod启用
@@ -68,6 +68,16 @@ public class DeploymentStandardGraphPublishRunner {
     public DeploymentStandardGraphPublishRunner(ModContext context, DeploymentRefFlow references) {
         this.context = Objects.requireNonNull(context);
         this.references = Objects.requireNonNull(references);
+        candidates = new DeploymentStandardCandidateRunner(
+            new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentPreparationObserver() {
+                @Override
+                public void buildStarted(String applicationId, TaskContext original) throws ApiException {
+                    gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(
+                        context, original,
+                        gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(
+                            context, "stage.executeCandidateBuild", applicationId));
+                }
+            });
     }
 
     /** Submits one whole-graph publication whose reviewed source preparation runs within this same task. / 提交一项来源准备也在同一任务内运行的整图发布。
@@ -321,6 +331,8 @@ public class DeploymentStandardGraphPublishRunner {
                 long required = 0;
                 long available = Long.MAX_VALUE;
                 for (var id : ordering.startOrder()) {
+                    gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
+                        gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.prepareComponent", id));
                     var observed = candidates.prepare(plans.get(id), session, context.interaction(), task,
                         true);
                     if (observed.outcome() != TaskResult.SUCCEEDED)
@@ -338,6 +350,7 @@ public class DeploymentStandardGraphPublishRunner {
                     }
                     available = Math.min(available, selection.availableBytes());
                     prepared.put(id, selection);
+                    references.checkpoint(task);
                 }
                 if (Math.addExact(required, plans.values().stream().mapToLong(value -> value.request().limits().hostReserveBytes()).max().orElseThrow()) > available)
                     return beforeCandidateFailure(ordering, plans, units, session, task, root, journals,
@@ -351,6 +364,7 @@ public class DeploymentStandardGraphPublishRunner {
                     journals);
                 if (built.outcome() != TaskResult.SUCCEEDED)
                     return new OperationResult<>(built.outcome(), Optional.empty(), built.problem());
+                references.checkpoint(task);
                 return new DeploymentStandardGraphPublishTransaction(context).publish(ordering, plans,
                     units, credentials, built.value().orElseThrow(), healthComponent, health, session, task, root, journals);
             } finally {
@@ -408,6 +422,8 @@ public class DeploymentStandardGraphPublishRunner {
                 if (cancelled(task))
                     return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                         Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GRAPH_CANDIDATE_CANCELLED")));
+                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
+                    gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.buildComponent", id));
                 var observed = candidates.build(prepared.get(id), session, task);
                 if (observed.outcome() != TaskResult.SUCCEEDED) {
                     if (observed.outcome() == TaskResult.UNKNOWN || observed.outcome() == TaskResult.CANCELLED)
@@ -418,6 +434,7 @@ public class DeploymentStandardGraphPublishRunner {
                     return new OperationResult<>(failure.outcome(), Optional.empty(), failure.problem());
                 }
                 builds.put(id, observed.value().orElseThrow());
+                references.checkpoint(task);
             }
         if (!root.mark("ALL_BUILT"))
             return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),

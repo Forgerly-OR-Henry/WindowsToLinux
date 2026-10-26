@@ -329,6 +329,32 @@ public final class DeploymentApplicationsService implements TaskRecovery {
                 snapshot.revisionSha256(), name, task));
     }
 
+    public TaskHandle<DeploymentRuntimeSettings.Form> runtimeSettings(DeploymentApplicationSnapshot selected) throws ApiException {
+        requireDefaultManagement();
+        return query(List.of(selected.application().server().id()), "Runtime settings", task -> {
+            try { return success(new DeploymentRuntimeRevisionFlow(context).form(selected, task)); }
+            catch (IllegalArgumentException unsupported) { return failed("DEPLOYMENT_NATIVE_RUNTIME_SETTINGS_REQUIRED"); }
+        });
+    }
+
+    /** The review task may update the pinned helper through the existing tracked installer. */
+    public TaskHandle<DeploymentRuntimeSettings.Review> reviewRuntimeSettings(DeploymentRuntimeSettings.Form form,
+        DeploymentRuntimeSettings.Values edited) throws ApiException {
+        requireDefaultManagement();
+        return action(form.selected().application().server(), "Review runtime settings", task -> {
+            try { return new DeploymentRuntimeRevisionFlow(context).review(form, edited, task); }
+            catch (IllegalArgumentException invalid) { return failed("DEPLOYMENT_RUNTIME_SETTINGS_INVALID"); }
+        });
+    }
+
+    public TaskHandle<String> applyRuntimeSettings(DeploymentRuntimeSettings.Review review) throws ApiException {
+        requireDefaultManagement();
+        return action(review.form().selected().application().server(), "Apply runtime settings", task -> {
+            try { return new DeploymentRuntimeRevisionFlow(context).apply(review, task); }
+            catch (IllegalArgumentException changed) { return failed("DEPLOYMENT_RUNTIME_SETTINGS_REVIEW_CHANGED"); }
+        });
+    }
+
     /** Returns retained page tasks so unknown work remains visible after reopening. / 返回留存页面任务，使未知工作在重开后仍可见。
      * @return bounded original snapshots / 有界原快照
      * @throws ApiException if task query fails / 任务查询失败时 */
@@ -357,6 +383,16 @@ public final class DeploymentApplicationsService implements TaskRecovery {
                 return unknown("DEPLOYMENT_APPLICATION_QUERY_RESOURCES");
             return failed("DEPLOYMENT_APPLICATION_QUERY_INTERRUPTED");
         }
+        var bootstrap = gold.debug.windowstolinux.mod.deployment.service.core.setup.DeploymentProtocolBootstrapActionLog.find(context.tasks(), task);
+        if (bootstrap.isPresent()) {
+            var facts = bootstrap.orElseThrow().facts();
+            try (var session = context.linux().connect(new ServerId(facts.serverId()), task)) {
+                var observed = new gold.debug.windowstolinux.mod.deployment.service.core.setup.DeploymentProtocolBootstrap(context.tasks(), task,
+                    new ServerId(facts.serverId()), session, context.interaction(), facts.layout()).reconcile(bootstrap.orElseThrow());
+                if (observed.outcome() != TaskResult.SUCCEEDED)
+                    return new OperationResult<>(observed.outcome(), Optional.empty(), observed.problem());
+            }
+        }
         var stored = new DeploymentManagementActionLog(context).find(task);
         if (stored.isEmpty()) {
             if (!context.tasks().resourcesReleased(task))
@@ -364,6 +400,14 @@ public final class DeploymentApplicationsService implements TaskRecovery {
             return failed("DEPLOYMENT_MANAGEMENT_NOT_STARTED");
         }
         var entry = stored.orElseThrow();
+        if (entry.action().equals("HISTORY_SWITCH") && entry.facts().path("runtimeSettingsKind").asText().equals("REVIEW")) {
+            if (!context.tasks().resourcesReleased(task)) return unknown("DEPLOYMENT_SETTINGS_REVIEW_RESOURCES");
+            return failed("DEPLOYMENT_SETTINGS_REVIEW_INTERRUPTED");
+        }
+        if (entry.action().equals("HISTORY_SWITCH") && entry.facts().path("runtimeSettingsKind").asText().equals("APPLY")) {
+            try { return new DeploymentRuntimeRevisionFlow(context).reconcile(entry, task); }
+            catch (Exception unconfirmed) { return unknown("DEPLOYMENT_RUNTIME_SETTINGS_RECOVERY_UNCONFIRMED"); }
+        }
         if (entry.facts().has(DeploymentLifecycleCleanupLog.FIELD))
             return cleanupOriginalLifecycle(entry, task);
         if (entry.phase().equals("REVIEWED")) {

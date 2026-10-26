@@ -18,15 +18,15 @@ public final class DeploymentConfigInput {
     }
 
     /**
-     * Parses semicolon-separated entries, defaulting unprefixed keys to runtime scope. / 解析分号分隔项，并将无前缀键默认为运行范围。
+     * Parses line- or semicolon-separated entries, defaulting unprefixed keys to runtime scope. / 解析换行或分号分隔项，并将无前缀键默认为运行范围。
      *
      * @param input source content consumed by this operation / 当前操作消费的源内容
-     * @return semicolon-separated entries, defaulting unprefixed keys to runtime scope / 分号分隔项，并将无前缀键默认为运行范围
+     * @return ordered configuration entries / 有序配置项
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public static List<DeploymentConfigEntry> parse(String input) {
         List<DeploymentConfigEntry> entries = new ArrayList<>();
-        for (String item : input.split(";")) {
+        for (String item : input.split("[;\\r\\n]+")) {
             String value = item.trim();
             if (value.isBlank()) {
                 continue;

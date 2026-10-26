@@ -25,7 +25,6 @@ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.task.run.TaskWork;
-import gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind;
 import gold.debug.windowstolinux.mod.files.file.model.FilesClipboard;
 import gold.debug.windowstolinux.mod.files.file.model.FilesDirectory;
 import gold.debug.windowstolinux.mod.files.file.model.FilesObservation;
@@ -178,10 +177,11 @@ public final class FilesService {
         return context.logs().read(log, Optional.of(Objects.requireNonNull(originalTaskId)), 100);
     }
 
-    /** Opens existing platform task review on the EDT without replaying effects. / 在EDT打开既有平台任务审阅，不重放副作用。
+    /** Opens this exact release's task view on the EDT without replaying effects. / 在EDT打开本精确版本的任务视图，不重放副作用。
      * @throws ApiException if the owner is locked or unavailable / 所属者锁定或不可用时 */
     public void openTasks() throws ApiException {
-        context.ui().openPlatform(PlatformPageKind.TASKS);
+        context.ui().open("workspace", new gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<>(
+            "tasks", UUID.class, Optional.empty()));
     }
 
     /** Optional activation-owned presentation clock. / 可选的启用所属展示时钟。

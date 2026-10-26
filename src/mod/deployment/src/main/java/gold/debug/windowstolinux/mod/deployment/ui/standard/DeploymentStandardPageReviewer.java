@@ -16,6 +16,8 @@ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentBuildLimits;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.database.DeploymentDatabaseConnection;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.database.DatabaseRequirement;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.database.DeploymentNativeDatabaseFacts.Candidate;
@@ -44,6 +46,12 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
     /** Original view generation. / 原视图代次。 */
     private final long view;
 
+    private Map<String, Set<SourceLanguageType>> componentLanguages = Map.of();
+
+    private Map<String, String> componentPaths = Map.of();
+
+    private Map<String, DeploymentProjectKind> componentTypes = Map.of();
+
     /** Binds one original view, not the publication task lifetime. / 绑定原视图，而非发布任务寿命。
      * @param page original page / 原页面
      * @param view captured generation / 已捕获代次 */
@@ -66,31 +74,13 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
     public OperationResult<Map<String, String>> databaseInputs(ServerId server, String componentId,
                                                                String sourceSha256, java.nio.file.Path root, String applicationId,
                                                                DatabaseProjectChecker.Report assessment, TaskContext task) throws Exception {
-        Map<String, String> supplied = Map.of();
-        var form = page.onEdt(() -> new DatabaseInputForm(page, componentId, sourceSha256, assessment,
-            DeploymentDatabaseSourceInputs.questions(assessment, applicationId, Map.of())));
-        while (page.active(view)) {
-            if (!page.approve(view, form.panel, page.text("databaseSourceReview"), task))
-                return cancelled();
-            var edited = page.onEdt(form::answers);
-            var merged = new LinkedHashMap<>(supplied);
-            merged.putAll(edited);
-            supplied = Map.copyOf(merged);
-            try {
-                DeploymentDatabaseSourceInputs.complete(root, applicationId, assessment, supplied);
-                return success(supplied);
-            } catch (IllegalArgumentException | java.io.IOException invalid) {
-                var answers = supplied;
-                form = page.onEdt(() -> new DatabaseInputForm(page, componentId, sourceSha256, assessment,
-                    DeploymentDatabaseSourceInputs.questions(assessment, applicationId, answers, true)));
-                var current = form;
-                page.onEdt(() -> {
-                    current.error.setText(page.text("invalidForm"));
-                    return null;
-                });
-            }
-        }
-        return cancelled();
+        if (!page.active(view)) return cancelled();
+        var supplied = new LinkedHashMap<String, String>();
+        DeploymentDatabaseSourceInputs.questions(assessment, applicationId, Map.of()).forEach(field -> {
+            if (!field.value().isBlank()) supplied.put(field.id(), field.value());
+        });
+        DeploymentDatabaseSourceInputs.complete(root, applicationId, assessment, supplied);
+        return success(Map.copyOf(supplied));
     }
 
     /** Shows every first-initialization source file before creating a planned review. / 生成计划批准前展示每份首次初始化源码文件。
@@ -404,6 +394,35 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
         return cancelled();
     }
 
+    @Override
+    public OperationResult<DeploymentStandardInputs.Selection> select(ServerId server, String sourceSha256,
+                                                                      List<DiscoveredProjectPart> discovered,
+                                                                      DeploymentStandardInputs.Selection automatic,
+                                                                      Map<String, Set<SourceLanguageType>> languages, TaskContext task) {
+        componentLanguages = Map.copyOf(languages);
+        var paths = new LinkedHashMap<String, String>();
+        var types = new LinkedHashMap<String, DeploymentProjectKind>();
+        discovered.forEach(part -> {
+            paths.put(part.id(), part.relativeRoot().toString().isBlank() ? "." : part.relativeRoot().toString());
+            types.put(part.id(), automatic.choices().get(part.id()).type());
+        });
+        componentPaths = Map.copyOf(paths);
+        componentTypes = Map.copyOf(types);
+        var panel = page.onEdt(() -> {
+            var rows = DeploymentDialogs.form();
+            rows.add(DeploymentDialogs.fact(() -> page.text("automatic.summary")));
+            var overview = languageOverview(page::text, languages);
+            overview.put(page.text("automatic.applicationId"), automatic.applicationId());
+            overview.put(page.text("automatic.partCount"), Integer.toString(discovered.size()));
+            automatic.healthComponent().ifPresent(id -> overview.put(page.text("automatic.entryPart"), id));
+            rows.add(DeploymentDialogs.facts(overview));
+            discovered.forEach(part -> rows.add(DeploymentDialogs.facts(componentFacts(page::text, part.id(),
+                types.get(part.id()), paths.get(part.id()), languages.getOrDefault(part.id(), Set.of())))));
+            return rows;
+        });
+        return page.approve(view, panel, page.text("componentReview"), task) ? success(automatic) : cancelled();
+    }
+
     /** Collects editable runtime and resource values for the source-bound prompts. / 为来源绑定问题收集可编辑运行与资源值。
      * @param server exact target / 精确目标
      * @param sourceSha256 source digest / 来源摘要
@@ -413,31 +432,266 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
     @Override
     public OperationResult<Map<String, DeploymentStandardInputs.Answers>> review(ServerId server, String sourceSha256,
                                                                                  List<DeploymentStandardInputs.Prompt> prompts, TaskContext task) {
-        var form = page.onEdt(() -> new ReviewForm(page, sourceSha256, prompts));
-        while (page.active(view)) {
-            if (!page.approve(view, form.panel, page.text("runtimeReview"), task))
-                return cancelled();
+        if (!page.active(view)) return cancelled();
+        var riskPrompts = prompts.stream().filter(prompt -> (requiresAdapterRisk(prompt)
+            && !Boolean.parseBoolean(prompt.defaults().getOrDefault("adapterRisk", "false")))
+            || (requiresContainerRisk(prompt) && !Boolean.parseBoolean(prompt.defaults().getOrDefault("containerRisk", "false")))).toList();
+        if (!riskPrompts.isEmpty()) {
+            var panel = page.onEdt(() -> {
+                var rows = DeploymentDialogs.form();
+                rows.add(DeploymentDialogs.fact(() -> page.text("automatic.riskNotice")));
+                for (var prompt : riskPrompts) {
+                    if (requiresAdapterRisk(prompt)) rows.add(DeploymentDialogs.fact(() -> prompt.componentId() + ": " + page.text("automatic.adapterWarning")));
+                    if (requiresContainerRisk(prompt)) rows.add(DeploymentDialogs.fact(() -> prompt.componentId() + ": " + page.text("automatic.containerWarning")));
+                }
+                return rows;
+            });
+            if (!page.approve(view, panel, page.text("automatic.riskReview"), task)) return cancelled();
+        }
+        var answers = new LinkedHashMap<String, DeploymentStandardInputs.Answers>();
+        for (var prompt : prompts) {
             try {
-                var answers = page.onEdt(form::answers);
-                for (var prompt : prompts)
-                    try {
-                        page.validateReview(prompt, answers.get(prompt.componentId()));
-                    } catch (IllegalArgumentException invalid) {
-                        page.onEdt(() -> {
-                            form.problem(prompt.componentId(), invalid);
-                            return null;
-                        });
-                        throw invalid;
-                    }
-                return success(answers);
+                var answer = automaticAnswer(prompt);
+                page.validateReview(prompt, answer);
+                answers.put(prompt.componentId(), answer);
+            } catch (IllegalArgumentException invalid) {
+                var missing = new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentStandardRuntimeResolver()
+                    .missing(prompt.componentId(), prompt.projectType(), prompt.defaults());
+                var panel = page.onEdt(() -> {
+                    var rows = DeploymentDialogs.form();
+                    rows.add(DeploymentDialogs.fact(() -> page.text("automatic.incomplete")));
+                    rows.add(DeploymentDialogs.fact(() -> prompt.componentId() + " / " + (missing.isEmpty()
+                        ? invalid.getMessage() : missing.stream().map(field -> page.text(field.titleKey()))
+                            .collect(java.util.stream.Collectors.joining(", ")))));
+                    return rows;
+                });
+                if (!page.approve(view, panel, page.text("runtimeReview"), task)) return cancelled();
+                return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(
+                    new Problem(ProblemCode.INVALID_INPUT,
+                        "DEPLOYMENT_AUTOMATIC_INPUT_INCOMPLETE", page.text("automatic.incomplete"), Map.of(), Optional.empty())));
+            }
+        }
+        var form = page.onEdt(() -> new AutomaticRuntimeForm(page::text, prompts, answers));
+        while (page.active(view)) {
+            if (!page.approve(view, form.panel, page.text("runtimeReview"), task)) return cancelled();
+            try {
+                var edited = page.onEdt(form::answers);
+                for (var prompt : prompts) page.validateReview(prompt, edited.get(prompt.componentId()));
+                return success(edited);
             } catch (IllegalArgumentException invalid) {
                 page.onEdt(() -> {
-                    if (form.error.getText().isBlank()) form.error.setText(page.text("invalidForm"));
+                    form.error.setText(page.text("automatic.launchInvalid") + " " + invalid.getMessage());
                     return null;
                 });
             }
         }
         return cancelled();
+    }
+
+    private static final class AutomaticRuntimeForm {
+        private final JPanel panel = DeploymentDialogs.form();
+        private final JLabel error = new JLabel();
+        private final Map<String, LaunchFields> fields = new LinkedHashMap<>();
+        private final Map<String, DeploymentStandardInputs.Answers> original;
+
+        private AutomaticRuntimeForm(java.util.function.Function<String, String> texts,
+                                     List<DeploymentStandardInputs.Prompt> prompts,
+                                     Map<String, DeploymentStandardInputs.Answers> original) {
+            this.original = Map.copyOf(original);
+            panel.add(DeploymentDialogs.fact(() -> texts.apply("automatic.launchSummary")));
+            for (var prompt : prompts) {
+                var values = prompt.defaults();
+                var command = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.ApplicationSpec.resolve(values).command();
+                String beforeCommand = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentLaunchSettings.preview(prompt.projectType(), values);
+                var summary = new JPanel(new java.awt.BorderLayout());
+                summary.setName("deployment.launch." + prompt.componentId() + ".summary");
+                panel.add(summary);
+                var form = DeploymentDialogs.form();
+                var port = new JTextField(values.getOrDefault("port", ""));
+                var url = new JTextField(values.getOrDefault("accessUrl", ""));
+                var entry = new JTextField(command.entrypoint());
+                var args = new JTextField(gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentCommandText.format(command.arguments()));
+                port.setName("deployment.launch." + prompt.componentId() + ".port");
+                url.setName("deployment.launch." + prompt.componentId() + ".accessUrl");
+                entry.setName("deployment.launch." + prompt.componentId() + ".entrypoint");
+                args.setName("deployment.launch." + prompt.componentId() + ".arguments");
+                if (values.containsKey("port")) addField(form, texts.apply("port"), port);
+                if (values.containsKey("accessUrl")) addField(form, texts.apply("accessUrl"), url);
+                addField(form, texts.apply("commandEntrypoint"), entry);
+                addField(form, texts.apply("commandArguments"), args);
+                form.add(new JLabel(texts.apply("automatic.launchBeforeCommand")));
+                form.add(DeploymentDialogs.text(beforeCommand));
+                var afterCommand = DeploymentDialogs.text(beforeCommand);
+                keepPreviewCaretLocal(afterCommand);
+                afterCommand.setName("deployment.launch." + prompt.componentId() + ".preview");
+                form.add(new JLabel(texts.apply("automatic.launchAfterCommand")));
+                form.add(afterCommand);
+                form.add(DeploymentDialogs.fact(() -> texts.apply("automatic.launchHelp")));
+                form.setVisible(false);
+                var toggle = new JToggleButton(texts.apply("automatic.editLaunch"));
+                toggle.setName("deployment.launch." + prompt.componentId() + ".edit");
+                toggle.addActionListener(ignored -> {
+                    form.setVisible(toggle.isSelected());
+                    panel.revalidate();
+                });
+                panel.add(toggle);
+                panel.add(form);
+                var launch = new LaunchFields(prompt, port, url, entry, args);
+                fields.put(prompt.componentId(), launch);
+                bindPreview(texts, launch, summary, afterCommand);
+            }
+            panel.add(error);
+        }
+
+        private void bindPreview(java.util.function.Function<String, String> texts, LaunchFields launch,
+                                  JPanel summary, JTextArea afterCommand) {
+            class Preview implements javax.swing.event.DocumentListener {
+                private String automaticUrl = launch.url().getText().trim();
+                private boolean synchronizing;
+
+                private void changed(javax.swing.event.DocumentEvent event) {
+                    if (synchronizing) return;
+                    if (event.getDocument() == launch.port().getDocument()) syncUrl();
+                    error.setText("");
+                    render();
+                }
+
+                private void syncUrl() {
+                    if (automaticUrl.isBlank() || !launch.url().getText().trim().equals(automaticUrl)) return;
+                    try {
+                        int port = Integer.parseInt(launch.port().getText().trim());
+                        if (port < 1 || port > 65535) return;
+                        var previous = java.net.URI.create(automaticUrl);
+                        String next = new java.net.URI(previous.getScheme(), previous.getUserInfo(), previous.getHost(),
+                            port, previous.getPath(), previous.getQuery(), previous.getFragment()).toString();
+                        synchronizing = true;
+                        try {
+                            automaticUrl = next;
+                            if (!next.equals(launch.url().getText())) launch.url().setText(next);
+                        } finally { synchronizing = false; }
+                    } catch (IllegalArgumentException | java.net.URISyntaxException incomplete) {
+                        // Incomplete edits are shown by render; no previous plan is presented as the new preview.
+                    }
+                }
+
+                private void render() {
+                    var input = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+                    var viewport = (JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, panel);
+                    var position = viewport != null && (input == launch.port() || input == launch.url()
+                        || input == launch.entry() || input == launch.args()) ? viewport.getViewPosition() : null;
+                    var anchor = position == null ? null : SwingUtilities.convertPoint(input, 0, 0, viewport.getView());
+                    String preview;
+                    try {
+                        var edited = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentLaunchSettings.edit(
+                            launch.prompt(), launch.port().getText().trim(), launch.url().getText().trim(),
+                            launch.entry().getText().trim(), launch.args().getText());
+                        preview = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentLaunchSettings.preview(
+                            edited.projectType(), edited.defaults());
+                    } catch (IllegalArgumentException incomplete) {
+                        preview = texts.apply("automatic.launchPreviewInvalid");
+                    }
+                    if (!afterCommand.getText().equals(preview)) afterCommand.setText(preview);
+                    var facts = new LinkedHashMap<String, String>();
+                    facts.put(texts.apply("automatic.componentId"), launch.prompt().componentId());
+                    if (launch.prompt().defaults().containsKey("port")) facts.put(texts.apply("port"), launch.port().getText().trim());
+                    if (launch.prompt().defaults().containsKey("accessUrl")) facts.put(texts.apply("accessUrl"), launch.url().getText().trim());
+                    facts.put(texts.apply("automatic.launchCommand"), preview);
+                    var updatedSummary = DeploymentDialogs.facts(facts);
+                    keepPreviewCaretLocal(updatedSummary);
+                    summary.removeAll();
+                    summary.add(updatedSummary, java.awt.BorderLayout.CENTER);
+                    panel.revalidate();
+                    panel.repaint();
+                    if (anchor != null) SwingUtilities.invokeLater(() -> {
+                        if (!panel.isShowing() || !input.isFocusOwner()
+                            || !viewport.getViewPosition().equals(position)) return;
+                        var window = SwingUtilities.getWindowAncestor(panel);
+                        if (window != null) window.validate();
+                        int delta = SwingUtilities.convertPoint(input, 0, 0, viewport.getView()).y - anchor.y;
+                        int maximum = Math.max(0, viewport.getView().getHeight() - viewport.getExtentSize().height);
+                        if (delta != 0) viewport.setViewPosition(new java.awt.Point(position.x,
+                            Math.max(0, Math.min(maximum, position.y + delta))));
+                    });
+                }
+
+                @Override public void insertUpdate(javax.swing.event.DocumentEvent event) { changed(event); }
+                @Override public void removeUpdate(javax.swing.event.DocumentEvent event) { changed(event); }
+                @Override public void changedUpdate(javax.swing.event.DocumentEvent event) { changed(event); }
+            }
+            var preview = new Preview();
+            for (var control : List.of(launch.port(), launch.url(), launch.entry(), launch.args()))
+                control.getDocument().addDocumentListener(preview);
+            preview.render();
+        }
+
+        /** Lets only deliberately focused preview text reveal its caret. / 仅允许用户主动聚焦的预览文字显示其光标位置。 */
+        private static void keepPreviewCaretLocal(java.awt.Component component) {
+            if (component instanceof JTextArea text) {
+                var caret = new javax.swing.text.DefaultCaret() {
+                    @Override protected void adjustVisibility(java.awt.Rectangle location) {
+                        if (text.isFocusOwner()) super.adjustVisibility(location);
+                    }
+                };
+                caret.setBlinkRate(text.getCaret().getBlinkRate());
+                text.setCaret(caret);
+            } else if (component instanceof java.awt.Container container) {
+                for (var child : container.getComponents()) keepPreviewCaretLocal(child);
+            }
+        }
+
+        private static void addField(JPanel form, String label, JTextField field) {
+            var caption = new JLabel(label);
+            caption.setLabelFor(field);
+            form.add(caption);
+            form.add(field);
+        }
+
+        private Map<String, DeploymentStandardInputs.Answers> answers() {
+            var answers = new LinkedHashMap<String, DeploymentStandardInputs.Answers>();
+            fields.forEach((id, form) -> {
+                var prompt = form.prompt();
+                var values = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentLaunchSettings.edit(prompt,
+                    form.port().getText().trim(), form.url().getText().trim(), form.entry().getText().trim(), form.args().getText()).defaults();
+                var previous = original.get(id);
+                answers.put(id, new DeploymentStandardInputs.Answers(values, previous.files(), previous.limits(),
+                    previous.containerRisk(), previous.adapterRisk(), previous.workspaceRequest(), previous.workspaceSelection()));
+            });
+            return Map.copyOf(answers);
+        }
+
+        private record LaunchFields(DeploymentStandardInputs.Prompt prompt, JTextField port, JTextField url,
+                                    JTextField entry, JTextField args) {
+        }
+    }
+
+    private DeploymentStandardInputs.Answers automaticAnswer(DeploymentStandardInputs.Prompt prompt) {
+        var values = prompt.defaults();
+        var defaults = page.buildDefaults();
+        var limits = new DeploymentBuildLimits(Integer.parseInt(values.getOrDefault("timeoutSeconds", "" + defaults.timeoutSeconds())),
+            Integer.parseInt(values.getOrDefault("maxProcesses", "" + defaults.maxProcesses())),
+            Integer.parseInt(values.getOrDefault("memoryMiB", "" + defaults.maxMemoryMiB())),
+            Long.parseLong(values.getOrDefault("maxOutputBytes", "" + defaults.maxOutputBytes())),
+            Long.parseLong(values.getOrDefault("maxWorkspaceBytes", "" + defaults.maxWorkspaceBytes())), false, defaults.hostReserveBytes());
+        for (String key : List.of("containerRisk", "adapterRisk"))
+            if (values.containsKey(key) && !Set.of("true", "false").contains(values.get(key)))
+                throw new IllegalArgumentException("Invalid advanced boolean: " + key);
+        var workspace = values.containsKey("maxWorkspaceBytes")
+            ? gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Request.explicit(limits.maxWorkspaceBytes())
+            : gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Request.automatic(0, 0);
+        return new DeploymentStandardInputs.Answers(values, List.of(), limits,
+            requiresContainerRisk(prompt) || Boolean.parseBoolean(values.getOrDefault("containerRisk", "false")),
+            requiresAdapterRisk(prompt) || Boolean.parseBoolean(values.getOrDefault("adapterRisk", "false")),
+            workspace, Optional.empty());
+    }
+
+    private static boolean requiresAdapterRisk(DeploymentStandardInputs.Prompt prompt) {
+        return Boolean.parseBoolean(prompt.defaults().getOrDefault("requiresAdapterRisk", "false"))
+            || !prompt.defaults().getOrDefault("application.companions", "").isBlank();
+    }
+
+    private static boolean requiresContainerRisk(DeploymentStandardInputs.Prompt prompt) {
+        return prompt.projectType() == gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind.DOCKERFILE_CONTAINER
+            && prompt.defaults().getOrDefault("containerEngine", "PODMAN").equals("DOCKER");
     }
 
     /** Edits only four build fields while retaining the original resource decisions. / 仅编辑四个构建字段并保留原资源决定。
@@ -567,6 +821,7 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
                            DeploymentBuildLimits defaults, String sourceSha256, List<DeploymentStandardInputs.Prompt> prompts) {
             this.texts = texts;
             panel.putClientProperty("deployment.dialog.scrollManaged", true);
+            panel.putClientProperty("deployment.dialog.preferredHeight", 700);
             for (var prompt : prompts) {
                 var form = new PartForm(texts, choices, prompt, defaults);
                 tabs.addTab(prompt.componentId(), DeploymentDialogs.scroll(form.panel()));
@@ -620,25 +875,11 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
     public OperationResult<Boolean> confirm(ServerId server, String sourceSha256, Map<String, String> archiveSha256,
                                             Map<String, DeploymentStandardInputs.Answers> answers, Map<String, DeploymentPreparedDatabase> databases,
                                             Optional<DeploymentStandardInputs.GitReview> git, TaskContext task) {
-        var panel = page.onEdt(() -> confirmation(page, server, sourceSha256, archiveSha256, answers, databases, git));
+        var panel = page.onEdt(() -> confirmation(page::text, server, sourceSha256, archiveSha256, answers, databases, git,
+            componentLanguages, componentPaths, componentTypes));
         if (!page.approve(view, panel, page.text("finalConfirm"), task, true))
             return cancelled();
         return success(Boolean.TRUE);
-    }
-
-    /** Shows the exact reviewed values as separate rows, never a Java map dump. / 逐行显示精确审阅值，而非 Java 映射转储。
-     * @param page owner page / 所属页
-     * @param server exact target / 精确目标
-     * @param sourceSha256 source manifest digest / 来源清单摘要
-     * @param archiveSha256 actual tar digests / 实际 tar 摘要
-     * @param answers final edited values / 最终编辑值
-     * @param databases source-derived SQLite facts / 源码派生 SQLite 事实
-     * @param git original and pinned Git identity / 原及固定 Git 身份
-     * @return confirmation rows / 确认行 */
-    private static JPanel confirmation(DeploymentStandardPage page, ServerId server, String sourceSha256,
-                                       Map<String, String> archiveSha256, Map<String, DeploymentStandardInputs.Answers> answers,
-                                       Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStandardInputs.GitReview> git) {
-        return confirmation(page::text, server, sourceSha256, archiveSha256, answers, databases, git);
     }
 
     /** Renders complete facts using a live catalog and immutable reviewed values. / 用实时文案及不可变审阅值呈现完整事实。
@@ -652,7 +893,113 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
      * @return naturally sized complete confirmation / 自然尺寸的完整确认 */
     private static JPanel confirmation(java.util.function.Function<String, String> texts, ServerId server, String sourceSha256,
                                        Map<String, String> archiveSha256, Map<String, DeploymentStandardInputs.Answers> answers,
-                                       Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStandardInputs.GitReview> git) {
+                                       Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStandardInputs.GitReview> git,
+                                       Map<String, Set<SourceLanguageType>> languages, Map<String, String> paths,
+                                       Map<String, DeploymentProjectKind> types) {
+        var panel = DeploymentDialogs.form();
+        panel.add(DeploymentDialogs.fact(() -> texts.apply("automatic.ready")));
+        var overview = languageOverview(texts, languages);
+        overview.put(texts.apply("automatic.serverId"), server.id());
+        panel.add(DeploymentDialogs.facts(overview));
+        answers.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
+            var values = entry.getValue().values();
+            var facts = componentFacts(texts, entry.getKey(), types.get(entry.getKey()), paths.get(entry.getKey()),
+                languages.getOrDefault(entry.getKey(), Set.of()));
+            for (String key : List.of("executionMode", "version", "port", "accessUrl"))
+                if (!values.getOrDefault(key, "").isBlank())
+                    facts.put(texts.apply(key),
+                        (key.equals("executionMode") ? texts.apply(values.get(key).equals("ON_DEMAND")
+                        ? "automatic.mode.onDemand" : "automatic.mode.daemon") : values.get(key)));
+            var type = types.get(entry.getKey());
+            if (type != null) facts.put(texts.apply("automatic.launchCommand"),
+                gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentLaunchSettings.preview(type, values));
+            var database = databases.get(entry.getKey());
+            if (database != null && !database.bindings().isEmpty()) facts.put(texts.apply("automatic.databaseId"),
+                database.bindings().stream().map(binding -> binding.databaseId()).collect(java.util.stream.Collectors.joining(", ")));
+            if (!entry.getValue().files().isEmpty()) facts.put(texts.apply("files"), entry.getValue().files().stream()
+                .map(file -> storageSummary(file, texts)).collect(java.util.stream.Collectors.joining("\n")));
+            if (entry.getValue().adapterRisk())
+                facts.put(texts.apply("automatic.support"), texts.apply("automatic.experimentalAccepted"));
+            panel.add(DeploymentDialogs.facts(facts));
+        });
+        var technical = technicalConfirmation(texts, server, sourceSha256, archiveSha256, answers, databases, git);
+        technical.setVisible(false);
+        var toggle = new JToggleButton(texts.apply("automatic.details"));
+        toggle.setName("deployment.confirmation.details");
+        toggle.addActionListener(ignored -> {
+            technical.setVisible(toggle.isSelected());
+            panel.revalidate();
+        });
+        panel.add(toggle);
+        panel.add(technical);
+        return panel;
+    }
+
+    private static LinkedHashMap<String, String> languageOverview(java.util.function.Function<String, String> texts,
+                                                                 Map<String, Set<SourceLanguageType>> languages) {
+        var all = displayLanguages(languages.values().stream().flatMap(Set::stream).collect(java.util.stream.Collectors.toSet()));
+        var facts = new LinkedHashMap<String, String>();
+        if (!all.isEmpty()) {
+            facts.put(texts.apply("automatic.languageCount"), Integer.toString(all.size()));
+            facts.put(texts.apply("automatic.languages"), languageNames(all));
+        }
+        return facts;
+    }
+
+    private static LinkedHashMap<String, String> componentFacts(java.util.function.Function<String, String> texts,
+                                                                String id, DeploymentProjectKind type, String path,
+                                                                Set<SourceLanguageType> languages) {
+        var facts = new LinkedHashMap<String, String>();
+        facts.put(texts.apply("automatic.componentId"), id);
+        if (type != null) facts.put(texts.apply("automatic.componentType"), texts.apply("automatic.type." + type.name()));
+        if (path != null) facts.put(texts.apply("automatic.sourcePath"), path);
+        var displayed = displayLanguages(languages);
+        if (!displayed.isEmpty()) facts.put(texts.apply("automatic.languages"), languageNames(displayed));
+        return facts;
+    }
+
+    private static Set<SourceLanguageType> displayLanguages(Set<SourceLanguageType> languages) {
+        var programming = languages.stream().filter(language -> !Set.of(SourceLanguageType.UNKNOWN, SourceLanguageType.HTML,
+            SourceLanguageType.CONTAINERFILE, SourceLanguageType.SHELL).contains(language))
+            .collect(java.util.stream.Collectors.toCollection(() -> java.util.EnumSet.noneOf(SourceLanguageType.class)));
+        return programming.isEmpty() ? languages.stream().filter(language -> language != SourceLanguageType.UNKNOWN)
+            .collect(java.util.stream.Collectors.toSet()) : programming;
+    }
+
+    private static String languageNames(Set<SourceLanguageType> languages) {
+        return languages.stream().sorted().map(language -> switch (language) {
+            case JAVA -> "Java";
+            case JAVASCRIPT -> "JavaScript";
+            case TYPESCRIPT -> "TypeScript";
+            case PYTHON -> "Python";
+            case GO -> "Go";
+            case RUST -> "Rust";
+            case CSHARP -> "C#";
+            case KOTLIN -> "Kotlin";
+            case RUBY -> "Ruby";
+            case CPP -> "C++";
+            case SCALA -> "Scala";
+            case CLOJURE -> "Clojure";
+            case ELIXIR -> "Elixir";
+            case DART -> "Dart";
+            case LUA -> "Lua";
+            case PERL -> "Perl";
+            case SWIFT -> "Swift";
+            case SHELL -> "Shell";
+            case CONTAINERFILE -> "Dockerfile";
+            default -> language.name();
+        }).collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    private static String storageSummary(DeploymentFileBinding file, java.util.function.Function<String, String> texts) {
+        return file.bindingId() + " → " + file.dataPath().path() + " ("
+            + texts.apply(file.dataPath().access() == DeploymentStoragePath.AccessMode.READ_WRITE ? "fileReadWrite" : "fileReadOnly")
+            + ")" + (file.seedFile().isEmpty() ? "" : " · " + texts.apply("fileSeed") + ": " + file.seedFile());
+    }
+
+    private static JPanel technicalConfirmation(java.util.function.Function<String, String> texts, ServerId server, String sourceSha256,
+                                                Map<String, String> archiveSha256, Map<String, DeploymentStandardInputs.Answers> answers,
+                                                Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStandardInputs.GitReview> git) {
         var panel = DeploymentDialogs.form();
         panel.add(DeploymentDialogs.fact(() -> texts.apply("server") + ": " + server.id()));
         git.ifPresent(identity -> panel.add(DeploymentDialogs.fact(() -> texts.apply("gitSource") + ": " + identity.remote() + " / "
@@ -668,9 +1015,12 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
         answers.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
             panel.add(DeploymentDialogs.fact(() -> entry.getKey()));
             entry.getValue().values().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(value -> {
+                if (value.getKey().equals("requiresAdapterRisk")) return;
                 if (!databases.containsKey(entry.getKey()) || databases.get(entry.getKey()).bindings().isEmpty()
                     || !Set.of("databaseMode", "databaseDetails").contains(value.getKey()))
-                    panel.add(DeploymentDialogs.fact(() -> "  " + texts.apply(value.getKey()) + ": " + value.getValue()));
+                    panel.add(DeploymentDialogs.fact(() -> "  "
+                        + (value.getKey().startsWith("application.") ? value.getKey() : texts.apply(value.getKey()))
+                        + ": " + value.getValue()));
             });
             var database = databases.get(entry.getKey());
             if (database != null)
@@ -698,7 +1048,7 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
                     DeploymentDialogs.fact(() -> "  " + texts.apply("database.inspectionDigest") + ": " + review.inspectionSha256())));
             }
             entry.getValue().files().forEach(file -> panel.add(
-                DeploymentDialogs.fact(() -> "  " + texts.apply("files") + ": " + file.bindingId() + " → " + file.dataPath().path())));
+                DeploymentDialogs.fact(() -> "  " + texts.apply("files") + ": " + storageSummary(file, texts))));
             panel.add(
                 DeploymentDialogs.fact(() -> "  " + texts.apply("timeoutSeconds") + ": " + entry.getValue().limits().timeoutSeconds()));
             panel.add(DeploymentDialogs.fact(() -> "  " + texts.apply("maxWorkspaceBytes") + ": " + entry.getValue().limits().maxWorkspaceBytes()
@@ -759,7 +1109,9 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
             List.of(), limits, false, false);
         return confirmation(texts, new ServerId("preview-server"), "b".repeat(64), Map.of("preview", "c".repeat(64)),
             Map.of("preview", answer), Map.of(), Optional.of(new DeploymentStandardInputs.GitReview(
-                "https://example.invalid/" + "source/".repeat(12), "DEFAULT:HEAD", "a".repeat(40))));
+                "https://example.invalid/" + "source/".repeat(12), "DEFAULT:HEAD", "a".repeat(40))),
+            Map.of("preview", Set.of(SourceLanguageType.TYPESCRIPT)), Map.of("preview", "frontend"),
+            Map.of("preview", DeploymentProjectKind.STATIC_SITE));
     }
 
     /** One typed component form with bounded resource rows. / 一份带有界资源行的类型化组件表单。 */
@@ -871,7 +1223,7 @@ final class DeploymentStandardPageReviewer implements DeploymentStandardInputs.R
         /** Parses completed non-secret values without retaining secret material. / 解析已补齐非秘密值，不保留秘密明文。
          * @return typed reviewed answers / 类型化审阅答案 */
         private DeploymentStandardInputs.Answers answer() {
-            var values = new LinkedHashMap<String, String>();
+            var values = new LinkedHashMap<>(prompt.defaults());
             fields.forEach((key, control) -> {
                 String value = control instanceof DeploymentSecretRefField secret
                     ? secret.value()

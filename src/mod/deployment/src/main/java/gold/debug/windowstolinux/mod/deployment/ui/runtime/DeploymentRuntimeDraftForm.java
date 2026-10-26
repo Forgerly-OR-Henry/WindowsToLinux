@@ -28,9 +28,20 @@ public final class DeploymentRuntimeDraftForm {
     public DeploymentRuntimeDraftForm(Function<String, String> text) {
         this.text = text;
         panel.setName("deployment.runtimeDraft");
+        var automatic = new JLabel(text.apply("runtimeDraft.automatic"));
+        automatic.putClientProperty("deployment.style.title", "runtimeDraft.automatic");
+        panel.add(automatic);
         for (String key : gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs.SourceOptions.RUNTIME_FIELDS) {
             var field = descriptor(key);
             var input = DeploymentReviewInputs.create(field);
+            if (input instanceof JComboBox<?> raw) {
+                @SuppressWarnings("unchecked") var choices = (JComboBox<String>) raw;
+                choices.insertItemAt("", 0);
+                choices.setSelectedItem("");
+                var renderer = new DefaultListCellRenderer();
+                choices.setRenderer((list, value, index, selected, focus) -> renderer.getListCellRendererComponent(
+                    list, value == null || value.isBlank() ? text.apply("automatic.value") : value, index, selected, focus));
+            }
             var label = DeploymentReviewInputs.label(key, text);
             label.setLabelFor(input);
             fields.put(key, input);
@@ -77,6 +88,7 @@ public final class DeploymentRuntimeDraftForm {
         var choices = switch (key) {
             case "healthMode" -> java.util.List.of("HTTP", "TCP", "UDP", "PROCESS", "COMMAND");
             case "containerEngine" -> java.util.List.of("PODMAN", "DOCKER");
+            case "containerRisk", "adapterRisk" -> java.util.List.of("true", "false");
             default -> java.util.List.<String>of();
         };
         return DeploymentStandardRuntimeResolver.field("draft", key, "", choices);

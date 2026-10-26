@@ -5,6 +5,7 @@ import java.time.Duration;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -509,20 +510,88 @@ public final class DeploymentBuildCommandChannel {
         beforeSend.verify();
         dispatchBoundary.run();
         try {
+            OperationResult<CommandResult> result;
             long started = System.nanoTime();
             try {
-                return session.execute(request, grant.value().orElseThrow());
+                result = session.execute(request, grant.value().orElseThrow());
             } finally {
                 budget.charge(System.nanoTime() - started);
             }
+            if (result.outcome() == TaskResult.SUCCEEDED || result.problem().isEmpty()) return result;
+            var original = result.problem().orElseThrow();
+            var facts = new LinkedHashMap<>(safeFailureFacts(original));
+            if (operation.matches("deployment\\.[a-z0-9_.-]{1,120}")) facts.put("dispatchOperation", operation);
+            facts.put("dispatchStage", "execute");
+            result.value().ifPresent(value -> {
+                value.exitCode().ifPresent(exit -> facts.put("exitCode", Integer.toString(exit)));
+                facts.put("truncated", Boolean.toString(value.truncated()));
+            });
+            return new OperationResult<>(result.outcome(), result.value(), Optional.of(new Problem(original.code(),
+                original.eventCode(), original.message(), facts, original.diagnosticId())));
         } catch (ApiException failure) {
             if (failure.problem().code() == ProblemCode.ACCESS_DENIED
                 || failure.problem().code() == ProblemCode.INVALID_INPUT)
                 throw failure;
+            var facts = new LinkedHashMap<>(safeFailureFacts(failure.problem()));
+            if (operation.matches("deployment\\.[a-z0-9_.-]{1,120}")) facts.put("dispatchOperation", operation);
+            facts.put("dispatchStage", "execute");
             return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_BUILD_DISPATCH_UNCONFIRMED",
-                    "Remote build effect is unconfirmed", Map.of(), Optional.empty())));
+                    "Remote build effect is unconfirmed", facts, failure.problem().diagnosticId())));
         }
+    }
+
+    /** Retains only typed bounded failure facts, never command text, output or arbitrary problem context. */
+    public static Map<String, String> safeFailureFacts(Problem problem) {
+        var facts = new LinkedHashMap<String, String>();
+        for (String key : List.of("commandOpenRequested", "channelOpenConfirmed", "inputSenderCreated", "authorPayloadSent",
+            "outputObserved", "exitObserved", "channelClosed", "sessionOpen", "sessionAuthenticated", "channelPeerAssigned",
+            "sessionCloseObserved", "disconnectInitiatorLocal", "truncated", "transportReadHandlerActive")) {
+            String value = problem.context().get(key);
+            if ("true".equals(value) || "false".equals(value)) facts.put(key, value);
+        }
+        Map.ofEntries(
+            Map.entry("commandPhase", "BEFORE_DISPATCH|CREATING_CHANNEL|CHANNEL_OPENING|WAITING_FOR_EXIT"),
+            Map.entry("inputState", "NOT_STARTED|SENDING|COMPLETED|FAILED"),
+            Map.entry("frameWritePhase", "NOT_STARTED|WRITING_LENGTH|WRITING_SCRIPT|WRITING_STDIN|FLUSHING|WRITTEN"),
+            Map.entry("scriptBytes", "[0-9]{1,8}"), Map.entry("stdinBytes", "[0-9]{1,8}"),
+            Map.entry("remoteWindowOpenMaxSize", "[0-9]{1,10}"),
+            Map.entry("remoteWindowOpenSize", "[0-9]{1,10}"),
+            Map.entry("remoteWindowOpenPacketSize", "[0-9]{1,10}"),
+            Map.entry("remoteWindowFailureMaxSize", "[0-9]{1,10}"),
+            Map.entry("remoteWindowFailureSize", "[0-9]{1,10}"),
+            Map.entry("remoteWindowFailurePacketSize", "[0-9]{1,10}"),
+            Map.entry("inputThreadState", "NEW|RUNNABLE|BLOCKED|WAITING|TIMED_WAITING|TERMINATED"),
+            Map.entry("transportReadThreadState", "NEW|RUNNABLE|BLOCKED|WAITING|TIMED_WAITING|TERMINATED"),
+            Map.entry("transportKeyExchangeState", "UNKNOWN|INIT|RUN|KEYS|DONE"),
+            Map.entry("transportReadCallbacks", "[0-9]{1,19}"),
+            Map.entry("transportReadCompletedAgeMillis", "UNKNOWN|[0-9]{1,13}"),
+            Map.entry("transportReadHandlerAgeMillis", "UNKNOWN|[0-9]{1,13}"),
+            Map.entry("authorPayloadState", "NOT_SENT|MAY_HAVE_BEEN_SENT"),
+            Map.entry("elapsedMillis", "[0-9]{1,13}"), Map.entry("timeoutMillis", "[0-9]{1,13}"),
+            Map.entry("exitCode", "-?[0-9]{1,10}"),
+            Map.entry("disconnectCode", "-?[0-9]{1,10}"),
+            Map.entry("transportFailureType", "-|(?:java|org\\.apache\\.sshd)\\.[A-Za-z0-9_.$]{1,160}"),
+            Map.entry("dispatchOperation", "deployment\\.[a-z0-9_.-]{1,120}"), Map.entry("dispatchStage", "execute"),
+            Map.entry("sourceProblemCode", "[A-Z_]{1,64}"), Map.entry("sourceProblemEvent", "[A-Z][A-Z0-9_]{0,119}")
+        ).forEach((key, pattern) -> {
+            String value = problem.context().get(key);
+            if (value != null && value.length() <= 180 && value.matches(pattern)) facts.put(key, value);
+        });
+        for (String prefix : List.of("inputStack", "transportReadStack")) {
+            for (int index = 0; index < 6; index++) {
+                String key = prefix + "[" + index + "]";
+                String value = problem.context().get(key);
+                if (value != null && value.length() <= 384 && value.matches(
+                    "(?:java|jdk|sun\\.nio|org\\.apache\\.sshd|gold\\.debug\\.windowstolinux\\.app\\.linux)"
+                        + "\\.[A-Za-z0-9_.$]{1,160}#[A-Za-z0-9_$<>]{1,128}:-?[0-9]{1,10}"))
+                    facts.put(key, value);
+            }
+        }
+        facts.putIfAbsent("sourceProblemCode", problem.code().name());
+        if (problem.eventCode().matches("[A-Z][A-Z0-9_]{0,119}"))
+            facts.putIfAbsent("sourceProblemEvent", problem.eventCode());
+        return Map.copyOf(facts);
     }
 
     /** Returns a known exhausted budget before any further dispatch. / 在继续发送前返回已知预算耗尽。
