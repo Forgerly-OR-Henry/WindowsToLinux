@@ -211,6 +211,8 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
 
     private final AtomicInteger reviews = new AtomicInteger();
 
+    private final Set<String> humanAnsweredFields = new HashSet<>();
+
     private final AtomicInteger nativeCalls = new AtomicInteger();
 
     private final FixedReviewFixture fixedReviews = new FixedReviewFixture();
@@ -360,6 +362,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                     values.put("healthMode", "TCP");
                     values.put("port", quotaScenario && !quotaAssisted || round > 0 ? "9090" : "0");
                     values.put("exposure", "INTERNAL");
+                    values.keySet().forEach(key -> humanAnsweredFields.add(prompt.componentId() + "/" + key));
                     return success(Map.of(prompt.componentId(), new DeploymentStandardInputs.Answers(values, List.of(),
                         gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().limits(), false, true,
                         quotaScenario && quotaAutomatic ? gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Request.automatic(0, 0)
@@ -389,7 +392,25 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
             };
             var handle = page.submit(new ServerId("server"),
                 new DeploymentStandardInputs.Draft("demo", quotaScenario ? 100 * 1024 * 1024 : 65536, 100, quotaScenario ? 2 * 1024 * 1024 : 65536), Optional.empty(), reviewer, !quotaScenario || quotaAssisted);
-            var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
+            OperationResult<Void> result;
+            try {
+                result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException unfinished) {
+                var diagnostics = new ArrayList<String>();
+                try {
+                    for (var category : runtime.logs().inventory(false).categories()) {
+                        if (!category.target().owner().equals(OWNER)) continue;
+                        runtime.logs().inspect(category.target().key()).records().stream()
+                            .filter(record -> record.event().taskId().filter(handle.id()::equals).isPresent()
+                                && record.event().eventCode().equals("DEPLOYMENT_PREPARATION_EXCEPTION"))
+                            .forEach(record -> diagnostics.add(record.event().details().orElse("")));
+                    }
+                } catch (Exception unavailable) {
+                    unfinished.addSuppressed(unavailable);
+                }
+                if (fixedReviews.lastFailure != null) unfinished.addSuppressed(fixedReviews.lastFailure);
+                throw new AssertionError("Local workflow incomplete: " + handle.snapshot() + ", preparation=" + diagnostics, unfinished);
+            }
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             if (scenario == ScenarioType.SOURCE_REJECTED || scenario == ScenarioType.SOURCE_UNSAFE) {
                 assertEquals(TaskResult.FAILED, result.outcome());
@@ -516,7 +537,11 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                 String output;
                 if (turn == 2) {
                     assertEquals("PREFLIGHT", facts.path("phase").textValue());
-                    assertTrue(facts.path("fields").isEmpty(), "Human answers cannot be replaced by model suggestions");
+                    assertTrue(facts.path("fields").isArray());
+                    assertTrue(humanAnsweredFields.stream().anyMatch(field -> field.endsWith("/port")));
+                    for (var offered : facts.path("fields"))
+                        assertFalse(humanAnsweredFields.contains(offered.path("id").asText()),
+                            "Human answers cannot be replaced by model suggestions");
                     output = "{\"decision\":\"RETRY\",\"reason\":\"Ask the human to correct the rejected port\",\"suggestions\":{}}";
                 } else {
                     String revision = facts.path("sourceRevision").textValue();
@@ -658,6 +683,25 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                 "managedApplication", "workloadInput", "publicationSnapshot", "originalPublicationStatus", "publicationMaintenance",
                 "stagedConfiguration", "candidateMavenBootstrap", "ownershipIdentityMeaning", "snapshotTaskMatchesOriginalContext"))
                 if (facts.has(field)) expected.add(field);
+            if (facts.has("toolchainDiagnostic")) {
+                expected.addAll(Set.of("toolchainDiagnostic", "originalToolchainPreparation"));
+                assertEquals("deployment.toolchain.prepare.v1", facts.path("operation").asText());
+                var diagnostic = facts.path("toolchainDiagnostic");
+                keys(diagnostic, Set.of("operationId", "taskId", "serverId", "fingerprintSha256", "planRevision",
+                    "originalRequestSha256", "originalRequestUtf8", "diagnosticTarget", "verb", "meaning"));
+                var originalRequest = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.decode(
+                    diagnostic.path("originalRequestUtf8").asText().getBytes(StandardCharsets.UTF_8));
+                assertEquals(task.id().toString(), originalRequest.taskId());
+                assertEquals("server", originalRequest.serverId());
+                assertEquals(facts.path("businessRevision").asText(), originalRequest.planRevision());
+                assertEquals(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.sha256(
+                    ("SHA256:" + "A".repeat(43)).getBytes(StandardCharsets.UTF_8)), originalRequest.fingerprintSha256());
+                assertEquals(new ObjectMapper().valueToTree(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.reviewFacts(
+                    "prepare-diagnosed", gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.command("prepare-diagnosed", originalRequest),
+                    originalRequest.bytes(), "server", Set.of(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(
+                        "server", "deployment-build", originalRequest.layout().toolchains())), originalRequest.layout())), diagnostic);
+                assertEquals(new ObjectMapper().valueToTree(originalRequest.preparationArguments()), facts.path("originalToolchainPreparation"));
+            }
             if (facts.has("snapshotTaskMatchesOriginalContext")) {
                 assertTrue(facts.path("snapshotTaskMatchesOriginalContext").booleanValue());
                 assertEquals(task.id().toString(), facts.path("publicationSnapshot").path("task").asText());
@@ -737,11 +781,13 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
             assertTrue(current.isObject());
             current.fieldNames().forEachRemaining(key -> assertTrue(allowed.contains(key), "Unexpected current evidence: " + key));
             var workflow = current.path("workflowAuthorization");
-            keys(workflow, Set.of("task", "serverTargets", "modelRevision", "approvalPolicy", "rememberAuthorization", "frozenWorkflowRequest",
+            keys(workflow, Set.of("task", "serverTargets", "modelRevision", "approvalPolicy", "approvalPolicyRevision", "rememberAuthorization", "frozenWorkflowRequest",
                 "recovery", "hostHandoffOpened", "meaning"));
             assertEquals(task.id().toString(), workflow.path("task").asText());
             assertEquals(List.of("server"), new ObjectMapper().convertValue(workflow.path("serverTargets"), List.class));
             assertEquals(policy.get(), workflow.path("approvalPolicy").asText());
+            assertTrue(workflow.path("approvalPolicyRevision").isIntegralNumber());
+            assertEquals(0, workflow.path("approvalPolicyRevision").longValue(), "This original workflow never changes its confirmed policy");
             assertTrue(workflow.path("modelRevision").asText().matches("[a-f0-9]{64}"));
             assertTrue(workflow.path("hostHandoffOpened").booleanValue());
             assertFalse(workflow.path("frozenWorkflowRequest").asText().isBlank());
@@ -806,12 +852,21 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
             }
             if (current.has("toolchainPreparationContract")) {
                 var contract = current.path("toolchainPreparationContract");
-                keys(contract, Set.of("contractRevision", "helperPath", "helperSha256", "remoteLayout", "remoteLayoutSha256", "server", "arguments", "meaning"));
+                var expected = new HashSet<>(Set.of("contractRevision", "helperPath", "helperSha256", "remoteLayout", "remoteLayoutSha256", "server", "arguments", "meaning"));
+                if (facts.has("toolchainDiagnostic")) {
+                    expected.add("diagnostic");
+                    var diagnostic = contract.path("diagnostic");
+                    keys(diagnostic, Set.of("operationId", "requestSha256", "target", "meaning"));
+                    assertEquals(facts.path("toolchainDiagnostic").path("operationId"), diagnostic.path("operationId"));
+                    assertEquals(facts.path("toolchainDiagnostic").path("originalRequestSha256"), diagnostic.path("requestSha256"));
+                    assertEquals(facts.path("toolchainDiagnostic").path("diagnosticTarget"), diagnostic.path("target"));
+                }
+                keys(contract, expected);
                 assertEquals("deployment.toolchain.prepare.v1", facts.path("operation").asText());
                 assertEquals("server", contract.path("server").asText()); assertEquals(layout.canonical(), contract.path("remoteLayout").asText());
                 assertEquals(layout.digest(), contract.path("remoteLayoutSha256").asText()); assertEquals(layout.helperPath(), contract.path("helperPath").asText());
                 assertEquals(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.helperSha256(layout), contract.path("helperSha256").asText());
-                assertEquals(facts.path("toolchainPreparation"), contract.path("arguments"));
+                assertEquals(facts.path(facts.has("toolchainDiagnostic") ? "originalToolchainPreparation" : "toolchainPreparation"), contract.path("arguments"));
             }
             if (current.has("toolchainPreparationObservations")) {
                 var group = current.path("toolchainPreparationObservations"); keys(group, Set.of("bindings", "meaning"));

@@ -64,11 +64,11 @@ final class DeploymentAssistedTestPeer {
                         archive, transfer.localPath(), transfer.remoteAbsolutePath())), Optional.empty());
                 }
                 assertEquals("execute", method.getName());
-                return command((CommandRequest) args[0]);
+                return command((CommandRequest) args[0], task);
             });
     }
 
-    private OperationResult<CommandResult> command(CommandRequest request) throws Exception {
+    private OperationResult<CommandResult> command(CommandRequest request, TaskContext task) throws Exception {
         String script = request.script();
         if (script.contains(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.PATH))
             script = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedBody(script);
@@ -82,6 +82,17 @@ final class DeploymentAssistedTestPeer {
             return reply((availableBytes / 4096) + " 4096\n");
         if (script.contains("build-preflight"))
             return reply("");
+        if (script.startsWith("'" + DeploymentManagedHelperBundle.PATH + "' prepare-toolchains 'prepare-diagnosed' ")) {
+            var preparation = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.decode(request.stdin());
+            assertEquals(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.command("prepare-diagnosed", preparation), script);
+            assertEquals(task.id().toString(), preparation.taskId());
+            assertEquals("server", preparation.serverId());
+            assertEquals(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.sha256(
+                ("SHA256:" + "A".repeat(43)).getBytes(StandardCharsets.UTF_8)), preparation.fingerprintSha256());
+            assertEquals("GO", preparation.arguments().get(1));
+            return reply("TOOLCHAIN=GO|1.24.1|/usr/local/lib/windowstolinux/toolchains/versions/go-" + "b".repeat(64)
+                + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n");
+        }
         if (script.contains("prepare-toolchains 'prepare'"))
             return reply("TOOLCHAIN=GO|1.24.1|/usr/local/lib/windowstolinux/toolchains/versions/go-" + "b".repeat(64)
                 + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n");
