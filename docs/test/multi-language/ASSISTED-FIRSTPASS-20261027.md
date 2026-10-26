@@ -1,12 +1,13 @@
 # 2026-10-27 ASSISTED 测试与失败修复
 
-本轮仍在进行，未达成首轮通过。task-board、file-transfer 首次有效尝试均在来源分析后失败。修复后task-board第五次、file-transfer第二次均通过真实部署和业务验收，并经产品确认STOPPED/DISABLED；其余六项尚未运行。不能据此记为八项通过或把重试并入首轮。
+本轮仍在进行，未达成首轮通过。task-board、file-transfer 首次有效尝试均在来源分析后失败。修复后task-board第五次、file-transfer第二次均通过真实部署和业务验收，并经产品确认STOPPED/DISABLED；asset-lending首次UNKNOWN正在修复，其余五项尚未运行。不能据此记为八项通过或把重试并入首轮。
 
 | 项目 | 首次有效尝试 | 当前证据 |
 | --- | --- | --- |
 | task-board | FAILED | 第五次尝试部署/业务通过，产品最终STOPPED/DISABLED；前四次结果保留 |
 | file-transfer | FAILED | 第二次尝试部署/完整文件业务通过，产品最终STOPPED/DISABLED；首轮来源拒绝保留 |
-| asset-lending、csv-inspector、survey-scoring | 未运行 | 等待共同阻断定位 |
+| asset-lending | UNKNOWN | .NET准备的独立审批拒绝；该prepare未实际派发，原任务待产品核对 |
+| csv-inspector、survey-scoring | 未运行 | 等待本轮前置问题处理 |
 | log-analyzer、directory-diff、binary-inspector | 未运行 | 等待共同阻断定位 |
 
 ## 入口与执行边界
@@ -119,3 +120,15 @@ helper既有绝对期限为1713秒，Java外层1728秒，但APT参数固定只�
 监控已知Token为104514+1016318=1120832，部署/审批调用32/108，140个generation attempt ID；每次四项能力探测用量仍未包含，不是完整账单。组件独立管理审批和状态核对耗时已计入本次实际验收；原AI管理任务期限为max(调用值,15)分钟，未在本轮提高。
 
 finally停止、delivery再次启动导出后，又经产品精确绑定原应用/revision/ownership执行STOP。最终STOPPED/DISABLED，清理进程退出0。首轮FAILED仍保留；其余六项目继续，未执行真实界面、浏览器或全套测试。
+
+## asset-lending 首次尝试：审批契约遗漏输入桥接说明
+
+`asset-lending-first-01` 基于 `410bb500`，启动时Git干净，原任务 `8870f1d3-7478-4f64-895b-11c244560419`、state `assisted-live-asset-lending-14ybwmxl1g`。来源、审核、容量与规划通过，182.518秒后UNKNOWN，JUnit1项失败、Maven1，应用未发布。已知部署/审批Token为72572/80390、共152962，28个监控generation attempt ID，四项能力探测不含。
+
+无派发产品检查1项通过；原结果为 `DEPLOYMENT_GRAPH_REMOTE_UNCONFIRMED`，保留graph/policy/两个unit和三个source-snapshot。进度文本 `AI_TOOL_RESULT inspect-host` 来自上一次工具提交，后面已有工具链审批，不能单凭此文本归因。退场收集拒绝信息又因原Runtime仍持有资源而同JVM reopen失败，单独保留，不当作首次原因。
+
+真正只读、共享锁及SHA前后核对确认，原 `DEPLOYMENT_COMMAND_REVIEW_DENIED` 的公开理由认为673字节请求只在stdin，缺少到fd3的复制。随后是ACCESS_DENIED操作异常和上述UNKNOWN，没有准备阶段异常。原请求为DOTNET branch10、exact10.0.300、1780秒，operation `23cf54e5-8058-4444-a71c-292f0d148d0b`。拒绝发生在审核返回之前，未到dispatch边界和session.execute，该prepare没有实际派发；unit的CANDIDATE_MAY_EXIST是派发前保守初值。
+
+实际固定helper由 `DeploymentManagedHelperBundle` 组装 `/usr/bin/python3 -I - "$@" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'`：先将外部stdin保存到fd3，再让here-doc向Python fd0提供固定源码，内部读取dup(3)。原审批契约只提内部fd3，遗漏边界映射。修复只补齐与该固定源码一致的说明；不改执行脚本、外部命令、helper pin、审批阈值或DENY规则。
+
+本地新增实测从完整renderScript提取实际wrapper，仅把解释器换成受控shell reader：正例673字节及SHA一致，删除3<&0和移到here-doc之后两个负控均不一致；契约还须包含真实header。旧契约反例失败已保留，直接ContractTest两项通过；最终措辞限定JSON request verbs后仅复验受影响新方法1项通过，均0skip。未运行生产Python或安装器，Maven/Bash正常退出。修复已本地提交 `926c8875`，未推送。原UNKNOWN将通过正常产品流程核对，未重放.NET准备或删除原状态。
