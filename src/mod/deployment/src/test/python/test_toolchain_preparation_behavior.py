@@ -51,6 +51,30 @@ class ToolchainPreparationBehaviorTest(unittest.TestCase):
                 self.assertIn(dependency, self.commands[0])
                 self.assertIn('install', self.commands[0])
 
+    def test_apt_lock_wait_uses_the_current_preparation_deadline(self):
+        for layout in ('python', 'php', 'ruby'):
+            for seconds in (630.75, 35.75):
+                with self.subTest(layout=layout, seconds=seconds):
+                    self.commands.clear()
+                    self.namespace['DEADLINE'] = 100 + seconds
+                    with mock.patch.object(self.namespace['time'], 'monotonic', return_value=100), \
+                            mock.patch.object(pathlib.Path, 'is_file', lambda path: path.as_posix() == '/usr/bin/apt-get'):
+                        self.namespace['source_dependencies'](layout)
+                    self.assertEqual(1, len(self.commands))
+                    self.assertIn('DPkg::Lock::Timeout=' + str(int(seconds)), self.commands[0])
+                    self.assertEqual(100 + seconds, self.namespace['DEADLINE'])
+
+    def test_expired_deadline_does_not_start_a_dependency_installer(self):
+        self.namespace['DEADLINE'] = 100
+        with mock.patch.object(self.namespace['time'], 'monotonic', return_value=100), \
+                mock.patch.object(pathlib.Path, 'is_file', lambda path: path.as_posix() == '/usr/bin/apt-get'), \
+                mock.patch.object(self.namespace['subprocess'], 'Popen') as spawn:
+            with self.assertRaises(self.namespace['PreparationFailure']) as raised:
+                self.namespace['source_dependencies']('python')
+        self.assertEqual('timeout', raised.exception.category)
+        self.namespace['run'].assert_not_called()
+        spawn.assert_not_called()
+
     def test_install_does_not_reuse_the_existing_php_installation_without_zip(self):
         old_key = hashlib.sha256(('PHP\n8.3.35\n' + 'a' * 64 + '\nphp-cli-iconv-v1').encode()).hexdigest()
         old_directory = self.root / 'versions' / ('php-' + old_key)

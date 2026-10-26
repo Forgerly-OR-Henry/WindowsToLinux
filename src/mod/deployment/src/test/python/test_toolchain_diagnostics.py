@@ -112,6 +112,32 @@ class ToolchainDiagnosticsTest(unittest.TestCase):
         self.assertEqual('timeout', diagnostic['failureCategory'])
         self.assertEqual('partial stdout\n', diagnostic['stdout'])
 
+    def test_apt_wait_and_installation_keep_one_deadline_after_command_construction(self):
+        clock = [100]
+        self.ns['DEADLINE'] = 700
+        process = mock.Mock(pid=4321, returncode=0)
+        process.stdout, process.stderr = io.BytesIO(b'lock released\n'), io.BytesIO()
+        process.wait.return_value = 0
+
+        def start(command, **kwargs):
+            self.assertIn('DPkg::Lock::Timeout=600', command)
+            clock[0] += 20
+            return process
+
+        with mock.patch.object(time, 'monotonic', side_effect=lambda: clock[0]), \
+                mock.patch.object(pathlib.Path, 'is_file', lambda path: path.as_posix() == '/usr/bin/apt-get'), \
+                mock.patch.object(subprocess, 'Popen', side_effect=start) as spawn, \
+                mock.patch.object(os, 'killpg', create=True) as kill, \
+                mock.patch.object(signal, 'SIGKILL', 9, create=True):
+            self.ns['source_dependencies']('python')
+        spawn.assert_called_once()
+        self.assertEqual('/usr/bin/apt-get', spawn.call_args.args[0][0])
+        self.assertEqual([mock.call(timeout=580), mock.call()], process.wait.call_args_list)
+        self.assertEqual(700, self.ns['DEADLINE'])
+        kill.assert_called_once_with(process.pid, 9)
+        self.assertTrue(process.stdout.closed)
+        self.assertTrue(process.stderr.closed)
+
     def test_real_child_exits_after_timeout_and_after_cancellation(self):
         # Linux exercises the real process-group primitive. Windows adapts only killpg to this new owned child.
         actual_spawn = subprocess.Popen

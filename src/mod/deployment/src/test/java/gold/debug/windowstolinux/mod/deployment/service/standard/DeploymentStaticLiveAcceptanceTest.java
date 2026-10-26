@@ -8511,7 +8511,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         }
     }
 
-    private static int standardWebsitePort(String project) {
+    static int standardWebsitePort(String project) {
         return switch (project) {
             case "task-board" -> 46100;
             case "file-transfer" -> 46110;
@@ -9566,8 +9566,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                                                                                          List<DeploymentStandardInputs.Prompt> prompts, TaskContext task) {
                 var answers = new LinkedHashMap<String, DeploymentStandardInputs.Answers>();
                 for (var prompt : prompts) {
-                    var values = new LinkedHashMap<>(prompt.defaults());
-                    values.putAll(inputs.get(componentRoles.get(prompt.componentId())));
+                    var values = gold.debug.windowstolinux.mod.deployment.service.standard.shared.DeploymentStandardRuntimeDraft
+                        .apply(prompt, inputs.get(componentRoles.get(prompt.componentId()))).defaults();
                     System.out.println("STATIC_LIVE_REVIEW " + project + "/" + prompt.componentId() + " " + values);
                     List<DeploymentFileBinding> files = List.of();
                     if (project.equals("file-transfer") && componentRoles.get(prompt.componentId()).equals("backend")

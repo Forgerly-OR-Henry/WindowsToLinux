@@ -82,8 +82,9 @@ class DeploymentStaticRegressionLiveAcceptanceTest extends DeploymentStaticLiveA
             if (cli) {
                 assertTrue(usage.components().stream().allMatch(component -> component.command().isPresent()));
             } else {
-                assertTrue(usage.components().stream().flatMap(component -> component.endpoints().stream())
-                    .anyMatch(endpoint -> endpoint.browser().isPresent()), "Use product-qualified public website endpoints");
+                var graph = gold.debug.windowstolinux.mod.deployment.service.core.handoff.DeploymentArchivedRuntimeCodec
+                    .verify(selected, new gold.debug.windowstolinux.mod.deployment.db.release.DeploymentReleaseStore(context.db())).graph();
+                assertDirectWebsiteUsage(project, System.getProperty("managed.ssh.host"), graph.healthComponentId(), usage);
             }
             var report = new LinkedHashMap<String, Object>();
             report.put("project", project);
@@ -106,6 +107,15 @@ class DeploymentStaticRegressionLiveAcceptanceTest extends DeploymentStaticLiveA
                 StandardOpenOption.CREATE_NEW);
             System.out.println(mode + "_MANUAL_DELIVERY " + project + " " + delivery + " state=" + usage.state());
         }
+    }
+
+    static void assertDirectWebsiteUsage(String project, String host, String componentId, DeploymentApplicationUsage usage) {
+        var website = usage.components().stream().filter(component -> component.id().equals(componentId)).toList();
+        assertEquals(1, website.size(), "The primary website component must be present exactly once");
+        int port = standardWebsitePort(project);
+        assertTrue(website.getFirst().endpoints().stream().flatMap(endpoint -> endpoint.browser().stream())
+            .anyMatch(uri -> "http".equals(uri.getScheme()) && host.equals(uri.getHost()) && uri.getPort() == port),
+            "The primary website must expose this direct-access case's host and port");
     }
 
     private static <T> T await(TaskHandle<T> handle) throws Exception {

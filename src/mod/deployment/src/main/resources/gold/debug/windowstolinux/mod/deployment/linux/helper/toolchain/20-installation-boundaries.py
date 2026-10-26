@@ -185,7 +185,7 @@ def source_dependencies(layout):
             TRACKED_OPERATION.dependencies_started()
         environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_MODE='l')
         run(
-            ['/usr/bin/apt-get', '-o', 'DPkg::Lock::Timeout=120', 'install', '-y', '--no-install-recommends']
+            ['/usr/bin/apt-get', '-o', 'DPkg::Lock::Timeout=' + str(remaining()), 'install', '-y', '--no-install-recommends']
             + common_apt
             + apt,
             environment=environment,

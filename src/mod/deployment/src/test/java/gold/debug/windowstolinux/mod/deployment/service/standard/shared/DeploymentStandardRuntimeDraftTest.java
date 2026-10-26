@@ -24,11 +24,17 @@ class DeploymentStandardRuntimeDraftTest {
         var draft = Map.of("primary", "reviewed-bin", "configuration", "RUNTIME:PORT=9090\nRUNTIME:MODE=fixture",
             "applicationDeclaration", declaration, "arguments", "--safe input", "jvmArguments", "-Xmx256m");
         var actual = DeploymentStandardRuntimeDraft.apply(prompt, draft);
-        draft.forEach((key, value) -> assertEquals(value, actual.defaults().get(key)));
+        assertEquals("reviewed-bin", actual.defaults().get("primary"));
+        assertEquals("--safe input", actual.defaults().get("arguments"));
+        assertEquals("-Xmx256m", actual.defaults().get("jvmArguments"));
+        assertEquals("RUNTIME:SOURCE=value\nRUNTIME:PORT=9090\nRUNTIME:MODE=fixture", actual.defaults().get("configuration"));
+        assertEquals("TCP", actual.defaults().get("healthMode"));
+        assertFalse(actual.defaults().containsKey("applicationDeclaration"));
         assertEquals("source-default", prompt.defaults().get("primary"));
         for (String key : draft.keySet()) {
+            if (key.equals("applicationDeclaration")) continue;
             var field = actual.fields().stream().filter(item -> item.id().equals("api/" + key)).findFirst().orElseThrow();
-            assertEquals(draft.get(key), field.value());
+            assertEquals(actual.defaults().get(key), field.value());
             assertFalse(ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page", Locale.ENGLISH)
                 .getString(field.helpKey()).isBlank());
         }
@@ -36,9 +42,11 @@ class DeploymentStandardRuntimeDraftTest {
     }
 
     @Test
-    void draftCannotAddResourceAuthorizationAndInvalidNumberIdentifiesOnlyOriginalField() {
+    void draftKeepsPublicSecretReferencesWithoutResourceAuthorizationAndInvalidNumberIdentifiesOnlyOriginalField() {
+        var references = new DeploymentStandardInputs.SourceOptions(Optional.empty(), Optional.empty(), Map.of("secrets", "protected:1"));
+        assertEquals(Map.of("secrets", "protected:1"), references.runtimeDraft());
         assertThrows(IllegalArgumentException.class, () -> new DeploymentStandardInputs.SourceOptions(
-            Optional.empty(), Optional.empty(), Map.of("secrets", "protected:1")));
+            Optional.empty(), Optional.empty(), Map.of("rememberAuthorization", "true")));
         assertThrows(IllegalArgumentException.class, () -> new DeploymentStandardInputs.SourceOptions(
             Optional.empty(), Optional.empty(), Map.of("databaseDetails", "foreign-binding")));
         var resolver = new DeploymentStandardRuntimeResolver();

@@ -53,3 +53,17 @@ task-board 原任务为 `ec414c7b-de2f-4004-a060-12c3662e1fb6`，state为 `assis
 首次清理因JSON日期自动转换后的比较方式不当，435项均被守卫跳过，没有删除；改为UTC ticks精确比较后执行第二轮，435项全部删除，未发生部分删除失败。两份回执分别保留。
 
 原始日志、JUnit、启动属性、阶段进度和清理回执位于 `.ai-workspace/evidence/assisted-firstpass-20261027/`。后续真实复验、最终收尾和未验证范围将在此记录续写。
+
+## task-board 第二次尝试：来源审核通过，Python依赖安装失败
+
+`task-board-retry-02` 基于 `d7900d07`，新任务 `ab8e707a-63dc-40d1-a552-36d248a03df7`、state `assisted-live-task-board-11rje8t7tk`。程序完成来源识别、SQLite声明、组件审核/归档、helper安装及Java21/Node24准备，尚未发布应用。后续Python3.12依赖安装失败，最终Maven exit1、JUnit1项失败，耗时708.88秒；所属JVM自然退出。原任务没有被改写为成功，未运行其余六项目。
+
+本次不再缺少apt错误证据：程序自动诊断记录 `stage=system-dependencies`、apt exit100、`timedOut=false/cancelled=false`，dpkg前端锁由PID3960的unattended-upgr持有。工具链请求668字节、SHA为 `5f65b85ba9554a11a9c7fc395349f3b3f658f15d8226be1079b1f86315c76097`，与本地重建的 `prepare/PYTHON/3.12/-/1713/-` 完全匹配，不能将其误称为NPM或Node下载失败。
+
+helper既有绝对期限为1713秒，Java外层1728秒，但APT参数固定只等锁120秒，导致预算仍有余量时提前失败。修复只将APT等待值改为调用时的原 `remaining()`，保持单次安装、原有总期限、取消及所属进程组收尾。没有人工安装依赖、删除锁、停止系统更新进程或增加总预算。原生等待参数语义见 [APT官方实现](https://github.com/Debian/apt/blob/main/apt-pkg/deb/debsystem.cc)。
+
+工具链Python本地精确6方法通过，覆盖Python/PHP/Ruby的长短剩余预算、耗尽不启动、参数构造后继续扣同一预算、超时诊断与真实所属子进程的超时/取消退出。旧固定120的六个反例失败及此前沙箱TEMP权限失败分别保留。
+
+另确认并修复live夹具传值问题：原reviewer直接覆盖端口却保留默认accessUrl；现在复用正式共享运行草稿转换，且导出按真实已验证图的healthComponentId核对主网站host/端口，保留显式代理URL。没有改生产usage规则。3项本地接线检查通过；本次尚未发生实际错误导出，因为应用未发布。
+
+直接相关旧RuntimeDraft组首次2项失败，反映旧断言仍期待配置整段替换、禁止公开秘密引用。当前合同是合并配置并消费应用声明，秘密字段保存标识/修订的公开引用，不授予资源授权。已仅同步测试断言并保留rememberAuthorization/databaseDetails拒绝检查，3项复验通过；生产合同未为通过测试而放宽。首次依赖解析权限失败、测试异常声明编译错误及原2项失败记录均保留。下一次真实复验仍未完成。
