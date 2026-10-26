@@ -27,6 +27,8 @@ import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentReviewField;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Checks bounded source feedback without model or server access. / 不访问模型或服务器，检查有界源码反馈。 */
 class DeploymentAssistedAnalysisTest {
@@ -194,9 +196,86 @@ class DeploymentAssistedAnalysisTest {
     }
 
     @Test
-    void sourceVersionRangeIsRejectedAsAConcreteChoice() throws Exception {
-        var analysis = analysis((turn, facts) -> turn == 0 ? read() : advice(">=24 <25"));
-        assertThrows(SecurityException.class, () -> analysis.analyze(fields(), Map.of(), task()));
+    void sourceVersionRangeMustBeCorrectedToAConcreteChoice() throws Exception {
+        var analysis = analysis((turn, facts) -> {
+            if (turn == 0) return read();
+            if (turn == 1) return advice(">=24 <25");
+            assertEquals("INVALID_CANDIDATE", facts.at("/feedback/reason").asText());
+            return advice("24");
+        });
+        assertEquals(Map.of("app/version", "24"), analysis.analyze(fields(), Map.of(), task()).values());
+        assertEquals(3, calls.get());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"UNKNOWN_FIELD", "INVALID_CANDIDATE", "DUPLICATE_FIELD", "EMPTY_EVIDENCE", "EXCESS_EVIDENCE"})
+    void invalidSuggestionRejectsTheWholeBatchBeforeAcceptingCorrection(String kind) throws Exception {
+        var analysis = analysis((turn, facts) -> {
+            if (turn == 0) return read();
+            if (turn == 1) {
+                try {
+                    var reply = JSON.readTree(advice("22"));
+                    var items = (com.fasterxml.jackson.databind.node.ArrayNode) reply.at("/arguments/suggestions");
+                    var invalid = items.addObject().put("field", "app/healthEndpoint").put("candidate", "http://127.0.0.1:3000");
+                    var cites = invalid.putArray("evidence").add("source/0");
+                    switch (kind) {
+                        case "UNKNOWN_FIELD" -> invalid.put("field", "app/notOffered");
+                        case "INVALID_CANDIDATE" -> invalid.put("candidate", "https://example.invalid");
+                        case "DUPLICATE_FIELD" -> invalid.put("field", "app/version").put("candidate", "24");
+                        case "EMPTY_EVIDENCE" -> cites.removeAll();
+                        case "EXCESS_EVIDENCE" -> { for (int index = 1; index < 9; index++) cites.add("source/0"); }
+                        default -> throw new AssertionError(kind);
+                    }
+                    return reply.toString();
+                } catch (IOException failure) {
+                    throw new AssertionError(failure);
+                }
+            }
+            assertEquals("ADVICE_SUGGESTION_REJECTED", facts.at("/feedback/code").asText());
+            assertEquals(kind.endsWith("EVIDENCE") ? "INVALID_EVIDENCE" : kind, facts.at("/feedback/reason").asText());
+            assertEquals(10, facts.path("remaining").asInt());
+            assertEquals(1, facts.path("observations").size());
+            assertEquals("source/0", facts.at("/evidenceReferences/0").asText());
+            assertFalse(facts.path("feedback").toString().contains("example.invalid"));
+            return advice("24");
+        });
+        var offered = List.of(fields().getFirst(),
+            new DeploymentReviewField("app/healthEndpoint", "Health endpoint", "", "", List.of()));
+        var result = analysis.analyze(offered, Map.of(), task());
+        assertEquals(Map.of("app/version", "24"), result.values());
+        assertEquals(java.util.Set.of("source/0"), result.locations().keySet());
+        assertEquals(3, calls.get());
+    }
+
+    @Test
+    void invalidSuggestionsCannotExtendTheOriginalDecisionBudget() throws Exception {
+        var analysis = analysis((turn, facts) -> {
+            if (turn == 0) return read();
+            if (turn > 1) {
+                assertEquals("ADVICE_SUGGESTION_REJECTED", facts.at("/feedback/code").asText());
+                assertEquals("INVALID_CANDIDATE", facts.at("/feedback/reason").asText());
+            }
+            assertEquals(12 - turn, facts.path("remaining").asInt());
+            return advice(">=24 <25");
+        });
+        var failure = assertThrows(IOException.class, () -> analysis.analyze(fields(), Map.of(), task()));
+        assertEquals("Assisted decision budget exhausted", failure.getMessage());
+        assertEquals(12, calls.get());
+    }
+
+    @Test
+    void changedFrozenSourceIsFatalBeforeInvalidAdviceCanBeCorrected() throws Exception {
+        var analysis = analysis((turn, facts) -> {
+            if (turn == 0) return read();
+            try {
+                Files.writeString(root.resolve("README.md"), "Changed after observation\n");
+            } catch (IOException failure) {
+                throw new AssertionError(failure);
+            }
+            return advice(">=24 <25");
+        });
+        var failure = assertThrows(SecurityException.class, () -> analysis.analyze(fields(), Map.of(), task()));
+        assertEquals("Frozen source changed", failure.getMessage());
         assertEquals(2, calls.get());
     }
 

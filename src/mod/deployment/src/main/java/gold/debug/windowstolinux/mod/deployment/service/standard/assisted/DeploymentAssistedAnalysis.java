@@ -132,9 +132,12 @@ public final class DeploymentAssistedAnalysis {
                 source.verify();
                 try {
                     return advice(args, offered, evidence);
-                } catch (UnobservedEvidenceException rejected) {
-                    feedback = Map.of("code", "ADVICE_EVIDENCE_REJECTED", "message",
-                        "No suggestion was accepted. Cite exact evidenceReferences from nonempty READ/SEARCH only; LIST, empty or excluded results and file paths are not evidence IDs. Read actual source or leave fields unresolved.");
+                } catch (RejectedSuggestionException rejected) {
+                    boolean unobserved = rejected.reason == AdviceRejectionReason.UNOBSERVED_EVIDENCE;
+                    feedback = Map.of("code", unobserved ? "ADVICE_EVIDENCE_REJECTED" : "ADVICE_SUGGESTION_REJECTED",
+                        "reason", rejected.reason.name(), "message", unobserved
+                            ? "No suggestion was accepted. Cite exact evidenceReferences from nonempty READ/SEARCH only; LIST, empty or excluded results and file paths are not evidence IDs. Read actual source or leave fields unresolved."
+                            : "Entire ADVISE discarded; no suggestion was accepted. Use only offered field IDs, each once, permitted concrete candidates and 1..8 observed evidenceReferences per suggestion. Correct the response within remaining turns or leave fields unresolved.");
                     continue;
                 }
             }
@@ -199,18 +202,23 @@ public final class DeploymentAssistedAnalysis {
         for (JsonNode item : suggestions) {
             exact(item, Set.of("field", "candidate", "evidence"));
             String fieldId = DeploymentJsonFields.text(item, "field", 128);
-            String value = DeploymentJsonFields.text(item, "candidate", 4096);
+            JsonNode candidate = item.get("candidate");
             var field = offered.get(fieldId);
             JsonNode cites = item.get("evidence");
-            if (field == null || !DeploymentAssistedAdvisor.accepts(field, value) || values.containsKey(fieldId)
-                || cites == null || !cites.isArray() || cites.isEmpty() || cites.size() > 8)
-                throw new SecurityException("Unsupported assisted source suggestion");
+            if (field == null)
+                throw new RejectedSuggestionException(AdviceRejectionReason.UNKNOWN_FIELD);
+            if (candidate == null || !candidate.isTextual() || !DeploymentAssistedAdvisor.accepts(field, candidate.textValue()))
+                throw new RejectedSuggestionException(AdviceRejectionReason.INVALID_CANDIDATE);
+            if (values.containsKey(fieldId))
+                throw new RejectedSuggestionException(AdviceRejectionReason.DUPLICATE_FIELD);
+            if (cites == null || !cites.isArray() || cites.isEmpty() || cites.size() > 8)
+                throw new RejectedSuggestionException(AdviceRejectionReason.INVALID_EVIDENCE);
             for (JsonNode cite : cites) {
                 if (!cite.isTextual() || !evidence.containsKey(cite.textValue()))
-                    throw new UnobservedEvidenceException();
+                    throw new RejectedSuggestionException(AdviceRejectionReason.UNOBSERVED_EVIDENCE);
                 locations.put(cite.textValue(), evidence.get(cite.textValue()));
             }
-            values.put(fieldId, value);
+            values.put(fieldId, candidate.textValue());
         }
         var questions = new ArrayList<String>();
         for (JsonNode item : unresolved) {
@@ -237,10 +245,16 @@ public final class DeploymentAssistedAnalysis {
         return schema.toString();
     }
 
-    /** A rejected citation is corrigible inside the original decision budget, with no partial advice. */
-    private static final class UnobservedEvidenceException extends SecurityException {
-        private UnobservedEvidenceException() {
-            super("Unobserved assisted source evidence");
+    /** Safe protocol reasons contain no source, candidate or caller-provided text. */
+    private enum AdviceRejectionReason {UNKNOWN_FIELD, INVALID_CANDIDATE, DUPLICATE_FIELD, INVALID_EVIDENCE, UNOBSERVED_EVIDENCE}
+
+    /** Only rejected advice is corrigible; frozen-source integrity failures remain fatal. */
+    private static final class RejectedSuggestionException extends SecurityException {
+        private final AdviceRejectionReason reason;
+
+        private RejectedSuggestionException(AdviceRejectionReason reason) {
+            super("Assisted source suggestion rejected: " + reason.name());
+            this.reason = reason;
         }
     }
 
