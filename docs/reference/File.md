@@ -1225,6 +1225,8 @@ APP共23表，官方部署Mod共19表，共412字段；AI表见上节，其余41
 
 ##### `desktop_preference`
 
+界面动画使用键 `ui_animation_enabled`，归入主题、缩放这一组偏好；它是键值记录，不新增物理列。按 6.1 核对 `information_schema.columns.ORDINAL_POSITION`，实际列序保持下表，不迁移、不重建表。
+
 | 列序 | 字段名 | 中文含义 |
 | ---: | --- | --- |
 | 1 | `preference_key` | 偏好设置名称 |

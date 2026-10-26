@@ -32,8 +32,9 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
     private final JTextField search = new JTextField();
     private final JLabel count = new JLabel(), status = new JLabel(), empty = new JLabel();
     private final JButton reload, logs, primary, intervene, collapse;
-    private final JPanel inventory, detail, workspace;
-    private final JPanel detailBody;
+    private final JPanel inventory, detail;
+    private final gold.debug.windowstolinux.app.ui.display.DesktopSplitPane workspace;
+    private final DetailContent detailBody;
     private final JScrollPane detailScroll;
     private final JProgressBar progress = new JProgressBar(0, 1000);
     private final javax.swing.Timer timer;
@@ -116,20 +117,8 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         detail.add(detailScroll);
         detail.setVisible(false);
         progress.setName("tasks.progress");
-        workspace = components.transparent(null);
-        workspace.setLayout(new java.awt.LayoutManager() {
-            public void addLayoutComponent(String name, Component component) {}
-            public void removeLayoutComponent(Component component) {}
-            public Dimension preferredLayoutSize(Container parent) { return UIScale.scale(new Dimension(1100, 650)); }
-            public Dimension minimumLayoutSize(Container parent) { return new Dimension(0, 0); }
-            public void layoutContainer(Container parent) {
-                int gap = detail.isVisible() ? UIScale.scale(16) : 0;
-                int left = detail.isVisible() ? (int) ((parent.getWidth() - gap) * .44) : parent.getWidth();
-                inventory.setBounds(0, 0, left, parent.getHeight());
-                detail.setBounds(left + gap, 0, Math.max(0, parent.getWidth() - left - gap), parent.getHeight());
-            }
-        });
-        workspace.add(inventory); workspace.add(detail); add(workspace);
+        workspace = new gold.debug.windowstolinux.app.ui.display.DesktopSplitPane(inventory, detail, .44, 16, new Dimension(1100,650));
+        add(workspace);
         timer = new javax.swing.Timer(1000, event -> {
             if (isShowing() && !locked && !closed && !busy && confirmation == null && logWindow == null) refresh();
         });
@@ -148,7 +137,7 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         epoch++;
         locked = value;
         dismissDialogs();
-        if (value) { timer.stop(); progress.setIndeterminate(false); }
+        if (value) { workspace.reset(false); timer.stop(); progress.setIndeterminate(false); }
         else { timer.start(); refresh(); }
         filter();
     }
@@ -267,9 +256,10 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         boolean newSelection = !Objects.equals(renderedSelection, selection);
         renderedSelection = selection;
         progress.setIndeterminate(false);
-        detailBody.removeAll();
         var entry = selected();
-        detail.setVisible(entry != null && !locked);
+        workspace.expanded(entry != null && !locked);
+        detailBody.content(entry == null || locked ? null : entry.snapshot().id());
+        detailBody.removeAll();
         if (entry != null && !locked) {
             var body = components.transparent(new BorderLayout(0, UIScale.scale(20)));
             var header = components.transparent(new BorderLayout(8, 8));
@@ -477,7 +467,7 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         }
     }
 
-    private static final class DetailContent extends JPanel implements Scrollable {
+    private static final class DetailContent extends gold.debug.windowstolinux.app.ui.display.DesktopFadingPanel implements Scrollable {
         DetailContent() { super(new BorderLayout()); setOpaque(false); }
         public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
         public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) { return UIScale.scale(20); }
@@ -491,7 +481,7 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         if (logWindow != null) { logWindow.dispose(); logWindow = null; }
     }
     @Override public void close() {
-        closed = true; epoch++; timer.stop(); progress.setIndeterminate(false); dismissDialogs();
+        closed = true; epoch++; workspace.close(); detailBody.close(); timer.stop(); progress.setIndeterminate(false); dismissDialogs();
         entries = List.of(); model.clear(); selection = null; detail.setVisible(false); controls();
     }
 }

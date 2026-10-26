@@ -13,9 +13,11 @@ import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
  * @param localeTag locale tag / 区域标签
  * @param themeMode theme mode / 主题模式
  * @param scalePercent application zoom relative to system scaling / 相对于系统缩放的应用缩放百分比
+ * @param animationEnabled global interface animation preference / 全局界面动画偏好
  * @param restoreLastPage whether startup restores the previous page / 启动是否恢复上次页面
  */
-public record DesktopDisplayConfig(String localeTag, ThemeMode themeMode, int scalePercent, boolean restoreLastPage) {
+public record DesktopDisplayConfig(String localeTag, ThemeMode themeMode, int scalePercent,
+                                   boolean animationEnabled, boolean restoreLastPage) {
     /**
      * Validates and binds the inputs required by desktop display configuration.
      * <p>校验并绑定Desktop显示配置所需输入。
@@ -23,6 +25,7 @@ public record DesktopDisplayConfig(String localeTag, ThemeMode themeMode, int sc
      * @param localeTag locale tag / 区域标签
      * @param themeMode theme mode / 主题模式
      * @param scalePercent supported application zoom / 支持的应用缩放百分比
+     * @param animationEnabled global interface animation preference / 全局界面动画偏好
      * @param restoreLastPage explicit startup restoration / 明确的启动恢复选择
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
@@ -37,7 +40,7 @@ public record DesktopDisplayConfig(String localeTag, ThemeMode themeMode, int sc
      * @param localeTag locale tag / 区域标签
      * @param themeMode theme mode / 主题模式 */
     public DesktopDisplayConfig(String localeTag, ThemeMode themeMode) {
-        this(localeTag, themeMode, 100, false);
+        this(localeTag, themeMode, 100, true, false);
     }
 
     /** Defaults startup to the home page. / 默认从首页启动。
@@ -45,7 +48,15 @@ public record DesktopDisplayConfig(String localeTag, ThemeMode themeMode, int sc
      * @param themeMode selected theme / 所选主题
      * @param scalePercent selected zoom / 所选缩放 */
     public DesktopDisplayConfig(String localeTag, ThemeMode themeMode, int scalePercent) {
-        this(localeTag, themeMode, scalePercent, false);
+        this(localeTag, themeMode, scalePercent, true, false);
+    }
+
+    public DesktopDisplayConfig(String localeTag, ThemeMode themeMode, int scalePercent, boolean restoreLastPage) {
+        this(localeTag, themeMode, scalePercent, true, restoreLastPage);
+    }
+
+    public DesktopDisplayConfig withAnimation(boolean enabled) {
+        return new DesktopDisplayConfig(localeTag, themeMode, scalePercent, enabled, restoreLastPage);
     }
 
     /**
@@ -106,6 +117,20 @@ public record DesktopDisplayConfig(String localeTag, ThemeMode themeMode, int sc
     public static DesktopDisplayConfig fromStoredValues(String storedLocaleTag, String storedThemeMode,
                                                         String storedScalePercent, String storedRestoreLastPage,
                                                         Locale systemLocale) {
+        return fromStoredValues(storedLocaleTag, storedThemeMode, storedScalePercent, null, storedRestoreLastPage, systemLocale);
+    }
+
+    /** Restores independently persisted motion and appearance choices. / 恢复独立保存的动效及外观选择。
+     * @param storedLocaleTag stored language / 已存语言
+     * @param storedThemeMode stored theme / 已存主题
+     * @param storedScalePercent stored zoom / 已存缩放
+     * @param storedAnimation stored animation switch / 已存动画开关
+     * @param storedRestoreLastPage stored restoration switch / 已存恢复开关
+     * @param systemLocale system language / 系统语言
+     * @return validated preferences / 已校验偏好 */
+    public static DesktopDisplayConfig fromStoredValues(String storedLocaleTag, String storedThemeMode,
+                                                        String storedScalePercent, String storedAnimation,
+                                                        String storedRestoreLastPage, Locale systemLocale) {
         Objects.requireNonNull(systemLocale, "systemLocale");
         if (storedLocaleTag != null && !java.util.Set.of("zh-CN", "en-US", "en").contains(storedLocaleTag))
             throw new IllegalArgumentException("invalid ui_locale preference");
@@ -115,7 +140,9 @@ public record DesktopDisplayConfig(String localeTag, ThemeMode themeMode, int sc
         int scalePercent = storedScalePercent == null ? 100 : Integer.parseInt(storedScalePercent);
         if (storedRestoreLastPage != null && !storedRestoreLastPage.equals("true") && !storedRestoreLastPage.equals("false"))
             throw new IllegalArgumentException("invalid ui_restore_last_page preference");
+        if (storedAnimation != null && !storedAnimation.equals("true") && !storedAnimation.equals("false"))
+            throw new IllegalArgumentException("invalid ui_animation_enabled preference");
         return new DesktopDisplayConfig(localeTag, ThemeMode.fromStoredValue(storedThemeMode), scalePercent,
-            Boolean.parseBoolean(storedRestoreLastPage));
+            storedAnimation == null || Boolean.parseBoolean(storedAnimation), Boolean.parseBoolean(storedRestoreLastPage));
     }
 }

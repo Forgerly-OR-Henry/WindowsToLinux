@@ -78,7 +78,7 @@ final class ServerPagePresentation extends JPanel {
     private final JPanel detailRegion;
 
     /** Selection changes resize this workspace without rebuilding controls. / 选择变化仅调整工作区尺寸，不重建控件。 */
-    private final JPanel workspace;
+    private final gold.debug.windowstolinux.app.ui.display.DesktopSplitPane workspace;
 
     /** Task evidence remains available without a selected server. / 未选服务器时仍可访问任务证据。 */
     private final JComponent taskRegion;
@@ -130,45 +130,8 @@ final class ServerPagePresentation extends JPanel {
         detailRegion.setName("servers.details.outer");
         detailRegion.add(detailScroll, BorderLayout.CENTER);
         detailRegion.setVisible(false);
-        workspace = components.transparent(new BorderLayout());
+        workspace = new gold.debug.windowstolinux.app.ui.display.DesktopSplitPane(inventory, detailRegion, .4, 16, new Dimension(1100,600));
         workspace.setName("servers.workspace");
-        workspace.setLayout(new java.awt.LayoutManager() {
-            /** Keeps composition-owned children unchanged. / 保持组合持有的子组件不变。
-             * @param name original layout name / 原布局名称
-             * @param child original child / 原子组件 */
-            public void addLayoutComponent(String name, Component child) {
-            }
-
-            /** Leaves removed-child ownership to Swing. / 将已移除子组件归属留给Swing。
-             * @param child original child / 原子组件 */
-            public void removeLayoutComponent(Component child) {
-            }
-
-            /** Reserves enough height for all controls and evidence. / 为全部控件与证据预留足够高度。
-             * @param parent original workspace / 原工作区
-             * @return preferred dimensions / 首选尺寸 */
-            public Dimension preferredLayoutSize(Container parent) {
-                return com.formdev.flatlaf.util.UIScale.scale(new Dimension(1100, 600));
-            }
-
-            /** Allows the surrounding page to provide scrolling. / 允许周围页面提供滚动。
-             * @param parent original workspace / 原工作区
-             * @return flexible minimum / 可伸缩最小尺寸 */
-            public Dimension minimumLayoutSize(Container parent) {
-                return new Dimension(0, 0);
-            }
-
-            /** Keeps inventory and detail widths at the selected ratio. / 将清单与详情宽度保持在选定比例。
-             * @param parent original workspace / 原工作区 */
-            public void layoutContainer(Container parent) {
-                int gap = detailRegion.isVisible() ? com.formdev.flatlaf.util.UIScale.scale(16) : 0;
-                int left = detailRegion.isVisible() ? (int) ((parent.getWidth() - gap) * .4) : parent.getWidth();
-                inventory.setBounds(0, 0, left, parent.getHeight());
-                detailRegion.setBounds(left + gap, 0, parent.getWidth() - left - gap, parent.getHeight());
-            }
-        });
-        workspace.add(inventory);
-        workspace.add(detailRegion);
         add(workspace, BorderLayout.CENTER);
         taskRegion = tasks(checks);
         taskRegion.setVisible(false);
@@ -225,6 +188,8 @@ final class ServerPagePresentation extends JPanel {
 
     /** Releases the actual point before page disposal. / 页面释放前清理实际位置。 */
     void closeExtensions() {
+        workspace.close();
+        details.close();
         extensionMenu.hide();
         if (extensionPoint == null) return;
         try {
@@ -501,6 +466,8 @@ final class ServerPagePresentation extends JPanel {
         return content;
     }
 
+    void clearMotion() { workspace.reset(false); details.resetMotion(); }
+
     /** Updates actual metadata and exact record ownership. / 更新实际元数据及精确记录归属。
      * @param summary selected saved summary / 所选保存摘要
      * @param total actual inventory size / 实际清单大小
@@ -509,11 +476,12 @@ final class ServerPagePresentation extends JPanel {
      * @param identity original record identity / 原记录身份 */
     void show(ServerSummary summary, int total, String text, String target, String identity,
               String state, Color color, String checkedAt) {
-        details.show(summary);
         boolean expanded = summary != null;
+        workspace.expanded(expanded);
+        details.show(summary);
         if (detailScroll.isVisible() != expanded) {
             detailScroll.setVisible(expanded);
-            detailRegion.setVisible(expanded);
+
             workspace.revalidate();
             workspace.repaint();
         }

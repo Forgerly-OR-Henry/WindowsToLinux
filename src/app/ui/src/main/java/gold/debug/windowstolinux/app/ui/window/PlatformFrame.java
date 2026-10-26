@@ -207,6 +207,7 @@ public final class PlatformFrame extends JFrame {
         this.config = Objects.requireNonNull(config);
         if (!SwingUtilities.isEventDispatchThread())
             throw new IllegalStateException("Platform window construction requires the EDT");
+        gold.debug.windowstolinux.app.ui.display.DesktopMotion.suspended(environment.locked());
         this.security = Objects.requireNonNull(security);
         messages = new PageMessagePresenter(catalog, reports);
         localizeSwing();
@@ -253,6 +254,7 @@ public final class PlatformFrame extends JFrame {
         lock = DesktopLockController.attach(this, security, catalog, reports, shell.utilities(), appearance.components,
             false, () -> content.setSelectedComponent(settingsScroll));
         lock.onLockChange(locked -> {
+            gold.debug.windowstolinux.app.ui.display.DesktopMotion.suspended(locked);
             feedback.modIssues.setEnabled(!locked);
             appearance.debug.locked(locked);
             if (servers != null)
@@ -966,6 +968,7 @@ public final class PlatformFrame extends JFrame {
         lock.close();
         shell.close();
         super.dispose();
+        gold.debug.windowstolinux.app.ui.display.DesktopMotion.suspended(false);
     }
 
     /** Mounts explicit persisted display choices without rebuilding any platform or Mod state. / 挂载明确的持久显示选择，不重建任何平台或 Mod 状态。
@@ -1178,6 +1181,7 @@ public final class PlatformFrame extends JFrame {
                              gold.debug.windowstolinux.app.ui.setting.PlatformAppearancePane.Preferences preferences) {
             if (!SwingUtilities.isEventDispatchThread() || pane != null)
                 throw new IllegalStateException("Appearance must be installed once on the EDT");
+            gold.debug.windowstolinux.app.ui.display.DesktopMotion.preference(initial.animationEnabled());
             pane = new gold.debug.windowstolinux.app.ui.setting.PlatformAppearancePane(initial, preferences,
                 this::apply, components, messages);
             content.addTab(messages.text("settings.appearance.title"),
@@ -1189,6 +1193,7 @@ public final class PlatformFrame extends JFrame {
         /** Updates existing widgets and notifies existing author pages of a confirmed preference. / 更新已有控件，并通知已有作者页面已确认偏好。
          * @param requested successfully persisted display choice / 成功持久化的显示选择 */
         private void apply(gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfig requested) {
+            gold.debug.windowstolinux.app.ui.display.DesktopMotion.preference(requested.animationEnabled());
             messages.catalog().language(requested.localeTag());
             localizeSwing();
             var effective = gold.debug.windowstolinux.app.ui.display.SystemThemeResolver

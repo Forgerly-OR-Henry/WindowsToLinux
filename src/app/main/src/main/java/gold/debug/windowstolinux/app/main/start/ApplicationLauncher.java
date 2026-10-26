@@ -139,7 +139,8 @@ public final class ApplicationLauncher {
             var preferences = runtime.persistence().preferences();
             var appearance = DesktopDisplayConfig.fromStoredValues(preferences.find("ui_locale").orElse(config.defaults().locale().equals("system") ? null : config.defaults().locale()),
                 preferences.find("ui_theme").orElse(config.defaults().theme()),
-                preferences.find("ui_scale").orElse(null), preferences.find("ui_restore_last_page").orElse(null), Locale.getDefault());
+                preferences.find("ui_scale").orElse(null), preferences.find("ui_animation_enabled").orElse(null),
+                preferences.find("ui_restore_last_page").orElse(null), Locale.getDefault());
             var messages = MessageCatalog.forLanguageTag(appearance.localeTag());
             var theme = SystemThemeResolver.effectiveTheme(appearance.themeMode());
             new DesktopUncaughtFailureBoundary(reports, messages).install();
@@ -232,6 +233,7 @@ public final class ApplicationLauncher {
                                       DesktopDisplayConfig appearance, ThemeMode theme, FailureReportStore reports,
                                       gold.debug.windowstolinux.app.service.ai.PlatformModelService models)
         throws gold.debug.windowstolinux.appapi.task.result.ApiException {
+        gold.debug.windowstolinux.app.ui.display.DesktopMotion.preference(appearance.animationEnabled());
         DesktopThemeService.install(theme, appearance.scalePercent());
         var window = new PlatformFrame(runtime.security(), messages,
             theme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light(),
@@ -251,14 +253,24 @@ public final class ApplicationLauncher {
         window.installModels(models);
         window.installTransfers(runtime.transfers());
         window.installFileSettings(runtime.fileSettings());
-        window.installAppearance(appearance, requested -> {
-            try (var authorized = runtime.security().beginTask()) {
-                authorized.execute(() -> {
-                    runtime.persistence().preferences().saveAll(java.util.Map.of("ui_locale", requested.localeTag(),
-                        "ui_theme", requested.themeMode().name(), "ui_scale", Integer.toString(requested.scalePercent()),
-                        "ui_restore_last_page", Boolean.toString(requested.restoreLastPage())));
-                    return null;
-                });
+        window.installAppearance(appearance, new gold.debug.windowstolinux.app.ui.setting.PlatformAppearancePane.Preferences() {
+            @Override public void save(DesktopDisplayConfig requested) throws Exception {
+                try (var authorized = runtime.security().beginTask()) {
+                    authorized.execute(() -> {
+                        runtime.persistence().preferences().saveAll(java.util.Map.of("ui_locale", requested.localeTag(),
+                            "ui_theme", requested.themeMode().name(), "ui_scale", Integer.toString(requested.scalePercent()),
+                            "ui_restore_last_page", Boolean.toString(requested.restoreLastPage())));
+                        return null;
+                    });
+                }
+            }
+            @Override public void saveMotion(boolean enabled) throws Exception {
+                try (var authorized = runtime.security().beginTask()) {
+                    authorized.execute(() -> {
+                        runtime.persistence().preferences().save("ui_animation_enabled", Boolean.toString(enabled));
+                        return null;
+                    });
+                }
             }
         });
         window.installLogs(runtime.logs());

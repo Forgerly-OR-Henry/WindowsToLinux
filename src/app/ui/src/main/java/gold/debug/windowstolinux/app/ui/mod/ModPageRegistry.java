@@ -297,6 +297,7 @@ public final class ModPageRegistry {
                     failure = problem;
                 }
             for (var scope : List.copyOf(scopes.values())) {
+                if (next.locked()) scope.motion.cancel();
                 for (var page : List.copyOf(scope.taskViews))
                     try { page.environmentChanged(next); }
                     catch (RuntimeException problem) {
@@ -449,6 +450,13 @@ public final class ModPageRegistry {
         private final String version;
 
         private final List<ModPage> taskViews = new ArrayList<>();
+
+        private final gold.debug.windowstolinux.app.ui.display.DesktopMotionScope motion =
+            new gold.debug.windowstolinux.app.ui.display.DesktopMotionScope(() -> visible() && !environment.locked());
+
+        @Override public Optional<gold.debug.windowstolinux.appapi.ui.page.UiMotion> motion() {
+            return Optional.of(motion);
+        }
 
         /** Whether normal UI publication is forbidden. / 是否禁止普通界面发布。 */
         private final boolean recoveryOnly;
@@ -604,6 +612,7 @@ public final class ModPageRegistry {
         public void seal() throws ApiException {
             onEdt(() -> {
                 stopping = true;
+                motion.close();
                 extensionBinding.seal();
                 for (var page : taskViews) page.close();
                 changed();
@@ -668,6 +677,7 @@ public final class ModPageRegistry {
                 if (closed)
                     return null;
                 stopping = true;
+                motion.close();
                 extensionBinding.seal();
                 changed();
                 ApiException first = null;

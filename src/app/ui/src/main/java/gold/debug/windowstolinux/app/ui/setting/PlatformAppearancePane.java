@@ -33,6 +33,10 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
     /** Explicit next-start page restoration choice. / 明确的下次启动页面恢复选择。 */
     private final JCheckBox restoreLastPage = new JCheckBox();
 
+    private final JCheckBox animation = new JCheckBox();
+    private Boolean pendingMotion;
+    private boolean savingMotion;
+
     /** Form labels whose explicit sizes follow live zoom. / 明确尺寸跟随实时缩放的表单标签。 */
     private JPanel fields;
 
@@ -83,6 +87,17 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
         language.setSelectedItem(MessageCatalog.normalizeLanguageTag(initial.localeTag()));
         theme.setSelectedItem(initial.themeMode());
         scale.setSelectedItem(initial.scalePercent());
+        animation.setName("appearance.animation");
+        animation.setSelected(initial.animationEnabled());
+        messages.bind(animation, "appearance.animation");
+        gold.debug.windowstolinux.app.ui.language.LocaleBinding.tooltip(animation,
+            gold.debug.windowstolinux.app.ui.language.LocalizedMessage.of("appearance.animation.description"), messages.catalog());
+        animation.addActionListener(event -> {
+            if (closed || locked) return;
+            gold.debug.windowstolinux.app.ui.display.DesktopMotion.preference(animation.isSelected());
+            pendingMotion = animation.isSelected();
+            persistMotion();
+        });
         restoreLastPage.setName("appearance.restoreLastPage");
         restoreLastPage.setSelected(initial.restoreLastPage());
         messages.bind(restoreLastPage, "appearance.restoreLastPage");
@@ -114,7 +129,8 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
         components.addField(fields, 0, 0, messages, "field.language", language);
         components.addField(fields, 1, 0, messages, "field.appearance", theme);
         components.addField(fields, 2, 0, messages, "field.scale", scale);
-        components.addField(fields, 3, 0, messages, "field.startup", restoreLastPage);
+        components.addField(fields, 3, 0, messages, "field.animation", animation);
+        components.addField(fields, 4, 0, messages, "field.startup", restoreLastPage);
         sizing();
         var editor = components.card(new BorderLayout(12, 12));
         editor.add(components.sectionHeading(messages, "settings.appearance.title", "settings.appearance.body"),
@@ -122,6 +138,7 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
         editor.add(fields, BorderLayout.CENTER);
         var footer = components.transparent(new BorderLayout(12, 12));
         footer.add(save, BorderLayout.WEST);
+        status.setName("appearance.status");
         footer.add(status, BorderLayout.CENTER);
         editor.add(footer, BorderLayout.SOUTH);
         body.add(editor, BorderLayout.NORTH);
@@ -165,7 +182,7 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
         if (locked || closed || busy)
             return;
         var requested = new DesktopDisplayConfig((String) language.getSelectedItem(),
-            (ThemeMode) theme.getSelectedItem(), (Integer) scale.getSelectedItem(), restoreLastPage.isSelected());
+            (ThemeMode) theme.getSelectedItem(), (Integer) scale.getSelectedItem(), animation.isSelected(), restoreLastPage.isSelected());
         busy = true;
         controls();
         messages.bind(status, "appearance.saving");
@@ -175,7 +192,7 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
         }, value -> {
             busy = false;
             if (!closed) {
-                applied.accept(value);
+                applied.accept(value.withAnimation(gold.debug.windowstolinux.app.ui.display.DesktopMotion.preference()));
                 messages.bind(status, "appearance.saved");
                 controls();
             }
@@ -187,6 +204,24 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
                 controls();
             }
         });
+    }
+
+    /** Serializes only this preference; a newer choice drains even after the editor closes. */
+    private void persistMotion() {
+        if (savingMotion || pendingMotion == null) return;
+        boolean requested = pendingMotion;
+        pendingMotion = null;
+        savingMotion = true;
+        DesktopTaskRunner.run(() -> { preferences.saveMotion(requested); return requested; },
+            ignored -> motionSaved(null), this::motionSaved);
+    }
+
+    private void motionSaved(Exception failure) {
+        savingMotion = false;
+        if (pendingMotion != null) { persistMotion(); return; }
+        if (closed || locked) return;
+        messages.bind(status, failure == null ? "appearance.animation.saved" : "appearance.animation.notSaved");
+        status.setToolTipText(failure == null ? null : messages.safe(failure));
     }
 
     /** Updates privacy without discarding drafts or cancelling accepted writes. / 更新隐私状态，不丢弃草稿或取消已接纳写入。
@@ -203,6 +238,7 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
         theme.setEnabled(enabled);
         scale.setEnabled(enabled);
         restoreLastPage.setEnabled(enabled);
+        animation.setEnabled(!locked && !closed);
         save.setEnabled(enabled);
     }
 
@@ -220,5 +256,10 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
          * @param requested captured preference selection / 捕获的偏好选择
          * @throws Exception if persistence or security rejects the write / 持久化或安全拒绝写入时 */
         void save(DesktopDisplayConfig requested) throws Exception;
+
+        /** Stores only the motion switch; other form drafts must not be persisted. */
+        default void saveMotion(boolean enabled) throws Exception {
+            throw new UnsupportedOperationException("Motion preference persistence is not composed");
+        }
     }
 }

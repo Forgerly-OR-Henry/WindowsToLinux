@@ -14,6 +14,12 @@ import gold.debug.windowstolinux.appapi.task.result.ApiException;
  * Owned page mounting without access to host implementation types. / 不暴露宿主实现类型的所属页面挂载服务。
  */
 public interface UiService {
+    /** Returns the optional clock bound to this UI activation. / 返回绑定本次界面启用的可选动效时钟。
+     * @return presentation capability when composed / 已装配时返回展示能力 */
+    default java.util.Optional<gold.debug.windowstolinux.appapi.ui.page.UiMotion> motion() {
+        return java.util.Optional.empty();
+    }
+
     /** Creates the host task template for this published normal activation's exact owner and version. Closing it never cancels tasks.
      * / 为本已发布普通启用的精确所有者及版本创建宿主任务模板；关闭界面不取消任务。
      * @return an uncreated owned page / 尚未创建的所属页面

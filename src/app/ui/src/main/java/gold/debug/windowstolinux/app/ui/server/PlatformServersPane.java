@@ -251,6 +251,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable, 
      * @param value whether interactive data must remain hidden / 交互数据是否必须保持隐藏
      */
     public void setLocked(boolean value) {
+        if (value) presentation.clearMotion();
         if (view.locked != value) {
             view.epoch++;
             view.request++;

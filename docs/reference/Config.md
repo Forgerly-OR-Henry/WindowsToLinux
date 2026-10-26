@@ -93,6 +93,8 @@ CLASS 开启自动加载时，开始发现前，使用当前 JDK 及本机 Maven
 
 入口排序、窗口尺寸、居中、布局、安全与协议常量不属于 YAML。外观中的平台入口顺序和固定 Mod 入口顺序进入 DB，分别使用 `platform_navigation_order` 和 `mod_navigation_pins`；隐藏项保留位置，新项追加，设置按钮保持底部。平台恢复默认按代码顺序，Mod 恢复默认按 ownerId/pageId 排序，不取消固定。损坏偏好报错并保留原值。
 
+外观按语言、主题、缩放、界面动画、启动页面这一组顺序维护。`app.desktop_preference.ui_animation_enabled` 保存 `true`／`false`，缺失时开启，非法值报错并保留原记录。启动先读取此值再创建窗口。界面动画开关立即生效、单独自动保存，不提交主题、缩放等未保存草稿；连续切换按最后一次选择串行写入。保存失败保留本次会话选择，并显示未保存及具体原因。开启时仍遵守 Windows 客户区动画偏好和 `-Dflatlaf.animation=false`。
+
 启动页面同样由 DB 偏好管理，不新增 YAML 配置：`ui_restore_last_page` 保存恢复开关（缺失时为 false），`ui_last_page` 保存正常关闭时的页面身份 JSON；未启用恢复或找不到原页面时进入首页。记录不包含输入草稿、弹窗或凭据。
 
 ## 完整可加载示例

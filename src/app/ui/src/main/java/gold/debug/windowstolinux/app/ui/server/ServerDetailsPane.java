@@ -13,7 +13,7 @@ import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
 /** Selected connection metadata and dated evidence, without reading credentials. / 所选连接元数据与带时间证据，不读取凭据。 */
-final class ServerDetailsPane extends JPanel implements Scrollable {
+final class ServerDetailsPane extends gold.debug.windowstolinux.app.ui.display.DesktopFadingPanel implements Scrollable {
     /** Current localized captions. / 当前本地化文案。 */
     private final PageMessagePresenter messages;
 
@@ -132,6 +132,7 @@ final class ServerDetailsPane extends JPanel implements Scrollable {
     /** Displays only the current saved selection and observation. / 仅展示当前保存的选择与观测。
      * @param summary selected saved summary or none / 所选保存摘要或无选择 */
     void show(ServerSummary summary) {
+        content(summary == null ? null : summary.profile().id());
         title.setFont(title.getFont().deriveFont(Font.BOLD, UIScale.scale(24f)));
         endpoint.setFont(UIManager.getFont("Label.font").deriveFont(Font.PLAIN, UIScale.scale(14f)));
         var profile = summary == null ? null : summary.profile();
