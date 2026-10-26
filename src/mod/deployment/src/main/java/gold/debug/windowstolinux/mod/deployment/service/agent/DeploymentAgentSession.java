@@ -315,7 +315,8 @@ public final class DeploymentAgentSession {
                                             gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task).digest());
                                         rejectionEvidence.put(call.id(), observe("PLAN_CAPACITY", refused.feedback()));
                                         return refused;
-                                    } catch (gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.IsolationRefusal refused) {
+                                    } catch (
+                                        gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.IsolationRefusal refused) {
                                         requireIsolationRefusal(refused);
                                         if (!DeploymentAgentActionLog.effectsSettled(journal.events(task)))
                                             throw new ApiException(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_ISOLATION_REQUIRES_RECOVERY", "Earlier work still requires reconciliation", Map.of(), Optional.of(task.id())));
@@ -806,9 +807,9 @@ public final class DeploymentAgentSession {
         } catch (DeploymentAiJson.CapabilityOutcomeException classified) {
             if (effect && classified.outcome() == TaskResult.FAILED
                 && (gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramState.hasUnconfirmed(
-                    context.tasks(), task, server.id(), gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task), journal.events(task))
-                    || classified.problem().filter(problem -> problem.eventCode().equals("DEPLOYMENT_AGENT_TOOLCHAIN_EXECUTION_FAILED")).isPresent()
-                    && !gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainFailureEvidence.settledTrackedFailure(classified.problem()))) {
+                context.tasks(), task, server.id(), gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task), journal.events(task))
+                || classified.problem().filter(problem -> problem.eventCode().equals("DEPLOYMENT_AGENT_TOOLCHAIN_EXECUTION_FAILED")).isPresent()
+                && !gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainFailureEvidence.settledTrackedFailure(classified.problem()))) {
                 journal.state(task, "UNKNOWN");
                 throw new DeploymentAiJson.CapabilityOutcomeException(TaskResult.UNKNOWN, Optional.of(new Problem(ProblemCode.UNKNOWN,
                     "DEPLOYMENT_AGENT_CONTROLLER_EFFECTS_UNCONFIRMED", "Original worker outcome lacks complete effect settlement",
@@ -1015,10 +1016,12 @@ public final class DeploymentAgentSession {
     }
 
     private void requireIsolationAdmission() throws Exception {
-        if (!(tools instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools remote)) return;
+        if (!(tools instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools remote))
+            return;
         try {
             remote.validateIsolationAdmission();
-        } catch (gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.IsolationRefusal refused) {
+        } catch (
+            gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.IsolationRefusal refused) {
             requireIsolationRefusal(refused);
             throw refused;
         } catch (DeploymentAgentAlternativeRequiredException refused) {
@@ -1421,7 +1424,8 @@ public final class DeploymentAgentSession {
     private void input(String question) throws Exception {
         if (question.isBlank() || question.length() > 2000)
             throw new IllegalArgumentException("Invalid agent question");
-        var answer = context.interaction().requestText("Autonomous deployment input", question, false, task);
+        var answer = context.interaction().requestText(gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(
+            context, "agent.publishInputTitle"), question, false, task);
         if (answer.outcome() != TaskResult.SUCCEEDED)
             throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
                 answer.outcome(), answer.problem());

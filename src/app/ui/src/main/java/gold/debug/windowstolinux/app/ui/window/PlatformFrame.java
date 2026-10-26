@@ -99,6 +99,18 @@ public final class PlatformFrame extends JFrame {
     /** Permanent original-task inspection and recovery. / 常驻原任务检查及恢复。 */
     private gold.debug.windowstolinux.app.ui.task.TaskRecoveryPane tasks;
 
+    /** Existing host actions that preserve original task ownership and navigation. / 保留原任务归属及导航的既有宿主操作。 */
+    private gold.debug.windowstolinux.app.service.task.TaskManagement taskManagement;
+
+    /** Shared transient queue, independent of durable waiting and recovery state. / 独立于持久等待及恢复状态的共用临时队列。 */
+    private gold.debug.windowstolinux.app.service.task.PlatformInterventionService interventions;
+
+    /** One modeless window for visible original-task questions. / 可见原任务问题共用的唯一非模态窗口。 */
+    private gold.debug.windowstolinux.app.ui.task.TaskInterventionPresenter interventionWindow;
+
+    /** Status-bar observation released with the platform frame. / 随平台窗口释放的状态栏观察。 */
+    private AutoCloseable interventionSubscription;
+
     /** Permanent installed Mod choices and explicit data maintenance. / 常驻已安装 Mod 选择及明确数据维护。 */
     private gold.debug.windowstolinux.app.ui.mod.PlatformModsPane mods;
 
@@ -153,6 +165,9 @@ public final class PlatformFrame extends JFrame {
         /** Navigation into the original log history page. / 导航到原日志历史页面。 */
         private final JButton openLogs = new JButton();
 
+        /** Task-count entry into original intervention navigation, unavailable while locked. / 锁定时不可用、按任务计数的原介入导航入口。 */
+        private final JButton pendingInterventions = new JButton();
+
         /** Single-line status surface with an invariant application-pixel height. / 应用像素高度恒定的单行状态界面。 */
         private final JPanel bar = new JPanel(new BorderLayout(12, 0));
 
@@ -170,7 +185,7 @@ public final class PlatformFrame extends JFrame {
                 BorderFactory.createMatteBorder(1, 0, 0, 0, palette.cardBorder()),
                 BorderFactory.createEmptyBorder(0, 12, 0, 8)));
             var font = UIManager.getFont("Label.font");
-            for (var control : new JComponent[]{logIssue, modStatus, modIssues, openLogs}) {
+            for (var control : new JComponent[]{logIssue, modStatus, modIssues, openLogs, pendingInterventions}) {
                 control.setForeground(palette.sidebarForeground());
                 control.setFont(font.deriveFont(Math.min(18f, font.getSize2D())));
             }
@@ -256,6 +271,8 @@ public final class PlatformFrame extends JFrame {
         lock.onLockChange(locked -> {
             gold.debug.windowstolinux.app.ui.display.DesktopMotion.suspended(locked);
             feedback.modIssues.setEnabled(!locked);
+            feedback.pendingInterventions.setEnabled(!locked);
+            if (interventionWindow != null) interventionWindow.locked(locked);
             appearance.debug.locked(locked);
             if (servers != null)
                 servers.setLocked(locked);
@@ -335,6 +352,10 @@ public final class PlatformFrame extends JFrame {
         feedback.openLogs.putClientProperty("desktop.navigation", true);
         feedback.openLogs.setEnabled(false);
         feedback.openLogs.addActionListener(event -> content.setSelectedComponent(settingsViews.logs));
+        feedback.pendingInterventions.setName("platform.pendingInterventions");
+        feedback.pendingInterventions.putClientProperty("desktop.navigation", true);
+        feedback.pendingInterventions.setVisible(false);
+        feedback.pendingInterventions.addActionListener(event -> openInterventions());
         messages.bind(feedback.logIssue, "platform.ready");
         for (var label : new JLabel[]{feedback.logIssue, feedback.modStatus}) {
             label.putClientProperty("html.disable", true);
@@ -345,11 +366,12 @@ public final class PlatformFrame extends JFrame {
         var actions = new JPanel();
         actions.setOpaque(false);
         actions.setLayout(new BoxLayout(actions, BoxLayout.X_AXIS));
+        actions.add(feedback.pendingInterventions);
         actions.add(feedback.modStatus);
         actions.add(Box.createHorizontalStrut(12));
         actions.add(feedback.modIssues);
         actions.add(feedback.openLogs);
-        for (var button : new JButton[]{feedback.modIssues, feedback.openLogs}) {
+        for (var button : new JButton[]{feedback.modIssues, feedback.openLogs, feedback.pendingInterventions}) {
             button.setBorderPainted(false);
             button.setContentAreaFilled(false);
             button.setMargin(new java.awt.Insets(0, 8, 0, 8));
@@ -607,6 +629,7 @@ public final class PlatformFrame extends JFrame {
     public void installTasks(gold.debug.windowstolinux.app.service.task.TaskManagement service) {
         if (!SwingUtilities.isEventDispatchThread() || tasks != null || settingsViews.logs == null)
             throw new IllegalStateException("Task management must be installed once after logs on the EDT");
+        taskManagement = service;
         tasks = new gold.debug.windowstolinux.app.ui.task.TaskRecoveryPane(service, appearance.components, messages,
             () -> content.setSelectedComponent(settingsViews.logs));
         content.addTab(messages.text("tasks.title"), messages.bind(tasks, "tasks.title"));
@@ -616,6 +639,64 @@ public final class PlatformFrame extends JFrame {
                 tasks.refresh();
         });
         tasks.setLocked(!security.securityState().unlocked());
+    }
+
+    /** Shares one review queue across the platform window, Mod scopes and status-bar task count. / 在平台窗口、Mod 作用域及状态栏任务计数间共用一个核验队列。
+     * @param service runtime-owned original-task review coordinator / 运行时所属原任务核验协调器 */
+    public void installInterventions(gold.debug.windowstolinux.app.service.task.PlatformInterventionService service) {
+        if (!SwingUtilities.isEventDispatchThread() || interventions != null || taskManagement == null)
+            throw new IllegalStateException("Interventions must be installed after task management");
+        interventions = java.util.Objects.requireNonNull(service);
+        pages.installInterventions(service);
+        interventionWindow = new gold.debug.windowstolinux.app.ui.task.TaskInterventionPresenter(this, messages.catalog(), service);
+        interventionSubscription = service.observe(this::refreshInterventions);
+        interventionWindow.locked(!security.securityState().unlocked());
+        refreshInterventions();
+    }
+
+    /** Projects pending questions into a distinct-task count without revealing form input. / 将待处理问题投影为不同任务计数，不暴露表单输入。 */
+    private void refreshInterventions() {
+        if (interventions == null) return;
+        long count = interventions.pending().stream().map(value -> value.task().id()).distinct().count();
+        feedback.pendingInterventions.setText(messages.text("intervention.tasks", java.util.Map.of("count", count)));
+        feedback.pendingInterventions.setToolTipText(feedback.pendingInterventions.getText());
+        feedback.pendingInterventions.setVisible(count > 0);
+        feedback.pendingInterventions.setEnabled(security.securityState().unlocked());
+        feedback.bar.revalidate();
+    }
+
+    /** Navigates through the original task controller before any queued question can open. / 任何排队问题打开前先通过原任务控制器导航。 */
+    private void openInterventions() {
+        if (interventions == null || !security.securityState().unlocked()) return;
+        var pending = interventions.pending().stream().map(value -> value.task().id()).distinct().toList();
+        if (pending.size() != 1) {
+            content.setSelectedComponent(tasks);
+            tasks.refresh();
+            return;
+        }
+        feedback.pendingInterventions.setEnabled(false);
+        new SwingWorker<Void, Void>() {
+            /** Requests original intervention navigation away from the EDT. / 离开 EDT 请求原人工介入导航。
+             * @return no business payload / 无业务载荷
+             * @throws Exception if the original controller or navigation is unavailable / 原控制器或导航不可用时 */
+            @Override
+            protected Void doInBackground() throws Exception {
+                taskManagement.control(pending.getFirst(), gold.debug.windowstolinux.appapi.task.control.TaskCommand.INTERVENE);
+                return null;
+            }
+
+            /** Falls back to the original task row if navigation fails and restores the task count. / 导航失败时回到原任务行，并恢复任务计数。 */
+            @Override
+            protected void done() {
+                try {
+                    get();
+                } catch (Exception unavailable) {
+                    content.setSelectedComponent(tasks);
+                    tasks.selectTask(pending.getFirst());
+                }
+                refreshInterventions();
+            }
+        }.execute();
     }
 
     /** Composes reusable task pages without changing the global task inventory. */
@@ -952,6 +1033,12 @@ public final class PlatformFrame extends JFrame {
         settingsViews.close();
         if (tasks != null)
             tasks.close();
+        if (interventionWindow != null) interventionWindow.close();
+        if (interventionSubscription != null) try {
+            interventionSubscription.close();
+        } catch (Exception failure) {
+            throw new IllegalStateException("Intervention observer cleanup failed", failure);
+        }
         if (mods != null)
             mods.close();
         if (originals != null)
@@ -1216,6 +1303,7 @@ public final class PlatformFrame extends JFrame {
                 servers.localize();
             if (tasks != null)
                 tasks.localize();
+            refreshInterventions();
             for (var owned : getOwnedWindows()) {
                 components.refreshTheme(owned);
                 gold.debug.windowstolinux.app.ui.language.LocaleBinding.refresh(owned, messages.catalog());

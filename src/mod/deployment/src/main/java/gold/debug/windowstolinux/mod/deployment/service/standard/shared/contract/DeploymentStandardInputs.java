@@ -201,7 +201,7 @@ public final class DeploymentStandardInputs {
         }
     }
 
-    /** Non-secret answers returned only after an explicit current-view confirmation. / 仅在当前视图明确确认后返回的不含秘密答案。
+    /** Non-secret runtime values; final deployment consent is separate from automatic defaults. / 不含秘密的运行值，最终部署同意与自动默认值分开。
      * @param values typed runtime, config and DB notation / 类型化运行、配置和数据库记法
      * @param files actual managed file bindings / 实际受管文件绑定
      * @param limits reviewed build limits / 经审阅构建限额
@@ -333,6 +333,28 @@ public final class DeploymentStandardInputs {
         OperationResult<Boolean> confirm(ServerId server, String sourceSha256, Map<String, String> archiveSha256,
                                          Map<String, Answers> answers, Map<String, DeploymentPreparedDatabase> databases,
                                          Optional<GitReview> git, TaskContext task) throws Exception;
+
+        /** Confirms the complete plan with optional ordinary launch edits. / 以可选普通启动编辑确认完整计划。
+         * @param server exact target server / 精确目标服务器
+         * @param sourceSha256 frozen source digest / 冻结来源摘要
+         * @param archiveSha256 exact component archive digests / 精确组件归档摘要
+         * @param answers previously reviewed values / 先前经审阅值
+         * @param databases exact prepared database bindings / 精确已准备数据库绑定
+         * @param git original pinned Git identity / 原固定 Git 身份
+         * @param task authentic original task / 真实原任务
+         * @return confirmed answers or actual refusal / 已确认答案或实际拒绝
+         * @throws Exception if original review cannot complete / 原审阅无法完成时 */
+        default OperationResult<Map<String, Answers>> confirmAnswers(ServerId server, String sourceSha256,
+                                                                     Map<String, String> archiveSha256, Map<String, Answers> answers,
+                                                                     Map<String, DeploymentPreparedDatabase> databases,
+                                                                     Optional<GitReview> git, TaskContext task) throws Exception {
+            var confirmed = confirm(server, sourceSha256, archiveSha256, answers, databases, git, task);
+            if (confirmed.outcome() != TaskResult.SUCCEEDED)
+                return new OperationResult<>(confirmed.outcome(), Optional.empty(), confirmed.problem());
+            return confirmed.value().orElse(false)
+                ? new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(Map.copyOf(answers)), Optional.empty())
+                : new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
+        }
     }
 
     /** Independent standard mode admission and deterministic review validation. / 独立标准模式准入及确定性审阅校验。 */

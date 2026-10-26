@@ -87,6 +87,7 @@ public final class Mod implements ModEntrypoint {
         var assisted = new DeploymentAssistedWorkflow(context, flow, assembly);
         var pageTasks = new DeploymentStandardPageService(context, workflow, assisted);
         pageTasks.taskWaiting(taskControls::waiting);
+        pageTasks.taskControl(taskControls::state);
         var autonomous = new DeploymentAgentWorkflow(context);
         var autonomousPageTasks = new DeploymentAgentPageService(context, autonomous);
         var applicationTasks = new DeploymentApplicationsService(context);

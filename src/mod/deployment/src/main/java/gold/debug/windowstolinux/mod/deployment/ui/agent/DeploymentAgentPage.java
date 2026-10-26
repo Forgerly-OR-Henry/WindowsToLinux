@@ -73,7 +73,7 @@ public final class DeploymentAgentPage implements ModPage {
     private final JTextArea requirements = new JTextArea(5, 48);
 
     /** Persisted task feedback visible to the user. / 用户可见的持久任务反馈。 */
-    private final JTextArea status = new JTextArea(10, 60);
+    private final JTextArea status = new JTextArea(2, 40);
 
     /** Actual original evidence and cooperative controls. / 实际原依据及协作控件。 */
     private final DeploymentAgentEvidencePanel evidence;
@@ -98,11 +98,36 @@ public final class DeploymentAgentPage implements ModPage {
 
     private java.util.UUID focusedTask;
 
+    /** Keeps a selected original task from being replaced by another goal's next worker. / 防止另一目标的后续工作线程替换已选原任务。 */
+    private boolean explicitTaskFocus;
+
+    /** Exact activation-bound review capability used to publish original-task visibility. / 用于发布原任务可见性的精确启用绑定核验能力。 */
+    private gold.debug.windowstolinux.appapi.ui.intervention.UiInterventionService interventions;
+
+    /** Original diagnostic text retained separately from the compact progress summary. / 与紧凑进度摘要分开保留的原诊断文字。 */
+    private String retainedTaskDetails = "";
+
+    /** Explicit expansion of retained technical task evidence. / 明确展开保留技术任务依据的开关。 */
+    private final JToggleButton evidenceToggle = new JToggleButton();
+
     public void focusOriginalTask(java.util.UUID id) {
         if (closed || locked) throw new IllegalStateException("Original view is unavailable");
-        focusedTask = id;
-        status.setText(id.toString());
+        explicitTaskFocus = true;
+        setFocusedTask(id);
         evidence.focusOriginalTask(id);
+        if (interventions == null) return;
+        actions.execute(() -> {
+            try {
+                var original = service.observeOriginal(id);
+                SwingUtilities.invokeLater(() -> {
+                    if (!closed && !locked && id.equals(focusedTask)) feedback.watch(original);
+                });
+            } catch (ApiException unavailable) {
+                SwingUtilities.invokeLater(() -> {
+                    if (!closed && !locked && id.equals(focusedTask)) status.setText(text("taskError"));
+                });
+            }
+        });
     }
 
     private volatile gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoal goal;
@@ -116,6 +141,27 @@ public final class DeploymentAgentPage implements ModPage {
 
     /** Current host lock state. / 当前宿主锁定状态。 */
     private volatile boolean locked;
+
+    /** Withdraws prior task visibility before reporting the newly focused original task. / 报告新聚焦原任务前撤回先前任务的可见性。
+     * @param id newly focused original UUID / 新聚焦原 UUID */
+    private void setFocusedTask(java.util.UUID id) {
+        if (interventions != null && focusedTask != null && !focusedTask.equals(id))
+            try {
+                interventions.visible(focusedTask, false);
+            } catch (ApiException unavailable) {
+            }
+        focusedTask = id;
+        publishVisibility();
+    }
+
+    /** Reports visibility only when this unlocked original-task page is actually showing. / 仅在此已解锁原任务页面实际显示时报告可见。 */
+    public void publishVisibility() {
+        if (interventions == null || focusedTask == null) return;
+        try {
+            interventions.visible(focusedTask, !closed && !locked && root.isShowing());
+        } catch (ApiException unavailable) {
+        }
+    }
 
     /** Current original task feedback independent of the historical recovery view. / 独立于历史恢复视图的当前原任务反馈。 */
     private gold.debug.windowstolinux.mod.deployment.ui.feedback.DeploymentTaskFeedback feedback;
@@ -143,7 +189,10 @@ public final class DeploymentAgentPage implements ModPage {
         preferences = shared != null ? shared.preferences : new DeploymentPreferenceSelection(actions, service::savePreferences,
             () -> "AGENT", selection -> {
         },
-            detail -> status.setText(text("preferenceError") + "\n" + detail), this::availability);
+            detail -> {
+                retainedTaskDetails = detail;
+                status.setText(text("preferenceError"));
+            }, this::availability);
         evidence = new DeploymentAgentEvidencePanel(service, actions, () -> focusedTask != null ? focusedTask : current == null ? null : current.id());
         targets.servers.setName("deployment.agent.server");
         targets.servers.setRenderer((list, value, index, selected, focus) -> {
@@ -163,6 +212,14 @@ public final class DeploymentAgentPage implements ModPage {
         requireEdt();
         locale(environment);
         locked = environment.locked();
+        try {
+            interventions = service.interventions();
+        } catch (ApiException unavailable) {
+            interventions = null;
+        }
+        root.addHierarchyListener(event -> {
+            if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0) publishVisibility();
+        });
         feedback = new gold.debug.windowstolinux.mod.deployment.ui.feedback.DeploymentTaskFeedback(service.feedback(),
             actions, () -> {
             try {
@@ -172,9 +229,25 @@ public final class DeploymentAgentPage implements ModPage {
             }
         }, service::delivery, service.configuration().view());
         feedback.originalTaskNavigation(id -> {
-            try { service.openTasks(java.util.Optional.of(id)); }
-            catch (ApiException unavailable) { status.setText(text("submitError")); }
+            try {
+                service.openTasks(java.util.Optional.of(id));
+            } catch (ApiException unavailable) {
+                status.setText(text("submitError"));
+            }
         });
+        feedback.presentationLookup(id -> service.presentation(id).map(value ->
+            new gold.debug.windowstolinux.mod.deployment.ui.feedback.DeploymentTaskFeedback.Presentation(
+                value.fraction(), false, value.pendingCount(),
+                service.controlState(id).filter(state -> state == gold.debug.windowstolinux.mod.deployment.service.agent.control.DeploymentAgentControl.State.PAUSED).isPresent(),
+                false)));
+        feedback.interventionNavigation(id -> {
+            try {
+                service.intervene(id);
+            } catch (ApiException unavailable) {
+                status.setText(text("submitError"));
+            }
+        });
+        feedback.additionalDetails(() -> retainedTaskDetails);
         if (shared != null) feedback.compactIdle(true);
         feedback.configure(environment);
         root.setBorder(shared == null ? BorderFactory.createEmptyBorder(18, 20, 18, 20) : BorderFactory.createEmptyBorder());
@@ -214,10 +287,20 @@ public final class DeploymentAgentPage implements ModPage {
             root.add(DeploymentPageStyle.selections(DeploymentPageStyle.card("style.source", sourceFields),
                 DeploymentPageStyle.card("style.server", targetFields)), BorderLayout.NORTH);
         var live = new JPanel(new BorderLayout(4, 4));
-        live.add(new JScrollPane(status), BorderLayout.NORTH);
+        live.add(DeploymentPageStyle.notice(status), BorderLayout.NORTH);
         live.add(feedback.component(), BorderLayout.CENTER);
-        var observed = new JSplitPane(JSplitPane.VERTICAL_SPLIT, live, evidence.component());
-        observed.setResizeWeight(0.55);
+        var observed = new JPanel(new BorderLayout(0, 8));
+        observed.add(live, BorderLayout.CENTER);
+        var technical = new JPanel(new BorderLayout());
+        technical.add(evidenceToggle, BorderLayout.NORTH);
+        evidenceToggle.setName("deployment.agent.details");
+        evidence.component().setVisible(false);
+        evidenceToggle.addActionListener(ignored -> {
+            evidence.component().setVisible(evidenceToggle.isSelected());
+            technical.revalidate();
+        });
+        technical.add(evidence.component(), BorderLayout.CENTER);
+        observed.add(technical, BorderLayout.SOUTH);
         root.add(shared == null ? DeploymentPageStyle.card("style.results", observed) : observed, BorderLayout.CENTER);
         if (shared == null) root.add(buttons, BorderLayout.SOUTH);
         else {
@@ -245,6 +328,7 @@ public final class DeploymentAgentPage implements ModPage {
         locked = environment.locked();
         localize();
         if (feedback != null) feedback.configure(environment);
+        publishVisibility();
         if (locked) {
             generation.incrementAndGet();
             cancelLookup();
@@ -263,6 +347,7 @@ public final class DeploymentAgentPage implements ModPage {
     public void close() {
         requireEdt();
         closed = true;
+        publishVisibility();
         if (goalWatch != null) goalWatch.stop();
         closeGoalSubscription();
         if (feedback != null) feedback.close();
@@ -363,6 +448,7 @@ public final class DeploymentAgentPage implements ModPage {
             return;
         }
         busy = true;
+        explicitTaskFocus = false;
         availability();
         long view = generation.get();
         actions.execute(() -> {
@@ -376,6 +462,7 @@ public final class DeploymentAgentPage implements ModPage {
                 SwingUtilities.invokeLater(() -> {
                     if (!closed && current == handle) {
                         feedback.watch(handle);
+                        setFocusedTask(handle.id());
                         if (goal != null) watchGoal(goal);
                     }
                 });
@@ -396,7 +483,7 @@ public final class DeploymentAgentPage implements ModPage {
                 SwingUtilities.invokeLater(() -> {
                     if (!closed) {
                         if (generation.get() == view)
-                            status.setText(text("submitError") + ": " + failure.getClass().getSimpleName());
+                            status.setText(text("submitError"));
                         availability();
                     }
                 });
@@ -410,7 +497,10 @@ public final class DeploymentAgentPage implements ModPage {
         goalSubscription = selected.watch(handle -> SwingUtilities.invokeLater(() -> {
             if (!closed && goal == selected) {
                 current = handle;
-                feedback.watch(handle);
+                if (!explicitTaskFocus) {
+                    feedback.watch(handle);
+                    setFocusedTask(handle.id());
+                }
                 availability();
             }
         }));
@@ -495,10 +585,10 @@ public final class DeploymentAgentPage implements ModPage {
                         + item.outcome().map(Object::toString).orElse(item.progressText()))
                     .collect(java.util.stream.Collectors.joining("\n"));
                 SwingUtilities.invokeLater(() -> {
-                    if (!closed && !locked && generation.get() == view)
-                        status.setText((shown.isBlank() ? text("noTasks") : shown) + "\n" + preferences.diagnostic()
-                            + (goal == null ? "" : "\n" + goal.observation().root() + " → " + goal.observation().current()
-                            + "  " + goal.observation().state()));
+                    if (!closed && !locked && generation.get() == view) {
+                        retainedTaskDetails = preferences.diagnostic();
+                        status.setText(shared == null && shown.isBlank() ? text("noTasks") : "");
+                    }
                 });
             } catch (Exception failure) {
                 SwingUtilities.invokeLater(() -> {
@@ -527,6 +617,7 @@ public final class DeploymentAgentPage implements ModPage {
 
     /** Updates locale-bound visible text and lock availability. / 更新依语言变化的可见文案与锁定可用性。 */
     private void localize() {
+        evidenceToggle.setText(text("intervention.details"));
         preferences.localize(this::text);
         labels.forEach(label -> label.setText(text((String) label.getClientProperty("key"))));
         start.setText(text("start"));

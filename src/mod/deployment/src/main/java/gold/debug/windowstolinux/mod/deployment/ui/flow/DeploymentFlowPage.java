@@ -92,6 +92,9 @@ public final class DeploymentFlowPage implements ModPage {
 
     private UUID observedTask;
 
+    /** Preserves an explicitly selected original intervention task during flow observation. / 在流程观察期间保留明确选定的原人工介入任务。 */
+    private boolean interventionFocus;
+
     private String observedMode = "ASSISTED", navigationMode;
 
     private String suggestedName = "";
@@ -481,17 +484,20 @@ public final class DeploymentFlowPage implements ModPage {
         observedTask = null;
         policy = null;
         problem.setText("");
+        interventionFocus = false;
         if (draft.mode.equals("AGENT")) agent.flowSubmit();
         else standard.flowSubmit();
         observe();
     }
 
-    @Override public void navigate(UiNavigationRequest<?> request) {
+    @Override
+    public void navigate(UiNavigationRequest<?> request) {
         if (closed || environment.locked() || !request.destination().equals("intervene-task")
             || request.contextType() != UUID.class || request.context().isEmpty())
             throw new IllegalArgumentException("Original task intervention required");
         UUID id = (UUID) request.context().orElseThrow();
         observedTask = id;
+        interventionFocus = true;
         if (agentService.controlState(id).isPresent()) {
             observedMode = "AGENT";
             results.showCard("AGENT");
@@ -509,7 +515,9 @@ public final class DeploymentFlowPage implements ModPage {
         boolean prior = draft.frozen;
         draft.frozen = active;
         UUID current = observedMode.equals("AGENT") ? agent.flowTask() : standard.flowTask();
-        if (current != null) observedTask = current;
+        if (current != null && !interventionFocus) observedTask = current;
+        standard.publishVisibility();
+        agent.publishVisibility();
         if (active && observedTask != null && !environment.locked()) {
             try {
                 var actual = observedMode.equals("AGENT") ? agentService.approvalPolicyState(observedTask) : standardService.approvalPolicyState(observedTask);

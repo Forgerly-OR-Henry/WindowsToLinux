@@ -1135,7 +1135,7 @@ class PackageStructureArchitectureTest {
         "linux.action", "linux.command", "linux.session", "linux.transfer", "mod", "mod.lifecycle", "mod.model",
         "mod.service", "secret", "secret.access", "secret.model", "secret.ref", "server", "server.model",
         "server.ref", "task", "task.run", "task.recover", "task.query", "task.model", "task.result",
-        "task.action", "task.control", "task.log", "task.process", "task.ref", "ui", "ui.page", "ui.extension");
+        "task.action", "task.control", "task.log", "task.process", "task.ref", "ui", "ui.page", "ui.extension", "ui.intervention");
 
     private static final Map<String, Set<String>> API_ROOT_ENTRIES = Map.of(
         "ai", Set.of("AiService"), "db", Set.of("ModDatabase"), "file", Set.of("FileService"),
@@ -1169,7 +1169,7 @@ class PackageStructureArchitectureTest {
         for (String relative : API_PACKAGES)
             verifyPackageLayout("gold.debug.windowstolinux.appapi." + relative,
                 relative.split("\\.").length - 1, problems);
-        assertEquals(44, API_PACKAGES.size());
+        assertEquals(45, API_PACKAGES.size());
         assertTrue(problems.isEmpty(), () -> "registered public API packages rejected: " + problems);
         for (String relative : List.of("task.error", "task.util", "file.transfer", "task.run.internal",
             "server.ref.model", "ai.voice.realtime")) {

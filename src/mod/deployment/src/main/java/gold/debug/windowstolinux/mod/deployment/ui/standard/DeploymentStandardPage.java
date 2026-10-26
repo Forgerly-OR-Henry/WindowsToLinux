@@ -117,7 +117,7 @@ public final class DeploymentStandardPage implements ModPage {
     private DeploymentStandardSecretControls secretControls;
 
     /** Current and previously retained task observations. / 当前及之前保留的任务观察。 */
-    private final JTextArea status = new JTextArea(10, 60);
+    private final JTextArea status = new JTextArea(2, 40);
 
     /** Start action. / 启动操作。 */
     private final JButton start = new JButton();
@@ -140,6 +140,15 @@ public final class DeploymentStandardPage implements ModPage {
     /** One modal dialog, disposed when this owner closes or locks. / 单个模态对话框，所属者关闭或锁定时销毁。 */
     private JDialog dialog;
 
+    /** Original activation's host review capability, enabled only when available. / 仅可用时启用的原启用宿主核验能力。 */
+    private gold.debug.windowstolinux.appapi.ui.intervention.UiInterventionService interventions;
+
+    /** Exact original UUID currently represented by this page. / 此页面当前呈现的精确原 UUID。 */
+    private java.util.UUID focusedTask;
+
+    /** Original technical details kept separate from the concise progress display. / 与简明进度展示分开保留的原技术详情。 */
+    private String retainedTaskDetails = "";
+
     /** A pending unconfirmed owner review. / 一项待确认所属审阅。 */
     private volatile boolean pendingReview;
 
@@ -157,6 +166,9 @@ public final class DeploymentStandardPage implements ModPage {
 
     /** Last safe result from this view's original task. / 当前视图原任务最近一次安全结果。 */
     private volatile Problem recentProblem;
+
+    /** Original task that owns the retained failure, excluding unrelated focused tasks. / 保留失败所属的原任务，用于排除无关聚焦任务。 */
+    private volatile java.util.UUID recentProblemTask;
 
     /** Returns the source defaults captured by this page service. / 返回当前页面服务捕获的来源默认值。
      * @return source limits / 来源限额 */
@@ -185,7 +197,10 @@ public final class DeploymentStandardPage implements ModPage {
         modeControls.preferences = shared != null ? shared.preferences : new DeploymentPreferenceSelection(actions, service::savePreferences,
             () -> modeControls.assisted.isSelected() ? "ASSISTED" : "STATIC",
             selection -> modeControls.assisted.setSelected(selection.mode().equals("ASSISTED")),
-            detail -> status.setText(text("preferenceError") + "\n" + detail), this::policyAvailability);
+            detail -> {
+                retainedTaskDetails = detail;
+                status.setText(text("preferenceError"));
+            }, this::policyAvailability);
         modeControls.assisted.setName("deployment.preference.assisted");
         modeControls.assisted.addActionListener(ignored -> modeControls.preferences.changed());
         servers.setRenderer((list, value, index, selected, focus) -> {
@@ -207,6 +222,14 @@ public final class DeploymentStandardPage implements ModPage {
             environment.locale(),
             ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_DEFAULT));
         locked = environment.locked();
+        try {
+            interventions = service.interventions();
+        } catch (ApiException unavailable) {
+            interventions = null;
+        }
+        root.addHierarchyListener(event -> {
+            if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0) publishVisibility();
+        });
         root.setBorder(shared == null ? BorderFactory.createEmptyBorder(18, 20, 18, 20) : BorderFactory.createEmptyBorder());
         servers.setName("deployment.server");
         draft.name.setName("deployment.sourceName");
@@ -303,16 +326,30 @@ public final class DeploymentStandardPage implements ModPage {
             try {
                 service.openPlatform(gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind.TASKS);
             } catch (ApiException unavailable) {
-                status.setText(text("target.unavailable") + " " + unavailable.problem().eventCode());
+                status.setText(text("target.unavailable"));
             }
         }, service::delivery, service.configuration().view());
         feedback.originalTaskNavigation(id -> {
-            try { service.openTasks(java.util.Optional.of(id)); }
-            catch (ApiException unavailable) { status.setText(text("target.unavailable") + " " + unavailable.problem().eventCode()); }
+            try {
+                service.openTasks(java.util.Optional.of(id));
+            } catch (ApiException unavailable) {
+                status.setText(text("target.unavailable"));
+            }
         });
+        feedback.presentationLookup(id -> service.presentation(id).map(value ->
+            new gold.debug.windowstolinux.mod.deployment.ui.feedback.DeploymentTaskFeedback.Presentation(
+                value.fraction(), false, value.pendingCount(), service.paused(id), false)));
+        feedback.interventionNavigation(id -> {
+            try {
+                service.intervene(id);
+            } catch (ApiException unavailable) {
+                status.setText(text("intervention.invalid"));
+            }
+        });
+        feedback.additionalDetails(() -> retainedTaskDetails);
         if (shared != null) feedback.compactIdle(true);
         var observations = new JPanel(new BorderLayout());
-        observations.add(new JScrollPane(status), BorderLayout.NORTH);
+        observations.add(DeploymentPageStyle.notice(status), BorderLayout.NORTH);
         observations.add(feedback.component(), BorderLayout.CENTER);
         root.add(shared == null ? DeploymentPageStyle.card("style.results", observations) : observations, BorderLayout.CENTER);
         if (shared == null) root.add(buttons, BorderLayout.SOUTH);
@@ -351,9 +388,13 @@ public final class DeploymentStandardPage implements ModPage {
         policyAvailability();
         modeControls.advanced.environment(messages, locked);
         DeploymentPageStyle.refresh(root, messages);
-        if (locked)
-            revoke();
-        else {
+        if (locked) {
+            if (interventions == null) revoke();
+            else {
+                publishVisibility();
+                secretControls.revoke();
+            }
+        } else {
             if (shared == null && !modeControls.preferences.ready())
                 loadPreferences();
             if (shared == null && servers.getItemCount() == 0)
@@ -470,14 +511,67 @@ public final class DeploymentStandardPage implements ModPage {
         root.revalidate();
     }
 
-    /** Original mode-specific surface used inside the one flow owner. / 在唯一流程所有者内部使用的原模式专用表面。 */
+    /** Reopens the exact task's real feedback while preserving the deployment draft. / 保留部署草稿并重开精确原任务的真实反馈。
+     * @param id selected original task UUID / 选定原任务 UUID */
     public void focusOriginalTask(java.util.UUID id) {
         if (closed || locked) throw new IllegalStateException("Original view is unavailable");
-        status.setText(id.toString());
-        if (currentTask != null && currentTask.id().equals(id) && dialog != null) {
-            dialog.toFront();
-            dialog.requestFocus();
+        setFocusedTask(id);
+        if (interventions == null) return;
+        actions.execute(() -> {
+            try {
+                var original = service.observeOriginal(id);
+                SwingUtilities.invokeLater(() -> {
+                    if (!closed && !locked && id.equals(focusedTask)) feedback.watch(original);
+                });
+            } catch (ApiException unavailable) {
+                SwingUtilities.invokeLater(() -> {
+                    if (!closed && !locked && id.equals(focusedTask)) status.setText(text("taskError"));
+                });
+            }
+        });
+    }
+
+    /** Withdraws the previous original task's visibility before changing the focused UUID. / 改变聚焦 UUID 前撤回先前原任务的可见性。
+     * @param id newly focused original task / 新聚焦原任务 */
+    private void setFocusedTask(java.util.UUID id) {
+        if (interventions != null && focusedTask != null && !focusedTask.equals(id))
+            try {
+                interventions.visible(focusedTask, false);
+            } catch (ApiException unavailable) {
+            }
+        focusedTask = id;
+        publishVisibility();
+    }
+
+    /** Reports only the actual visible, unlocked original-task surface to the host queue. / 仅向宿主队列报告实际可见且已解锁的原任务界面。 */
+    public void publishVisibility() {
+        if (interventions == null || focusedTask == null) return;
+        try {
+            interventions.visible(focusedTask, !closed && !locked && root.isShowing());
+        } catch (ApiException unavailable) {
         }
+    }
+
+    /** Uses the current application name for readable review without exposing an internal identifier. / 以当前应用名称提供可读核验文字，避免暴露内部标识。
+     * @return application caption with a localized unnamed fallback / 应用文字，未命名时使用本地化缺省文字 */
+    String applicationDisplayName() {
+        String name = draft.name.getText().strip();
+        return name.isBlank() ? text("confirmation.currentApplication") : name;
+    }
+
+    /** Resolves the selected original server name and disambiguates duplicate names with its host. / 解析所选原服务器名称，并用主机区分重名。
+     * @param id original selected server identity / 原所选服务器身份
+     * @return readable name with a safe localized fallback / 可读名称及安全本地化缺省文字 */
+    String serverDisplayName(ServerId id) {
+        for (int index = 0; index < servers.getItemCount(); index++) {
+            var item = servers.getItemAt(index);
+            if (!item.ref().equals(id)) continue;
+            int sameName = 0;
+            for (int other = 0; other < servers.getItemCount(); other++)
+                if (servers.getItemAt(other).name().equals(item.name())) sameName++;
+            return item.name() + (sameName > 1 ? " (" + item.host() + ")" : "");
+        }
+        return text("confirmation.selectedServer");
     }
 
     public JComponent flowResults() {
@@ -555,6 +649,7 @@ public final class DeploymentStandardPage implements ModPage {
         secretControls.updateAvailability();
         confirmed = false;
         recentProblem = null;
+        recentProblemTask = null;
         start.setEnabled(false);
         try {
             actions.execute(() -> {
@@ -570,7 +665,11 @@ public final class DeploymentStandardPage implements ModPage {
                         git, new DeploymentStandardPageReviewer(this, view), assisted, approvalMode, rememberAuthorization);
                     admitted = true;
                     currentTask = handle;
-                    SwingUtilities.invokeLater(() -> feedback.watch(handle));
+                    recentProblemTask = handle.id();
+                    SwingUtilities.invokeLater(() -> {
+                        feedback.watch(handle);
+                        setFocusedTask(handle.id());
+                    });
                     if (closed || locked || generation.get() != view)
                         cancelUnconfirmed(handle);
                     handle.completion().whenComplete((result, failure) -> {
@@ -625,7 +724,7 @@ public final class DeploymentStandardPage implements ModPage {
                         .collect(java.util.stream.Collectors.joining("\n"));
                     SwingUtilities.invokeLater(() -> {
                         if (!closed && !locked && generation.get() == view) {
-                            var problem = recentProblem;
+                            var problem = focusedTask == null || focusedTask.equals(recentProblemTask) ? recentProblem : null;
                             String diagnostic = problem == null
                                 ? ""
                                 : problem.eventCode().equals("DEPLOYMENT_STATIC_VIEW_REVOKED")
@@ -634,8 +733,10 @@ public final class DeploymentStandardPage implements ModPage {
                                 + (problem.eventCode().equals("DEPLOYMENT_SCHEMA_REVIEW_REQUIRED")
                                 ? text("schemaReviewRequired")
                                 : problem.message());
-                            status.setText((shown.isEmpty() ? text("noTasks") : shown) + diagnostic + "\n"
-                                + modeControls.preferences.diagnostic());
+                            retainedTaskDetails = diagnostic + "\n" + modeControls.preferences.diagnostic();
+                            status.setText(problem == null ? (shared == null && shown.isEmpty() ? text("noTasks") : "")
+                                : problem.eventCode().equals("DEPLOYMENT_SCHEMA_REVIEW_REQUIRED")
+                                ? text("schemaReviewRequired") : text("intervention.invalid"));
                         }
                     });
                 } catch (Exception failure) {
@@ -737,6 +838,76 @@ public final class DeploymentStandardPage implements ModPage {
      * @return current approval / 当前同意 */
     private boolean approve(long view, JPanel panel, String title, TaskContext task, boolean finalReview,
                             Runnable onAccepted) {
+        return approveValidated(view, panel, title, task, finalReview, () -> {
+        }, onAccepted);
+    }
+
+    /** Requires current validated form input before recording original-task consent. / 记录原任务同意前要求当前有效表单输入。
+     * @param view original view generation / 原视图代次
+     * @param panel actual review controls / 实际核验控件
+     * @param title localized review title / 本地化核验标题
+     * @param task authentic original callback / 真实原回调
+     * @param finalReview whether this grants final publication consent / 是否为最终发布同意
+     * @param validator current same-EDT input validation / 当前同 EDT 输入校验
+     * @return explicit acceptance after original boundary checks / 原边界检查后的明确接受 */
+    boolean approveValidated(long view, JPanel panel, String title, TaskContext task, boolean finalReview, Runnable validator) {
+        return approveValidated(view, panel, title, task, finalReview, validator, () -> {
+        });
+    }
+
+    /** Uses hosted review for original publication tasks and preserves the existing short-task dialog path. / 对原发布任务使用宿主核验，并保留既有短任务对话框路径。
+     * @param view original view generation / 原视图代次
+     * @param panel actual review controls / 实际核验控件
+     * @param title localized review title / 本地化核验标题
+     * @param task authentic original task / 真实原任务
+     * @param finalReview whether this is final publication consent / 是否为最终发布同意
+     * @param validator same-EDT validation before acceptance / 接受前的同 EDT 校验
+     * @param onAccepted original owner transition after validation / 校验后的原所有者状态转换
+     * @return explicit acceptance, or false after withdrawal or unavailability / 明确接受，撤回或不可用后为假 */
+    private boolean approveValidated(long view, JPanel panel, String title, TaskContext task, boolean finalReview,
+                                     Runnable validator, Runnable onAccepted) {
+        if (hostedInterventions(task)) {
+            try {
+                var request = interventions.request(task,
+                    new gold.debug.windowstolinux.appapi.ui.intervention.UiInterventionSpec(
+                        finalReview ? text("finalConfirm") : text("intervention.title"), "",
+                        text(finalReview ? "intervention.finalAccept" : "intervention.continue"), true),
+                    () -> new gold.debug.windowstolinux.appapi.ui.intervention.UiInterventionForm<Boolean>() {
+                        /** Refreshes this opening's localized form before host mounting. / 宿主挂载前刷新本次打开表单的本地化文字。
+                         * @return original review controls / 原核验控件 */
+                        @Override
+                        public JComponent component() {
+                            DeploymentPageStyle.refresh(panel, messages);
+                            return panel;
+                        }
+
+                        /** Rechecks view, task and inputs before recording the original acceptance transition. / 记录原接受转换前重查视图、任务及输入。
+                         * @return affirmative validated decision / 已校验的肯定决定 */
+                        @Override
+                        public Boolean submit() {
+                            if (closed || locked || generation.get() != view || task.cancelToken().requested())
+                                throw new IllegalArgumentException("Original review is unavailable");
+                            validator.run();
+                            if (finalReview) confirmed = true;
+                            onAccepted.run();
+                            return Boolean.TRUE;
+                        }
+
+                        /** Clears every password document when this review opening ends. / 本次核验打开结束时清除全部密码文档。 */
+                        @Override
+                        public void close() {
+                            clearPasswords(panel);
+                        }
+                    });
+                return Boolean.TRUE.equals(request.completion().toCompletableFuture().get());
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return false;
+            } catch (ApiException | java.util.concurrent.ExecutionException |
+                     java.util.concurrent.CancellationException unavailable) {
+                return false;
+            }
+        }
         if (closed || locked || generation.get() != view || task.cancelToken().requested())
             return false;
         var answer = new java.util.concurrent.CompletableFuture<Boolean>();
@@ -760,9 +931,19 @@ public final class DeploymentStandardPage implements ModPage {
                         focus.requestFocusInWindow();
                     });
                 service.userWaiting(task.id(), true);
-                owned.setVisible(true);
-                boolean accepted = !closed && !locked && generation.get() == view
-                    && Integer.valueOf(JOptionPane.OK_OPTION).equals(pane.getValue());
+                boolean accepted;
+                for (; ; ) {
+                    owned.setVisible(true);
+                    accepted = !closed && !locked && generation.get() == view
+                        && Integer.valueOf(JOptionPane.OK_OPTION).equals(pane.getValue());
+                    if (!accepted) break;
+                    try {
+                        validator.run();
+                        break;
+                    } catch (IllegalArgumentException invalid) {
+                        pane.setValue(JOptionPane.UNINITIALIZED_VALUE);
+                    }
+                }
                 if (accepted && finalReview)
                     confirmed = true;
                 if (accepted)
@@ -799,6 +980,99 @@ public final class DeploymentStandardPage implements ModPage {
         } catch (java.util.concurrent.ExecutionException failed) {
             return false;
         }
+    }
+
+    /** Limits hosted author forms to authentic publication callbacks rather than short editor tasks. / 将宿主作者表单限制为真实发布回调，避免混入短编辑任务。
+     * @param task original callback context / 原回调上下文
+     * @return whether hosted publication review is available / 宿主发布核验是否可用 */
+    boolean hostedInterventions(TaskContext task) {
+        try {
+            return interventions != null && service.publicationTask(task);
+        } catch (ApiException unavailable) {
+            return false;
+        }
+    }
+
+    /** Transfers one freshly validated password buffer back to the original publication worker. / 将一个新校验密码缓冲区交回原发布工作线程。
+     * @param view original view generation / 原视图代次
+     * @param task authentic original publication task / 真实原发布任务
+     * @param title human-readable password role / 供用户阅读的密码用途
+     * @param label localized meaning of the requested password / 所需密码含义的本地化文字
+     * @param allowEmpty whether the original operation permits an empty password / 原操作是否允许空密码
+     * @param onAccepted original owner transition before returning the buffer / 返回缓冲区前的原所有者状态转换
+     * @return caller-owned buffer requiring disposal after use / 由调用方持有并须在使用后清除的缓冲区
+     * @throws Exception if original review, validation or waiting is unavailable / 原核验、校验或等待不可用时 */
+    char[] requestPassword(long view, TaskContext task, String title, String label, boolean allowEmpty, Runnable onAccepted) throws Exception {
+        var request = interventions.request(task,
+            new gold.debug.windowstolinux.appapi.ui.intervention.UiInterventionSpec(
+                text("intervention.title"), "", text("intervention.continue"), true),
+            () -> new gold.debug.windowstolinux.appapi.ui.intervention.UiInterventionForm<char[]>() {
+                /** Secret input scoped to this one fresh host opening. / 仅属于本次新宿主打开的秘密输入。 */
+                private final JPasswordField field = new JPasswordField(32);
+
+                /** Password meaning and masked input mounted by the host. / 宿主挂载的密码含义及遮蔽输入。 */
+                private final JPanel panel = passwordPanel();
+
+                /** Builds a fresh masked field under the original question label. / 在原问题标签下创建新遮蔽字段。
+                 * @return one disposable password form / 单次可释放密码表单 */
+                private JPanel passwordPanel() {
+                    var content = DeploymentDialogs.form();
+                    content.add(DeploymentDialogs.fact(() -> title));
+                    var technical = DeploymentDialogs.fact(() -> label);
+                    technical.setVisible(false);
+                    var details = new JToggleButton(text("automatic.details"));
+                    details.addActionListener(ignored -> {
+                        technical.setVisible(details.isSelected());
+                        content.revalidate();
+                    });
+                    content.add(details);
+                    content.add(technical);
+                    field.setName("deployment.intervention.password");
+                    content.add(field);
+                    return content;
+                }
+
+                /** Returns this opening's masked password form. / 返回本次打开的遮蔽密码表单。
+                 * @return current password panel / 当前密码面板 */
+                @Override
+                public JComponent component() {
+                    return panel;
+                }
+
+                /** Validates original lifetime and password bounds before transferring disposable characters. / 转交可清除字符前校验原寿命及密码范围。
+                 * @return validated caller-owned password buffer / 已校验且由调用方持有的密码缓冲区 */
+                @Override
+                public char[] submit() {
+                    char[] value = field.getPassword();
+                    if (closed || locked || generation.get() != view || task.cancelToken().requested()
+                        || value.length > 262144 || !allowEmpty && value.length == 0) {
+                        java.util.Arrays.fill(value, '\0');
+                        throw new IllegalArgumentException("Password input is unavailable or invalid");
+                    }
+                    try {
+                        onAccepted.run();
+                        return value;
+                    } catch (RuntimeException failure) {
+                        java.util.Arrays.fill(value, '\0');
+                        throw failure;
+                    }
+                }
+
+                /** Clears the field document on acceptance, deferral, cancellation and invalidation. / 接受、延期、取消及失效时清除字段文档。 */
+                @Override
+                public void close() {
+                    field.setText("");
+                }
+            });
+        return request.completion().toCompletableFuture().get();
+    }
+
+    /** Clears nested password documents before author review controls leave the host window. / 作者核验控件离开宿主窗口前清除嵌套密码文档。
+     * @param value original review component or descendant container / 原核验组件或其后代容器 */
+    private static void clearPasswords(java.awt.Component value) {
+        if (value instanceof JPasswordField password) password.setText("");
+        if (value instanceof java.awt.Container parent)
+            for (var child : parent.getComponents()) clearPasswords(child);
     }
 
     /** Creates or reads one Swing form only on the EDT. / 仅在 EDT 创建或读取一份 Swing 表单。

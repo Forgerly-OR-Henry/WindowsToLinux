@@ -440,10 +440,138 @@ public final class PlatformTaskRuntime implements AutoCloseable {
 
     private final Map<RecoveryKey, ControlBinding> controllers = new HashMap<>();
 
+    /** One volatile host review queue, separate from durable task waiting. / 与持久任务等待独立的唯一内存宿主核验队列。 */
+    private volatile PlatformInterventionService interventions;
+
+    /** Returns the one host review queue owned by this runtime. / 返回此运行时持有的唯一宿主核验队列。
+     * @return runtime-owned review queue / 运行时所属核验队列 */
+    public synchronized PlatformInterventionService interventions() {
+        if (closing) throw new IllegalStateException("Task runtime is closing");
+        if (interventions == null) new PlatformInterventionService(this);
+        return interventions;
+    }
+
+    /** Attaches one host queue without replacing an active instance. / 挂接唯一宿主队列，不替换活动实例。
+     * @param service original queue / 原队列 */
+    synchronized void installInterventions(PlatformInterventionService service) {
+        if (closing || interventions != null)
+            throw new IllegalStateException("Host interventions are already installed");
+        interventions = service;
+    }
+
+    /** Detaches only the queue that actually closed. / 仅分离确已关闭的队列。
+     * @param service original closed queue / 原已关闭队列 */
+    synchronized void removeInterventions(PlatformInterventionService service) {
+        if (interventions == service) interventions = null;
+    }
+
+    /** Shares the actual desktop privacy transition with review forms. / 与核验表单共用实际桌面隐私转换。
+     * @param observer original host privacy callback / 原宿主隐私回调
+     * @return original removable registration / 原可移除登记 */
+    AutoCloseable observeInterventionLock(java.util.function.Consumer<Boolean> observer) {
+        return security.observeLock(observer);
+    }
+
+    /** Runs host-local interaction cleanup on the existing tracked worker pool. / 在既有受追踪工作线程池运行宿主本地交互清理。
+     * @param cleanup actual original lease release, without new business work / 实际原占用释放，不执行新业务 */
+    void interactionCleanup(Runnable cleanup) {
+        workers.execute(cleanup);
+    }
+
+    /** Checks an authentic ordinary task's exact author navigation outside the runtime monitor. / 在运行时监视器外检查真实普通任务的精确作者导航。
+     * @param original caller observation used only to locate its authentic task / 仅用于定位真实任务的调用方观察
+     * @return whether the original live task currently supports intervention / 原存活任务当前是否支持人工介入 */
+    boolean interventionNavigable(TaskSnapshot original) {
+        ControlBinding binding;
+        try {
+            synchronized (this) {
+                var actual = requireIntervention(original.id(), original.ownerId(), original.ownerVersion());
+                binding = controllers.get(new RecoveryKey(actual.ownerId(), actual.ownerVersion(), actual.type()));
+                if (binding == null) return false;
+                binding.calls++;
+            }
+        } catch (ApiException unavailable) {
+            return false;
+        }
+        try {
+            if (!Objects.requireNonNull(binding.controller.snapshot(original.id())).allows(TaskCommand.INTERVENE))
+                return false;
+            requireIntervention(original.id(), original.ownerId(), original.ownerVersion());
+            return true;
+        } catch (ApiException | RuntimeException unavailable) {
+            return false;
+        } finally {
+            synchronized (this) {
+                binding.calls--;
+            }
+        }
+    }
+
+    /** Authenticates a live original root task for transient review. / 为临时核验认证存活原根任务。
+     * @param id original identity / 原任务标识
+     * @param owner exact original owner / 精确原所有者
+     * @param version exact original release / 精确原发布
+     * @return authentic current observation / 真实当前观察
+     * @throws ApiException if ownership, cancellation or execution lifetime differs / 归属、取消或执行寿命不符时 */
+    synchronized TaskSnapshot requireIntervention(UUID id, String owner, String version) throws ApiException {
+        var task = executions.get(id);
+        if (task == null || !task.snapshot.ownerId().equals(owner) || !task.snapshot.ownerVersion().equals(version))
+            throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "TASK_INTERVENTION_OWNER",
+                "Review must belong to the exact original task and release");
+        if (closing || task.returned || task.reconciling || task.cancelled || task.uncertainEffect
+            || !Set.of(TaskState.RUNNING, TaskState.WAITING).contains(task.snapshot.state()))
+            throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "TASK_INTERVENTION_EXPIRED",
+                "The original live task is unavailable for review");
+        return task.snapshot;
+    }
+
+    /** Returns only the actual original ordinary execution after exact ownership verification. / 精确核验归属后仅返回实际原普通执行。
+     * @param id original task UUID / 原任务 UUID
+     * @param owner exact original Mod owner / 精确原 Mod 所有者
+     * @param version exact original release / 精确原发布
+     * @return actual runtime handle, never a replacement task or context / 实际运行时句柄，绝非替代任务或上下文
+     * @throws ApiException if the original ordinary task or ownership is unavailable / 原普通任务或归属不可用时 */
+    synchronized TaskHandle<?> interventionHandle(UUID id, String owner, String version) throws ApiException {
+        requireIntervention(id, owner, version);
+        return executions.get(id);
+    }
+
+    /** Reads actual progress without entering controller or review projections. / 不进入控制器或核验投影地读取真实进度。
+     * @param id original identity / 原任务标识
+     * @param owner exact original owner / 精确原所有者
+     * @param version exact original release / 精确原发布
+     * @return actual progress or unknown / 真实进度或未知
+     * @throws ApiException if the original execution is unavailable / 原执行不可用时 */
+    synchronized Optional<Double> interventionFraction(UUID id, String owner, String version) throws ApiException {
+        requireIntervention(id, owner, version);
+        return executions.get(id).progressFraction;
+    }
+
+    /** Rechecks current desktop access immediately before mounting or accepting input. / 挂载或接受输入前立即重查当前桌面访问。
+     * @throws ApiException if the desktop is locked / 桌面锁定时 */
+    void requireInterventionAccess() throws ApiException {
+        try {
+            security.requireUnlocked();
+        } catch (gold.debug.windowstolinux.app.service.error.ApplicationServiceException denied) {
+            throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "TASK_SECURITY_LOCKED", "Unlock the desktop to review tasks");
+        }
+    }
+
+    /** Requests display only after original navigation has succeeded. / 仅原导航成功后请求显示。
+     * @param id original task / 原任务 */
+    void showIntervention(UUID id) {
+        var service = interventions;
+        if (service != null) service.showNext(id);
+    }
+
     private static final class ControlBinding {
         final TaskController controller;
+
         int calls;
-        ControlBinding(TaskController controller) { this.controller = controller; }
+
+        ControlBinding(TaskController controller) {
+            this.controller = controller;
+        }
     }
 
     /** Bound author services revoked when their owning activation closes. / 所属启用关闭时撤销的绑定作者服务。 */
@@ -1127,10 +1255,14 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         } catch (ApiException | RuntimeException unavailable) {
             controls = TaskControlSnapshot.unavailable("TASK_CONTROL_UNAVAILABLE");
         } finally {
-            synchronized (this) { binding.calls--; }
+            synchronized (this) {
+                binding.calls--;
+            }
         }
+        var service = interventions;
+        int pending = service == null ? 0 : service.count(entry.snapshot().id());
         return new TaskManagement.Entry(entry.snapshot(), entry.cancellable(), entry.recovery(), entry.title(),
-            TaskManagement.projection(entry.snapshot(), entry.recovery(), fraction, controls));
+            TaskManagement.projection(entry.snapshot(), entry.recovery(), fraction, controls, pending));
     }
 
     /** Dispatches explicit controls without lending a business context or holding the runtime lock. */
@@ -1155,7 +1287,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                     throw TaskConclusion.error(ProblemCode.BUSY, "TASK_CONTROL_STATE", "The original boundary rejects this action");
                 binding.controller.request(id, command);
             } finally {
-                synchronized (this) { binding.calls--; }
+                synchronized (this) {
+                    binding.calls--;
+                }
             }
         }
     }
@@ -1171,8 +1305,13 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                     throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "TASK_LOGS_UNAVAILABLE", "Original Mod task logs are unavailable");
                 binding.calls++;
             }
-            try { return binding.controller.readLogs(id); }
-            finally { synchronized (this) { binding.calls--; } }
+            try {
+                return binding.controller.readLogs(id);
+            } finally {
+                synchronized (this) {
+                    binding.calls--;
+                }
+            }
         }
     }
 
@@ -1322,6 +1461,8 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 throw TaskConclusion.error(ProblemCode.BUSY, "TASK_WORKERS_ACTIVE",
                     "Task callbacks are still returning");
             securityRegistration.close();
+            var service = interventions;
+            if (service != null) service.close();
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw TaskConclusion.error(ProblemCode.BUSY, "TASK_WAIT_INTERRUPTED", "Task shutdown wait was interrupted");
@@ -2456,6 +2597,8 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         /** Publishes observations after a monitor-owned state update; never used as authority. / 在监视器所属状态更新后发布观察，不用作授权依据。 */
         private void publish() {
             snapshots = executions.values().stream().map(t -> t.snapshot).toList();
+            var service = interventions;
+            if (service != null) service.taskChanged(snapshots);
         }
     }
 

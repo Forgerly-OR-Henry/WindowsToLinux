@@ -33,6 +33,41 @@ public final class DeploymentAgentPageService implements TaskRecovery {
     /** Actual original owner capabilities. / 实际原所有者能力。 */
     private final ModContext context;
 
+    /** Returns review sessions bound to this agent workflow's original Mod activation. / 返回绑定此自主流程原 Mod 启用的核验会话。
+     * @return activation-owned host review capability / 启用所属宿主核验能力
+     * @throws ApiException if the original UI activation is unavailable / 原界面启用不可用时 */
+    public gold.debug.windowstolinux.appapi.ui.intervention.UiInterventionService interventions() throws ApiException {
+        return context.ui().interventions();
+    }
+
+    /** Reattaches observation to the authentic original task, never a replacement. / 重新观察真实原任务，不创建替代任务。
+     * @param id selected original task UUID / 选定原任务 UUID
+     * @return the actual host-owned handle / 实际宿主任务句柄
+     * @throws ApiException if the original task or owning release is unavailable / 原任务或所属发布不可用时 */
+    public TaskHandle<?> observeOriginal(UUID id) throws ApiException {
+        return interventions().observe(id);
+    }
+
+    /** Reads actual progress and pending review count for the selected original task. / 读取所选原任务的真实进度及待核验数量。
+     * @param id selected original task UUID / 所选原任务 UUID
+     * @return current display observation, absent if its original scope is unavailable / 当前展示观察，原作用域不可用时为空 */
+    public Optional<gold.debug.windowstolinux.appapi.ui.intervention.UiInterventionSnapshot> presentation(UUID id) {
+        try {
+            return Optional.of(interventions().snapshot(id));
+        } catch (ApiException unavailable) {
+            return Optional.empty();
+        }
+    }
+
+    /** Opens the exact original workspace before requesting its pending questions. / 请求待处理问题前先打开精确原工作区。
+     * @param id original task UUID / 原任务 UUID
+     * @throws ApiException if original navigation or review ownership cannot be confirmed / 无法确认原导航或核验归属时 */
+    public void intervene(UUID id) throws ApiException {
+        context.ui().open("workspace", new gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<>(
+            "intervene-task", UUID.class, Optional.of(id)));
+        interventions().show(id);
+    }
+
     /** Dedicated original task admission and recovery coordinator. / 专有原任务准入及恢复协调器。 */
     private final DeploymentAgentWorkflow workflow;
 
@@ -90,7 +125,8 @@ public final class DeploymentAgentPageService implements TaskRecovery {
      * @param target explicit finite destination / 明确有限目的页
      * @throws ApiException if original UI access is revoked / 原UI访问被撤销时 */
     public void openPlatform(gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind target) throws ApiException {
-        if (target == gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind.TASKS) openTasks(java.util.Optional.empty());
+        if (target == gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind.TASKS)
+            openTasks(java.util.Optional.empty());
         else context.ui().openPlatform(target);
     }
 

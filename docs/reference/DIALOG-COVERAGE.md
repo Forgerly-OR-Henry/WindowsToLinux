@@ -14,7 +14,8 @@
 | APP 外壳 | PlatformFrame：启动／管理错误、问题详情、工作区关闭、重启错误和进度；DesktopLockController：设密引导及退出提示；CardOrderSession：排序冲突与保存错误 | DesktopDialogs 消息／选项及固定操作壳 |
 | APP 调试 | UiDebugDialog 的画廊、服务器和模型预览；UiDebugPreviewHost 的作者预览外壳 | DesktopDialogs；预览不持有真实保存、SSH或模型执行能力 |
 | APP 启动错误 | ApplicationLauncher、DesktopUncaughtFailureBoundary 的无主窗口错误 | DesktopDialogs 有界消息；保留原失败报告及退出合同 |
-| 部署标准流程 | DeploymentStandardPageReviewer：组件、运行参数、构建纠正、数据库来源／软件／替换／恢复／结构／密码、最终确认；独立保存来源确认 | DeploymentStandardPage 审阅窗口及 DeploymentDialogs |
+| 部署标准流程 | DeploymentStandardPageReviewer：普通识别及默认参数合并至最终确认；必要构建纠正、数据库与秘密输入逐项确认 | UiService.interventions 作者表单，经 TaskInterventionPresenter 单一宿主窗口呈现；独立来源选择仍用 DeploymentDialogs |
+| 部署宿主人工介入 | 原任务审批、普通／秘密输入、文件冲突和停滞；离页底栏计数、原任务定位、稍后介入、锁定及取消 | PlatformInterventionService 队列与 TaskInterventionPresenter；精确授权保留，持久 WAITING／恢复状态不变 |
 | 部署其他窗口 | 高级设置、服务器选择、应用编辑、发布历史、发现／接管、重新关联及日志 | 部署自身 UI 样式层；保留原窗口模态性和业务能力 |
 | 文件 Mod | FilesDialogs：新建／重命名、位置替换、删除范围、服务器与绝对路径、移动链接 | 文件 Mod 私有窗口支持；保留草稿、显式目标及撤销 |
 
@@ -37,3 +38,7 @@
 - 不同确认文案和数据库步骤复用同一生产审阅壳；布局矩阵与真实业务返回值／撤销测试分别核对。
 - 链接全文及SSH同意说明直接换行显示；原复选模型、默认未选和标签切换行为保留。视口按当前可用宽度测量正文高度，不能依赖上一帧的字段宽度而少算最后一项。
 - 实际定点结果、截图、首次失败与修正记录集中保存在 `.ai-workspace/evidence/dialog-unification-20261024/`。未进行真实服务器部署、外部模型调用或全项目测试。
+
+## 部署人工介入增量核对
+
+人工介入新增检查独立于上述历史960组矩阵：使用本地模拟原任务操作真实 Swing 窗口，核对宿主与作者表单共用同一窗口、离页底栏提醒、任务数与事项数区分、稍后介入、过期回答以及明暗主题和150%受限窗口。截图来源为实际生产组件及宿主窗口，不以生成图片替代；它们不代表真实远端部署、外部模型或全量测试通过。

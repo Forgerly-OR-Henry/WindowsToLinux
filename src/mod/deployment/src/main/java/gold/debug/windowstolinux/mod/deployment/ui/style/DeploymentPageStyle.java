@@ -6,6 +6,47 @@ import javax.swing.*;
 
 /** Mod-local presentation using Swing theme values, without host implementation access. / 仅使用 Swing 主题值的 Mod 本地展示，不访问宿主实现。 */
 public final class DeploymentPageStyle {
+    /** Shows short notices only while there is something to read. / 仅在存在内容时显示简短提示，不为原日志预留空白。
+     * @param message original notice document / 原提示文档
+     * @return automatically sized notice area / 自动收起的提示区域 */
+    public static JScrollPane notice(JTextArea message) {
+        var scroll = new JScrollPane(message);
+        Runnable update = () -> {
+            scroll.setVisible(!message.getText().isBlank());
+            if (scroll.getParent() != null) scroll.getParent().revalidate();
+        };
+        message.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            /** Applies notice visibility on the EDT even when its document changes on a worker. / 即使文档由工作线程修改，也在 EDT 应用提示可见性。 */
+            private void changed() {
+                if (SwingUtilities.isEventDispatchThread()) update.run();
+                else SwingUtilities.invokeLater(update);
+            }
+
+            /** Reveals notices after text insertion without reserving empty log space. / 插入文字后显示提示，不预留空日志区域。
+             * @param event original document insertion / 原文档插入事件 */
+            @Override
+            public void insertUpdate(javax.swing.event.DocumentEvent event) {
+                changed();
+            }
+
+            /** Rechecks notice visibility when its current text is removed. / 当前文字删除时重查提示可见性。
+             * @param event original document removal / 原文档删除事件 */
+            @Override
+            public void removeUpdate(javax.swing.event.DocumentEvent event) {
+                changed();
+            }
+
+            /** Keeps notice sizing consistent after document attribute changes. / 文档属性变化后保持提示尺寸一致。
+             * @param event original document attribute change / 原文档属性变化事件 */
+            @Override
+            public void changedUpdate(javax.swing.event.DocumentEvent event) {
+                changed();
+            }
+        });
+        update.run();
+        return scroll;
+    }
+
     /** Prevents helper instances. / 禁止工具实例。 */
     private DeploymentPageStyle() {
     }

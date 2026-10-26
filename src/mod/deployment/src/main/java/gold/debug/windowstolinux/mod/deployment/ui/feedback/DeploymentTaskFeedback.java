@@ -12,6 +12,8 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationUsage;
@@ -19,6 +21,84 @@ import gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagn
 
 /** Continuously observes one original handle without submitting polling tasks. / 持续观察一个原句柄，不提交轮询任务。 */
 public final class DeploymentTaskFeedback implements AutoCloseable {
+    /** Host-owned progress projection without clock-based fractions. / 不按时间推算比例的宿主进度投影。
+     * @param fraction reported fraction, absent when unmeasurable / 报告的比例，不可计算时为空
+     * @param estimated whether the fraction is a phase estimate / 比例是否为阶段估算
+     * @param pendingInterventions unresolved original decisions / 原任务未决事项数
+     * @param paused confirmed pause observation / 已确认暂停观察
+     * @param uncertain unconfirmed result observation / 未确认结果观察 */
+    public record Presentation(Optional<Double> fraction, boolean estimated, int pendingInterventions,
+                               boolean paused, boolean uncertain) {
+        /** Rejects invalid display observations. / 拒绝无效的展示观察。
+         * @param fraction bounded reported fraction / 有界报告比例
+         * @param estimated phase estimate flag / 阶段估算标记
+         * @param pendingInterventions nonnegative decision count / 非负事项数
+         * @param paused actual pause observation / 实际暂停观察
+         * @param uncertain actual uncertainty observation / 实际不确定性观察 */
+        public Presentation {
+            Objects.requireNonNull(fraction);
+            if (pendingInterventions < 0 || fraction.filter(value -> !Double.isFinite(value) || value < 0 || value > 1).isPresent())
+                throw new IllegalArgumentException("Invalid feedback projection");
+        }
+    }
+
+    /** Worker-side host observation without another task. / 不创建新任务的后台宿主观察。 */
+    private volatile java.util.function.Function<UUID, Optional<Presentation>> presentationLookup = ignored -> Optional.empty();
+
+    /** Destination for the watched task's unresolved decisions. / 所观察任务的未决事项目的页。 */
+    private java.util.function.Consumer<UUID> interventionNavigation;
+
+    /** Last presentation admitted for this view generation. / 当前视图代次最近准入的展示。 */
+    private Optional<Presentation> presentation = Optional.empty();
+
+    /** Locale used to format factual counts. / 格式化事实计数的语言。 */
+    private Locale locale = Locale.SIMPLIFIED_CHINESE;
+
+    /** Fraction bar that reserves full completion for actual success. / 仅实际成功才完整填满的比例条。 */
+    private final JProgressBar progress = new JProgressBar(0, 100);
+
+    /** Visible distinction between estimated and measured fractions. / 区分预计与实测比例的可见文字。 */
+    private final JLabel percentage = new JLabel();
+
+    /** Factual pending-decision count. / 实际未决事项数。 */
+    private final JLabel interventionCount = new JLabel();
+
+    /** Opens decisions for the retained original identity. / 按保留的原身份打开事项。 */
+    private final JButton intervention = new JButton();
+
+    /** Explicit opt-in to technical information. / 明确展开专业信息的控件。 */
+    private final JToggleButton detailsToggle = new JToggleButton();
+
+    /** Copyable original task and diagnostic evidence. / 可复制的原任务及诊断依据。 */
+    private final JTextArea details = new JTextArea(8, 40);
+
+    /** Collapsed container for original evidence. / 默认折叠的原依据容器。 */
+    private final JPanel detailsPanel = new JPanel(new BorderLayout(4, 4));
+
+    /** Copies the complete retained evidence beyond the viewport. / 复制包含视口外内容的完整保留依据。 */
+    private final JButton copyDetails = new JButton();
+
+    /** Keeps the current action above its fraction bar. / 将当前动作放在比例条上方。 */
+    private final JPanel progressPanel = new JPanel(new BorderLayout(4, 4));
+
+    /** Consecutively deduplicated known workflow phases. / 连续去重的已知流程阶段。 */
+    private java.util.List<String> retainedStages = java.util.List.of();
+
+    /** Actual completion identity retained only in details. / 仅在详情保留的实际完成标识。 */
+    private String completionDetails = "";
+
+    /** Reports a missing diagnostic observation without replacing evidence. / 不替换已有依据地报告诊断缺失。 */
+    private boolean observationUnavailable;
+
+    /** Fixed plain-language explanation for the latest known issue. / 最近已知问题的固定通俗说明。 */
+    private String observationNotice = "";
+
+    /** Prevents repeated graph phases from reversing an estimate. / 避免重复整图阶段导致预计值倒退。 */
+    private int estimatedHighWater;
+
+    /** Reads existing owner diagnostics only on the EDT. / 仅在 EDT 读取既有所属诊断。 */
+    private java.util.function.Supplier<String> additionalDetails = () -> "";
+
     /** Reads delivery with the actual completed original identity. / 以实际已完成原身份读取交付。 */
     public interface DeliveryLookup {
         /** Admits one exact original publication read. / 准入一项精确原发布读取。
@@ -48,7 +128,7 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
     /** Latest actual state and original identity. / 最新实际状态及原身份。 */
     private final JTextArea state = new JTextArea(3, 40);
 
-    /** Bounded persisted event window. / 有界持久事件窗口。 */
+    /** Human-readable stage history, separate from diagnostics. / 与诊断分开的通俗阶段历史。 */
     private final JTextArea events = new JTextArea(6, 40);
 
     private final JScrollPane eventsScroll = new JScrollPane(events);
@@ -146,25 +226,78 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
         events.setName("deployment.task.feedback.events");
         cancel.setName("deployment.task.feedback.cancel");
         tasks.setName("deployment.task.feedback.tasks");
+        progress.setName("deployment.task.feedback.progress");
+        percentage.setName("deployment.task.feedback.percentage");
+        interventionCount.setName("deployment.task.feedback.interventionCount");
+        intervention.setName("deployment.task.feedback.intervention");
+        detailsToggle.setName("deployment.task.feedback.detailsToggle");
+        details.setName("deployment.task.feedback.details");
+        copyDetails.setName("deployment.task.feedback.copyDetails");
         state.setEditable(false);
         events.setEditable(false);
         state.setLineWrap(true);
         events.setLineWrap(true);
         state.setWrapStyleWord(true);
         events.setWrapStyleWord(true);
+        details.setEditable(false);
+        details.setLineWrap(true);
+        details.setWrapStyleWord(true);
+        state.setOpaque(false);
+        events.setOpaque(false);
         var controls = new JPanel();
+        controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
+        cancel.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+        tasks.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+        detailsToggle.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
         controls.add(cancel);
+        controls.add(Box.createVerticalStrut(4));
         controls.add(tasks);
-        root.add(state, BorderLayout.NORTH);
+        controls.add(Box.createVerticalStrut(4));
+        controls.add(detailsToggle);
+        var action = new JPanel(new BorderLayout(4, 4));
+        action.add(state, BorderLayout.CENTER);
+        action.add(percentage, BorderLayout.EAST);
+        progressPanel.add(action, BorderLayout.NORTH);
+        progressPanel.add(progress, BorderLayout.CENTER);
+        var attention = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEADING));
+        attention.add(interventionCount);
+        attention.add(intervention);
+        progressPanel.add(attention, BorderLayout.SOUTH);
+        root.add(progressPanel, BorderLayout.NORTH);
         var observation = new JPanel(new BorderLayout(4, 4));
         observation.add(eventsScroll, BorderLayout.CENTER);
-        if (delivery != null) observation.add(delivery.component(), BorderLayout.SOUTH);
+        detailsPanel.add(new JScrollPane(details), BorderLayout.CENTER);
+        detailsPanel.add(copyDetails, BorderLayout.SOUTH);
+        detailsPanel.setVisible(false);
+        var supplement = new JPanel(new BorderLayout(4, 4));
+        supplement.add(detailsPanel, BorderLayout.CENTER);
+        if (delivery != null) supplement.add(delivery.component(), BorderLayout.SOUTH);
+        observation.add(supplement, BorderLayout.SOUTH);
         root.add(observation, BorderLayout.CENTER);
         root.add(controls, BorderLayout.SOUTH);
         cancel.addActionListener(ignored -> cancelOriginal());
+        detailsToggle.addActionListener(ignored -> {
+            detailsPanel.setVisible(detailsToggle.isSelected() && !closed && !unavailable);
+            root.revalidate();
+        });
+        copyDetails.addActionListener(ignored -> {
+            if (closed || unavailable) return;
+            try {
+                java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(
+                    new java.awt.datatransfer.StringSelection(details.getText()), null);
+            } catch (IllegalStateException | java.awt.HeadlessException unavailableClipboard) {
+                details.selectAll();
+                details.requestFocusInWindow();
+            }
+        });
+        intervention.addActionListener(ignored -> {
+            if (!closed && !unavailable && handle != null && interventionNavigation != null)
+                interventionNavigation.accept(handle.id());
+        });
         tasks.addActionListener(ignored -> {
             if (!closed && !unavailable) {
-                if (handle != null && originalTaskNavigation != null) originalTaskNavigation.accept(handle.snapshot().id());
+                if (handle != null && originalTaskNavigation != null)
+                    originalTaskNavigation.accept(handle.snapshot().id());
                 else openTasks.run();
             }
         });
@@ -191,16 +324,49 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
         originalTaskNavigation = Objects.requireNonNull(navigation);
     }
 
+    /** Reads host progress without admitting another task. / 不准入新任务地读取宿主进度。
+     * @param lookup worker-side original-task projection / 后台原任务投影 */
+    public void presentationLookup(java.util.function.Function<UUID, Optional<Presentation>> lookup) {
+        requireEdt();
+        presentationLookup = Objects.requireNonNull(lookup);
+        if (handle != null && !closed && !unavailable) poll();
+    }
+
+    /** Opens the exact original task's manual decisions. / 打开精确原任务的人工事项。
+     * @param navigation original-task decision destination / 原任务事项目的页 */
+    public void interventionNavigation(java.util.function.Consumer<UUID> navigation) {
+        requireEdt();
+        interventionNavigation = Objects.requireNonNull(navigation);
+        availability();
+    }
+
+    /** Appends owner diagnostics only to details. / 仅向详情附加所属诊断。
+     * @param supplier EDT-safe original diagnostic reader / EDT 安全的原诊断读取器 */
+    public void additionalDetails(java.util.function.Supplier<String> supplier) {
+        requireEdt();
+        additionalDetails = Objects.requireNonNull(supplier);
+    }
+
     /** Binds an admitted original handle on the EDT. / 在EDT绑定已准入原句柄。
      * @param original actual original handle / 实际原句柄 */
     public void watch(TaskHandle<?> original) {
         requireEdt();
         if (closed) return;
+        if (handle == original) {
+            if (!unavailable) poll();
+            return;
+        }
         handle = Objects.requireNonNull(original);
         if (delivery != null) delivery.watch(original);
         generation++;
         result = "";
         retainedEvents = "";
+        completionDetails = "";
+        retainedStages = java.util.List.of();
+        presentation = Optional.empty();
+        observationUnavailable = false;
+        observationNotice = "";
+        estimatedHighWater = 0;
         cancellationRequested = false;
         original.completion().whenComplete((completed, failure) -> {
             try {
@@ -220,15 +386,20 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
     public void configure(Locale locale, boolean unavailable) {
         requireEdt();
         messages = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.feedback.task-feedback", locale);
+        this.locale = locale;
         this.unavailable = unavailable;
         generation++;
         if (delivery != null) delivery.gate(unavailable);
         cancel.setText(messages.getString("cancel"));
         tasks.setText(messages.getString("tasks"));
+        detailsToggle.setText(messages.getString("details"));
+        copyDetails.setText(messages.getString("copyDetails"));
+        intervention.setText(messages.getString("intervention"));
         if (closed || unavailable) {
             timer.stop();
             state.setText("");
             events.setText("");
+            details.setText("");
         } else if (handle != null) {
             timer.start();
             poll();
@@ -253,9 +424,7 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
         if (closed || unavailable || handle == null) return;
         var original = handle;
         var snapshot = original.snapshot();
-        state.setText(snapshot.id() + " · " + snapshot.state() + "\n" + snapshot.progressText()
-            + (cancellationRequested ? "\n" + messages.getString("cancelRequested") : "")
-            + (result.isEmpty() ? "" : "\n" + result));
+        render(snapshot);
         availability();
         if (!reading.compareAndSet(false, true)) return;
         long view = generation;
@@ -272,22 +441,60 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
      * @param view captured view generation / 捕获的视图代次 */
     private void read(TaskHandle<?> original, long view) {
         String text;
+        java.util.List<String> stages = null;
+        Optional<Presentation> projected = Optional.empty();
+        boolean storageProblem = false;
+        String notice = "";
+        try {
+            projected = Objects.requireNonNull(presentationLookup.apply(original.id()));
+        } catch (
+            RuntimeException unavailableProjection) { /* An unavailable projection cannot supply a fraction or decision count. */ }
         try {
             var observed = diagnostics.read(original.id());
+            storageProblem = observed.problem().isPresent();
+            if (!observed.records().isEmpty()) notice = switch (observed.records().getFirst().event().eventCode()) {
+                case "DEPLOYMENT_AGENT_COMMAND_REVIEW_DENIED", "DEPLOYMENT_AGENT_REVIEW_DENIED",
+                     "DEPLOYMENT_ASSISTED_REVIEW_DENIED" -> "issue.review";
+                case "DEPLOYMENT_CANDIDATE_TRANSFER_FAILURE" -> "issue.transfer";
+                case "DEPLOYMENT_AGENT_FAILURE", "DEPLOYMENT_OPERATION_FAILURE", "DEPLOYMENT_EFFECT_OUTCOME" ->
+                    "issue.operation";
+                case "DEPLOYMENT_AGENT_SESSION_STOPPED" -> "issue.stopped";
+                case "DEPLOYMENT_AGENT_TOOL_REJECTED" -> "issue.tool";
+                default -> "";
+            };
+            var stageMessages = new java.util.ArrayList<String>();
+            for (var record : observed.records().reversed()) {
+                if (!record.event().eventCode().equals("DEPLOYMENT_STAGE")) continue;
+                DeploymentTaskStages.identify(record.event().message()).ifPresent(stage -> {
+                    if (stageMessages.isEmpty() || !stageMessages.getLast().equals(stage.message()))
+                        stageMessages.add(stage.message());
+                });
+            }
+            stages = java.util.List.copyOf(stageMessages);
             text = observed.records().reversed().stream().map(record -> record.recordedAt() + " · "
                 + record.event().level() + " · " + record.event().eventCode() + " · " + record.event().message()
                 + record.event().outcome().map(value -> " · " + value).orElse("")
+                + record.event().details().map(value -> " · " + value).orElse("")
                 + (record.truncated() ? " …" : "")).collect(java.util.stream.Collectors.joining("\n"));
             text += observed.problem().map(problem -> "\n" + problem.eventCode()).orElse("");
         } catch (Exception unavailable) {
             text = null;
         }
         String current = text;
+        var currentStages = stages;
+        var currentProjection = projected;
+        boolean currentStorageProblem = storageProblem;
+        String currentNotice = notice;
         SwingUtilities.invokeLater(() -> {
             reading.set(false);
             if (closed || unavailable || generation != view || handle != original) return;
             if (current != null) retainedEvents = current;
-            events.setText(retainedEvents + (current == null ? "\n" + messages.getString("unavailable") : ""));
+            if (currentStages != null) retainedStages = currentStages;
+            presentation = currentProjection;
+            observationUnavailable = current == null || currentStorageProblem;
+            if (current != null) observationNotice = currentNotice;
+            render(original.snapshot());
+            availability();
             if (original.snapshot().endedAt().isPresent()) timer.stop();
         });
     }
@@ -299,8 +506,9 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
     private void completed(TaskHandle<?> original, OperationResult<?> completed, Throwable failure) {
         if (closed || handle != original) return;
         if (delivery != null) delivery.completed(original, completed, failure);
-        result = failure != null || completed == null ? messages.getString("unavailable")
-            : completed.outcome() + completed.problem().map(problem -> " · " + problem.eventCode()).orElse("");
+        result = failure != null || completed == null ? "unavailable" : "outcome." + completed.outcome();
+        completionDetails = failure != null ? failure.getClass().getSimpleName()
+            : completed == null ? "" : completed.outcome() + completed.problem().map(problem -> " · " + problem.eventCode()).orElse("");
         if (!unavailable) {
             timer.start();
             poll();
@@ -320,7 +528,7 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
             } catch (Exception refused) {
                 SwingUtilities.invokeLater(() -> {
                     if (!closed && !unavailable && handle == original) {
-                        result = messages.getString("cancelUnavailable");
+                        result = "cancelUnavailable";
                         poll();
                     }
                 });
@@ -332,10 +540,83 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
     private void availability() {
         boolean showObservation = !compactIdle || !closed && !unavailable && handle != null;
         state.setVisible(showObservation);
+        progressPanel.setVisible(showObservation);
         eventsScroll.setVisible(showObservation);
+        detailsToggle.setEnabled(!closed && !unavailable && handle != null);
+        detailsPanel.setVisible(showObservation && !closed && !unavailable && detailsToggle.isSelected());
+        int pending = handle != null && handle.snapshot().endedAt().isPresent() ? 0
+            : presentation.map(Presentation::pendingInterventions).orElse(0);
+        interventionCount.setVisible(pending > 0 && !closed && !unavailable);
+        intervention.setVisible(pending > 0 && !closed && !unavailable);
+        intervention.setEnabled(interventionNavigation != null);
         cancel.setEnabled(!closed && !unavailable && handle != null && !cancellationRequested
             && handle.snapshot().endedAt().isEmpty());
         tasks.setEnabled(!closed && !unavailable);
+    }
+
+    /** Renders lifecycle facts separately from estimated progress. / 将生命周期事实与预计进度分开呈现。
+     * @param snapshot authentic original observation / 真实原任务观察 */
+    private void render(TaskSnapshot snapshot) {
+        var stage = DeploymentTaskStages.identify(snapshot.progressText());
+        var projection = presentation;
+        boolean uncertain = snapshot.state() == gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN
+            || projection.map(Presentation::uncertain).orElse(false);
+        boolean paused = projection.map(Presentation::paused).orElse(false);
+        boolean succeeded = snapshot.endedAt().isPresent() && snapshot.outcome().orElse(null) == TaskResult.SUCCEEDED;
+        boolean awaiting = !uncertain && !paused && projection.map(Presentation::pendingInterventions).orElse(0) > 0
+            && (snapshot.state() == gold.debug.windowstolinux.appapi.task.model.TaskState.RUNNING
+            || snapshot.state() == gold.debug.windowstolinux.appapi.task.model.TaskState.WAITING);
+        String status = snapshot.endedAt().isPresent() ? "outcome." + snapshot.outcome().orElseThrow()
+            : uncertain ? "outcome.UNKNOWN" : paused ? "paused" : awaiting ? "state.WAITING" : "state." + snapshot.state();
+        String action = stage.map(value -> messages.getString(value.message())).orElse(messages.getString("action.pending"));
+        StringBuilder summary = new StringBuilder(messages.getString(status));
+        if (!succeeded && !awaiting && !paused) summary.append('\n').append(action);
+        if (cancellationRequested && snapshot.endedAt().isEmpty())
+            summary.append('\n').append(messages.getString("cancelRequested"));
+        if (!result.isEmpty() && (result.equals("unavailable") || result.equals("cancelUnavailable")))
+            summary.append('\n').append(messages.getString(result));
+        if (observationUnavailable) summary.append('\n').append(messages.getString("unavailable"));
+        if (!observationNotice.isEmpty() && snapshot.endedAt().isEmpty())
+            summary.append('\n').append(messages.getString(observationNotice));
+        state.setText(summary.toString());
+
+        Optional<Double> fraction = projection.flatMap(Presentation::fraction);
+        boolean estimated = projection.map(Presentation::estimated).orElse(false);
+        // Phase estimates apply only to fixed standard workflows, whose stages have a known order.
+        // An autonomous workflow can revisit any stage, so it must supply its own bounded projection.
+        if (fraction.isEmpty() && !snapshot.type().toLowerCase(Locale.ROOT).contains("agent")
+            && stage.filter(value -> value.estimate() >= 0).isPresent()) {
+            fraction = Optional.of(stage.orElseThrow().estimate() / 100.0);
+            estimated = true;
+        }
+        if (succeeded) {
+            progress.setIndeterminate(false);
+            progress.setValue(100);
+            percentage.setText("100%");
+        } else if (fraction.isPresent()) {
+            int percent = Math.min(99, (int) Math.floor(fraction.orElseThrow() * 100));
+            if (estimated) {
+                estimatedHighWater = Math.max(estimatedHighWater, percent);
+                percent = estimatedHighWater;
+            }
+            progress.setIndeterminate(false);
+            progress.setValue(percent);
+            percentage.setText((estimated ? messages.getString("estimated") + " " : "") + percent + "%");
+        } else {
+            progress.setValue(0);
+            progress.setIndeterminate(snapshot.endedAt().isEmpty() && !paused);
+            percentage.setText(messages.getString("progress.unknown"));
+        }
+        progress.setToolTipText(messages.getString(estimated ? "progress.estimated" : "progress.measured"));
+        int pending = projection.map(Presentation::pendingInterventions).orElse(0);
+        interventionCount.setText(new java.text.MessageFormat(messages.getString("interventionCount"), locale).format(new Object[]{pending}));
+        events.setText(retainedStages.stream().map(messages::getString).collect(java.util.stream.Collectors.joining("\n")));
+        String extraDetails = Objects.requireNonNullElse(additionalDetails.get(), "");
+        details.setText(snapshot.id() + " · " + snapshot.state() + "\n" + snapshot.progressText()
+            + (snapshot.blockers().isEmpty() ? "" : "\n" + String.join("\n", snapshot.blockers()))
+            + (completionDetails.isEmpty() ? "" : "\n" + completionDetails)
+            + (retainedEvents.isEmpty() ? "" : "\n" + retainedEvents)
+            + (extraDetails.isBlank() ? "" : "\n" + extraDetails));
     }
 
     /** Stops every refresh callback without changing the accepted original task. / 停止所有刷新回调，不改变已准入原任务。 */
@@ -351,6 +632,11 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
         result = "";
         state.setText("");
         events.setText("");
+        details.setText("");
+        progress.setIndeterminate(false);
+        progress.setValue(0);
+        percentage.setText("");
+        presentation = Optional.empty();
         availability();
     }
 

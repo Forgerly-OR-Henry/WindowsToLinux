@@ -277,7 +277,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
                     if (!ordinaryDelete) {
                         var displayed = reviewedCommand == null ? intent : new ActionIntent(intent.type(), intent.serverIds(),
                             intent.target(), intent.revision(), intent.exactAction(), explanation, intent.semantics());
-                        return prompts.approve(displayed, snapshot, cancellation);
+                        return prompts.approve(displayed, snapshot, cancellation, reviewedCommand == null ? "" : explanation);
                     }
                     DeleteEffect effect = prompts.delete(deletionChoices, explanation, snapshot, cancellation);
                     if (effect == null) return false;
@@ -673,6 +673,16 @@ public final class PlatformInteractionService implements InteractionService, Aut
          * @return explicit approval / 明确同意
          */
         boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancellation);
+
+        /** Preserves the human tradeoff separately from technical effect details. / 将人工取舍说明与技术副作用详情分开保留。
+         * @param intent exact immutable review / 精确不可变审核
+         * @param task original task identity / 原任务身份
+         * @param cancellation original privacy and cancellation signal / 原隐私及取消信号
+         * @param explanation independent human-readable choice explanation / 独立且供用户阅读的取舍说明
+         * @return explicit approval only / 仅明确同意时为真 */
+        default boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancellation, String explanation) {
+            return approve(intent, task, cancellation);
+        }
 
         /** Confirms an offered deletion effect; basic presenters review the recoverable default when available. / 确认可选删除效果，基础呈现器在可回收时审核回收默认项。
          * @param choices immutable offered effects for the exact same object / 同一精确对象的不可变可选效果

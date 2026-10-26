@@ -244,7 +244,20 @@ public final class ApplicationLauncher {
         window.onExit(runtime);
         window.onRestart(new ApplicationRestart(runtime));
         window.rememberPage(new gold.debug.windowstolinux.app.service.setting.StartupPageService(runtime.persistence())::remember);
-        var presenter = new gold.debug.windowstolinux.app.ui.task.TaskInteractionPresenter(window, messages);
+        var presenter = new gold.debug.windowstolinux.app.ui.task.TaskInteractionPresenter(window, messages, runtime.tasks().interventions());
+        presenter.serverNames(() -> {
+            try {
+                var profiles = runtime.persistence().servers().listServerProfiles();
+                var labels = new java.util.HashMap<String, String>();
+                for (var profile : profiles) {
+                    boolean duplicate = profiles.stream().filter(value -> value.displayName().equals(profile.displayName())).count() > 1;
+                    labels.put(profile.id(), profile.displayName() + (duplicate ? " (" + profile.host() + ")" : ""));
+                }
+                return java.util.Map.copyOf(labels);
+            } catch (java.sql.SQLException unavailable) {
+                return java.util.Map.of();
+            }
+        });
         runtime.setInteractionPresenter(presenter);
         runtime.setSourcePicker(presenter);
         window.installServers(runtime.servers());
@@ -254,7 +267,8 @@ public final class ApplicationLauncher {
         window.installTransfers(runtime.transfers());
         window.installFileSettings(runtime.fileSettings());
         window.installAppearance(appearance, new gold.debug.windowstolinux.app.ui.setting.PlatformAppearancePane.Preferences() {
-            @Override public void save(DesktopDisplayConfig requested) throws Exception {
+            @Override
+            public void save(DesktopDisplayConfig requested) throws Exception {
                 try (var authorized = runtime.security().beginTask()) {
                     authorized.execute(() -> {
                         runtime.persistence().preferences().saveAll(java.util.Map.of("ui_locale", requested.localeTag(),
@@ -264,7 +278,9 @@ public final class ApplicationLauncher {
                     });
                 }
             }
-            @Override public void saveMotion(boolean enabled) throws Exception {
+
+            @Override
+            public void saveMotion(boolean enabled) throws Exception {
                 try (var authorized = runtime.security().beginTask()) {
                     authorized.execute(() -> {
                         runtime.persistence().preferences().save("ui_animation_enabled", Boolean.toString(enabled));
@@ -278,6 +294,7 @@ public final class ApplicationLauncher {
             runtime.security(), id -> recovery.reconcile(id, true), runtime.modRecovery()::release);
         window.installTasks(taskManagement);
         window.installModTaskPages(taskManagement);
+        window.installInterventions(runtime.tasks().interventions());
         window.installNavigationOrder(new gold.debug.windowstolinux.app.service.setting.NavigationOrderService(
             runtime.persistence().navigation(), runtime.security()));
         return window;

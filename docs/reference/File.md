@@ -189,6 +189,7 @@ WindowsToLinux/                           # [聚合]     工程构建入口，�
    │  │  └─ run/                          # [公开包]   任务执行上下文、取消、结果观察与资源持有
    │  └─ ui/                              # [公开包]   页面登记、打开与环境查询入口
    │     ├─ extension/                    # [公开包]   所属界面扩展、挂载与撤销
+   │     ├─ intervention/                 # [公开包]   原任务人工介入会话、表单与安全展示
    │     └─ page/                         # [公开包]   页面创建、登记句柄、描述、环境更新与关闭合同
    ├─ mod/                                # [聚合]     官方 Mod 的 Maven 模块分组
    │  ├─ pom.xml                          # [构建文件] Maven 模块与依赖声明
@@ -444,7 +445,7 @@ test/                                                                           
 | 范围 | 现行组织方式 |
 | --- | --- |
 | `src/app` | 模块内先确定实际功能与所有权，默认只保留模块下面第一层必要功能包；接口、专属数据与实现就近归包。模块本身已准确表达单一职责且不需分类时，具体实现可以直接位于模块 Java 根包。 |
-| `src/appapi` | 保留 9 个一级能力包，在其下按实际职责使用已登记的二级包；根包只保留主要入口，具体合同归二级职责包；当前共 44 个公开包，包含 `file.material` 与 `ui.extension`，不新增三级包。 |
+| `src/appapi` | 保留 9 个一级能力包，在其下按实际职责使用已登记的二级包；根包只保留主要入口，具体合同归二级职责包；当前共 45 个公开包，包含 `file.material`、`ui.extension` 与 `ui.intervention`，不新增三级包。 |
 | `src/mod`、`src/moddev` | 第一层职责包与相应平台模块同名，按需使用 `ai`、`db`、`file`、`linux`、`secret`、`service`、`ui`、`windows`；`api` 是 Mod 专属公开包，根包入口是 `Mod.java`。第一层之后由作者自主组织，APP 的词表、父子包模板、层数与内部命名门禁均不适用，也不提供同类推荐词表。 |
 
 APP 不强制套用 `contract`、`generation`、`extension`、`execution`、`persistence` 中间层。只有实际独立功能、所有权、访问隔离或依赖边界需要时才增加子包；默认一层不是禁止子包，类数达到 6～8 个时检查职责；只有 1～2 个类型时也核对是否适合合并。数量只触发检查，不决定合并或拆分，不凑数，不把无关类型塞进同一包；职责独立的小包保留。包合并前核对包内可见成员、重名、资源定位与引用，不能通过扩大可见性代替职责整理。
@@ -735,7 +736,7 @@ UPPER_SNAKE_CASE
 
 `task` 同时提供任务执行与核对的基础合同。`task/ref` 保存服务器和秘密业务提交与核对共用的引用状态与结果，不保存具体资源存取或释放逻辑；`server/ref` 依赖 `server/model` 与 `task/ref`，秘密引用依赖 `secret/model` 与 `task/ref`。持久业务引用仍归服务器和秘密能力管理，任务结束不代表引用自动释放。`task/query` 的 `PageSlice` 是可供任务、服务器等能力复用的通用分页结果，仅依赖 JDK，不反向依赖任务模型或服务入口。`db/schema` 保存 Schema 生命周期合同，`SchemaAccess` 的操作作用域与 `ModDatabase` 的任务作用域保持分离。
 
-`ai/model` 保存通用模型用途、消息、请求、响应与用量，`ai/vision` 仅保存图像输入，视觉仍复用通用消息调用链；`ai/voice` 保存音频输入和实时会话合同。`linux/session` 保存会话与主机观测，`linux/action` 保存精确审批意图。Mod 身份归 `mod/model`，启动模式、停止上下文与原因归 `mod/lifecycle`，跨 Mod 服务归 `mod/service`。`ui/page` 成组保存页面创建、登记、描述、环境、临时 `UiNavigationRequest` 及固定平台目的地类型 `PlatformPageKind`；`ui/extension` 保存提供方所属位置、动作/组件、挂载适配器、可撤销登记与 `PlatformUiExtensions` 正式位置常量。秘密标识、业务引用和短期读取回调分别归 `secret/model`、`secret/ref`、`secret/access`。二级合同不反向依赖所属能力的根包入口，按第 5.2 节的实际依赖维护包图。
+`ai/model` 保存通用模型用途、消息、请求、响应与用量，`ai/vision` 仅保存图像输入，视觉仍复用通用消息调用链；`ai/voice` 保存音频输入和实时会话合同。`linux/session` 保存会话与主机观测，`linux/action` 保存精确审批意图。Mod 身份归 `mod/model`，启动模式、停止上下文与原因归 `mod/lifecycle`，跨 Mod 服务归 `mod/service`。`ui/page` 成组保存页面创建、登记、描述、环境、临时 `UiNavigationRequest` 及固定平台目的地类型 `PlatformPageKind`；`ui/extension` 保存提供方所属位置、动作/组件、挂载适配器、可撤销登记与 `PlatformUiExtensions` 正式位置常量。`ui/intervention` 保存绑定原任务及精确所属版本的人工介入请求、EDT 表单、可延期会话与只读展示；不承接业务审批或持久恢复状态。秘密标识、业务引用和短期读取回调分别归 `secret/model`、`secret/ref`、`secret/access`。二级合同不反向依赖所属能力的根包入口，按第 5.2 节的实际依赖维护包图。
 
 ### 3.2 APP 平台模块与装配
 
@@ -1044,8 +1045,9 @@ mod/files ──→ appapi
 | `task.ref` | 无，仅使用 JDK。 |
 | `task.result` | 无，仅使用 JDK。 |
 | `task.run` | `task.model`、`task.result` |
-| `ui` | `task.result`、`ui.page`、`ui.extension` |
+| `ui` | `task.result`、`ui.page`、`ui.extension`、`ui.intervention` |
 | `ui.page` | `task.result` |
+| `ui.intervention` | `task.result`、`task.run` |
 | `ui.extension` | `task.result`、`ui.page`、`server.model` |
 
 跨能力限制按一级能力归属检查，实际包图仍按所有一级与二级包检查无环，不反向引用 ModContext 或具体 Mod；`file.material` 仅为不可变生产方身份引用 `db.schema.SchemaIdentity`，不取得 DB 执行能力。`task.action.InteractionService` 仅为独立审核的实际请求身份引用 JDK-only 的 `linux.command.CommandRequest`，宿主用它复核脚本、输入摘要和资源上限；不允许任务合同取得 LinuxService、RemoteSession、传输或执行能力，也不扩大其他任务类型的 Linux 依赖。db 中 JDBC、ui 中 Swing 均为 JDK 合同，不引入 H2 或 APP 实现。内部模型用途与公开 AiPurpose 分开，Id / Ref / Identity 的类型区分见第 2.6 节。

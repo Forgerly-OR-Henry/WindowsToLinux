@@ -34,10 +34,21 @@ public final class ModPageRegistry {
 
     private TaskPageFactory taskPages;
 
+    /** Runtime-owned queue shared only with explicitly enabled normal Mod scopes. / 仅与明确启用的普通 Mod 作用域共用的运行时队列。 */
+    private gold.debug.windowstolinux.app.service.task.PlatformInterventionService interventions;
+
+    /** Installs the host queue without enabling intervention for every Mod activation. / 安装宿主队列，不为全部 Mod 启用自动开启人工介入。
+     * @param service original runtime review coordinator / 原运行时核验协调器 */
+    public void installInterventions(gold.debug.windowstolinux.app.service.task.PlatformInterventionService service) {
+        if (interventions != null) throw new IllegalStateException("Interventions already installed");
+        interventions = Objects.requireNonNull(service);
+    }
+
     /** Installs only the host-selected task renderer; Mod code never supplies ownership. */
     public void installTaskPages(TaskPageFactory factory) throws ApiException {
         onEdt(() -> {
-            if (taskPages != null) throw failure(ProblemCode.BUSY, "TASK_PAGE_EXISTS", "Task renderer already installed");
+            if (taskPages != null)
+                throw failure(ProblemCode.BUSY, "TASK_PAGE_EXISTS", "Task renderer already installed");
             taskPages = Objects.requireNonNull(factory);
             return null;
         });
@@ -299,8 +310,9 @@ public final class ModPageRegistry {
             for (var scope : List.copyOf(scopes.values())) {
                 if (next.locked()) scope.motion.cancel();
                 for (var page : List.copyOf(scope.taskViews))
-                    try { page.environmentChanged(next); }
-                    catch (RuntimeException problem) {
+                    try {
+                        page.environmentChanged(next);
+                    } catch (RuntimeException problem) {
                         if (failure == null) failure = failure(ProblemCode.CONTRACT_VIOLATION,
                             "TASK_PAGE_ENVIRONMENT_FAILED", "A task page environment notification failed");
                     }
@@ -451,10 +463,28 @@ public final class ModPageRegistry {
 
         private final List<ModPage> taskViews = new ArrayList<>();
 
+        /** Lazily enabled capability confined to this exact owner, version and activation lifetime. / 延迟启用且仅限此精确所有者、版本及启用寿命的能力。 */
+        private gold.debug.windowstolinux.appapi.ui.intervention.UiInterventionService interventionScope;
+
+        /** Enables original-task review only for this live normal activation. / 仅为本存活普通启用开启原任务核验。
+         * @return exact activation-bound review capability / 精确启用绑定核验能力
+         * @throws ApiException if the host, activation or normal launch scope is unavailable / 宿主、启用或普通启动作用域不可用时 */
+        @Override
+        public gold.debug.windowstolinux.appapi.ui.intervention.UiInterventionService interventions() throws ApiException {
+            synchronized (this) {
+                if (interventions == null || stopping || recoveryOnly)
+                    throw failure(ProblemCode.UNAVAILABLE, "TASK_INTERVENTION_UNAVAILABLE", "Task review is unavailable");
+                if (interventionScope == null)
+                    interventionScope = interventions.scoped(owner, version, () -> committed && !stopping && !closed);
+                return interventionScope;
+            }
+        }
+
         private final gold.debug.windowstolinux.app.ui.display.DesktopMotionScope motion =
             new gold.debug.windowstolinux.app.ui.display.DesktopMotionScope(() -> visible() && !environment.locked());
 
-        @Override public Optional<gold.debug.windowstolinux.appapi.ui.page.UiMotion> motion() {
+        @Override
+        public Optional<gold.debug.windowstolinux.appapi.ui.page.UiMotion> motion() {
             return Optional.of(motion);
         }
 
@@ -510,7 +540,8 @@ public final class ModPageRegistry {
             return committed && !recoveryOnly && !stopping;
         }
 
-        @Override public ModPage createTaskPage() throws ApiException {
+        @Override
+        public ModPage createTaskPage() throws ApiException {
             return onEdt(() -> {
                 if (!visible() || version.isBlank() || taskPages == null)
                     throw failure(ProblemCode.UNAVAILABLE, "TASK_PAGE_UNAVAILABLE", "The exact Mod task view is unavailable");
@@ -612,6 +643,7 @@ public final class ModPageRegistry {
         public void seal() throws ApiException {
             onEdt(() -> {
                 stopping = true;
+                if (interventionScope != null) interventions.revokeOwner(owner, version);
                 motion.close();
                 extensionBinding.seal();
                 for (var page : taskViews) page.close();
@@ -677,6 +709,7 @@ public final class ModPageRegistry {
                 if (closed)
                     return null;
                 stopping = true;
+                if (interventionScope != null) interventions.revokeOwner(owner, version);
                 motion.close();
                 extensionBinding.seal();
                 changed();
@@ -695,8 +728,11 @@ public final class ModPageRegistry {
                 if (first != null)
                     throw first;
                 for (var page : taskViews)
-                    try { page.close(); }
-                    catch (Exception invalid) { throw failure(ProblemCode.CONTRACT_VIOLATION, "TASK_PAGE_CLOSE", "Task view cleanup failed"); }
+                    try {
+                        page.close();
+                    } catch (Exception invalid) {
+                        throw failure(ProblemCode.CONTRACT_VIOLATION, "TASK_PAGE_CLOSE", "Task view cleanup failed");
+                    }
                 taskViews.clear();
                 extensionBinding.close();
                 closed = true;

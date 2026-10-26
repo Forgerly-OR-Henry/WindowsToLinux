@@ -65,7 +65,8 @@ public final class PlatformTaskManagement implements TaskManagement {
                     throw failure(ProblemCode.UNAVAILABLE, "TASK_VIEW_CLOSED", "The original task view is unavailable");
             }
 
-            @Override public List<Entry> list() throws ApiException {
+            @Override
+            public List<Entry> list() throws ApiException {
                 requireScope();
                 return PlatformTaskManagement.this.list().stream().filter(entry ->
                     entry.snapshot().ownerId().equals(owner) && entry.snapshot().ownerVersion().equals(version)).toList();
@@ -76,39 +77,48 @@ public final class PlatformTaskManagement implements TaskManagement {
                     throw failure(ProblemCode.ACCESS_DENIED, "TASK_VIEW_OWNER", "Task is outside this exact Mod release");
             }
 
-            @Override public void control(UUID id, gold.debug.windowstolinux.appapi.task.control.TaskCommand command) throws ApiException {
+            @Override
+            public void control(UUID id, gold.debug.windowstolinux.appapi.task.control.TaskCommand command) throws ApiException {
                 requireOwned(id);
                 PlatformTaskManagement.this.control(id, command);
             }
 
-            @Override public gold.debug.windowstolinux.appapi.task.log.LogReadResult readLogs(UUID id) throws ApiException {
+            @Override
+            public gold.debug.windowstolinux.appapi.task.log.LogReadResult readLogs(UUID id) throws ApiException {
                 requireOwned(id);
                 return PlatformTaskManagement.this.readLogs(id);
             }
 
-            @Override public TaskSnapshot requestCancel(UUID id) throws ApiException {
+            @Override
+            public TaskSnapshot requestCancel(UUID id) throws ApiException {
                 requireOwned(id);
                 return PlatformTaskManagement.this.requestCancel(id);
             }
 
-            @Override public TaskSnapshot continueWaiting(UUID id) throws ApiException {
+            @Override
+            public TaskSnapshot continueWaiting(UUID id) throws ApiException {
                 requireOwned(id);
                 return PlatformTaskManagement.this.continueWaiting(id);
             }
 
-            @Override public CompletionStage<TaskSnapshot> reconcile(UUID id, boolean actionReconciled) throws ApiException {
+            @Override
+            public CompletionStage<TaskSnapshot> reconcile(UUID id, boolean actionReconciled) throws ApiException {
                 requireOwned(id);
                 return PlatformTaskManagement.this.reconcile(id, false);
             }
         };
     }
 
-    @Override public void control(UUID id, gold.debug.windowstolinux.appapi.task.control.TaskCommand command) throws ApiException {
+    @Override
+    public void control(UUID id, gold.debug.windowstolinux.appapi.task.control.TaskCommand command) throws ApiException {
         requireAccess();
         tasks.requestControl(id, command);
+        if (command == gold.debug.windowstolinux.appapi.task.control.TaskCommand.INTERVENE)
+            tasks.showIntervention(id);
     }
 
-    @Override public gold.debug.windowstolinux.appapi.task.log.LogReadResult readLogs(UUID id) throws ApiException {
+    @Override
+    public gold.debug.windowstolinux.appapi.task.log.LogReadResult readLogs(UUID id) throws ApiException {
         requireAccess();
         return tasks.readTaskLogs(id);
     }

@@ -275,13 +275,15 @@ public final class DeploymentStandardWorkflow {
             return priorEffects(cancelled(), task);
         } catch (SQLException readFailure) {
             return priorEffects(ioFailure("DEPLOYMENT_STATIC_METADATA_UNAVAILABLE"), task);
-        } catch (gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStorageDeclarations.InvalidDeclaration invalid) {
+        } catch (
+            gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStorageDeclarations.InvalidDeclaration invalid) {
             return priorEffects(rejected("DEPLOYMENT_STORAGE_DECLARATION_INVALID"), task);
         } catch (IOException sourceFailure) {
             return priorEffects(ioFailure("DEPLOYMENT_STATIC_DISCOVERY_UNAVAILABLE"), task);
         } catch (SecurityException sourceRejected) {
             return priorEffects(rejected("DEPLOYMENT_STATIC_SOURCE_REJECTED"), task);
-        } catch (gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.InsufficientCapacity capacity) {
+        } catch (
+            gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.InsufficientCapacity capacity) {
             return priorEffects(new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
                 ProblemCode.INCOMPATIBLE, "DEPLOYMENT_WORKSPACE_HOST_INSUFFICIENT",
                 "Verified host space cannot satisfy all reviewed component budgets and the host reserve",
@@ -345,7 +347,6 @@ public final class DeploymentStandardWorkflow {
             return rejected("DEPLOYMENT_STATIC_REVIEW_INCOMPLETE");
         supplied = Map.of(id, gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStorageDeclarations
             .apply(material, discovered, supplied.get(id)));
-        var values = completed(prompt, supplied.get(id));
         validateReview(prompt, supplied.get(id));
         var stages = new DeploymentDatabaseStages(context);
         stages.validateRuntime(databaseLocal, supplied.get(id));
@@ -375,12 +376,13 @@ public final class DeploymentStandardWorkflow {
             draft.archiveBytes(), task);
         archives.add(archive);
         supplied = selectWorkspaces(server, task, material, Map.of(id, archive), Map.of(id, facts), supplied, advice);
-        var confirmed = reviewer.confirm(server, material.snapshot().sha256(), Map.of(id, archive.sha256()), supplied,
+        var confirmed = reviewer.confirmAnswers(server, material.snapshot().sha256(), Map.of(id, archive.sha256()), supplied,
             Map.of(id, preparedDatabase), gitReview(pinned), task);
         if (confirmed.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(confirmed);
-        if (!confirmed.value().orElse(false))
-            return cancelled();
+        supplied = confirmedAnswers(List.of(prompt), supplied, confirmed.value().orElseThrow());
+        validateReview(prompt, supplied.get(id));
+        stages.validateRuntime(databaseLocal, supplied.get(id));
         var answer = answers(task, server, facts.applicationId(), material, archive, supplied.get(id));
         var planned = reviewBuilder(task).plan(server, material, archive, reanalyzed.value().orElseThrow(), answer,
             preparedDatabase, task);
@@ -474,11 +476,29 @@ public final class DeploymentStandardWorkflow {
             draft.archiveBytes(), archives, task);
         var byComponent = frozen.archives();
         supplied = selectWorkspaces(server, task, material, byComponent, facts, supplied, advice);
-        var confirmed = reviewer.confirm(server, material.snapshot().sha256(), frozen.digests(), supplied, databases, gitReview(pinned), task);
+        var confirmed = reviewer.confirmAnswers(server, material.snapshot().sha256(), frozen.digests(), supplied, databases, gitReview(pinned), task);
         if (confirmed.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(confirmed);
-        if (!confirmed.value().orElse(false))
-            return cancelled();
+        var finalSupplied = confirmedAnswers(prompts, supplied, confirmed.value().orElseThrow());
+        finalSupplied = reviewedOrigins(prompts, selection, finalSupplied);
+        for (var prompt : prompts) {
+            validateReview(prompt, finalSupplied.get(prompt.componentId()));
+            stages.validateRuntime(databaseLocal.get(prompt.componentId()), finalSupplied.get(prompt.componentId()));
+        }
+        if (!finalSupplied.equals(supplied)) {
+            requests.clear();
+            for (int i = 0; i < discovered.size(); i++)
+                requests.add(componentRequest(discovered.get(i), selection.choices().get(discovered.get(i).id()),
+                    facts.get(discovered.get(i).id()), prompts.get(i), finalSupplied.get(discovered.get(i).id())));
+            var finalAnalysis = analyzer.analyzeComponents(material, logicalName, selection.applicationId(), requests, reviews, false, task);
+            if (finalAnalysis.outcome() != TaskResult.SUCCEEDED) return withoutValue(finalAnalysis);
+            assessment = finalAnalysis.value().orElseThrow();
+            if (assessment.assessment().issues().stream().anyMatch(issue -> schemaReviewCode(issue.code())))
+                return schemaReviewRequired();
+            if (assessment.assessment().admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING)
+                return rejected("DEPLOYMENT_STATIC_ANALYSIS_INCOMPLETE");
+        }
+        supplied = finalSupplied;
         var answers = new HashMap<String, DeploymentStandardReviewAnswers>();
         for (var component : assessment.assessment().components())
             answers.put(component.componentId(), answers(task, server, component.facts().applicationId(), material,
@@ -783,6 +803,39 @@ public final class DeploymentStandardWorkflow {
         return Map.copyOf(values);
     }
 
+    /** Reconstructs permitted launch edits without replacing reviewed bindings. / 重建允许的启动编辑，不替换经审阅绑定。
+     * @param prompts original source-bound questions / 原源码绑定问题
+     * @param original answers before final consent / 最终同意前的答案
+     * @param confirmed answers returned by final consent / 最终同意返回的答案
+     * @return complete copied answers with unchanged bindings / 绑定不变的完整答案副本 */
+    static Map<String, Answers> confirmedAnswers(List<Prompt> prompts, Map<String, Answers> original,
+                                                 Map<String, Answers> confirmed) {
+        if (!confirmed.keySet().equals(original.keySet()))
+            throw new SecurityException("Final confirmation changed component scope");
+        for (var prompt : prompts) {
+            var before = original.get(prompt.componentId());
+            var after = confirmed.get(prompt.componentId());
+            if (before.equals(after)) continue;
+            if (!before.files().equals(after.files()) || !before.limits().equals(after.limits())
+                || before.containerRisk() != after.containerRisk() || before.adapterRisk() != after.adapterRisk()
+                || !before.workspaceRequest().equals(after.workspaceRequest()) || !before.workspaceSelection().equals(after.workspaceSelection()))
+                throw new SecurityException("Final confirmation changed reviewed resource bindings");
+            var values = new LinkedHashMap<>(prompt.defaults());
+            values.putAll(before.values());
+            var effective = new Prompt(prompt.componentId(), prompt.applicationId(), prompt.projectType(), values, prompt.fields());
+            var workload = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.ApplicationSpec.resolve(values);
+            var edits = after.values();
+            var allowed = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentLaunchSettings.edit(effective,
+                edits.getOrDefault("port", values.getOrDefault("port", "")),
+                edits.getOrDefault("accessUrl", values.getOrDefault("accessUrl", "")),
+                edits.getOrDefault("commandEntrypoint", workload.command().entrypoint()),
+                edits.getOrDefault("commandArguments", gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.input.DeploymentCommandText.format(workload.command().arguments())));
+            if (!allowed.defaults().equals(edits))
+                throw new SecurityException("Final confirmation changed values outside ordinary launch settings");
+        }
+        return Map.copyOf(confirmed);
+    }
+
     /** Checks only local typed values so an owner can correct the same form before publication. / 仅校验本地类型化值，使所属者能在发布前修改同一表单。
      * @param prompt source-backed questions / 来源依据问题
      * @param answer edited non-secret values / 已编辑非秘密值
@@ -908,7 +961,7 @@ public final class DeploymentStandardWorkflow {
             var entries = DeploymentConfigInput.parse(answer.values().getOrDefault("configuration", ""));
             String configuration = entries.stream().map(entry -> entry.scope().name() + ":" + entry.key() + "="
                 + (entry.key().equals("WEB_ORIGIN") && entry.value().equals(before.orElseThrow().value())
-                    ? origin : entry.value().canonicalValue())).collect(java.util.stream.Collectors.joining("\n"));
+                ? origin : entry.value().canonicalValue())).collect(java.util.stream.Collectors.joining("\n"));
             var values = new LinkedHashMap<>(answer.values());
             values.put("configuration", configuration);
             result.put(prompt.componentId(), new Answers(values, answer.files(), answer.limits(), answer.containerRisk(),

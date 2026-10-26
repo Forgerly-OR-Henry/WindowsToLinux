@@ -14,6 +14,15 @@ import gold.debug.windowstolinux.appapi.task.result.ApiException;
  * Owned page mounting without access to host implementation types. / 不暴露宿主实现类型的所属页面挂载服务。
  */
 public interface UiService {
+    /** Returns host review sessions for this exact activation. / 返回此精确启用的宿主核验会话能力。
+     * @return bound transient review capability / 已绑定临时核验能力
+     * @throws ApiException if the host has not composed this capability / 宿主尚未装配此能力时 */
+    default gold.debug.windowstolinux.appapi.ui.intervention.UiInterventionService interventions() throws ApiException {
+        throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNAVAILABLE, "TASK_INTERVENTION_UNAVAILABLE",
+            "Host task interventions are not composed", java.util.Map.of(), java.util.Optional.empty()));
+    }
+
     /** Returns the optional clock bound to this UI activation. / 返回绑定本次界面启用的可选动效时钟。
      * @return presentation capability when composed / 已装配时返回展示能力 */
     default java.util.Optional<gold.debug.windowstolinux.appapi.ui.page.UiMotion> motion() {

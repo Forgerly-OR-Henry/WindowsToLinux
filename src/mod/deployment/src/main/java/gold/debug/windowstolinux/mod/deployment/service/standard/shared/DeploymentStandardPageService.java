@@ -45,6 +45,66 @@ public final class DeploymentStandardPageService implements TaskRecovery {
 
     private java.util.function.BiConsumer<java.util.UUID, Boolean> taskWaiting;
 
+    /** Original publication control observations used only for page presentation. / 仅用于页面展示的原发布控制观察。 */
+    private java.util.function.Function<java.util.UUID, Optional<gold.debug.windowstolinux.mod.deployment.service.agent.control.DeploymentAgentControl.State>> taskControl = ignored -> Optional.empty();
+
+    /** Binds the original publication controller without transferring task authority to the page. / 绑定原发布控制器，不向页面转移任务权限。
+     * @param value lookup of original control observations by task UUID / 按任务 UUID 查询原控制观察的入口 */
+    public void taskControl(java.util.function.Function<java.util.UUID, Optional<gold.debug.windowstolinux.mod.deployment.service.agent.control.DeploymentAgentControl.State>> value) {
+        taskControl = Objects.requireNonNull(value);
+    }
+
+    /** Returns host review sessions for this exact normal deployment activation. / 返回此精确普通部署启用的宿主核验会话。
+     * @return activation-bound review capability / 启用绑定核验能力
+     * @throws ApiException if the original UI activation is unavailable / 原界面启用不可用时 */
+    public gold.debug.windowstolinux.appapi.ui.intervention.UiInterventionService interventions() throws ApiException {
+        return context.ui().interventions();
+    }
+
+    /** Reattaches observation to the authentic original task, never a replacement. / 重新观察真实原任务，不创建替代任务。
+     * @param id selected original task UUID / 选定原任务 UUID
+     * @return the actual host-owned handle / 实际宿主任务句柄
+     * @throws ApiException if the original task or owning release is unavailable / 原任务或所属发布不可用时 */
+    public TaskHandle<?> observeOriginal(java.util.UUID id) throws ApiException {
+        return interventions().observe(id);
+    }
+
+    /** Authenticates whether the current callback is the original publication task rather than a short editor task. / 认证当前回调是否为原发布任务，避免混入短编辑任务。
+     * @param task authentic original callback context / 真实原回调上下文
+     * @return whether the original task type is publication / 原任务类型是否为发布
+     * @throws ApiException if original context inspection is unavailable / 原上下文检查不可用时 */
+    public boolean publicationTask(TaskContext task) throws ApiException {
+        return context.tasks().inspect(task).type().equals(
+            gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow.TASK_TYPE);
+    }
+
+    /** Reads actual progress and pending review count without creating replacement work. / 读取真实进度及待核验数量，不创建替代工作。
+     * @param id selected original task UUID / 所选原任务 UUID
+     * @return current display observation, absent when original scope is unavailable / 当前展示观察，原作用域不可用时为空 */
+    public Optional<gold.debug.windowstolinux.appapi.ui.intervention.UiInterventionSnapshot> presentation(java.util.UUID id) {
+        try {
+            return Optional.of(interventions().snapshot(id));
+        } catch (ApiException unavailable) {
+            return Optional.empty();
+        }
+    }
+
+    /** Reports the original controller's paused boundary for display only. / 仅为展示报告原控制器的暂停边界。
+     * @param id original publication task / 原发布任务
+     * @return whether the original controller reports a pause / 原控制器是否报告暂停 */
+    public boolean paused(java.util.UUID id) {
+        return taskControl.apply(id).filter(value -> value == gold.debug.windowstolinux.mod.deployment.service.agent.control.DeploymentAgentControl.State.PAUSED).isPresent();
+    }
+
+    /** Navigates to the exact original task before reopening its deferred review. / 重开延期核验前先导航至精确原任务。
+     * @param id original publication UUID / 原发布 UUID
+     * @throws ApiException if original navigation or review ownership is unavailable / 原导航或核验归属不可用时 */
+    public void intervene(java.util.UUID id) throws ApiException {
+        context.ui().open("workspace", new gold.debug.windowstolinux.appapi.ui.page.UiNavigationRequest<>(
+            "intervene-task", java.util.UUID.class, Optional.of(id)));
+        interventions().show(id);
+    }
+
     public void taskWaiting(java.util.function.BiConsumer<java.util.UUID, Boolean> waiting) {
         taskWaiting = Objects.requireNonNull(waiting);
     }
@@ -112,7 +172,7 @@ public final class DeploymentStandardPageService implements TaskRecovery {
         this.revisions = new DeploymentSecretStore(context.db());
         this.environment = new gold.debug.windowstolinux.mod.deployment.service.environment.DeploymentEnvironmentWorkflow(
             context, (target, revision, request, task) -> context.interaction().approve(
-                gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(target.server(), revision, request), task),
+            gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(target.server(), revision, request), task),
             configuration.environment());
     }
 
@@ -153,7 +213,8 @@ public final class DeploymentStandardPageService implements TaskRecovery {
      * @param target explicit platform destination / 明确平台目标
      * @throws ApiException if current owner UI access is refused / 当前所属 UI 访问被拒绝时 */
     public void openPlatform(gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind target) throws ApiException {
-        if (target == gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind.TASKS) openTasks(java.util.Optional.empty());
+        if (target == gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind.TASKS)
+            openTasks(java.util.Optional.empty());
         else context.ui().openPlatform(target);
     }
 

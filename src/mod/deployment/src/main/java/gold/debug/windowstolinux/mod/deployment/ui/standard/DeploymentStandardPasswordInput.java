@@ -32,15 +32,23 @@ final class DeploymentStandardPasswordInput {
      * @throws Exception if the view or input is unavailable / 视图或输入不可用时 */
     static byte[] request(DeploymentStandardPage page, long view, TaskContext task, String title, String label,
                           boolean allowEmpty, Runnable onAccepted) throws Exception {
-        var field = page.onEdt(JPasswordField::new);
-        var form = page.onEdt(() -> {
-            var value = DeploymentDialogs.form();
-            value.add(DeploymentDialogs.text(label));
-            value.add(field);
-            return value;
-        });
-        boolean accepted = page.approveSecret(view, form, title, task, onAccepted);
-        char[] chars = capture(field);
+        char[] chars;
+        boolean accepted;
+        if (page.hostedInterventions(task)) {
+            chars = page.requestPassword(view, task, title, label, allowEmpty, onAccepted);
+            accepted = true;
+        } else {
+            var field = page.onEdt(JPasswordField::new);
+            var form = page.onEdt(() -> {
+                var value = DeploymentDialogs.form();
+                value.add(DeploymentDialogs.text(label));
+                value.add(field);
+                return value;
+            });
+
+            accepted = page.approveSecret(view, form, title, task, onAccepted);
+            chars = capture(field);
+        }
         try {
             if (!accepted)
                 throw new CancellationException("Password input was cancelled");

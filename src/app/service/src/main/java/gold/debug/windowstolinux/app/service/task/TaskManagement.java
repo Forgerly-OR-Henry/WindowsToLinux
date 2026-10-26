@@ -69,18 +69,38 @@ public interface TaskManagement {
         }
     }
 
+    /** Creates a display projection without pending host questions. / 创建无待处理宿主问题的展示投影。
+     * @param snapshot original task observation / 原任务观察
+     * @param recovery current recovery availability / 当前恢复可用性
+     * @param fraction actual progress or unknown / 真实进度或未知
+     * @param controls original author controls / 原作者控制
+     * @return display-only task state / 纯展示任务状态 */
     static gold.debug.windowstolinux.appapi.task.model.TaskViewSnapshot projection(TaskSnapshot snapshot,
-        RecoveryState recovery, java.util.Optional<Double> fraction,
-        gold.debug.windowstolinux.appapi.task.control.TaskControlSnapshot controls) {
+                                                                                   RecoveryState recovery, java.util.Optional<Double> fraction,
+                                                                                   gold.debug.windowstolinux.appapi.task.control.TaskControlSnapshot controls) {
+        return projection(snapshot, recovery, fraction, controls, 0);
+    }
+
+    /** Combines transient host questions with original author controls for display only. / 仅为展示合并临时宿主问题及原作者控制。
+     * @param snapshot original task observation / 原任务观察
+     * @param recovery current recovery availability / 当前恢复可用性
+     * @param fraction actual progress or unknown / 真实进度或未知
+     * @param controls original author controls / 原作者控制
+     * @param pendingInterventions unresolved host requests / 未决宿主请求
+     * @return display-only task state / 纯展示任务状态 */
+    static gold.debug.windowstolinux.appapi.task.model.TaskViewSnapshot projection(TaskSnapshot snapshot,
+                                                                                   RecoveryState recovery, java.util.Optional<Double> fraction,
+                                                                                   gold.debug.windowstolinux.appapi.task.control.TaskControlSnapshot controls, int pendingInterventions) {
         var category = gold.debug.windowstolinux.appapi.task.model.TaskViewSnapshot.Category.RUNNING;
         if (snapshot.state() == gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN
             || recovery != RecoveryState.NOT_READY
             || controls.state() == gold.debug.windowstolinux.appapi.task.control.TaskControlSnapshot.State.PAUSED)
             category = gold.debug.windowstolinux.appapi.task.model.TaskViewSnapshot.Category.WAITING_RECOVERY;
         else if (snapshot.state() == gold.debug.windowstolinux.appapi.task.model.TaskState.WAITING
+            || pendingInterventions > 0
             || controls.state() == gold.debug.windowstolinux.appapi.task.control.TaskControlSnapshot.State.WAITING_USER)
             category = gold.debug.windowstolinux.appapi.task.model.TaskViewSnapshot.Category.WAITING_USER;
-        return new gold.debug.windowstolinux.appapi.task.model.TaskViewSnapshot(category, fraction, controls);
+        return new gold.debug.windowstolinux.appapi.task.model.TaskViewSnapshot(category, fraction, controls, pendingInterventions);
     }
 
     /** Distinguishes execution, missing original code and metadata-only completion. / 区分执行中、缺少原代码和仅元数据收尾。 */

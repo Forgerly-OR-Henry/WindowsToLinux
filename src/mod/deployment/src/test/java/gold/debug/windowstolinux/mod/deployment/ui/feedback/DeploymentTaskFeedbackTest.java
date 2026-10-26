@@ -86,10 +86,10 @@ class DeploymentTaskFeedbackTest extends DeploymentRuntimeFixture {
             var release = new CountDownLatch(1);
             var cancellation = new CountDownLatch(1);
             var handle = context.tasks().submit(new TaskRequest("fixture.feedback", "Feedback", java.util.List.of(), true), task -> {
-                DeploymentDiagnostics.progress(context, task, "Preparing original source");
+                DeploymentDiagnostics.progress(context, task, "Freezing the selected source");
                 entered.countDown();
                 if (!advance.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Fixture advance missing");
-                DeploymentDiagnostics.progress(context, task, "Building original source");
+                DeploymentDiagnostics.progress(context, task, "Uploading and building the original component graph");
                 second.countDown();
                 while (!release.await(20, TimeUnit.MILLISECONDS))
                     if (task.cancelToken().requested()) cancellation.countDown();
@@ -106,18 +106,19 @@ class DeploymentTaskFeedbackTest extends DeploymentRuntimeFixture {
                     feedback.get().configure(Locale.ENGLISH, false);
                     feedback.get().watch(handle);
                 });
-                await(() -> text(feedback.get(), "state").contains("Preparing original source"));
+                await(() -> text(feedback.get(), "state").contains("Checking the selected project files"));
                 advance.countDown();
                 assertTrue(second.await(5, TimeUnit.SECONDS));
-                await(() -> text(feedback.get(), "events").contains("Building original source"));
+                await(() -> text(feedback.get(), "events").contains("Copying project files and preparing the application"));
                 runtime.security().lock();
                 SwingUtilities.invokeAndWait(() -> feedback.get().configure(Locale.SIMPLIFIED_CHINESE, true));
                 assertEquals("", text(feedback.get(), "state"));
                 assertEquals("", text(feedback.get(), "events"));
+                assertEquals("", text(feedback.get(), "details"));
                 assertFalse(handle.snapshot().endedAt().isPresent());
                 runtime.security().unlock(PASSWORD.toCharArray());
                 SwingUtilities.invokeAndWait(() -> feedback.get().configure(Locale.ENGLISH, false));
-                await(() -> text(feedback.get(), "events").contains("Building original source"));
+                await(() -> text(feedback.get(), "events").contains("Copying project files and preparing the application"));
                 SwingUtilities.invokeAndWait(() -> button(feedback.get(), "tasks").doClick());
                 assertEquals(1, navigated.get());
                 SwingUtilities.invokeAndWait(() -> button(feedback.get(), "cancel").doClick());
@@ -126,10 +127,11 @@ class DeploymentTaskFeedbackTest extends DeploymentRuntimeFixture {
                 assertTrue(text(feedback.get(), "state").contains("Cancellation requested"));
                 release.countDown();
                 assertEquals(TaskResult.CANCELLED, handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
-                await(() -> text(feedback.get(), "state").contains("CANCELLED"));
+                await(() -> text(feedback.get(), "state").contains("Cancelled; cleanup is confirmed"));
                 assertTrue(context.tasks().list(100).items().stream().noneMatch(task -> task.id().equals(handle.id())));
-                assertTrue(text(feedback.get(), "state").contains(handle.id().toString()));
-                assertTrue(text(feedback.get(), "events").contains("Building original source"));
+                assertFalse(text(feedback.get(), "state").contains(handle.id().toString()));
+                assertTrue(text(feedback.get(), "details").contains(handle.id().toString()));
+                assertTrue(text(feedback.get(), "details").contains("Uploading and building the original component graph"));
             } finally {
                 advance.countDown();
                 release.countDown();
