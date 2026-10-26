@@ -1,3 +1,6 @@
+export function newRequestId() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (value) => value.toString(16).padStart(2, "0")).join("");
+}
 export const statuses = {
   queued: "排队中",
   running: "检查中",

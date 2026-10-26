@@ -1,4 +1,4 @@
-import { api, text, run, table, pager, statuses } from "./ui.js";
+import { api, text, run, table, pager, statuses, newRequestId } from "./ui.js";
 const view = document.querySelector("#view");
 let timer;
 function poll(fn) {
@@ -99,7 +99,7 @@ async function jobs(offset = 0) {
   view.innerHTML = `<h2>检查任务</h2><p id="worker">工作进程：${worker.responsive ? "在线" : "无近期心跳，请检查 worker.php"}</p><form id="new-job"><label>数据集<select id="dataset">${options(sets.items)}</select></label><label>规则模板<select id="template-id">${options(templates.items)}</select></label><button>开始后台检查</button></form><button id="refresh">刷新任务</button><table><thead><tr><th>任务</th><th>状态</th><th>尝试</th><th>已检查行</th><th>问题数</th><th>更新时间</th></tr></thead><tbody>${data.items.map((j) => `<tr><td><a href="#job/${j.id}">${j.id.slice(0, 10)}</a></td><td>${statuses[j.status]}</td><td>${j.attempt}</td><td>${j.progress_rows}</td><td>${j.issue_count}</td><td>${j.updated}</td></tr>`).join("")}</tbody></table><div id="pages"></div>`;
   pager(data, (offset) => run(() => jobs(offset)));
   document.querySelector("#refresh").onclick = () => run(() => jobs(offset));
-  const key = crypto.randomUUID();
+  const key = newRequestId();
   form("#new-job", async () => {
     const j = await api("/api/jobs", {
       json: {
@@ -126,7 +126,7 @@ async function job(id, offset = 0) {
   for (const action of ["cancel", "retry"]) {
     const button = document.querySelector("#" + action);
     if (button) {
-      const key = crypto.randomUUID();
+      const key = newRequestId();
       button.onclick = () => {
         button.disabled = true;
         run(async () => {
