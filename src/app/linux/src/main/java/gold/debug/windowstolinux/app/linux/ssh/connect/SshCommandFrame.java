@@ -36,6 +36,13 @@ final class SshCommandFrame implements AutoCloseable {
     /** Owned unmodified command input, wiped after actual sender termination. / 发送线程实际终止后清零的所属原始命令输入。 */
     private final byte[] input;
 
+    /** Last attempted frame write, without retaining stream errors or payload content. / 最近尝试的帧写入，不保留流错误或载荷内容。 */
+    private volatile WritePhase writePhase = WritePhase.NOT_STARTED;
+
+    enum WritePhase {
+        NOT_STARTED, WRITING_LENGTH, WRITING_SCRIPT, WRITING_STDIN, FLUSHING, WRITTEN
+    }
+
     /**
      * Validates and copies the exact request before any network dispatch. / 在任何网络发送前校验并复制精确请求。
      * @param request immutable reviewed request / 不可变的已审核请求
@@ -75,10 +82,27 @@ final class SshCommandFrame implements AutoCloseable {
      * @throws IOException if the transport cannot accept bytes / 传输无法接收字节时
      */
     void writeTo(OutputStream target) throws IOException {
+        writePhase = WritePhase.WRITING_LENGTH;
         target.write((script.length + "\n").getBytes(StandardCharsets.US_ASCII));
+        writePhase = WritePhase.WRITING_SCRIPT;
         target.write(script);
+        writePhase = WritePhase.WRITING_STDIN;
         target.write(input);
+        writePhase = WritePhase.FLUSHING;
         target.flush();
+        writePhase = WritePhase.WRITTEN;
+    }
+
+    int scriptBytes() {
+        return script.length;
+    }
+
+    int stdinBytes() {
+        return input.length;
+    }
+
+    WritePhase writePhase() {
+        return writePhase;
     }
 
     /** Wipes owned copies only after no sender can access them. / 仅在发送线程不再访问时清零所属副本。 */

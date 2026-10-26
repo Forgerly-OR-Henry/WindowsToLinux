@@ -27,6 +27,274 @@ public class SshCommandExecutionTest {
     Path root;
 
     @Test
+    void authorPayloadNotSentBeforeSenderRetainsKnownFailureAndStartedSenderRemainsUnknown() throws Exception {
+        for (boolean opened : List.of(false, true)) {
+            var bytes = new AtomicInteger();
+            var inputRequested = new AtomicInteger();
+            var inputStarted = new CountDownLatch(1);
+            var opening = (org.apache.sshd.client.future.OpenFuture) java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class<?>[]{org.apache.sshd.client.future.OpenFuture.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "await" -> true;
+                    case "verify" -> {
+                        if (!opened) throw new IOException("private channel failure");
+                        yield proxy;
+                    }
+                    default -> throw new AssertionError(method.getName());
+                });
+            var channel = new org.apache.sshd.client.channel.ChannelExec(SshCommandFrame.COMMAND, null, Map.of()) {
+                @Override
+                public org.apache.sshd.client.future.OpenFuture open() {
+                    return opening;
+                }
+
+                @Override
+                public OutputStream getInvertedIn() {
+                    inputRequested.incrementAndGet();
+                    return new OutputStream() {
+                        public void write(int value) {
+                            bytes.incrementAndGet();
+                            inputStarted.countDown();
+                        }
+                    };
+                }
+
+                @Override
+                public Set<org.apache.sshd.client.channel.ClientChannelEvent> waitFor(Collection<org.apache.sshd.client.channel.ClientChannelEvent> events, long timeout) {
+                    try {
+                        assertTrue(inputStarted.await(3, TimeUnit.SECONDS));
+                    } catch (InterruptedException interrupted) {
+                        throw new AssertionError(interrupted);
+                    }
+                    throw new UncheckedIOException(new IOException("private receipt lost after sender creation"));
+                }
+
+                @Override
+                protected void preClose() {
+                }
+
+                @Override
+                protected org.apache.sshd.common.Closeable getInnerCloseable() {
+                    return builder().build();
+                }
+            };
+            var session = (org.apache.sshd.client.session.ClientSession) java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class<?>[]{org.apache.sshd.client.session.ClientSession.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "createExecChannel" -> {
+                        assertEquals(SshCommandFrame.COMMAND, args[0]);
+                        assertFalse(args[0].toString().contains("private-author"));
+                        yield channel;
+                    }
+                    case "addSessionListener", "removeSessionListener", "getKexState", "getIoSession" -> null;
+                    case "isOpen", "isAuthenticated" -> true;
+                    default -> throw new AssertionError(method.getName());
+                });
+            try (var request = request("private-author script", 100)) {
+                var execution = new SshCommandExecution(session, request);
+                try {
+                    var result = execution.run(() -> false);
+                    var problem = result.problem().orElseThrow();
+                    assertEquals(opened ? TaskResult.UNKNOWN : TaskResult.FAILED, result.outcome());
+                    assertEquals(opened ? "SSH_COMMAND_TRANSPORT" : "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT", problem.eventCode());
+                    assertEquals("true", problem.context().get("commandOpenRequested"), "Bootstrap opening is not classified as absent");
+                    assertEquals(Boolean.toString(opened), problem.context().get("inputSenderCreated"));
+                    assertEquals(opened ? "MAY_HAVE_BEEN_SENT" : "NOT_SENT", problem.context().get("authorPayloadState"));
+                    assertEquals(opened ? 1 : 0, inputRequested.get());
+                    assertEquals(opened, bytes.get() > 0);
+                    assertFalse(result.toString().contains("private"));
+                } finally {
+                    assertTrue(execution.close());
+                    assertTrue(channel.isClosed());
+                }
+            }
+        }
+    }
+
+    @Test
+    void channelOpeningTimeoutProvesAuthorPayloadAbsenceAndPreservesCancellationAndStartedInputUncertainty() {
+        assertAll(List.of("OPEN_TIMEOUT", "DEADLINE_CANCEL", "DEADLINE_INTERRUPT", "OPEN_CANCEL",
+            "INTERRUPTED_IO", "INTERRUPTED_EXCEPTION", "TRANSPORT_CANCEL", "TRANSPORT_INTERRUPT",
+            "STARTED_TIMEOUT", "CLOSE_PENDING", "BEFORE_CANCEL").stream().map(scenario ->
+            (org.junit.jupiter.api.function.Executable) () -> {
+                var bytes = new AtomicInteger();
+                var inputRequested = new AtomicInteger();
+                var openRequests = new AtomicInteger();
+                var cancellationChecks = new AtomicInteger();
+                var cancelled = new AtomicBoolean(scenario.equals("BEFORE_CANCEL"));
+                var inputStarted = new CountDownLatch(1);
+                var pending = new CountDownLatch(1);
+                boolean startedSender = scenario.equals("STARTED_TIMEOUT");
+                boolean knownAbsence = Set.of("OPEN_TIMEOUT", "CLOSE_PENDING").contains(scenario);
+                boolean interrupted = Set.of("DEADLINE_INTERRUPT", "INTERRUPTED_IO",
+                    "INTERRUPTED_EXCEPTION", "TRANSPORT_INTERRUPT").contains(scenario);
+                class OpeningFailure {
+                    @SuppressWarnings("unchecked")
+                    <T extends Throwable> void raise(Throwable failure) throws T {
+                        throw (T) failure;
+                    }
+                }
+                var opening = new org.apache.sshd.client.future.DefaultOpenFuture(scenario, null) {
+                    @Override
+                    public boolean await(long timeout, org.apache.sshd.common.future.CancelOption... options) throws IOException {
+                        switch (scenario) {
+                            case "INTERRUPTED_IO" -> throw new InterruptedIOException("private-121 transport");
+                            case "INTERRUPTED_EXCEPTION" ->
+                                new OpeningFailure().raise(new InterruptedException("private-121 transport"));
+                            case "TRANSPORT_CANCEL" -> {
+                                cancelled.set(true);
+                                throw new IOException("private-121 transport");
+                            }
+                            case "TRANSPORT_INTERRUPT" -> {
+                                Thread.currentThread().interrupt();
+                                throw new IOException("private-121 transport");
+                            }
+                            case "OPEN_CANCEL" -> cancelled.set(true);
+                            case "STARTED_TIMEOUT" -> {
+                                return super.await(timeout, options);
+                            }
+                            default -> {
+                                try {
+                                    assertFalse(pending.await(350, TimeUnit.MILLISECONDS));
+                                } catch (InterruptedException failure) {
+                                    throw new AssertionError(failure);
+                                }
+                            }
+                        }
+                        return false;
+                    }
+                };
+                if (startedSender) opening.setOpened();
+                var innerCloseable = new org.apache.sshd.common.util.closeable.SimpleCloseable(scenario, null) {
+                    @Override
+                    protected void doClose(boolean immediately) {
+                        if (!scenario.equals("CLOSE_PENDING")) super.doClose(immediately);
+                    }
+
+                    void confirmClose() {
+                        future.setClosed();
+                    }
+                };
+                var channel = new org.apache.sshd.client.channel.ChannelExec(SshCommandFrame.COMMAND, null, Map.of()) {
+                    @Override
+                    public org.apache.sshd.client.future.OpenFuture open() {
+                        openRequests.incrementAndGet();
+                        return opening;
+                    }
+
+                    @Override
+                    public OutputStream getInvertedIn() {
+                        inputRequested.incrementAndGet();
+                        return new OutputStream() {
+                            @Override
+                            public void write(int value) {
+                                bytes.incrementAndGet();
+                                inputStarted.countDown();
+                            }
+                        };
+                    }
+
+                    @Override
+                    public Set<org.apache.sshd.client.channel.ClientChannelEvent> waitFor(Collection<org.apache.sshd.client.channel.ClientChannelEvent> events, long timeout) {
+                        try {
+                            assertTrue(inputStarted.await(3, TimeUnit.SECONDS));
+                            assertFalse(pending.await(timeout, TimeUnit.MILLISECONDS));
+                        } catch (InterruptedException failure) {
+                            throw new AssertionError(failure);
+                        }
+                        return Set.of();
+                    }
+
+                    @Override
+                    protected void preClose() {
+                    }
+
+                    @Override
+                    protected org.apache.sshd.common.Closeable getInnerCloseable() {
+                        return innerCloseable;
+                    }
+                };
+                var session = (org.apache.sshd.client.session.ClientSession) java.lang.reflect.Proxy.newProxyInstance(
+                    getClass().getClassLoader(), new Class<?>[]{org.apache.sshd.client.session.ClientSession.class},
+                    (proxy, method, args) -> switch (method.getName()) {
+                        case "createExecChannel" -> {
+                            assertEquals(SshCommandFrame.COMMAND, args[0]);
+                            assertFalse(args[0].toString().contains("private-121"));
+                            yield channel;
+                        }
+                        case "addSessionListener", "removeSessionListener", "getKexState", "getIoSession" -> null;
+                        case "isOpen", "isAuthenticated" -> true;
+                        default -> throw new AssertionError(method.getName());
+                    });
+                try (var request = new CommandRequest("private-121 author script", "private-121 input".getBytes(StandardCharsets.UTF_8),
+                    startedSender ? Duration.ofSeconds(1) : Duration.ofMillis(250), 100)) {
+                    var execution = new SshCommandExecution(session, request);
+                    try {
+                        var result = execution.run(() -> {
+                            int checks = cancellationChecks.incrementAndGet();
+                            if (checks >= 3 && scenario.equals("DEADLINE_CANCEL")) cancelled.set(true);
+                            if (checks >= 3 && scenario.equals("DEADLINE_INTERRUPT"))
+                                Thread.currentThread().interrupt();
+                            return cancelled.get();
+                        });
+                        var problem = result.problem().orElseThrow();
+                        boolean beforeDispatch = scenario.equals("BEFORE_CANCEL");
+                        assertEquals(beforeDispatch ? TaskResult.CANCELLED : knownAbsence ? TaskResult.FAILED : TaskResult.UNKNOWN,
+                            result.outcome(), scenario);
+                        assertEquals(knownAbsence ? "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT"
+                            : startedSender ? "SSH_COMMAND_TIMEOUT" : "SSH_COMMAND_CANCELLED", problem.eventCode(), scenario);
+                        assertEquals(knownAbsence ? ProblemCode.IO_FAILURE : beforeDispatch ? ProblemCode.CANCELLED : ProblemCode.UNKNOWN,
+                            problem.code(), scenario);
+                        var diagnostic = problem.context();
+                        assertEquals(beforeDispatch ? "BEFORE_DISPATCH" : startedSender ? "WAITING_FOR_EXIT" : "CHANNEL_OPENING",
+                            diagnostic.get("commandPhase"), scenario);
+                        assertEquals(Boolean.toString(!beforeDispatch), diagnostic.get("commandOpenRequested"));
+                        assertEquals(Boolean.toString(startedSender), diagnostic.get("channelOpenConfirmed"));
+                        assertEquals(Boolean.toString(startedSender), diagnostic.get("inputSenderCreated"));
+                        assertEquals(startedSender ? "MAY_HAVE_BEEN_SENT" : "NOT_SENT", diagnostic.get("authorPayloadState"));
+                        if (!startedSender) assertEquals("NOT_STARTED", diagnostic.get("inputState"));
+                        assertEquals("true", diagnostic.get("sessionOpen"));
+                        assertEquals("true", diagnostic.get("sessionAuthenticated"));
+                        assertEquals("false", diagnostic.get("outputObserved"));
+                        assertEquals("false", diagnostic.get("exitObserved"));
+                        assertEquals(beforeDispatch ? 0 : 1, openRequests.get());
+                        assertEquals(startedSender ? 1 : 0, inputRequested.get());
+                        assertEquals(startedSender, bytes.get() > 0);
+                        assertEquals(interrupted, Thread.currentThread().isInterrupted(), scenario);
+                        assertFalse(result.toString().contains("private-121"));
+                        if (knownAbsence || startedSender) {
+                            assertEquals(startedSender ? "1000" : "250", diagnostic.get("timeoutMillis"));
+                            assertTrue(Long.parseLong(diagnostic.get("elapsedMillis")) >= (startedSender ? 1000 : 250));
+                        }
+                        if (knownAbsence) {
+                            opening.setOpened();
+                            assertTrue(opening.isOpened());
+                            assertEquals(0, inputRequested.get(), "A late open receipt cannot create a sender after run returned");
+                            assertEquals(0, bytes.get());
+                            assertTrue(problem.message().contains("deadline"));
+                        }
+                        if (scenario.equals("CLOSE_PENDING")) {
+                            assertFalse(execution.close());
+                            assertFalse(channel.isClosed(), "Known payload absence does not prove local resource release");
+                        }
+                    } finally {
+                        boolean retainedInterrupt = Thread.interrupted();
+                        try {
+                            innerCloseable.confirmClose();
+                            if (scenario.equals("BEFORE_CANCEL")) channel.close(true);
+                            assertTrue(execution.close());
+                            assertTrue(channel.isClosed());
+                        } finally {
+                            Thread.interrupted();
+                        }
+                        assertEquals(interrupted, retainedInterrupt, scenario);
+                        assertFalse(Thread.currentThread().isInterrupted());
+                    }
+                }
+            }).toList());
+    }
+
+    @Test
     void realBashReceivesLargeUnicodeScriptAndExactBinaryStdinThroughOneSshChannel() throws Exception {
         Path bash = Path.of(System.getProperty("managed.test.bash", "/bin/bash"));
         org.junit.jupiter.api.Assumptions.assumeTrue(Files.isRegularFile(bash),
@@ -114,7 +382,14 @@ public class SshCommandExecutionTest {
         try (var fixture = new WireFixture(root, command -> {
             throw new AssertionError("Cancelled work was dispatched");
         }); var connector = new SshConnector(); var connection = connect(connector, fixture.server)) {
-            assertEquals(TaskResult.CANCELLED, connection.execute(request("fixture", 10), () -> true).outcome());
+            var result = connection.execute(request("private-command", 10), () -> true);
+            assertEquals(TaskResult.CANCELLED, result.outcome());
+            var diagnostic = result.problem().orElseThrow().context();
+            assertEquals("BEFORE_DISPATCH", diagnostic.get("commandPhase"));
+            assertEquals("false", diagnostic.get("commandOpenRequested"));
+            assertEquals("false", diagnostic.get("channelOpenConfirmed"));
+            assertEquals("NOT_STARTED", diagnostic.get("inputState"));
+            assertFalse(diagnostic.toString().contains("private-command"));
             assertEquals(0, fixture.calls.get());
         }
     }
@@ -149,6 +424,63 @@ public class SshCommandExecutionTest {
     }
 
     @Test
+    void channelCreationFailureRemainsKnownAndReportsNoPrivateExceptionText() throws Exception {
+        var session = (org.apache.sshd.client.session.ClientSession) java.lang.reflect.Proxy.newProxyInstance(
+            getClass().getClassLoader(), new Class<?>[]{org.apache.sshd.client.session.ClientSession.class},
+            (proxy, method, args) -> switch (method.getName()) {
+                case "createExecChannel" -> throw new IOException("private transport address and payload");
+                case "addSessionListener", "removeSessionListener", "getKexState", "getIoSession" -> null;
+                case "isOpen", "isAuthenticated" -> true;
+                default -> throw new AssertionError("Unexpected session call: " + method.getName());
+            });
+        try (var request = request("private source command", 10)) {
+            var execution = new SshCommandExecution(session, request);
+            try {
+                var result = execution.run(() -> false);
+                assertEquals(TaskResult.FAILED, result.outcome());
+                assertEquals("SSH_COMMAND_NOT_SENT", result.problem().orElseThrow().eventCode());
+                var diagnostic = result.problem().orElseThrow().context();
+                assertEquals("CREATING_CHANNEL", diagnostic.get("commandPhase"));
+                assertEquals("false", diagnostic.get("commandOpenRequested"));
+                assertEquals("false", diagnostic.get("channelOpenConfirmed"));
+                assertEquals("NOT_STARTED", diagnostic.get("inputState"));
+                assertFalse(result.toString().contains("private"));
+            } finally {
+                assertTrue(execution.close());
+            }
+        }
+    }
+
+    @Test
+    void blockedInputReportsBoundedLibraryFramesWithoutPayloadAndRemainsUnknown() throws Exception {
+        try (var fixture = new WireFixture(root, command -> command.destroyed.await());
+             var connector = new SshConnector()) {
+            org.apache.sshd.core.CoreModuleProperties.WINDOW_SIZE.set(fixture.server.server(), 1024L);
+            try (var connection = connect(connector, fixture.server)) {
+                var result = connection.execute(new CommandRequest("private command", new byte[65536],
+                    Duration.ofSeconds(1), 100), () -> false);
+                assertEquals(TaskResult.UNKNOWN, result.outcome());
+                assertEquals("SSH_COMMAND_TIMEOUT", result.problem().orElseThrow().eventCode());
+                var diagnostic = result.problem().orElseThrow().context();
+                assertEquals("SENDING", diagnostic.get("inputState"));
+                assertTrue(Set.of("WAITING", "TIMED_WAITING", "RUNNABLE").contains(
+                    diagnostic.get("inputThreadState")), diagnostic.toString());
+                var frames = diagnostic.entrySet().stream()
+                    .filter(entry -> entry.getKey().startsWith("inputStack[")).toList();
+                assertTrue(!frames.isEmpty() && frames.size() <= 6, diagnostic.toString());
+                assertTrue(frames.stream().anyMatch(entry -> entry.getValue().contains("org.apache.sshd.")),
+                    diagnostic.toString());
+                assertFalse(diagnostic.toString().contains("private"));
+                assertFalse(diagnostic.toString().contains("127.0.0.1"));
+                assertEquals(1, fixture.calls.get());
+                assertEquals(ProblemCode.BUSY,
+                    assertThrows(ApiException.class, () -> connection.execute(request("replay", 100), () -> false))
+                        .problem().code());
+            }
+        }
+    }
+
+    @Test
     void timeoutAndMissingExitAreUncertainEvenAfterLocalChannelClose() throws Exception {
         for (boolean timeout : new boolean[]{true, false}) {
             Path directory = Files.createDirectories(root.resolve(Boolean.toString(timeout)));
@@ -172,6 +504,22 @@ public class SshCommandExecutionTest {
                     result.problem().orElseThrow().eventCode());
                 assertTrue(result.value().orElseThrow().exitCode().isEmpty());
                 assertEquals("observed prefix", result.value().orElseThrow().stdout());
+                var diagnostic = result.problem().orElseThrow().context();
+                assertEquals("WAITING_FOR_EXIT", diagnostic.get("commandPhase"));
+                assertEquals("true", diagnostic.get("commandOpenRequested"));
+                assertEquals("true", diagnostic.get("channelOpenConfirmed"));
+                assertEquals(Boolean.toString(!timeout), diagnostic.get("channelClosed"));
+                assertEquals("true", diagnostic.get("sessionOpen"));
+                assertEquals("true", diagnostic.get("sessionAuthenticated"));
+                assertEquals("COMPLETED", diagnostic.get("inputState"));
+                assertEquals("true", diagnostic.get("outputObserved"));
+                assertEquals("false", diagnostic.get("exitObserved"));
+                assertEquals(timeout ? "300" : "5000", diagnostic.get("timeoutMillis"));
+                long elapsed = Long.parseLong(diagnostic.get("elapsedMillis"));
+                assertTrue(elapsed >= 0);
+                if (timeout) assertTrue(elapsed >= 300);
+                assertFalse(diagnostic.toString().contains("fixture"));
+                assertFalse(diagnostic.toString().contains("observed prefix"));
                 assertEquals(1, fixture.calls.get());
             }
         }
