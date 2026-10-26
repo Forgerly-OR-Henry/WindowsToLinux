@@ -127,9 +127,11 @@ public final class DesktopPartFactory {
         page.setBackground(palette.pageBackground());
     }
 
-    /** Keeps search surfaces distinct in light mode and follows live theme changes. / 浅色搜索框突出显示，并跟随实时主题更新。
+    /** Shares the server search height and theme surface across inventories. / 清单搜索框统一使用服务器的高度与主题表面。
      * @param field existing search input / 已有搜索输入框 */
     public void styleSearchField(JTextField field) {
+        var margin = field.getMargin();
+        field.setMargin(new Insets(8, margin.left, 8, margin.right));
         field.putClientProperty("FlatLaf.style", "background: $TextField.searchBackground; focusedBackground: $TextField.searchBackground");
     }
 
