@@ -1,10 +1,10 @@
 # 2026-10-27 ASSISTED 测试与失败修复
 
-本轮仍在进行，尚未达成首轮通过。task-board、file-transfer 首次有效尝试均在来源分析后失败，尚未进入构建、发布和业务验收。其余六项目暂缓，先调查共同阻断；不能据此记为六项失败或已完成八项测试。
+本轮仍在进行，未达成首轮通过。task-board、file-transfer 首次有效尝试均在来源分析后失败。修复后task-board第五次尝试已通过真实部署和业务验收，并经产品确认STOPPED/DISABLED；file-transfer待复验，其余六项尚未运行。不能据此记为八项通过或把重试并入首轮。
 
 | 项目 | 首次有效尝试 | 当前证据 |
 | --- | --- | --- |
-| task-board | FAILED | 来源准备返回 `DEPLOYMENT_STATIC_SOURCE_REJECTED`；65.878秒，应用列表空 |
+| task-board | FAILED | 第五次尝试部署/业务通过，产品最终STOPPED/DISABLED；前四次结果保留 |
 | file-transfer | FAILED | 同一来源拒绝，应用未发布 |
 | asset-lending、csv-inspector、survey-scoring | 未运行 | 等待共同阻断定位 |
 | log-analyzer、directory-diff、binary-inspector | 未运行 | 等待共同阻断定位 |
@@ -101,3 +101,11 @@ helper既有绝对期限为1713秒，Java外层1728秒，但APT参数固定只�
 修复同步两处独立固定值，保留逐字节完整性检查、独立契约核验、协议版本及原预算。对应两项身份检查和安装器摘要范围/绑定单项已通过；容量场景随后又暴露旧桩遗漏approvalPolicyRevision、toolchainPreparationContract.diagnostic及诊断安装协议。已对照实际生产合同同步：精确匹配策略修订号，使用生产codec重算诊断请求并核对原任务、服务器、指纹、计划、UUID、SHA和target；本地peer只解码准确的prepare-diagnosed首发请求并返回受控TOOLCHAIN成功回执，不伪造诊断附件。
 
 最终 `DeploymentAssistedWorkflowTest#independentAssistedPathUsesTheConfirmedDynamicQuota` 三参数全部通过（48.92秒，Maven exit0），原单场景30秒期限及容量/业务断言不变。归档1项、安全诊断1项、身份2项、安装器绑定1项和容量3项合计8个相关本地检查通过；不重复计算中间轮次。仅覆盖上述范围，没有执行全模块/全项目测试，真实第五次尝试随后进行。原失败均保留。
+
+## task-board 第五次尝试：部署、业务与收尾通过
+
+`task-board-retry-05` 基于 `1c69ac29`，启动时Git干净，原任务 `c7486dca-3e5b-4178-9608-9e0f6d3079b9`、state `assisted-live-task-board-13dgcawqc0`、应用 `wtl-assisted-task-board-13dgcciwxk`。JUnit1项通过，1585.117秒，Maven退出0。程序完成来源/审核/容量、更新helper、Java21/Node24/Python3.12准备、构建、双组件发布和健康门槛。Python本次成功回执为3.12.16；不能据此证明再次实际遇到包锁或需要等待特定时长。
+
+实际业务为HTTP首页、新建任务，以及由产品执行STOP、START、RESTART后读取任务确认持久化；没有真实界面或浏览器验收。AI_LIVE_PASS记录部署模型调用27、审批调用59；监控已知Token为78697+861391=940088，86个generation attempt ID，能力探测用量仍不含在内，不是完整账单。
+
+原夹具finally已STOP，delivery随后再次启动网站并导出；因此又由产品按精确application/revision/ownership执行STOP和检查。最终 `PRODUCT_CLEANUP_VERIFIED` 为STOPPED/DISABLED，清理进程退出0，未手动SSH部署或启停。交付摘要与最终停止证据分别保留，不把中途停止或RUNNING导出当作最终状态。本轮首轮FAILED保持，原第四次UNKNOWN核对仍为FAILED；其余项目验收继续。
