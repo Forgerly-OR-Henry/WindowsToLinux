@@ -309,7 +309,7 @@ public final class DeploymentRetainedReleases {
                                                DeploymentReleaseSnapshot from,
                                                DeploymentReleaseSnapshot to, DeploymentHandoffChannel channel, DeploymentPublishChannel publication,
                                                TaskContext task, boolean rollbackAllowed) throws ApiException {
-        boolean allRunning = true;
+        boolean allVerifiable = true;
         for (var component : ordered(to.graph())) {
             if (channel.current(component, binding(to, component.componentId()).releaseSha256())
                 .outcome() != TaskResult.SUCCEEDED)
@@ -335,8 +335,10 @@ public final class DeploymentRetainedReleases {
                         "DEPLOYMENT_RETAINED_RUNTIME_FAILED"));
                 return copy(uncertain(operation, task, "DEPLOYMENT_RETAINED_COMMITTED_RUNTIME_UNKNOWN"));
             }
-            if (!expectedState.equals("RUNNING")) {
-                allRunning = false;
+            boolean verifiable = expectedState.equals("RUNNING") || expectedState.equals("INSTALLED")
+                && component.reviewedRuntime().workload().mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND;
+            if (!verifiable) {
+                allVerifiable = false;
                 continue;
             }
             var health = publication.healthCheck(component.unit(), component.reviewedRuntime().healthCheck());
@@ -346,7 +348,7 @@ public final class DeploymentRetainedReleases {
             if (health.outcome() != TaskResult.SUCCEEDED)
                 return copy(uncertain(operation, task, "DEPLOYMENT_RETAINED_HEALTH_FAILED"));
         }
-        if (!allRunning)
+        if (!allVerifiable)
             return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
         var healthOwner = to.graph().components().stream()
             .filter(value -> value.componentId().equals(to.graph().healthComponentId())).findFirst().orElseThrow();
@@ -650,7 +652,7 @@ public final class DeploymentRetainedReleases {
     private OperationResult<String> verifyRollback(DeploymentManagementActionLog.Entry operation,
                                                    DeploymentReleaseSnapshot source, DeploymentReleaseSnapshot target, DeploymentHandoffChannel channel,
                                                    DeploymentPublishChannel publication, TaskContext task) throws ApiException {
-        boolean allRunning = true;
+        boolean allVerifiable = true;
         for (var component : ordered(source.graph())) {
             if (channel.current(component, binding(source, component.componentId()).releaseSha256())
                 .outcome() != TaskResult.SUCCEEDED)
@@ -670,8 +672,10 @@ public final class DeploymentRetainedReleases {
             if (state.outcome() != TaskResult.SUCCEEDED || state.value().isEmpty()
                 || !state.value().orElseThrow().state().name().equals(expected))
                 return uncertain(operation, task, "DEPLOYMENT_RETAINED_OLD_RUNTIME_UNKNOWN");
-            if (!expected.equals("RUNNING")) {
-                allRunning = false;
+            boolean verifiable = expected.equals("RUNNING") || expected.equals("INSTALLED")
+                && component.reviewedRuntime().workload().mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND;
+            if (!verifiable) {
+                allVerifiable = false;
                 continue;
             }
             if (publication.healthCheck(component.unit(), component.reviewedRuntime().healthCheck())
@@ -681,7 +685,7 @@ public final class DeploymentRetainedReleases {
         var healthOwner = source.graph().components().stream()
             .filter(value -> value.componentId().equals(source.graph().healthComponentId())).findFirst()
             .orElseThrow();
-        if (allRunning && publication.healthCheck(healthOwner.unit(), source.graph().healthCheck())
+        if (allVerifiable && publication.healthCheck(healthOwner.unit(), source.graph().healthCheck())
             .outcome() != TaskResult.SUCCEEDED)
             return uncertain(operation, task, "DEPLOYMENT_RETAINED_OLD_APPLICATION_HEALTH_UNKNOWN");
         journal.advance(operation, "FINISHED",
