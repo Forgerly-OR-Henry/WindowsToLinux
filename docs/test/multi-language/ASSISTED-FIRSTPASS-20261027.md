@@ -52,6 +52,10 @@ task-board 原任务为 `ec414c7b-de2f-4004-a060-12c3662e1fb6`，state为 `assis
 
 首次清理因JSON日期自动转换后的比较方式不当，435项均被守卫跳过，没有删除；改为UTC ticks精确比较后执行第二轮，435项全部删除，未发生部分删除失败。两份回执分别保留。
 
+补充真正只读审计确认，主库仍有8个应用、14个单元、20条执行记录等旧业务，之前的目录清理没有清主库内部历史。用户已明确旧库用于上一轮测试并授权重建，本轮选择保留基础配置的更小清理。服务器地址核对与本轮目标一致；主库平台任务、资源及Mod操作均为0后，使用产品数据库独占锁及单个事务，先拆应用/组件health外键环，再按真实外键顺序清19张deployment业务表，精确删除22条对应服务器引用及209条旧runtime_log。一次apply退出0，事务内确认上述业务表、引用和日志均归零，保留设置的内存逻辑快照一致，db-access.bin未变。没有禁用外键、TRUNCATE、远端卸载或复制秘密。
+
+独立真正只读复核再次确认上述业务、引用和日志均为0，server1/model1/credential3/security1/桌面偏好14/Mod偏好4及Mod身份和版本保留，服务器地址匹配、app_state为CLEAN。只读复查前后4个根文件长度、mtime和SHA不变，清理及审计自有JVM残留0。回执为 `main-db-cleanup-apply-01*`、`main-db-cleanup-post-readonly-01*`。
+
 原始日志、JUnit、启动属性、阶段进度和清理回执位于 `.ai-workspace/evidence/assisted-firstpass-20261027/`。后续真实复验、最终收尾和未验证范围将在此记录续写。
 
 ## task-board 第二次尝试：来源审核通过，Python依赖安装失败
@@ -78,4 +82,20 @@ helper既有绝对期限为1713秒，Java外层1728秒，但APT参数固定只�
 
 该输入边界交由Astra High做只读专项判断，Sol负责实现；没有让Astra做常态监督或必经最终审查。专项判断另指出当前共享逻辑的一个独立问题：同次修改port与显式代理URL，且代理端口等于旧端口时，显式URL会被联动改写。本地旧版两个反例均失败，修复仅使端口联动保留明确提供的accessUrl，并继续同步声明端点URL。
 
-最终本地联测17项通过（八项目接线等12项、RuntimeDraft5项），无API/SSH调用。八项目矩阵、显式代理和声明端点一致性、任意合法主组件ID、backend冒名拒绝、完整配置/绑定字段及CLI默认值均有覆盖。期间一次lambda捕获编译错误已修正并保留原日志。真实第四次尝试尚未完成，不能把本地矩阵通过记为八项目部署通过。
+最终本地联测17项通过（八项目接线等12项、RuntimeDraft5项），无API/SSH调用。八项目矩阵、显式代理和声明端点一致性、任意合法主组件ID、backend冒名拒绝、完整配置/绑定字段及CLI默认值均有覆盖。期间一次lambda捕获编译错误已修正并保留原日志。不能把本地矩阵通过记为八项目部署通过。
+
+## task-board 第四次尝试：准备异常与原任务核对
+
+`task-board-retry-04` 基于 `824bb90a`，原任务 `9d89ba69-a5f8-44e5-8715-dbbb981a1ee7`、state `assisted-live-task-board-12hi6krhd4`。本次完整后端输入及frontend端口46100/accessUrl审核正确；119.821秒后在“归档已审阅冻结组件”阶段进入UNKNOWN，Maven1/JUnit1项失败。已知部署模型83369 Token、审批0，四项探测用量未知，没有本次容量审批、安装或发布记录。
+
+原状态的产品无派发检查1项通过；持久异常日志确认 `java.lang.IllegalStateException`，仅保留publication-policy检查点，没有AGENT命令检查点。旧诊断没有消息或栈，阶段文本也覆盖归档之后的工作区选择，不能据此唯一断言归档失败或容量失败。只读调查的数据库及引导文件SHA未变。
+
+随后使用 `DeploymentStaticLiveAcceptanceTest#reconcilesOriginalTaskThroughProduct` 核对原任务，1项通过，进程退出0；最终原任务ENDED/FAILED、blockers为空，正常释放恢复会话，没有重放准备或将结果改成成功。
+
+为保留后续可定位证据，准备异常诊断增加最多6个经标识符白名单校验的内部类/方法/行号，不保存异常消息、源文件名或外部帧，隐私及数量边界1项本地测试通过。真实文件能力的task-board双组件连续归档1项本地测试也通过，覆盖归档SHA、原snapshot与文件资源释放；使用隔离副本及host.invalid，不能当成原live逐字节回放或归档无缺陷的证明。
+
+排查期间执行既有动态容量3参数定点，三项均等待超时。新增诊断确定它们由测试桩的AssertionFailedError引起，发生在“审阅组件图”，不同于本次live的IllegalStateException。旧桩要求可纠正字段全部为空，当前协议仍可提供未填的可选healthEndpoint；应核对已经人工确认的字段不能再交由模型覆盖。原失败日志保留，修正及复验另行记录，不将本地失败冒认为live根因。
+
+修正旧桩后，同一3参数测试均越过旧断言，新的安全帧一致指向 `DeploymentManagedHelperBundle.renderScript:255`。之前APT片段修改遗漏了helper固定SHA及独立审批契约SHA，实际脚本摘要为 `b29887d896bb61cf6b61e43b59441f78c63008b8ddd32fff1c3b6285eed9d3ab`，旧固定摘要仍为 `f00011d5db422c2331ad77eb4c2f31b55c99d78f85780b6e5b60d5b617c90c01`。现有逐字节组装单项也单独复现同一拒绝。该遗漏由本轮修改引入；本地已确认，不据此补造旧live缺失的异常栈。
+
+修复同步两处独立固定值，保留逐字节完整性检查、独立契约核验、协议版本及原预算。对应两项身份检查和安装器摘要范围/绑定单项已通过；容量场景随后又暴露旧桩遗漏approvalPolicyRevision、toolchainPreparationContract.diagnostic及诊断安装协议，正在对照实际生产合同同步。原失败均保留，尚未据此声明真实部署通过。

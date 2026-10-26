@@ -192,10 +192,7 @@ public final class DeploymentRefFlow implements TaskRecovery {
                 facts.putAll(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildCommandChannel.safeFailureFacts(problem));
                 problem.diagnosticId().ifPresent(id -> facts.put("diagnosticId", id.toString()));
             });
-            if (failure != null) {
-                String type = failure.getClass().getName();
-                if (type.matches("[A-Za-z_$][A-Za-z0-9_.$]{0,199}")) facts.put("exceptionType", type);
-            }
+            facts.putAll(preparationFailureFacts(failure));
             var target = context.logs().register(new gold.debug.windowstolinux.appapi.task.log.LogCategory(
                 "deployment", "Deployment", Optional.of("deployment_log")));
             context.logs().write(target, new gold.debug.windowstolinux.appapi.task.log.LogEvent(
@@ -209,6 +206,25 @@ public final class DeploymentRefFlow implements TaskRecovery {
         } catch (ApiException | java.io.IOException | RuntimeException | LinkageError | AssertionError unavailable) {
             // Diagnostic storage cannot replace the original preparation outcome or authorize any replay.
         }
+    }
+
+    /** Retains bounded internal code locations without exception messages or source filenames. */
+    static Map<String, String> preparationFailureFacts(Throwable failure) {
+        if (failure == null) return Map.of();
+        var facts = new LinkedHashMap<String, String>();
+        String type = failure.getClass().getName();
+        if (type.matches("[A-Za-z_$][A-Za-z0-9_.$]{0,199}")) facts.put("exceptionType", type);
+        int index = 0;
+        for (var frame : failure.getStackTrace()) {
+            String owner = frame.getClassName();
+            String method = frame.getMethodName();
+            if (!owner.startsWith("gold.debug.windowstolinux.")
+                || !owner.matches("[A-Za-z_$][A-Za-z0-9_.$]{0,199}")
+                || !method.matches("(?:[A-Za-z_$][A-Za-z0-9_$]{0,119}|<init>|<clinit>)")) continue;
+            facts.put("exceptionFrame." + index++, owner + "#" + method + ":" + frame.getLineNumber());
+            if (index == 6) break;
+        }
+        return Map.copyOf(facts);
     }
 
     /** Reconciles exact original evidence only; unknown external work is never run again. / 仅核对精确原证据；未知外部工作绝不重跑。

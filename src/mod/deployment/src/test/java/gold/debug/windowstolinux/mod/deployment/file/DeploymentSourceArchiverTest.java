@@ -26,6 +26,8 @@ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.task.run.TaskWork;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.part.ProjectPartFinder;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStandardSourceSetup;
 import org.junit.jupiter.api.Test;
 
 class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
@@ -90,6 +92,68 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
                 throw failure.getCause();
             }
         });
+    }
+
+    @Test
+    void realTaskBoardRuntimeInputsPreserveBothComponentArchivesAndReleaseFileResources() throws Exception {
+        Path fixture = workspace().resolve("test/multi-language/success-task-board");
+        var original = new TreeMap<Path, String>();
+        try (var paths = Files.walk(fixture)) {
+            for (Path path : paths.toList()) {
+                Path target = selectedSourceDirectory().resolve(fixture.relativize(path));
+                if (Files.isDirectory(path)) Files.createDirectories(target);
+                else {
+                    original.put(path, HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path))));
+                    Files.copy(path, target);
+                }
+            }
+        }
+        try {
+            var liveType = Class.forName("gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticLiveAcceptanceTest");
+            var constructor = liveType.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            var runtimeInputs = liveType.getDeclaredMethod("runtimeInputs", String.class, Path.class, String.class, int.class);
+            runtimeInputs.setAccessible(true);
+            var inputs = (Map<?, ?>) runtimeInputs.invoke(constructor.newInstance(), "task-board", selectedSourceDirectory(), "host.invalid", 46100);
+            assertEquals("46100", ((Map<?, ?>) inputs.get("frontend")).get("port"));
+            assertEquals("46101", ((Map<?, ?>) inputs.get("backend")).get("port"));
+            enable();
+            try (var runtime = open()) {
+                start(runtime, true);
+                run(runtime, task -> {
+                    var source = file(runtime);
+                    try (var material = new DeploymentSourceSetup(source).prepare(source.sources().selectDirectory("Source", task),
+                        128L * 1024 * 1024, 10000, task)) {
+                        var discovered = new ProjectPartFinder().discover(material.snapshot().directory());
+                        assertEquals(List.of("backend", "frontend"), discovered.stream()
+                            .map(part -> part.relativeRoot().toString().replace('\\', '/')).toList());
+                        String sourceSha = material.snapshot().sha256();
+                        var owned = new ArrayList<DeploymentSourceArchive>();
+                        try {
+                            var frozen = DeploymentStandardSourceSetup.archiveParts(material, source, discovered,
+                                64L * 1024 * 1024, owned, task);
+                            assertEquals(2, frozen.archives().size());
+                            for (var archive : frozen.archives().values()) {
+                                assertEquals(material.snapshot().id(), archive.originSnapshotId());
+                                assertEquals(sourceSha, archive.sourceManifestSha256());
+                                assertTrue(Files.isRegularFile(archive.path()));
+                                assertEquals(archive.sha256(), HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                                    .digest(Files.readAllBytes(archive.path()))));
+                            }
+                            assertEquals(sourceSha, material.snapshot().sha256());
+                            return success();
+                        } finally {
+                            for (var archive : owned) archive.close();
+                        }
+                    }
+                });
+                assertEquals(0, files(runtime));
+            }
+        } finally {
+            for (var entry : original.entrySet())
+                assertEquals(entry.getValue(), HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(Files.readAllBytes(entry.getKey()))), "Original task-board fixture must remain unchanged");
+        }
     }
 
     @Test
