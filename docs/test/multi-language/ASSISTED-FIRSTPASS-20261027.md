@@ -1,12 +1,12 @@
 # 2026-10-27 ASSISTED 测试与失败修复
 
-本轮仍在进行，未达成首轮通过。task-board、file-transfer 首次有效尝试均在来源分析后失败。修复后task-board第五次、file-transfer第二次均通过真实部署和业务验收，并经产品确认STOPPED/DISABLED；asset-lending首次UNKNOWN正在修复，其余五项尚未运行。不能据此记为八项通过或把重试并入首轮。
+本轮仍在进行，未达成首轮通过。task-board、file-transfer 首次有效尝试均在来源分析后失败。修复后task-board第五次、file-transfer第二次均通过真实部署和业务验收，并经产品确认STOPPED/DISABLED；asset-lending首次UNKNOWN已由产品核对为FAILED，契约修复后待复验，其余五项尚未运行。不能据此记为八项通过或把重试并入首轮。
 
 | 项目 | 首次有效尝试 | 当前证据 |
 | --- | --- | --- |
 | task-board | FAILED | 第五次尝试部署/业务通过，产品最终STOPPED/DISABLED；前四次结果保留 |
 | file-transfer | FAILED | 第二次尝试部署/完整文件业务通过，产品最终STOPPED/DISABLED；首轮来源拒绝保留 |
-| asset-lending | UNKNOWN | .NET准备的独立审批拒绝；该prepare未实际派发，原任务待产品核对 |
+| asset-lending | UNKNOWN→FAILED（产品核对） | .NET准备的独立审批拒绝；该prepare未派发，原任务已正常收尾，修复后待复验 |
 | csv-inspector、survey-scoring | 未运行 | 等待本轮前置问题处理 |
 | log-analyzer、directory-diff、binary-inspector | 未运行 | 等待共同阻断定位 |
 
@@ -131,4 +131,6 @@ finally停止、delivery再次启动导出后，又经产品精确绑定原应�
 
 实际固定helper由 `DeploymentManagedHelperBundle` 组装 `/usr/bin/python3 -I - "$@" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'`：先将外部stdin保存到fd3，再让here-doc向Python fd0提供固定源码，内部读取dup(3)。原审批契约只提内部fd3，遗漏边界映射。修复只补齐与该固定源码一致的说明；不改执行脚本、外部命令、helper pin、审批阈值或DENY规则。
 
-本地新增实测从完整renderScript提取实际wrapper，仅把解释器换成受控shell reader：正例673字节及SHA一致，删除3<&0和移到here-doc之后两个负控均不一致；契约还须包含真实header。旧契约反例失败已保留，直接ContractTest两项通过；最终措辞限定JSON request verbs后仅复验受影响新方法1项通过，均0skip。未运行生产Python或安装器，Maven/Bash正常退出。修复已本地提交 `926c8875`，未推送。原UNKNOWN将通过正常产品流程核对，未重放.NET准备或删除原状态。
+本地新增实测从完整renderScript提取实际wrapper，仅把解释器换成受控shell reader：正例673字节及SHA一致，删除3<&0和移到here-doc之后两个负控均不一致；契约还须包含真实header。旧契约反例失败已保留，直接ContractTest两项通过；最终措辞限定JSON request verbs后仅复验受影响新方法1项通过，均0skip。未运行生产Python或安装器，Maven/Bash正常退出。修复已本地提交 `926c8875`，未推送。
+
+随后 `reconcilesOriginalTaskThroughProduct` 对原任务核对1项通过（31.68秒，进程退出0），最终原任务ENDED/FAILED、blockers为空，恢复会话正常释放。没有重放.NET准备或删除原状态，也不将核对成功记为部署成功。下一次部署仍为新的重试。
