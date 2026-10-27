@@ -1,6 +1,6 @@
 # 2026-10-27 ASSISTED 测试与失败修复
 
-本轮仍在进行，未达成首轮通过。task-board、file-transfer首次来源失败，asset-lending首次UNKNOWN由产品核对为FAILED。上述三项及CSV均在后续重试通过真实部署和业务验收，最终STOPPED/DISABLED；CSV首次PHP准备失去SSH退出证据，附件确认准备成功后原任务已核对FAILED，断连原因仍未知；其余四项尚未运行。不能据此记为八项通过或把重试并入首轮。
+本轮仍在进行，未达成首轮全部通过。五项网站均已通过部署、业务及最终STOPPED/DISABLED，其中survey-scoring首次通过，其他四项为后续重试通过。CSV首次PHP准备失去SSH退出证据，附件确认准备成功后原任务已核对FAILED，断连原因仍未知；三个CLI尚未运行。不能据此记为八项通过或把重试并入首轮。
 
 | 项目 | 首次有效尝试 | 当前证据 |
 | --- | --- | --- |
@@ -8,7 +8,7 @@
 | file-transfer | FAILED | 第二次尝试部署/完整文件业务通过，产品最终STOPPED/DISABLED；首轮来源拒绝保留 |
 | asset-lending | UNKNOWN→FAILED（产品核对） | 第二次部署/借还与重启持久化通过，产品最终STOPPED/DISABLED；首轮拒绝保留 |
 | csv-inspector | UNKNOWN→FAILED（产品核对） | 第二次部署、分析业务及重启持久化通过，最终STOPPED/DISABLED；首次SSH原因未知 |
-| survey-scoring | 未运行 | 等待本轮前置问题处理 |
+| survey-scoring | PASS | 三组件部署、84.21评分及重启持久化通过，最终STOPPED/DISABLED |
 | log-analyzer、directory-diff、binary-inspector | 未运行 | 等待共同阻断定位 |
 
 ## 入口与执行边界
@@ -167,3 +167,11 @@ HTTP业务验证分类和资产创建、借用submit/approve/checkout/return，�
 HTTP业务检查worker有效、创建demo/basic分析任务并完成，断言3行、6个问题、1个有效行；经产品整应用RESTART后worker PID变化，任务仍为completed，导出包含issueCount。JUnit1项通过、0skip、Maven0，耗时1008.261秒。66个监控generation attempt ID，已知部署/审批Token59461+648566=708027，四项能力探测不含，未提高预算或期限。
 
 导出后由产品精确绑定原应用、revision与ownership再次STOP并inspect，最终STOPPED/DISABLED，清理进程退出0，assessment为COMPLETE。首次UNKNOWN、附件SUCCEEDED、原任务核对FAILED均保留；本次成功不能证明原SSH断连根因已修复。本轮四项网站重试通过，survey-scoring及三个CLI尚未运行。
+
+## survey-scoring 首次尝试：三组件部署与评分通过
+
+`survey-scoring-first-01` 基于 `4237af9a`，启动时Git干净。原任务 `0fa7b74a-6f23-4a95-9735-58e980b2efe5`、state `assisted-live-survey-scoring-16yoqkyfak`、应用 `wtl-assisted-survey-scoring-16yoqml36c`。程序完成来源审核、工具链准备、scorer/backend/frontend三组件构建、按依赖发布及整应用健康门槛。准备和构建中的长时间等待均由原命令自然返回成功，没有人工安装、重复派发或提高期限。
+
+HTTP提交问卷，断言返回有效id且评分为84.21，再经产品整应用RESTART后读取原提交，确认评分持久化。JUnit1项通过、0skip、Maven0，耗时2124.481秒。121个监控generation attempt ID，已知部署/审批Token114893+1061619=1176512，四项能力探测不含。LOW/LOW及原1500000监督阈值不变。
+
+导出后的额外产品STOP和inspect确认最终STOPPED/DISABLED，清理进程退出0，assessment为COMPLETE。此项计为本轮首次通过；其他四网站重试历史不变。三个CLI继续，未执行真实界面或浏览器。
