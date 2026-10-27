@@ -126,6 +126,7 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
         start(runtime, true); server(runtime);
         run(runtime, task -> { publishManaged(runtime, task, reviewedGraph(), 1); return success(); });
         var harness = new ManagedHarness(runtime.modContexts().get(OWNER).context());
+        harness.requireUnattemptedEffectReview = true;
         var app = new DeploymentApplicationId("application", new ServerId("server"));
         for (var action : List.of(DeploymentLifecycleAction.RESTART, DeploymentLifecycleAction.STOP,
             DeploymentLifecycleAction.START, DeploymentLifecycleAction.DISABLE_AUTOSTART)) {
