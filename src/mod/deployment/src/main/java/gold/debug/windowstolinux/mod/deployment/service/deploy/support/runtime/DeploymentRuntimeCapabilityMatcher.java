@@ -105,6 +105,24 @@ public final class DeploymentRuntimeCapabilityMatcher {
             : DeploymentRuntimeCapabilityDecision.missingHostPrerequisite(detail);
     }
 
+    /** Typed native gap shared by preparation and its current independent review. */
+    public static boolean nativeBuildPrerequisitesMissing(DeploymentLinuxCapabilityFacts capabilities,
+            DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime) {
+        if (!(runtime instanceof DeploymentRuntimeDefinition.CmakeService) && runtime.workload().companions().isEmpty()) return false;
+        if (!companionBuildTools(capabilities)) return true;
+        for (var need : DeploymentProjectToolchainRequirements.from(facts, runtime)) {
+            if (need.ecosystem() == gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType.C
+                && !hasTool(capabilities, DeploymentEcosystemToolType.C_COMPILER)) return true;
+            if (need.ecosystem() == gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType.CPP
+                && !hasTool(capabilities, DeploymentEcosystemToolType.CPP_COMPILER)) return true;
+        }
+        return runtime instanceof DeploymentRuntimeDefinition.CmakeService
+            && (facts.languageFacts().sourceLanguages().contains(SourceLanguageType.C)
+                && !hasTool(capabilities, DeploymentEcosystemToolType.C_COMPILER)
+                || facts.languageFacts().sourceLanguages().contains(SourceLanguageType.CPP)
+                && !hasTool(capabilities, DeploymentEcosystemToolType.CPP_COMPILER));
+    }
+
     /**
      * Tests the companion build tools predicate against the supplied evidence.
      * <p>根据所提供证据检查配套单元构建工具集合条件。
@@ -218,9 +236,7 @@ public final class DeploymentRuntimeCapabilityMatcher {
                     ? null
                     : "the selected Ruby runtime and dependency tool are not available";
             case DeploymentRuntimeDefinition.CmakeService ignored -> !facts.languageFacts().sourceLanguages().isEmpty()
-                && anyVersion(capabilities, DeploymentEcosystemToolType.CMAKE,
-                segments -> segments[0] > 3 || segments[0] == 3 && segments[1] >= 25)
-                && hasTool(capabilities, DeploymentEcosystemToolType.NINJA)
+                && companionBuildTools(capabilities)
                 && (!facts.languageFacts().sourceLanguages().contains(SourceLanguageType.C)
                 || hasTool(capabilities, DeploymentEcosystemToolType.C_COMPILER))
                 && (!facts.languageFacts().sourceLanguages().contains(SourceLanguageType.CPP)

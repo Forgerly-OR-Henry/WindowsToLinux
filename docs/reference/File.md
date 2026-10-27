@@ -935,9 +935,11 @@ com/example/windowstolinux/mod/backup/  # [包]     Mod 主模块的 Java 根包
 
 ### 4.5 资源、构建与物理会话装配
 
-生产资源位于所属模块的 Maven resources 内，路径与实际加载归属一致；Mod 包资源与运行后数据分开。部署远端资源统一归 `linux/helper`：协议基础与命令分派直接放在该目录，语言、数据库、输入、发布、恢复、运行、备份、工具链和构建工作目录分别归 `ecosystem`、`database`、`input`、`release`、`restore`、`runtime`、`backup`、`toolchain`、`workspace`；`runtime/container`、`runtime/systemd` 保留实际运行机制分类，CentOS 仓库选择随工具链依赖准备归 `toolchain`。`DeploymentManagedHelperBundle` 按显式清单和原顺序组装。纯路径迁移保留字节、顺序、协议与摘要；行为改变才同步身份与合同，历史资源核对见 [1.1 结构迁移证据](../development/PHASE-1.1.md#structure-gates)。
+生产资源位于所属模块的 Maven resources 内，路径与实际加载归属一致；Mod 包资源与运行后数据分开。部署受管 helper 的远端资源统一归 `linux/helper`：协议基础与命令分派直接放在该目录，语言、数据库、输入、发布、恢复、运行、备份、工具链和构建工作目录分别归 `ecosystem`、`database`、`input`、`release`、`restore`、`runtime`、`backup`、`toolchain`、`workspace`；`runtime/container`、`runtime/systemd` 保留实际运行机制分类，CentOS 仓库选择随工具链依赖准备归 `toolchain`。`DeploymentManagedHelperBundle` 按显式清单和原顺序组装。纯路径迁移保留字节、顺序、协议与摘要；行为改变才同步身份与合同，历史资源核对见 [1.1 结构迁移证据](../development/PHASE-1.1.md#structure-gates)。
 
 页面专属文案跟随所属 Java 包：自主页归 `ui/agent`，应用页归 `ui/application`，环境、反馈与交付文案保持各自职责目录；Workspace 与标准页共用的 `deployment-page` 文案留在 `ui` 根目录。环境准备脚本、外部应用扫描脚本和共用流程文案分别保持 `service/environment`、`service/core/application`、`service/feedback` 归属；Schema 脚本仍归 `db`。资源文件名、文案键及语言回退规则保持原合同。
+
+标准与 Agent 共用的固定原生包依赖叶子归 `service/deploy/toolchain`，唯一的 `agent-toolchain-dependencies.py` 与 `dependency-packages.json` 资源随该共享实现归属；保留原程序字节、包表及 Agent operation。标准入口只接纳固定 `NATIVE_BUILD`，分别绑定当前完整程序、原任务/来源/计划、精确事务目标和回执，再重新核验主机能力；不借用 Agent controller 权限或将依赖回执当作构建就绪。
 
 `DeploymentPublishEvidenceChannel` 负责原任务/独立操作证据及实际准入发送，`DeploymentPublishReceipt` 解析固定回执；不把协议解析和业务编排混在一起。CLASS/JAR loader、SSH 客户端、物理会话、通道、线程、进程及 JDBC 连接由实际所有者关闭并核对退出；发出停止请求或返回 close 不表示账本已清理。
 

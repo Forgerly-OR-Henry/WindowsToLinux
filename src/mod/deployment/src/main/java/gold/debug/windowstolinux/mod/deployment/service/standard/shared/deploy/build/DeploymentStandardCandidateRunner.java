@@ -245,29 +245,67 @@ public final class DeploymentStandardCandidateRunner {
         var selection = prepared.value().orElseThrow();
         if (!selection.rendered.reviewedPlanSha256().equals(rendered.value().orElseThrow().reviewedPlanSha256()))
             return unknownPreparation("DEPLOYMENT_PLAN_IDENTITY_CHANGED");
+        return validateHostPreparation(selection, channel, task, requiredSpace, capacity.value().orElseThrow());
+    }
+
+    private OperationResult<Prepared> validateHostPreparation(DeploymentStandardBuildRunner.Prepared selection,
+            DeploymentCandidateChannel channel, TaskContext task, long requiredSpace, long availableBytes) throws ApiException {
+        var request = selection.plan.request();
+        if (cancelled(task)) return cancelledPreparation();
         var preparedFacts = channel.hostFacts(request.runtime());
-        if (preparedFacts.outcome() != TaskResult.SUCCEEDED)
-            return withoutPreparedValue(preparedFacts);
-        preparationObserver.hostObserved(selection.rendered.reviewedPlanSha256(),
-            preparedFacts.value().orElseThrow(), selection.tools, task);
-        if (DeploymentHostMatcher
-            .evaluate(preparedFacts.value().orElseThrow(), request.facts(), request.runtime(), selection.tools)
+        if (preparedFacts.outcome() != TaskResult.SUCCEEDED) return withoutPreparedValue(preparedFacts);
+        var host = preparedFacts.value().orElseThrow();
+        preparationObserver.hostObserved(selection.rendered.reviewedPlanSha256(), host, selection.tools, task);
+        var runtime = gold.debug.windowstolinux.mod.deployment.service.deploy.support.runtime.DeploymentRuntimeCapabilityMatcher.evaluate(host, request.facts(), request.runtime(), selection.tools);
+        boolean platformReady = DeploymentHostMatcher.evaluatePlatform(host).support() == DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION;
+        boolean nativeAttempted = false;
+        if (platformReady && runtime.missingHostPrerequisite()
+            && gold.debug.windowstolinux.mod.deployment.service.deploy.support.runtime.DeploymentRuntimeCapabilityMatcher.nativeBuildPrerequisitesMissing(host, request.facts(), request.runtime())) {
+            if (cancelled(task)) return cancelledPreparation();
+            long seconds = Math.min(7200, selection.commands.remainingSeconds());
+            if (seconds < 45) return failedPreparation(ProblemCode.TIMEOUT, "DEPLOYMENT_BUILD_BUDGET_EXHAUSTED");
+            String operation = java.util.UUID.randomUUID().toString().replace("-", "");
+            byte[] input = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencies(request.layout()).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.linux.command.CommandResult> installed;
+            try {
+                installed = selection.commands.send(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION,
+                    gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(request.server(), "NATIVE_BUILD"),
+                    gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.command(java.util.List.of("NATIVE_BUILD", operation)), input,
+                    java.time.Duration.ofSeconds(seconds), 65536);
+            } finally { java.util.Arrays.fill(input, (byte) 0); }
+            if (installed.outcome() != TaskResult.SUCCEEDED) return withoutPreparedValue(installed);
+            if (installed.value().isEmpty() || installed.value().orElseThrow().truncated()
+                || installed.value().orElseThrow().exitCode().isEmpty())
+                return unknownPreparation("DEPLOYMENT_NATIVE_BUILD_PREREQUISITES_UNCONFIRMED");
+            var result = installed.value().orElseThrow();
+            if (result.exitCode().orElseThrow() != 0)
+                return failedPreparation(ProblemCode.IO_FAILURE, "DEPLOYMENT_NATIVE_BUILD_PREREQUISITES_FAILED");
+            if (!gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyReceipt(result.stdout(), "NATIVE_BUILD", operation))
+                return unknownPreparation("DEPLOYMENT_NATIVE_BUILD_PREREQUISITES_UNCONFIRMED");
+            if (cancelled(task)) return cancelledPreparation();
+            nativeAttempted = true;
+            preparedFacts = channel.hostFacts(request.runtime());
+            if (preparedFacts.outcome() != TaskResult.SUCCEEDED) return withoutPreparedValue(preparedFacts);
+            host = preparedFacts.value().orElseThrow();
+            preparationObserver.hostObserved(selection.rendered.reviewedPlanSha256(), host, selection.tools, task);
+            runtime = gold.debug.windowstolinux.mod.deployment.service.deploy.support.runtime.DeploymentRuntimeCapabilityMatcher.evaluate(host, request.facts(), request.runtime(), selection.tools);
+        }
+        if (DeploymentHostMatcher.evaluate(host, request.facts(), request.runtime(), selection.tools)
             .support() != DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION) {
-            var runtime = gold.debug.windowstolinux.mod.deployment.service.deploy.support.runtime.DeploymentRuntimeCapabilityMatcher
-                .evaluate(preparedFacts.value().orElseThrow(), request.facts(), request.runtime(), selection.tools);
-            if (runtime.missingHostPrerequisite() && DeploymentHostMatcher.evaluatePlatform(preparedFacts.value().orElseThrow())
-                .support() == DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION)
+            if (nativeAttempted) return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
+                ProblemCode.INCOMPATIBLE, "DEPLOYMENT_NATIVE_BUILD_PREREQUISITES_UNSATISFIED",
+                "Native prerequisites remain unconfirmed after the original fixed transaction",
+                Map.of("requiredCapability", runtime.detail().orElse("Complete runtime matcher rejected the current host"),
+                    "observedTools", host.ecosystemToolVersions().toString()), Optional.empty())));
+            if (runtime.missingHostPrerequisite() && platformReady)
                 return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
-                    ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HOST_PREREQUISITE_MISSING",
-                    "Reviewed host prerequisites could not be validated",
+                    ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HOST_PREREQUISITE_MISSING", "Reviewed host prerequisites could not be validated",
                     Map.of("requiredCapability", runtime.detail().orElseThrow()), Optional.empty())));
             return failedPreparation(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_RUNTIME_UNSUPPORTED");
         }
-        if (cancelled(task))
-            return cancelledPreparation();
+        if (cancelled(task)) return cancelledPreparation();
         return new OperationResult<>(TaskResult.SUCCEEDED,
-            Optional.of(new Prepared(selection, channel, requiredSpace, capacity.value().orElseThrow())),
-            Optional.empty());
+            Optional.of(new Prepared(selection, channel, requiredSpace, availableBytes)), Optional.empty());
     }
 
     /** Uploads and builds one already prepared original candidate exactly once. / 精确一次上传并构建已准备的原候选。
@@ -362,9 +400,7 @@ public final class DeploymentStandardCandidateRunner {
             throw new IllegalArgumentException("Recovery changed original candidate identity");
         var channel = new DeploymentCandidateChannel(session, interaction, plan.request().server(), task,
             actual.rendered.reviewedPlanSha256(), actual.budget, plan.request().layout());
-        return new OperationResult<>(TaskResult.SUCCEEDED,
-            Optional.of(new Prepared(actual, channel, previous.requiredSpace, previous.availableBytes)),
-            Optional.empty());
+        return validateHostPreparation(actual, channel, task, previous.requiredSpace, previous.availableBytes);
     }
 
     /** Builds an existing verified candidate after formal review confirmation; never recreates or uploads it. / 正式审阅确认后构建已有已核候选，绝不重建或上传候选。

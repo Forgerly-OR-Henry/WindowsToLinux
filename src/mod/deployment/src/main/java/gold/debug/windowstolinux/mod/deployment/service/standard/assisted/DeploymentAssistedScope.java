@@ -210,6 +210,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         var observation = new LinkedHashMap<String, Object>(association);
         observation.put("reviewedPlanSha256", expected);
         observation.put("requiredCapability", result.detail().orElseThrow());
+        observation.put("nativeBuildPrerequisitesMissing", gold.debug.windowstolinux.mod.deployment.service.deploy.support.runtime.DeploymentRuntimeCapabilityMatcher.nativeBuildPrerequisitesMissing(host, request.facts(), request.runtime()));
         observation.put("observedAt", java.time.Instant.now().toString());
         observation.put("distro", host.distro().name());
         observation.put("version", host.version());
@@ -306,6 +307,8 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                                 TaskContext supplied) throws ApiException {
         var facts = new LinkedHashMap<String, Object>(effectFacts(intent, supplied));
+        if (intent.semantics().filter(value -> value.operation().equals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION)).isPresent())
+            facts.put("currentNativeBuildPrerequisites", nativeDependencyFacts(intent, request, supplied));
         if (intent.semantics().filter(value -> value.operation().startsWith(
             gold.debug.windowstolinux.mod.deployment.linux.cleanup.DeploymentCandidateCompensationProgram.OPERATION_PREFIX)).isPresent())
             facts.put("originalCandidateCompensation",
@@ -391,7 +394,32 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 java.util.Arrays.fill(input, (byte) 0);
             }
         }
+        if (intent.semantics().filter(value -> value.operation().equals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION)).isPresent())
+            instructions += "\n" + gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources.text(
+                DeploymentAssistedApproval.class, "native-dependencies-review.md");
         return instructions;
+    }
+
+    private synchronized Map<String, ?> nativeDependencyFacts(ActionIntent intent,
+            gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, TaskContext supplied) throws ApiException {
+        var planned = toolchainPlan;
+        if (planned == null || !planned.identity().equals(intent.revision())
+            || !intent.serverIds().equals(List.of(planned.server())))
+            throw new IllegalArgumentException("Current native preparation plan required");
+        var r = planned.plan().request();
+        var observation = hostPrerequisites.get(r.facts().applicationId());
+        if (observation == null || !Boolean.TRUE.equals(observation.get("nativeBuildPrerequisitesMissing"))
+            || !planned.identity().equals(observation.get("reviewedPlanSha256")))
+            throw new IllegalArgumentException("Current typed native prerequisite gap required");
+        // Re-render against the actual source/archive handles and original workflow, rather than trusting stored labels.
+        toolchainPreparationPlanned(planned.plan(), planned.identity(), supplied);
+        var association = reviewedApplicationSources.get(r.facts().applicationId());
+        if (association == null || association.entrySet().stream().anyMatch(entry -> !entry.getValue().equals(observation.get(entry.getKey()))))
+            throw new IllegalArgumentException("Native gap source association changed");
+        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied);
+        if (!r.layout().digest().equals(layout.digest())) throw new IllegalArgumentException("Native plan layout differs from original task");
+        var binding = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.inspect(intent, request, layout);
+        return Map.of("currentToolchainPlan", planned.evidence(), "observedGap", observation, "fixedTransaction", binding);
     }
 
     /** Compares the literal build archive guard and complete collector to one captured source association. */

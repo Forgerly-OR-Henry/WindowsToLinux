@@ -144,6 +144,7 @@ class DeploymentRuntimeCapabilityMatcherTest {
 
         assertEquals(false, decision.supported());
         assertTrue(decision.missingHostPrerequisite());
+        assertTrue(DeploymentRuntimeCapabilityMatcher.nativeBuildPrerequisitesMissing(withTools(base, tools), facts(DeploymentProjectKind.CMAKE_SERVICE, DeploymentBuildToolType.CMAKE), runtime));
         assertTrue(decision.detail().orElseThrow().contains("Ninja"));
 
         tools.put(DeploymentEcosystemToolType.NINJA, Set.of("1.12.1"));
@@ -153,6 +154,8 @@ class DeploymentRuntimeCapabilityMatcherTest {
             runtime);
         assertEquals(false, obsoleteCmake.supported());
         assertTrue(obsoleteCmake.detail().orElseThrow().contains("CMake"));
+        assertTrue(DeploymentRuntimeCapabilityMatcher.nativeBuildPrerequisitesMissing(withTools(base, tools), facts(DeploymentProjectKind.CMAKE_SERVICE, DeploymentBuildToolType.CMAKE), runtime));
+        assertFalse(DeploymentRuntimeCapabilityMatcher.nativeBuildPrerequisitesMissing(capabilities(), facts(DeploymentProjectKind.CMAKE_SERVICE, DeploymentBuildToolType.CMAKE), runtime));
     }
 
     private static DeploymentProjectFacts facts(DeploymentProjectKind type, DeploymentBuildToolType tool) {
@@ -194,6 +197,8 @@ class DeploymentRuntimeCapabilityMatcherTest {
             var missing = DeploymentRuntimeCapabilityMatcher.evaluate(withTools(capabilities(), tools), project, runtime, prepared);
             assertFalse(missing.supported());
             assertTrue(missing.missingHostPrerequisite());
+            assertTrue(DeploymentRuntimeCapabilityMatcher.nativeBuildPrerequisitesMissing(withTools(capabilities(), tools), project, runtime));
+            assertFalse(DeploymentRuntimeCapabilityMatcher.nativeBuildPrerequisitesMissing(capabilities(), project, runtime));
             tools.remove(DeploymentEcosystemToolType.NINJA);
             var wrongSelection = new DeploymentResolvedToolchains(DeploymentToolchainCatalog.defaults().revision(),
                 List.of(new DeploymentResolvedToolchains.Selection(rust,

@@ -17,9 +17,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 
-import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
@@ -321,17 +319,7 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
             target(server, "toolchain-source", ecosystem.name() + ":" + branch + ":" + exact));
     }
 
-    static Set<ActionTarget> dependencyTargets(ServerId server, String profile) {
-        Set<ActionTarget> targets = new LinkedHashSet<>();
-        for (String manager : List.of("APT", "DNF")) {
-            targets.add(target(server, "system-package-index", manager + ":configured-authenticated-sources"));
-            targets.add(target(server, "system-package-transaction", manager + ":authenticated-dependency-closure:" + profile));
-            for (String name : DeploymentAgentToolchainPrograms.packages(manager, profile))
-                targets.add(target(server, "system-package", name));
-        }
-        targets.add(target(server, "system-repository", "DNF:centos:crb:transaction-only"));
-        return Set.copyOf(targets);
-    }
+    static Set<ActionTarget> dependencyTargets(ServerId server, String profile) { return gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(server, profile); }
 
     private static ActionTarget target(ServerId server, String kind, String id) {
         return new ActionTarget(server.id(), kind, id);
@@ -390,33 +378,7 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
         }
     }
 
-    private static boolean dependencyReceipt(String stdout, String ecosystem, String operation) {
-        String prefix = "TOOLCHAIN_DEPENDENCIES=";
-        if (!stdout.startsWith(prefix) || !stdout.endsWith("\n") || stdout.indexOf('\n') != stdout.length() - 1)
-            return false;
-        try (var parser = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .createParser(stdout.substring(prefix.length()))) {
-            JsonNode root = new ObjectMapper().readTree(parser);
-            if (root == null || parser.nextToken() != null || !root.isObject() || root.size() != 4
-                || !operation.equals(root.path("operation").asText()) || !ecosystem.equals(root.path("ecosystem").asText()))
-                return false;
-            String manager = root.path("manager").asText();
-            if (!List.of("APT", "DNF").contains(manager) || !root.path("packages").isObject())
-                return false;
-            var actual = new java.util.HashSet<String>();
-            var fields = root.path("packages").fields();
-            while (fields.hasNext()) {
-                var field = fields.next();
-                if (!field.getValue().isTextual() || field.getValue().textValue().isBlank()
-                    || field.getValue().textValue().length() > 256 || field.getValue().textValue().chars().anyMatch(Character::isISOControl))
-                    return false;
-                actual.add(field.getKey());
-            }
-            return actual.equals(Set.copyOf(DeploymentAgentToolchainPrograms.packages(manager, ecosystem)));
-        } catch (java.io.IOException | IllegalArgumentException malformed) {
-            return false;
-        }
-    }
+    private static boolean dependencyReceipt(String stdout, String ecosystem, String operation) { return gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyReceipt(stdout, ecosystem, operation); }
 
     private static boolean complete(OperationResult<CommandResult> result) {
         return result.outcome() == TaskResult.SUCCEEDED && result.value().isPresent()

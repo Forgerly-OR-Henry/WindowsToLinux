@@ -98,6 +98,22 @@ class DeploymentAssistedRuntimeNeedTest {
     @ParameterizedTest
     @ValueSource(strings = {"VALID", "REVISION", "SERVER", "SOURCE", "ARCHIVE_HANDLE", "TASK", "WORKFLOW", "BRANCH", "ECOSYSTEM", "EXACT", "DENY", "HOST_MISSING", "HOST_CLEARED", "HOST_REVISION", "HOST_TASK"})
     void runtimeNeedIsBoundToThePlanAndSourceWithoutRewritingSourceDeclarations(String mutation) throws Exception {
+        runtimeNeed(mutation);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"NATIVE_VALID", "NATIVE_DENY", "NATIVE_APPROVE", "NATIVE_SOURCE", "NATIVE_ARCHIVE", "NATIVE_LAYOUT", "NATIVE_PLAN", "NATIVE_TASK", "NATIVE_NO_GAP", "NATIVE_CLEARED", "NATIVE_NO_PLAN"})
+    void nativeDependenciesRequireTheCurrentTypedPlanAndGap(String mutation) throws Exception {
+        runtimeNeed(mutation);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"NATIVE_POST_SOURCE", "NATIVE_POST_ROUTE"})
+    void nativeDependenciesRecheckCurrentAuthorityAfterApproval(String mutation) throws Exception {
+        runtimeNeed(mutation);
+    }
+
+    private void runtimeNeed(String mutation) throws Exception {
         Files.createDirectories(directory.resolve("frontend"));
         Files.writeString(directory.resolve("frontend/package.json"), "{\"engines\":{\"node\":\">=24 <25\"},\"scripts\":{\"build\":\"vite build\"}}");
         var sourceId = new AtomicReference<>(UUID.randomUUID());
@@ -108,16 +124,32 @@ class DeploymentAssistedRuntimeNeedTest {
         var archive = new DeploymentSourceArchive(archived, "b".repeat(64), 1, 1, sourceId.get(), "a".repeat(64), "frontend");
         var fixture = new NativeAiFixture();
         var grants = new AtomicInteger();
+        var exactNativeIntent = new AtomicReference<ActionIntent>();
+        var exactNativeRequest = new AtomicReference<gold.debug.windowstolinux.appapi.linux.command.CommandRequest>();
         var host = (InteractionService) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{InteractionService.class},
             (proxy, method, args) -> {
                 if (method.getName().equals("openReviewedWorkflow"))
                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of((WorkflowGrant) () -> {
                     }), Optional.empty());
+                if (method.getName().equals("approveReviewedAction") && (mutation.equals("NATIVE_APPROVE") || mutation.startsWith("NATIVE_POST_"))) {
+                    assertSame(exactNativeIntent.get(), args[0]);
+                    assertSame(exactNativeRequest.get(), ((Optional<?>) args[1]).orElseThrow());
+                    assertSame(fixture.task, args[4]);
+                    grants.incrementAndGet();
+                    if (mutation.equals("NATIVE_POST_SOURCE")) archiveId.set(UUID.randomUUID());
+                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())), Optional.empty());
+                }
                 grants.incrementAndGet();
                 throw new AssertionError("No host permission in evidence-only test");
             });
+        var routeAi = (gold.debug.windowstolinux.appapi.ai.AiService) Proxy.newProxyInstance(getClass().getClassLoader(),
+            new Class<?>[]{gold.debug.windowstolinux.appapi.ai.AiService.class}, (proxy, method, args) -> {
+                if (method.getName().equals("configurationRevision") && mutation.equals("NATIVE_POST_ROUTE") && grants.get() > 0) return "changed-after-native-grant";
+                try { return method.invoke(fixture.context.ai(), args); } catch (InvocationTargetException error) { throw error.getCause(); }
+            });
         var context = (ModContext) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{ModContext.class},
             (proxy, method, args) -> {
+                if (method.getName().equals("ai")) return routeAi;
                 if (method.getName().equals("interaction")) return host;
                 if (method.getName().equals("ui")) return Proxy.newProxyInstance(getClass().getClassLoader(),
                     new Class<?>[]{gold.debug.windowstolinux.appapi.ui.UiService.class}, (unused, uiMethod, values) -> {
@@ -133,26 +165,72 @@ class DeploymentAssistedRuntimeNeedTest {
             });
         var server = new ServerId("fixture");
         var scope = new DeploymentAssistedScope(context, fixture.task, fixture.configurationRevision, "AUTOMATIC", true);
-        var layout = DeploymentRemoteLayout.original();
+        var layout = mutation.equals("NATIVE_LAYOUT") ? new DeploymentRemoteLayout(new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(
+            "/srv/other/helper", "/srv/other/apps", "/srv/other/state", "/srv/other/config", "/srv/other/data")) : DeploymentRemoteLayout.original();
         try (var permission = DeploymentWorkflowAuthorization.open(context, fixture.task, server, fixture.configurationRevision,
             "AUTOMATIC", true, "Deploy selected survey including its reviewed runtime dependencies")) {
             scope.workflowOpened(permission);
             scope.sourceCaptured(server, material, fixture.task);
             var initialPlan = DeploymentAssistedApprovalBudgetLiveTest.staticSitePlan(material, archive, "wtl-survey", layout,
                 mutation.equals("SERVER") ? new ServerId("other") : server);
-            var plan = mutation.startsWith("HOST_") ? companionPlan(initialPlan) : initialPlan;
+            var plan = mutation.startsWith("HOST_") || mutation.startsWith("NATIVE_") ? companionPlan(initialPlan) : initialPlan;
             scope.archiveCaptured(material, archive, plan.request().facts().toolchainRequirements(), fixture.task);
             String identity = ReviewedPlanIdentity.from(plan.request());
             var observer = scope;
             if (mutation.equals("SOURCE")) sourceId.set(UUID.randomUUID());
             if (mutation.equals("ARCHIVE_HANDLE")) archiveId.set(UUID.randomUUID());
             if (mutation.equals("WORKFLOW")) permission.close();
-            if (Set.of("REVISION", "SERVER", "SOURCE", "ARCHIVE_HANDLE", "TASK", "WORKFLOW").contains(mutation)) {
+            if (Set.of("REVISION", "SERVER", "SOURCE", "ARCHIVE_HANDLE", "TASK", "WORKFLOW", "NATIVE_LAYOUT").contains(mutation)) {
                 assertThrows(IllegalArgumentException.class, () -> observer.toolchainPreparationPlanned(plan,
                     mutation.equals("REVISION") ? "d".repeat(64) : identity,
                     mutation.equals("TASK") ? new NativeAiFixture().task : fixture.task));
             } else {
                 observer.toolchainPreparationPlanned(plan, identity, fixture.task);
+                if (mutation.startsWith("NATIVE_")) {
+                    if (!mutation.equals("NATIVE_NO_GAP")) observer.hostPrerequisitesObserved(plan, identity, hostFacts(false), preparedTools(plan), fixture.task);
+                    if (mutation.equals("NATIVE_CLEARED")) observer.hostPrerequisitesObserved(plan, identity, hostFacts(true), preparedTools(plan), fixture.task);
+                    if (mutation.equals("NATIVE_SOURCE")) sourceId.set(UUID.randomUUID());
+                    if (mutation.equals("NATIVE_ARCHIVE")) archiveId.set(UUID.randomUUID());
+                    if (mutation.equals("NATIVE_NO_PLAN")) { var field = DeploymentAssistedScope.class.getDeclaredField("toolchainPlan"); field.setAccessible(true); field.set(scope, null); }
+                    var actualLayout = mutation.equals("NATIVE_LAYOUT") ? new DeploymentRemoteLayout(new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(
+                        "/srv/other/helper", "/srv/other/apps", "/srv/other/state", "/srv/other/config", "/srv/other/data")) : layout;
+                    String program = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencies(actualLayout);
+                    try (var command = new gold.debug.windowstolinux.appapi.linux.command.CommandRequest(
+                        gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.command(List.of("NATIVE_BUILD", "a".repeat(32))),
+                        program.getBytes(java.nio.charset.StandardCharsets.UTF_8), java.time.Duration.ofSeconds(60), 65536)) {
+                        var intent = RemoteActions.command(server, mutation.equals("NATIVE_PLAN") ? "d".repeat(64) : identity, command).withSemantics(new ActionSemantics(
+                            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION,
+                            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(server, "NATIVE_BUILD")));
+                        exactNativeIntent.set(intent); exactNativeRequest.set(command);
+                        var supplied = mutation.equals("NATIVE_TASK") ? new NativeAiFixture().task : fixture.task;
+                        if (Set.of("NATIVE_VALID", "NATIVE_DENY", "NATIVE_APPROVE").contains(mutation) || mutation.startsWith("NATIVE_POST_")) {
+                            var facts = new ObjectMapper().valueToTree(scope.facts(intent, command, supplied));
+                            assertTrue(facts.at("/currentNativeBuildPrerequisites/observedGap/nativeBuildPrerequisitesMissing").asBoolean());
+                            assertTrue(scope.reviewInstructions(intent, command, supplied).contains("maintainer scripts"));
+                            if (mutation.equals("NATIVE_APPROVE") || mutation.startsWith("NATIVE_POST_")) {
+                                fixture.nativeReply(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("approve-native", "submit_result",
+                                    "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled fixed transaction\"}"));
+                                if (mutation.startsWith("NATIVE_POST_")) {
+                                    var refused = assertThrows(ApiException.class, () -> ((DeploymentCommandReview) scope.interaction()).approveCommand(intent, command, supplied));
+                                    assertEquals(mutation.equals("NATIVE_POST_SOURCE") ? "DEPLOYMENT_COMMAND_REVIEW_INVALID" : "DEPLOYMENT_ASSISTED_CONFIGURATION_CHANGED", refused.problem().eventCode());
+                                } else {
+                                    var result = ((DeploymentCommandReview) scope.interaction()).approveCommand(intent, command, supplied);
+                                    assertEquals(TaskResult.SUCCEEDED, result.outcome());
+                                    assertTrue(result.value().isPresent());
+                                }
+                            }
+                            if (mutation.equals("NATIVE_DENY")) {
+                                fixture.nativeReply(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("deny-native", "submit_result",
+                                    "{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled original refusal\"}"));
+                                var denied = assertThrows(ApiException.class, () -> ((DeploymentCommandReview) scope.interaction()).approveCommand(intent, command, supplied));
+                                assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
+                            }
+                        } else assertThrows(RuntimeException.class, () -> scope.facts(intent, command, supplied));
+                    }
+                    assertEquals(mutation.equals("NATIVE_APPROVE") || mutation.startsWith("NATIVE_POST_") ? 1 : 0, grants.get());
+                    return;
+                }
+
                 if (mutation.startsWith("HOST_")) {
                     var tools = preparedTools(plan);
                     if (mutation.equals("HOST_REVISION") || mutation.equals("HOST_TASK")) {

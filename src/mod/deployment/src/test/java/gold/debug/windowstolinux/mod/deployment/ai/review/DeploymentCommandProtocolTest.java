@@ -37,6 +37,70 @@ class DeploymentCommandProtocolTest {
     private final ModContext owner = (ModContext) Proxy.newProxyInstance(getClass().getClassLoader(),
         new Class<?>[]{ModContext.class}, (proxy, method, args) -> { throw new AssertionError("No capability access: " + method.getName()); });
 
+    @Test
+    void sharedDependencyBytesAndStrictReceiptsPreserveOriginalProfiles() throws Exception {
+        String source = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencies(layout);
+        assertEquals("a154a5d6078cd3e7f62bd152b9e5f9cf0bb7c883efff7c8b7ed45586d6f0b395", java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8))));
+        assertEquals(source, DeploymentAgentToolchainPrograms.dependencies(layout));
+        assertEquals(DeploymentAgentToolchainPrograms.BOOTSTRAP, gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.BOOTSTRAP);
+        assertEquals(DeploymentAgentToolchainPrograms.command(List.of("NATIVE_BUILD", "a".repeat(32))),
+            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.command(List.of("NATIVE_BUILD", "a".repeat(32))));
+        for (String manager : List.of("APT", "DNF")) for (String profile : List.of("NATIVE_BUILD", "PYTHON", "PHP", "RUBY", "HELPER_RUNTIME")) {
+            var names = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.packages(manager, profile);
+            assertEquals(names, DeploymentAgentToolchainPrograms.packages(manager, profile));
+            var packages = new LinkedHashMap<String, String>(); names.forEach(name -> packages.put(name, "1.0"));
+            var value = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(Map.of("operation", "a".repeat(32), "ecosystem", profile, "manager", manager, "packages", packages));
+            String line = "TOOLCHAIN_DEPENDENCIES=" + value + "\n";
+            var numeric = (com.fasterxml.jackson.databind.node.ObjectNode) value.deepCopy();
+            numeric.put("operation", new java.math.BigInteger("1".repeat(32)));
+            assertFalse(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyReceipt("TOOLCHAIN_DEPENDENCIES=" + numeric + "\n", profile, "1".repeat(32)), "Numeric operation cannot borrow textual identity");
+            assertTrue(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyReceipt(line, profile, "a".repeat(32)));
+            for (String mutation : List.of("DUPLICATE", "EXTRA", "OPERATION", "PROFILE", "MANAGER", "PACKAGES", "EMPTY_VERSION", "CONTROL_VERSION", "TAIL")) {
+                var changed = (com.fasterxml.jackson.databind.node.ObjectNode) value.deepCopy();
+                switch (mutation) {
+                    case "EXTRA" -> changed.put("extra", "data");
+                    case "OPERATION" -> changed.put("operation", "b".repeat(32));
+                    case "PROFILE" -> changed.put("ecosystem", "OTHER");
+                    case "MANAGER" -> changed.put("manager", "NONE");
+                    case "PACKAGES" -> ((com.fasterxml.jackson.databind.node.ObjectNode) changed.get("packages")).remove(names.getFirst());
+                    case "EMPTY_VERSION" -> ((com.fasterxml.jackson.databind.node.ObjectNode) changed.get("packages")).put(names.getFirst(), " ");
+                    case "CONTROL_VERSION" -> ((com.fasterxml.jackson.databind.node.ObjectNode) changed.get("packages")).put(names.getFirst(), "1\n2");
+                }
+                String raw = changed.toString();
+                if (mutation.equals("DUPLICATE")) raw = raw.replaceFirst("\\{", "{\"manager\":\"" + manager + "\",");
+                if (mutation.equals("TAIL")) raw += "{}";
+                assertFalse(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyReceipt("TOOLCHAIN_DEPENDENCIES=" + raw + "\n", profile, "a".repeat(32)), manager + profile + mutation);
+            }
+        }
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"VALID", "SOURCE", "PROFILE", "HELPER", "ARGV", "ID", "LAUNCHER", "MISSING_TARGET", "EXTRA_TARGET", "SERVER", "OUTPUT", "REQUEST"})
+    void nativeDependencyCommonProtocolBindsEveryCurrentByteAndTarget(String mutation) throws Exception {
+        String profile = mutation.equals("PROFILE") ? "PYTHON" : mutation.equals("HELPER") ? "HELPER_RUNTIME" : "NATIVE_BUILD";
+        String operation = mutation.equals("ID") ? "A".repeat(32) : "a".repeat(32);
+        var args = new ArrayList<>(List.of(profile, operation));
+        if (mutation.equals("ARGV")) args.add("extra");
+        String script = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.command(args);
+        if (mutation.equals("LAUNCHER")) script = script.replace("/usr/bin/python3", "/bin/python3");
+        String source = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencies(layout)
+            + (mutation.equals("SOURCE") ? " " : "");
+        var targets = new java.util.HashSet<>(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(server, "NATIVE_BUILD"));
+        if (mutation.equals("MISSING_TARGET")) targets.remove(targets.iterator().next());
+        if (mutation.equals("EXTRA_TARGET")) targets.add(new ActionTarget(server.id(), "system-package", "curl"));
+        if (mutation.equals("SERVER")) { targets.clear(); targets.addAll(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(new ServerId("other"), "NATIVE_BUILD")); }
+        try (var request = new CommandRequest(script, source.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(60), mutation.equals("OUTPUT") ? 4096 : 65536);
+             var changed = new CommandRequest(request.script(), "different".getBytes(StandardCharsets.UTF_8), request.timeout(), request.outputLimitBytes())) {
+            var intent = intent(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION, request, Set.copyOf(targets));
+            var common = new DeploymentFixedCommandProtocol(owner);
+            if (mutation.equals("VALID")) {
+                var facts = common.inspect(intent, request, layout, task(UUID.randomUUID()));
+                assertEquals(source, facts.get("completeExecutableInput"));
+                assertEquals("NATIVE_BUILD", ((Map<?, ?>) facts.get("toolchainDependencies")).get("profile"));
+            } else assertThrows(IllegalArgumentException.class, () -> common.inspect(intent, mutation.equals("REQUEST") ? changed : request, layout, task(UUID.randomUUID())));
+        }
+    }
+
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
     void trackedToolchainOperationsRequireTheSameExactOriginalInputInBothModes(boolean custom) throws Exception {

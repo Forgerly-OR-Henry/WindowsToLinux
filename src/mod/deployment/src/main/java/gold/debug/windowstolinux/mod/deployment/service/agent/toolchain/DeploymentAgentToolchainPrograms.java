@@ -7,8 +7,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentToolchainSources;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType;
 
@@ -16,13 +14,9 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.Dep
 public final class DeploymentAgentToolchainPrograms {
     private static final String ROOT = "/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/";
 
-    private static final ObjectMapper JSON = new ObjectMapper();
 
-    private static final List<String> PROFILES = List.of("PYTHON", "PHP", "RUBY", "NATIVE_BUILD", "HELPER_RUNTIME");
 
-    private static final String PACKAGES_TEXT = resource("dependency-packages.json");
 
-    private static final JsonNode PACKAGES = packages();
 
     /** Reads the original bytes once and gives the fixed controller its own source identity. / 仅读取一次原字节，并向固定控制器提供其自身来源身份。 */
     public static final String BOOTSTRAP = "import sys;sys.dont_write_bytecode=True;code=sys.stdin.buffer.read();exec(compile(code,'<wtl-agent-toolchain>','exec'),{'__name__':'__main__','PROGRAM_SOURCE':code})";
@@ -89,15 +83,7 @@ public final class DeploymentAgentToolchainPrograms {
         return dependencies(DeploymentRemoteLayout.original());
     }
 
-    public static String dependencies(DeploymentRemoteLayout layout) {
-        Objects.requireNonNull(layout);
-        try {
-            return "import json\nDEPENDENCY_PACKAGES = json.loads(" + JSON.writeValueAsString(PACKAGES_TEXT)
-                + ")\n" + resource("agent-toolchain-dependencies.py");
-        } catch (IOException failure) {
-            throw new IllegalStateException("Dependency source cannot be rendered", failure);
-        }
-    }
+    public static String dependencies(DeploymentRemoteLayout layout) { return gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencies(layout); }
 
     /** Returns exact potential packages, without accepting model-controlled package names. / 返回精确潜在包名，不接受模型控制的包名。 */
     public static List<String> packages(String manager, DeploymentToolchainType ecosystem) {
@@ -105,14 +91,7 @@ public final class DeploymentAgentToolchainPrograms {
     }
 
     /** Returns only one shipped dependency profile. / 仅返回一个随产品发布的依赖类别。 */
-    public static List<String> packages(String manager, String profile) {
-        JsonNode names = PACKAGES.path(manager).path(profile);
-        if (!names.isArray())
-            throw new IllegalArgumentException("Unsupported dependency manager or ecosystem");
-        var result = new java.util.ArrayList<String>();
-        names.forEach(name -> result.add(name.textValue()));
-        return List.copyOf(result);
-    }
+    public static List<String> packages(String manager, String profile) { return gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.packages(manager, profile); }
 
     /** Uses one canonical launcher for dispatch and evidence validation. / 发送和证据核验使用同一规范启动器。 */
     public static String command(List<String> arguments) {
@@ -156,30 +135,7 @@ public final class DeploymentAgentToolchainPrograms {
         return "'" + Objects.requireNonNull(value).replace("'", "'\\''") + "'";
     }
 
-    private static JsonNode packages() {
-        try {
-            JsonNode result = JSON.readTree(PACKAGES_TEXT);
-            if (result.size() != 2 || !result.has("APT") || !result.has("DNF"))
-                throw new IllegalStateException("Unexpected dependency managers");
-            for (String manager : List.of("APT", "DNF")) {
-                if (result.path(manager).size() != PROFILES.size())
-                    throw new IllegalStateException("Unexpected dependency ecosystems");
-                for (String ecosystem : PROFILES) {
-                    var names = result.path(manager).path(ecosystem);
-                    var unique = new java.util.HashSet<String>();
-                    if (!names.isArray() || names.isEmpty() || names.size() > 24)
-                        throw new IllegalStateException("Invalid dependency package collection");
-                    for (var name : names)
-                        if (!name.isTextual() || !name.textValue().matches("[a-z][a-z0-9+.-]{0,63}")
-                            || !unique.add(name.textValue()))
-                            throw new IllegalStateException("Invalid dependency package name");
-                }
-            }
-            return result;
-        } catch (IOException failure) {
-            throw new IllegalStateException("Dependency manifest unreadable", failure);
-        }
-    }
+
 
     private static String resource(String name) {
         try (var input = DeploymentAgentToolchainPrograms.class.getResourceAsStream(ROOT + name)) {

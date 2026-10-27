@@ -14,6 +14,7 @@ import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 /** Fixed protocols shared by deployment modes, with no mode-specific interpretation. */
 public final class DeploymentFixedCommandProtocol implements DeploymentCommandProtocol {
     private static final Set<String> OPERATIONS = Set.of(
+        gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION,
         "deployment.helper.install.v1",
         "deployment.helper.install.tracked.v1",
         "deployment.helper.install.files.v1",
@@ -103,6 +104,20 @@ public final class DeploymentFixedCommandProtocol implements DeploymentCommandPr
             } finally {
                 java.util.Arrays.fill(input, (byte) 0);
             }
+        }
+        if (intent.semantics().orElseThrow().operation().equals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION)) {
+            var binding = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.inspect(intent, request, layout);
+            var evidence = new java.util.LinkedHashMap<String, Object>(DeploymentCommandEvidence.baseFacts(intent, request, layout, false));
+            byte[] input = request.stdin();
+            try {
+                evidence.put("commandScript", request.script());
+                evidence.put("inputKind", "EXECUTABLE_SCRIPT");
+                evidence.put("completeExecutableInput", new String(input, java.nio.charset.StandardCharsets.UTF_8));
+                evidence.put("timeoutSeconds", request.timeout().toSeconds());
+                evidence.put("outputLimitBytes", request.outputLimitBytes());
+                evidence.put("toolchainDependencies", binding);
+                return java.util.Collections.unmodifiableMap(evidence);
+            } finally { java.util.Arrays.fill(input, (byte) 0); }
         }
         var facts = DeploymentCommandEvidence.facts(intent, request, layout, context, task);
         if (facts.get("modelCommand") instanceof Map<?, ?> command && !task.id().toString().equals(command.get("task")))

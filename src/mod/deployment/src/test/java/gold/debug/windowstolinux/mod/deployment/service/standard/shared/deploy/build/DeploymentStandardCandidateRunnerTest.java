@@ -117,10 +117,40 @@ class DeploymentStandardCandidateRunnerTest extends DeploymentRuntimeFixture {
     @ParameterizedTest
     @EnumSource(ScenarioType.class)
     void originalSourceTaskUsesOneCandidateAndExactTransfer(ScenarioType scenario) throws Exception {
+        candidateScenario(scenario, null);
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"INSTALL", "READY", "NON_NATIVE", "COMPILER", "UNKNOWN", "CANCELLED",
+        "NO_VALUE", "NO_EXIT", "TRUNCATED", "EXIT", "RECEIPT", "OBSOLETE", "POST_UNKNOWN", "DENY", "CANCEL_INCOMPLETE", "CANCEL_COMPLETE"})
+    void fixedNativePrerequisitesGateTheOriginalCandidate(String nativeCase) throws Exception {
+        candidateScenario(ScenarioType.SUCCESS, nativeCase);
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"UNSUPPORTED", "SDK_INVALID", "RECOVERY", "RECOVERY_UNKNOWN"})
+    void nativePreparationPreservesAdmissionAndRecoveredSelection(String nativeCase) throws Exception {
+        candidateScenario(ScenarioType.SUCCESS, nativeCase);
+    }
+
+    private void candidateScenario(ScenarioType scenario, String nativeCase) throws Exception {
         Files.createDirectories(selectedSourceDirectory());
         Files.writeString(selectedSourceDirectory().resolve("go.mod"), "module example.test/service\n\ngo 1.24\n");
         Files.writeString(selectedSourceDirectory().resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
         Files.writeString(selectedSourceDirectory().resolve("main.go"), "package main\nfunc main() {}\n");
+        boolean rust = nativeCase != null && !nativeCase.equals("NON_NATIVE");
+        if (rust) {
+            Files.createDirectories(selectedSourceDirectory().resolve("src"));
+            Files.writeString(selectedSourceDirectory().resolve("Cargo.toml"), "[package]\nname=\"native-fixture\"\nversion=\"0.1.0\"\nedition=\"2021\"\nrust-version=\"1.95\"\n");
+            Files.writeString(selectedSourceDirectory().resolve("Cargo.lock"), "version = 4\n");
+            Files.writeString(selectedSourceDirectory().resolve("rust-toolchain.toml"), "[toolchain]\nchannel=\"1.95.0\"\nprofile=\"minimal\"\n");
+            Files.writeString(selectedSourceDirectory().resolve("src/main.rs"), "fn main() {}\n");
+            Files.createDirectories(selectedSourceDirectory().resolve("native"));
+            Files.writeString(selectedSourceDirectory().resolve("native/CMakeLists.txt"), "cmake_minimum_required(VERSION 3.25)\nproject(worker LANGUAGES C)\nset(CMAKE_C_STANDARD 17)\nadd_executable(worker worker.c)\n");
+            Files.writeString(selectedSourceDirectory().resolve("native/worker.c"), "int main(void) { return 0; }\n");
+            Files.writeString(selectedSourceDirectory().resolve("windowstolinux-application.properties"), "companions=worker\ncompanion.worker.type=CMAKE_SERVICE\ncompanion.worker.sourcePath=native\ncompanion.worker.artifactPath=.w2l/bin/worker\ncompanion.worker.environment=NATIVE_HELPER\n");
+            Files.writeString(selectedSourceDirectory().resolve("native/CMakePresets.json"), "{\"version\":3,\"configurePresets\":[{\"name\":\"w2l-release\",\"generator\":\"Ninja\",\"binaryDir\":\"${sourceDir}/.w2l/cmake-build\",\"cacheVariables\":{\"CMAKE_BUILD_TYPE\":\"Release\"}}],\"buildPresets\":[{\"name\":\"w2l-release-build\",\"configurePreset\":\"w2l-release\"}]}");
+        }
         enable();
         try (var runtime = open()) {
             start(runtime, true);
@@ -135,6 +165,8 @@ class DeploymentStandardCandidateRunnerTest extends DeploymentRuntimeFixture {
             var workspaceIdentity = new AtomicReference<DeploymentRemoteWorkspace>();
             var actions = new CopyOnWriteArrayList<String>();
             var hostReads = new AtomicInteger();
+            var nativeSends = new AtomicInteger();
+            var originalHandle = new AtomicReference<gold.debug.windowstolinux.appapi.task.run.TaskHandle<?>>();
             var candidateCreates = new AtomicInteger();
             var uploads = new AtomicInteger();
             var grants = new ConcurrentHashMap<ApprovalGrant, ActionIntent>();
@@ -178,16 +210,53 @@ class DeploymentStandardCandidateRunnerTest extends DeploymentRuntimeFixture {
                             + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.EXPECTED_SHA256
                             + "\n");
                     }
+                    if (script.startsWith("/usr/bin/python3 -I -S -c ")) {
+                        actions.add("native-install"); nativeSends.incrementAndGet();
+                        var approved = grants.get(args[1]);
+                        assertEquals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION,
+                            approved.semantics().orElseThrow().operation());
+                        var bound = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.inspect(
+                            approved, command, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original());
+                        assertEquals("NATIVE_BUILD", bound.get("profile"));
+                        assertTrue(actions.indexOf("bind-tools") < actions.indexOf("native-install"));
+                        assertEquals(nativeCase.startsWith("RECOVERY") ? 3 : 2, hostReads.get());
+                        assertEquals(nativeCase.startsWith("RECOVERY") ? 1 : 0, uploads.get());
+                        if (nativeCase.startsWith("CANCEL_")) originalHandle.get().requestCancel();
+                        if (nativeCase.equals("CANCEL_INCOMPLETE")) return new OperationResult<CommandResult>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+                        if (nativeCase.equals("UNKNOWN") || nativeCase.equals("RECOVERY_UNKNOWN")) return unknownCommand();
+                        if (nativeCase.equals("CANCELLED")) return new OperationResult<CommandResult>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
+                        if (nativeCase.equals("NO_VALUE")) return new OperationResult<CommandResult>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+                        if (nativeCase.equals("NO_EXIT")) return new OperationResult<>(TaskResult.SUCCEEDED,
+                            Optional.of(new CommandResult(Optional.empty(), "", "", false)), Optional.empty());
+                        if (nativeCase.equals("TRUNCATED")) return new OperationResult<>(TaskResult.SUCCEEDED,
+                            Optional.of(new CommandResult(Optional.of(0), "", "", true)), Optional.empty());
+                        if (nativeCase.equals("EXIT")) return new OperationResult<>(TaskResult.SUCCEEDED,
+                            Optional.of(new CommandResult(Optional.of(4), "", "", false)), Optional.empty());
+                        if (nativeCase.equals("RECEIPT")) return reply("TOOLCHAIN_DEPENDENCIES={}\n");
+                        var packages = new LinkedHashMap<String, String>();
+                        gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.packages("APT", "NATIVE_BUILD")
+                            .forEach(name -> packages.put(name, "1.0"));
+                        return reply("TOOLCHAIN_DEPENDENCIES=" + new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(
+                            Map.of("operation", bound.get("operationId"), "ecosystem", "NATIVE_BUILD", "manager", "APT", "packages", packages)) + "\n");
+                    }
                     if (script.contains("DISTRO_ID=")) {
                         actions.add("host-facts");
                         int read = hostReads.incrementAndGet();
                         if (scenario == ScenarioType.HOST_RECEIPT_MISSING)
                             return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+                        if (nativeCase != null && nativeCase.equals("POST_UNKNOWN") && read == 3) return unknownCommand();
+                        String nativeTools = "";
+                        if (rust) {
+                            boolean ready = nativeCase.startsWith("RECOVERY") ? read <= 2 || read >= 4 : nativeCase.equals("READY") || read >= 3;
+                            nativeTools = "TOOL_C_COMPILER=" + (nativeCase.equals("COMPILER") && !ready ? "" : "13.3.0") + "\n"
+                                + "TOOL_CMAKE=" + (ready ? nativeCase.equals("OBSOLETE") ? "3.24.4" : "3.28.3" : nativeCase.equals("COMPILER") ? "3.28.3" : "") + "\n"
+                                + "TOOL_NINJA=" + (ready || nativeCase.equals("COMPILER") ? "1.11.1" : "") + "\n";
+                        }
                         return reply("DISTRO_ID=ubuntu\nVERSION=24.04\nARCH="
-                            + (scenario == ScenarioType.HOST_DRIFT && read == 2 ? "aarch64" : "x86_64")
+                            + ("UNSUPPORTED".equals(nativeCase) || scenario == ScenarioType.HOST_DRIFT && read == 2 ? "aarch64" : "x86_64")
                             + "\nPACKAGE_MANAGER=apt\nPACKAGE_ARCH=amd64\nSYSTEMD=1\nCPU_LEVEL=x86-64-v3\n"
                             + "SECURITY_MODULE=apparmor\nSECURITY_STATE=enabled\nFIREWALL=ufw\n"
-                            + "FIREWALL_STATE=active\n");
+                            + "FIREWALL_STATE=active\n" + nativeTools);
                     }
                     if (script.contains("stat -f -c")) {
                         actions.add("capacity");
@@ -199,9 +268,12 @@ class DeploymentStandardCandidateRunnerTest extends DeploymentRuntimeFixture {
                         actions.add("build-preflight");
                         return reply("");
                     }
-                    if (script.contains("prepare-toolchains 'prepare'")) {
+                    if (script.contains("prepare-toolchains 'prepare-diagnosed'")) {
+                        var diagnostic = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.decode(command.stdin());
+                        assertEquals(rust ? "RUST" : "GO", diagnostic.preparationArguments().get("ecosystem"));
                         actions.add("prepare-tools");
-                        return reply("TOOLCHAIN=GO|1.24.1|/usr/local/lib/windowstolinux/toolchains/versions/go-"
+                        if ("SDK_INVALID".equals(nativeCase)) return reply("TOOLCHAIN=RUST|9.99.1|/opt/unconfirmed|MANAGED|https://official.example/rust|" + "b".repeat(64) + "\n");
+                        return reply("TOOLCHAIN=" + (rust ? "RUST|1.95.0|/usr/local/lib/windowstolinux/toolchains/versions/rust-" : "GO|1.24.1|/usr/local/lib/windowstolinux/toolchains/versions/go-")
                             + "b".repeat(64) + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n");
                     }
                     if (script.contains("prepare-toolchains 'bind'")) {
@@ -239,13 +311,17 @@ class DeploymentStandardCandidateRunnerTest extends DeploymentRuntimeFixture {
                     assertTrue(script.startsWith("exec /usr/bin/python3 -I -c "), script);
                     actions.add("build");
                     return reply("WTL_BUILD_REPORT=1\nEXIT=0\nBYTES=0\nSHA256=" + "c".repeat(64)
-                        + "\nUID=1001\nENGINE=ordinary\nTOOL=GO_MODULE\nCOMPAT=0\nLIMIT=-\n"
+                        + "\nUID=1001\nENGINE=ordinary\nTOOL=" + (rust ? "CARGO_LOCKED" : "GO_MODULE") + "\nCOMPAT=0\nLIMIT=-\n"
                         + "CONFLICT=0\nHEAD=\nTAIL=\n");
                 });
             var context = runtime.modContexts().get(OWNER).context();
             InteractionService hostInteraction = new InteractionService() {
                 public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task)
                     throws ApiException {
+                    if ("DENY".equals(nativeCase) && intent.semantics().orElseThrow().operation().equals(
+                        gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION))
+                        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.ACCESS_DENIED,
+                            "CONTROLLED_DENY", "Original native review refused", Map.of(), Optional.empty())));
                     var result = context.interaction().approve(intent, task);
                     result.value().ifPresent(value -> grants.put(value, intent));
                     return result;
@@ -272,16 +348,28 @@ class DeploymentStandardCandidateRunnerTest extends DeploymentRuntimeFixture {
                             archiveBytes.set(archive.byteCount());
                             archivePath.set(archive.path());
                             var analysis = new DeploymentStandardAnalyzer().analyze(material, "Reviewed Go",
-                                DeploymentProjectKind.GO_SERVICE, Optional.empty(), false, task);
+                                rust ? DeploymentProjectKind.RUST_SERVICE : DeploymentProjectKind.GO_SERVICE, Optional.empty(), false, task);
+                            assertEquals(TaskResult.SUCCEEDED, analysis.outcome(), analysis.problem().toString());
+                            assertTrue(analysis.value().orElseThrow().assessment().facts().isPresent(), analysis.value().orElseThrow().assessment().toString());
                             var facts = analysis.value().orElseThrow().assessment().facts().orElseThrow();
                             workspaceIdentity
                                 .set(new DeploymentRemoteWorkspace(facts.applicationId(), archive.sha256()));
+                            DeploymentRuntimeDefinition runtimeDefinition = rust
+                                ? new DeploymentRuntimeDefinition.RustService("1.95", facts.applicationId(), "src/main.rs", new DeploymentHealthCheck.Tcp(8080, 10, 2))
+                                : new DeploymentRuntimeDefinition.GoService("1.24", facts.applicationId(), "main.go", new DeploymentHealthCheck.Tcp(8080, 10, 2));
+                            if (rust) {
+                                var workload = runtimeDefinition.workload();
+                                runtimeDefinition = runtimeDefinition.withWorkload(new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentWorkload(
+                                    workload.mode(), workload.reviewed(), workload.command(), workload.workingDirectory(), workload.endpoints(), workload.verification(),
+                                    workload.expectedOutput(), workload.client(), workload.inputs(), List.of(new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentCompanion(
+                                        "worker", "native", gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentCompanion.BuildType.CMAKE_SERVICE,
+                                        ".w2l/bin/worker", "NATIVE_HELPER")), workload.buildDirectory(), workload.workers()));
+                            }
                             var request = new ReviewedDeploymentRequest(server, facts, material, archive,
                                 DeploymentConfigSnapshot.create(facts.applicationId(), 1, "v1",
                                     Instant.now(), List.of()),
                                 List.of(), new DeploymentResourceBindings(List.of(), Optional.of(List.of())),
-                                new DeploymentRuntimeDefinition.GoService("1.24", facts.applicationId(),
-                                    "main.go", new DeploymentHealthCheck.Tcp(8080, 10, 2)),
+                                runtimeDefinition,
                                 Optional.empty(), gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().limits(),
                                 new DeploymentReviewConsent(facts.applicationId(), server.id(),
                                     material.snapshot().sha256(), archive.sha256(), Instant.now()),
@@ -298,8 +386,29 @@ class DeploymentStandardCandidateRunnerTest extends DeploymentRuntimeFixture {
                                     Thread.currentThread().interrupt();
                                 }
                             }
-                            var result = new DeploymentStandardCandidateRunner()
-                                .execute(plan.value().orElseThrow(), session, hostInteraction, task);
+                            var runner = new DeploymentStandardCandidateRunner();
+                            OperationResult<DeploymentVerifiedBuildResult> result;
+                            if (nativeCase != null && nativeCase.startsWith("RECOVERY")) {
+                                var prepared = runner.prepare(plan.value().orElseThrow(), session, hostInteraction, task);
+                                assertEquals(TaskResult.SUCCEEDED, prepared.outcome(), prepared.toString());
+                                var original = prepared.value().orElseThrow();
+                                var built = runner.build(original, session, task);
+                                assertEquals(TaskResult.SUCCEEDED, built.outcome(), built.toString());
+                                var recovered = runner.recoverSelection(original, plan.value().orElseThrow(), 0, session, hostInteraction, task);
+                                assertEquals(1, uploads.get(), "Formal correction cannot upload the existing candidate again");
+                                assertEquals(1, actions.stream().filter("build"::equals).count());
+                                if (recovered.outcome() == TaskResult.SUCCEEDED) {
+                                    var field = DeploymentStandardCandidateRunner.Prepared.class.getDeclaredField("selection"); field.setAccessible(true);
+                                    var before = (DeploymentStandardBuildRunner.Prepared) field.get(original);
+                                    var after = (DeploymentStandardBuildRunner.Prepared) field.get(recovered.value().orElseThrow());
+                                    assertSame(before.budget, after.budget); assertSame(before.task, after.task); assertSame(before.session, after.session);
+                                    assertEquals(before.workspace, after.workspace);
+                                    result = built;
+                                } else {
+                                    assertTrue(recovered.value().isEmpty());
+                                    result = new OperationResult<>(recovered.outcome(), Optional.empty(), recovered.problem());
+                                }
+                            } else result = runner.execute(plan.value().orElseThrow(), session, hostInteraction, task);
                             observed.set(result);
                             callbackFinished.countDown();
                             return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
@@ -310,6 +419,7 @@ class DeploymentStandardCandidateRunnerTest extends DeploymentRuntimeFixture {
                         throw caught;
                     }
                 });
+            originalHandle.set(handle);
             if (scenario == ScenarioType.CANCELLED_BEFORE_REMOTE) {
                 assertTrue(readyToCancel.await(10, TimeUnit.SECONDS));
                 handle.requestCancel();
@@ -318,8 +428,24 @@ class DeploymentStandardCandidateRunnerTest extends DeploymentRuntimeFixture {
             assertTrue(callbackFinished.await(20, TimeUnit.SECONDS), "callback did not return");
             assertNull(failure.get(), () -> String.valueOf(failure.get()));
             var completed = handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS);
-            if (scenario != ScenarioType.CANCELLED_BEFORE_REMOTE)
+            if (scenario != ScenarioType.CANCELLED_BEFORE_REMOTE && (nativeCase == null || !nativeCase.startsWith("CANCEL_")))
                 assertEquals(TaskResult.SUCCEEDED, completed.outcome());
+            if (nativeCase != null) {
+                boolean success = Set.of("INSTALL", "COMPILER", "READY", "NON_NATIVE", "RECOVERY").contains(nativeCase);
+                TaskResult expected = success ? TaskResult.SUCCEEDED : Set.of("CANCELLED", "CANCEL_COMPLETE").contains(nativeCase) ? TaskResult.CANCELLED
+                    : Set.of("EXIT", "OBSOLETE", "DENY", "UNSUPPORTED").contains(nativeCase) ? TaskResult.FAILED : TaskResult.UNKNOWN;
+                assertEquals(expected, observed.get().outcome(), observed.get().toString());
+                assertEquals(Set.of("READY", "NON_NATIVE", "DENY", "UNSUPPORTED", "SDK_INVALID").contains(nativeCase) ? 0 : 1, nativeSends.get());
+                boolean originalBuild = success || nativeCase.startsWith("RECOVERY");
+                assertEquals(originalBuild ? 1 : 0, uploads.get());
+                assertEquals(originalBuild ? 1 : 0, candidateCreates.get());
+                assertEquals(originalBuild, actions.contains("build"));
+                if (nativeCase.equals("OBSOLETE")) assertEquals("DEPLOYMENT_NATIVE_BUILD_PREREQUISITES_UNSATISFIED", observed.get().problem().orElseThrow().eventCode());
+                if (nativeCase.startsWith("CANCEL_")) assertEquals(2, hostReads.get(), "Cancellation cannot start a fresh probe");
+                if (success && nativeSends.get() == 1) assertTrue(actions.indexOf("native-install") < actions.lastIndexOf("host-facts"));
+                assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
+                return;
+            }
             if (scenario == ScenarioType.SUCCESS) {
                 assertEquals(TaskResult.SUCCEEDED, observed.get().outcome(), observed.get().toString());
                 assertEquals(archiveIdentity.get(), observed.get().value().orElseThrow().archiveSha256());

@@ -40,11 +40,7 @@ public final class DeploymentAgentToolchainInputEvidence {
         "agent_lifecycle_failure", "agent_lifecycle_diagnostic", "agent_identity_reject", "agent_exception_facts", "agent_lifecycle_cause", "agent_valid_lifecycle_cause", "agent_execute", "agent_worker", "agent_vendor", "agent_freeze", "agent_stopped", "agent_scan", "agent_copy_tree", "agent_promote",
         "agent_detach", "agent_installation_key", "agent_installation_selection", "agent_record", "agent_prepare", "agent_prepare_selected", "agent_bind", "agent_main", "agent_cli");
 
-    private static final List<String> DEPENDENCY_LOCATIONS = List.of("dependency_protected", "dependency_bytes", "dependency_profile",
-        "dependency_registered", "dependency_tool", "dependency_run", "dependency_packages", "dependency_url", "dependency_key",
-        "dependency_apt_hook_owners", "dependency_apt_binaries", "dependency_apt_options", "dependency_validate_dpkg",
-        "dependency_apt_source_authentication", "dependency_apt_sources", "dependency_validate_apt", "dependency_dnf_config",
-        "dependency_validate_dnf", "dependency_versions", "dependency_main", "dependency_cli");
+
 
     private DeploymentAgentToolchainInputEvidence() {
     }
@@ -69,6 +65,8 @@ public final class DeploymentAgentToolchainInputEvidence {
                 throw new IllegalArgumentException("Inline binding has no matching Agent entrypoint");
             return Optional.empty();
         }
+        if (operation.equals(PREFIX + "dependencies.v1"))
+            return Optional.of(new Evidence(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.inspect(current, layout, false)));
         String phase = operation.substring(PREFIX.length(), operation.length() - 3);
         var servers = current.path("serverTargets");
         if (!servers.isArray() || servers.size() != 1 || !servers.get(0).isTextual())
@@ -97,13 +95,7 @@ public final class DeploymentAgentToolchainInputEvidence {
         Set<ActionTarget> targets;
         Map<String, String> resolvedRelease = Map.of();
         DeploymentResolvedToolchains decodedBinding = null;
-        if (phase.equals("dependencies")) {
-            if (arguments.size() != 2)
-                throw new IllegalArgumentException("Dependency frame changed");
-            profile = arguments.get(0);
-            identity = identity(arguments.get(1));
-            targets = DeploymentAgentToolchainCommands.dependencyTargets(server, profile);
-        } else if (phase.equals("resolve")) {
+        if (phase.equals("resolve")) {
             if (arguments.size() != 6 || !arguments.get(0).equals("resolve"))
                 throw new IllegalArgumentException("Read-only release frame changed");
             var ecosystem = DeploymentToolchainType.valueOf(arguments.get(1));
@@ -166,18 +158,6 @@ public final class DeploymentAgentToolchainInputEvidence {
             facts.put("lineCount", Math.toIntExact(body.lines().count()));
             if (phase.equals("prepare") || phase.equals("bind"))
                 facts.put("locations", sourceLocations(body, CONTROLLER_LOCATIONS));
-            if (phase.equals("dependencies")) {
-                facts.put("locations", sourceLocations(body, DEPENDENCY_LOCATIONS));
-                facts.put("nativeTransaction", Map.of(
-                    "evidenceKind", "CURRENT_SOURCE_AND_DECLARED_SCOPE_ONLY",
-                    "requestedPackages", Map.of("APT", DeploymentAgentToolchainPrograms.packages("APT", profile),
-                        "DNF", DeploymentAgentToolchainPrograms.packages("DNF", profile)),
-                    "transactionTargets", targets.stream().filter(target -> target.kind().equals("system-package-transaction"))
-                        .map(ActionTarget::id).sorted().toList(),
-                    "effects", "Root package maintenance includes resolver-selected transitive dependencies, installation, upgrade, configuration, distribution maintainer scripts, triggers and registered OS hooks. Requested names are not the entire transaction.",
-                    "osBaseline", "Existing OS interpreter and protected package database are bootstrap trust assumptions. Source-level tool/configuration guards are evaluated during execution; this request supplies no fixed OS binary SHA or observed download authentication result.",
-                    "meaning", "Navigation and declared scope only. Inspect the current source and enforced authentication independently; these facts grant no permission and establish no execution result."));
-            }
             facts.put("bundledSourceSha256", digest);
             facts.put("stdinSha256", digest);
             facts.put("exactActionSha256", sha256(exact.getBytes(StandardCharsets.UTF_8)));
@@ -463,9 +443,7 @@ public final class DeploymentAgentToolchainInputEvidence {
     }
 
     /** Function navigation in the complete current dependency source, including a canonical installer literal. */
-    public static List<Map<String, Object>> dependencySourceLocations(String body, String sourcePointer) {
-        return sourceLocations(body, DEPENDENCY_LOCATIONS, sourcePointer);
-    }
+    public static List<Map<String, Object>> dependencySourceLocations(String body, String sourcePointer) { return gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencySourceLocations(body, sourcePointer); }
 
     private static List<Map<String, Object>> sourceLocations(String body, List<String> required, String sourcePointer) {
         var definitions = Pattern.compile("(?m)^def ([A-Za-z_][A-Za-z0-9_]*)\\(").matcher(body);
