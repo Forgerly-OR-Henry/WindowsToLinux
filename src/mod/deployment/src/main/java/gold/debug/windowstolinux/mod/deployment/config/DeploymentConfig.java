@@ -96,11 +96,11 @@ public record DeploymentConfig(Source source, Build build, Environment environme
         }
     }
 
-    /** Caller-owned request deadlines and an optional Agent pure-generation recovery budget; unrelated to project size, tool attempts or execution permission.
+    /** Caller-owned request deadlines and an optional pure-generation recovery budget; unrelated to project size, tool attempts or execution permission.
      * @param deploymentTimeoutSeconds ordinary logical generation deadline / 普通逻辑生成期限
      * @param approvalTimeoutSeconds approval logical generation deadline / 审批逻辑生成期限
      * @param extendedTimeoutSeconds extended logical generation deadline / 扩展逻辑生成期限
-     * @param generationRecoveryAttempts extra incomplete-body generation attempts for independently selected Agent callers, 0..16; 0 disables / 独立 Agent 调用者选择的正文不完整额外生成次数，0..16；0 关闭 */
+     * @param generationRecoveryAttempts extra incomplete-body generation attempts for independently selected callers, 0..16; 0 disables / 独立调用者选择的正文不完整额外生成次数，0..16；0 关闭 */
     public record Requests(int deploymentTimeoutSeconds, int approvalTimeoutSeconds, int extendedTimeoutSeconds,
                            int generationRecoveryAttempts) {
         public Requests(int deploymentTimeoutSeconds, int approvalTimeoutSeconds, int extendedTimeoutSeconds) {

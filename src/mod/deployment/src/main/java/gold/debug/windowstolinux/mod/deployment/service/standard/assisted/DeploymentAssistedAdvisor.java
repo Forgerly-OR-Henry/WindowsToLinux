@@ -74,7 +74,8 @@ public final class DeploymentAssistedAdvisor {
      * @param context actual platform context / 实际平台上下文 */
     public DeploymentAssistedAdvisor(ModContext context) {
         this.context = Objects.requireNonNull(context);
-        this.ai = new DeploymentAiJson(context);
+        this.ai = new DeploymentAiJson(context,
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().requests().generationRecoveryAttempts());
         this.approvalMode = context instanceof DeploymentAssistedScope scope ? scope.approvalMode() : "MANUAL_REVIEW";
     }
 

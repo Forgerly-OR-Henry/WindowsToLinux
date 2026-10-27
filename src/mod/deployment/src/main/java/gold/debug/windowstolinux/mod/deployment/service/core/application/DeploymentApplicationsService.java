@@ -545,8 +545,12 @@ public final class DeploymentApplicationsService implements TaskRecovery {
             try (var workflow = recovery
                 ? DeploymentWorkflowAuthorization.recover(context, task, application.server(), policy.configurationRevision(), "AUTOMATIC", false, frozen)
                 : DeploymentWorkflowAuthorization.open(context, task, application.server(), policy.configurationRevision(), "AUTOMATIC", false, frozen)) {
+                int recoveryAttempts = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current()
+                    .ai().requests().generationRecoveryAttempts();
                 var scoped = new DeploymentCommandReviewScope(context, context.interaction(), task, "AUTOMATIC", false,
-                    policy::configurationRevision).withCurrentEvidence(evidence);
+                    policy::configurationRevision, null, evidence,
+                    () -> gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel.submission(
+                        new DeploymentAiJson(context, recoveryAttempts)));
                 return work.run(new DeploymentApplicationRunner(scoped, journal), policy);
             }
         } catch (DeploymentAiJson.CapabilityOutcomeException refusal) {

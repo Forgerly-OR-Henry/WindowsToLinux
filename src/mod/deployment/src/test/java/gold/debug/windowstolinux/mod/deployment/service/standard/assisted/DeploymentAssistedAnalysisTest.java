@@ -288,6 +288,7 @@ class DeploymentAssistedAnalysisTest {
             currentSchema = JSON.readTree(request.tools().getFirst().inputSchema());
             String output = respond.apply(calls.getAndIncrement(), facts);
             assertFalse(request.jsonObjectResponse());
+            assertEquals(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().requests().generationRecoveryAttempts(), request.generationRecoveryAttempts());
             assertEquals("submit_result", request.tools().getFirst().name());
             return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", "tool_calls",
                 new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),

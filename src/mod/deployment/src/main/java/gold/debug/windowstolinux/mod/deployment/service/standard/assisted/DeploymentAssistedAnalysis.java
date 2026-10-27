@@ -69,7 +69,8 @@ public final class DeploymentAssistedAnalysis {
      * @param source original frozen source / 原冻结来源
      * @param revision frozen original model-routing identity / 冻结原模型路由身份 */
     public DeploymentAssistedAnalysis(ModContext context, DeploymentSourceBrowser source, String revision) {
-        this.ai = new DeploymentAiJson(context);
+        this.ai = new DeploymentAiJson(context,
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().requests().generationRecoveryAttempts());
         this.source = Objects.requireNonNull(source);
         this.revision = Objects.requireNonNull(revision);
     }

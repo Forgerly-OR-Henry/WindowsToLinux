@@ -649,6 +649,8 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
                 assertTrue(Set.of(DeploymentApplicationsService.ACTION_TASK, DeploymentApplicationsService.QUERY_TASK).contains(actual.tasks().inspect(task).type()));
                 if (method.getName().equals("configurationRevision")) return modelRevision;
                 var request = (AiRequest) args[0]; assertEquals(AiPurpose.APPROVAL, request.purpose());
+                assertEquals(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().requests().generationRecoveryAttempts(),
+                    request.generationRecoveryAttempts(), "Independent application management explicitly selects its pure-generation budget");
                 var facts = json.readTree(request.messages().getLast().text());
                 var identity = facts.path("currentCommandEvidence").path("managementIdentity");
                 assertEquals(task.id().toString(), identity.path("taskId").asText());

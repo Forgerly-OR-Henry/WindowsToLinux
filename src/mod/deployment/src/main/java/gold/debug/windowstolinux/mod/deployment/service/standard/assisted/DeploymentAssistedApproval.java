@@ -81,7 +81,8 @@ final class DeploymentAssistedApproval {
             facts.put("authorizationPolicy", policy);
             var scope = context instanceof DeploymentAssistedScope value ? value : null;
             if (scope != null) facts.put("currentCommandEvidence", scope.effectFacts(intent, task));
-            var response = new DeploymentAiJson(context).askCommand(
+            var response = new DeploymentAiJson(context,
+                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().requests().generationRecoveryAttempts()).askCommand(
                 gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.INSTRUCTION
                     + DeploymentSkillResources.text(DeploymentAssistedApproval.class, "fixed-effect-review.md"),
                 facts, revision, task, gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision::malformed);

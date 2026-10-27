@@ -24,7 +24,7 @@ public final class DeploymentAiJson {
 
     private final DeploymentConfig.Ai output;
 
-    /** Explicit caller selection; ordinary and assisted adapters keep zero extra attempts. / 调用者显式选择，普通及 ASSISTED 适配器保持零额外尝试。 */
+    /** Explicit caller selection; the ordinary adapter defaults to zero extra attempts. / 调用者显式选择，普通适配器默认零额外尝试。 */
     private final int generationRecoveryAttempts;
 
     private final gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation approvalConversation;

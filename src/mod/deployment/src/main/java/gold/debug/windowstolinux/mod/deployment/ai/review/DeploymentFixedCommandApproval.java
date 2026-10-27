@@ -55,7 +55,17 @@ public final class DeploymentFixedCommandApproval {
     public static OperationResult<ApprovalGrant> approveWithEvidence(ModContext context, InteractionService host, ActionIntent intent,
                                                                      CommandRequest request, TaskContext task, String revision, String policy,
                                                                      boolean rememberAuthorization, DeploymentCurrentCommandEvidence evidence) throws ApiException {
-        return approve(context, host, intent, request, task, revision, policy, rememberAuthorization, new DeploymentAiJson(context), evidence);
+        return approveWithEvidence(context, host, intent, request, task, revision, policy, rememberAuthorization,
+            evidence, 0);
+    }
+
+    /** Applies an explicit pure-generation budget; complete refusals still never obtain a host grant. / 显式选择纯生成预算，完整拒绝仍不取得宿主许可。 */
+    public static OperationResult<ApprovalGrant> approveWithEvidence(ModContext context, InteractionService host, ActionIntent intent,
+                                                                     CommandRequest request, TaskContext task, String revision, String policy,
+                                                                     boolean rememberAuthorization, DeploymentCurrentCommandEvidence evidence,
+                                                                     int generationRecoveryAttempts) throws ApiException {
+        return approve(context, host, intent, request, task, revision, policy, rememberAuthorization,
+            new DeploymentAiJson(context, generationRecoveryAttempts), evidence);
     }
 
     static OperationResult<ApprovalGrant> approve(ModContext context, InteractionService host, ActionIntent intent,

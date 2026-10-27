@@ -3,7 +3,12 @@ package gold.debug.windowstolinux.mod.deployment.ai;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.*;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.net.InetSocketAddress;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,6 +32,9 @@ import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.AiService;
+import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
+import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
@@ -140,6 +148,10 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
     }
 
     void configure(PlatformRuntime runtime, Peer peer) throws Exception {
+        configure(runtime, peer, peer.endpoint());
+    }
+
+    void configure(PlatformRuntime runtime, Peer peer, String endpoint) throws Exception {
         active = peer;
         runtime.servers().saveServerProfile(ServerProfile.fromStored(new StoredServerProfile(SERVER.id(), "127.0.0.1",
             peer.ssh.server().getPort(), "tester", "hd16-ssh")), "fixture-secret".toCharArray());
@@ -147,7 +159,7 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
             credentials.save("hd16-model", "fixture-model-key".toCharArray());
         }
         for (String role : List.of("language", "approval")) {
-            var profile = new StoredAiModelProfile(role, peer.endpoint(), "fixture/" + role, "hd16-model");
+            var profile = new StoredAiModelProfile(role, endpoint, "fixture/" + role, "hd16-model");
             runtime.persistence().aiProfiles().saveVerified(profile, role, Instant.now(), AiCapabilityType.TEXT);
             runtime.persistence().aiProfiles().saveVerified(profile, role, Instant.now(), AiCapabilityType.TOOL_CALLING);
             runtime.persistence().aiProfiles().saveOutputLimit(role, 1600);
@@ -165,8 +177,8 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
             if (peer.failure.get() != null) assertion.addSuppressed(peer.failure.get());
             throw assertion;
         }
+        assertEquals(TaskState.ENDED, handle.snapshot().state(), () -> handle.snapshot() + "; modelRequests=" + peer.modelRequests.size() + "; completeReviews=" + peer.approvedActions.size() + "; pendingExpected=" + peer.expected.size() + "; remoteSends=" + peer.sends.size());
         peer.healthy();
-        assertEquals(TaskState.ENDED, handle.snapshot().state(), handle.snapshot().toString());
         assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
     }
 
@@ -337,6 +349,228 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
         } finally {
             active = null;
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"APPROVE", "DENY"})
+    void assistedRecoversIncompleteApprovalBodyBeforeAnyHostGrantOrDispatch(String decision) throws Exception {
+        enable();
+        try (var peer = new Peer(root.resolve("peer")); var runtime = open();
+             var chunks = new IncompleteChunkProxy(peer)) {
+            configure(runtime, peer, chunks.endpoint());
+            start(runtime, true);
+            peer.modelReply = decision;
+            var modelProblem = new AtomicReference<gold.debug.windowstolinux.appapi.task.result.Problem>();
+            var generationAttempts = new AtomicReference<List<gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt>>(List.of());
+            var selectedBudget = new java.util.concurrent.atomic.AtomicInteger(-1);
+            var context = observeModelResult(runtime.modContexts().get(OWNER).context(), modelProblem, generationAttempts, selectedBudget);
+            var failure = new AtomicReference<Throwable>();
+            var callbackFinished = new CountDownLatch(1);
+            var handle = context.tasks().submit(new TaskRequest("assisted-body-recovery", "Incomplete approval retains exact original action", List.of(SERVER.id()), false), task -> {
+                try {
+                    chunks.taskId = task.id();
+                    String revision = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
+                    try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision, "AUTOMATIC", false, "original-recovery-action");
+                         var session = context.linux().connect(SERVER, task);
+                         var request = command("body-recovery")) {
+                        var reviewed = modeReview(context, task, workflow, revision, "ASSISTED", "AUTOMATIC", false);
+                        var actual = intent(request, "recovery-business", OPERATION);
+                        peer.expect(actual, request, false);
+                        chunks.beforeCompleteRequest = () -> {
+                            assertEquals(0, chunks.incompleteSent.getCount());
+                            String ownHttp = " FROM platform_task_resource WHERE task_id='" + task.id()
+                                + "' AND resource_kind='CONNECTION' AND resource_id LIKE 'ai-http-%' AND released_at ";
+                            assertEquals(1, scalar(runtime, "SELECT COUNT(*)" + ownHttp + "IS NOT NULL"));
+                            assertEquals(1, scalar(runtime, "SELECT COUNT(*)" + ownHttp + "IS NULL"));
+                            assertEquals(0, peer.commandQuestions()); assertTrue(peer.sends.isEmpty());
+                        };
+                        var commands = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) reviewed;
+                        if (decision.equals("APPROVE")) {
+                            gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant> approval;
+                            try {
+                                approval = commands.approveCommand(actual, request, task);
+                            } catch (ApiException failed) {
+                                throw new AssertionError("Original model result: " + modelProblem.get(), failed);
+                            }
+                            assertEquals(TaskResult.SUCCEEDED, approval.outcome(), approval.problem().toString());
+                            var grant = approval.value().orElseThrow();
+                            assertEquals(TaskResult.SUCCEEDED, session.execute(request, grant).outcome());
+                        } else {
+                            var denied = assertThrows(ApiException.class, () -> commands.approveCommand(actual, request, task));
+                            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode(), () -> "Original model result: " + modelProblem.get());
+                        }
+                        chunks.healthy();
+                        assertEquals(1, selectedBudget.get());
+                        assertEquals(1, peer.facts.size(), "Only the second complete response reaches the existing full review handler");
+                        assertEquals(2, chunks.requests.size()); assertEquals(2, chunks.ports.size());
+                        assertEquals(List.of(TaskResult.UNKNOWN, TaskResult.SUCCEEDED), generationAttempts.get().stream()
+                            .map(gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt::outcome).toList());
+                        assertTrue(generationAttempts.get().getFirst().usage().inputTokens().isEmpty(), "Missing usage is retained rather than counted as zero");
+                        assertEquals("HTTP_CHUNK_INCOMPLETE", generationAttempts.get().getFirst().transportFailureKind());
+                        assertArrayEquals(chunks.requests.getFirst(), chunks.requests.getLast(), "Recovery keeps the exact encoded model input");
+                        assertEquals(new String(chunks.requests.getLast(), StandardCharsets.UTF_8), peer.modelRequests.getFirst());
+                        assertEquals(1, peer.approvedActions.size(), "The incomplete response never becomes a completed review");
+                        assertEquals(decision.equals("APPROVE") ? 1 : 0, peer.sends.size(), "Only the complete independent APPROVE can precede one remote dispatch");
+                        assertEquals(0, peer.commandQuestions());
+                    }
+                    return success(null);
+                } catch (Throwable error) {
+                    failure.set(error);
+                    throw error;
+                } finally {
+                    callbackFinished.countDown();
+                }
+            });
+            long callbackDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(25);
+            boolean uncertainDuringRecovery = false;
+            while (callbackFinished.getCount() != 0 && System.nanoTime() < callbackDeadline) {
+                uncertainDuringRecovery |= handle.snapshot().state() == TaskState.UNKNOWN;
+                callbackFinished.await(5, TimeUnit.MILLISECONDS);
+            }
+            assertEquals(0, callbackFinished.getCount(), "Original callback must settle before its audit is inspected");
+            await(handle, peer, failure);
+            assertFalse(uncertainDuringRecovery, "The original task must not expose UNKNOWN while pure generation is recovering");
+            assertEquals(0, chunks.incompleteSent.getCount());
+            peer.assertSendOrdering();
+            assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        } finally {
+            active = null;
+        }
+    }
+
+    private static ModContext observeModelResult(ModContext original,
+                                                 AtomicReference<gold.debug.windowstolinux.appapi.task.result.Problem> problem,
+                                                 AtomicReference<List<gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt>> attempts,
+                                                 java.util.concurrent.atomic.AtomicInteger selectedBudget) {
+        var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(), new Class<?>[]{AiService.class}, (proxy, method, args) -> {
+            try {
+                Object result = method.invoke(original.ai(), args);
+                if (args != null && args.length > 0 && args[0] instanceof AiRequest request
+                    && result instanceof OperationResult<?> outcome) {
+                    assertEquals(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().requests().generationRecoveryAttempts(), request.generationRecoveryAttempts());
+                    selectedBudget.set(request.generationRecoveryAttempts());
+                    problem.set(outcome.problem().orElse(null));
+                    if (outcome.value().orElse(null) instanceof AiResponse response) attempts.set(response.generationAttempts());
+                    else if (outcome.problem().isPresent()) attempts.set(gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt.fromProblem(outcome.problem().orElseThrow()));
+                    System.out.println("GENERATION_RECOVERY_RESULT budget=" + request.generationRecoveryAttempts() + " outcome=" + outcome.outcome()
+                        + " problem=" + outcome.problem() + " attempts=" + attempts.get());
+                }
+                return result;
+            } catch (InvocationTargetException invocation) {
+                if (args != null && args.length > 0 && args[0] instanceof AiRequest
+                    && invocation.getCause() instanceof ApiException failed) problem.set(failed.problem());
+                throw invocation.getCause();
+            }
+        });
+        return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+            if (method.getName().equals("ai")) return ai;
+            try {
+                return method.invoke(original, args);
+            } catch (InvocationTargetException invocation) {
+                throw invocation.getCause();
+            }
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"COMMAND", "EFFECT"})
+    void assistedPreservesUnknownReviewProblemWithoutPostFailureConfigurationQueries(String path) throws Exception {
+        enable();
+        try (var peer = new Peer(root.resolve("peer")); var runtime = open()) {
+            configure(runtime, peer); start(runtime, true);
+            var original = runtime.modContexts().get(OWNER).context();
+            var returned = new java.util.concurrent.atomic.AtomicBoolean();
+            var postFailureQueries = new java.util.concurrent.atomic.AtomicInteger();
+            var originalProblem = new gold.debug.windowstolinux.appapi.task.result.Problem(
+                gold.debug.windowstolinux.appapi.task.result.ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN", "Controlled incomplete generation",
+                Map.of("transportFailureKind", "HTTP_CHUNK_INCOMPLETE", "httpHeadersReceived", "true", "httpStatus", "200",
+                    "httpBodyBytesAccepted", "16", "generationAttemptCount", "0"), Optional.empty());
+            var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(), new Class<?>[]{AiService.class}, (proxy, method, args) -> {
+                if (method.getName().equals("configurationRevision") && returned.get()) {
+                    postFailureQueries.incrementAndGet();
+                    throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+                        gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNKNOWN, "TASK_EFFECT_UNCERTAIN", "Controlled post-failure guard", Map.of(), Optional.empty()));
+                }
+                if (args != null && args.length > 0 && args[0] instanceof AiRequest) {
+                    returned.set(true);
+                    return new OperationResult<AiResponse>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(originalProblem));
+                }
+                try { return method.invoke(original.ai(), args); } catch (InvocationTargetException error) { throw error.getCause(); }
+            });
+            var context = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+                if (method.getName().equals("ai")) return ai;
+                try { return method.invoke(original, args); } catch (InvocationTargetException error) { throw error.getCause(); }
+            });
+            var failure = new AtomicReference<Throwable>();
+            var handle = context.tasks().submit(new TaskRequest("assisted-original-problem", "Preserve original model failure", List.of(SERVER.id()), false), task -> {
+                try {
+                    String revision = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
+                    try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision, "AUTOMATIC", false, "original-problem");
+                         var request = command("original-problem")) {
+                        var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview)
+                            modeReview(context, task, workflow, revision, "ASSISTED", "AUTOMATIC", false);
+                        var actual = intent(request, "original-problem", OPERATION);
+                        var result = path.equals("COMMAND") ? review.approveCommand(actual, request, task) : review.approve(actual, task);
+                        assertEquals(TaskResult.UNKNOWN, result.outcome());
+                        assertSame(originalProblem, result.problem().orElseThrow(), "No later task-state query may replace the model classification/context");
+                        assertTrue(result.value().isEmpty()); assertTrue(returned.get()); assertEquals(0, postFailureQueries.get());
+                        assertEquals(0, peer.commandQuestions()); assertTrue(peer.sends.isEmpty()); assertTrue(peer.modelRequests.isEmpty());
+                    }
+                } catch (Throwable error) {
+                    // The injected service never reports a real uncertain task; finish this fixture's cleanup, then fail its assertion.
+                    failure.set(error);
+                }
+                return success(null);
+            });
+            await(handle, peer, failure);
+        } finally { active = null; }
+    }
+
+    @Test
+    void assistedStillChecksConfigurationAfterSuccessfulHumanApproval() throws Exception {
+        enable();
+        try (var peer = new Peer(root.resolve("peer")); var runtime = open()) {
+            configure(runtime, peer); start(runtime, true);
+            var original = runtime.modContexts().get(OWNER).context();
+            var granted = new java.util.concurrent.atomic.AtomicBoolean();
+            var changedQueries = new java.util.concurrent.atomic.AtomicInteger();
+            var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(), new Class<?>[]{AiService.class}, (proxy, method, args) -> {
+                if (method.getName().equals("configurationRevision") && granted.get()) {
+                    changedQueries.incrementAndGet(); return "changed-after-host-grant";
+                }
+                try { return method.invoke(original.ai(), args); } catch (InvocationTargetException error) { throw error.getCause(); }
+            });
+            var host = (gold.debug.windowstolinux.appapi.task.action.InteractionService) Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class}, (proxy, method, args) -> {
+                    Object result;
+                    try { result = method.invoke(original.interaction(), args); } catch (InvocationTargetException error) { throw error.getCause(); }
+                    if (method.getName().equals("approve") && result instanceof OperationResult<?> approval
+                        && approval.outcome() == TaskResult.SUCCEEDED) granted.set(true);
+                    return result;
+                });
+            var context = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+                if (method.getName().equals("ai")) return ai;
+                if (method.getName().equals("interaction")) return host;
+                try { return method.invoke(original, args); } catch (InvocationTargetException error) { throw error.getCause(); }
+            });
+            var failure = new AtomicReference<Throwable>();
+            var handle = context.tasks().submit(new TaskRequest("assisted-success-guard", "Retain successful grant guard", List.of(SERVER.id()), false), task -> {
+                try {
+                    String revision = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
+                    try (var workflow = DeploymentWorkflowAuthorization.open(context, task, SERVER, revision, "AUTOMATIC", false, "success-guard")) {
+                        var review = modeReview(context, task, workflow, revision, "ASSISTED", "AUTOMATIC", false);
+                        var intent = new ActionIntent("deployment.assisted.unresolved", List.of(SERVER.id()), "controlled-business-question",
+                            "controlled-business-revision", "Controlled unresolved question", "Confirm the original question");
+                        var refused = assertThrows(ApiException.class, () -> review.approve(intent, task));
+                        assertEquals("DEPLOYMENT_ASSISTED_CONFIGURATION_CHANGED", refused.problem().eventCode());
+                        assertTrue(granted.get()); assertEquals(1, changedQueries.get());
+                        assertTrue(peer.modelRequests.isEmpty()); assertTrue(peer.sends.isEmpty());
+                    }
+                } catch (Throwable error) { failure.set(error); }
+                return success(null);
+            });
+            await(handle, peer, failure);
+        } finally { active = null; }
     }
 
     private static gold.debug.windowstolinux.appapi.task.action.InteractionService modeReview(
@@ -808,6 +1042,93 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
                  DeploymentAgentDeliveryPort.Prepared second, Peer peer, String revision) throws Exception;
     }
 
+    /** Fault injection only: the second unchanged request still traverses the existing complete HTTP/SSH peer. */
+    private static final class IncompleteChunkProxy implements AutoCloseable {
+        final ServerSocket server;
+        final Thread worker;
+        final List<byte[]> requests = new CopyOnWriteArrayList<>();
+        final Set<Integer> ports = ConcurrentHashMap.newKeySet();
+        final CountDownLatch incompleteSent = new CountDownLatch(1);
+        final AtomicReference<Throwable> failure = new AtomicReference<>();
+        final AtomicReference<Socket> incoming = new AtomicReference<>(), outgoing = new AtomicReference<>();
+        volatile CheckedObservation beforeCompleteRequest;
+        volatile UUID taskId;
+        volatile boolean closing;
+
+        IncompleteChunkProxy(Peer peer) throws Exception {
+            server = new ServerSocket(0, 2, InetAddress.getByName("127.0.0.1"));
+            server.setSoTimeout(6000);
+            worker = Thread.ofPlatform().daemon(true).name("controlled-chunk-recovery").start(() -> {
+                try {
+                    for (int number = 1; number <= 2; number++) {
+                        try (var client = server.accept()) {
+                            incoming.set(client); client.setSoTimeout(6000); ports.add(client.getPort());
+                            String headers = headers(client.getInputStream());
+                            int length = length(headers);
+                            byte[] body = client.getInputStream().readNBytes(length);
+                            assertEquals(length, body.length); requests.add(body);
+                            if (number == 1) {
+                                assertTrue(peer.modelRequests.isEmpty()); assertTrue(peer.sends.isEmpty()); assertEquals(0, peer.commandQuestions());
+                                var output = client.getOutputStream();
+                                output.write("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n1000\r\n".getBytes(StandardCharsets.US_ASCII));
+                                output.write(Arrays.copyOf("{\"choices\":[{\"index\":0}]".getBytes(StandardCharsets.US_ASCII), 16));
+                                output.flush();
+                                incompleteSent.countDown();
+                                System.out.println("RAW_CHUNK_INCOMPLETE_SENT task=" + taskId + " prefixBytes=16 chunkLengthComplete=true");
+                            } else {
+                                assertArrayEquals(requests.getFirst(), body);
+                                assertNotNull(beforeCompleteRequest); beforeCompleteRequest.check();
+                                try (var upstream = new Socket("127.0.0.1", peer.http.getAddress().getPort())) {
+                                    outgoing.set(upstream); upstream.setSoTimeout(6000);
+                                    upstream.getOutputStream().write(headers.getBytes(StandardCharsets.ISO_8859_1));
+                                    upstream.getOutputStream().write(body); upstream.getOutputStream().flush();
+                                    String responseHeaders = headers(upstream.getInputStream());
+                                    byte[] response = upstream.getInputStream().readNBytes(length(responseHeaders));
+                                    assertEquals(length(responseHeaders), response.length);
+                                    client.getOutputStream().write(responseHeaders.getBytes(StandardCharsets.ISO_8859_1));
+                                    client.getOutputStream().write(response); client.getOutputStream().flush();
+                                } finally { outgoing.set(null); }
+                            }
+                        } finally { incoming.set(null); }
+                    }
+                } catch (Throwable error) { if (!closing) failure.set(error); }
+            });
+        }
+
+        String endpoint() { return "http://127.0.0.1:" + server.getLocalPort() + "/chat"; }
+
+        static String headers(InputStream input) throws IOException {
+            var bytes = new ByteArrayOutputStream();
+            while (bytes.size() <= 8192) {
+                int next = input.read(); if (next < 0) throw new EOFException("Controlled HTTP headers incomplete");
+                bytes.write(next);
+                String text = bytes.toString(StandardCharsets.ISO_8859_1);
+                if (text.endsWith("\r\n\r\n")) return text;
+            }
+            throw new IOException("Controlled HTTP header bound exceeded");
+        }
+
+        static int length(String headers) {
+            var found = java.util.regex.Pattern.compile("(?im)^content-length:\\s*([0-9]+)\\s*$").matcher(headers);
+            assertTrue(found.find(), "The controlled request/response must have an exact length");
+            int length = Integer.parseInt(found.group(1)); assertTrue(length > 0 && length <= 1048576); return length;
+        }
+
+        void healthy() { if (failure.get() != null) throw new AssertionError("Controlled raw chunk proxy failed", failure.get()); }
+
+        public void close() throws Exception {
+            closing = true; server.close();
+            for (var reference : List.of(incoming, outgoing)) {
+                var socket = reference.get(); if (socket != null) socket.close();
+            }
+            worker.join(7000); assertFalse(worker.isAlive(), "Owned raw proxy thread must exit");
+            healthy();
+        }
+    }
+
+    @FunctionalInterface
+    private interface CheckedObservation { void check() throws Exception; }
+
     private static final class Peer implements AutoCloseable {
         final HttpServer http;
 
@@ -818,6 +1139,8 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
         final Queue<Expected> expected = new ConcurrentLinkedQueue<>();
 
         final List<JsonNode> facts = new CopyOnWriteArrayList<>();
+
+        final List<String> modelRequests = new CopyOnWriteArrayList<>();
 
         final List<String> approvedActions = new CopyOnWriteArrayList<>();
 
@@ -859,6 +1182,7 @@ class DeploymentCommandApprovalPolicyRuntimeTest extends DeploymentRuntimeFixtur
             http.createContext("/chat", exchange -> {
                 try {
                     byte[] wire = exchange.getRequestBody().readAllBytes();
+                    modelRequests.add(new String(wire, StandardCharsets.UTF_8));
                     assertTrue(wire.length <= 1048576, "The complete native request retains the actual encoded one MiB contract");
                     var sent = JSON.readTree(wire);
                     assertEquals("Bearer fixture-model-key", exchange.getRequestHeaders().getFirst("Authorization"));

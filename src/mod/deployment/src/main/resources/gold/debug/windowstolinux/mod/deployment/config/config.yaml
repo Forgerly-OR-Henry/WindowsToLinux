@@ -6,7 +6,7 @@ ai: # 部署 Mod 的模型运行资源；按类加载器读取快照，不热修
     deployment-timeout-seconds: 120 # 普通部署模型单次调用期限，单位：秒
     approval-timeout-seconds: 600 # 独立审批模型单次调用期限，单位：秒
     extended-timeout-seconds: 600 # 扩展部署模型单次调用期限，单位：秒；不小于普通/审批期限
-    generation-recovery-attempts: 1 # 独立 AGENT main/APP 显式选择：HTTP 正文不完整后额外纯生成次数，0..16，0 关闭，默认 1；共享原调用期限，仅旧连接和占用释放后发送。不会重放工具/审批/部署，不适用于取消、超时、完整拒绝、格式错误或响应上限；与项目体量及工具预算无关。仅当前生成捕获，旧计划/身份/UNKNOWN 不变，未知用量不补零；其他调用者默认 0。
+    generation-recovery-attempts: 1 # 独立 AGENT main/APP 及 ASSISTED 分析/APP 显式选择：HTTP 正文不完整后额外纯生成次数，0..16，0 关闭，默认 1；共享原调用期限，仅旧连接和占用释放后发送。不重放完整审批结论、工具或业务效果，不适用于取消、超时、完整拒绝、格式错误或响应上限；与项目体量及工具预算无关。仅当前生成捕获，旧计划/身份/UNKNOWN 不变，未知用量不补零；普通/STATIC 调用者默认 0。
   execution: # 有限运行兜底；任一资源耗尽即可停止，不要求模型用满预算
     shared-tool-attempts: 4096 # 主 AGENT 与嵌套工具循环共用的尝试上限，单位：次；拒绝也扣减
     standalone-tool-attempts: 256 # 无外层协调 scope 时的工具尝试上限，单位：次

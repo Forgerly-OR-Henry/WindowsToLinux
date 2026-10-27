@@ -818,9 +818,11 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                                                                  gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, TaskContext supplied) throws ApiException {
                 sameTask(supplied);
                 verify();
-                var actual = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentFixedCommandApproval.approve(
-                    DeploymentAssistedScope.this, original.interaction(), intent, request, supplied, revision, approvalMode, rememberAuthorization);
-                verify();
+                var actual = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentFixedCommandApproval.approveWithEvidence(
+                    DeploymentAssistedScope.this, original.interaction(), intent, request, supplied, revision, approvalMode, rememberAuthorization,
+                    DeploymentAssistedScope.this,
+                    gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().requests().generationRecoveryAttempts());
+                if (actual.outcome() == gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED) verify();
                 return actual;
             }
 
@@ -833,7 +835,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 sameTask(supplied);
                 verify();
                 var actual = DeploymentAssistedApproval.approve(DeploymentAssistedScope.this, original.interaction(), intent, supplied, revision, approvalMode, rememberAuthorization);
-                verify();
+                if (actual.outcome() == gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED) verify();
                 return actual;
             }
 

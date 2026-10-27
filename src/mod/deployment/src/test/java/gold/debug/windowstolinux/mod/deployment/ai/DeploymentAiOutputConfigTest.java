@@ -54,8 +54,8 @@ class DeploymentAiOutputConfigTest {
                 selected.call(purpose, List.of(new AiMessage(AiRole.USER, "current", List.of())), List.of(new AiToolDefinition("submit_result", "complete", "{\"type\":\"object\"}")),
                     "fixture-route", fixture.task, false);
                 assertEquals(extra, fixture.requests.getLast().generationRecoveryAttempts());
-                if (purpose == AiPurpose.APPROVAL)
-                    assertEquals(Optional.of("submit_result"), fixture.requests.getLast().requiredToolName());
+                assertEquals(Optional.empty(), fixture.requests.getLast().requiredToolName(), "The raw call preserves automatic tool selection; strict submissions are validated by askCommand");
+                assertEquals("submit_result", fixture.requests.getLast().tools().getFirst().name());
             }
         }
         fixture.nativeReply(new AiToolCall("ordinary", "submit_result", "{}"));
