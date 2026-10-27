@@ -173,6 +173,8 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
             assertEquals(gold.debug.windowstolinux.mod.deployment.api.ApplicationRunState.RUNNING, harness.finished(start).after());
             assertTrue(harness.otherComponentReadReviews.get() > otherReadsAfterStop,
                 "Component START must independently review the unchanged component baseline");
+            assertTrue(harness.postStartObservationReviews.get() > 0,
+                "The attempted START must receive a separate review of its still-unverified observation");
             assertNotEquals(stop.id(), start.id()); assertEquals(2, harness.peer.effects.get());
             assertTrue(harness.peer.enabled.values().stream().allMatch(Boolean::booleanValue));
             int effects = harness.peer.effects.get();
@@ -181,6 +183,43 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
             assertThrows(IllegalArgumentException.class, () -> harness.service.lifecycleComponent(snapshot, "worker", DeploymentLifecycleAction.RESTART));
             assertEquals(effects, harness.peer.effects.get()); harness.assertNoFailure();
         }
+    }
+
+    @org.junit.jupiter.api.Test
+    void deniedPostStartObservationRetainsUnknownWithoutReplayingStart() throws Exception {
+        isolatedManagedRecovery(root, "START_OBSERVE_DENIED");
+    }
+
+    private void managedPostStartObservationDenial() throws Exception {
+        enable();
+        var runtime = open();
+        start(runtime, true); server(runtime);
+        run(runtime, task -> { publishManaged(runtime, task, reviewedGraph(), 1); return success(); });
+        var harness = new ManagedHarness(runtime.modContexts().get(OWNER).context());
+        var app = new DeploymentApplicationId("application", new ServerId("server"));
+        harness.finished(harness.service.lifecycleComponent(harness.finished(harness.service.inspect(app)), "worker", DeploymentLifecycleAction.STOP));
+        var snapshot = harness.finished(harness.service.inspect(app));
+        harness.denyPostStartObservation = true;
+        var denied = harness.service.lifecycleComponent(snapshot, "worker", DeploymentLifecycleAction.START);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        while (denied.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline) Thread.sleep(10);
+        var refusal = assertInstanceOf(ApiException.class, harness.failure.get());
+        assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", refusal.problem().eventCode());
+        assertEquals(TaskState.UNKNOWN, denied.snapshot().state());
+        assertEquals(1, harness.deniedPostStartObservations.get());
+        assertEquals(2, harness.peer.effects.get(), "One STOP and one START; denied verification never repeats START");
+        assertTrue(harness.peer.running.get("worker"), "START took effect before its observation was denied");
+        var original = harness.deniedPostStartFacts.get();
+        assertNotNull(original);
+        assertEquals("EFFECTING", original.path("operationPhase").asText());
+        assertTrue(original.path("originalActionFacts").path("components").path("worker").path("attempted").asBoolean());
+        assertFalse(original.path("originalActionFacts").path("components").path("worker").path("verified").asBoolean());
+        assertEquals(harness.reviews.get() - 1, harness.hostGrants.get(), "DENY receives no host grant");
+        assertEquals(harness.hostGrants.get(), harness.peer.sends.get());
+        assertTrue(harness.reviewed.isEmpty());
+        assertEquals(0, harness.openWorkflows.get()); assertEquals(0, harness.peer.sessions.get());
+        assertThrows(ApiException.class, runtime::close, "The real UNKNOWN task must retain its recovery resources");
+        System.out.println("MANAGEMENT_V2_READ_ONLY_VERIFIED START_OBSERVE_DENIED");
     }
 
     @org.junit.jupiter.api.Test
@@ -425,10 +464,13 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
         final Set<UUID> issued = new HashSet<>();
         final AtomicReference<Throwable> failure = new AtomicReference<>();
         final AtomicInteger otherComponentReadReviews = new AtomicInteger();
+        final AtomicInteger postStartObservationReviews = new AtomicInteger(), deniedPostStartObservations = new AtomicInteger();
+        final AtomicReference<com.fasterxml.jackson.databind.JsonNode> deniedPostStartFacts = new AtomicReference<>();
         final Map<UUID, OperationResult<?>> workResults = new java.util.concurrent.ConcurrentHashMap<>();
         String modelRevision = "b".repeat(64), decision = "APPROVE";
         boolean cleanupConfirmed;
         boolean requireCompleteComponentReviewScopes;
+        boolean denyPostStartObservation;
         boolean failWorkflow;
         int waitSeconds = 20;
         ManagedAfter after;
@@ -447,8 +489,31 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
                 assertEquals(task.id().toString(), identity.path("taskId").asText());
                 assertEquals("AUTOMATIC", identity.path("review").path("approval").asText());
                 assertFalse(identity.path("review").path("rememberAuthorization").booleanValue());
+                assertEquals(facts.path("operation").asText(), identity.path("currentCommandOperation").asText());
                 String verdict = decision;
                 String selected = identity.path("selectedComponentId").asText();
+                var attempted = identity.path("originalActionFacts").path("components").path(selected);
+                if (identity.path("action").asText().equals("START") && peer.running.getOrDefault(selected, false)
+                    && attempted.path("attempted").asBoolean()
+                    && !attempted.path("verified").asBoolean()
+                    && facts.path("operation").asText().equals("deployment.publication.observe.v1")) {
+                    String releaseRoot = "";
+                    for (var component : identity.path("components"))
+                        if (component.path("componentId").asText().equals(selected)) releaseRoot = component.path("releaseRoot").asText();
+                    boolean observesSelected = false;
+                    for (var target : facts.path("resourceTargets"))
+                        observesSelected |= target.path("id").asText().equals(releaseRoot);
+                    if (observesSelected) {
+                        assertEquals("EFFECTING", identity.path("operationPhase").asText());
+                        assertTrue(request.messages().stream().filter(message -> message.role() == AiRole.SYSTEM)
+                            .anyMatch(message -> message.text().contains("not the effect required of every command")
+                                && message.text().contains("never authorize replay")), "Step interpretation belongs to trusted instructions");
+                        postStartObservationReviews.incrementAndGet();
+                        if (denyPostStartObservation) {
+                            verdict = "DENY"; deniedPostStartObservations.incrementAndGet(); deniedPostStartFacts.set(identity.deepCopy());
+                        }
+                    }
+                }
                 if (requireCompleteComponentReviewScopes && !selected.isEmpty()
                     && facts.path("operation").asText().equals("deployment.publication.inspect.v1")) {
                     boolean observesOther = false;
@@ -688,6 +753,7 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
                 var probe = new DeploymentApplicationLifecycleTest(); probe.root = java.nio.file.Path.of(args[1]);
                 if (args[2].startsWith("CLEANUP_")) probe.managedCleanup(args[2].substring(8));
                 else if (args[2].equals("APP_REVIEW")) probe.managedAppReview();
+                else if (args[2].equals("START_OBSERVE_DENIED")) probe.managedPostStartObservationDenial();
                 else probe.managedRecovery(args[2]);
                 System.exit(0);
             } catch (Throwable failure) { failure.printStackTrace(); System.exit(1); }

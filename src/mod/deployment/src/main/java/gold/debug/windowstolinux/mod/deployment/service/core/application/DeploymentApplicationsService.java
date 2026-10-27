@@ -602,10 +602,22 @@ public final class DeploymentApplicationsService implements TaskRecovery {
                 "releaseSha256", original.release().bindings().stream().filter(binding -> binding.unitId().equals(part.unit().id()))
                     .findFirst().orElseThrow().releaseSha256())).toList());
             var entry = journal.find(task);
+            value.put("currentCommandOperation", intent.semantics().orElseThrow().operation());
+            value.put("operationPhase", entry.map(DeploymentManagementActionLog.Entry::phase).orElse("NOT_RECORDED"));
             entry.ifPresent(stored -> value.put("originalActionFacts", stored.facts()));
             if (journal instanceof DeploymentLifecycleCleanupLog cleanup)
                 value.put("originalLifecycleCleanup", cleanup.evidence(task));
             return Map.of("managementIdentity", Collections.unmodifiableMap(value));
+        }
+
+        public String reviewInstructions() {
+            return """
+                For application management, managementIdentity.action is the whole task goal, not the effect required of every command.
+                Review only the current exact command and its reachable effects. currentCommandOperation identifies this step; operationPhase and originalActionFacts describe journal progress, not authority or proof of success.
+                Ownership, current-release, runtime and health observations are separate read-only steps before and after lifecycle effects, including during EFFECTING and read-only reconciliation. Do not require an observation command to contain or execute START, STOP or another task-goal effect.
+                attempted=true with verified=false means the original effect was attempted and still needs verification. It neither proves success nor prevents reviewing the read that obtains that evidence; never require the future read result before permitting the current read.
+                Reads remain confined to readOnlyObservationComponentIds; lifecycle effects remain confined to lifecycleEffectComponentIds. Check exact arguments, contracts, ownership and safety independently. These step facts grant no permission, do not override DENY, and never authorize replay of an attempted effect.
+                """;
         }
 
         public void verify(ActionIntent intent, CommandRequest request, TaskContext supplied) throws ApiException {
