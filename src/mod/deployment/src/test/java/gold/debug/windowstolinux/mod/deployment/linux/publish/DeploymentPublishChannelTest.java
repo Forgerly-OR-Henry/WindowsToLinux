@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.Function;
 
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
@@ -39,6 +38,63 @@ import org.junit.jupiter.api.Test;
 
 /** Exercises fixed publication receipts with a controlled remote peer. / 用受控远端对等端验证固定发布回执。 */
 class DeploymentPublishChannelTest {
+    @Test
+    void lifecycleGuardRunsOnceAfterItsGrantAndBeforeOnlyItsEffect() throws Exception {
+        for (String mode : List.of("SUCCESS", "APP_DENY", "GLOBAL_DENY", "GUARD_DENY", "ACK_LOST", "CANCELLED", "FAILED", "EXPIRED")) {
+            var events = new ArrayList<String>();
+            var scripts = new ArrayList<String>();
+            var grants = new ArrayList<UUID>();
+            var guards = new java.util.concurrent.atomic.AtomicInteger();
+            var effects = new java.util.concurrent.atomic.AtomicInteger();
+            var observed = new java.util.concurrent.atomic.AtomicInteger();
+            var operation = new java.util.concurrent.atomic.AtomicReference<String>();
+            var channel = channel(request -> {
+                String step = request.script().contains("'lifecycle-deployment'") ? "effect"
+                    : request.script().contains("'inspect-runtime'") ? "inspect" : "observe";
+                events.add("execute:" + step);
+                if (step.equals("inspect")) return reply(0, "KIND=deployment\nMODE=DAEMON\n");
+                if (step.equals("observe")) return reply(0, nativeObservation(observed.getAndIncrement() == 0));
+                assertEquals(1, guards.get());
+                if (mode.equals("EXPIRED")) throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED,
+                    "CONTROLLED_GRANT_EXPIRED", "Controlled host-consumption refusal", Map.of(), Optional.empty()));
+                effects.incrementAndGet();
+                if (mode.equals("ACK_LOST") || mode.equals("CANCELLED") || mode.equals("FAILED"))
+                    return new OperationResult<>(TaskResult.valueOf(mode.equals("ACK_LOST") ? "UNKNOWN" : mode), Optional.empty(),
+                        Optional.of(new Problem(ProblemCode.UNKNOWN, "CONTROLLED_RECEIPT_LOST", "Controlled incomplete transport", Map.of(), Optional.empty())));
+                return reply(0, "LIFECYCLE=stop\n");
+            }, scripts, grants, () -> {
+                events.add("global:" + operation.get());
+                if (mode.equals("GLOBAL_DENY") && operation.get().equals("effect"))
+                    throw new ApiException(new Problem(ProblemCode.INCOMPATIBLE, "CONTROLLED_GLOBAL_REFUSAL", "Refused", Map.of(), Optional.empty()));
+            }, intent -> {
+                String step = intent.semantics().orElseThrow().operation().equals("deployment.application.lifecycle.v1") ? "effect"
+                    : intent.semantics().orElseThrow().operation().equals("deployment.publication.inspect.v1") ? "inspect" : "observe";
+                operation.set(step); events.add("grant:" + step);
+                if (mode.equals("APP_DENY") && step.equals("effect"))
+                    throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "CONTROLLED_APP_DENY", "Refused", Map.of(), Optional.empty()));
+            });
+            gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard guard = () -> {
+                assertEquals("effect", operation.get()); assertEquals(3, grants.size());
+                assertEquals(1, guards.incrementAndGet()); events.add("lifecycle-guard");
+                if (mode.equals("GUARD_DENY")) throw new ApiException(new Problem(ProblemCode.UNKNOWN,
+                    "CONTROLLED_COMMIT_UNKNOWN", "Unconfirmed local registration", Map.of(), Optional.empty()));
+            };
+            if (List.of("APP_DENY", "GLOBAL_DENY", "GUARD_DENY", "EXPIRED").contains(mode))
+                assertThrows(ApiException.class, () -> channel.lifecycle(unit(), reviewedRuntime(), "stop", "a".repeat(64), guard));
+            else assertEquals(mode.equals("SUCCESS") ? TaskResult.SUCCEEDED : TaskResult.UNKNOWN,
+                channel.lifecycle(unit(), reviewedRuntime(), "stop", "a".repeat(64), guard).outcome(), mode);
+            boolean dispatched = List.of("SUCCESS", "ACK_LOST", "CANCELLED", "FAILED", "EXPIRED").contains(mode);
+            assertEquals(dispatched ? 1 : 0, scripts.stream().filter(script -> script.contains("'lifecycle-deployment'")).count(), mode);
+            assertEquals(dispatched && !mode.equals("EXPIRED") ? 1 : 0, effects.get(), mode);
+            assertEquals(List.of("APP_DENY", "GLOBAL_DENY").contains(mode) ? 0 : 1, guards.get(), mode);
+            assertEquals(mode.equals("APP_DENY") ? 2 : mode.equals("SUCCESS") ? 5 : 3, grants.size(), mode);
+            if (mode.equals("SUCCESS")) assertEquals(List.of(
+                "grant:inspect", "global:inspect", "execute:inspect", "grant:observe", "global:observe", "execute:observe",
+                "grant:effect", "global:effect", "lifecycle-guard", "execute:effect",
+                "grant:inspect", "global:inspect", "execute:inspect", "grant:observe", "global:observe", "execute:observe"), events);
+        }
+    }
+
     @Test
     void systemdObservationUnavailableStaysUnknownWithoutReplayingLifecycle() throws Exception {
         for (boolean beforeEffect : List.of(true, false)) {
@@ -458,13 +514,31 @@ class DeploymentPublishChannelTest {
      * @param answer remote reply / 远端回执
      * @param scripts dispatched scripts / 已发送脚本
      * @return channel under test / 待测通道 */
-    private static DeploymentPublishChannel channel(Function<CommandRequest, OperationResult<CommandResult>> answer,
+    private static DeploymentPublishChannel channel(CommandAnswer answer,
                                                     List<String> scripts) {
         return channel(answer, scripts, new ArrayList<>());
     }
 
-    private static DeploymentPublishChannel channel(Function<CommandRequest, OperationResult<CommandResult>> answer,
+    private static DeploymentPublishChannel channel(CommandAnswer answer,
                                                     List<String> scripts, List<UUID> grants) {
+        return channel(answer, scripts, grants,
+            gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard.NONE, intent -> {});
+    }
+
+    @FunctionalInterface
+    private interface CommandAnswer {
+        OperationResult<CommandResult> apply(CommandRequest request) throws ApiException;
+    }
+
+    @FunctionalInterface
+    private interface ApprovalCheck {
+        void check(ActionIntent intent) throws ApiException;
+    }
+
+    private static DeploymentPublishChannel channel(CommandAnswer answer,
+                                                    List<String> scripts, List<UUID> grants,
+                                                    gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard globalGuard,
+                                                    ApprovalCheck approval) {
         var task = new TaskContext() {
             public UUID id() {
                 return UUID.fromString("11111111-1111-4111-8111-111111111111");
@@ -484,9 +558,10 @@ class DeploymentPublishChannelTest {
         };
         var pending = new java.util.concurrent.atomic.AtomicReference<ApprovalGrant>();
         var interaction = new InteractionService() {
-            public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext actual) {
+            public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext actual) throws ApiException {
                 assertSame(task, actual);
                 assertEquals(List.of("Server-Exact"), intent.serverIds());
+                approval.check(intent);
                 var grant = new ApprovalGrant(UUID.randomUUID());
                 pending.set(grant);
                 grants.add(grant.id());
@@ -507,7 +582,7 @@ class DeploymentPublishChannelTest {
                 return answer.apply(request);
             });
         return new DeploymentPublishChannel(session, interaction, new ServerId("Server-Exact"), task,
-            "f".repeat(64));
+            "f".repeat(64), globalGuard);
     }
 
     /** Returns a known complete process observation. / 返回已知完整进程观测。

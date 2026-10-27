@@ -459,7 +459,15 @@ public final class DeploymentPublishChannel {
      * @throws ApiException if host admission fails / 宿主准入失败时 */
     public OperationResult<Void> lifecycle(DeploymentUnitIdentity unit, DeploymentRuntimeDefinition runtime,
                                            String action, String expectedReleaseSha256) throws ApiException {
+        return lifecycle(unit, runtime, action, expectedReleaseSha256, DeploymentSendGuard.NONE);
+    }
+
+    /** Registers this exact effect only after approval, immediately before execution. / 审批后紧靠执行前登记本次精确副作用。 */
+    public OperationResult<Void> lifecycle(DeploymentUnitIdentity unit, DeploymentRuntimeDefinition runtime,
+                                           String action, String expectedReleaseSha256,
+                                           DeploymentSendGuard beforeLifecycleSend) throws ApiException {
         requireUnit(unit);
+        Objects.requireNonNull(beforeLifecycleSend);
         if (expectedReleaseSha256 == null || !expectedReleaseSha256.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Exact reviewed current release required");
         Objects.requireNonNull(runtime);
@@ -472,7 +480,8 @@ public final class DeploymentPublishChannel {
         String verb = runtime instanceof DeploymentRuntimeDefinition.Container
             ? "lifecycle-container" : "lifecycle-deployment";
         var observed = send("deployment.application.lifecycle.v1", unit, verb,
-            List.of(unit.id(), action, unit.ownershipManifestSha256(), expectedReleaseSha256), Duration.ofSeconds(45), 4096);
+            List.of(unit.id(), action, unit.ownershipManifestSha256(), expectedReleaseSha256), Duration.ofSeconds(45), 4096,
+            new byte[0], beforeLifecycleSend);
         if (observed.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(observed);
         if (!complete(observed) || !lifecycleReceipt(observed.value().orElseThrow().stdout(), action))
@@ -784,6 +793,12 @@ public final class DeploymentPublishChannel {
      * @throws ApiException if admission fails before dispatch / 发送前准入失败时 */
     private OperationResult<CommandResult> send(String operation, DeploymentUnitIdentity unit, String verb,
                                                 List<String> arguments, Duration timeout, long output, byte[] input) throws ApiException {
+        return send(operation, unit, verb, arguments, timeout, output, input, DeploymentSendGuard.NONE);
+    }
+
+    private OperationResult<CommandResult> send(String operation, DeploymentUnitIdentity unit, String verb,
+                                                List<String> arguments, Duration timeout, long output, byte[] input,
+                                                DeploymentSendGuard beforeRequestSend) throws ApiException {
         StringBuilder script = new StringBuilder();
         if (Set.of("inspect-runtime", "observe-deployment", "lifecycle-deployment", "lifecycle-container",
             "snapshot-deployment", "snapshot-deployment-attempt", "publish-deployment", "rollback-deployment",
@@ -817,7 +832,7 @@ public final class DeploymentPublishChannel {
         if (verb.equals("stage-secret"))
             targets.add(new ActionTarget(server.id(), "deployment-secret", unit.layout().configurationRoot(unit.id())
                 + "/secrets/" + arguments.get(1) + "/" + arguments.get(2) + "/value"));
-        return dispatch(operation, unit, new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script.toString(), unit.layout()), input, timeout, output), Set.copyOf(targets));
+        return dispatch(operation, unit, new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script.toString(), unit.layout()), input, timeout, output), Set.copyOf(targets), beforeRequestSend);
     }
 
     /** Dispatches one exact fixed command through actual review. / 经真实审核发送一条精确固定命令。
@@ -833,6 +848,12 @@ public final class DeploymentPublishChannel {
 
     private OperationResult<CommandResult> dispatch(String operation, DeploymentUnitIdentity unit,
                                                     CommandRequest request, Set<ActionTarget> targets) throws ApiException {
+        return dispatch(operation, unit, request, targets, DeploymentSendGuard.NONE);
+    }
+
+    private OperationResult<CommandResult> dispatch(String operation, DeploymentUnitIdentity unit,
+                                                    CommandRequest request, Set<ActionTarget> targets,
+                                                    DeploymentSendGuard beforeRequestSend) throws ApiException {
         String observationStage = operation.equals("deployment.publication.inspect.v1") ? "inspect"
             : operation.equals("deployment.publication.observe.v1") ? "observe" : null;
         try (request) {
@@ -843,6 +864,7 @@ public final class DeploymentPublishChannel {
                 if (grant.outcome() != TaskResult.SUCCEEDED)
                     return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
                 beforeSend.verify();
+                beforeRequestSend.verify();
                 try {
                     var executed = session.execute(request, grant.value().orElseThrow());
                     // Only this fixed read may be observed again, with a new grant and no prior author payload.

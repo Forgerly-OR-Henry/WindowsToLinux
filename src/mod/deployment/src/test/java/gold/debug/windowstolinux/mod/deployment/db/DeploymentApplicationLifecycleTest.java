@@ -161,6 +161,7 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
             run(runtime, task -> { publishManaged(runtime, task, reviewedGraph(), 1); return success(); });
             var harness = new ManagedHarness(runtime.modContexts().get(OWNER).context());
             harness.requireCompleteComponentReviewScopes = true;
+            harness.requireUnattemptedEffectReview = true;
             var app = new DeploymentApplicationId("application", new ServerId("server"));
             var stop = harness.service.lifecycleComponent(harness.finished(harness.service.inspect(app)), "worker", DeploymentLifecycleAction.STOP);
             var stopped = harness.finished(stop);
@@ -176,12 +177,131 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
             assertTrue(harness.postStartObservationReviews.get() > 0,
                 "The attempted START must receive a separate review of its still-unverified observation");
             assertNotEquals(stop.id(), start.id()); assertEquals(2, harness.peer.effects.get());
+            assertEquals(List.of("worker:stop", "worker:start"), harness.effectReviews);
+            assertEquals(harness.effectReviews, harness.effectExecutions);
             assertTrue(harness.peer.enabled.values().stream().allMatch(Boolean::booleanValue));
             int effects = harness.peer.effects.get();
             assertEquals(TaskResult.FAILED, harness.service.lifecycleComponent(harness.finished(harness.service.inspect(app)),
                 "missing", DeploymentLifecycleAction.STOP).completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertThrows(IllegalArgumentException.class, () -> harness.service.lifecycleComponent(snapshot, "worker", DeploymentLifecycleAction.RESTART));
             assertEquals(effects, harness.peer.effects.get()); harness.assertNoFailure();
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    void wholeApplicationAndRestartRegisterEachVerbOnlyAfterItsOwnReview() throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true); server(runtime);
+            run(runtime, task -> { publishManaged(runtime, task, reviewedGraph(), 1); return success(); });
+            var harness = new ManagedHarness(runtime.modContexts().get(OWNER).context());
+            harness.requireUnattemptedEffectReview = true;
+            var app = new DeploymentApplicationId("application", new ServerId("server"));
+            for (var action : List.of(DeploymentLifecycleAction.STOP, DeploymentLifecycleAction.START, DeploymentLifecycleAction.RESTART))
+                harness.finished(harness.service.lifecycle(harness.finished(harness.service.inspect(app)), action));
+            assertEquals(List.of("web:stop", "worker:stop", "worker:start", "web:start",
+                "web:stop", "worker:stop", "worker:start", "web:start"), harness.effectReviews);
+            assertEquals(harness.effectReviews, harness.effectExecutions);
+            assertEquals(8, harness.peer.effects.get());
+            assertEquals(harness.reviews.get(), harness.hostGrants.get()); harness.assertNoFailure();
+        }
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"DENY", "CAS_CONFLICT", "COMMIT_UNKNOWN", "IDENTITY_BEFORE", "IDENTITY_AFTER", "ROUTE_AFTER"})
+    void lifecycleDispatchFailuresNeverSendOrReconstructPermission(String scenario) throws Exception {
+        isolatedManagedRecovery(root, "DISPATCH_" + scenario);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"CANCEL_BEFORE", "CANCEL_AFTER"})
+    void visibleLifecycleCancellationPreventsDispatch(String scenario) throws Exception {
+        isolatedManagedRecovery(root, "DISPATCH_" + scenario);
+    }
+
+    @org.junit.jupiter.api.Test
+    void originalLostStopAcknowledgementRemainsReadOnly() throws Exception {
+        isolatedManagedRecovery(root, "STOP_ACK");
+    }
+
+    @org.junit.jupiter.api.Test
+    void originalLostStartAcknowledgementRemainsReadOnly() throws Exception {
+        isolatedManagedRecovery(root, "START_ACK");
+    }
+
+    @org.junit.jupiter.api.Test
+    void restartNeverStartsAfterAnUnconfirmedStop() throws Exception {
+        isolatedManagedRecovery(root, "RESTART_STOP_ACK");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"CONFIRM", "DENY", "ACK_LOST"})
+    void lifecycleDispatchPreservesOriginalCleanupHistory(String scenario) throws Exception {
+        isolatedManagedRecovery(root, "CLEANUP_" + scenario);
+    }
+
+    private void managedDispatchFailure(String scenario) throws Exception {
+        enable(); var runtime = open(); start(runtime, true); server(runtime);
+        run(runtime, task -> { publishManaged(runtime, task, reviewedGraph(), 1); return success(); });
+        var harness = new ManagedHarness(runtime.modContexts().get(OWNER).context());
+        harness.requireUnattemptedEffectReview = true;
+        var app = new DeploymentApplicationId("application", new ServerId("server"));
+        var snapshot = harness.finished(harness.service.inspect(app));
+        harness.dispatchScenario = scenario;
+        var denied = harness.service.lifecycleComponent(snapshot, "worker", DeploymentLifecycleAction.STOP);
+        harness.actionHandle.set(denied); harness.handleReady.countDown();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        while (denied.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline) Thread.sleep(10);
+        assertEquals(TaskState.UNKNOWN, denied.snapshot().state());
+        assertTrue(harness.failureAuditDone.await(20, TimeUnit.SECONDS), "Cancellation can publish UNKNOWN before the original callback has unwound");
+        assertNotNull(harness.failure.get(), "The injected local refusal must propagate, never become a transport retry");
+        assertNull(harness.auditFailure.get(), () -> "Original failure audit failed: " + harness.auditFailure.get());
+        if (scenario.startsWith("CANCEL_")) {
+            assertTrue(harness.cancellationObserved.get(), "The real host cancellation must be visible, not merely an injected exception");
+            assertEquals(ProblemCode.CANCELLED, assertInstanceOf(ApiException.class, harness.failure.get()).problem().code());
+        }
+        assertEquals(0, harness.peer.effects.get()); assertEquals(0, harness.effectExecutions.size());
+        assertEquals(1, harness.effectReviews.size());
+        assertEquals(scenario.equals("DENY") ? 0 : 1, harness.effectGrants.get());
+        var task = harness.lastEffectTask.get(); assertNotNull(task);
+        // Cancelled authors have lost Mod access; inspect their durable state through the fixture's APP connection.
+        var retained = scenario.startsWith("CANCEL_") ? storedManagementEntry(runtime, denied.id()) : harness.failedEntry.get();
+        assertNotNull(retained);
+        boolean registered = Set.of("COMMIT_UNKNOWN", "CANCEL_AFTER", "IDENTITY_AFTER", "ROUTE_AFTER").contains(scenario);
+        if (registered || scenario.equals("CAS_CONFLICT")) assertTrue(harness.dispatchInjected.get());
+        assertEquals(registered, retained.facts().path("components").path("worker").path("attempted").asBoolean());
+        assertFalse(retained.facts().path("components").path("worker").path("verified").asBoolean());
+        if (scenario.equals("CAS_CONFLICT")) assertTrue(retained.facts().path("interrupted").asBoolean());
+        if (scenario.equals("COMMIT_UNKNOWN")) {
+            assertEquals("EFFECTING", retained.phase());
+            assertEquals(TaskResult.UNKNOWN, harness.recoveredFailure.get().outcome());
+            assertEquals(retained.facts(), harness.recoveredEntry.get().facts(), "Recovery cannot clear an attempted unsent effect or invent its ACK");
+        }
+        assertEquals(0, harness.openWorkflows.get()); assertEquals(0, harness.peer.sessions.get());
+        assertThrows(ApiException.class, runtime::close);
+        System.out.println("MANAGEMENT_V2_READ_ONLY_VERIFIED DISPATCH_" + scenario);
+    }
+
+    /** The cancelled author cannot borrow new Mod access; the fixture owns its APP database for this read. */
+    private static DeploymentManagementActionLog.Entry storedManagementEntry(
+        gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime, UUID task) throws Exception {
+        try (var connection = runtime.persistence().database().openConnection()) {
+            String schema;
+            try (var query = connection.createStatement(); var rows = query.executeQuery(
+                "SELECT table_schema FROM information_schema.tables WHERE table_name='deployment_management_operation'")) {
+                assertTrue(rows.next()); schema = rows.getString(1); assertTrue(schema.matches("m_[a-f0-9]+_v1")); assertFalse(rows.next());
+            }
+            try (var query = connection.prepareStatement("SELECT operation_id,owner_mod_id,owner_mod_version,application_id,server_profile_id,action,"
+                + "current_release_sha256,target_release_sha256,phase,component_state FROM " + schema + ".deployment_management_operation WHERE platform_task_id=?")) {
+                query.setObject(1, task);
+                try (var rows = query.executeQuery()) {
+                    assertTrue(rows.next());
+                    var entry = new DeploymentManagementActionLog.Entry(rows.getObject(1, UUID.class), task, rows.getString(2), rows.getString(3),
+                        rows.getString(4), new ServerId(rows.getString(5)), rows.getString(6), rows.getString(7), Optional.ofNullable(rows.getString(8)),
+                        rows.getString(9), new com.fasterxml.jackson.databind.ObjectMapper().readTree(rows.getBytes(10)));
+                    assertFalse(rows.next()); return entry;
+                }
+            }
         }
     }
 
@@ -303,11 +423,19 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
 
     static void isolatedManagedRecovery(java.nio.file.Path root, String scenario) throws Exception {
         var executable = java.nio.file.Path.of(System.getProperty("java.home"), "bin", "java.exe");
-        var process = new ProcessBuilder(executable.toString(), "-cp", System.getProperty("java.class.path"),
+        var process = new ProcessBuilder(executable.toString(), "-Dmanaged.runtime.staticLive=false", "-Dmanaged.runtime.agentLive=false",
+            "-Djava.io.tmpdir=" + System.getProperty("java.io.tmpdir"),
+            "-Djdk.net.unixdomain.tmpdir=" + System.getProperty("jdk.net.unixdomain.tmpdir", System.getProperty("java.io.tmpdir")),
+            "-cp", System.getProperty("java.class.path"),
             DeploymentApplicationLifecycleTest.class.getName(), "--managed-v2", root.toString(), scenario).redirectErrorStream(true).start();
         try {
-            assertTrue(process.waitFor(60, TimeUnit.SECONDS));
+            boolean exited = process.waitFor(60, TimeUnit.SECONDS);
+            if (!exited) {
+                process.destroy();
+                if (!process.waitFor(2, TimeUnit.SECONDS)) { process.destroyForcibly(); assertTrue(process.waitFor(5, TimeUnit.SECONDS)); }
+            }
             String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(exited, "Original managed child exceeded its unchanged sixty-second bound:\n" + output);
             assertEquals(0, process.exitValue(), output); assertTrue(output.contains("MANAGEMENT_V2_READ_ONLY_VERIFIED"), output);
         } finally {
             if (process.isAlive()) { process.destroy(); if (!process.waitFor(2, TimeUnit.SECONDS)) { process.destroyForcibly(); assertTrue(process.waitFor(5, TimeUnit.SECONDS)); } }
@@ -403,17 +531,23 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
 
     /** Actual ACTION Task/journal with controlled host/AI/peer; this is not the Mod registry integration test. */
     private void managedRecovery(String scenario) throws Exception {
+        System.out.println("MANAGEMENT_CONTROLLED_STAGE " + scenario + " enable");
         enable(); var runtime = open(); start(runtime, true); server(runtime);
+        System.out.println("MANAGEMENT_CONTROLLED_STAGE " + scenario + " seed");
         run(runtime, task -> { publishManaged(runtime, task, reviewedGraph(), 1); return success(); });
         var harness = new ManagedHarness(runtime.modContexts().get(OWNER).context());
         var app = new DeploymentApplicationId("application", new ServerId("server"));
         var snapshot = harness.finished(harness.service.inspect(app));
         boolean start = scenario.equals("START_ACK") || scenario.equals("HEALTH");
+        boolean restart = scenario.equals("RESTART_STOP_ACK");
+        harness.requireUnattemptedEffectReview = restart;
         if (start) { harness.finished(harness.service.lifecycleComponent(snapshot, "worker", DeploymentLifecycleAction.STOP)); snapshot = harness.finished(harness.service.inspect(app)); }
+        System.out.println("MANAGEMENT_CONTROLLED_STAGE " + scenario + " prepared");
         boolean disable = scenario.startsWith("DISABLE_");
         harness.peer.lossVerb = start ? "start" : disable ? "disable" : "stop";
-        harness.peer.lossUnit = disable && !scenario.equals("DISABLE_PARTIAL_ACK") ? "web" : "worker";
+        harness.peer.lossUnit = restart || disable && !scenario.equals("DISABLE_PARTIAL_ACK") ? "web" : "worker";
         harness.after = (task, result) -> {
+            System.out.println("MANAGEMENT_CONTROLLED_STAGE " + scenario + " original-result");
             assertEquals(TaskResult.UNKNOWN, result.outcome());
             assertEquals(DeploymentApplicationsService.ACTION_TASK, harness.actual.tasks().inspect(task).type());
             var log = new DeploymentManagementActionLog(harness.context);
@@ -429,6 +563,7 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
             if (scenario.equals("TARGET")) harness.peer.fingerprint = "SHA256:" + "B".repeat(43);
             if (scenario.equals("HEALTH")) harness.peer.forceUnhealthy = true;
             var recovered = new DeploymentApplicationsService(harness.context).reconcile(harness.actual.tasks().inspect(task), task);
+            System.out.println("MANAGEMENT_CONTROLLED_STAGE " + scenario + " reconciled");
             assertEquals(effects, harness.peer.effects.get(), "Original reconciliation never resends STOP/START/DISABLE");
             boolean positive = Set.of("STOP_ACK", "START_ACK", "DISABLE_ACK").contains(scenario);
             assertEquals(positive ? TaskResult.SUCCEEDED : TaskResult.UNKNOWN, recovered.outcome());
@@ -439,11 +574,16 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
             if (positive) assertTrue(retained.facts().path("reconciledReadOnly").booleanValue());
             return recovered;
         };
-        var handle = disable ? harness.service.lifecycle(snapshot, DeploymentLifecycleAction.DISABLE_AUTOSTART)
+        var handle = restart ? harness.service.lifecycle(snapshot, DeploymentLifecycleAction.RESTART)
+            : disable ? harness.service.lifecycle(snapshot, DeploymentLifecycleAction.DISABLE_AUTOSTART)
             : harness.service.lifecycleComponent(snapshot, "worker", start ? DeploymentLifecycleAction.START : DeploymentLifecycleAction.STOP);
         var outcome = harness.result(handle);
         harness.assertNoFailure();
         assertEquals(0, harness.peer.sessions.get()); assertEquals(0, harness.openWorkflows.get());
+        if (restart) {
+            assertEquals(List.of("web:stop"), harness.effectReviews);
+            assertEquals(1, harness.peer.effects.get(), "No START may follow an unconfirmed STOP or be replayed during recovery");
+        }
         if (outcome.outcome() == TaskResult.UNKNOWN) { assertEquals(TaskState.UNKNOWN, handle.snapshot().state()); assertThrows(ApiException.class, runtime::close); }
         else { assertEquals(TaskState.ENDED, handle.snapshot().state()); runtime.close(); }
         System.out.println("MANAGEMENT_V2_READ_ONLY_VERIFIED " + scenario);
@@ -472,12 +612,37 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
         boolean requireCompleteComponentReviewScopes;
         boolean denyPostStartObservation;
         boolean failWorkflow;
+        boolean requireUnattemptedEffectReview;
+        volatile String dispatchScenario;
+        final List<String> effectReviews = new ArrayList<>(), effectExecutions = new ArrayList<>();
+        final AtomicInteger effectGrants = new AtomicInteger();
+        final AtomicBoolean effectPending = new AtomicBoolean(), dispatchInjected = new AtomicBoolean();
+        final AtomicBoolean cancellationObserved = new AtomicBoolean();
+        final java.util.concurrent.CountDownLatch handleReady = new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch failureAuditDone = new java.util.concurrent.CountDownLatch(1);
+        final AtomicReference<Throwable> auditFailure = new AtomicReference<>();
+        final AtomicReference<TaskHandle<?>> actionHandle = new AtomicReference<>();
+        final AtomicReference<TaskContext> lastEffectTask = new AtomicReference<>();
+        final AtomicReference<DeploymentManagementActionLog.Entry> failedEntry = new AtomicReference<>(), recoveredEntry = new AtomicReference<>();
+        final AtomicReference<OperationResult<?>> recoveredFailure = new AtomicReference<>();
         int waitSeconds = 20;
         ManagedAfter after;
 
         ManagedHarness(ModContext actual) {
             this.actual = actual; peer.managedMode = true; peer.healthy = true;
             var base = bind(actual, peer);
+            peer.beforeExecute = (task, request) -> {
+                if (!request.script().contains("'lifecycle-deployment'")) return;
+                var args = literalArguments(request.script());
+                String component = args.get(2), verb = args.get(3);
+                var entry = new DeploymentManagementActionLog(actual).find(task).orElseThrow();
+                if (requireUnattemptedEffectReview) {
+                    var part = entry.facts().path("components").path(component);
+                    assertEquals("EFFECTING", entry.phase()); assertTrue(part.path("attempted").asBoolean());
+                    assertFalse(part.path("verified").asBoolean()); assertEquals(verb, part.path("verb").asText());
+                    effectExecutions.add(component + ":" + verb);
+                }
+            };
             var json = new com.fasterxml.jackson.databind.ObjectMapper();
             var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(), new Class<?>[]{AiService.class}, (proxy, method, args) -> {
                 var task = Arrays.stream(args).filter(TaskContext.class::isInstance).map(TaskContext.class::cast).findFirst().orElseThrow();
@@ -491,6 +656,19 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
                 assertFalse(identity.path("review").path("rememberAuthorization").booleanValue());
                 assertEquals(facts.path("operation").asText(), identity.path("currentCommandOperation").asText());
                 String verdict = decision;
+                if (requireUnattemptedEffectReview && facts.path("operation").asText().equals("deployment.application.lifecycle.v1")) {
+                    var literals = literalArguments(facts.path("exactAction").asText().split("\\nscript:\\n", 2)[1]);
+                    String component = literals.get(2), verb = literals.get(3);
+                    var part = identity.path("originalActionFacts").path("components").path(component);
+                    if (part.path("attempted").asBoolean() && !part.path("verified").asBoolean()
+                        && part.path("verb").asText().equals(verb)) verdict = "DENY";
+                    else if (identity.path("action").asText().equals("RESTART") && verb.equals("start")) {
+                        assertTrue(part.path("attempted").asBoolean()); assertTrue(part.path("verified").asBoolean());
+                        assertEquals("stop", part.path("verb").asText());
+                    } else assertFalse(part.path("attempted").asBoolean(), "APP must see the real unattempted current effect");
+                    effectReviews.add(component + ":" + verb); lastEffectTask.set(task);
+                    if ("DENY".equals(dispatchScenario)) verdict = "DENY";
+                }
                 String selected = identity.path("selectedComponentId").asText();
                 var attempted = identity.path("originalActionFacts").path("components").path(selected);
                 if (identity.path("action").asText().equals("START") && peer.running.getOrDefault(selected, false)
@@ -504,7 +682,8 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
                     for (var target : facts.path("resourceTargets"))
                         observesSelected |= target.path("id").asText().equals(releaseRoot);
                     if (observesSelected) {
-                        assertEquals("EFFECTING", identity.path("operationPhase").asText());
+                        assertTrue(Set.of("EFFECTING", "UNKNOWN").contains(identity.path("operationPhase").asText()),
+                            "Original post-effect verification and later read-only reconciliation retain distinct phases");
                         assertTrue(request.messages().stream().filter(message -> message.role() == AiRole.SYSTEM)
                             .anyMatch(message -> message.text().contains("not the effect required of every command")
                                 && message.text().contains("never authorize replay")), "Step interpretation belongs to trusted instructions");
@@ -561,6 +740,16 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
                 var request = (CommandRequest) ((Optional<?>) args[1]).orElseThrow();
                 var grant = new ApprovalGrant(UUID.randomUUID()); assertTrue(issued.add(grant.id()));
                 peer.grants.put(grant.id(), request); hostGrants.incrementAndGet();
+                if (intent.semantics().orElseThrow().operation().equals("deployment.application.lifecycle.v1")) {
+                    effectGrants.incrementAndGet(); effectPending.set(true);
+                    if (dispatchScenario != null) {
+                        assertTrue(handleReady.await(10, TimeUnit.SECONDS));
+                        if (dispatchScenario.equals("CANCEL_BEFORE")) {
+                            actionHandle.get().requestCancel(); cancellationObserved.set(task.cancelToken().requested());
+                        }
+                        if (dispatchScenario.equals("IDENTITY_BEFORE")) changeLocalOwnership(actual, task);
+                    }
+                }
                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(grant), Optional.empty());
             });
             var tasks = (TaskService) Proxy.newProxyInstance(TaskService.class.getClassLoader(), new Class<?>[]{TaskService.class}, (proxy, method, args) -> {
@@ -574,16 +763,78 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
                             var next = request.type().equals(DeploymentApplicationsService.ACTION_TASK) && after != null ? after.run(task, result) : result;
                             workResults.put(task.id(), next);
                             return new OperationResult<>(next.outcome(), next.value().map(value -> (Object) value), next.problem());
-                        } catch (Exception | AssertionError error) { failure.set(error); throw error; }
+                        } catch (Exception | AssertionError error) {
+                            failure.set(error);
+                            try {
+                                if (dispatchScenario != null && !dispatchScenario.startsWith("CANCEL_")) {
+                                    failedEntry.set(new DeploymentManagementActionLog(actual).find(task).orElseThrow());
+                                    if (dispatchScenario.equals("COMMIT_UNKNOWN")) {
+                                        effectPending.set(false);
+                                        reconcileFailure(task);
+                                    }
+                                }
+                            } catch (Exception | AssertionError audit) { auditFailure.set(audit); error.addSuppressed(audit); }
+                            finally { failureAuditDone.countDown(); }
+                            throw error;
+                        }
                     };
                 }
                 try { return method.invoke(actual.tasks(), args); } catch (InvocationTargetException error) { throw error.getCause(); }
             });
             context = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class}, (proxy, method, args) -> switch (method.getName()) {
                 case "ai" -> ai; case "interaction" -> host; case "tasks" -> tasks;
+                case "db" -> dispatchDatabase(base.db());
                 default -> { try { yield method.invoke(base, args); } catch (InvocationTargetException error) { throw error.getCause(); } }
             });
             service = new DeploymentApplicationsService(context, DeploymentApplicationsService.AgentManagementPolicy.INDEPENDENT_APP);
+        }
+
+        private void reconcileFailure(TaskContext task) throws ApiException {
+            recoveredFailure.set(new DeploymentApplicationsService(context).reconcile(actual.tasks().inspect(task), task));
+            recoveredEntry.set(new DeploymentManagementActionLog(actual).find(task).orElseThrow());
+        }
+
+        private gold.debug.windowstolinux.appapi.db.ModDatabase dispatchDatabase(gold.debug.windowstolinux.appapi.db.ModDatabase database) {
+            return (gold.debug.windowstolinux.appapi.db.ModDatabase) Proxy.newProxyInstance(database.getClass().getClassLoader(),
+                new Class<?>[]{gold.debug.windowstolinux.appapi.db.ModDatabase.class}, (proxy, method, args) -> {
+                    Object value;
+                    try { value = method.invoke(database, args); } catch (InvocationTargetException error) { throw error.getCause(); }
+                    if (!(value instanceof java.sql.Connection connection)) return value;
+                    return Proxy.newProxyInstance(java.sql.Connection.class.getClassLoader(), new Class<?>[]{java.sql.Connection.class},
+                        (connectionProxy, operation, values) -> {
+                            Object prepared;
+                            try { prepared = operation.invoke(connection, values); } catch (InvocationTargetException error) { throw error.getCause(); }
+                            if (!operation.getName().equals("prepareStatement") || !(prepared instanceof java.sql.PreparedStatement statement)
+                                || !((String) values[0]).startsWith("UPDATE deployment_management_operation SET phase=?")) return prepared;
+                            var nextPhase = new AtomicReference<String>();
+                            return Proxy.newProxyInstance(java.sql.PreparedStatement.class.getClassLoader(), new Class<?>[]{java.sql.PreparedStatement.class},
+                                (statementProxy, dispatch, inputs) -> {
+                                    if (dispatch.getName().equals("setString") && inputs[0].equals(1)) nextPhase.set((String) inputs[1]);
+                                    boolean inject = dispatch.getName().equals("executeUpdate") && "EFFECTING".equals(nextPhase.get())
+                                        && effectPending.get() && dispatchScenario != null && dispatchInjected.compareAndSet(false, true);
+                                    if (inject && dispatchScenario.equals("CAS_CONFLICT")) {
+                                        var task = lastEffectTask.get(); var entry = new DeploymentManagementActionLog(actual).find(task).orElseThrow();
+                                        var changed = DeploymentManagementActionLog.copy(entry).put("interrupted", true);
+                                        try (var concurrent = database.openConnection(task); var update = concurrent.prepareStatement(
+                                            "UPDATE deployment_management_operation SET component_state=? WHERE operation_id=?")) {
+                                            update.setBytes(1, new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsBytes(changed));
+                                            update.setObject(2, entry.id()); assertEquals(1, update.executeUpdate());
+                                        }
+                                    }
+                                    Object changed;
+                                    try { changed = dispatch.invoke(statement, inputs); } catch (InvocationTargetException error) { throw error.getCause(); }
+                                    if (inject) {
+                                        if (dispatchScenario.equals("COMMIT_UNKNOWN")) throw new java.sql.SQLException("Controlled unknown after confirmed database update");
+                                        if (dispatchScenario.equals("CANCEL_AFTER")) {
+                                            actionHandle.get().requestCancel(); cancellationObserved.set(lastEffectTask.get().cancelToken().requested());
+                                        }
+                                        if (dispatchScenario.equals("IDENTITY_AFTER")) changeLocalOwnership(actual, lastEffectTask.get());
+                                        if (dispatchScenario.equals("ROUTE_AFTER")) modelRevision = "f".repeat(64);
+                                    }
+                                    return changed;
+                                });
+                        });
+                });
         }
 
         @SuppressWarnings("unchecked")
@@ -613,6 +864,20 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
         }
 
         void assertNoFailure() { if (failure.get() != null) throw new AssertionError("Controlled real management task failed", failure.get()); }
+    }
+
+    private static List<String> literalArguments(String script) {
+        var args = new ArrayList<String>();
+        var matcher = Pattern.compile("'([^']*)'").matcher(DeploymentManagedHelperBundle.verifiedBody(script));
+        while (matcher.find()) args.add(matcher.group(1));
+        return args;
+    }
+
+    private static void changeLocalOwnership(ModContext context, TaskContext task) throws Exception {
+        try (var connection = context.db().openConnection(task); var update = connection.prepareStatement(
+            "UPDATE deployment_unit SET ownership_manifest_sha256=? WHERE deployment_unit_id='worker'")) {
+            update.setString(1, "f".repeat(64)); assertEquals(1, update.executeUpdate());
+        }
     }
 
     /** Runs actual management evidence without inventing an unknown final acknowledgement. / 执行实际管理依据，不捏造未知最终确认。
@@ -754,6 +1019,7 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
                 if (args[2].startsWith("CLEANUP_")) probe.managedCleanup(args[2].substring(8));
                 else if (args[2].equals("APP_REVIEW")) probe.managedAppReview();
                 else if (args[2].equals("START_OBSERVE_DENIED")) probe.managedPostStartObservationDenial();
+                else if (args[2].startsWith("DISPATCH_")) probe.managedDispatchFailure(args[2].substring(9));
                 else probe.managedRecovery(args[2]);
                 System.exit(0);
             } catch (Throwable failure) { failure.printStackTrace(); System.exit(1); }
@@ -867,6 +1133,7 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
         final AtomicInteger sends = new AtomicInteger();
         final Map<UUID, CommandRequest> grants = new HashMap<>();
         final Map<String, Boolean> enabled = new HashMap<>();
+        ManagedBeforeExecute beforeExecute;
 
         Peer(ScenarioType scenario) {
             this.scenario = scenario;
@@ -898,6 +1165,7 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
                             assertSame(args[0], grants.remove(((ApprovalGrant) args[1]).id()), "One fresh reviewed grant per exact send");
                             sends.incrementAndGet();
                         }
+                        if (beforeExecute != null) beforeExecute.check(task, (CommandRequest) args[0]);
                         return command((CommandRequest) args[0]);
                     }
                     throw new AssertionError(method.getName());
@@ -988,5 +1256,10 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
             return new OperationResult<>(TaskResult.SUCCEEDED,
                 Optional.of(new CommandResult(Optional.of(exit), text, "", false)), Optional.empty());
         }
+    }
+
+    @FunctionalInterface
+    private interface ManagedBeforeExecute {
+        void check(TaskContext task, CommandRequest request) throws Exception;
     }
 }

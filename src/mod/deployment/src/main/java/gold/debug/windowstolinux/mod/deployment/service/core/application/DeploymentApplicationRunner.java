@@ -515,23 +515,91 @@ public final class DeploymentApplicationRunner {
                     return unknown("DEPLOYMENT_LIFECYCLE_CURRENT_RELEASE_CHANGED");
                 }
             }
-            var facts = DeploymentManagementActionLog.copy(entry);
-            facts.withObject("components").withObject(component.componentId()).put("attempted", true).put("verb", verb)
-                .put("verified", false);
-            entry = journal.advance(entry, "EFFECTING", facts, task);
+            var expected = entry;
+            var endpoint = currentTarget(data.snapshot().application().server(), task);
+            var registered = new DeploymentManagementActionLog.Entry[1];
+            boolean[] entered = {false};
             var result = channel.lifecycle(component.unit(), component.reviewedRuntime(), verb,
                 data.release().bindings().stream().filter(value -> value.unitId().equals(component.unit().id()))
-                    .findFirst().orElseThrow().releaseSha256());
+                    .findFirst().orElseThrow().releaseSha256(), () -> {
+                        if (entered[0]) throw problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_LIFECYCLE_ALREADY_ATTEMPTED");
+                        entered[0] = true;
+                        verifyLifecycleBinding(data, expected, endpoint, task);
+                        requireUnattemptedLifecycle(data, expected, component.componentId(), verb);
+                        var attempted = DeploymentManagementActionLog.copy(expected);
+                        attempted.withObject("components").withObject(component.componentId())
+                            .put("attempted", true).put("verb", verb).put("verified", false);
+                        registered[0] = journal.advance(expected, "EFFECTING", attempted, task);
+                        verifyLifecycleBinding(data, registered[0], endpoint, task);
+                    });
+            if (registered[0] != null) entry = registered[0];
             if (result.outcome() != TaskResult.SUCCEEDED) {
                 journal.advance(entry, "UNKNOWN",
                     DeploymentManagementActionLog.copy(entry).put("effectOutcome", result.outcome().name()), task);
                 return unknown("DEPLOYMENT_LIFECYCLE_PARTIAL_OR_UNCONFIRMED");
             }
-            facts = DeploymentManagementActionLog.copy(entry);
+            if (registered[0] == null)
+                return unknown("DEPLOYMENT_LIFECYCLE_ATTEMPT_UNCONFIRMED");
+            var facts = DeploymentManagementActionLog.copy(entry);
             facts.withObject("components").withObject(component.componentId()).put("verified", true);
             entry = journal.advance(entry, "EFFECTING", facts, task);
         }
         return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+    }
+
+    /** Revalidates only local original identity around the durable pre-dispatch transition. / 围绕持久发送前转换仅复核本地原身份。 */
+    private void verifyLifecycleBinding(ApplicationFacts data, DeploymentManagementActionLog.Entry expected,
+                                        RemoteTarget endpoint, TaskContext task) throws ApiException {
+        if (task.cancelToken().requested() || Thread.currentThread().isInterrupted())
+            throw problem(ProblemCode.CANCELLED, "DEPLOYMENT_LIFECYCLE_INTERRUPTED");
+        var current = reader.find(data.snapshot().application(), task);
+        if (!current.snapshot().revisionSha256().equals(expected.currentRevision())
+            || !current.snapshot().ownershipSha256().equals(data.snapshot().ownershipSha256())
+            || !originalBindings(current, expected) || !current.graph().equals(data.graph())
+            || !current.release().bindings().equals(data.release().bindings()))
+            throw problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_MANAGEMENT_BINDINGS_CHANGED");
+        var original = DeploymentManagementActionLog.target(expected, task);
+        var actual = currentTarget(data.snapshot().application().server(), task);
+        if (!endpoint.equals(actual) || !original.host().equals(actual.host()) || original.port() != actual.port()
+            || !original.username().equals(actual.username())
+            || actual.fingerprint().isPresent() && !actual.fingerprint().equals(original.fingerprint()))
+            throw problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_LIFECYCLE_ORIGINAL_TARGET_UNCONFIRMED");
+        var policy = DeploymentManagementActionLog.review(expected);
+        if (policy.isPresent())
+            gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentFixedCommandApproval.requireRoute(
+                context, task, policy.orElseThrow().configurationRevision());
+        if (task.cancelToken().requested() || Thread.currentThread().isInterrupted())
+            throw problem(ProblemCode.CANCELLED, "DEPLOYMENT_LIFECYCLE_INTERRUPTED");
+    }
+
+    /** Admits a new verb once; only this uninterrupted RESTART may follow its verified stop phase. / 新动作仅准入一次，只有本次连续重启可接续已核实停止阶段。 */
+    private static void requireUnattemptedLifecycle(ApplicationFacts data, DeploymentManagementActionLog.Entry expected,
+                                                     String componentId, String verb) throws ApiException {
+        if (!Set.of("REVIEWED", "EFFECTING").contains(expected.phase()))
+            throw problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_LIFECYCLE_ALREADY_ATTEMPTED");
+        var selected = DeploymentManagementActionLog.selected(expected);
+        if (selected.isPresent() && !selected.orElseThrow().equals(componentId))
+            throw problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_MANAGEMENT_COMPONENT_CHANGED");
+        boolean restartStart = expected.action().equals("LIFECYCLE_RESTART") && verb.equals("start");
+        var part = expected.facts().path("components").path(componentId);
+        if (!part.isObject() || !part.path("attempted").isBoolean() || !part.path("verified").isBoolean())
+            throw problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_MANAGEMENT_COMPONENT_CHANGED");
+        if (restartStart ? !part.path("attempted").asBoolean() || !part.path("verified").asBoolean()
+            || !part.path("verb").asText().equals("stop")
+            : part.path("attempted").asBoolean() || part.path("verified").asBoolean()
+                || !part.path("verb").isNull() && !part.path("verb").isMissingNode())
+            throw problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_LIFECYCLE_ALREADY_ATTEMPTED");
+        var action = DeploymentLifecycleAction.valueOf(expected.action().substring("LIFECYCLE_".length()));
+        if (action == DeploymentLifecycleAction.RESTART ? !Set.of("stop", "start").contains(verb) : !action.verb().equals(verb))
+            throw problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_LIFECYCLE_ORIGINAL_INTENT_CHANGED");
+        for (var component : data.graph().components()) {
+            if (!component.runtime().workload().supportsLifecycle()) continue;
+            var other = expected.facts().path("components").path(component.componentId());
+            if (other.path("attempted").asBoolean() && !other.path("verified").asBoolean()
+                || restartStart && (!other.path("attempted").asBoolean() || !other.path("verified").asBoolean()
+                    || !Set.of("stop", "start").contains(other.path("verb").asText())))
+                throw problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_LIFECYCLE_PREVIOUS_EFFECT_UNCONFIRMED");
+        }
     }
 
     /** Observes all units in one authenticated session and checks whole-application health. / 在一份认证会话中观察所有单元并检查整应用健康。
