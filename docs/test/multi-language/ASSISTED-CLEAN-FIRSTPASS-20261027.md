@@ -1,6 +1,8 @@
 # 2026-10-27 清理服务器后的 ASSISTED 复验
 
-本轮进行中，服务器清场及独立复查已完成。task-board、asset-lending、survey-scoring、directory-diff首次完整通过；file-transfer、csv-inspector、log-analyzer首次NOT_PASS。FTP原业务START任务已核对为ENDED/SUCCEEDED，CSV原业务RESTART任务已核对为ENDED/FAILED，随后均由产品正常停止且禁自启；原失败和UNKNOWN历史保留，恢复不替代完整业务重试。2026-10-28继续后，Log Analyzer在候选传输附近进入UNKNOWN，底层异常未被保留；Binary Inspector尚未运行，三项完整重试仍待执行。不能称为首次八项通过，上一轮结果与本轮不合并。
+本轮于2026-10-28完成：八项目首次5项完整通过、3项NOT_PASS；修复已确认问题后，三项分别以新任务完成完整重试，八项目均有完整PASS，共11次项目尝试。FTP原业务START任务核对为ENDED/SUCCEEDED，CSV原业务RESTART及Log原部署任务均核对为ENDED/FAILED，原失败和UNKNOWN历史保留；恢复不替代完整重试，也不把本轮改写为首次八项通过。上一轮结果不合并。
+
+五个网站在各自最终产品收尾时均确认STOPPED/DISABLED，三个按需CLI确认INSTALLED/NOT_APPLICABLE；驱动正常quit/退出0，自有验证进程0，驱动临时目录已清理。CSV首次SSH断连和Log首次候选阶段异常均未在完整重试中复现，底层根因仍未确认；诊断增强不等于修复这些未证实的原因。
 
 ## 执行边界
 
@@ -22,9 +24,11 @@
 
 夹具已将结果断言移至宿主回调外，并分别约束只读与实际清理的执行等待。清场程序首轮本地6项为3通过、3失败、0skip；失败是Windows路径及POSIX信号mock适配，原日志/JUnit保留。修正后仅重跑3个失败及直接受影响的3个方法，6/0/0/0skip通过；结合首轮未受影响的计划篡改用例，7个直接场景均有通过证据。随后host-plan-02由已修复夹具正常记录失败并退出Maven1，没有再挂起；APT模拟发现将连带移除ubuntu-server元包，守卫拒绝，仍无删除。调整为保留Git/Git文档及Ubuntu服务器元包，其余编译器、SDK、CMake/Ninja和开发包删除范围不变。该修正的两个直接受影响方法2/0/0/0skip通过，未重复其他已过组；后续实机计划及清场结果见下文。
 
-## 本轮部署结果
+## 本轮首次结果
 
 首次两个项目均以干净工作树、本地提交 `6723f1c1` 启动。后续出现另一项论文任务的未提交改动，本任务保留且不暂存；后续启动记录会据实保留工作树状态。
+
+八个首次尝试跨越 `6723f1c1`、`bbcca259`、`4c089215`、`f9c8613c` 四个提交；首轮统计表示每个项目本轮的第一次尝试，不表示同一冻结版本的一轮8/8。论文变动出现在前两项之后，启动记录中的工作树状态保留，不称全程Git干净。
 
 | 项目 | 首次结果 | 实际验证边界 |
 | --- | --- | --- |
@@ -35,7 +39,7 @@
 | survey-scoring | PASS | JUnit1项、0失败/错误/跳过，2680.077秒，Maven0；真实HTTP、跨语言及重启持久化通过，额外产品STOP确认STOPPED/DISABLED |
 | log-analyzer | NOT_PASS | JUnit1失败、0错误/跳过，620.991秒，Maven1；候选创建成功，传输审批APPROVE后原root UNKNOWN；无构建、发布或完整业务通过证明 |
 | directory-diff | PASS | JUnit1项、0失败/错误/跳过，436.482秒，Maven0；原COMMAND健康探测与预期业务输出、INSTALLED/NOT_APPLICABLE及真实用法导出通过 |
-| binary-inspector | 未运行 | 尚无本轮结果 |
+| binary-inspector | PASS | JUnit1项、0失败/错误/跳过，441.577秒，Maven0；原COMMAND健康探测与预期业务输出、INSTALLED/NOT_APPLICABLE及真实用法导出通过 |
 
 task-board原部署任务为 `a6dacc81-30c5-4f38-ae40-65d15414096f`，应用 `wtl-assisted-task-board-1dw2zdba4o`，修订 `09bfcd2282557b0f505756d0ea71f7ee2c1d91ece1680a72f049c19822f2fefe`。已知监测Token为部署106006、审批895232，共1001238，93个generation attempt id；四次能力探测用量未知且未计入，不是完整账单。
 
@@ -57,6 +61,34 @@ survey-scoring原部署任务 `7066e36b-bda6-4751-8f3e-b8b4b859c2dd`，应用 `w
 
 directory-diff原部署任务 `fe90d43f-d5de-466f-9d47-288158c46a21`，应用 `wtl-assisted-directory-diff-2wl4v72d8`，修订 `b3744be75dfe4157bdba7f73d0f67c3e50a98acb7c0f17a8eeb5bc4b0016d1ba`。已知监测Token382370、39个generation attempt id，能力探测未计入。该项与Log Analyzer首次均在正式代码提交 `4c089215` 上启动，工作树如实保留论文任务的外部改动。
 
+binary-inspector原部署任务 `2b1b6130-abf6-4abb-a21c-1f134c95486a`，应用 `wtl-assisted-binary-inspector-3cepycql8`，修订 `c8fefdfca64576599606a20dd9c6e095f7a74acf700abc7fa38feacc5f96ed22`。已知监测Token398196、44个generation attempt id，能力探测未计入；以 `f9c8613c` 启动，最终CLI状态与交付回执一致。
+
+## 完整新任务重试与收尾
+
+以下三项均沿用原LOW/LOW、1500000已知Token监督阈值、90分钟部署主任务等待及原业务负载，使用新隔离状态和新root。不是重放原UNKNOWN，也不是把原任务核对当成业务重试。
+
+| run | 新部署root | JUnit秒数 | 已知监测Token | 最终结果 |
+| --- | --- | --- | --- | --- |
+| log-analyzer-retry-02 | e65e6ce6-7881-4cbd-99da-363c3e07e7e6 | 400.844 | 350848 | 1项PASS、Maven0；COMMAND业务与用法导出，INSTALLED/NOT_APPLICABLE |
+| csv-inspector-retry-02 | 99512e08-5227-4bd6-9d65-42ee3b05add2 | 1234.172 | 738673 | 1项PASS、Maven0；HTTP/跨语言/重启/持久化，额外STOP退出0、STOPPED/DISABLED |
+| file-transfer-retry-02 | 27e09727-8f3f-4e1a-bc40-0075debc266c | 2731.861 | 1116368 | 1项PASS、Maven0；完整V2业务，额外STOP退出0、STOPPED/DISABLED |
+
+三次重试均为1项测试、0失败/错误/跳过，正式代码为 `f9c8613c`，论文外部变动保留。最新应用与修订来自真实交付及最终收尾回执：
+
+| 项目 | 应用 | 修订SHA256 |
+| --- | --- | --- |
+| log-analyzer | wtl-assisted-log-analyzer-3itmz7l64 | ae3d921358e7b8aabd7aeaae633fdbc924b3013818cdec6e70711a88c63ded86 |
+| csv-inspector | wtl-assisted-csv-inspector-3od20pcco | e62390f33848b11189bc822e7b7efa0d1c26a0ea395e4d70c23e3c5f7bff9b95 |
+| file-transfer | wtl-assisted-file-transfer-461b1m8bg | 0e1ce6570d2bd4bcfd537a1d5886c75a202f3b563a661ad34996ae04fefe46d3 |
+
+FTP重试保持两份64MiB内容、1MiB分块、上传重启续传、重复/冲突/未完成请求409、10次并发完成仅一个版本、取消持久化及错误SHA422。后端单独STOP后，程序确认网关DEGRADED及真实502；新START任务 `782f9f7c-e400-443f-aac5-1c3ef91412d9` 返回SUCCEEDED，应用DEGRADED→RUNNING，原身份与其他组件raw runtime/autostart保持。START后的观察及健康检查通过，覆盖了首次审批混淆发生的环节；原 `9ecd9652-529a-4040-8645-1904a490f262` 没有重放。
+
+五次完整下载均实收67108864字节且SHA一致，按旧版、旧版、新版、恢复后旧版、恢复后新版顺序验证；耗时分别87559、92447、102225、132784、60426毫秒，共335544320字节。旧版本 `1aeec89b3b7b2ae415c977c1dc365a99`、新版本 `30cc3d2756ab822f39a6a6cfd41d0b09` 的BEGIN/BODY_RETURNED/VERIFIED逐条匹配，没有重发或降低负载。本次速度改善不作已证性能根因修复结论。
+
+`final-matrix.json`由原始launch、JUnit、退出码、真实交付和STOP回执生成，保留11次尝试及首次5/8、最终八项目各有PASS的边界；`file-transfer-retry-02-v2-receipts.json`独立核对完整下载顺序和字节数。11次项目尝试合计JUnit11项、3失败、0错误/跳过，21198.197秒；8个PASS中包含3次完整重试。原任务核对、清场预检及本地定点测试另列，不计入首次分母。
+
+项目尝试已知监测Token合计8102655；每项四个能力探测任务的用量及物理调用数未知，原任务恢复等额外用量也未并入，这不是完整账单。
+
 ## Log Analyzer 候选阶段未知结果
 
 `log-analyzer-first-01` 原部署任务为 `b2758e01-90d5-47ad-9c51-2e936ad3318a`，隔离状态 `assisted-live-log-analyzer-2nngkh9b4`，应用 `wtl-assisted-log-analyzer-2nngm88d0`。程序自行补充CMake/Ninja并完成工具链绑定，候选创建和查询exit0；候选上传审批APPROVE后root进入UNKNOWN。已知监测Token328989、40个generation attempt id，能力探测未计入。
@@ -67,7 +99,9 @@ directory-diff原部署任务 `fe90d43f-d5de-466f-9d47-288158c46a21`，应用 `w
 
 已补充单应用异常及非成功传输结果的尽力诊断：异常路径只保留类型、直接cause类型及受限错误码，完全不读取异常消息或载荷；传输结果复用既有白名单元数据。日志运行时异常不改变原UNKNOWN及会话关闭，原审批、派发和重试行为不变。这是证据缺口修复，不宣称原传输故障已解决。
 
-`single-diagnostics-local-01`限定8项，5通过、3失败、0错误/跳过；3个新反例均在受控upload前失败。补充白名单诊断后的`local-02`仅重跑这3项，仍失败，确认最后动作是build-preflight，异常为AssertionError。查明受控SSH夹具仍匹配旧`prepare`，而产品已发送`prepare-diagnosed`；只更新夹具并严格核对新协议、原server/fingerprint/grant，不放松上传次数、UNKNOWN及不重放断言。`local-03`仅运行这3个失败方法及1个受直接影响的正常成功方法，4项全部通过、0错误/跳过，JUnit26.37秒、Maven0。此前5项未受影响的通过结果保留，共9个直接场景有通过证据，自有Java均已退出。原任务尚未核对，完整新任务复验也未执行。
+`single-diagnostics-local-01`限定8项，5通过、3失败、0错误/跳过；3个新反例均在受控upload前失败。补充白名单诊断后的`local-02`仅重跑这3项，仍失败，确认最后动作是build-preflight，异常为AssertionError。查明受控SSH夹具仍匹配旧`prepare`，而产品已发送`prepare-diagnosed`；只更新夹具并严格核对新协议、原server/fingerprint/grant，不放松上传次数、UNKNOWN及不重放断言。`local-03`仅运行这3个失败方法及1个受直接影响的正常成功方法，4项全部通过、0错误/跳过，JUnit26.367秒、Maven0。此前5项未受影响的通过结果保留，共9个直接场景有通过证据，自有Java均已退出。
+
+随后 `log-analyzer-first-01-recovery-01` 通过产品精确核对原root `b2758e01-90d5-47ad-9c51-2e936ad3318a`，JUnit1项通过、36.794秒、退出0；原root当前ENDED/FAILED，公开事件DEPLOYMENT_PUBLICATION_NOT_STARTED、blockers=[]。这不是原部署成功。之后完整新任务 `log-analyzer-retry-02` 通过，原候选阶段异常未复现，底层cause仍未知；不把夹具协议修正、日志增强或重试成功当成已证明的远端根因修复。
 
 ## CSV 业务重启前的 SSH 未确认
 
@@ -81,7 +115,7 @@ Astra对这个具体传输问题做了只读源码核查：未找到execute/clos
 
 同时纠正管理审批SYSTEM说明：health可能执行准入/清理 bookkeeping或应用代码，必须按完整可达合同审核，不能按health标签当纯只读或自动重试；attempted只记录尝试，不能证明已派发或成功。`management-step-local-03`仅复验直接相关的正常组件停启与START后观测拒绝两项，均通过、0失败/错误/跳过；未重复其它已过组。
 
-此后 `csv-inspector-first-01-lifecycle-recovery-01` 经产品精确核对原业务task `64d81e3a-24be-4118-a3a3-5de9276b225f`，JUnit1项通过、171.565秒、Maven0；原task当前ENDED/FAILED，事件为DEPLOYMENT_MANAGEMENT_NOT_STARTED。核对后只新增两次STOP，没有重放START/RESTART，原应用最终STOPPED/DISABLED。原首次NOT_PASS及UNKNOWN历史保留，这次核对未证明完整CSV业务通过；完整新任务复验仍待执行。SSH断连根因仍未确认，诊断增强不等于修复SSH断连。
+此后 `csv-inspector-first-01-lifecycle-recovery-01` 经产品精确核对原业务task `64d81e3a-24be-4118-a3a3-5de9276b225f`，JUnit1项通过、171.565秒、Maven0；原task当前ENDED/FAILED，事件为DEPLOYMENT_MANAGEMENT_NOT_STARTED。核对后只新增两次STOP，没有重放START/RESTART，原应用最终STOPPED/DISABLED。原首次NOT_PASS及UNKNOWN历史保留，这次核对未证明完整CSV业务通过。之后单列的完整新任务复验已通过，首次SSH断连未复现，根因仍未确认；诊断增强不等于修复SSH断连。
 
 ## 清场执行与独立复查
 
@@ -100,3 +134,11 @@ Astra对这个具体传输问题做了只读源码核查：未找到execute/clos
 本地58个隔离/辅助目录逐项分类后，守卫程序精确删除前轮8个完整成功库、4个完成观察库及4个完成清场核验库，共16目录、267文件、14933295文件字节；当时独立复核42个保护目录均存在。随后第5次下载观察库清理1目录、3文件、270694文件字节，两个CSV SSH元数据观察库再清理2目录、6文件、541388文件字节；暂停前累计19目录、276文件、15745377文件字节。各阶段原始日志、JUnit及清理回执保留；当前部署库、认证源、失败/UNKNOWN原库、备份控制库和共享目录未删除。这些数字不包括暂停时另删的驱动临时目录 `tmp/clean27`。
 
 删除前检查精确绝对路径、祖先及子树无重解析、文件独占与所属进程退出；没有打开当时活动的file-transfer库，也没有访问远端。四个主库根文件长度、mtime及SHA前后不变。首次外层PowerShell回执因正常脚本返回后的LASTEXITCODE为空而报告exit2，实际16项均已删除；没有重删，独立复核确认16项均不存在、42保护目录完整，Verified=true/exit0，原回执保留。
+
+## 最终收尾与验证范围
+
+驱动收到quit后输出RUNNER_EXIT、退出0。按PID与创建时间核对本轮Python28296及最后收尾Java18368均已退出，范围内验证进程0。绝对路径、祖先与子树无重解析、文件独占检查通过后，删除本任务 `tmp/clean27` 的2个文件、273408文件字节；未终止其它进程，没有追加远端命令。数据库19目录清理与此次驱动临时文件清理分开计数。
+
+本轮代码修复已分阶段本地提交，最新源码修复为 `f9c8613c`，最终报告另作本地提交；未推送，论文外部未完成变动保留。Sol执行例行实施与证据核查，Astra仅参与此前具体SSH异常的有界困难判断，没有将其诊断意见表述为已证根因。
+
+范围为选定八个ASSISTED项目的真实模型/SSH/程序部署和代码业务验收，以及所列直接定点验证；没有真实界面、浏览器、全模块或全项目测试。服务器清场不是重装操作系统，最终状态依据各项目产品收尾回执；保留旧失败、UNKNOWN、原状态和恢复证据，未做历史“全成功”改写。
