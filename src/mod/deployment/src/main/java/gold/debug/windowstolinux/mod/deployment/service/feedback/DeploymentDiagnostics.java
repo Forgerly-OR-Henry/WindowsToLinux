@@ -200,6 +200,26 @@ public final class DeploymentDiagnostics {
             agentReason(reason), Optional.empty());
     }
 
+    /** Retains exception identity without reading arbitrary provider messages or payloads. / 保留异常身份，不读取任意提供方消息或载荷。 */
+    public static void operationFailureMetadata(ModContext context, TaskContext task, Throwable failure) {
+        try {
+            var reason = new StringBuilder("exceptionType=").append(failure.getClass().getName());
+            var cause = failure.getCause();
+            if (cause != null)
+                reason.append(" causeType=").append(cause.getClass().getName());
+            if (failure instanceof ApiException api) {
+                reason.append(" problemCode=").append(api.problem().code());
+                String event = api.problem().eventCode();
+                if (event.matches("(?:SFTP|SSH|DEPLOYMENT|TASK|FILE)_[A-Z0-9_]{1,96}"))
+                    reason.append(" problemEvent=").append(event);
+            }
+            new DeploymentDiagnostics(context).event(task.id(), LogLevel.ERROR, "DEPLOYMENT_OPERATION_FAILURE",
+                reason.toString(), Optional.empty());
+        } catch (RuntimeException unavailable) {
+            // Optional evidence must not replace the original uncertainty or bypass session closure.
+        }
+    }
+
     /** Keeps the actual independent denial bounded and redacted without granting permission. */
     public static void agentReviewDenied(ModContext context, TaskContext task, String type, String action, String reason) {
         if (!java.util.Set.of("COMMAND", "PATCH").contains(type) || !action.matches("[0-9a-f]{64}")) return;

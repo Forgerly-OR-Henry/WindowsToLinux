@@ -218,9 +218,11 @@ public class DeploymentStandardSinglePublishRunner {
                 } else {
                     build = new OperationResult<>(prepared.outcome(), Optional.empty(), prepared.problem());
                 }
-                if (build.outcome() != TaskResult.SUCCEEDED)
+                if (build.outcome() != TaskResult.SUCCEEDED) {
+                    gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.candidateTransferFailure(context, task, build);
                     new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(context)
                         .effectResult(task.id(), build);
+                }
                 if (build.outcome() == TaskResult.SUCCEEDED)
                     references.checkpoint(task);
                 result = build.outcome() == TaskResult.SUCCEEDED
@@ -229,6 +231,7 @@ public class DeploymentStandardSinglePublishRunner {
                     : unknown("DEPLOYMENT_CANDIDATE_NOT_CONFIRMED");
             } else return assisted(plan, unit, credentials, task, session, journal, correction.orElseThrow());
         } catch (Exception | LinkageError | AssertionError uncertain) {
+            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.operationFailureMetadata(context, task, uncertain);
             result = unknown("DEPLOYMENT_PUBLICATION_SESSION_UNCONFIRMED");
         }
         try {

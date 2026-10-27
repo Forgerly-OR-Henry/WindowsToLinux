@@ -45,6 +45,8 @@ import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
 import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.log.LogEvent;
+import gold.debug.windowstolinux.appapi.task.log.LogService;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
@@ -101,6 +103,7 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.c
 import gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentDatabasePlanActionLog;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentNativeDatabaseActionLog;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentNativeDatabaseSetup;
+import gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.plan.DeploymentReviewedReleaseIdentity;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.policy.DeploymentPublishPolicyFacts;
 import org.junit.jupiter.api.Test;
@@ -119,11 +122,14 @@ public class DeploymentStandardSinglePublishRunnerTest extends DeploymentRuntime
 
     /** Three distinct original remote outcomes. / 三种不同的原远端结果。 */
     private enum ScenarioType {
-        SUCCESS, SECOND_CONFIG_UNKNOWN, PUBLISH_UNKNOWN, HEALTH_FAILED_ROLLBACK, HEALTH_FAILED_ROLLBACK_UNSUPPORTED_MODE, HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN, ROLLBACK_UNKNOWN, RETAIN_UNKNOWN, MAINTENANCE_UNKNOWN, MAINTENANCE_DENIED, COMMIT_WINDOW, PURPOSE_PRESENT, PURPOSE_UNKNOWN, PURPOSE_MISMATCH
+        SUCCESS, SECOND_CONFIG_UNKNOWN, PUBLISH_UNKNOWN, HEALTH_FAILED_ROLLBACK, HEALTH_FAILED_ROLLBACK_UNSUPPORTED_MODE, HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN, ROLLBACK_UNKNOWN, RETAIN_UNKNOWN, MAINTENANCE_UNKNOWN, MAINTENANCE_DENIED, COMMIT_WINDOW, PURPOSE_PRESENT, PURPOSE_UNKNOWN, PURPOSE_MISMATCH, UPLOAD_EXCEPTION, UPLOAD_FAILURE, UPLOAD_EXCEPTION_LOG_UNAVAILABLE
     }
 
     /** Actual host-reviewed grants. / 宿主实际审核的授权。 */
     private final Map<ApprovalGrant, ActionIntent> grants = new ConcurrentHashMap<>();
+
+    private final AtomicInteger sessionCloseCalls = new AtomicInteger();
+    private final AtomicInteger failedOperationDiagnosticWrites = new AtomicInteger();
 
     /** Optional controlled loopback port for a later cross-process recovery probe. / 后续跨进程恢复探针可用的受控回环端口。 */
     private int recoveryPort = 22;
@@ -1134,6 +1140,21 @@ public class DeploymentStandardSinglePublishRunnerTest extends DeploymentRuntime
         }
     }
 
+    @Test
+    void uploadExceptionRetainsOriginalCauseAndClosesSession() throws Exception {
+        unknownPublicationRetainsOriginalEvidenceWithoutNormalShutdown(ScenarioType.UPLOAD_EXCEPTION);
+    }
+
+    @Test
+    void uploadFailureRetainsOnlySafeMetadataBeforeUnknown() throws Exception {
+        unknownPublicationRetainsOriginalEvidenceWithoutNormalShutdown(ScenarioType.UPLOAD_FAILURE);
+    }
+
+    @Test
+    void diagnosticRuntimeFailurePreservesUploadUnknownAndSessionClose() throws Exception {
+        unknownPublicationRetainsOriginalEvidenceWithoutNormalShutdown(ScenarioType.UPLOAD_EXCEPTION_LOG_UNAVAILABLE);
+    }
+
     /** The real static submit path retains its preparation marker and frozen source on an unknown native effect. / 真实静态提交路径遇原生效果未知时保留准备标记及冻结源码。
      * @throws Exception if the isolated original task cannot be observed / 无法观察隔离原任务时 */
     @Test
@@ -1327,7 +1348,19 @@ public class DeploymentStandardSinglePublishRunnerTest extends DeploymentRuntime
                     Thread.sleep(10);
                 assertEquals(TaskState.UNKNOWN, handle.snapshot().state(), handle.snapshot().toString());
                 assertEquals(scenario == ScenarioType.RETAIN_UNKNOWN || scenario == ScenarioType.MAINTENANCE_UNKNOWN || scenario == ScenarioType.MAINTENANCE_DENIED ? 1 : 0, countMod(runtime, "deployment_release"));
-                if (scenario == ScenarioType.COMMIT_WINDOW) {
+                boolean uploadFailure = scenario == ScenarioType.UPLOAD_EXCEPTION || scenario == ScenarioType.UPLOAD_FAILURE
+                    || scenario == ScenarioType.UPLOAD_EXCEPTION_LOG_UNAVAILABLE;
+                if (uploadFailure) {
+                    assertEquals(1, actions.stream().filter("upload"::equals).count(),
+                        uploadDiagnosticSummary(real, handle.id(), actions));
+                    assertEquals(1, sessionCloseCalls.get());
+                    assertFalse(actions.contains("build"), actions.toString());
+                    assertFalse(actions.contains("publish"), actions.toString());
+                    assertFalse(actions.contains("candidate-cleanup"), actions.toString());
+                    assertTrue(pendingCandidate(runtime, handle.id(), candidate.get().candidateId(), "CANDIDATE_MAY_EXIST"));
+                    assertEquals(1, countExecutionOutcome(runtime, "UNKNOWN"));
+                    assertUploadDiagnostic(runtime, real, handle.id(), scenario);
+                } else if (scenario == ScenarioType.COMMIT_WINDOW) {
                     assertEquals(0, countMod(runtime, "deployment_release"));
                     assertTrue(originalCheckpointReleased(runtime, handle.id()));
                     assertEquals(1, countExecutionOutcome(runtime, "UNKNOWN"));
@@ -1374,13 +1407,65 @@ public class DeploymentStandardSinglePublishRunnerTest extends DeploymentRuntime
                     assertEquals(1, countExecutionOutcome(runtime, "FAILED"));
                 }
             }
-            assertEquals(scenario == ScenarioType.SECOND_CONFIG_UNKNOWN ? 0 : 1,
+            assertEquals(Set.of(ScenarioType.SECOND_CONFIG_UNKNOWN, ScenarioType.UPLOAD_EXCEPTION,
+                    ScenarioType.UPLOAD_FAILURE, ScenarioType.UPLOAD_EXCEPTION_LOG_UNAVAILABLE).contains(scenario) ? 0 : 1,
                 actions.stream().filter("publish"::equals).count());
             assertEquals(1, actions.stream().filter("create-candidate"::equals).count());
         } finally {
             if (!interruptedHost)
                 runtime.close();
         }
+    }
+
+    private void assertUploadDiagnostic(PlatformRuntime runtime, ModContext context, UUID taskId, ScenarioType scenario)
+        throws Exception {
+        String expectedResult = scenario == ScenarioType.UPLOAD_FAILURE
+            ? "DEPLOYMENT_CANDIDATE_NOT_CONFIRMED" : "DEPLOYMENT_PUBLICATION_SESSION_UNCONFIRMED";
+        assertTrue(originalTaskDiagnostics(runtime, taskId).contains(expectedResult));
+        var read = new DeploymentDiagnostics(context).read(taskId);
+        assertTrue(read.problem().isEmpty(), read.toString());
+        var events = read.records().stream().map(record -> record.event()).toList();
+        assertFalse(events.toString().contains("opaque-"));
+        if (scenario == ScenarioType.UPLOAD_EXCEPTION_LOG_UNAVAILABLE) {
+            assertEquals(1, failedOperationDiagnosticWrites.get());
+            assertTrue(events.stream().noneMatch(event -> event.eventCode().equals("DEPLOYMENT_OPERATION_FAILURE")));
+            return;
+        }
+        String expectedEvent = scenario == ScenarioType.UPLOAD_FAILURE
+            ? "DEPLOYMENT_CANDIDATE_TRANSFER_FAILURE" : "DEPLOYMENT_OPERATION_FAILURE";
+        var matching = events.stream().filter(event -> event.eventCode().equals(expectedEvent)).toList();
+        assertEquals(1, matching.size(), events.toString());
+        var event = matching.getFirst();
+        assertEquals(Optional.of(taskId), event.taskId());
+        assertEquals(Optional.of(taskId), event.operationId());
+        if (scenario == ScenarioType.UPLOAD_FAILURE) {
+            assertEquals("outcome=FAILED problemCode=IO_FAILURE problemEvent=SFTP_NOT_VERIFIED"
+                + " transferId=11111111-1111-4111-8111-111111111111 phase=remote-validation providerType=SftpException status=3",
+                event.message());
+            assertEquals(Optional.of(TaskResult.FAILED), event.outcome());
+        } else {
+            assertEquals("exceptionType=" + ApiException.class.getName() + " causeType=java.lang.IllegalStateException"
+                + " problemCode=INVALID_INPUT problemEvent=SFTP_APPROVAL", event.message());
+            assertTrue(event.outcome().isEmpty());
+        }
+    }
+
+    private String uploadDiagnosticSummary(ModContext context, UUID taskId, List<String> actions) throws ApiException {
+        var facts = new ArrayList<String>();
+        for (var record : new DeploymentDiagnostics(context).read(taskId).records()) {
+            var event = record.event();
+            if (event.eventCode().equals("DEPLOYMENT_OPERATION_FAILURE")) {
+                var fields = new ArrayList<String>();
+                for (String field : event.message().split(" "))
+                    if (field.matches("(?:exceptionType|causeType)=[A-Za-z_$][A-Za-z0-9_.$]{0,199}")
+                        || field.matches("(?:problemCode|problemEvent)=[A-Z][A-Z0-9_]{0,119}"))
+                        fields.add(field);
+                facts.add(event.eventCode() + ":" + fields);
+            } else if (event.eventCode().equals("DEPLOYMENT_EFFECT_OUTCOME")
+                && event.message().matches("[A-Z][A-Z0-9_]{0,119}"))
+                facts.add(event.eventCode() + ":" + event.message());
+        }
+        return "actions=" + actions + ", closeCalls=" + sessionCloseCalls.get() + ", safeDiagnostics=" + facts;
     }
 
     /** Saves an exact opaque purpose, optionally modeling a migrated unknown-purpose row. / 保存精确不透明用途，并可模拟迁移后用途未知的行。
@@ -1678,6 +1763,20 @@ public class DeploymentStandardSinglePublishRunnerTest extends DeploymentRuntime
             (proxy, method, args) -> {
                 if (method.getName().equals("linux"))
                     return linux;
+                if (method.getName().equals("logs") && scenario == ScenarioType.UPLOAD_EXCEPTION_LOG_UNAVAILABLE)
+                    return Proxy.newProxyInstance(LogService.class.getClassLoader(), new Class<?>[]{LogService.class},
+                        (logProxy, operation, arguments) -> {
+                            if (operation.getName().equals("write") && arguments[1] instanceof LogEvent event
+                                && event.eventCode().equals("DEPLOYMENT_OPERATION_FAILURE")) {
+                                failedOperationDiagnosticWrites.incrementAndGet();
+                                throw new IllegalStateException("opaque-logger-fixture");
+                            }
+                            try {
+                                return operation.invoke(real.logs(), arguments);
+                            } catch (InvocationTargetException failure) {
+                                throw failure.getCause();
+                            }
+                        });
                 if (method.getName().equals("db") && scenario == ScenarioType.COMMIT_WINDOW)
                     return new ModDatabase() {
                         public gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity identity() throws ApiException {
@@ -2112,6 +2211,7 @@ public class DeploymentStandardSinglePublishRunnerTest extends DeploymentRuntime
                 if (method.getName().equals("facts"))
                     return new RemoteFacts("", "", CONTROLLED_FINGERPRINT);
                 if (method.getName().equals("close")) {
+                    sessionCloseCalls.incrementAndGet();
                     callbackEnded.countDown();
                     if (scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN)
                         throw new IllegalStateException("Controlled original session close acknowledgement lost");
@@ -2120,6 +2220,18 @@ public class DeploymentStandardSinglePublishRunnerTest extends DeploymentRuntime
                 assertTrue(grants.containsKey(args[1]), "Original host grant must be passed unchanged");
                 if (method.getName().equals("upload")) {
                     actions.add("upload");
+                    if (scenario == ScenarioType.UPLOAD_EXCEPTION || scenario == ScenarioType.UPLOAD_EXCEPTION_LOG_UNAVAILABLE) {
+                        var failure = new ApiException(new Problem(ProblemCode.INVALID_INPUT, "SFTP_APPROVAL",
+                            "opaque-credential-fixture", Map.of("command", "opaque-payload-fixture"), Optional.empty()));
+                        failure.initCause(new IllegalStateException("opaque-cause-fixture"));
+                        throw failure;
+                    }
+                    if (scenario == ScenarioType.UPLOAD_FAILURE)
+                        return new OperationResult<TransferResult>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
+                            ProblemCode.IO_FAILURE, "SFTP_NOT_VERIFIED", "opaque-transfer-fixture",
+                            Map.of("transferId", "11111111-1111-4111-8111-111111111111", "phase", "remote-validation",
+                                "providerType", "SftpException", "status", "3", "path", "opaque-path-fixture",
+                                "command", "opaque-payload-fixture"), Optional.empty())));
                     var transfer = (TransferRequest) args[0];
                     if (path.get() == null) {
                         path.set(transfer.localPath());
@@ -2152,7 +2264,15 @@ public class DeploymentStandardSinglePublishRunnerTest extends DeploymentRuntime
                     actions.add("build-preflight");
                     return reply("");
                 }
-                if (script.contains("prepare-toolchains 'prepare'")) {
+                if (script.contains("prepare-toolchains 'prepare-diagnosed'")) {
+                    var original = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.decode(command.stdin());
+                    assertEquals(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.command(
+                        "prepare-diagnosed", original), script);
+                    assertEquals("server-publication", original.serverId());
+                    assertEquals(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.sha256(
+                        CONTROLLED_FINGERPRINT.getBytes(StandardCharsets.UTF_8)), original.fingerprintSha256());
+                    assertEquals(grants.get((ApprovalGrant) args[1]).revision(), original.planRevision());
+                    assertEquals(noPortNode ? "NODE" : "GO", original.arguments().get(1));
                     actions.add("prepare-tools");
                     if (noPortNode)
                         return reply(

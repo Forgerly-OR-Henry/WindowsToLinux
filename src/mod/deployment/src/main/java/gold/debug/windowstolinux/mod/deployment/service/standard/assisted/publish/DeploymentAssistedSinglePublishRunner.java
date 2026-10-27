@@ -135,6 +135,7 @@ public final class DeploymentAssistedSinglePublishRunner extends DeploymentStand
                             DeploymentSkillResources.description(DeploymentAssistedSinglePublishRunner.class, "assisted-single-publish-runner-tools.properties", "build"), args -> {
                             DeploymentJsonFields.exact(args, java.util.Set.of());
                             var completed = loop.build(state.prepared, correction, unit, journal, null, () -> "", owned.current(), task);
+                            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.candidateTransferFailure(context, task, completed.result());
                             if (completed.result().outcome() != TaskResult.SUCCEEDED)
                                 return DeploymentModelToolLoop.Feedback.ended(assistedBuildFailure(completed, unit, task, journal, owned));
                             state.current = completed.plan();

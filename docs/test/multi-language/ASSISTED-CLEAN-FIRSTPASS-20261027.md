@@ -1,6 +1,6 @@
 # 2026-10-27 清理服务器后的 ASSISTED 复验
 
-本轮进行中，服务器清场及独立复查已完成。task-board、asset-lending首次完整通过；file-transfer首次在后端START后态观测审批处失败，已修复审批步骤解释并完成原任务核对、正常停止，完整重试待执行。CSV部署成功，但业务RESTART最初健康检查遇SSH无退出回执，原任务UNKNOWN保留，尚未核对或重试。survey-scoring及三个CLI尚未运行，不能称为首次八项通过。上一轮结果与本轮不合并。
+本轮进行中，服务器清场及独立复查已完成。task-board、asset-lending、survey-scoring、directory-diff首次完整通过；file-transfer、csv-inspector、log-analyzer首次NOT_PASS。FTP原业务START任务已核对为ENDED/SUCCEEDED，CSV原业务RESTART任务已核对为ENDED/FAILED，随后均由产品正常停止且禁自启；原失败和UNKNOWN历史保留，恢复不替代完整业务重试。2026-10-28继续后，Log Analyzer在候选传输附近进入UNKNOWN，底层异常未被保留；Binary Inspector尚未运行，三项完整重试仍待执行。不能称为首次八项通过，上一轮结果与本轮不合并。
 
 ## 执行边界
 
@@ -32,7 +32,10 @@
 | file-transfer | NOT_PASS | JUnit1失败、0错误/跳过，8296.934秒，Maven1；部署成功，业务组件START后状态观测审批被拒，首次UNKNOWN历史保留 |
 | asset-lending | PASS | JUnit1项、0失败/错误/跳过，1273.506秒，Maven0；HTTP业务及重启持久化通过，额外产品STOP确认STOPPED/DISABLED |
 | csv-inspector | NOT_PASS | JUnit1失败、0错误/跳过，1094.21秒，Maven1；部署成功，业务RESTART最初health遇SSH未确认退出，原管理journal不存在 |
-| survey-scoring及三个CLI | 未运行 | 尚无本轮结果 |
+| survey-scoring | PASS | JUnit1项、0失败/错误/跳过，2680.077秒，Maven0；真实HTTP、跨语言及重启持久化通过，额外产品STOP确认STOPPED/DISABLED |
+| log-analyzer | NOT_PASS | JUnit1失败、0错误/跳过，620.991秒，Maven1；候选创建成功，传输审批APPROVE后原root UNKNOWN；无构建、发布或完整业务通过证明 |
+| directory-diff | PASS | JUnit1项、0失败/错误/跳过，436.482秒，Maven0；原COMMAND健康探测与预期业务输出、INSTALLED/NOT_APPLICABLE及真实用法导出通过 |
+| binary-inspector | 未运行 | 尚无本轮结果 |
 
 task-board原部署任务为 `a6dacc81-30c5-4f38-ae40-65d15414096f`，应用 `wtl-assisted-task-board-1dw2zdba4o`，修订 `09bfcd2282557b0f505756d0ea71f7ee2c1d91ece1680a72f049c19822f2fefe`。已知监测Token为部署106006、审批895232，共1001238，93个generation attempt id；四次能力探测用量未知且未计入，不是完整账单。
 
@@ -50,6 +53,22 @@ file-transfer原部署任务 `6b4a4305-e1ea-43cc-aac3-86c2a2e82821` 已SUCCEEDED
 
 asset-lending原部署任务 `11dc6f99-1461-44fc-b076-53954c6ee5e7`，应用 `wtl-assisted-asset-lending-1klwdalod0`，修订 `ca9d8a0a7f5b29b5d6b20852f4d0bd5e834bb61a65fe4a5de79b0ee0db0110d8`。已知监测Token759233，86个generation attempt id，能力探测未计入。最终额外产品停止回执及进程exit0完整，assessment为COMPLETE。
 
+survey-scoring原部署任务 `7066e36b-bda6-4751-8f3e-b8b4b859c2dd`，应用 `wtl-assisted-survey-scoring-1m6tme5gh8`，修订 `cccb49cb7fc78edb42e58976d31144a11e5538db525cce47958d568051c53d06`。已知监测Token1223115（部署115624、审批1107491），124个generation attempt id，能力探测未计入。该项及额外产品STOP结束后曾按用户要求正常退出runner和自有进程、清除驱动临时目录；2026-10-28经用户明确继续，恢复同一轮剩余测试，没有重新清场或重跑已完整通过的项目。
+
+directory-diff原部署任务 `fe90d43f-d5de-466f-9d47-288158c46a21`，应用 `wtl-assisted-directory-diff-2wl4v72d8`，修订 `b3744be75dfe4157bdba7f73d0f67c3e50a98acb7c0f17a8eeb5bc4b0016d1ba`。已知监测Token382370、39个generation attempt id，能力探测未计入。该项与Log Analyzer首次均在正式代码提交 `4c089215` 上启动，工作树如实保留论文任务的外部改动。
+
+## Log Analyzer 候选阶段未知结果
+
+`log-analyzer-first-01` 原部署任务为 `b2758e01-90d5-47ad-9c51-2e936ad3318a`，隔离状态 `assisted-live-log-analyzer-2nngkh9b4`，应用 `wtl-assisted-log-analyzer-2nngm88d0`。程序自行补充CMake/Ninja并完成工具链绑定，候选创建和查询exit0；候选上传审批APPROVE后root进入UNKNOWN。已知监测Token328989、40个generation attempt id，能力探测未计入。
+
+针对已退出测试的原库执行三次真正只读查询，根文件SHA、长度及mtime均不变：execution为ASSISTED/EXECUTING/UNKNOWN，business_committed=false、cleanup_complete=false、无receipt，最后未释放的发布检查点为CANDIDATE_MAY_EXIST。全库只有原root任务，没有file_operation或sftp.v1资源。SFTP前置验证发生在journal之前，因此没有该记录不能证明没有打开通道或远端无文件。
+
+当前确认的缺陷是单应用发布宽catch将底层异常折叠为 `DEPLOYMENT_PUBLICATION_SESSION_UNCONFIRMED` 而不保存cause；原日志及platform result只有这一泛化码。不能据此断言SFTP提供方、网络、审批或本地验证中的任一项是原始根因。
+
+已补充单应用异常及非成功传输结果的尽力诊断：异常路径只保留类型、直接cause类型及受限错误码，完全不读取异常消息或载荷；传输结果复用既有白名单元数据。日志运行时异常不改变原UNKNOWN及会话关闭，原审批、派发和重试行为不变。这是证据缺口修复，不宣称原传输故障已解决。
+
+`single-diagnostics-local-01`限定8项，5通过、3失败、0错误/跳过；3个新反例均在受控upload前失败。补充白名单诊断后的`local-02`仅重跑这3项，仍失败，确认最后动作是build-preflight，异常为AssertionError。查明受控SSH夹具仍匹配旧`prepare`，而产品已发送`prepare-diagnosed`；只更新夹具并严格核对新协议、原server/fingerprint/grant，不放松上传次数、UNKNOWN及不重放断言。`local-03`仅运行这3个失败方法及1个受直接影响的正常成功方法，4项全部通过、0错误/跳过，JUnit26.37秒、Maven0。此前5项未受影响的通过结果保留，共9个直接场景有通过证据，自有Java均已退出。原任务尚未核对，完整新任务复验也未执行。
+
 ## CSV 业务重启前的 SSH 未确认
 
 原部署root `4f973b0b-a135-47ba-b19a-cd22eacb2c3e` 显式SUCCEEDED，应用 `wtl-assisted-csv-inspector-1l4x0165xg`，修订 `76e6bb39424db7f801e901f3453819b3a840a9e46f2f65555e57092eba5c79f6`。业务RESTART任务 `64d81e3a-24be-4118-a3a3-5de9276b225f` 在最初应用观察的health请求得到 `SSH_COMMAND_EXIT_UNKNOWN`。单条命令elapsed1679毫秒、timeout55000毫秒，channel已开后关闭、未见输出及退出码，sessionOpen=false，记录IOException。不能解释为55秒超时，也不能把命令计时当连接寿命。
@@ -60,7 +79,9 @@ Astra对这个具体传输问题做了只读源码核查：未找到execute/clos
 
 已修复诊断歧义：显式记录disconnectObserved，未观测回调时发起方为UNKNOWN；保留首个受限异常类型、直接cause及最多六个白名单栈帧，不存异常消息、地址、载荷或Throwable。新增session单调年龄、命令开始读取计数及本命令增量，避免把整连接读取数与单条命令计时混用。`diagnostics-local-01`限定六个直接方法全部通过、Maven0，含raw Io close与显式disconnect两种wire反例、一次派发不重放、脱敏及首异常保留；没有修改任务outcome、发送、重试、超时、权限或生命周期行为。此项是诊断修复，不宣称SSH断连根因已解决。
 
-同时纠正管理审批SYSTEM说明：health可能执行准入/清理 bookkeeping或应用代码，必须按完整可达合同审核，不能按health标签当纯只读或自动重试；attempted只记录尝试，不能证明已派发或成功。`management-step-local-03`仅复验直接相关的正常组件停启与START后观测拒绝两项，均通过、0失败/错误/跳过；未重复其它已过组。原CSV任务核对及完整新任务复验尚未执行。
+同时纠正管理审批SYSTEM说明：health可能执行准入/清理 bookkeeping或应用代码，必须按完整可达合同审核，不能按health标签当纯只读或自动重试；attempted只记录尝试，不能证明已派发或成功。`management-step-local-03`仅复验直接相关的正常组件停启与START后观测拒绝两项，均通过、0失败/错误/跳过；未重复其它已过组。
+
+此后 `csv-inspector-first-01-lifecycle-recovery-01` 经产品精确核对原业务task `64d81e3a-24be-4118-a3a3-5de9276b225f`，JUnit1项通过、171.565秒、Maven0；原task当前ENDED/FAILED，事件为DEPLOYMENT_MANAGEMENT_NOT_STARTED。核对后只新增两次STOP，没有重放START/RESTART，原应用最终STOPPED/DISABLED。原首次NOT_PASS及UNKNOWN历史保留，这次核对未证明完整CSV业务通过；完整新任务复验仍待执行。SSH断连根因仍未确认，诊断增强不等于修复SSH断连。
 
 ## 清场执行与独立复查
 
@@ -76,6 +97,6 @@ Astra对这个具体传输问题做了只读源码核查：未找到execute/clos
 
 用户追加要求适时清理测试遗留后，真正只读审计确认主库19张部署业务表、运行日志、平台任务/资源及Mod服务器引用均为0，服务器、模型、凭据与偏好配置保留；并非主库重新累积了部署历史。
 
-本地58个隔离/辅助目录逐项分类后，守卫程序精确删除前轮8个完整成功库、4个完成观察库及4个完成清场核验库，共16目录、267文件、14933295文件字节；42个保护目录均存在。随后一次新只读观察产生的唯一临时库也在其JVM正常退出后清除，合计17目录、270文件、15203989文件字节。原始日志、JUnit及清理回执保留；当前部署库、认证源、失败/UNKNOWN原库、备份控制库和共享目录未删除。
+本地58个隔离/辅助目录逐项分类后，守卫程序精确删除前轮8个完整成功库、4个完成观察库及4个完成清场核验库，共16目录、267文件、14933295文件字节；当时独立复核42个保护目录均存在。随后第5次下载观察库清理1目录、3文件、270694文件字节，两个CSV SSH元数据观察库再清理2目录、6文件、541388文件字节；暂停前累计19目录、276文件、15745377文件字节。各阶段原始日志、JUnit及清理回执保留；当前部署库、认证源、失败/UNKNOWN原库、备份控制库和共享目录未删除。这些数字不包括暂停时另删的驱动临时目录 `tmp/clean27`。
 
 删除前检查精确绝对路径、祖先及子树无重解析、文件独占与所属进程退出；没有打开当时活动的file-transfer库，也没有访问远端。四个主库根文件长度、mtime及SHA前后不变。首次外层PowerShell回执因正常脚本返回后的LASTEXITCODE为空而报告exit2，实际16项均已删除；没有重删，独立复核确认16项均不存在、42保护目录完整，Verified=true/exit0，原回执保留。

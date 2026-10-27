@@ -102,6 +102,52 @@ class DeploymentDiagnosticsTest {
         }
     }
 
+    @Test
+    void operationFailureMetadataExcludesUnlabelledMessagesAndKeepsOnlyValidatedCodes() {
+        UUID taskId = UUID.randomUUID();
+        var saved = new ArrayList<LogEvent>();
+        var context = transferDiagnosticContext(saved, null, null);
+        var task = transferDiagnosticTask(taskId);
+        var failure = new ApiException(new Problem(ProblemCode.INVALID_INPUT, "SFTP_APPROVAL",
+            "opaque-credential-fixture", Map.of("command", "opaque-payload-fixture"), Optional.empty())) {
+            @Override
+            public String getMessage() {
+                throw new AssertionError("Provider message must not be read");
+            }
+        };
+        failure.initCause(new java.io.IOException("opaque-cause-fixture"));
+        DeploymentDiagnostics.operationFailureMetadata(context, task, failure);
+        var event = saved.getFirst();
+        assertEquals("DEPLOYMENT_OPERATION_FAILURE", event.eventCode());
+        assertEquals(Optional.of(taskId), event.taskId());
+        assertEquals(Optional.of(taskId), event.operationId());
+        assertEquals("exceptionType=" + failure.getClass().getName() + " causeType=java.io.IOException"
+            + " problemCode=INVALID_INPUT problemEvent=SFTP_APPROVAL", event.message());
+        assertTrue(event.outcome().isEmpty());
+        assertTrue(event.details().isEmpty());
+        assertFalse(event.toString().contains("opaque-"));
+        DeploymentDiagnostics.operationFailureMetadata(context, task, new ApiException(new Problem(
+            ProblemCode.INVALID_INPUT, "SFTP_APPROVAL\nopaque-event-fixture", "opaque-message-fixture", Map.of(), Optional.empty())));
+        assertFalse(saved.getLast().message().contains("problemEvent="));
+        assertFalse(saved.getLast().toString().contains("opaque-"));
+    }
+
+    @Test
+    void operationDiagnosticLoggerFailuresNeverEscape() {
+        var task = transferDiagnosticTask(UUID.randomUUID());
+        var failure = new IllegalStateException("opaque-provider-fixture");
+        for (String method : List.of("register", "write")) {
+            for (Exception unavailable : List.of(new ApiException(new Problem(ProblemCode.IO_FAILURE,
+                "FIXTURE_LOG_UNAVAILABLE", "opaque-logger-fixture", Map.of(), Optional.empty())),
+                new IllegalStateException("opaque-logger-fixture"))) {
+                var saved = new ArrayList<LogEvent>();
+                assertDoesNotThrow(() -> DeploymentDiagnostics.operationFailureMetadata(
+                    transferDiagnosticContext(saved, method, unavailable), task, failure));
+                assertTrue(saved.isEmpty());
+            }
+        }
+    }
+
     private static ModContext transferDiagnosticContext(List<LogEvent> saved, String failingMethod, Exception unavailable) {
         var logs = (LogService) Proxy.newProxyInstance(LogService.class.getClassLoader(), new Class<?>[]{LogService.class},
             (proxy, method, args) -> {
