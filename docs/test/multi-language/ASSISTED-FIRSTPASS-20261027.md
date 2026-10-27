@@ -1,6 +1,6 @@
 # 2026-10-27 ASSISTED 测试与失败修复
 
-本轮仍在进行，未达成首轮全部通过。五项网站均已通过部署、业务及最终STOPPED/DISABLED，其中survey-scoring首次通过，其他四项为后续重试通过；log-analyzer首次安装及COMMAND检查通过。CSV首次PHP准备失去SSH退出证据，附件确认准备成功后原任务已核对FAILED，断连原因仍未知；其余两个CLI尚未运行。不能据此记为八项通过或把重试并入首轮。
+本轮仍在进行，未达成首轮全部通过。五项网站均已通过部署、业务及最终STOPPED/DISABLED，其中survey-scoring首次通过，其他四项为后续重试通过；log-analyzer和directory-diff首次安装及COMMAND检查通过。CSV首次PHP准备失去SSH退出证据，附件确认准备成功后原任务已核对FAILED，断连原因仍未知；binary-inspector尚未运行。不能据此记为八项通过或把重试并入首轮。
 
 | 项目 | 首次有效尝试 | 当前证据 |
 | --- | --- | --- |
@@ -10,7 +10,8 @@
 | csv-inspector | UNKNOWN→FAILED（产品核对） | 第二次部署、分析业务及重启持久化通过，最终STOPPED/DISABLED；首次SSH原因未知 |
 | survey-scoring | PASS | 三组件部署、84.21评分及重启持久化通过，最终STOPPED/DISABLED |
 | log-analyzer | PASS | 程序自行补齐CMake/Ninja，安装及固定样例COMMAND检查通过，INSTALLED/NOT_APPLICABLE |
-| directory-diff、binary-inspector | 未运行 | 后续逐项执行CLI专用测试 |
+| directory-diff | PASS | 固定目录样例COMMAND检查通过，INSTALLED/NOT_APPLICABLE |
+| binary-inspector | 未运行 | 后续执行CLI专用测试 |
 
 ## 入口与执行边界
 
@@ -184,3 +185,9 @@ HTTP提交问卷，断言返回有效id且评分为84.21，再经产品整应用
 该AI补充operation为 `31b3202f-2080-4ff0-b9ce-2f2399275d85`、SHA `401a432717d5b48cf23994521dbc27f952f50045f5247c372b8c99fa4db65677`；没有主管手工安装或重新启动整项部署。这属于首次任务的正常ASSISTED能力补齐，不是此前失败后的人工重试。
 
 受审COMMAND使用samples/events.log、JSON格式并要求输出包含 `"matched": 6`。产品健康核验及fixture断言通过，最终INSTALLED/NOT_APPLICABLE，导出同状态；没有运行额外CLI业务list或交互验收。JUnit1项通过、0skip、807.065秒、Maven0，49个监控generation attempt ID，已知部署/审批Token71664+408637=480301，四项能力探测不含。CLI无常驻网站需STOP；测试进程自然退出。
+
+## directory-diff 首次尝试：安装与固定样例检查通过
+
+`directory-diff-first-01` 基于 `c0ccf981`，启动时Git干净。原任务 `4979559c-3bab-4079-9694-3468afdcd0b2`、state `assisted-live-directory-diff-183oa40xx4`、应用 `wtl-assisted-directory-diff-183oa5oss4`。产品完成Python3.12与原生伴随构建所需能力准备、构建和发布，没有主管安装依赖或重试整项任务。
+
+受审COMMAND以JSON格式对samples/baseline生成live-baseline快照，要求输出包含 `"status": "complete"`；产品健康及fixture断言通过。最终及导出状态均INSTALLED/NOT_APPLICABLE，JUnit1项通过、0skip、405.230秒、Maven0。38个监控generation attempt ID，已知部署/审批Token68414+293216=361630，四项能力探测不含。未追加CLI交互或其他业务操作；仅剩binary-inspector未运行。
