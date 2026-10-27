@@ -29,7 +29,7 @@ liblzma-dev libncurses-dev libncurses5-dev libncursesw5-dev libgdbm-dev
 libonig-dev libcurl4-openssl-dev libxml2-dev libpq-dev libzip-dev libyaml-dev
 libnode-dev libexpat1-dev libgdbm-compat-dev libltdl-dev libtool libtool-bin
 gcc g++ cpp gfortran clang clang-tools lld llvm make cmake cmake-data ninja-build
-meson autoconf automake autotools-dev bison flex dpkg-dev binutils git git-man
+meson autoconf automake autotools-dev bison flex dpkg-dev binutils
 nodejs npm composer php php-cli php-common php-dev php-pear php-mbstring php-xml
 php-curl php-zip php-sqlite3 php-pgsql php-mysql ruby ruby-dev ruby-bundler bundler
 rubygems rustc cargo rustfmt clippy maven ant gradle default-jdk default-jdk-headless
@@ -39,6 +39,7 @@ python3 python3-minimal apt dpkg systemd systemd-sysv libc6 libc-bin libgcc-s1
 libstdc++6 sudo ca-certificates coreutils bash dash util-linux mount findutils
 passwd login procps iproute2 iputils-ping netbase netplan.io network-manager
 systemd-resolved systemd-networkd cloud-init ubuntu-minimal ubuntu-standard
+ubuntu-server ubuntu-server-minimal git git-man
 base-files base-passwd debianutils hostname init init-system-helpers udev'''.split())
 MAX_JSON = 512 * 1024
 MAX_PLAN = 65536
@@ -351,7 +352,7 @@ def inventory():
     core = {'python3': executable('/usr/bin/python3'), 'sshClient': executable('/usr/bin/ssh'),
             'sshDaemon': executable('/usr/sbin/sshd'),
             'requiredPackages': [value for value in installed if core_package(value['name']) or value['essential']],
-            'preserved': 'OS Python, SSH client/daemon, package manager, service manager, core libraries and networking remain installed.'}
+            'preserved': 'OS Python, SSH client/daemon, server meta-packages, Git utilities, package/service managers, core libraries and networking remain installed.'}
     return {'formatVersion': 1, 'hostSha256': digest(machine), 'roots': roots, 'units': units,
             'installedUnits': installed_units, 'unitFiles': unit_files, 'unitStates': unit_states, 'accounts': accounts, 'groups': groups,
             'installedPackages': installed, 'installedTargets': [value for value in installed if target_package(value['name'])],

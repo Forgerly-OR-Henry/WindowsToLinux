@@ -60,7 +60,8 @@ class DeploymentDisposableHostResetProgramTest {
             compiler_names = ['gcc', 'gcc-x86-64-linux-gnu', 'gcc-13-x86-64-linux-gnu',
                               'g++-x86-64-linux-gnu', 'cpp-x86-64-linux-gnu', 'binutils-x86-64-linux-gnu', 'cmake', 'libssl-dev']
             core_names = ['openssh-server', 'openssh-client', 'python3', 'python3-minimal',
-                          'apt', 'dpkg', 'systemd', 'libc6', 'iproute2', 'sudo', 'ca-certificates']
+                          'apt', 'dpkg', 'systemd', 'libc6', 'iproute2', 'sudo', 'ca-certificates',
+                          'git', 'git-man', 'ubuntu-server', 'ubuntu-server-minimal']
             installed = [dict(name=name, version='1', essential=False) for name in compiler_names + core_names + ['foreign-app']]
             transcript = chr(10).join(('Remv ' if index % 2 else 'Purg ') + name + ' [1]'
                                       for index, name in enumerate(compiler_names))
@@ -69,6 +70,7 @@ class DeploymentDisposableHostResetProgramTest {
             for name in core_names:
                 rejected('APT_CORE_REMOVAL_REFUSED', lambda name=name: g['parse_simulation']('Remv ' + name + ' [1]', installed, []))
                 assert g['core_package'](name) and not g['target_package'](name)
+            rejected('APT_CORE_REMOVAL_REFUSED', lambda: g['parse_simulation']('Purg ubuntu-server [1]', installed, []))
             rejected('APT_UNREVIEWED_REMOVAL', lambda: g['parse_simulation']('Remv foreign-app [1]', installed, []))
             rejected('APT_UNEXPECTED_INSTALL', lambda: g['parse_simulation']('Inst foreign-app [1]', installed, []))
             rejected('APT_REQUEST_NOT_SIMULATED', lambda: g['parse_simulation']('Purg cmake [1]', installed, ['gcc']))
@@ -83,7 +85,11 @@ class DeploymentDisposableHostResetProgramTest {
         verify("""
             calls = []
             installed = [dict(name='gcc', version='13', essential=False),
-                         dict(name='openssh-server', version='1', essential=False)]
+                         dict(name='git', version='1', essential=False),
+                         dict(name='git-man', version='1', essential=False),
+                         dict(name='openssh-server', version='1', essential=False),
+                         dict(name='ubuntu-server', version='1', essential=False),
+                         dict(name='ubuntu-server-minimal', version='1', essential=False)]
             def read_command(arguments, **options):
                 calls.append(arguments)
                 if arguments[0] == '/usr/bin/dpkg-query':
@@ -103,6 +109,8 @@ class DeploymentDisposableHostResetProgramTest {
                 observed = g['inventory']()
                 assert calls and all(call[0] == '/usr/bin/dpkg-query' for call in calls)
                 assert observed['installedPackages'] == installed
+                assert [value['name'] for value in observed['core']['requiredPackages']] == [
+                    'git', 'git-man', 'openssh-server', 'ubuntu-server', 'ubuntu-server-minimal']
                 assert observed['hostSha256'] == g['digest'](b'a' * 32)
                 planned = g['plan']()
                 assert planned['purgePackages'] == ['gcc']
