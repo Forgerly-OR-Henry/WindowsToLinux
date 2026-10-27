@@ -235,10 +235,20 @@ public final class DeploymentBuildOutputProtocol {
             Long.parseLong(frame.group(3)), Integer.parseInt(frame.group(4)), Integer.parseInt(frame.group(5)), Long.parseLong(frame.group(6)),
             frame.group(7), digest, frame.group(9), groups)))
             throw new IllegalArgumentException("Build collector bytes or input digest differ");
-        return java.util.Map.of("application", frame.group(1), "candidate", frame.group(2), "candidateRoot", layout.candidateRoot(frame.group(2)),
+        var facts = new java.util.LinkedHashMap<String, Object>(java.util.Map.of("application", frame.group(1), "candidate", frame.group(2), "candidateRoot", layout.candidateRoot(frame.group(2)),
             "seconds", Long.parseLong(frame.group(3)), "processes", Integer.parseInt(frame.group(4)), "memoryMiB", Integer.parseInt(frame.group(5)),
             "maximumOutputBytes", Long.parseLong(frame.group(6)), "engine", frame.group(7), "inputSha256", digest,
-            "meaning", "Complete exact product collector regenerated from its literal arguments and compatibility phrases; stdin SHA256 matches. The Python process collects output and invokes this single hash-guarded helper build-run. The helper, not Python, dispatches executable stdin to its restricted build entry. Scope is only this application/candidate and decoded tool binding; other components' tools need not appear in this build. This proves request framing only, not live isolation, successful execution, safe project hooks or authority. Review the full executable stdin and actual helper guards.");
+            "meaning", "Complete exact product collector regenerated from its literal arguments and compatibility phrases; stdin SHA256 matches. The Python process collects output and invokes this single hash-guarded helper build-run. The helper, not Python, dispatches executable stdin to its restricted build entry. Scope is only this application/candidate and decoded tool binding; other components' tools need not appear in this build. This proves request framing only, not live isolation, successful execution, safe project hooks or authority. Review the full executable stdin and actual helper guards."));
+        var names = List.of("application", "candidate", "seconds", "maxProcesses", "memoryMiB", "maxOutputBytes",
+            "engine", "scriptDigest", "encodedToolBinding");
+        var arguments = new java.util.ArrayList<java.util.Map<String, Object>>();
+        for (int position = 1; position <= names.size(); position++)
+            arguments.add(java.util.Map.of("position", position, "name", names.get(position - 1), "value", frame.group(position)));
+        facts.put("helperInvocation", java.util.Map.of("verb", "build-run", "argumentCount", names.size(),
+            "arguments", List.copyOf(arguments), "collectorPointer", "/exactAction",
+            "executableStdin", java.util.Map.of("sourcePointer", "/completeExecutableInput", "utf8Bytes", input.length, "sha256", digest),
+            "meaning", "These ordered values come from this exact collector only after complete render round-trip and stdin digest validation. Standard build-run receives these nine arguments; original task/workflow authority and captured archive/source association must be checked in their separate current evidence. This navigation proves no live ownership, isolation, successful execution, project safety or permission."));
+        return java.util.Collections.unmodifiableMap(facts);
     }
 
     /** Parses only a complete fixed wrapper receipt; arbitrary build output never becomes a control field. / 仅解析完整固定包装器回执；任意构建输出不成为控制字段。

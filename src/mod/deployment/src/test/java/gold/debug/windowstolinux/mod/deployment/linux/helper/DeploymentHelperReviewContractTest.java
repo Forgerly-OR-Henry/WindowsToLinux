@@ -108,4 +108,23 @@ class DeploymentHelperReviewContractTest {
             guarded.replace("' probe", "' unknown-command"), guarded.replace("' probe", "' $untrusted")))
             assertThrows(IllegalArgumentException.class, () -> DeploymentHelperReviewContract.verifiedInvocation(changed));
     }
+
+    @Test
+    void standardAndAgentBuildInterfacesMatchTheirActualConsumers() throws Exception {
+        String contract = DeploymentHelperReviewContract.text();
+        assertTrue(contract.contains("Standard build-run parameters, in order (9): application,candidate,seconds,max processes,memory MiB,max output,engine,script digest,encoded tool binding."));
+        assertTrue(contract.contains("Agent agent-run parameters, in order (9): application,candidate,task,source revision,seconds,max output,engine,script digest,encoded tool binding."));
+        String root = "/gold/debug/windowstolinux/mod/deployment/linux/helper/workspace/";
+        try (var standard = getClass().getResourceAsStream(root + "22-restricted-build.sh");
+             var agent = getClass().getResourceAsStream(root + "27-agent-workspace.sh")) {
+            assertNotNull(standard); assertNotNull(agent);
+            String standardSource = new String(standard.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+            String agentSource = new String(agent.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+            assertTrue(standardSource.contains("run_restricted_build() {\n    [ \"$#\" -eq 9 ] || reject build-arguments\n"));
+            assertTrue(standardSource.contains("local app=\"$1\" candidate_id=\"$2\" seconds=\"$3\" processes=\"$4\" memory=\"$5\" output=\"$6\" engine=\"$7\" script_digest=\"$8\" tools=\"$9\""));
+            assertTrue(agentSource.contains("agent_run() {\n    [ \"$#\" -eq 9 ] || reject agent-run-arguments\n"));
+            assertTrue(agentSource.contains("local app=\"$1\" candidate=\"$2\" task=\"$3\" revision=\"$4\" seconds=\"$5\" output=\"$6\" engine=\"$7\" script_digest=\"$8\" tools=\"$9\""));
+            assertTrue(agentSource.contains("run_restricted_build \"$app\" \"$candidate\" \"$seconds\" 256 2048 \"$output\" \"$engine\" \"$script_digest\" \"$tools\""));
+        }
+    }
 }

@@ -37,6 +37,66 @@ class DeploymentCommandProtocolTest {
     private final ModContext owner = (ModContext) Proxy.newProxyInstance(getClass().getClassLoader(),
         new Class<?>[]{ModContext.class}, (proxy, method, args) -> { throw new AssertionError("No capability access: " + method.getName()); });
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"APPROVE", "DENY", "INPUT", "ARGV", "COLLECTOR", "TARGET", "REQUEST", "HELPER_GUARD"})
+    void standardBuildInvocationFactsKeepIndependentDecisionsAndExactGrants(String scenario) throws Exception {
+        var fixture = new gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture();
+        var context = reviewContext(fixture);
+        var workspace = new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace("demo", "a".repeat(64));
+        byte[] body = "printf approved\n".getBytes(StandardCharsets.UTF_8);
+        String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(body));
+        String script = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildOutputProtocol.script(
+            workspace, 60, 16, 256, 8192, "ordinary", digest, "-", List.of(List.of("marker")));
+        if (scenario.equals("ARGV")) script = script.substring(0, script.length() - " '-'".length());
+        if (scenario.equals("COLLECTOR")) script = script.replace("subprocess.Popen(sys.argv[1:]", "subprocess.Popen(sys.argv[2:]");
+        if (!scenario.equals("HELPER_GUARD")) script = DeploymentManagedHelperBundle.verifiedCommand(script, layout);
+        var grants = new AtomicInteger();
+        var reviews = new AtomicInteger();
+        var exactRequest = new java.util.concurrent.atomic.AtomicReference<CommandRequest>();
+        var exactIntent = new java.util.concurrent.atomic.AtomicReference<ActionIntent>();
+        var host = (InteractionService) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{InteractionService.class}, (proxy, method, args) -> {
+            assertEquals("approveReviewedAction", method.getName());
+            assertSame(exactIntent.get(), args[0]); assertSame(exactRequest.get(), ((java.util.Optional<?>) args[1]).orElseThrow());
+            assertSame(fixture.task, args[4]); grants.incrementAndGet();
+            return new gold.debug.windowstolinux.appapi.task.result.OperationResult<>(gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED,
+                java.util.Optional.of(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID())), java.util.Optional.empty());
+        });
+        DeploymentCommandReviewModel model = (instructions, facts, intent, request, revision, supplied) -> {
+            reviews.incrementAndGet();
+            var current = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(facts);
+            var invocation = current.at("/buildCollector/helperInvocation");
+            assertEquals("build-run", invocation.path("verb").asText()); assertEquals(9, invocation.path("argumentCount").asInt());
+            assertEquals("seconds", invocation.at("/arguments/2/name").asText());
+            assertEquals("60", invocation.at("/arguments/2/value").asText());
+            assertEquals("maxProcesses", invocation.at("/arguments/3/name").asText());
+            assertEquals(digest, invocation.at("/executableStdin/sha256").asText());
+            assertEquals("printf approved\n", current.path("completeExecutableInput").asText());
+            assertEquals(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.REVISION,
+                current.path("platformContractRevision").asText());
+            return new DeploymentCommandReviewModel.Result(new DeploymentReviewDecision(scenario.equals("DENY") ? "DENY" : "APPROVE", false, "Controlled independent verdict"), Map.of());
+        };
+        try (var request = new CommandRequest(script, scenario.equals("INPUT") ? "changed".getBytes(StandardCharsets.UTF_8) : body, Duration.ofSeconds(75), 65536);
+             var replacement = new CommandRequest(script, "new request".getBytes(StandardCharsets.UTF_8), request.timeout(), request.outputLimitBytes())) {
+            var intent = intent("deployment.build.run.v1", request, Set.of(new ActionTarget(server.id(), "deployment-build",
+                scenario.equals("TARGET") ? workspace.candidateRoot() + "-other" : workspace.candidateRoot())));
+            exactIntent.set(intent); exactRequest.set(request);
+            if (scenario.equals("APPROVE")) {
+                var result = DeploymentFixedCommandApproval.approve(context, host, intent, request, fixture.task,
+                    "fixture-route", "AUTOMATIC", false, model, DeploymentCurrentCommandEvidence.NONE, true);
+                assertEquals(gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED, result.outcome()); assertTrue(result.value().isPresent());
+            } else {
+                var refused = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approve(context, host, intent,
+                    scenario.equals("REQUEST") ? replacement : request, fixture.task, "fixture-route", "AUTOMATIC", false,
+                    model, DeploymentCurrentCommandEvidence.NONE, true));
+                assertEquals(scenario.equals("DENY") ? "DEPLOYMENT_COMMAND_REVIEW_DENIED" : scenario.equals("REQUEST")
+                    ? "DEPLOYMENT_COMMAND_REQUEST_CHANGED" : "DEPLOYMENT_COMMAND_REVIEW_INVALID", refused.problem().eventCode());
+            }
+        }
+        assertEquals(scenario.equals("APPROVE") || scenario.equals("DENY") ? 1 : 0, reviews.get());
+        assertEquals(scenario.equals("APPROVE") ? 1 : 0, grants.get());
+        assertTrue(fixture.requests.isEmpty(), "No provider call is needed for a fixed request/protocol boundary test");
+    }
+
     @Test
     void sharedDependencyBytesAndStrictReceiptsPreserveOriginalProfiles() throws Exception {
         String source = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencies(layout);

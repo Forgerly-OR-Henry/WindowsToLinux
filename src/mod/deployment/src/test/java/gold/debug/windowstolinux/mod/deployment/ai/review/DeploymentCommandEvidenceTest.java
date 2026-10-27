@@ -1077,6 +1077,21 @@ class DeploymentCommandEvidenceTest {
                 assertEncodingEvidence(facts.path("decodedToolchainBinding"), encoded, payload);
                 assertEquals("printf approved\n", facts.path("completeExecutableInput").asText());
                 assertFalse(facts.path("decodedToolchainBinding").has("verified"));
+                var invocation = facts.at("/buildCollector/helperInvocation");
+                assertEquals("build-run", invocation.path("verb").asText());
+                assertEquals(9, invocation.path("argumentCount").asInt());
+                var names = List.of("application", "candidate", "seconds", "maxProcesses", "memoryMiB", "maxOutputBytes",
+                    "engine", "scriptDigest", "encodedToolBinding");
+                var values = List.of("demo", workspace.candidateId(), "60", "16", "256", "8192", "ordinary", bodySha, encoded);
+                for (int index = 0; index < names.size(); index++) {
+                    var argument = invocation.path("arguments").get(index);
+                    assertEquals(index + 1, argument.path("position").asInt());
+                    assertEquals(names.get(index), argument.path("name").asText());
+                    assertEquals(values.get(index), argument.path("value").asText());
+                }
+                assertEquals("/completeExecutableInput", invocation.at("/executableStdin/sourcePointer").asText());
+                assertEquals(body.getBytes(StandardCharsets.UTF_8).length, invocation.at("/executableStdin/utf8Bytes").asInt());
+                assertEquals(bodySha, invocation.at("/executableStdin/sha256").asText());
             }
         }
         try (var wrongDigest = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script.replace(bodySha, "c".repeat(64))),
