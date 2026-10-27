@@ -116,6 +116,26 @@ class DeploymentDisposableHostResetLiveTest {
             assertEquals(mode, body.path("mode").asText());
             assertTrue(body.path("ok").asBoolean(), body::toString);
             assertTrue(Files.isRegularFile(receipt));
+            if (mode.equals("inventory")) {
+                String probe = gold.debug.windowstolinux.mod.deployment.linux.probe.DeploymentPlatformCapabilityProbe.render();
+                var probeTask = context.tasks().submit(new TaskRequest("disposable-host-platform-observation",
+                    "Observe actual platform tools after inventory", List.of("static-live"), false), task -> {
+                        var server = new ServerId("static-live");
+                        try (var session = context.linux().connect(server, task);
+                             var request = new CommandRequest(probe, new byte[0], Duration.ofMinutes(2), 65536)) {
+                            assertEquals(fingerprint, session.facts().fingerprint());
+                            var grant = context.interaction().approve(RemoteActions.command(server,
+                                "disposable-host-read-only-platform", request), task);
+                            return session.execute(request, grant.value().orElseThrow());
+                        }
+                    });
+                var observed = await(probeTask, 3);
+                Files.writeString(evidence.resolve(receiptName + "-platform.txt"), observed.stdout(),
+                    StandardOpenOption.CREATE_NEW);
+                assertFalse(observed.truncated());
+                assertEquals(0, observed.exitCode().orElseThrow());
+                System.out.println("DISPOSABLE_RESET_PLATFORM_VERIFIED receipt=" + receiptName);
+            }
         }
         System.out.println("DISPOSABLE_RESET_VERIFIED mode=" + mode + " receipt=" + receiptName);
     }
