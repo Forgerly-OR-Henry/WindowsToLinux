@@ -1,6 +1,6 @@
 # 2026-10-27 ASSISTED 测试与失败修复
 
-本轮仍在进行，未达成首轮全部通过。五项网站均已通过部署、业务及最终STOPPED/DISABLED，其中survey-scoring首次通过，其他四项为后续重试通过。CSV首次PHP准备失去SSH退出证据，附件确认准备成功后原任务已核对FAILED，断连原因仍未知；三个CLI尚未运行。不能据此记为八项通过或把重试并入首轮。
+本轮仍在进行，未达成首轮全部通过。五项网站均已通过部署、业务及最终STOPPED/DISABLED，其中survey-scoring首次通过，其他四项为后续重试通过；log-analyzer首次安装及COMMAND检查通过。CSV首次PHP准备失去SSH退出证据，附件确认准备成功后原任务已核对FAILED，断连原因仍未知；其余两个CLI尚未运行。不能据此记为八项通过或把重试并入首轮。
 
 | 项目 | 首次有效尝试 | 当前证据 |
 | --- | --- | --- |
@@ -9,7 +9,8 @@
 | asset-lending | UNKNOWN→FAILED（产品核对） | 第二次部署/借还与重启持久化通过，产品最终STOPPED/DISABLED；首轮拒绝保留 |
 | csv-inspector | UNKNOWN→FAILED（产品核对） | 第二次部署、分析业务及重启持久化通过，最终STOPPED/DISABLED；首次SSH原因未知 |
 | survey-scoring | PASS | 三组件部署、84.21评分及重启持久化通过，最终STOPPED/DISABLED |
-| log-analyzer、directory-diff、binary-inspector | 未运行 | 等待共同阻断定位 |
+| log-analyzer | PASS | 程序自行补齐CMake/Ninja，安装及固定样例COMMAND检查通过，INSTALLED/NOT_APPLICABLE |
+| directory-diff、binary-inspector | 未运行 | 后续逐项执行CLI专用测试 |
 
 ## 入口与执行边界
 
@@ -175,3 +176,11 @@ HTTP业务检查worker有效、创建demo/basic分析任务并完成，断言3�
 HTTP提交问卷，断言返回有效id且评分为84.21，再经产品整应用RESTART后读取原提交，确认评分持久化。JUnit1项通过、0skip、Maven0，耗时2124.481秒。121个监控generation attempt ID，已知部署/审批Token114893+1061619=1176512，四项能力探测不含。LOW/LOW及原1500000监督阈值不变。
 
 导出后的额外产品STOP和inspect确认最终STOPPED/DISABLED，清理进程退出0，assessment为COMPLETE。此项计为本轮首次通过；其他四网站重试历史不变。三个CLI继续，未执行真实界面或浏览器。
+
+## log-analyzer 首次尝试：程序补齐依赖并通过CLI检查
+
+`log-analyzer-first-01` 基于 `dec61cf3`，启动时Git干净。原任务 `63b217b3-c8a8-48ef-a221-d42faa9f348d`、state `assisted-live-log-analyzer-17smwv7q2o`、应用 `wtl-assisted-log-analyzer-17smwx0zm0`。程序准备Rust工具链；发现CMAKE_SERVICE伴随构建缺少CMake/Ninja后，在原任务内由部署模型提出supplement，经独立审批后派发，命令及后续验证成功，再继续原prepare/build/publish。
+
+该AI补充operation为 `31b3202f-2080-4ff0-b9ce-2f2399275d85`、SHA `401a432717d5b48cf23994521dbc27f952f50045f5247c372b8c99fa4db65677`；没有主管手工安装或重新启动整项部署。这属于首次任务的正常ASSISTED能力补齐，不是此前失败后的人工重试。
+
+受审COMMAND使用samples/events.log、JSON格式并要求输出包含 `"matched": 6`。产品健康核验及fixture断言通过，最终INSTALLED/NOT_APPLICABLE，导出同状态；没有运行额外CLI业务list或交互验收。JUnit1项通过、0skip、807.065秒、Maven0，49个监控generation attempt ID，已知部署/审批Token71664+408637=480301，四项能力探测不含。CLI无常驻网站需STOP；测试进程自然退出。
