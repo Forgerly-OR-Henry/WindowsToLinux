@@ -1,6 +1,6 @@
 # 2026-10-27 清理服务器后的 ASSISTED 复验
 
-本轮进行中，服务器清场及独立复查已完成。task-board首次完整通过；file-transfer部署及前三次64MiB下载校验成功，但后端组件START的后态观测被独立审批拒绝，业务任务进入UNKNOWN，首次未通过。其余六项目尚未运行，不能称为首次八项通过。上一轮结果与本轮不合并。
+本轮进行中，服务器清场及独立复查已完成。task-board、asset-lending首次完整通过；file-transfer首次在后端START后态观测审批处失败，已修复审批步骤解释并完成原任务核对、正常停止，完整重试待执行。CSV部署成功，但业务RESTART最初健康检查遇SSH无退出回执，原任务UNKNOWN保留，尚未核对或重试。survey-scoring及三个CLI尚未运行，不能称为首次八项通过。上一轮结果与本轮不合并。
 
 ## 执行边界
 
@@ -29,8 +29,10 @@
 | 项目 | 首次结果 | 实际验证边界 |
 | --- | --- | --- |
 | task-board | PASS | JUnit1项、0失败/错误/跳过，1987.543秒，Maven0；真实HTTP、跨语言、任务创建及产品停启/重启后持久化；额外产品STOP确认STOPPED/DISABLED |
-| file-transfer | NOT_PASS | JUnit1失败、0错误/跳过，8296.934秒，Maven1；部署成功，业务组件START后状态观测审批被拒，原任务UNKNOWN保留 |
-| asset-lending、csv-inspector、survey-scoring及三个CLI | 未运行 | 尚无本轮结果 |
+| file-transfer | NOT_PASS | JUnit1失败、0错误/跳过，8296.934秒，Maven1；部署成功，业务组件START后状态观测审批被拒，首次UNKNOWN历史保留 |
+| asset-lending | PASS | JUnit1项、0失败/错误/跳过，1273.506秒，Maven0；HTTP业务及重启持久化通过，额外产品STOP确认STOPPED/DISABLED |
+| csv-inspector | NOT_PASS | JUnit1失败、0错误/跳过，1094.21秒，Maven1；部署成功，业务RESTART最初health遇SSH未确认退出，原管理journal不存在 |
+| survey-scoring及三个CLI | 未运行 | 尚无本轮结果 |
 
 task-board原部署任务为 `a6dacc81-30c5-4f38-ae40-65d15414096f`，应用 `wtl-assisted-task-board-1dw2zdba4o`，修订 `09bfcd2282557b0f505756d0ea71f7ee2c1d91ece1680a72f049c19822f2fefe`。已知监测Token为部署106006、审批895232，共1001238，93个generation attempt id；四次能力探测用量未知且未计入，不是完整账单。
 
@@ -42,7 +44,23 @@ file-transfer原部署任务 `6b4a4305-e1ea-43cc-aac3-86c2a2e82821` 已SUCCEEDED
 
 本次最小修复在管理审批证据中加入当前命令operation和持久阶段，并用产品固定SYSTEM说明区分整个任务目标、单次只读检查与生命周期副作用；attempted并非成功证明，后态检查正是获取证明的步骤。保留独立DENY、命令/身份/范围校验及宿主单次授权，不自动放行任何观察命令。
 
-`management-step-local-01`限定三个直接场景，2通过、1失败、0跳过；新反例最初把拒绝注入了START前的预观察，没有覆盖本次后态故障，原XML与失败回执保留。调整为确认受控端已实际START后拒绝后态观察，真实任务必须UNKNOWN，写副作用只有一次STOP及一次START、拒绝命令不得获得宿主许可。`management-step-local-02`仅重跑该失败组和直接受影响的正常组件停启，2项通过、0失败/错误/跳过；首轮通过且未受后续改动影响的身份/范围守卫结果保留。真实原任务核对及新一轮部署复验尚未执行，不能仅凭定点测试声称已修复实机。
+`management-step-local-01`限定三个直接场景，2通过、1失败、0跳过；新反例最初把拒绝注入了START前的预观察，没有覆盖本次后态故障，原XML与失败回执保留。调整为确认受控端已实际START后拒绝后态观察，真实任务必须UNKNOWN，写副作用只有一次STOP及一次START、拒绝命令不得获得宿主许可。`management-step-local-02`仅重跑该失败组和直接受影响的正常组件停启，2项通过、0失败/错误/跳过，66.328秒；首轮通过且未受后续改动影响的身份/范围守卫结果保留。
+
+本地提交 `bbcca259` 后，经现有产品恢复入口精确核对原业务任务 `9ecd9652-529a-4040-8645-1904a490f262`，没有误核对已成功的部署root。`component-recovery-01` JUnit1项通过、Maven0，266.739秒；原任务当前ENDED/SUCCEEDED，恢复日志仅有两次STOP、没有START，之后应用STOPPED/DISABLED。独立真正只读复核原journal为FINISHED、原backend verified=false仍未重构，查询前后文件SHA不变。该结果仅证明原目标当前可核验及正常收尾，不是首次通过，也没有补做完整V2剩余两次下载。产品原任务核对不重发原生命周期效果，但会执行正常健康/准入步骤；不将其统称为严格零副作用读取。
+
+asset-lending原部署任务 `11dc6f99-1461-44fc-b076-53954c6ee5e7`，应用 `wtl-assisted-asset-lending-1klwdalod0`，修订 `ca9d8a0a7f5b29b5d6b20852f4d0bd5e834bb61a65fe4a5de79b0ee0db0110d8`。已知监测Token759233，86个generation attempt id，能力探测未计入。最终额外产品停止回执及进程exit0完整，assessment为COMPLETE。
+
+## CSV 业务重启前的 SSH 未确认
+
+原部署root `4f973b0b-a135-47ba-b19a-cd22eacb2c3e` 显式SUCCEEDED，应用 `wtl-assisted-csv-inspector-1l4x0165xg`，修订 `76e6bb39424db7f801e901f3453819b3a840a9e46f2f65555e57092eba5c79f6`。业务RESTART任务 `64d81e3a-24be-4118-a3a3-5de9276b225f` 在最初应用观察的health请求得到 `SSH_COMMAND_EXIT_UNKNOWN`。单条命令elapsed1679毫秒、timeout55000毫秒，channel已开后关闭、未见输出及退出码，sessionOpen=false，记录IOException。不能解释为55秒超时，也不能把命令计时当连接寿命。
+
+原库真正只读审计确认该业务task没有management journal，也没有该task的runtime/deployment日志；查询前后原库长度、mtime、SHA保持。因此没有已登记RESTART副作用可供重建，不能说原重启已完成。已知监测Token705783、66个generation attempt id；原失败及UNKNOWN保留，finally资源阻塞和同JVM二开库锁异常仅为抑制错误。
+
+Astra对这个具体传输问题做了只读源码核查：未找到execute/close互斥失效或helper误杀SSH祖先进程的证据。原诊断的disconnectInitiatorLocal=false是默认值，disconnectCode=-1表示未观察到disconnect回调，无法据此确定关闭发起方。通过产品SDK另起两个严格只读元数据任务，分别按ssh.service和sshd日志标识核故障时间窗，原SSH服务active/NRestarts0、两个组件仍active；指定窗口未检出OOM/进程故障分类事件。采样未调用health或cleanup，仍不足以唯一确定远端、网络或客户端原因。
+
+已修复诊断歧义：显式记录disconnectObserved，未观测回调时发起方为UNKNOWN；保留首个受限异常类型、直接cause及最多六个白名单栈帧，不存异常消息、地址、载荷或Throwable。新增session单调年龄、命令开始读取计数及本命令增量，避免把整连接读取数与单条命令计时混用。`diagnostics-local-01`限定六个直接方法全部通过、Maven0，含raw Io close与显式disconnect两种wire反例、一次派发不重放、脱敏及首异常保留；没有修改任务outcome、发送、重试、超时、权限或生命周期行为。此项是诊断修复，不宣称SSH断连根因已解决。
+
+同时纠正管理审批SYSTEM说明：health可能执行准入/清理 bookkeeping或应用代码，必须按完整可达合同审核，不能按health标签当纯只读或自动重试；attempted只记录尝试，不能证明已派发或成功。`management-step-local-03`仅复验直接相关的正常组件停启与START后观测拒绝两项，均通过、0失败/错误/跳过；未重复其它已过组。原CSV任务核对及完整新任务复验尚未执行。
 
 ## 清场执行与独立复查
 

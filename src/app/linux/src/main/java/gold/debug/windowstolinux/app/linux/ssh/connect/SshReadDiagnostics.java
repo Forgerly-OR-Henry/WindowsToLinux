@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.linux.ssh.connect;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -14,6 +16,8 @@ final class SshReadDiagnostics implements IoHandler {
     private final IoHandler delegate;
 
     static final class Reading {
+        private final long created = System.nanoTime();
+
         private final AtomicLong callbacks = new AtomicLong();
 
         private volatile long completed;
@@ -21,6 +25,46 @@ final class SshReadDiagnostics implements IoHandler {
         private volatile Thread reader;
 
         private volatile long entered;
+
+        private volatile Failure firstFailure;
+
+        synchronized void failure(Throwable failure) {
+            if (firstFailure == null)
+                firstFailure = Failure.capture(failure);
+        }
+
+        long callbacks() {
+            return callbacks.get();
+        }
+    }
+
+    /** Immutable bounded exception metadata, never the original throwable. / 有界异常元数据，不保留原始异常。 */
+    record Failure(String type, String causeType, List<String> stack) {
+        static Failure capture(Throwable failure) {
+            var frames = new ArrayList<String>();
+            for (var frame : failure.getStackTrace()) {
+                if (safeFrame(frame)) {
+                    frames.add(frame.getClassName() + "#" + frame.getMethodName() + ":" + frame.getLineNumber());
+                    if (frames.size() == 6)
+                        break;
+                }
+            }
+            return new Failure(type(failure), type(failure.getCause()), List.copyOf(frames));
+        }
+
+        private static String type(Throwable failure) {
+            if (failure == null)
+                return "UNKNOWN";
+            String name = failure.getClass().getName();
+            return name.matches("(?:java|org\\.apache\\.sshd)\\.[A-Za-z0-9_.$]{1,160}") ? name : "UNKNOWN";
+        }
+
+        void appendTo(Map<String, String> facts) {
+            facts.put("transportFailureType", type);
+            facts.put("transportFailureCauseType", causeType);
+            for (int index = 0; index < stack.size(); index++)
+                facts.put("transportFailureStack[" + index + "]", stack.get(index));
+        }
     }
 
     SshReadDiagnostics(IoHandler delegate) {
@@ -40,6 +84,9 @@ final class SshReadDiagnostics implements IoHandler {
 
     @Override
     public void exceptionCaught(IoSession session, Throwable failure) throws Exception {
+        var observed = reading(session);
+        if (observed != null)
+            observed.failure(failure);
         delegate.exceptionCaught(session, failure);
     }
 
@@ -75,6 +122,7 @@ final class SshReadDiagnostics implements IoHandler {
         long now = System.nanoTime();
         Thread active = observed.reader;
         facts.put("transportReadCallbacks", Long.toString(observed.callbacks.get()));
+        facts.put("transportSessionAgeMillis", age(now, observed.created));
         facts.put("transportReadHandlerActive", Boolean.toString(active != null));
         facts.put("transportReadCompletedAgeMillis", age(now, observed.completed));
         if (active == null)
@@ -83,15 +131,23 @@ final class SshReadDiagnostics implements IoHandler {
         facts.put("transportReadThreadState", active.getState().name());
         int index = 0;
         for (var frame : active.getStackTrace()) {
-            if (frame.getClassName().matches(
-                "(?:java|jdk|sun\\.nio|org\\.apache\\.sshd|gold\\.debug\\.windowstolinux\\.app\\.linux)\\.[A-Za-z0-9_.$]{1,160}")
-                && frame.getMethodName().matches("[A-Za-z0-9_$<>]{1,128}")) {
+            if (safeFrame(frame)) {
                 facts.put("transportReadStack[" + index++ + "]",
                     frame.getClassName() + "#" + frame.getMethodName() + ":" + frame.getLineNumber());
                 if (index == 6)
                     break;
             }
         }
+    }
+
+    static Failure firstFailure(Reading observed) {
+        return observed == null ? null : observed.firstFailure;
+    }
+
+    private static boolean safeFrame(StackTraceElement frame) {
+        return frame.getClassName().matches(
+            "(?:java|jdk|sun\\.nio|org\\.apache\\.sshd|gold\\.debug\\.windowstolinux\\.app\\.linux)\\.[A-Za-z0-9_.$]{1,160}")
+            && frame.getMethodName().matches("[A-Za-z0-9_$<>]{1,128}");
     }
 
     private static String age(long now, long since) {

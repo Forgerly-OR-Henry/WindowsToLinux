@@ -614,9 +614,10 @@ public final class DeploymentApplicationsService implements TaskRecovery {
             return """
                 For application management, managementIdentity.action is the whole task goal, not the effect required of every command.
                 Review only the current exact command and its reachable effects. currentCommandOperation identifies this step; operationPhase and originalActionFacts describe journal progress, not authority or proof of success.
-                Ownership, current-release, runtime and health observations are separate read-only steps before and after lifecycle effects, including during EFFECTING and read-only reconciliation. Do not require an observation command to contain or execute START, STOP or another task-goal effect.
-                attempted=true with verified=false means the original effect was attempted and still needs verification. It neither proves success nor prevents reviewing the read that obtains that evidence; never require the future read result before permitting the current read.
-                Reads remain confined to readOnlyObservationComponentIds; lifecycle effects remain confined to lifecycleEffectComponentIds. Check exact arguments, contracts, ownership and safety independently. These step facts grant no permission, do not override DENY, and never authorize replay of an attempted effect.
+                Ownership, current-release and raw runtime/autostart inspections can be separate read-only steps before and after lifecycle effects, including during EFFECTING and reconciliation. Do not require an observation command to contain or execute START, STOP or another task-goal effect.
+                Classify health checks by their complete reachable contract: admission or cleanup bookkeeping and application-code execution may occur. A health operation name does not prove that a command is read-only or safe to repeat.
+                attempted=true with verified=false records an attempt whose dispatch or result still needs verification. It neither proves success nor prevents reviewing the read that obtains that evidence; never require the future read result before permitting the current read.
+                Component metadata observations remain confined to readOnlyObservationComponentIds; lifecycle effects remain confined to lifecycleEffectComponentIds. Check exact arguments, contracts, ownership and safety independently. These step facts grant no permission, do not override DENY, and never authorize replay of an attempted effect.
                 """;
         }
 

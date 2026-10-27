@@ -8,11 +8,13 @@ import org.apache.sshd.common.session.SessionListener;
 
 /** Retains typed transport facts without peer messages, addresses or payloads. / 仅保留类型化传输事实，不保留对端消息、地址或载荷。 */
 final class SshCommandDiagnostics implements SessionListener {
-    private volatile String failureType = "-";
+    private volatile SshReadDiagnostics.Failure firstFailure;
 
     private volatile int disconnectCode = -1;
 
     private volatile boolean localDisconnect;
+
+    private volatile boolean disconnectObserved;
 
     private volatile boolean sessionClosed;
 
@@ -20,9 +22,13 @@ final class SshCommandDiagnostics implements SessionListener {
 
     private SshReadDiagnostics.Reading reading;
 
+    private long readCallbacksAtCommandStart;
+
     void attach(ClientSession value) {
         session = value;
         reading = SshReadDiagnostics.reading(value.getIoSession());
+        if (reading != null)
+            readCallbacksAtCommandStart = reading.callbacks();
         value.addSessionListener(this);
     }
 
@@ -31,16 +37,16 @@ final class SshCommandDiagnostics implements SessionListener {
         failure(failure);
     }
 
-    void failure(Throwable failure) {
-        String name = failure.getClass().getName();
-        if (name.matches("(?:java|org\\.apache\\.sshd)\\.[A-Za-z0-9_.$]{1,160}"))
-            failureType = name;
+    synchronized void failure(Throwable failure) {
+        if (firstFailure == null)
+            firstFailure = SshReadDiagnostics.Failure.capture(failure);
     }
 
     @Override
     public void sessionDisconnect(Session value, int reason, String message, String language, boolean initiator) {
         disconnectCode = reason;
         localDisconnect = initiator;
+        disconnectObserved = true;
     }
 
     @Override
@@ -49,14 +55,28 @@ final class SshCommandDiagnostics implements SessionListener {
     }
 
     void appendTo(Map<String, String> facts) {
-        facts.put("transportFailureType", failureType);
+        var failure = SshReadDiagnostics.firstFailure(reading);
+        if (failure == null)
+            failure = firstFailure;
+        if (failure == null) {
+            facts.put("transportFailureType", "-");
+            facts.put("transportFailureCauseType", "UNKNOWN");
+        } else {
+            failure.appendTo(facts);
+        }
+        boolean observed = disconnectObserved;
+        facts.put("disconnectObserved", Boolean.toString(observed));
         facts.put("disconnectCode", Integer.toString(disconnectCode));
-        facts.put("disconnectInitiatorLocal", Boolean.toString(localDisconnect));
+        facts.put("disconnectInitiatorLocal", observed ? Boolean.toString(localDisconnect) : "UNKNOWN");
         facts.put("sessionCloseObserved", Boolean.toString(sessionClosed));
         if (session != null) {
             var state = session.getKexState();
             facts.put("transportKeyExchangeState", state == null ? "UNKNOWN" : state.name());
             SshReadDiagnostics.appendTo(reading, facts);
+            facts.put("transportReadCallbacksAtCommandStart", reading == null ? "UNKNOWN"
+                : Long.toString(readCallbacksAtCommandStart));
+            facts.put("transportReadCallbacksDuringCommand", reading == null ? "UNKNOWN"
+                : Long.toString(Math.max(0, reading.callbacks() - readCallbacksAtCommandStart)));
         }
     }
 
