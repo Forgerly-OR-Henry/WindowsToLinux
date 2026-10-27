@@ -1,6 +1,6 @@
 # 2026-10-27 ASSISTED 测试与失败修复
 
-本轮仍在进行，未达成首轮全部通过。五项网站均已通过部署、业务及最终STOPPED/DISABLED，其中survey-scoring首次通过，其他四项为后续重试通过；log-analyzer和directory-diff首次安装及COMMAND检查通过。CSV首次PHP准备失去SSH退出证据，附件确认准备成功后原任务已核对FAILED，断连原因仍未知；binary-inspector尚未运行。不能据此记为八项通过或把重试并入首轮。
+本轮测试与已确认问题修复完成：15次部署尝试中，八项目首次通过4/8，后续各项目均有通过记录。五项网站部署、业务及最终STOPPED/DISABLED通过，其中survey-scoring首次通过，其他四项为重试通过；三个CLI首次安装及COMMAND检查通过。CSV首次PHP准备失去SSH退出证据，原附件确认准备成功后原任务已核对FAILED，断连原因仍未知。不能将本轮记为同配置首轮8/8。
 
 | 项目 | 首次有效尝试 | 当前证据 |
 | --- | --- | --- |
@@ -11,7 +11,7 @@
 | survey-scoring | PASS | 三组件部署、84.21评分及重启持久化通过，最终STOPPED/DISABLED |
 | log-analyzer | PASS | 程序自行补齐CMake/Ninja，安装及固定样例COMMAND检查通过，INSTALLED/NOT_APPLICABLE |
 | directory-diff | PASS | 固定目录样例COMMAND检查通过，INSTALLED/NOT_APPLICABLE |
-| binary-inspector | 未运行 | 后续执行CLI专用测试 |
+| binary-inspector | PASS | 固定二进制样例COMMAND检查通过，INSTALLED/NOT_APPLICABLE |
 
 ## 入口与执行边界
 
@@ -191,3 +191,19 @@ HTTP提交问卷，断言返回有效id且评分为84.21，再经产品整应用
 `directory-diff-first-01` 基于 `c0ccf981`，启动时Git干净。原任务 `4979559c-3bab-4079-9694-3468afdcd0b2`、state `assisted-live-directory-diff-183oa40xx4`、应用 `wtl-assisted-directory-diff-183oa5oss4`。产品完成Python3.12与原生伴随构建所需能力准备、构建和发布，没有主管安装依赖或重试整项任务。
 
 受审COMMAND以JSON格式对samples/baseline生成live-baseline快照，要求输出包含 `"status": "complete"`；产品健康及fixture断言通过。最终及导出状态均INSTALLED/NOT_APPLICABLE，JUnit1项通过、0skip、405.230秒、Maven0。38个监控generation attempt ID，已知部署/审批Token68414+293216=361630，四项能力探测不含。未追加CLI交互或其他业务操作；仅剩binary-inspector未运行。
+
+## binary-inspector 首次尝试：安装与二进制样例检查通过
+
+`binary-inspector-first-01` 基于 `89e7a6b4`，启动时Git干净。原任务 `654ba666-b46f-4fdb-9247-82f50c0d4c01`、state `assisted-live-binary-inspector-189hymk0b8`、应用 `wtl-assisted-binary-inspector-189hynz6d4`。程序完成来源审核、工具链准备/绑定、原生组件构建、发布和COMMAND健康检查；固定samples/normal.bin以JSON格式检查，要求输出包含 `"records": 5`，产品及fixture断言通过。
+
+最终及导出状态均INSTALLED/NOT_APPLICABLE，JUnit1项通过、0skip、570.510秒、Maven0。45个监控generation attempt ID，已知部署/审批Token106530+320645=427175，四项能力探测不含。没有追加交互或其他CLI业务操作。
+
+## 最终核对及范围
+
+从15次尝试的原始launch、JUnit、退出码和日志，以及8份成功delivery、5份最终STOP回执重新建立 `final-matrix.json`，独立于不同版本的assessment格式，没有覆盖旧诊断。八项最新JUnit均为1项通过、0failure/error/skip；五网站的额外收尾均精确绑定原应用与revision，确认STOPPED/DISABLED，三个CLI确认INSTALLED/NOT_APPLICABLE。首次通过为survey-scoring、log-analyzer、directory-diff、binary-inspector；另外四项的原始失败及UNKNOWN/核对结果均保留。
+
+本轮已确认并修复的范围包括来源建议的可纠正拒绝、APT原预算内锁等待及helper固定摘要同步、live完整审核输入与显式代理URL传递、独立审批契约的stdin→fd3说明、原graph准备附件的只读诊断入口及SSH安全诊断输出。相关本地定点结果见各节；没有执行全项目或全模块测试，也没有真实界面/浏览器验收。Astra High仅用于输入/代理和原图诊断所有权的两项只读判断，Sol负责实现与测试。
+
+不能据本轮宣称最后代码在全新服务器上一轮8/8：项目跨修复版本逐项验证，工具链和补充依赖保留在同一测试服务器，后续尝试会复用这些状态；初始系统未完整盘点。CSV首次原PHP最终成功与SSH退出证据丢失分别成立，断连根因未确定，未作无证据的心跳或期限调整。
+
+旧库清理保留本轮证据库和基础配置：435旧隔离目录及主库旧部署/运行历史已清理，原清理回执和独立只读复核均保留。最后runner正常quit退出0，工作区相关自有Java/Python/Maven/收尾进程为0，既有IDE进程37680保留，核对绝对路径且无重解析后删除本任务j27临时目录；没有强杀或额外远端动作。最终回执为 `final-process-temp-receipt.json`。代码、测试与正式报告均按阶段本地提交，未推送。
