@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active，R06已因并行主工作区源码/HEAD漂移被原冻结守卫阻断：计划八项，前三项原完整回执PASS、后五项未启动；不是3/3，也不把未启动项目记为业务失败，整轮未达标。FTP原64MiB五下载/全业务/交付/清理齐备，内部纯生成恢复1/未知用量1另记，非零异常。R06自有进程及临时目录已收尾、文本敏感值审计通过。R07在独立保留工作树准备，候选65f8dfd1含已选主分支提交和授权8MiB；新库独立产品连接已过，尚无正式清场/部署。目标仍同轮八项完整首过，既有结果不拼接。仅测试代码，不使用真实界面或浏览器。
+状态：目标active。R07已在独立保留工作树、冻结65f8dfd1及policy02下完成产品清场和独立复查，八项命令各提交一次，当前TaskBoard原任务运行，尚无完整终态，不重发队列。FTP本轮按用户授权使用8MiB，其余既定业务不减。R06前三项原完整回执PASS/后五未启，因并行主源码漂移整轮未达标；旧64MiB与新轮不拼接。R07准备盘点01的本地Files产物覆盖失败另记，已补齐并实际产品scan3/0，不称零异常。仅测试代码，无真实界面、浏览器或Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -24,6 +24,7 @@
 | round-04 | f03ebfccf070c029f3fcaf124092906412f77449 | 原P01漂移拒绝保留，服务静止后完整清场及独立复查通过 | 八项各一次：首过7、FTP业务错误1 | 未达成；无内部生成恢复，预算修复已于轮末合入，准备R05 |
 | round-05 | abc7abd1fa8db25626854eece961ca43347913e8 | 首个清场执行和独立复查均通过 | 八项各一次：首过7、FTP业务失败1 | 未达成；无内部生成恢复，分阶段上传修复已轮末合入9259ee92，准备R06 |
 | round-06 | 818ac8acb065182cfd90b090db42d322e605436e | 产品清场及独立复查通过 | 计划八项，仅前三项原完整回执PASS、后五未启动；0项已观察业务失败 | 未达标；运行期主工作区发生并行源码/HEAD漂移，原守卫在CSV前退出；准备问题单列，原64MiB保留，FTP恢复1/未知usage1 |
+| round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八命令各提交一次；TaskBoard原任务运行、后七待原队列，完整终态0 | 进行中；FTP8MiB为用户授权新口径，不拼旧成绩，不称已达标 |
 
 ## 失败原因与解决方案
 
@@ -654,3 +655,11 @@ Asset原root`ed1a6b10-2f24-423e-b40b-25c3eb7f794c`，app`wtl-assisted-asset-lend
 仅对本树files及必要依赖执行skipTests package，实际wait0/BUILD SUCCESS、5.306秒。随后调用实际DevelopmentModFinder.scan（含DevelopmentInfo.read与ModCodeChecker），3个候选/0拒绝、Java实际0；此辅助未构造PlatformRuntime、未开库/网络/启动作者Mod。Files新增47个classes文件及marker，JUnit仍54项16本树输出+38公共JAR，构建前后原54内容完全一致；动态发现的额外Files输出另列，使受守卫的本树输出共17。三Mod manifest集合、entry、descriptor有效内容/实际raw、inputDigest/compiled marker、声明输出及依赖列入新02冻结门禁。未修改生产代码、旧policy01或失败回执，不能把本地准备修正写成服务器清场或完整业务通过。
 
 父另用本树新r07-02在内存核对准备文本，privacy-audit-preparation-01覆盖207文件及主当前正式报告/进度，敏感字面/XML属性0，实际Java31712退出0且宿主CIM确认不存在；只正常打开该本机新库（本地ledger可能更新），无旧copied/UNKNOWN或远端请求。此为当时准备文本范围，不是未来整轮最终隐私审计。
+
+### R07正式冻结与全新八项开始
+
+正式根为保留树H:/Program/WindowsToLinux/.ai-workspace/wt/r07，source65f8dfd1、final policy02 SHA6fd3ff6165a537a6c980ae668b27ae7d78a489f7e69fd88c0e77728614addb30。三Mod/17输出和54cp均完整冻结，生成descriptor仅对象键顺序规范化、值/数组/marker严格；实际raw逐门留存，旧policy01/失败不覆盖。原LOW/LOW/1500000/65536/90、独立审批及有限上传参数不变，FTP按授权8MiB，不跟随主分支变动。
+
+新host-before02 JUnit27.165s/0、plan02 23.836s/0，计划原receipt SHA13bbaac087ab8921c795e33cfebae7eeb19ca6c53f362dddd1c30ecef20cd8de、内层plan SHA7898b193c4e3879c574594732eaaa995d8a87c4a247e2c9cc4d8f349b30df770；apply02 34.605s/0，独立after02 24.375s/0，均1test/0失败错误跳过且Maven实际0。8根均不存在，相关受管集合为空，APT缓存三项0，after与apply postInventory逐字段一致；原initial_reset verified=true。派生parent-verification文件被原glob枚举为非有效候选不等于额外执行，真正host-reset02原回执全部门槛通过。
+
+UTC19:16:36通过初清门槛后，仅一次提交八条原run，eight-original-command-submission-01与intent留证，不能重发。唯一root持有driver37576/Python25764、observer66898/Python5844；首TaskBoard Maven44392，原root70213c5c-583c-42ae-8ac8-b61a1d8b9096、app wtl-assisted-task-board-a86sa4z7w、新state assisted-live-task-board-a86s83rvo运行。其余七项待原队列，尚无本轮完整业务/交付/清理终态，不提前记首过。旧9355/76637及更早16741/37339都已结束，不poll旧句柄或重启旧队列；所有修复另树调查，活动轮不换版。

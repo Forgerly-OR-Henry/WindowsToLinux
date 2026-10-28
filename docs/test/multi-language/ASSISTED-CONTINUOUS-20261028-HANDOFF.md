@@ -1,14 +1,16 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R06已收尾，R07独立冻结工作树准备中
+## 现行入口：R06已收尾，R07完整新轮运行中
 
 目标active，R06未达标：计划八项，仅TaskBoard/FTP/Asset三个原完整回执PASS、后五项未启动；不是3/3，也不是五项业务失败。运行期主工作区出现并行UI源码及818→da3e提交，原冻结守卫在CSV launch前拒绝，不能继续声称整轮保持冻结。FTP原64MiB全业务通过，含纯生成恢复1/未知usage1；Asset原JUnit/交付/清理均0，源码变更对在途运行的全部影响不作无证断言。R06原始证据及额外冻结审计见[已关闭轮](../../../.ai-workspace/evidence/assisted-continuous-20261028/round-06/README.md)。原driver16741实际exit1，observer37339有意终止后实际exit1，CIM自有进程0，clean28r06已清，1447文本敏感值审计通过；关闭文档修改后的02检查覆盖1453文本、零匹配、实际0，独占临时目录已清。不得poll/重启旧句柄或重发旧八队列。
 
-正式后续验收根改为`H:/Program/WindowsToLinux/.ai-workspace/wt/r07`，分支`codex/assisted-frozen-r07-20261029`，候选`65f8dfd1e70ddac4debd0ea6243ddd83393e30e5`（保留9068/da3e双parent）。已纳入授权8MiB和已选提交快照，主分支后续7487等及WIP不随入活动轮。16个workspace输出/全部源码、state、delivery与原证据必须在该树，38个E缓存JAR逐一hash，禁止引用会变的主target；实际54cp、两Mod descriptor、8MiB CLASS及300000/20000已核，编译仅skipTests，不是业务通过。此树是保留验收根，不随tmp回收，不在运行后移动绝对路径。
+正式后续验收根改为`H:/Program/WindowsToLinux/.ai-workspace/wt/r07`，分支`codex/assisted-frozen-r07-20261029`，正式冻结`65f8dfd1e70ddac4debd0ea6243ddd83393e30e5`（保留9068/da3e双parent）。已纳入授权8MiB和已选提交快照，主分支后续7487等及WIP不随入活动轮。JUnit的16个workspace输出及额外Files输出（共17）、全部源码、state、delivery与原证据必须在该树，38个E缓存JAR逐一hash，禁止引用会变的主target；实际54cp、三Mod descriptor、8MiB CLASS及300000/20000已核，编译仅skipTests，不是业务通过。此树是保留验收根，不随tmp回收，不在运行后移动绝对路径。
 
 新凭据根为该树`src/app/db/data/agent-live-credential-20261029-r07-02`。本地桥02因未安装presenter失败、部分r07-01保留；桥03仅补deny-only presenter后把**主机新resume-01**凭据通过char[]内存导入全新r07-02，实际0，无旧copied/UNKNOWN开库/复制，无远端。独立产品连接connection-reuse-01 JUnit1/0、6.777秒、Maven0，实际已授权BiNl pin匹配、root/45.192.105.213:22，无密码env/模型请求。短独占临时根`H:/Program/WindowsToLinux/.ai-workspace/wt/r07t`仅本任务使用，后续按身份清理，不是源码/原证据根。
 
-R07首个准备盘点host-before-01在本地enable files Mod时被MOD_DEVELOPMENT_INVALID拒绝，JUnit1失败/Maven1，enable已打开自己的新本地状态库，但尚未连接服务器或发远端盘点，正式项目0。原driver9355正常quit实际0，observer76637显式观察停止后包装实际1/意图3，三个原PID均已CIM确认退出；不重启旧句柄或覆盖旧policy01/原证据。已确认files整个target缺失，现补齐该动态Mod的产物覆盖缺口，准备新02控制器及policy；读取preparation-inventory-failure-closeout-01.json、preparation-inventory-failure-boundary-correction-02.json和后续02交付，再核actual HEAD/source/8MiB/全部运行期Mod输出/54cp/新vault，经全新产品inventory→plan→apply→独立after与原initialReset通过，才从零排完整八项各一次。不能只跑R06未启五项或拼旧三项。全部真实调用用授权宿主、JDK21、双-s/-gs任务Central配置、LOW/LOW/1500000/65536/90分钟及原独立审批；模型/凭据值不得入日志/Git。仅测试代码，无Computer Use/UI/浏览器；Sol执行，Astra仅曾处理JFR观测判断，无Terra。
+R07已正式开始：02产品inventory→plan→apply→独立after全部Maven0，8根及受管集合空、APT缓存0，after与postInventory完全一致，原initial_reset通过。final policy02 SHA6fd3ff6165a537a6c980ae668b27ae7d78a489f7e69fd88c0e77728614addb30；唯一活动driver工具37576/Python25764（创建UTC19:11:29.756587）、observer66898/Python5844（UTC19:11:46.412548），均root持有。八条run已一次提交，勿重发或新建runner。TaskBoard原Maven44392/root70213c5c-583c-42ae-8ac8-b61a1d8b9096运行，app wtl-assisted-task-board-a86sa4z7w/state assisted-live-task-board-a86s83rvo；后七待原队列，目前完整终态0。下一目标回合只读原日志/快照并续管原句柄，勿把等待当失败或开新项目重试。首先读initial-clean-verification-02.json、eight-original-command-submission-01.json、parent-owned-processes-start-03.json、README-controller-02.md及原driver-console-02.log。
+
+此前host-before01在本地enable Files Mod时失败1：files整个target缺失，enable已初始化自己的新本地state，未到SSH。原9355实际0/observer76637包装实际1（意图3）、原三个PID均已退出；原失败/旧policy01及过宽before-open说法的boundary-correction02保留。仅必要skipTests重建Files及实际产品scan3/0，54cp内容不变，新增Files动态输出使冻结输出共17、三Mod全部纳入新guard02。此为准备覆盖修正，不是服务器或DPAPI故障，也不计八项目分母。全部调用为授权宿主/JDK21/双MavenCentral配置/LOW-LOW/1500000/65536/90/原独立审批；无Computer Use/UI/浏览器。Sol执行，Astra只曾就JFR观测作判断，无Terra。
 
 用户已撤回尚未执行的单项目三连过讨论方案：仍要求同一冻结轮八项原任务、既定完整业务、交付及清理均首次通过。任何一项正式失败就判整轮未达标，但原轮其余项目继续完成，前提是不绕过冻结或安全守卫；本次R06其余项目被原HEAD守卫阻断，未伪记业务失败。修复在隔离树检查共享代码及直接受影响项目，不能把新版本掺入活动轮，轮末再合入、清场独立复查。每次修复先查新问题/旧复发/相似未知/旧判断修正及新旧反例，撤旧保护需反证，详见逐轮报告及fix-history-anti-oscillation-audit-01。主树用户论文、并行修改/提交均保留；本任务只提交自有文件，不推送。
 
