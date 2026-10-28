@@ -1,4 +1,25 @@
-# ASSISTED连续首过验证：暂停与换机交接
+# ASSISTED连续首过验证：接续与阶段交接
+
+## 新机接续：本目标回合的结果与下一回合入口
+
+2026-10-28，Asia/Singapore。用户已明确恢复，并明确要求：本回合完成迁移校验和新服务器连接测试后结束，由**当前目标的下一回合**继续；不是新建侧栏聊天，也不是再次暂停或完成长期目标。以下补充为现行入口，其后的旧机暂停快照保留作历史。
+
+当前已读取并沿用`H:/_Save_/.codex/skills/gpt-6-x-agent-router/SKILL.md`。本回合仅使用GPT-6.1-Sol High子代理处理迁移证据、辅助脚本及具体诊断；未使用GPT-6-Astra、GPT-6.1-Terra或Computer Use。下一回合仍按该最新版技能和用户禁用Computer Use的要求执行。
+
+- 当前项目为`H:/Program/WindowsToLinux`，开始核查时HEAD为`3c31429ac5c8879be45f9ad2e264297d99bc9492`；源码仍为已审修复`9259ee92`及其既有提交链，本回合未改业务源码。交接更新另本地提交，以`git log -1`及本阶段提交回执为准，未推送，论文三删/一改/一未跟踪均保留。
+- 已从总归档`workspace-retention-20261028/plan.json.gz`对本任务**1165份历史证据、36,773,627字节**逐一核长度及SHA256，缺失/长度不符/hash不符均0；两个旧工具亦匹配来源清单。53个原隔离状态均在，原UNKNOWN五库十五文件与既有审计hash一致。Git全对象完整性检查通过。此清单覆盖`.ai-workspace`，不等于穷尽证明整个旧电脑、仓库或所有数据库的复制；核心原证据已获字节对照证据。
+- 服务器已由用户重装，旧运行/清场回执不能代表新机。最新端点仍为`45.192.105.213:22`、`root`；**现行获准指纹为`SHA256:BiNl5kOr/2sc0vo657OtU0v6DjWAo/YUxZDUZRcjXlM`**，已实际握手取得并由用户明确授权。旧Dyq指纹仅属历史，不应继续固定到新入口。
+- 新凭据只从用户附件在内存解析后传入子进程环境，使用既有`FreshCredentialState.java`及产品连接器完成认证，`connection-01`为SUCCEEDED/exit0且实际pin匹配；密码未回显、未明文落盘。新库为`src/app/db/data/agent-live-credential-20261028-resume-01`，旧01/02凭据库及UNKNOWN未打开、覆盖或重放。
+- 独立进程无SSH密码环境的复用检查`02`重新打开上述新库、解锁并用产品连接器认证，SUCCEEDED/exit0。此前受限上下文的复用检查`01`在H2初始化UPDATE报readonly，发生在第二次SSH前；同JDK对照显示受限`Files.isWritable=false`、授权宿主为true，两个上下文DOS/文件系统readonly均false。实际H2有对应只读退化路径。**后续live runner须使用已授权宿主执行上下文**；没有改ACL、数据库URL、保护守卫或系统设置，不能称修复了产品缺陷或DPAPI故障。原失败完整保留，属于准备阶段，不计八项目分母。
+- 本机实测JDK21.0.10、Maven3.9.12、Python3.12.10、Go1.26.5、Node24.16.0。JDK/Maven/Go/Node路径仍在`E:/Program`；Python使用`E:/Program/Python/Python3.12/python.exe`，不用WindowsApps占位入口。Go与旧机1.26.8不同，此阶段未运行Go/Node业务或全suite。项目`.codex/instructions/task-progress.md`入口缺失，来源不明；本机全局同名规则`H:/_Save_/.codex/instructions/task-progress.md`已读取并按现有索引维护。
+- 缺失依赖按项目固定版本补齐，7个JAR共214,157,957字节均与官方Maven Central SHA1一致并通过ZIP校验，依赖版本/lock未改。辅助build01权限失败、build02/03/04人为停止及外层CMD错误返回0均保留，未当成功；仅**build05**完整17项reactor SUCCESS、BUILD SUCCESS、exit0、313秒左右且所有测试跳过被接受。任务配置需同时`-s`和`-gs`指向`resume-preflight-01/maven-central-settings.xml`，避免合并全局镜像；全局配置文件未改。
+- 实际新JAR SHA256为`1b7b129cd42deeba410416b0d2c77315ec0fb86d809d123d54743fd7d1b98644`；test CLASS仍为`00c343ca366fb3ea67e28c9df2e13cffa2f92e2eb3f748d3a0ffb320507040cd`。资源、当前计划observer、typed SSH日志、Mod描述符当前H路径、7个上传源与已审提交均核真；纯反射验证chunk PUT300000/其它HTTP20000，网络0/runtime未开。新类路径为`resume-preflight-01/java-classpath.txt`，**54项有效、原顺序保留、fixture provider唯一**；旧55计数包含尾随空项，现移除隐式cwd，不复用旧I路径。
+
+本阶段所有新证据在`.ai-workspace/evidence/assisted-continuous-20261028/resume-preflight-01/`；首先读`README.md`、`migration-source-manifest-verification-01.json`、`machine-output-verification-01.json`、`saved-credential-connection-02.json`及阶段收尾回执。R01至R05仍4/8、7/8、4/8、7/8、7/8，**R06未启动，重装服务器尚未执行产品清场或独立after**，模型调用及正式项目尝试均0。不是新轮验收通过，也不能称本阶段零异常。
+
+下一目标回合：适配全新`round-06/`及唯一driver，不能运行或覆盖旧`round-06-preparation-only/`。以本阶段54项类路径、新resume-01凭据库、新获准pin、实际H路径和上述双Maven配置入口接续；新临时目录需另建。本回合临时目录将按最终收尾回执移除，不能照用残留路径。先记录新冻结HEAD/实际输出/参数，再使用产品原清场流程inventory→plan→apply→独立after，并核initialReset。全部门槛通过后才一次排入TaskBoard、FTP、Asset、CSV、Survey、Log、Directory、Binary八项，各自仅一次原尝试；沿用LOW/LOW、1500000已知Token监督阈值、65536输出、90分钟部署等待及原完整FTP负载，独立审批不变。仅测试代码，不用Computer Use/UI/浏览器或SSH手工部署。失败时保留原证据、在隔离树修确证问题并定点验证/提交，活动轮不换冻结版本，再清场复查全新一轮；直到同一轮八项原任务、完整业务、交付和清理全部首次通过。
+
+## 旧机暂停快照（历史）
 
 2026-10-28，Asia/Singapore。用户明确要求“不启动第六轮，直接收尾”。目标尚未达成，按暂停保留；恢复须由用户明确提出。
 
