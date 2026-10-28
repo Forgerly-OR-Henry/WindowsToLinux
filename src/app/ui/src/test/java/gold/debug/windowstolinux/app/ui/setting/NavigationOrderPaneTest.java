@@ -24,6 +24,54 @@ import org.junit.jupiter.api.Test;
 
 class NavigationOrderPaneTest {
     @Test
+    void hiddenPublicationChangesCoalesceUntilTheEditorIsShown() throws Exception {
+        var reads = new AtomicInteger();
+        var window = edt(JFrame::new);
+        var pane = edt(() -> {
+            DesktopThemeService.install(ThemeMode.LIGHT);
+            var root = new NavigationOrderPane(new DesktopPartFactory(ThemePalette.light()),
+                new PageMessagePresenter(MessageCatalog.forLanguageTag("en")));
+            root.section("navigation.platform", () -> {
+                assertFalse(SwingUtilities.isEventDispatchThread());
+                reads.incrementAndGet();
+                return List.of("platform.servers");
+            }, List::copyOf, List::copyOf, value -> value, (expected, requested) -> requested, ignored -> {
+            });
+            window.setContentPane(root);
+            window.setSize(640, 480);
+            root.setLocked(false);
+            return root;
+        });
+        try {
+            await(() -> named(pane, "navigation.platform.list").isEnabled());
+            assertEquals(1, reads.get());
+            edt(() -> {
+                for (int i = 0; i < 10; i++) pane.refreshWhenShowing();
+                assertEquals(1, reads.get());
+                window.setVisible(true);
+                return null;
+            });
+            await(() -> reads.get() == 2 && named(pane, "navigation.platform.list").isEnabled());
+            edt(() -> {
+                window.setVisible(false);
+                pane.refreshWhenShowing();
+                pane.refreshWhenShowing();
+                pane.close();
+                window.setVisible(true);
+                assertEquals(2, reads.get(), "A closed editor must not reload on display");
+                return null;
+            });
+        } finally {
+            edt(() -> {
+                pane.close();
+                window.dispose();
+                return null;
+            });
+            await(() -> !gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner.hasActiveTasks());
+        }
+    }
+
+    @Test
     void clearedSelectionSurvivesReloadWithoutSavingAndEmptyInventoryKeepsItsScroll() throws Exception {
         var saved = new AtomicReference<>(List.of("platform.servers", "platform.models"));
         var writes = new AtomicInteger();

@@ -133,6 +133,7 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
 
         /** Owned transition, stopped on disposal. / 销毁时停止的所属过渡动画。 */
         private final DesktopMotionScope scope = new DesktopMotionScope(() -> true);
+
         private UiMotionHandle transition;
 
         /** Continuous width and velocity retained when reversing a transition. / 反转过渡时保留的连续宽度和速度。 */
@@ -442,9 +443,12 @@ final class PlatformNavigationShell extends JPanel implements AutoCloseable {
         double from = motion.width, target = motion.target;
         motion.transition = motion.scope.animate(this, UiMotionKind.SIDEBAR, progress -> {
             motion.width = from + (target - from) * progress;
-            sidebar.setPreferredSize(new Dimension((int) Math.round(motion.width), 0));
+            int width = (int) Math.round(motion.width);
+            if (sidebar.getPreferredSize().width != width) {
+                sidebar.setPreferredSize(new Dimension(width, 0));
+                revalidate();
+            }
             presentNavigation();
-            revalidate();
             sidebar.repaint();
         });
     }

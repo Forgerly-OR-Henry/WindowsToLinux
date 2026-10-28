@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.app.ui.server;
 
 import java.util.List;
+import java.util.Objects;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JMenuItem;
@@ -83,9 +84,10 @@ final class ServerExtensionMenu implements UiExtensionHost {
     @Override
     public void updateAction(JComponent control, UiActionPresentation presentation) {
         var item = (JMenuItem) control;
-        item.setText(presentation.text());
-        item.setEnabled(presentation.enabled());
-        item.getAccessibleContext().setAccessibleName(presentation.text());
+        if (!Objects.equals(item.getText(), presentation.text())) item.setText(presentation.text());
+        if (item.isEnabled() != presentation.enabled()) item.setEnabled(presentation.enabled());
+        if (!Objects.equals(item.getAccessibleContext().getAccessibleName(), presentation.text()))
+            item.getAccessibleContext().setAccessibleName(presentation.text());
     }
 
     /** Reorders managed items only when their identities change. / 仅受管身份变化时重新排列。
@@ -99,6 +101,8 @@ final class ServerExtensionMenu implements UiExtensionHost {
             if (!components.isEmpty()) menu.addSeparator();
             menu.add(recheckIdentityItem);
             menu.add(deleteItem);
+            menu.revalidate();
+            menu.repaint();
         }
         refresh();
     }
@@ -112,12 +116,12 @@ final class ServerExtensionMenu implements UiExtensionHost {
             appearance = current;
             scale = zoom;
         }
-        deleteItem.setText(delete.getText());
-        deleteItem.setEnabled(delete.isEnabled());
-        recheckIdentityItem.setText(recheckIdentity.getText());
-        recheckIdentityItem.setEnabled(recheckIdentity.isEnabled());
-        menu.revalidate();
-        menu.repaint();
+        if (!Objects.equals(deleteItem.getText(), delete.getText())) deleteItem.setText(delete.getText());
+        if (deleteItem.isEnabled() != delete.isEnabled()) deleteItem.setEnabled(delete.isEnabled());
+        if (!Objects.equals(recheckIdentityItem.getText(), recheckIdentity.getText()))
+            recheckIdentityItem.setText(recheckIdentity.getText());
+        if (recheckIdentityItem.isEnabled() != recheckIdentity.isEnabled())
+            recheckIdentityItem.setEnabled(recheckIdentity.isEnabled());
     }
 
     /** Hides the original transient popup on release. / 释放时隐藏原临时菜单。 */

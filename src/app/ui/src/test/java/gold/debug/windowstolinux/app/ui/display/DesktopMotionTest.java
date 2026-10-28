@@ -3,6 +3,8 @@ package gold.debug.windowstolinux.app.ui.display;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.*;
 import javax.swing.*;
 
@@ -10,6 +12,124 @@ import org.junit.jupiter.api.Test;
 import gold.debug.windowstolinux.appapi.ui.page.*;
 
 class DesktopMotionTest {
+    @Test
+    void theSharedClockRunsOnlyWhileAtLeastOneMotionIsActive() throws Exception {
+        String flag = System.getProperty("flatlaf.animation");
+        boolean previous = DesktopMotion.preference();
+        SwingUtilities.invokeAndWait(() -> {
+            var first = new DesktopMotion(ignored -> {
+            });
+            var second = new DesktopMotion(ignored -> {
+            });
+            try {
+                System.setProperty("flatlaf.animation", "true");
+                DesktopMotion.preference(true);
+                first.start();
+                second.start();
+                assertEquals(2, DesktopMotion.runningCount());
+                assertTrue(DesktopMotion.clockRunning());
+                first.close();
+                assertEquals(1, DesktopMotion.runningCount());
+                assertTrue(DesktopMotion.clockRunning());
+                second.close();
+                assertEquals(0, DesktopMotion.runningCount());
+                assertFalse(DesktopMotion.clockRunning());
+            } finally {
+                first.close();
+                second.close();
+                if (flag == null) System.clearProperty("flatlaf.animation");
+                else System.setProperty("flatlaf.animation", flag);
+                DesktopMotion.preference(previous);
+            }
+        });
+    }
+
+    @Test
+    void frameFailuresAreReportedWithoutStarvingRemainingClocks() throws Exception {
+        String flag = System.getProperty("flatlaf.animation");
+        boolean previous = DesktopMotion.preference();
+        var clocks = new ArrayList<DesktopMotion>();
+        var report = new AtomicReference<Throwable>();
+        var handler = new AtomicReference<Thread.UncaughtExceptionHandler>();
+        var healthyFrame = new CountDownLatch(1);
+        var reported = new CountDownLatch(1);
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                handler.set(Thread.currentThread().getUncaughtExceptionHandler());
+                Thread.currentThread().setUncaughtExceptionHandler((thread, failure) -> {
+                    report.set(failure);
+                    reported.countDown();
+                });
+                System.setProperty("flatlaf.animation", "true");
+                DesktopMotion.preference(true);
+                clocks.add(new DesktopMotion(ignored -> {
+                    throw new IllegalStateException("first frame failure");
+                }));
+                clocks.add(new DesktopMotion(ignored -> {
+                    throw new IllegalArgumentException("second frame failure");
+                }));
+                clocks.add(new DesktopMotion(elapsed -> {
+                    assertTrue(SwingUtilities.isEventDispatchThread());
+                    assertTrue(elapsed > 0);
+                    clocks.getLast().close();
+                    healthyFrame.countDown();
+                }));
+                clocks.forEach(DesktopMotion::start);
+            });
+            assertTrue(healthyFrame.await(2, TimeUnit.SECONDS));
+            assertTrue(reported.await(2, TimeUnit.SECONDS));
+            SwingUtilities.invokeAndWait(() -> {
+                assertInstanceOf(IllegalStateException.class, report.get());
+                assertEquals(1, report.get().getSuppressed().length);
+                assertInstanceOf(IllegalArgumentException.class, report.get().getSuppressed()[0]);
+                assertEquals(0, DesktopMotion.runningCount());
+                assertFalse(DesktopMotion.clockRunning());
+            });
+        } finally {
+            SwingUtilities.invokeAndWait(() -> {
+                clocks.forEach(DesktopMotion::close);
+                if (flag == null) System.clearProperty("flatlaf.animation");
+                else System.setProperty("flatlaf.animation", flag);
+                DesktopMotion.preference(previous);
+                Thread.currentThread().setUncaughtExceptionHandler(handler.get());
+            });
+        }
+    }
+
+    @Test
+    void cancellingASiblingDuringAFrameSkipsItsPendingCallback() throws Exception {
+        String flag = System.getProperty("flatlaf.animation");
+        boolean previous = DesktopMotion.preference();
+        var clocks = new ArrayList<DesktopMotion>();
+        var cancelledFrames = new AtomicInteger();
+        var finished = new CountDownLatch(1);
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                System.setProperty("flatlaf.animation", "true");
+                DesktopMotion.preference(true);
+                clocks.add(new DesktopMotion(ignored -> {
+                    clocks.forEach(DesktopMotion::close);
+                    finished.countDown();
+                }));
+                clocks.add(new DesktopMotion(ignored -> cancelledFrames.incrementAndGet()));
+                clocks.forEach(DesktopMotion::start);
+            });
+            assertTrue(finished.await(2, TimeUnit.SECONDS));
+            SwingUtilities.invokeAndWait(() -> {
+                assertEquals(0, cancelledFrames.get());
+                assertEquals(0, DesktopMotion.runningCount());
+                assertFalse(DesktopMotion.clockRunning());
+            });
+        } finally {
+            SwingUtilities.invokeAndWait(() -> {
+                clocks.forEach(DesktopMotion::close);
+                if (flag == null) System.clearProperty("flatlaf.animation");
+                else System.setProperty("flatlaf.animation", flag);
+                DesktopMotion.preference(previous);
+            });
+        }
+    }
+
     @Test
     void easingIsMonotonicAndDurationsAreIndependentOfScale() {
         double previous = -1;

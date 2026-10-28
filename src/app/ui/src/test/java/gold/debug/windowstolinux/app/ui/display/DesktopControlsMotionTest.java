@@ -12,6 +12,110 @@ import org.junit.jupiter.api.Test;
 
 class DesktopControlsMotionTest {
     @Test
+    void drawerFramesKeepOwnerLayoutResponsibilitiesAndSkipUnchangedBounds() throws Exception {
+        String flag = System.getProperty("flatlaf.animation");
+        boolean previous = DesktopMotion.preference();
+        edt(() -> {
+            var layouts = new AtomicInteger();
+            var drawer = new AtomicReference<DesktopDrawer>();
+            var inventory = new JPanel(null);
+            var detail = new JPanel();
+            var footer = new JButton("Footer");
+            inventory.add(footer);
+            var owner = new JPanel(null) {
+                @Override
+                public boolean isShowing() {
+                    return true;
+                }
+
+                @Override
+                public void doLayout() {
+                    layouts.incrementAndGet();
+                    drawer.get().layout(inventory, new Rectangle(0, 0, getWidth(), getHeight()), 400, 16);
+                    footer.setBounds(0, 0, inventory.getWidth(), 30);
+                }
+            };
+            owner.add(inventory);
+            owner.add(detail);
+            owner.setSize(1000, 600);
+            drawer.set(new DesktopDrawer(owner, detail));
+            try {
+                System.setProperty("flatlaf.animation", "true");
+                DesktopMotion.preference(true);
+                owner.doLayout();
+                int initialLayouts = layouts.get();
+                drawer.get().expanded(true);
+                assertEquals(initialLayouts, layouts.get(), "The unchanged first frame must reuse current geometry");
+                DesktopMotion.preference(false);
+                assertEquals(initialLayouts + 1, layouts.get());
+                assertEquals(400, inventory.getWidth());
+                assertEquals(400, footer.getWidth(), "Owner-specific dependent layout must run with the new inventory width");
+                assertEquals(416, detail.getX());
+                assertEquals(584, detail.getWidth());
+                drawer.get().reset(true);
+                assertEquals(initialLayouts + 1, layouts.get(), "Identical integer bounds must not relayout the owner");
+            } finally {
+                drawer.get().close();
+                if (flag == null) System.clearProperty("flatlaf.animation");
+                else System.setProperty("flatlaf.animation", flag);
+                DesktopMotion.preference(previous);
+            }
+            return null;
+        });
+    }
+
+    @Test
+    void popupMotionMovesActualHitBoundsWithoutRepeatingContentLayout() throws Exception {
+        String flag = System.getProperty("flatlaf.animation");
+        boolean previous = DesktopMotion.preference();
+        edt(() -> {
+            var layouts = new AtomicInteger();
+            var content = new JButton("Action");
+            var pane = new DesktopRevealPane(content);
+            pane.setLayout(new BorderLayout() {
+                @Override
+                public void layoutContainer(Container target) {
+                    layouts.incrementAndGet();
+                    super.layoutContainer(target);
+                }
+            });
+            pane.remove(content);
+            pane.add(content, BorderLayout.CENTER);
+            var window = new JFrame("Popup motion bounds");
+            try {
+                System.setProperty("flatlaf.animation", "true");
+                DesktopMotion.preference(true);
+                window.setContentPane(pane);
+                window.setSize(240, 140);
+                window.setVisible(true);
+                pane.doLayout();
+                int initialLayouts = layouts.get();
+                var event = new java.awt.event.HierarchyEvent(pane, java.awt.event.HierarchyEvent.HIERARCHY_CHANGED,
+                    pane, null, java.awt.event.HierarchyEvent.SHOWING_CHANGED);
+                for (var listener : pane.getHierarchyListeners()) listener.hierarchyChanged(event);
+                int offset = com.formdev.flatlaf.util.UIScale.scale(6);
+                assertEquals(offset, content.getY());
+                assertSame(pane, SwingUtilities.getDeepestComponentAt(pane, 20, 0));
+                assertSame(content, SwingUtilities.getDeepestComponentAt(pane, 20, offset + 2));
+                assertEquals(initialLayouts, layouts.get());
+                pane.doLayout();
+                assertEquals(offset, content.getY(), "External layout must apply the offset once without accumulating it");
+                DesktopMotion.preference(false);
+                assertEquals(0, content.getY());
+                assertSame(content, SwingUtilities.getDeepestComponentAt(pane, 20, 2));
+                assertEquals(initialLayouts + 1, layouts.get(), "The final frame must move bounds without a full layout");
+            } finally {
+                pane.close();
+                window.dispose();
+                if (flag == null) System.clearProperty("flatlaf.animation");
+                else System.setProperty("flatlaf.animation", flag);
+                DesktopMotion.preference(previous);
+            }
+            return null;
+        });
+    }
+
+    @Test
     void changingTheExpandedTargetOrReversingRetainsTheCurrentInventoryWidth() throws Exception {
         String flag = System.getProperty("flatlaf.animation");
         boolean previous = DesktopMotion.preference();

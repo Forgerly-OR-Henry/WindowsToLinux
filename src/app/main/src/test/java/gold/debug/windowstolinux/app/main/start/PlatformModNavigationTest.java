@@ -190,6 +190,53 @@ class PlatformModNavigationTest {
     }
 
     @Test
+    void selectingRootsReusesButtonsAndDoesNotPublishOrderChanges() throws Exception {
+        var navigation = onEdt(() -> (gold.debug.windowstolinux.app.ui.mod.ModNavigationPane) named(frame, "mods.navigation"));
+        var first = onEdt(() -> rootButton(P));
+        var second = onEdt(() -> rootButton(FREE));
+        var firstIcon = onEdt(first::getIcon);
+        var notifications = new java.util.concurrent.atomic.AtomicInteger();
+        try (var listener = onEdt(() -> navigation.onMetadataChange(notifications::incrementAndGet))) {
+            clickRoot(P);
+            clickRoot(FREE);
+            clickRoot(P);
+            onEdt(() -> {
+                assertSame(first, rootButton(P));
+                assertSame(second, rootButton(FREE));
+                assertSame(firstIcon, first.getIcon());
+                assertNotEquals(first.getBackground(), second.getBackground());
+                assertEquals(0, notifications.get(), "Selection must not reload hidden ordering settings");
+                return null;
+            });
+        }
+    }
+
+    @Test
+    void navigationAvailabilityRestoresPageActionsWithoutPublishingOrderChanges() throws Exception {
+        var navigation = onEdt(() -> (gold.debug.windowstolinux.app.ui.mod.ModNavigationPane) named(frame, "mods.navigation"));
+        var states = new java.util.ArrayList<Boolean>();
+        var metadata = new java.util.concurrent.atomic.AtomicInteger();
+        try (var stateSubscription = onEdt(() -> navigation.onChange(() -> states.add(navigation.available())));
+             var metadataSubscription = onEdt(() -> navigation.onMetadataChange(metadata::incrementAndGet))) {
+            onEdt(() -> {
+                assertTrue(named(frame, "mods.openPage").isEnabled());
+                navigation.setLocked(true);
+                assertFalse(named(frame, "mods.openPage").isEnabled());
+                navigation.setLocked(false);
+                return null;
+            });
+            idle();
+            onEdt(() -> {
+                assertTrue(states.contains(false), "Dependent controls must observe unavailable navigation");
+                assertEquals(Boolean.TRUE, states.getLast(), "Preference completion must restore availability");
+                assertEquals(0, metadata.get());
+                assertTrue(named(frame, "mods.openPage").isEnabled());
+                return null;
+            });
+        }
+    }
+
+    @Test
     void publishedModOpensActualPlatformDestinationsAndReturnsToItsOriginalDraft() throws Exception {
         var models = runtime.models();
         onEdt(() -> {
@@ -268,6 +315,7 @@ class PlatformModNavigationTest {
             assertEquals(2, list.getModel().getSize());
             list.setSelectedIndex(1);
             ((JButton) named(frame, "navigation.mods.up")).doClick(0);
+            ((JButton) named(frame, "navigation.logo")).doClick(0);
             return null;
         });
         idle();

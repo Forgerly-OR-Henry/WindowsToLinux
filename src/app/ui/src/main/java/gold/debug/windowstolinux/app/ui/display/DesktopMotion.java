@@ -9,11 +9,18 @@ import javax.swing.Timer;
 /** Shared elapsed-time clock and policy for UI motion. / UI 动效共用的实际时间时钟和策略。 */
 public final class DesktopMotion implements AutoCloseable {
     private static volatile boolean preference = true;
+
     private static boolean suspended;
+
     private static final Set<DesktopMotion> RUNNING = new LinkedHashSet<>();
+
     private static final Map<Runnable, Boolean> OBSERVERS = Collections.synchronizedMap(new WeakHashMap<>());
 
+    // Local Windows/JDK 21 sampling delivered 16 ms requests around 31 ms; 10 ms avoided that quantization.
+    private static final Timer TIMER = new Timer(10, ignored -> pulse());
+
     static {
+        TIMER.setCoalesce(true);
         Toolkit.getDefaultToolkit().addPropertyChangeListener("win.clientAreaAnimation",
             event -> SwingUtilities.invokeLater(DesktopMotion::refreshPolicy));
     }
@@ -25,7 +32,9 @@ public final class DesktopMotion implements AutoCloseable {
         refreshPolicy();
     }
 
-    public static boolean preference() { return preference; }
+    public static boolean preference() {
+        return preference;
+    }
 
     /** Privacy lock suspends presentation without changing the persisted preference. */
     public static void suspended(boolean value) {
@@ -48,18 +57,29 @@ public final class DesktopMotion implements AutoCloseable {
         Throwable failure = null;
         if (!enabled()) for (var clock : List.copyOf(RUNNING)) {
             clock.close();
-            try { clock.frame.accept(Double.POSITIVE_INFINITY); }
-            catch (RuntimeException | Error problem) {
-                if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
+            try {
+                clock.frame.accept(Double.POSITIVE_INFINITY);
+            } catch (RuntimeException | Error problem) {
+                if (failure == null) failure = problem;
+                else if (failure != problem) failure.addSuppressed(problem);
             }
         }
         List<Runnable> observers;
-        synchronized (OBSERVERS) { observers = List.copyOf(OBSERVERS.keySet()); }
-        for (var listener : observers) try { listener.run(); }
-        catch (RuntimeException | Error problem) {
-            if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
+        synchronized (OBSERVERS) {
+            observers = List.copyOf(OBSERVERS.keySet());
         }
+        for (var listener : observers)
+            try {
+                listener.run();
+            } catch (RuntimeException | Error problem) {
+                if (failure == null) failure = problem;
+                else if (failure != problem) failure.addSuppressed(problem);
+            }
         for (var window : java.awt.Window.getWindows()) if (window.isDisplayable()) window.repaint();
+        report(failure);
+    }
+
+    private static void report(Throwable failure) {
         if (failure != null) {
             Throwable reported = failure;
             SwingUtilities.invokeLater(() -> {
@@ -77,8 +97,28 @@ public final class DesktopMotion implements AutoCloseable {
     public static void requireEdt() {
         if (!SwingUtilities.isEventDispatchThread()) throw new IllegalStateException("Motion requires EDT");
     }
-    /** Owned frame timer and elapsed-time callback. / 所属帧计时器和实际时间回调。 */
-    private final Timer timer;
+
+    private static void pulse() {
+        long now = System.nanoTime();
+        Throwable failure = null;
+        for (var clock : List.copyOf(RUNNING)) {
+            if (!RUNNING.contains(clock) || clock.last > now) continue;
+            double elapsed = (now - clock.last) / 1_000_000_000d;
+            clock.last = now;
+            if (!enabled()) {
+                clock.close();
+                elapsed = Double.POSITIVE_INFINITY;
+            }
+            try {
+                clock.frame.accept(elapsed);
+            } catch (RuntimeException | Error problem) {
+                clock.close();
+                if (failure == null) failure = problem;
+                else if (failure != problem) failure.addSuppressed(problem);
+            }
+        }
+        report(failure);
+    }
 
     /** Previous monotonic frame timestamp. / 上一帧单调时钟时间戳。 */
     private long last;
@@ -90,15 +130,6 @@ public final class DesktopMotion implements AutoCloseable {
      * @param frame receives elapsed seconds / 接收经过的秒数 */
     public DesktopMotion(DoubleConsumer frame) {
         this.frame = frame;
-        timer = new Timer(16, ignored -> {
-            long now = System.nanoTime();
-            double elapsed = (now - last) / 1_000_000_000d;
-            last = now;
-            if (!enabled()) { close(); elapsed = Double.POSITIVE_INFINITY; }
-            try { frame.accept(elapsed); }
-            catch (RuntimeException | Error failure) { close(); throw failure; }
-        });
-        timer.setCoalesce(true);
     }
 
     /** Starts or continues the monotonic clock. / 启动或继续单调时钟。 */
@@ -106,10 +137,9 @@ public final class DesktopMotion implements AutoCloseable {
         requireEdt();
         if (!enabled()) {
             frame.accept(Double.POSITIVE_INFINITY);
-        } else if (!timer.isRunning()) {
+        } else if (RUNNING.add(this)) {
             last = System.nanoTime();
-            RUNNING.add(this);
-            timer.start();
+            if (!TIMER.isRunning()) TIMER.start();
         }
     }
 
@@ -123,9 +153,15 @@ public final class DesktopMotion implements AutoCloseable {
     /** Stops the owned animation. / 停止所属动画。 */
     @Override
     public void close() {
-        timer.stop();
         RUNNING.remove(this);
+        if (RUNNING.isEmpty()) TIMER.stop();
     }
 
-    static int runningCount() { return RUNNING.size(); }
+    static int runningCount() {
+        return RUNNING.size();
+    }
+
+    static boolean clockRunning() {
+        return TIMER.isRunning();
+    }
 }
