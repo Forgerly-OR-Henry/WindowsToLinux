@@ -1,8 +1,22 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 新机接续：本目标回合的结果与下一回合入口
+## 现行入口：R06已收尾，R07独立冻结工作树准备中
 
-2026-10-28，Asia/Singapore。用户已明确恢复，并明确要求：本回合完成迁移校验和新服务器连接测试后结束，由**当前目标的下一回合**继续；不是新建侧栏聊天，也不是再次暂停或完成长期目标。以下补充为现行入口，其后的旧机暂停快照保留作历史。
+目标active，R06未达标：计划八项，仅TaskBoard/FTP/Asset三个原完整回执PASS、后五项未启动；不是3/3，也不是五项业务失败。运行期主工作区出现并行UI源码及818→da3e提交，原冻结守卫在CSV launch前拒绝，不能继续声称整轮保持冻结。FTP原64MiB全业务通过，含纯生成恢复1/未知usage1；Asset原JUnit/交付/清理均0，源码变更对在途运行的全部影响不作无证断言。R06原始证据及额外冻结审计见[已关闭轮](../../../.ai-workspace/evidence/assisted-continuous-20261028/round-06/README.md)。原driver16741实际exit1，observer37339有意终止后实际exit1，CIM自有进程0，clean28r06已清，1447文本敏感值审计通过；关闭文档修改后的02检查覆盖1453文本、零匹配、实际0，独占临时目录已清。不得poll/重启旧句柄或重发旧八队列。
+
+正式后续验收根改为`H:/Program/WindowsToLinux/.ai-workspace/wt/r07`，分支`codex/assisted-frozen-r07-20261029`，候选`65f8dfd1e70ddac4debd0ea6243ddd83393e30e5`（保留9068/da3e双parent）。已纳入授权8MiB和已选提交快照，主分支后续7487等及WIP不随入活动轮。16个workspace输出/全部源码、state、delivery与原证据必须在该树，38个E缓存JAR逐一hash，禁止引用会变的主target；实际54cp、两Mod descriptor、8MiB CLASS及300000/20000已核，编译仅skipTests，不是业务通过。此树是保留验收根，不随tmp回收，不在运行后移动绝对路径。
+
+新凭据根为该树`src/app/db/data/agent-live-credential-20261029-r07-02`。本地桥02因未安装presenter失败、部分r07-01保留；桥03仅补deny-only presenter后把**主机新resume-01**凭据通过char[]内存导入全新r07-02，实际0，无旧copied/UNKNOWN开库/复制，无远端。独立产品连接connection-reuse-01 JUnit1/0、6.777秒、Maven0，实际已授权BiNl pin匹配、root/45.192.105.213:22，无密码env/模型请求。短独占临时根`H:/Program/WindowsToLinux/.ai-workspace/wt/r07t`仅本任务使用，后续按身份清理，不是源码/原证据根。
+
+R07尚未正式reset/run。下一回合先读上述验收根的`.ai-workspace/evidence/assisted-continuous-20261028/round-07/local-preparation-final-02.json`、`connection-reuse-01-parent-verification.json`以及最终控制器/policy/README（准备中），检查actual HEAD/source/8MiB/54cp/descriptor/新vault后，经产品inventory→plan→apply→独立after与原initialReset通过，才从零排完整八项各一次；不能只跑R06未启五项或拼旧三项。全部真实调用用授权宿主、JDK21、双-s/-gs任务Central配置、LOW/LOW/1500000/65536/90分钟及原独立审批；模型/凭据值不得入日志/Git。仅测试代码，无Computer Use/UI/浏览器；Sol执行，Astra仅曾处理JFR观测判断，无Terra。
+
+用户已撤回尚未执行的单项目三连过讨论方案：仍要求同一冻结轮八项原任务、既定完整业务、交付及清理均首次通过。任何一项正式失败就判整轮未达标，但原轮其余项目继续完成，前提是不绕过冻结或安全守卫；本次R06其余项目被原HEAD守卫阻断，未伪记业务失败。修复在隔离树检查共享代码及直接受影响项目，不能把新版本掺入活动轮，轮末再合入、清场独立复查。每次修复先查新问题/旧复发/相似未知/旧判断修正及新旧反例，撤旧保护需反证，详见逐轮报告及fix-history-anti-oscillation-audit-01。主树用户论文、并行修改/提交均保留；本任务只提交自有文件，不推送。
+
+用户明确授权后续FTP文件由64MiB改8MiB，其余业务场景保留。原8MiB提交9068fe92仍在`codex/ftp-live-8m-20261029`，旧tmp/f8m29已正常move，不能再用旧路径。R07候选65f8实际CLASS为8MiB，1MiB片共8/先2后6，五SHA/双版本/10并发/19正常trace和真实停启等保留；真实8MiB业务尚未运行。未来checker需实际policy/各launch的workloadPolicySha256/新scope audit，旧64MiB成绩不可改标8MiB，三连过门槛没有恢复。
+
+## 新机预检阶段交接（历史，本阶段已结束）
+
+2026-10-28，Asia/Singapore。用户已明确恢复，并明确要求：本回合完成迁移校验和新服务器连接测试后结束，由**当前目标的下一回合**继续；不是新建侧栏聊天，也不是再次暂停或完成长期目标。以下为该预检阶段交接，现行入口见上节；其后的旧机暂停快照继续保留作历史。
 
 当前已读取并沿用`H:/_Save_/.codex/skills/gpt-6-x-agent-router/SKILL.md`。本回合仅使用GPT-6.1-Sol High子代理处理迁移证据、辅助脚本及具体诊断；未使用GPT-6-Astra、GPT-6.1-Terra或Computer Use。下一回合仍按该最新版技能和用户禁用Computer Use的要求执行。
 

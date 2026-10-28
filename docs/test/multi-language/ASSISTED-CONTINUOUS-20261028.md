@@ -1,8 +1,18 @@
 # ASSISTED 连续首过验证记录
 
-状态：用户已明确恢复，目标尚未达成；新机迁移/产品连接预检已完成，按要求本目标回合收尾，下一目标回合再清场复查并启动新轮。R05仍7/8，R06未启动。仅通过测试代码执行真实模型、SSH、产品部署及既定业务验证，不使用真实界面或浏览器。现行入口见[阶段交接](ASSISTED-CONTINUOUS-20261028-HANDOFF.md)首章，旧暂停记录保留为历史。
+状态：目标active，R06已因并行主工作区源码/HEAD漂移被原冻结守卫阻断：计划八项，前三项原完整回执PASS、后五项未启动；不是3/3，也不把未启动项目记为业务失败，整轮未达标。FTP原64MiB五下载/全业务/交付/清理齐备，内部纯生成恢复1/未知用量1另记，非零异常。R06自有进程及临时目录已收尾、文本敏感值审计通过。R07在独立保留工作树准备，候选65f8dfd1含已选主分支提交和授权8MiB；新库独立产品连接已过，尚无正式清场/部署。目标仍同轮八项完整首过，既有结果不拼接。仅测试代码，不使用真实界面或浏览器。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
+
+## 用户2026-10-29确认的现行执行与修复规则
+
+目标仍为同一冻结轮八个项目完整首过。单项目连续三次后再统一验收的讨论方案已由用户撤回，尚未执行，不设置三连过前置门槛、不折算旧成绩；该指示没有改变当时R06原八条队列及冻结版本/参数。
+
+一项正式项目失败即判整轮未达标，但不立即中止原轮；后续项目继续用原冻结版完成，保留完整跨项目证据。可同时在隔离工作树调查和修复，评估共享平台、审批、执行、模板及生命周期对其他项目的影响，只运行直接相关定点验证及必要编译。轮末原任务与自有进程收尾后才合入并本地提交，再清场、独立复查后开始新轮；修改版的定点或独立诊断结果不混入原轮成绩。修复对全部八项的实际影响由下一完整冻结轮验收。
+
+每项修复在实施前对照原失败、历史确认原因、旧修复提交及所保护行为，分类为新问题、已确认旧问题复发、症状相似但原因未明或旧判断经反证修正；证据不足保留未知。记录本次为何需要改变旧策略、保留哪些旧保护及回归反例，合入时同时验证新故障和旧修复保护的行为。若拟撤销旧修复，须有反证和新旧场景对照结果；不因下一轮再次报错就回滚为旧实现或在同一组参数之间反复切换。复发无新证据时先调整调查方法，不把诊断增强当根因修复。已有R01-R05修复链另作只读回查，原失败/UNKNOWN及用户论文修改继续保留。
+
+用户随后因当前网速慢，明确授权**下一次新冻结验收将FTP文件改为8MiB（8388608字节）**。此明确授权仅替代原64MiB文件大小及其派生分片数：1MiB分片、双版本、五次全量下载/SHA、10并发complete、重复冲突、取消持久化、错误SHA、部分上传重启续传、真实后端停启/502、交付和清理场景继续保留。部分上传按原1/4位置由16/64改为2/8后重启，再续6片；两个版本加三个辅助单片的正常trace由131组改为19组。不得把历史64MiB结果改标为8MiB或混算为同一冻结轮。当前R06仍用64MiB及原实际产物，不中途换参数；8MiB变更先在独立工作树准备验证和本地提交，原轮收尾后才可合入，未来轮另记实际冻结版本与口径。该请求不授权改产品大小上限、上传时限或共享安全保护。
 
 ## 逐轮结果
 
@@ -13,6 +23,7 @@
 | round-03 | 37ecb0c1b0bc21dfbf0f40622b2bfdd94e48f537 | 预检P01失败，维护后完整清场及独立复查通过 | 八项各一次：首过4、失败/UNKNOWN4 | 未达成；四项失败保留，三项改动轮末合入，准备R04 |
 | round-04 | f03ebfccf070c029f3fcaf124092906412f77449 | 原P01漂移拒绝保留，服务静止后完整清场及独立复查通过 | 八项各一次：首过7、FTP业务错误1 | 未达成；无内部生成恢复，预算修复已于轮末合入，准备R05 |
 | round-05 | abc7abd1fa8db25626854eece961ca43347913e8 | 首个清场执行和独立复查均通过 | 八项各一次：首过7、FTP业务失败1 | 未达成；无内部生成恢复，分阶段上传修复已轮末合入9259ee92，准备R06 |
+| round-06 | 818ac8acb065182cfd90b090db42d322e605436e | 产品清场及独立复查通过 | 计划八项，仅前三项原完整回执PASS、后五未启动；0项已观察业务失败 | 未达标；运行期主工作区发生并行源码/HEAD漂移，原守卫在CSV前退出；准备问题单列，原64MiB保留，FTP恢复1/未知usage1 |
 
 ## 失败原因与解决方案
 
@@ -555,3 +566,81 @@ R05报告已本地提交260620df27fa624a52076e44ddd518099d069dac。随后仅准�
 预检异常独立记录：native keyscan工具错误→Java拒绝式公钥观察；缓存写权限失败→批准的缓存写入；WinRT路径读取拒绝→内存流；本地origin/HEAD悬空→保留原值后修本地别名；慢依赖下载→固定版本官方checksum/ZIP校验后入缓存；辅助Maven JVM中止而外层CMD报0→必须同时核完整BUILD SUCCESS；单-s仍合并全局镜像→本任务同时-s/-gs；受限H2只读→授权宿主对照验证。7个补齐JAR共214,157,957字节，所有whole-file校验和ZIP验证通过，有界range下载失败0；不据此称整个预检零异常。build01失败、02/03/04中止、受限复用01失败均保留，不计八项目分母。
 
 本阶段证据及未推送本地提交、隐私/进程/临时目录收尾见`resume-preflight-01/`。项目个人`.codex`入口缺失仍记录，已读取本机全局同名进度规则。下一目标回合按阶段交接创建全新R06证据/driver、记录新冻结版本和参数、产品清场及独立复查，之后才开始八项原任务。目标继续active，不能把预检或旧轮PASS计为新轮完成。
+
+## round-06 准备与冻结
+
+冻结`818ac8acb065182cfd90b090db42d322e605436e`（新机预检文档提交，业务源码仍9259修复链）。新54有效cp保持旧顺序，JAR/test CLASS与已通过新机预检匹配；任务Maven双配置入口及其内容、私有模型配置仅不透明hash、原模型参数/有限上传策略及业务负载均固定，未重跑已通过构建或改业务源码。新目录`round-06/`与旧准备归档分开。
+
+准备控制异常单列：父误读序列化regex转义，虽然直接AST反例实际匹配成功，仍过早正常quit了尚0远端/模型/项目的准备driver。原“regex有bug”判断不成立，纠正回执明确撤回且不覆盖原初查；旧driver真实退出0。只更换新启动/console回执标签，实际验收逻辑及参数不变；唯一活动driver为session16741/Python34524（UTC13:49:17.251035），授权宿主、新resume-01/BiNl pin，不能当项目失败或无准备异常。
+
+host-before-01通过：JUnit1/0失败/错误/跳过、31.848秒、Maven0/BUILD SUCCESS；产品盘点8受管根全部不存在，units/accounts/目标开发包为空，APT cache bytes/deb/partial均0。已发新plan；完整apply及独立after/initialReset成功前不启动八项。
+
+本轮沿用既定验收入口、原真实业务链或CLI样例；不将其概括为BUSINESS.md全部10k/100k压测矩阵。FTP原完整负载保持，额外父核原五下载与版本marker；独立审批、原任务及交付/清理门槛不减。
+
+用户随后明确确认长期验收范围“沿用交接的既定验收负载”，而非补齐BUSINESS.md全部矩阵。user-acceptance-scope-01.json保存原答复；原任务/业务/交付/清理首次通过仍必须同轮八项满足，本轮负载/冻结参数无改变，不扩大为全规格或全unit suite声明。
+
+plan01 SHA`c7faa2f758eb281d68fafcf1a56997ebb4f203eb934c1e626b39c8cd3e5f4587`、JUnit26.150秒/0；apply01同计划、JUnit25.540秒/0，实际停止/删定义/账户/根/开发包均0、APT缓存清理。独立after01通过，与postInventory逐字段完全一致，8根及所有受管集合为空、cache三项0；原inspector initialReset在项目0时verified=true，initial-clean-verification-01保留。随后只一次排八run，首TaskBoard Maven26136、原root9b737f6f-dcf4-4048-99bf-0501ba9f0432启动；其它尚原队列，不能重发。语言阶段原格式反馈保留，生成SUC不替代APPROVE或部署/业务成功。
+
+### round-06 TaskBoard完整首次通过
+
+原root`9b737f6f-dcf4-4048-99bf-0501ba9f0432`，应用`wtl-assisted-task-board-3i4j8l5y8`，原库`assisted-live-task-board-3i4j6hkcg`，修订`9cbfba7e0fc204d8796a4a75940072116f4ba31e33d4c05ba2fb6199fb36e19d`。JUnit1/0失败/0错误/0跳过、2324.118秒、Maven0；既定业务及持久化、交付、额外产品cleanup退出0与STOPPED/DISABLED全部齐备，父原inspector eligibleAttempt=true。
+
+known tokens1018335，92唯一generation IDs/92物理events/唯一(id,number)，物理非成功generation0；能力探测与额外收尾不含，非完整账单。LANGUAGE结构化提交反馈16另记，不当作整项目重试或CHUNK恢复，也不声称零异常。原assessment、parent-verification及raw日志/XML/exit/cleanup均保留。当前1/8完整首过，FTP原Maven2132按原队列已启动；本轮源/实际输出及参数继续818冻结，不重发run。
+
+### round-06 FTP原下载等待及独立辅助诊断
+
+FTP原root`8d2aab24-e6a0-4c40-a1cf-7b8b9cc9e314`部署成功，首版本64个1MiB分片完成后进入原64MiB下载。UTC2026-10-28 16:09仍只有BEGIN，无完整收体、SHA或原退出回执，尚不能算业务首过。原JVM只读线程快照确认main在http/readAllBytes；GET的20秒是读等待时限，没有整笔总期限，90分钟workflow等待不包后续业务。旧R04原日志的1020301ms/67108864后VERIFIED是历史单笔事实，不能推出本次完成或慢因。
+
+Astra High仅就安全观测方法作只读判断：JFR默认敏感事件、活动设置合并及SocketRead可能反向DNS带来新增变量，父未启用JFR。之后沿用旧产品维护调用链，新增本轮专用、固定脚本哈希且移除清理分支的辅助工具；两个版本Java本地单独编译均0，后版防止等待超时后异步任务可能仍持有的公开脚本bytes被提前清零。前版未运行远端，并非产品修复或正式验收重试。
+
+`diagnostic-ftp-sockets-01`只读远端systemctl/ss两次15秒快照，产品连接及独立维护审批grant均通过；实际新指纹匹配，维护task`9ad5e7c6-2c5e-436b-a8cc-da9a3c3d619c`/远端0/Java0/外层0。UTC16:05:15至16:05:30，同一后端PID119042/socket的bytes_acked增加1112571、bytes_sent增加1178054，发送队列4169664→3057093，证明该内核连接有传输推进。不能当作Java已收正文、下载剩余量或SHA成功；网关MainPID未匹配socket属于覆盖缺口，不能写成零流量；瓶颈和最终结果仍未知。
+
+辅助仅正常打开本机新resume-01（其本地账本可能更新）并新建maintenance-ftp-sockets-65ct7suas，未打开活动FTP库、旧复制凭据库或UNKNOWN；模型/部署/清场/额外HTTP请求0。未修改服务、信号、内核、参数或重发原任务；不加入或删改八项分母。Java6920的原句柄实际退出0且父CIM按创建时间核不存在，两次辅助编译输出已按精确路径/non-reparse/唯一class核查删除，原轮clean28r06、driver及observer继续保留运行。原始launch/output/log/exit、父独立assessment及进程/编译清理回执均在round-06，辅助诊断不代表底层故障修复。
+
+### 修复链防回摆回查与本轮继续（2026-10-29）
+
+`fix-history-anti-oscillation-audit-01.json`完成R01-R05正式报告已列的13项修复/诊断链回查，保存16份原证据SHA、14提交元信息和6关键生产文件Git blob保留对照；不是全仓库穷尽审查或新业务验收。六文件从对应修复至9259逐字未改，9259至R06冻结818仅两正式文档差异。父逐项读分类/未知/保留反例，并独立复核派发guard和review合同两项Git blob，结果与原修复相同，回执见fix-history-parent-review-01.json。
+
+在此范围内，未发现后续生产修复撤销APP/fresh grant/CAS/UNKNOWN保护、组件计划/receipt或完整FTP负载。R03/R04的客户端20秒与R05 Go绝对30秒是不同已证边界；最终40→300配合D240/I30/A30/Node290是有反例支持的有限协调合同，不是旧保护回退。进入Node前的慢供给是否同一物理原因仍未知，R06慢GET不能判为旧PUT上传超时复发。旧“无限io.Copy”归因、journal分段推断及夹具前提等已被反证修正的判断同样保留，不能重新当成已知根因反复修。
+
+回查在未执行的03辅助草稿中发现旧观测保护漏复用：缺journalctl --all且静默跳过非字符串MESSAGE。原R04实际长字段证据可证明此风险，不能证明03运行期已复发。执行前已保留pre-review原草稿、补--all和显式非字符串/版本归属未知覆盖缺口，Java只更新固定脚本SHA，runner不改；父审精确diff和pin一致。Python AST及纯本地null/array反例通过（缺口2、typed保留1、任意MESSAGE/URL canary未导出），没有运行03 Java/编译/DB/SSH/真实journal。该修正不改活动轮业务源码、产物或验收参数，不计正式八项故障/通过。
+
+UTC17:03原FTP已完成前两笔67108864字节及SHA，首笔elapsed5097460ms；第二版本64分片已完成，当前第三笔下载原请求进行中，五笔及后续业务/交付/清理尚未齐，完整首过仍1/8。原driver16741持续存活，八run不重发；03仍仅准备，首次等待已自然完成，不为使用准备工具而额外执行诊断。
+
+### round-06 FTP完整首次通过：原64MiB口径
+
+原root`8d2aab24-e6a0-4c40-a1cf-7b8b9cc9e314`，应用`wtl-assisted-file-transfer-4dw5awlps`，原库`assisted-live-file-transfer-4dw58yyjg`，revision`64c420c477b09f4ab7cf9f3180deb63d060cdffaea9e9c703f0e74964d03eb96`。原JUnit1/0失败/错误/跳过、10582.045秒，Maven0；交付原文件齐备，额外产品cleanup39276/exit0并核STOPPED/DISABLED。原inspector eligibleAttempt=true，FTP全量独立证据核查PASS，assessment与ftp-full-workload-parent-proof-01.json均仅新建一次。
+
+五次67108864字节/SHA顺序v1/v1/v2/v1/v2全部通过；131组正常1MiB trace均完整2xx/收体，无trace重试，双64片及三个单片辅助组相符。V2原标记完整：10并发complete、重复冲突、部分上传重启续传、取消持久化、错误SHA、真实backend STOP/START与502、重启持久化。选定STOP`368f80a3-6e2e-43dd-afd2-649e818a5459`及START`a3c2743b-2368-4cde-85f2-218f5bb850a5`均为原SUC任务；跨过R01旧失败阶段，但不重放原UNKNOWN，也不证明外部慢传输物理原因已查明。具体SHA/ACK值未打印，证明来自冻结源码强断言、原成功JUnit及原始marker，未另下载补验。
+
+known tokens1218450（deployment120757/approval1097693），138唯一generation/139物理(id,number)，重复/冲突/未解析0。generation`9bf0ce47-90da-40c6-ae8c-5d7c892d7777`的APPROVAL n1为HTTP_CHUNK_INCOMPLETE/UNKNOWN、用量未知，n2成功；实际有界纯生成恢复1，原项目/业务任务未重试或恢复UNKNOWN。该首次未知用量不补零，已知role与去重物理token对账差0，仍非完整账单；结构化提交反馈9另记。cleanExecutionWithoutInternalRetry=false，不称零异常。单项目终态生成账本保留file-transfer-first-01-generation-accounting-01.json，整轮账本待全部八项终态后核。
+
+本轮现2/8；唯一原driver已自行消费Asset Lending，Maven39932、原root`ed1a6b10-2f24-423e-b40b-25c3eb7f794c`进行中，余五条不重发。主冻结818及原64MiB/实际JAR/CLASS/5输入未变。
+
+### 后续8MiB隔离改动已准备，尚未进入当前轮
+
+隔离分支`codex/ftp-live-8m-20261029`已提交`9068fe92db66c11ee5cc047922b19ef04c7f22b5`，仅fileTransferV2数据/派生循环和8MiB范围短说明两文件；方法外LF归一源码逐字相同，产品/Go/Node/超时/保护不改。Maven跳过测试打包实际wait0/BUILD SUCCESS、31.110秒；实际CLASS字节码核8MiB/8片/先2后6，源码/未来checker AST门禁通过，未运行8MiB真实业务或全suite。初次git metadata受限失败后授权宿主成功，子命令原退出码未单独捕获，不臆填128；该准备失败不计正式项目。
+
+父审完整diff、实际构建exit/log、字节码与未来8MiB policy/checker，并本地负例确认checker拒绝R06原64MiB且不写证明（预期拒绝exit1，不是业务失败）。主HEAD818和全部5冻结输入仍匹配；隔离构建进程已核真实退出，自有target/编译tmp已按边界与non-reparse校验清理，f8m29工作树保留供轮末合入。next-round-8m-preparation内parent-review-01及isolated-final-verification-01留证；旧64MiB结果不可改标8MiB。当前轮全八项终态/收尾/原证据审计后才可合入并重建主实际产物，未推送，论文修改保留。
+
+### R06/P-SOURCE-DRIFT-01：并行主工作区变更，原守卫阻断后五项
+
+UTC17:46新增非本任务的PlatformMotionPerformanceProfileTest，17:50已观察18项主工作区UI生产/测试变更；随后主HEAD由818推进da3e。external-worktree-drift-observation-01保存路径/时间/hash，五项已登记运行输入仍相同，但不能据此证明整个运行期源码保持冻结或这些改动对在途Asset完全无影响。本任务未回滚、修改、提交这些并行源码，也未终止用户进程。
+
+Asset原root`ed1a6b10-2f24-423e-b40b-25c3eb7f794c`，app`wtl-assisted-asset-lending-86kvigelg`、revision`171d7ac942c3e6f8f39bdd418ff4aa0a2ea9965ee98df06bf48fcf00a7bb6347`；原JUnit1/0失败/错误/跳过、1353.727秒、Maven0、cleanup35012/0并STOPPED/DISABLED。随后原driver16741在下一CSV命令创建launch前报Frozen source HEAD changed，实际exit1，无补救或绕过。CSV/Survey/Log/Directory/Binary均未启动，不称五项业务失败；前三项原结果保留，不能因观察到源码漂移而伪称同一冻结轮已完成八项。
+
+原inspector记录3launch/3eligible/3个原JUnit PASS，goalEligible=false（缺五项）；其中frozenVersionAndParameters=true仅比较已记录launch，不反证运行期源码漂移。父额外冻结审计明确noObservedSourceOrHeadDrift=false，整轮未达标。Asset80唯一generation/80物理、known765230、恢复/未知usage0、结构化反馈11；三项合计known3002015、310唯一ID/311物理、纯生成恢复1/未知usage1、反馈36，能力探测等不含，非完整账单。
+
+原observer12896按PID/创建时间/真实-u relative命令核身份后，仅该采样器被有意停止；原私有工具37339实际exit1，不伪造自然ALL_EIGHT_TERMINAL。初次保守匹配假设-B absolute而exit4、未停止，后对原receipt校正后执行，辅助记录保留。父CIM核R06自有签名进程0；privacy-audit-final-01仅开本机新resume-01，1447文本SSH/API敏感字面及XML敏感属性均0、真实exit0。clean28r06按精确绝对路径/non-reparse/进程0核查删除2自有文件，旧证据/UNKNOWN/论文及其他任务进程文件保留。driver-exit-source-drift-01、round-final-inspector-01、round-final-parent-closeout-01、observer及process-temp-final原回执齐备，旧结果不改写。
+
+关闭文档更新后另用privacy-audit-final-02检查1453文本，SSH/API敏感字面及XML敏感属性均0；实际Java退出0，CIM按原PID确认不存在，新独占pva06c2临时目录已清，不重建旧clean28r06。原01审计及原轮回执保留，检查没有发送远端或业务请求。
+
+### R07独立冻结工作树准备：不追随主分支后续变化
+
+为消除共享主目录竞态，已将自有干净8MiB工作树由tmp/f8m29正常移至保留根`H:/Program/WindowsToLinux/.ai-workspace/wt/r07`，原8MiB分支9068仍保留。仅在新分支`codex/assisted-frozen-r07-20261029`正常合入已选da3e，双parent候选`65f8dfd1e70ddac4debd0ea6243ddd83393e30e5`；未纳入随后main的7487及未提交修改，不回滚或提交用户主源码。新树及其原始state/evidence含绝对路径，后续不移动或随tmp清理；主任务索引保留指向，真实代码/产物/私有配置/运行证据均属该树。
+
+两阶段隔离候选均独立skipTests package/真实wait0/BUILD SUCCESS（01为9068，02为65f8、33.049秒），旧回执不覆盖。02全部54cp按原顺序为16本树输出+38原E缓存JAR，零主target引用；两descriptor真实路径/重算inputDigest/compiled marker一致，8MiB CLASS、300000/20000纯反射验证0网络/未开Runtime。私有配置仅CreateNew独立副本、hash匹配且ignored/untracked；ACL原SDDL串比较exit1后逐四项ACE语义相等，未改源ACL，准备边界单列。实际targets保留，额外编译临时文件与自有进程清理；公开依赖解析不声称全网络0。
+
+凭据只从本机新主resume-01经严格两端allowlist、已保存host/PIN核验及char[]内存桥导入本树全新vault，不复制旧DPAPI/UNKNOWN整库。桥02未安装交互presenter，target.servers()在PlatformRuntime.java477因prompts为空报错，已创建部分r07-01但无远端；这是新辅助初始化遗漏，不是旧DPAPI/readonly或部署问题。保留原源码/log/exit/部分库，桥03补本地deny-only presenter（不放宽原fixture守卫，不调用started或远端），另建r07-02后真实wait0；char[]清零，source/target正常开库可能写本地账本。
+
+独立原产品连接定点DeploymentStaticLiveAcceptanceTest#connectsThroughTheRealPlatform从r07-02复用，JUnit1/0失败/错误/跳过、6.777秒、Maven0/BUILD SUCCESS，实际wire指纹为已授权BiNl，host45.192.105.213:22/root，新进程无密码env/无生成marker。连接是准备验证，不计八项；R07尚无正式reset/run。待最终控制器、scope audit和8MiB policy核查后，必须完整产品inventory/plan/apply/独立after通过，再从零执行全新八项原尝试，不能接续R06未跑五项来拼轮。
