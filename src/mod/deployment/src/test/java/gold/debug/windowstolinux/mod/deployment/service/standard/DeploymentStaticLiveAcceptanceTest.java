@@ -10021,7 +10021,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         }
     }
 
-    /** Chunk ACK reads retain the service's 30s window plus fixed return margin, not a total request deadline. */
+    /** Covers chunk D240/A30 and Node's 290s watchdog with return margin; this is a per-read wait, not a total deadline. */
     private static int responseReadTimeoutMillis(java.net.URI endpoint, String method) {
         if (!method.equals("PUT")) return 20000;
         var chunk = java.util.regex.Pattern.compile("/api/uploads/[0-9a-f]{32}/chunks/(0|[1-9][0-9]{0,15})")
