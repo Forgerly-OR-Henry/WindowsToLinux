@@ -6570,13 +6570,41 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                 }
                 return result;
             });
+        var logs = (gold.debug.windowstolinux.appapi.task.log.LogService) Proxy.newProxyInstance(
+            gold.debug.windowstolinux.appapi.task.log.LogService.class.getClassLoader(),
+            new Class<?>[]{gold.debug.windowstolinux.appapi.task.log.LogService.class}, (proxy, method, args) -> {
+                Object result = invoke(method, actual.logs(), args);
+                if (method.getName().equals("write") && args[1] instanceof gold.debug.windowstolinux.appapi.task.log.LogEvent event)
+                    liveSubmissionCorrectionProjection(event).ifPresent(projected -> {
+                        if (result instanceof gold.debug.windowstolinux.appapi.task.log.LogWriteResult saved
+                            && saved.storage() == gold.debug.windowstolinux.appapi.task.log.LogStorage.DATABASE
+                            && !saved.truncated() && saved.problem().isEmpty()) System.out.println(projected);
+                        else System.out.println("AI_LIVE_SUBMISSION_CORRECTION_COVERAGE_GAP"
+                            + projected.substring("AI_LIVE_SUBMISSION_CORRECTION".length())
+                            + " storage=" + (result instanceof gold.debug.windowstolinux.appapi.task.log.LogWriteResult saved ? saved.storage() : "UNKNOWN")
+                            + " truncated=" + (result instanceof gold.debug.windowstolinux.appapi.task.log.LogWriteResult saved ? saved.truncated() : "UNKNOWN")
+                            + " hasProblem=" + (result instanceof gold.debug.windowstolinux.appapi.task.log.LogWriteResult saved ? saved.problem().isPresent() : "UNKNOWN"));
+                    });
+                return result;
+            });
         return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
             (proxy, method, args) -> switch (method.getName()) {
                 case "ai" -> ai;
                 case "linux" -> linux;
                 case "interaction" -> interaction;
+                case "logs" -> logs;
                 default -> invoke(method, actual, args);
             });
+    }
+
+    static Optional<String> liveSubmissionCorrectionProjection(gold.debug.windowstolinux.appapi.task.log.LogEvent event) {
+        if (!event.eventCode().equals("DEPLOYMENT_AI_SUBMISSION_CORRECTION") || event.taskId().isEmpty()
+            || event.operationId().isEmpty() || event.outcome().isPresent()
+            || !event.details().orElse("").equals("{\"purpose\":\"APPROVAL\",\"reason\":\"MISSING_NATIVE_CALL\",\"rejectedSubmission\":\"1\",\"nextSubmission\":\"2\",\"maximumSubmissions\":\"2\"}"))
+            return Optional.empty();
+        return Optional.of("AI_LIVE_SUBMISSION_CORRECTION task=" + event.taskId().orElseThrow()
+            + " correction=" + event.operationId().orElseThrow()
+            + " purpose=APPROVAL reason=MISSING_NATIVE_CALL rejectedSubmission=1 nextSubmission=2 maximumSubmissions=2");
     }
 
     /** Records physical known usage once, falling back only for legacy uninstrumented responses. / 仅记录一次物理已知用量，仅旧未测量响应回退。 */
