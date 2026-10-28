@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { validResponse } from "./contracts.js";
+import { protectUpload } from "./upload-budget.js";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "public");
 const upstream = new URL(process.env.API_URL || "http://127.0.0.1:18111");
 if (upstream.protocol !== "http:") throw new Error("API_URL must use HTTP");
@@ -16,6 +17,8 @@ const server = http.createServer((req, res) => {
   if (url.pathname.startsWith("/api/") || url.pathname === "/readyz") {
     const uploadMatch = req.method === "PUT" ? /^\/api\/uploads\/([0-9a-f]{32})\/chunks\/(0|[1-9][0-9]{0,15})$/.exec(url.pathname) : null;
     const upload = uploadMatch && Number.isSafeInteger(Number(uploadMatch[2])) ? uploadMatch : null;
+    const protection = upload ? protectUpload(req,res) : undefined;
+    if (upload && !protection) return;
     const uploadStarted = upload ? process.hrtime.bigint() : 0n;
     const uploadStartedAtUtc = upload ? new Date().toISOString() : undefined;
     let uploadSequence = 0;
@@ -166,12 +169,13 @@ const server = http.createServer((req, res) => {
     const target = new URL(url.pathname === "/readyz" ? "/healthz" : url.pathname + url.search, upstream);
     const headers = { ...req.headers, host: target.host };
     delete headers.connection;
-    const proxy = http.request(
+    let proxy: http.ClientRequest;
+    try { proxy = http.request(
       target,
       {
         method: req.method,
         headers,
-        timeout: Number(process.env.API_TIMEOUT_MS || 30000),
+        timeout: upload ? 0 : Number(process.env.API_TIMEOUT_MS || 30000),
       },
       (response) => {
         uploadResponse = response;
@@ -280,7 +284,11 @@ const server = http.createServer((req, res) => {
           res.destroy();
         });
       },
-    );
+    ); } catch {
+      if (protection) protection.fail();
+      else { res.writeHead(502, {"Content-Type":"application/json"}); res.end(JSON.stringify({error:"后端服务不可用"})); }
+      return;
+    }
     uploadProxy = proxy;
     if (observeUpload) {
       proxy.once("finish", () => observeUpload("PROXY_FINISH_LOCAL_OS_DELIVERY_ONLY"));
@@ -316,6 +324,8 @@ const server = http.createServer((req, res) => {
         proxy.destroy();
       }
     });
+    protection?.attach(proxy);
+    if (upload) proxy.flushHeaders();
     req.pipe(proxy);
     if (observeUpload && !uploadObservationDetached) {
       try {
@@ -377,4 +387,5 @@ const server = http.createServer((req, res) => {
     stream.pipe(res);
   });
 });
+server.requestTimeout = 300000;
 server.listen(Number(process.env.PORT || 18110), process.env.HOST || "127.0.0.1");

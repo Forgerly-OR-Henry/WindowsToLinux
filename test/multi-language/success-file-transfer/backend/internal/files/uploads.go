@@ -140,9 +140,12 @@ func newID() (string, error) {
 	return hex.EncodeToString(b[:]), e
 }
 func (s *Store) load(id string) (Upload, error) {
+	return s.loadContext(context.Background(), id)
+}
+func (s *Store) loadContext(ctx context.Context, id string) (Upload, error) {
 	var u Upload
 	var version *string
-	e := s.db.QueryRow("SELECT id,folder_id,name,size,sha256,chunk_size,state,version_id,error FROM uploads WHERE id=?", id).Scan(&u.ID, &u.FolderID, &u.Name, &u.Size, &u.SHA256, &u.ChunkSize, &u.State, &version, &u.Error)
+	e := s.db.QueryRowContext(ctx, "SELECT id,folder_id,name,size,sha256,chunk_size,state,version_id,error FROM uploads WHERE id=?", id).Scan(&u.ID, &u.FolderID, &u.Name, &u.Size, &u.SHA256, &u.ChunkSize, &u.State, &version, &u.Error)
 	if errors.Is(e, sql.ErrNoRows) {
 		return u, reject(404, "上传会话不存在")
 	}
@@ -199,20 +202,32 @@ func (s *Store) Create(v UploadInput) (any, error) {
 	return s.Get(id)
 }
 func (s *Store) Chunk(ctx context.Context, id string, number int, source io.Reader) (result any, returnedErr error) {
+	return s.chunk(ctx, id, number, source, (*os.File).Sync)
+}
+func (s *Store) chunk(ctx context.Context, id string, number int, source io.Reader, syncFile func(*os.File) error) (result any, returnedErr error) {
 	o, _ := ctx.Value(chunkObservationKey{}).(*chunkObservation)
 	if o == nil {
 		o = newChunkObservation(ctx, id, number)
 	}
 	defer func() { o.emit("CHUNK_RETURN", returnedErr) }()
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
+	}
 	o.emit("LOCK_WAIT_BEGIN", nil)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	o.emit("LOCK_ACQUIRED", nil)
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
+	}
 	o.emit("SESSION_LOOKUP_BEGIN", nil)
-	u, e := s.load(id)
+	u, e := s.loadContext(ctx, id)
 	o.emit("SESSION_LOOKUP_END", e)
 	if e != nil {
 		return nil, e
+	}
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
 	}
 	if u.State != "receiving" {
 		return nil, reject(409, "会话已结束或正在校验")
@@ -229,12 +244,19 @@ func (s *Store) Chunk(ctx context.Context, id string, number int, source io.Read
 		o.expected = expected
 	}
 	o.emit("STAGING_CREATE_BEGIN", nil)
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
+	}
 	tmp, e := os.CreateTemp(filepath.Join(s.dir, "staging"), "chunk-")
 	o.emit("STAGING_CREATE_END", e)
 	if e != nil {
 		return nil, e
 	}
 	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
+	}
 	digest := sha256.New()
 	var destination io.Writer = tmp
 	limited := io.LimitReader(source, expected+1)
@@ -248,14 +270,32 @@ func (s *Store) Chunk(ctx context.Context, id string, number int, source io.Read
 		o.copied = n
 	}
 	o.emit("BODY_COPY_END", e)
+	if e != nil || n != expected || chunkContextError(ctx) != nil {
+		return nil, reject(400, "分块中断或长度不匹配")
+	}
+	if budget, ok := ctx.Value(chunkBudgetKey{}).(*chunkBudget); ok {
+		ctx, e = budget.beginPost()
+		if e != nil {
+			return nil, e
+		}
+		if o != nil {
+			o.ctx = ctx
+		}
+	}
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
+	}
 	o.emit("SYNC_BEGIN", nil)
-	syncErr := tmp.Sync()
+	syncErr := syncFile(tmp)
 	o.emit("SYNC_END", syncErr)
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
+	}
 	o.emit("STAGING_CLOSE_BEGIN", nil)
 	closeErr := tmp.Close()
 	o.emit("STAGING_CLOSE_END", closeErr)
-	if e != nil || n != expected || ctx.Err() != nil {
-		return nil, reject(400, "分块中断或长度不匹配")
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
 	}
 	if syncErr != nil {
 		return nil, syncErr
@@ -266,8 +306,14 @@ func (s *Store) Chunk(ctx context.Context, id string, number int, source io.Read
 	hash := hex.EncodeToString(digest.Sum(nil))
 	var previous string
 	o.emit("METADATA_LOOKUP_BEGIN", nil)
-	e = s.db.QueryRow("SELECT sha256 FROM chunks WHERE upload_id=? AND number=?", id, number).Scan(&previous)
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
+	}
+	e = s.db.QueryRowContext(ctx, "SELECT sha256 FROM chunks WHERE upload_id=? AND number=?", id, number).Scan(&previous)
 	o.emit("METADATA_LOOKUP_END", e)
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
+	}
 	if e == nil {
 		if previous != hash {
 			return nil, reject(409, "相同分块编号的内容冲突")
@@ -278,25 +324,43 @@ func (s *Store) Chunk(ctx context.Context, id string, number int, source io.Read
 		return nil, e
 	}
 	dest := filepath.Join(s.dir, "chunks", id, strconv.Itoa(number))
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
+	}
 	o.emit("CHUNK_RENAME_BEGIN", nil)
 	if _, e = os.Stat(dest); e == nil {
+		if err := chunkContextError(ctx); err != nil {
+			return nil, err
+		}
 		if e = os.Remove(dest); e != nil {
 			return nil, e
 		}
+	}
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
 	}
 	if e = os.Rename(tmp.Name(), dest); e != nil {
 		return nil, e
 	}
 	o.emit("CHUNK_RENAME_END", nil)
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
+	}
 	o.emit("FAULT_GATE_BEGIN", nil)
-	if e = fault("chunk-written"); e != nil {
+	if e = faultContext(ctx, "chunk-written"); e != nil {
 		o.emit("FAULT_GATE_END", e)
 		return nil, e
 	}
 	o.emit("FAULT_GATE_END", nil)
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
+	}
 	o.emit("METADATA_COMMIT_BEGIN", nil)
-	_, e = s.db.Exec("INSERT INTO chunks(upload_id,number,size,sha256) VALUES(?,?,?,?)", id, number, n, hash)
+	_, e = s.db.ExecContext(ctx, "INSERT INTO chunks(upload_id,number,size,sha256) VALUES(?,?,?,?)", id, number, n, hash)
 	o.emit("METADATA_COMMIT_END", e)
+	if err := chunkContextError(ctx); err != nil {
+		return nil, err
+	}
 	if e != nil {
 		return nil, e
 	}

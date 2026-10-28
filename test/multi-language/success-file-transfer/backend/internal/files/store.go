@@ -1,6 +1,7 @@
 package files
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -204,6 +205,12 @@ func (s *Store) History(folder int64) (any, error) {
 	return rows(s.db, "SELECT id,name,size,state,version_id AS versionId,error,created FROM uploads WHERE folder_id=? ORDER BY rowid DESC LIMIT 200", folder)
 }
 func fault(point string) error {
+	return faultContext(context.Background(), point)
+}
+func faultContext(ctx context.Context, point string) error {
+	if e := ctx.Err(); e != nil {
+		return e
+	}
 	if os.Getenv("SAMPLE_FAULT_POINT") != point {
 		return nil
 	}
@@ -219,10 +226,19 @@ func fault(point string) error {
 	}
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
+		if e := ctx.Err(); e != nil {
+			return e
+		}
 		if _, e := os.Stat(filepath.Join(dir, point+".release")); e == nil {
 			return nil
 		}
-		time.Sleep(20 * time.Millisecond)
+		timer := time.NewTimer(20 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
 	return fmt.Errorf("fault gate %s timed out", point)
 }

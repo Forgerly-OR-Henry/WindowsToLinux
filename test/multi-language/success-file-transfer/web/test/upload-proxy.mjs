@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { once } from "node:events";
+import { once, EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
@@ -28,13 +28,25 @@ async function gateway(origin, options = {}) {
   const source = await fs.readFile(path.join(sourceRoot, "server.ts"), "utf8");
   const contracts = await fs.readFile(path.join(sourceRoot, "contracts.ts"), "utf8");
   assert.equal(source.split('from "./contracts.js"').length, 2);
-  await fs.writeFile(path.join(temporary, "server.mjs"), stripTypeScriptTypes(source.replace('from "./contracts.js"', 'from "./contracts.mjs"')));
+  let budgetSource=await fs.readFile(path.join(sourceRoot,"upload-budget.ts"),"utf8");
+  if(options.policy) { assert.match(budgetSource,/export const uploadPolicy = \{[^\n]+\};/); budgetSource=budgetSource.replace(/export const uploadPolicy = \{[^\n]+\};/,"export const uploadPolicy = "+JSON.stringify(options.policy)+";"); }
+  await fs.writeFile(path.join(temporary, "upload-budget.mjs"), stripTypeScriptTypes(budgetSource));
+  await fs.writeFile(path.join(temporary, "server.mjs"), stripTypeScriptTypes(source.replace('from "./contracts.js"', 'from "./contracts.mjs"').replace('from "./upload-budget.js"','from "./upload-budget.mjs"')));
   await fs.writeFile(path.join(temporary, "contracts.mjs"), stripTypeScriptTypes(contracts));
   const original = { createServer: http.createServer, request: http.request, info: console.info,
-    setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval, hrtime: process.hrtime.bigint };
+    setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval, setTimeout:globalThis.setTimeout, clearTimeout:globalThis.clearTimeout, hrtime: process.hrtime.bigint };
   const env = Object.fromEntries(["HOST", "PORT", "API_URL", "API_TIMEOUT_MS"].map((key) => [key, process.env[key]]));
   Object.assign(process.env, { HOST: "127.0.0.1", PORT: "0", API_URL: origin, API_TIMEOUT_MS: "30000" });
-  const trace = { records: [], flowRecords: [], requests: [], proxies: [], unpipeDataListenerCounts: [], intervals: [] };
+  const trace = { records: [], flowRecords: [], requests: [], responses:[], proxies: [], unpipeDataListenerCounts: [], intervals: [], policyTimers:[], lifecycle:[],clientEvents:[] };
+  const recordLife=(event,res,proxy,upstream,reason)=>{if(trace.lifecycle.length<128)trace.lifecycle.push({sequence:trace.lifecycle.length+1,event,reason,
+    downstreamFinished:res?.writableFinished,downstreamEnded:res?.writableEnded,downstreamDestroyed:res?.destroyed,proxyDestroyed:proxy?.destroyed,upstreamComplete:upstream?.complete})};
+  globalThis.setTimeout=(callback,millis,...args)=>{
+    if(!new Error().stack.includes("upload-budget.mjs")) return original.setTimeout(callback,millis,...args);
+    if(options.failPolicyTimer) throw new Error("CONTROLLED_POLICY_SETUP_FAILURE");
+    const record={active:true,millis}; const handle=original.setTimeout(()=>{record.active=false;record.fired=true;callback(...args)},millis);
+    record.handle=handle;trace.policyTimers.push(record);return handle;
+  };
+  globalThis.clearTimeout=(handle)=>{const entry=trace.policyTimers.find(r=>r.handle===handle);if(entry)entry.active=false;return original.clearTimeout(handle)};
   globalThis.setInterval = (callback, millis, ...args) => {
     if (options.failTimer) throw new Error("TEST_SECRET_CANARY");
     const entry = { callback, millis, active: true, fires: 0 };
@@ -49,24 +61,36 @@ async function gateway(origin, options = {}) {
   let server;
   const ready = new Promise((resolve, reject) => {
     http.createServer = function (listener, ...args) {
-      server = original.createServer.call(this, (req, res) => { trace.requests.push(req); listener(req, res); }, ...args);
+      server = original.createServer.call(this, (req, res) => {
+        trace.requests.push(req);trace.responses.push(res);
+        res.on("finish",()=>recordLife("DOWNSTREAM_FINISH",res));res.on("close",()=>recordLife("DOWNSTREAM_CLOSE",res));
+        const destroy=res.destroy;res.destroy=function(...values){recordLife("DOWNSTREAM_DESTROY",res);return destroy.apply(this,values)};
+        listener(req, res);
+      }, ...args);
       server.once("listening", resolve); server.once("error", reject); return server;
     };
   });
   http.request = function (...args) {
-    assert.equal(args[1].timeout, 30000);
+    assert.equal(args[1].timeout, /^\/api\/uploads\/[0-9a-f]{32}\/chunks\//.test(args[0].pathname) && args[1].method === "PUT" ? 0 : 30000);
     args[1] = { ...args[1], agent: backendAgent };
     const proxy = original.request.apply(this, args);
     const record = { destroyCalls: 0, timeouts: [], stream: proxy }; trace.proxies.push(record);
+    const downstream=trace.responses.at(-1);let upstream;
+    proxy.on("response",response=>{upstream=response;recordLife("UPSTREAM_HEADERS",downstream,proxy,upstream);
+      response.on("end",()=>recordLife("UPSTREAM_END",downstream,proxy,upstream));response.on("aborted",()=>recordLife("UPSTREAM_ABORTED",downstream,proxy,upstream));response.on("error",()=>recordLife("UPSTREAM_ERROR",downstream,proxy,upstream));});
+    proxy.on("error",()=>recordLife("PROXY_ERROR",downstream,proxy,upstream));
     if (options.corkProxy) proxy.once("socket", (socket) => {
       const hold = () => { proxy.cork(); record.corked = true; };
       if (socket.connecting) socket.once("connect", hold); else hold();
     });
     const destroy = proxy.destroy;
-    proxy.destroy = function (...values) { record.destroyCalls++; return destroy.apply(this, values); };
+    proxy.destroy = function (...values) {
+      const stack=new Error().stack;const reason=["finished","closed","aborted","fail"].find(name=>new RegExp("\\b"+name+"\\b").test(stack))||"OTHER";
+      recordLife("PROXY_DESTROY",downstream,proxy,upstream,reason);record.destroyCalls++;return destroy.apply(this,values);
+    };
     const setTimeout = proxy.setTimeout;
     proxy.setTimeout = function (millis, ...values) { record.timeouts.push(millis); return setTimeout.call(this, millis, ...values); };
-    proxy.on("unpipe", (source) => queueMicrotask(() => trace.unpipeDataListenerCounts.push(source.listenerCount("data"))));
+    proxy.on("unpipe", (source) => queueMicrotask(() => trace.unpipeDataListenerCounts.push(source.listeners("data").filter(listener=>listener.name!=="progress").length)));
     return proxy;
   };
   console.info = function (...args) {
@@ -80,6 +104,9 @@ async function gateway(origin, options = {}) {
     if (server?.listening) { const stopped = new Promise((resolve) => server.close(resolve)); server.closeAllConnections(); await stopped; }
     console.info = original.info;
     globalThis.setInterval = original.setInterval; globalThis.clearInterval = original.clearInterval; process.hrtime.bigint = original.hrtime;
+    globalThis.setTimeout=original.setTimeout;globalThis.clearTimeout=original.clearTimeout;
+    assert.ok(trace.policyTimers.every(entry=>!entry.active),"all protection timers stop after response/abort, independently of observation");
+    assert.ok(trace.policyTimers.every(entry=>!entry.handle.hasRef()),"policy timers are unref'ed");
     const outstanding = trace.intervals.filter((entry) => entry.active);
     for (const entry of outstanding) original.clearInterval(entry.handle);
     for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
@@ -150,20 +177,101 @@ function verifyFlowRecords(records) {
 const uploadId = "0123456789abcdef0123456789abcdef";
 const uploadBody = Buffer.alloc(1 << 20, 0x5a);
 uploadBody.write("TEST_SECRET_CANARY");
-function startUpload(proxy, write = (request) => request.end(uploadBody)) {
-  let request;
+function startUpload(proxy, write = (request) => request.end(uploadBody), body = uploadBody) {
+  let request,observedResponse,responseBytes=0;
   const result = new Promise((resolve, reject) => {
     const deadline = setTimeout(() => reject(new Error("LOCAL_UPLOAD_HTTP_DEADLINE")), 3000);
     request = proxy.request(`${proxy.url}/api/uploads/${uploadId}/chunks/0?secret=TEST_SECRET_CANARY`, {
-      method: "PUT", agent: false, headers: { "Content-Length": uploadBody.length, Authorization: "Bearer TEST_SECRET_CANARY" },
+      method: "PUT", agent: false, headers: { "Content-Length": body.length, Authorization: "Bearer TEST_SECRET_CANARY" },
     }, (response) => {
-      const parts = []; response.on("data", (part) => parts.push(part)); response.on("error", reject);
-      response.on("end", () => { clearTimeout(deadline); resolve({ status: response.statusCode, body: JSON.parse(Buffer.concat(parts).toString()) }); });
+      observedResponse=response;
+      proxy.clientEvents.push({event:"HEADERS",status:response.statusCode});
+      const parts = []; response.on("data", (part) => {responseBytes+=part.length;parts.push(part)}); response.on("error", error=>{proxy.clientEvents.push({event:"ERROR",bytes:responseBytes,complete:response.complete,code:error.code});reject(error)});
+      response.on("end", () => { proxy.clientEvents.push({event:"END",bytes:responseBytes,complete:response.complete});clearTimeout(deadline); resolve({ status: response.statusCode, body: JSON.parse(Buffer.concat(parts).toString()) }); });
     });
     request.on("error", reject); request.once("close", () => clearTimeout(deadline)); write(request);
-  }).then((response) => ({ response }), (error) => ({ errorCode: error.code || error.name }));
+  }).then((response) => ({ response }), (error) => ({ errorCode: error.code || error.name,responseStatus:observedResponse?.statusCode,
+    responseBytes,responseComplete:observedResponse?.complete,declaredResponseLength:observedResponse?.headers["content-length"] }));
   return { request, result };
 }
+
+for (const mode of ["idle","total","watchdog","finish-is-not-receipt","abort","observation-detached","setup-failure","backpressure","paused-total"]) test(`upload deadline ${mode} stays bounded and cleans independent guards`, {timeout:7000}, async(t)=>{
+  const heldRead=mode.startsWith("finish-");
+  let requests=0,received=0,fixtureCommits=0,releaseBody;
+  const sentBody=heldRead?uploadBody.subarray(0,65536):uploadBody;
+  const upstream=http.createServer((req,res)=>{
+    requests++;req.on("error",()=>{});req.on("data",chunk=>{received+=chunk.length});
+    req.on("end",()=>{if(heldRead || mode==="backpressure") setTimeout(()=>{fixtureCommits++;res.writeHead(200,{"X-Sample-Protocol":"2"});res.end(JSON.stringify({number:0,sha256:createHash("sha256").update(sentBody).digest("hex"),duplicate:false}))},mode==="backpressure"?180:0)});
+    if(heldRead){req.pause();releaseBody=()=>req.resume();}
+  });
+  upstream.listen(0,"127.0.0.1");await once(upstream,"listening");let proxy,client,tick;
+  try{
+    const policy={body:["total","observation-detached","paused-total"].includes(mode)?180:heldRead?2000:900,idle:heldRead?500:70,connect:300,overall:mode==="watchdog"?200:heldRead?4000:1200};
+    proxy=await gateway(`http://127.0.0.1:${upstream.address().port}`,{policy,failPolicyTimer:mode==="setup-failure",corkProxy:mode==="backpressure"||mode==="paused-total"});
+    client=startUpload(proxy,(req)=>{
+      if(heldRead || ["watchdog","setup-failure","backpressure","paused-total"].includes(mode))req.end(sentBody);
+      else {req.write(uploadBody.subarray(0,32768));if(mode==="total"||mode==="observation-detached")tick=setInterval(()=>req.write(Buffer.from([1])),20)}
+    },sentBody);
+    client.request.once("response",()=>{if(tick){clearInterval(tick);tick=undefined}});
+    if(mode==="abort"){await waitFor(()=>proxy.requests[0]?.listenerCount("data")===3);client.request.destroy();}
+    if(mode==="observation-detached"){await waitFor(()=>proxy.proxies.length===1);proxy.requests[0].unpipe(proxy.proxies[0].stream);}
+    if(mode==="backpressure") {await waitFor(()=>proxy.proxies[0]?.corked && proxy.requests[0].isPaused());await new Promise(r=>setTimeout(r,130));proxy.proxies[0].stream.uncork();}
+    if(heldRead) {await waitFor(()=>releaseBody && proxy.records.some(r=>r.event==="PROXY_FINISH_LOCAL_OS_DELIVERY_ONLY"));assert.equal(received,0,"local finish precedes actual upstream body consumption");await new Promise(r=>setTimeout(r,700));releaseBody();}
+    const began=performance.now();const result=await client.result;
+    if(mode==="abort") assert.equal(result.errorCode,"ECONNRESET");
+    else if(["total","paused-total","setup-failure"].includes(mode) && !result.response) assert.equal(result.errorCode,"ECONNRESET","only explicit connection failure, never an ACK");
+    else assert.equal(result.response?.status,heldRead || mode==="backpressure"?200:502,JSON.stringify(result));
+    if(heldRead) {assert.equal(received,sentBody.length);assert.ok(proxy.records.some(r=>r.event==="PROXY_FINISH_LOCAL_OS_DELIVERY_ONLY"));}
+    assert.equal(proxy.proxies.length,mode==="setup-failure"?0:1);assert.equal(requests,mode==="setup-failure"?0:1);
+    assert.equal(fixtureCommits,heldRead || mode==="backpressure"?1:0,"no successful effect in the controlled upstream after failure");
+    await waitFor(()=>proxy.policyTimers.every(r=>!r.active));
+    await waitFor(()=>client.request.destroyed && proxy.proxies.every(r=>r.stream.destroyed));
+    t.diagnostic(JSON.stringify({mode,requests,received,fixtureCommits,requestTerminated:client.request.destroyed,policyTimers:proxy.policyTimers.length,active:proxy.policyTimers.filter(r=>r.active).length}));
+    if(heldRead)t.diagnostic(JSON.stringify({lifecycle:proxy.lifecycle,client:proxy.clientEvents}));
+  } catch(error){t.diagnostic(error.stack);t.diagnostic(JSON.stringify({requests,received,fixtureCommits,events:proxy?.records.map(({event,upstreamStatusCode,error})=>({event,upstreamStatusCode,error})),policy:proxy?.policyTimers.map(({millis,active,fired})=>({millis,active,fired})),lifecycle:proxy?.lifecycle,client:proxy?.clientEvents,flow:proxy?.flowRecords}));throw error;}
+  finally {releaseBody?.();if(tick)clearInterval(tick);client?.request.destroy();try{await proxy?.close()}finally{const stopped=new Promise(r=>upstream.close(r));upstream.closeAllConnections();await stopped;}}
+});
+
+test("upload deadline bounds blocked actual Go sync",{timeout:7000},async(t)=>{
+  const origin=process.env.UPLOAD_TEST_GO_ORIGIN,id=process.env.UPLOAD_TEST_GO_ID;
+  if(!origin||!id){t.skip("explicit Go owned sync fixture only");return}
+  const proxy=await gateway(origin,{policy:{body:5000,idle:2000,connect:1000,overall:1500}});let request;
+  try{
+    const result=await new Promise((resolve,reject)=>{
+      request=proxy.request(`${proxy.url}/api/uploads/${id}/chunks/0`,{method:"PUT",agent:false,headers:{"Content-Length":65536}},res=>{res.resume();res.on("end",()=>resolve(res.statusCode));res.on("error",reject)});
+      request.on("error",reject);request.end(Buffer.alloc(65536,0x5a));
+    });
+    assert.equal(result,502);assert.equal(proxy.proxies.length,1);assert.ok(proxy.records.some(r=>r.event==="PROXY_FINISH_LOCAL_OS_DELIVERY_ONLY"));
+    await waitFor(()=>proxy.policyTimers.every(r=>!r.active));t.diagnostic("NODE_WATCHDOG_ACTUAL_GO_BLOCKED_SYNC_FINITE_FAILURE=true");
+  }finally{request?.destroy();await proxy.close()}
+});
+
+test("browser chunk fixed timer clears on success error timeout and early abort",async()=>{
+  const source=await fs.readFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)),"../src/client/client.ts"),"utf8");
+  const block=/controller = new AbortController\(\);[\s\S]*?controller = undefined;\n      }/.exec(source)?.[0];assert.ok(block);
+  const execute=new (Object.getPrototypeOf(async function(){}).constructor)("api","file","u","n","paused","setTimeout","clearTimeout","AbortController","let controller;"+block+";return controller;");
+  for(const mode of ["success","error","timeout","abort"]){
+    let timer,clears=0,controller,signal;class Controller extends AbortController{constructor(){super();controller=this}}
+    const action=execute(async(_url,options)=>{signal=options.signal;if(mode==="success")return {};if(mode==="error")throw new Error("CONTROLLED_FAILURE");return new Promise((_,reject)=>{signal.addEventListener("abort",()=>reject(new DOMException("cancelled","AbortError")),{once:true});queueMicrotask(()=>mode==="timeout"?timer():controller.abort())})},
+      {slice:()=>new Blob([uploadBody])},{id:uploadId,chunkSize:1<<20},0,false,(callback,millis)=>{assert.equal(millis,300000);timer=callback;return 1},(handle)=>{assert.equal(handle,1);clears++},Controller);
+    if(mode==="success")assert.equal(await action,undefined);else await assert.rejects(action,mode==="error"?{message:"CONTROLLED_FAILURE"}:{name:"AbortError"});
+    assert.equal(clears,1);assert.equal(signal.aborted,mode==="timeout"||mode==="abort");
+  }
+});
+
+test("upload connection guard refuses stalled socket and detaches before dispatch",async()=>{
+  const source=await fs.readFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)),"../src/server/upload-budget.ts"),"utf8");
+  const {protectUpload}=await import("data:text/javascript,"+encodeURIComponent(stripTypeScriptTypes(source)));
+  const req=new EventEmitter();req.isPaused=()=>false;req.unpipe=()=>{};req.complete=false;
+  const res=new EventEmitter();res.headersSent=false;res.writableEnded=false;let status;
+  res.writeHead=(value)=>{status=value;res.headersSent=true};res.end=()=>{res.writableEnded=true;res.emit("finish")};res.destroy=()=>{};
+  const proxy=new EventEmitter();proxy.destroyed=false;proxy.destroy=()=>{proxy.destroyed=true};
+  const socket=new EventEmitter();socket.connecting=true;
+  const guard=protectUpload(req,res,{body:300,idle:200,connect:40,overall:500});assert.ok(guard);guard.attach(proxy);proxy.emit("socket",socket);
+  const began=performance.now();await waitFor(()=>res.writableEnded);
+  assert.equal(status,502);assert.ok(performance.now()-began>=30);assert.ok(proxy.destroyed);
+  assert.deepEqual(req.eventNames(),[]);assert.deepEqual(res.eventNames(),[]);assert.deepEqual(socket.eventNames(),[]);assert.deepEqual(proxy.eventNames(),[]);
+});
 
 test("upload flow samples actual Node backpressure and bounded tick gaps", { timeout: 8000 }, async (t) => {
   let received = 0;
@@ -174,7 +282,7 @@ test("upload flow samples actual Node backpressure and bounded tick gaps", { tim
   upstream.listen(0, "127.0.0.1"); await once(upstream, "listening"); let proxy, client;
   try {
     proxy = await gateway(`http://127.0.0.1:${upstream.address().port}`, { corkProxy: true }); client = startUpload(proxy);
-    await waitFor(() => proxy.proxies[0]?.corked && proxy.requests[0]?.isPaused() && proxy.proxies[0]?.stream.writableNeedDrain && proxy.requests[0].listenerCount("data") === 2);
+    await waitFor(() => proxy.proxies[0]?.corked && proxy.requests[0]?.isPaused() && proxy.proxies[0]?.stream.writableNeedDrain && proxy.requests[0].listenerCount("data") === 3);
     assert.equal(proxy.intervals.length, 1); assert.equal(proxy.intervals[0].millis, 1000); assert.equal(proxy.intervals[0].handle.hasRef(), false);
     const heldUntil = performance.now() + 1150;
     while (performance.now() < heldUntil) {} // A controlled local scheduling stall, not a network diagnosis.
@@ -211,7 +319,7 @@ for (const ending of ["abort", "error", "timeout", "unpipe", "response-aborted"]
   upstream.listen(0, "127.0.0.1"); await once(upstream, "listening"); let proxy, client;
   try {
     proxy = await gateway(`http://127.0.0.1:${upstream.address().port}`); client = startUpload(proxy, (request) => request.write(uploadBody.subarray(0, 32768)));
-    await waitFor(() => proxy.requests[0]?.listenerCount("data") === 2 && proxy.proxies.length === 1);
+    await waitFor(() => proxy.requests[0]?.listenerCount("data") === 3 && proxy.proxies.length === 1);
     if (ending === "response-aborted") await waitFor(() => proxy.records.some((entry) => entry.event === "UPSTREAM_RESPONSE_HEADERS"));
     for (let index = 0; index < 40; index++) proxy.tick();
     assert.equal(proxy.records.length, ending === "response-aborted" ? 2 : 1); const stream = proxy.proxies[0].stream;
@@ -222,7 +330,9 @@ for (const ending of ["abort", "error", "timeout", "unpipe", "response-aborted"]
     else { proxy.requests[0].unpipe(stream); stream.destroy(Object.assign(new Error("TEST_SECRET_CANARY"), { code: "ECONNRESET" })); }
     await client.result; await waitFor(() => proxy.flowRecords.length === 1 && proxy.intervals.every((entry) => !entry.active));
     const first = proxy.records.find((entry) => entry.firstObservedTerminationEvent !== null);
-    assert.equal(first.firstObservedTerminationEvent, ending === "abort" ? "REQUEST_ABORTED" : ending === "timeout" ? "UPSTREAM_TIMEOUT" : ending === "response-aborted" ? "RESPONSE_ABORTED" : "PROXY_ERROR");
+    const nativeTermination=ending==="response-aborted"?proxy.lifecycle.find(entry=>["PROXY_ERROR","UPSTREAM_ABORTED"].includes(entry.event))?.event:null;
+    if(ending==="response-aborted")assert.ok(nativeTermination,"observe the actual transport termination order independently");
+    assert.equal(first.firstObservedTerminationEvent, ending === "abort" ? "REQUEST_ABORTED" : ending === "timeout" ? "UPSTREAM_TIMEOUT" : ending === "response-aborted" ? nativeTermination==="UPSTREAM_ABORTED"?"RESPONSE_ABORTED":"PROXY_ERROR" : "PROXY_ERROR");
     if (ending === "error") { for (let index = 0; index < 20; index++) stream.emit("error", Object.assign(new Error("TEST_SECRET_CANARY"), { code: "EPIPE" })); assert.equal(proxy.records.length, 12); }
     assert.equal(proxy.flowRecords.length, 1); assert.equal(proxy.flowRecords[0].sampleCount, 40); assert.equal(proxy.flowRecords[0].droppedSamples, 24);
     verifyFlowRecords(proxy.flowRecords); verifyRecords(proxy.records); assert.deepEqual(proxy.proxies[0].timeouts, []);
@@ -315,7 +425,7 @@ test("upload proxy distinguishes body transfer from processing and detaches obse
       });
     }
     const slow = send(0, "slow");
-    await waitFor(() => proxy.requests[0]?.listenerCount("data") === 2);
+    await waitFor(() => proxy.requests[0]?.listenerCount("data") === 3);
     assert.ok(!proxy.records.some((entry) => entry.chunkIndex === 0 && entry.event === "REQUEST_END"));
     const first = await slow; assert.equal(first.status, 200); assert.equal(first.body.duplicate, false); assert.equal(counts.get(0), body.length);
     const processing = send(1, "full"); await processingBody;
@@ -328,7 +438,7 @@ test("upload proxy distinguishes body transfer from processing and detaches obse
     assert.ok(disconnected.status === 502 || disconnected.errorCode === "ECONNRESET");
     await waitFor(() => proxy.unpipeDataListenerCounts.length >= 3);
     assert.ok(proxy.unpipeDataListenerCounts.every((count) => count === 0));
-    assert.ok(proxy.proxies.every((record) => record.timeouts.length === 0), "upload must retain its original 30000ms timeout");
+    assert.ok(proxy.proxies.every((record) => record.timeouts.length === 0), "chunk protection replaces the old socket timeout without a finish-based ACK timer");
     verifyRecords(proxy.records);
     verifyFlowRecords(proxy.flowRecords);
     t.diagnostic(JSON.stringify({ marker: "LOCAL_UPLOAD_PROXY_BODY_VS_PROCESSING_VERIFIED", bytes: body.length, sourceSha256: proxy.sourceSha256,
@@ -357,7 +467,7 @@ test("upload cancellation reaches actual Go handler", { timeout: 7000 }, async (
     });
     await waitFor(() => proxy.records.some((entry) => entry.event === "REQUEST_ABORTED") && proxy.unpipeDataListenerCounts.length > 0);
     assert.ok(proxy.unpipeDataListenerCounts.every((count) => count === 0));
-    assert.equal(proxy.proxies.length, 1); assert.equal(proxy.proxies[0].destroyCalls, 2, "retain the existing req.aborted and incomplete res.close destroy calls");
+    assert.equal(proxy.proxies.length, 1); assert.ok(proxy.proxies[0].stream.destroyed, "the sole owned upstream must be terminated");
     assert.deepEqual(proxy.proxies[0].timeouts, []);
     verifyRecords(proxy.records);
     t.diagnostic(JSON.stringify({ marker: "LOCAL_UPLOAD_NODE_REAL_GO_CANCEL_SENT", sourceSha256: proxy.sourceSha256,

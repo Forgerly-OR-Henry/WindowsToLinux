@@ -159,6 +159,8 @@ async function upload(file: File, resume: string) {
     if (paused) return;
     if (!confirmed.has(n)) {
       controller = new AbortController();
+      const chunkController = controller;
+      const chunkTimer = setTimeout(() => chunkController.abort(), 300000);
       try {
         await api(`/api/uploads/${u.id}/chunks/${n}`, {
           method: "PUT",
@@ -170,6 +172,7 @@ async function upload(file: File, resume: string) {
         if (paused) return;
         throw e;
       } finally {
+        clearTimeout(chunkTimer);
         controller = undefined;
       }
     }

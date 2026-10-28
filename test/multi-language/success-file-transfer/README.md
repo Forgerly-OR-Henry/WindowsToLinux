@@ -12,9 +12,9 @@ TypeScript 网页和 Node 网关通过 HTTP 调用 Go。Go 独占 SQLite 元数�
 | ---- | ------------------------------------- | ------------------------------------------ |
 | Go   | HOST / PORT                           | 127.0.0.1 / 18111                          |
 | Go   | DATA_DIR                              | 当前工作目录 data                          |
-| Go   | MAX_FILE_BYTES / HTTP_TIMEOUT_SECONDS | 268435456 / 30                             |
+| Go   | MAX_FILE_BYTES / HTTP_TIMEOUT_SECONDS | 268435456 / 30（普通请求；chunk 局部策略见下） |
 | Node | HOST / PORT / API_URL                 | 127.0.0.1 / 18110 / http://127.0.0.1:18111 |
-| Node | API_TIMEOUT_MS / MAX_API_BYTES        | 30000 / 8388608（JSON 响应限制）           |
+| Node | API_TIMEOUT_MS / MAX_API_BYTES        | 30000（非chunk）/ 8388608（JSON 响应限制） |
 
 PowerShell 示例：`$env:DATA_DIR="D:\样例 数据"`；Linux：`export DATA_DIR="/tmp/样例 数据"`。本版使用全新数据库结构，指定新的 DATA_DIR；不迁移旧版数据库。重启同一新版目录保留数据。一个数据目录由一个 Go 服务实例管理。
 
@@ -42,7 +42,13 @@ UTF-8 JSON，Go 响应带 `X-Sample-Protocol: 2`。Node 对协议错误、必要
 - `POST /api/uploads/{id}/cancel`：取消并移除分块；重复取消幂等。
 - `GET /api/versions/{id}/download`：原始字节，含 `X-Content-SHA256`。未发布会话不可下载。
 
-下载的30秒由最终客户端按接收进展计时：网页从请求开始等待首个非空响应块，此后每收到非空响应块重新计时；连续30秒无进展则取消请求。响应头到达不算内容进展。网页收齐声明长度并核对版本SHA-256后才保存文件，截断或摘要不符会显示错误。下载可以持续超过30秒；Go的普通响应写入期限与Node的上游socket期限只在有效文件下载流中解除，连接、响应头、JSON及上传原有限制保留，客户端关闭会沿Node取消Go请求。
+chunk PUT 采用有限分阶段期限：Go 从受理开始最多240秒收体（D，包括等待Store锁），每次读取只按正字节进展刷新30秒停滞期限（I）；持续小步输入不能延长D。精确完整body后，从原HTTP context另派生30秒后处理/ACK资格期限（A），覆盖同步、重复查询、重命名、故障闸门、元数据提交与成功响应。失败/超长/取消的body不再Sync或提交；保留expected+1限长和64 KiB..4 MiB、最后短块校验。
+
+Node仅对相同chunk PUT以局部D240/I30、上游连接10秒和整体290秒watchdog替代原30秒proxy socket期限。背压暂停时暂扣本地I计时，D/整体期限始终不暂停；只有非空入站body刷新I。Node的end/finish表示本地流事件，不能作为Go收体完成或A开始的凭证。server.requestTimeout明确为300秒，是额外收请求保护，不替代局部门禁。网页每chunk fetch固定300秒总timer，暂停/取消可更早abort并清理timer；Java验收同语义PUT采用300秒响应readTimeout，普通HTTP20秒/connect10秒不变。Java readTimeout是每次响应socket读取期限，不覆盖本地write的整个请求硬deadline。
+
+这些数值是允许有进展慢传的新策略，不保证物理吞吐改善。A不硬中断fsync、普通文件操作或mutex；到期后禁止开始新的提交步骤/成功ACK，卡住的调用返回后重验期限。若INSERT/提交已进入竞争或ACK丢失，客户端仍未确认，不能据本地写入/暂存文件宣称成功，也不自动重发或GET补成功。Node整体期限提供外围有限失败；错误JSON仅在连接仍可写时尽力返回，不能保证必达。Store仍全局串行，慢传可能更久占锁，cancel接口也可能排队；浏览器先abort当前请求不等于所有服务端资源立即释放。
+
+下载的30秒由最终客户端按接收进展计时：网页从请求开始等待首个非空响应块，此后每收到非空响应块重新计时；连续30秒无进展则取消请求。响应头到达不算内容进展。网页收齐声明长度并核对版本SHA-256后才保存文件，截断或摘要不符会显示错误。下载可以持续超过30秒；Go的普通响应写入期限与Node的上游socket期限只在有效文件下载流中解除。连接、响应头、普通JSON保护不变；上传按上述新策略执行，客户端关闭会沿Node取消Go请求。
 
 直接调用下载API的客户端也须实现30秒或更严格的接收停滞取消并校验长度和摘要。服务端无法观察最终客户端实际接收进展，不能用网关写入阻塞代替该判断。网页校验期间会在内存中保留文件；浏览器暂停或主线程阻塞时，计时检查需等事件循环恢复才能执行。
 
@@ -54,6 +60,6 @@ UTF-8 JSON，Go 响应带 `X-Sample-Protocol: 2`。Node 对协议错误、必要
 
 仓库运行器：`python src/app/main/src/test/python/polyglot_runner.py verify --project file-transfer --profile standard --work <隔离目录>`；`--profile quick` 使用较小规模。标准档生成 64 MiB 文件、两版本、10 路完成竞争，执行浏览器操作、真实流中断、分块落盘与发布前杀进程、协议/字段/超时/下游异常和重启恢复。种子、规模、耗时和可采集资源记录在 report.json。
 
-故障闸门仅用于隔离验收：`SAMPLE_FAULT_POINT=chunk-written|before-publish`、`SAMPLE_FAULT_DIR`。到达边界写入 `<point>.ready` 后等待同目录 `<point>.release`，60 秒超时报错，默认关闭。不能把闸门配置用于日常体验。
+故障闸门仅用于隔离验收：`SAMPLE_FAULT_POINT=chunk-written|before-publish`、`SAMPLE_FAULT_DIR`。到达边界写入 `<point>.ready` 后等待同目录 `<point>.release`，60秒兜底，chunk-written还受该请求A/context的更早取消，默认关闭。不能把闸门配置用于日常体验。
 
 数据库、分块、版本、生成样本和构建产物不提交。运行器与产品部署验证分别记录；本轮正式64MiB ASSISTED业务、各次失败、原任务恢复和产品收尾状态见[四项复验记录](../../../docs/test/multi-language/ASSISTED-FOUR-FIXES-20261023.md)，实际完成范围以对应轮次证据为准。

@@ -28,6 +28,25 @@ func replyObserved(w http.ResponseWriter, status int, v any, o *chunkObservation
 	err := json.NewEncoder(w).Encode(v)
 	o.emit("HTTP_RESPONSE_END", err)
 }
+func replyChunk(w http.ResponseWriter, status int, v any, o *chunkObservation) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	data = append(data, '\n')
+	if o != nil {
+		o.status = status
+	}
+	o.emit("HTTP_RESPONSE_BEGIN", nil)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.WriteHeader(status)
+	_, err = w.Write(data)
+	if err == nil {
+		err = http.NewResponseController(w).Flush()
+	}
+	o.emit("HTTP_RESPONSE_END", err)
+}
 func route(fn func(*http.Request) (any, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var observation *chunkObservation
@@ -40,10 +59,26 @@ func route(fn func(*http.Request) (any, error)) http.HandlerFunc {
 			}
 		}
 		v, e := fn(r)
+		budget, _ := r.Context().Value(chunkBudgetKey{}).(*chunkBudget)
+		respond := func(status int, value any) {
+			if budget != nil {
+				replyChunk(w, status, value, observation)
+			} else {
+				replyObserved(w, status, value, observation)
+			}
+		}
+		if budget != nil {
+			if e == nil && budget.postError() != nil {
+				e = reject(400, "分块确认期限已结束")
+			}
+			if e != nil {
+				budget.errorResponse(w)
+			}
+		}
 		if e != nil {
 			var b businessError
 			if errors.As(e, &b) {
-				replyObserved(w, b.status, map[string]string{"error": b.message}, observation)
+				respond(b.status, map[string]string{"error": b.message})
 				return
 			}
 			if observation != nil {
@@ -51,10 +86,10 @@ func route(fn func(*http.Request) (any, error)) http.HandlerFunc {
 			} else {
 				log.Printf("request %s %s: %v", r.Method, r.URL.Path, e)
 			}
-			replyObserved(w, 500, map[string]string{"error": "存储操作失败，请检查服务日志"}, observation)
+			respond(500, map[string]string{"error": "存储操作失败，请检查服务日志"})
 			return
 		}
-		replyObserved(w, 200, v, observation)
+		respond(200, v)
 	}
 }
 func body(r *http.Request, v any) error {
@@ -94,6 +129,16 @@ func paging(r *http.Request) (int, int, error) {
 	return offset, limit, nil
 }
 func Routes(s *Store) http.Handler {
+	return routesWithChunkPolicy(s, uploadPolicy)
+}
+func chunkNumber(value string) (int, error) {
+	n, e := strconv.Atoi(value)
+	if e != nil {
+		return 0, reject(400, "分块编号无效")
+	}
+	return n, nil
+}
+func routesWithChunkPolicy(s *Store, policy chunkPolicy) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", route(func(r *http.Request) (any, error) {
 		return map[string]any{"status": "ok", "component": "go-files", "version": 2}, s.db.Ping()
@@ -135,13 +180,7 @@ func Routes(s *Store) http.Handler {
 		return s.Create(v)
 	}))
 	mux.HandleFunc("GET /api/uploads/{id}", route(func(r *http.Request) (any, error) { return s.Get(r.PathValue("id")) }))
-	mux.HandleFunc("PUT /api/uploads/{id}/chunks/{number}", route(func(r *http.Request) (any, error) {
-		n, e := strconv.Atoi(r.PathValue("number"))
-		if e != nil {
-			return nil, reject(400, "分块编号无效")
-		}
-		return s.Chunk(r.Context(), r.PathValue("id"), n, r.Body)
-	}))
+	mux.HandleFunc("PUT /api/uploads/{id}/chunks/{number}", chunkRoute(s, policy))
 	mux.HandleFunc("POST /api/uploads/{id}/complete", route(func(r *http.Request) (any, error) { return s.Complete(r.Context(), r.PathValue("id")) }))
 	mux.HandleFunc("POST /api/uploads/{id}/cancel", route(func(r *http.Request) (any, error) { return s.Cancel(r.PathValue("id")) }))
 	mux.HandleFunc("GET /api/versions/{id}/download", func(w http.ResponseWriter, r *http.Request) {

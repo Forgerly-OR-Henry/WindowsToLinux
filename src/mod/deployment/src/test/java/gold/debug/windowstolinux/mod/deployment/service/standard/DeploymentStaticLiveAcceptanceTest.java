@@ -10026,7 +10026,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         if (!method.equals("PUT")) return 20000;
         var chunk = java.util.regex.Pattern.compile("/api/uploads/[0-9a-f]{32}/chunks/(0|[1-9][0-9]{0,15})")
             .matcher(endpoint.getRawPath());
-        return chunk.matches() && Long.parseLong(chunk.group(1)) <= 9007199254740991L ? 40000 : 20000;
+        return chunk.matches() && Long.parseLong(chunk.group(1)) <= 9007199254740991L ? 300000 : 20000;
     }
 
     private static byte[] http(String url, String method, byte[] body, String type, int expectedStatus,
@@ -10082,7 +10082,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             }
             if (trace != null)
                 trace.emit("RESPONSE_BODY_READ", started, phaseStarted, " responseBytes=" + response.length);
-            if (readTimeoutMillis == 40000)
+            if (readTimeoutMillis == 300000)
                 System.out.println("FILE_TRANSFER_CHUNK_RESPONSE readTimeoutMillis=" + readTimeoutMillis
                     + " timeoutMeaning=PER_READ_WAIT_NOT_TOTAL_DEADLINE status=" + status + " responseBytes=" + response.length
                     + " responseElapsedMillis=" + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - responseStarted));
@@ -10091,7 +10091,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                     + " body=" + new String(response, java.nio.charset.StandardCharsets.UTF_8));
             return response;
         } catch (java.io.IOException failure) {
-            if (readTimeoutMillis == 40000)
+            if (readTimeoutMillis == 300000)
                 System.out.println("FILE_TRANSFER_CHUNK_RESPONSE readTimeoutMillis=" + readTimeoutMillis
                     + " timeoutMeaning=PER_READ_WAIT_NOT_TOTAL_DEADLINE exceptionType=" + failure.getClass().getSimpleName()
                     + " responseElapsedMillis=" + (responseStarted == 0 ? -1 : TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - responseStarted)));

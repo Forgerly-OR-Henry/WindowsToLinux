@@ -22,6 +22,65 @@ import org.junit.jupiter.params.provider.ValueSource;
 /** Verifies direct acceptance HTTP using local peers, without a deployment or model. / 使用本地端点验证直连验收，不执行部署或模型调用。 */
 @ResourceLock("java.net.ProxySelector")
 class DeploymentLiveHttpClientTest {
+    @Test
+    @Timeout(110)
+    void slowOneMiBTraversesActualGoNodeAndAcceptanceHelperOnce() throws Exception {
+        var process = new ProcessBuilder(System.getProperty("fileTransfer.nodeBinary"),
+            System.getProperty("fileTransfer.peerScript")).redirectError(ProcessBuilder.Redirect.INHERIT).start();
+        System.out.println("UPLOAD_LOCAL_NODE_IDENTITY pid=" + process.pid() + " created=" + process.info().startInstant().orElseThrow());
+        var lines = new java.util.concurrent.LinkedBlockingQueue<String>();
+        var pump = new Thread(() -> {
+            try (var input = process.inputReader(StandardCharsets.UTF_8)) {
+                for (String line; (line = input.readLine()) != null;) { System.out.println(line); lines.add(line); }
+            } catch (IOException failure) { lines.add("PEER_READ_FAILED"); }
+        }, "local-upload-peer-output");
+        pump.start();
+        try {
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            String ready = null;
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
+            while (System.nanoTime() < deadline) {
+                String line = lines.poll(1, java.util.concurrent.TimeUnit.SECONDS);
+                if (line != null && line.startsWith("UPLOAD_DEADLINE_PEER_READY ")) { ready = line.substring(27); break; }
+                assertTrue(process.isAlive(), "Local peer exited before ready");
+            }
+            assertNotNull(ready, "Local peer startup deadline");
+            var peer = mapper.readTree(ready);
+            var go = ProcessHandle.of(peer.path("goPid").asLong()).orElseThrow();
+            System.out.println("UPLOAD_LOCAL_GO_IDENTITY pid=" + go.pid() + " created=" + go.info().startInstant().orElseThrow());
+            assertEquals(300000, peer.path("requestTimeout").asInt());
+            assertEquals(60000, peer.path("headersTimeout").asInt());
+            String origin = peer.path("origin").asText();
+            String data = "{\"folderId\":1,\"name\":\"slow.bin\",\"size\":1048576,\"chunkSize\":1048576,\"sha256\":\"" + chunkSha() + "\"}";
+            var upload = mapper.readTree(request(URI.create(origin + "/api/uploads"), "POST", data.getBytes(StandardCharsets.UTF_8), "application/json"));
+            String id = upload.path("id").asText(); assertTrue(id.matches("[0-9a-f]{32}"));
+            String pacedUpload = peer.path("pacedOrigin").asText() + "/api/uploads/" + id;
+            long started = System.nanoTime();
+            boolean baseline = Boolean.getBoolean("fileTransfer.deadlineBaseline");
+            if (baseline) assertThrows(org.opentest4j.AssertionFailedError.class, () -> chunk(pacedUpload));
+            else chunk(pacedUpload);
+            long elapsed = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+            assertTrue(elapsed >= (baseline ? 29000 : 44000) && elapsed < 60000, "Actual paced transfer millis=" + elapsed);
+            var stored = mapper.readTree(request(URI.create(origin + "/api/uploads/" + id), "GET", null, "application/json"));
+            assertEquals(baseline ? 0 : 1, stored.path("chunks").size());
+            if (!baseline) { assertEquals(0, stored.path("chunks").get(0).path("number").asInt()); assertEquals(chunkSha(), stored.path("chunks").get(0).path("sha256").asText()); }
+            System.out.println("UPLOAD_ACTUAL_THREE_TIER baseline=" + baseline + " bytes=1048576 elapsedMillis=" + elapsed + " committed=" + stored.path("chunks").size());
+        } finally {
+            boolean interrupted = Thread.interrupted();
+            try {
+                try {
+                    if (process.isAlive()) process.getOutputStream().write("stop\n".getBytes(StandardCharsets.UTF_8));
+                    process.getOutputStream().close();
+                } finally {
+                    if (!process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)) { process.destroy(); assertTrue(process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)); }
+                    pump.join(3000); assertFalse(pump.isAlive()); assertEquals(0, process.exitValue());
+                }
+                String stopped = lines.stream().filter(line -> line.startsWith("UPLOAD_DEADLINE_PEER_STOPPED ")).findFirst().orElseThrow();
+                assertEquals(1, new com.fasterxml.jackson.databind.ObjectMapper().readTree(stopped.substring(29)).path("putCount").asInt());
+            } finally { if (interrupted) Thread.currentThread().interrupt(); }
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"SAME_ORIGIN", "PATH_PREFIX", "SEPARATE_PORT"})
     void usesTheRuntimeConfiguredApiForBusinessAndBrowserRequests(String mode) throws Exception {
@@ -201,13 +260,13 @@ class DeploymentLiveHttpClientTest {
     }
 
     @Test
-    @Timeout(60)
-    void silentChunkStillTimesOutOnceWithinTheFixedFortySecondBudget() throws Exception {
+    @Timeout(325)
+    void silentChunkStillTimesOutOnceWithinTheFixedFiveMinuteBudget() throws Exception {
         try (var peer = new ChunkPeer("SILENT", 0, true)) {
             long started = System.nanoTime();
             assertThrows(java.net.SocketTimeoutException.class, () -> chunk(peer.upload("3".repeat(32))));
             long elapsed = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
-            assertTrue(elapsed >= 39000 && elapsed < 50000, "Finite chunk read timeout: " + elapsed);
+            assertTrue(elapsed >= 299000 && elapsed < 315000, "Finite chunk read timeout: " + elapsed);
             assertEquals(1, peer.requests.get());
             System.out.println("LOCAL_CHUNK_SILENT_TIMEOUT elapsedMillis=" + elapsed + " requests=1");
         }
@@ -219,7 +278,7 @@ class DeploymentLiveHttpClientTest {
         budget.setAccessible(true);
         String base = "http://127.0.0.1/api/uploads/" + "a".repeat(32);
         for (String suffix : List.of("/chunks/0", "/chunks/49", "/chunks/9007199254740991", "/chunks/1?diagnostic=off"))
-            assertEquals(40000, invoke(budget, URI.create(base + suffix), "PUT"));
+            assertEquals(300000, invoke(budget, URI.create(base + suffix), "PUT"));
         for (String suffix : List.of("", "/complete", "/cancel", "/chunks/-1", "/chunks/01", "/chunks/9007199254740992", "/chunks/1/"))
             assertEquals(20000, invoke(budget, URI.create(base + suffix), "PUT"));
         for (String method : List.of("GET", "POST", "HEAD"))
@@ -370,7 +429,7 @@ class DeploymentLiveHttpClientTest {
                     assertArrayEquals(CHUNK_BYTES, bytes);
                     assertEquals(chunkSha(), java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)));
                     accepted.countDown();
-                    if (mode.equals("SILENT")) { release.await(55, java.util.concurrent.TimeUnit.SECONDS); return; }
+                    if (mode.equals("SILENT")) { release.await(330, java.util.concurrent.TimeUnit.SECONDS); return; }
                     if (delayMillis > 0 && release.await(delayMillis, java.util.concurrent.TimeUnit.MILLISECONDS)) return;
                     if (mode.equals("ABORT")) return;
                     int status = mode.equals("REDIRECT") ? 307 : mode.equals("NON_2XX") ? 503 : mode.equals("CONFLICT") || mode.equals("CANCELLED") ? 409 : 200;
