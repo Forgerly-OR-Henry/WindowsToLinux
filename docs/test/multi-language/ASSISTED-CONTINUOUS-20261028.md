@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active。R07八项目各一次原尝试均已结束，完整首过7/8，仅CSV原UNKNOWN/测试失败，本轮未达标；driver37576/observer66898均已观察实际tool0，自有进程及专用r07t核退清理，原失败/UNKNOWN保留。FTP按用户授权实际8MiB，其余既定业务不减。全轮已知5507842/552物理生成/47工具提交反馈，非零异常或完整账单。R08仅本地候选，未启动正式项目，最终1683文本隐私审计通过；随后四说明改动另由final03补核。仅测试代码，无真实UI、浏览器或Computer Use。
+状态：目标active。R07八项目各一次原尝试均已结束，完整首过7/8，仅CSV原UNKNOWN/测试失败，本轮未达标；driver37576/observer66898均已观察实际tool0，自有进程及专用r07t核退清理，原失败/UNKNOWN保留。FTP按用户授权实际8MiB，其余既定业务不减。全轮已知5507842/552物理生成/47工具提交反馈，非零异常或完整账单。R08局部候选及新凭据/原产品连接准备已过，正式0；下一目标回合完成最终冻结与产品清场独立after后才全新八项。R07隐私1683文本及其后四说明补核均过，后续R08文本另核。仅测试代码，无真实UI、浏览器或Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -792,3 +792,20 @@ closing-audit/final01编译0、Java32448实际wait1；停在LOAD_EXACT_LOCAL_NEE
 新final02保持精确profile/端点/key校验，以原connection-reuse-01五公开文件固定SHA、JUnit1/0/实际SUC/wire BiNl及确切r07-02 source绑定证明已认证；vault trust如存在仍须匹配，仅不要求复制后必有。实际编译43912/0、Java2076/0、外层工具69785/0，1683公共文本SSH/API literal0、敏感XML属性0。结果SHA8ee52df8eb44195181bfc62aeffbf63c41a9437d619744a538735c5aee2d79eb；父重新核1682输入仍同SHA，唯一自身log仅追加固定安全PASS marker，parent-privacy02-verification-01。只正常读取本机新r07-02与指定私有API针，内存处理；正常vault open可写local ledger，不能称全程只读，无模型/SSH/HTTP业务。
 
 final01与02的自有Java/javac均宿主CIM核退、任务签名0、各专用pva07f1/f2精确nonreparse清理，旧UNKNOWN及冻结root/产物保留；02 process-temp SHAab2ae0a677e4e6f069eef43b373d4abe4d040890dc339fa6d64c30fdb0f00088。完整快照排除私有配置本身/DB密文/二进制/论文/R08等其他阶段及next-round-native-preparation。其后修改的main两正式说明、CURRENT、notes由新final03仅补查这四文件，结论以新CreateNew结果、actualwait和process/tmp回执为准，不将02快照冒称覆盖后续字节。R07业务结果仍7/8，目标active；R08正式0，另行凭据/连接/冻结/清场after。
+
+
+### R08新凭据/原产品连接准备完成，正式项目0
+
+候选保留HEAD73bbbbbb07346a09155d8d3ddc23c5dd08756d38，不跟随main后续文档提交196f1c8f；src/test/pom从实际构建merge f3acc至73为空diff，旧classpath manifest的f3身份保留，不篡改旧记录。05最小增量经父读取Java先验/完整guard/共享adapter并核60+171文件长度SHA、16原PID0及tmp absent后接受为本地候选：9441a5f6 Java/c414fa80 adapter、parent-readiness-review-05-01。8真实JVM先验反例、实际DRAFT拒绝、合成有效廉价先验→真实04 DRAFT guard拒绝保留，实际main FINAL/真实cleanup尚未验证，不另强加常规Astra终审或重跑32组。
+
+只从本机新main resume-01通过char[]内存迁移到全新r08/src/app/db/data/agent-live-credential-20261029-r08-04，未复制DB或打开旧DPAPI/UNKNOWN；桥cf0047a5实际编译44496/0、迁移35924/0，原credential-memory-migration-01仅一次。私有API配置105B安全CopyNew到R08 ignored/untracked路径，元数据只有whole-file SHA7964f8e9...，无正文输出/入Git。新credential-source-identity-04 SHA24d35b8ebc09635c8d68de4c69331daf14c87dddb5fa576d223a9660a8b337b9；source原pin严格核BiNl，目标trust未人工复制或补写。
+
+原DeploymentStaticLiveAcceptanceTest#connectsThroughTheRealPlatform仅运行一次：Maven9588 actualwait0/工具13478实际0，JUnit1/0失败错误跳过、6.506秒，原wire指纹严格为获准BiNl、产品连接SUCCEEDED、实际host45.192.105.213/root22及所有指定属性一致。product-connection-proof-04 SHA70ccb760c26671fa52c4cc15ba06d8cf6d275543f825fd0e789f0149569d56b9；父parent-product-connection-verification-04核四raw SHA/实际XML/日志/身份/API wholefile hash，并真实运行04只读后置freeze（54cp/3Mod17输出）通过，未新开DB或再次连接。该连接不是八项目业务验收，模型/部署/reset正式项目均0。
+
+只在这次连接PREPARATION使用JUnit cleanup NEVER，将唯一connection-runtime/junit-5741360465431718999留在new-04内；与vault/data分开，保留状态不移动。JDK源码确认Windows UNIX临时路径优先级，POM普通argLine可覆盖java.io.tmpdir；本地probe23708/0真实核受控_JAVA_OPTIONS优先级与短JNA/UNIX路径。此临时覆盖仅本次连接准备，不照抄到正式八项冻结参数；没有本机系统/内核修改、真实UI或手SSH部署。
+
+前后实际f102 CLASS、54有效cp/16JAR/17输出、三descriptor canonical/数组/路径/inputDigest/marker保持。实际JUnit原classpath55段含空项及POM ../，规范化顺序与54独立cp完全等价。Git descriptor raw b29beb53→98b8d9b5仅对象key顺序重排，Maven报告产生新文件；初版closeout过宽noSourceOrTargetContentChange旗标保留，final明确订正，不声称所有target/raw字节未变。最终credential-preflight-closeout-04-final SHA9e227787d9fb053bf12383ba9373c8e8f8728e1c0dc6d60041e8f84e79b15b63。
+
+四个本预检进程原wait均0，宿主CIM按PID+creation及精确cp0804/桥/probe/launcher签名核退0；只精确nonreparse清cp0804六自有临时文件，保留newvault、连接state、targets及所有原证据，无其他用户或05进程信号。credential-preflight-process-temp-04 SHAf075669a6755a9ef3a655fd147e771b8e515163d2dffa1ffb106eea5d8b524b6。没有声称曾观测到已自然结束的Maven后代JVM PID/exit。本阶段后续公共文本隐私补核以04/preflight-privacy-04的新CreateNew原结果/实际退出/进程临时目录回执为准；R07旧02/03快照不覆盖这里的后续字节。
+
+下一目标回合先读最新CURRENT/交接和上述proof。05唯一支持入口为adapter05.py的driver/monitor/inspect三模式，继续复用04身份/原八项目/54cp；父最终policy须合并05当前launch-plan中的三个冻结输入与cleanupEntrySource，同时绑定new-04 credential-source-identity、product-connection-proof和实际final-source-policy，再创建正确FINAL policy/release和全新t04。当前这些FINAL/release/t04均未创建，服务器未再次清场。之后按原产品inventory→plan→apply→独立after，initialReset通过才一次排入全新八项各一个原run。任何正式失败整轮失败、仍按原冻结继续其余；不改活动版本/参数、不重放旧UNKNOWN、不拼7项旧成绩，格式/SDK内部恢复分别如实记录。FTP仍授权8MiB/1MiB/2+6，五下载、10并发及其余既定完整业务/独立审批/交付清理不减，LOW/LOW/1500000/65536/90不变。

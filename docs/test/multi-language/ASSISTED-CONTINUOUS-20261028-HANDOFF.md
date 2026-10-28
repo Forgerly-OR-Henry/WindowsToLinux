@@ -18,9 +18,15 @@ CSV原审计四文件及Astra传播判定已CreateNew，父回读关键判据和
 
 用户明确授权后续FTP文件由64MiB改8MiB，其余业务场景保留。原8MiB提交9068fe92仍在`codex/ftp-live-8m-20261029`，旧tmp/f8m29已正常move，不能再用旧路径。R07冻结65f8实际CLASS为8MiB，1MiB片共8/先2后6，五SHA/双版本/10并发/19正常trace和真实停启等保留；真实8MiB完整首过已核定：五笔完整下载均8388608字节/SHA，顺序v1/v1/v2/v1/v2，原完整V2及交付/清理齐，checker一次0/PASS。查看ftp-8m-full-workload-parent-proof-01.json和file-transfer-first-01-parent-verification.json；实际policy/launch workloadPolicySha256/新scope audit均绑定，旧64MiB成绩不改标或拼接，三连过门槛没有恢复。
 
-## 当前补充：R08仅纯本地集成候选，正式八项未启动
+## 当前补充：R08本地候选及新凭据/原产品连接准备完成，正式0
 
-候选保留根.ai-workspace/wt/r08、branch codex/assisted-r08-local-preparation-20261029、HEAD73bbbbbb07346a09155d8d3ddc23c5dd08756d38；正常merge f3acc双亲main4b27+nr29ff83，已本地提交、未push/合入main/r07。实际必要package0、指定32定点0，54独立cp/3Mod17输出/CLASSf102/16JAR/8MiB2+6/12超时纯反射均父核，旧45证据/源/产物不动。03DRAFT控制器及04增量仅辅助准备，正式0；Astra03两个核心绕过及builder问题在04闭合，04仍有Java缺父release须在子进程前拒绝的顺序缺口，05正在最小修正和验证。03/04及全部红/绿/审查证据保留，不用DRAFT开真实Runtime/DB/项目。后续先完成R07最终隐私收尾及05父核，再fresh vault/私有API配置/原产品连接/BiNl pin，冻结最终policy/release，产品清场及独立after通过才一次启动全新八项。不使用旧UNKNOWN或拷回旧DPAPI库，不拼本地定点到真实验收。
+保留根.ai-workspace/wt/r08、branch codex/assisted-r08-local-preparation-20261029、HEAD73bbbbbb07346a09155d8d3ddc23c5dd08756d38。生产源实际构建f3acc至73仅文档差异；必要package0/指定32定点0/54独立cp/3Mod17输出/CLASSf102/16JAR/8MiB2+6及12超时反射已父核。03/04历史红/绿和Astra记录保持；05 Java9441a5f6和adapter c414fa80完成最小缺release预子进程拒绝，父核60+171和16PID0，parent-readiness-review-05-01接受局部候选。真实main FINAL/cleanup尚未验证，3既有Source测试失败仍保留，不称全suite绿。
+
+新vault src/app/db/data/agent-live-credential-20261029-r08-04已从本机新main resume-01仅内存迁移，cf桥编译0/迁移0；源pin核BiNl，未复制旧DPAPI/UNKNOWN/DB或目标trust。API安全CopyNew到ignored/untracked私有配置105B，no plaintext。原产品连接selector一次Maven0/JUnit1/0/6.506s、wire BiNl/SUCCEEDED，credential-source-identity-04 SHA24d35b8e、product-connection-proof-04 SHA70ccb760。父parent-product-connection-verification-04再核原四raw/XML/所有属性及真实后置freeze54cp/17输出0。Git descriptor仅对象key raw重排，三份有效内容严格不变；初版过宽target旗标由新final closeout9e227787订正，原件保留。全段仍非正式八项。
+
+连接准备的JUnit cleanup NEVER/受控_JAVA_OPTIONS长state与短JNA/UNIX安排，仅此PREPARATION；原Maven9588、bridge35924、javac44496、probe23708均actualwait0，自有CIM核0/专用cp0804已精确清六文件，process-temp SHAf075669a。新vault/data和独立connection-runtime/junit-5741360465431718999保留，不能删除/移动或视为旧UNKNOWN。后续本阶段公共文本补核见04/preflight-privacy-04新原回执，不将R07快照当覆盖未来文本。
+
+下一目标回合不要再迁移凭据/复制API或重跑连接。先回读04/05及最新proof，创建实际final-source-policy、最终round-policy-04.json与parent-final-release-04.json，绑定正确新凭据/连接与源/私有配置hash。最终policy必须合入05-launch-plan.DRAFT.json当前三个输入及cleanupEntrySource，仅用adapter05.py driver/monitor/inspect，不直接启动旧04或任何旧R07句柄。DRAFT/缺release在子进程前拒绝；source73、54cp/17输出、LOW/LOW/1500000/65536/90、8MiB及原业务/独立审批冻结。新t04也未创建，服务器尚未再清。产品inventory→plan→apply→独立after和initialReset通过才八条唯一原run；失败继续原冻结其余，修复隔离，不拼旧7项成绩。没有用户必须答复项。
 
 ## 新机预检阶段交接（历史，本阶段已结束）
 
