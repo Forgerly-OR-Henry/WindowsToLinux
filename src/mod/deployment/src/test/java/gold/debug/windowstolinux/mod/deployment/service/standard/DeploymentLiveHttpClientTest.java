@@ -24,6 +24,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 class DeploymentLiveHttpClientTest {
     @Test
     @Timeout(110)
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "fileTransfer.peerScript", matches = ".+")
     void slowOneMiBTraversesActualGoNodeAndAcceptanceHelperOnce() throws Exception {
         var process = new ProcessBuilder(System.getProperty("fileTransfer.nodeBinary"),
             System.getProperty("fileTransfer.peerScript")).redirectError(ProcessBuilder.Redirect.INHERIT).start();
