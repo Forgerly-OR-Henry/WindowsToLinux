@@ -25,12 +25,50 @@ const server = http.createServer((req, res) => {
     let uploadProxy: http.ClientRequest | undefined;
     let uploadResponse: http.IncomingMessage | undefined;
     let uploadDataObserver: ((chunk: Buffer) => void) | undefined;
+    let uploadPauseObserver: (() => void) | undefined;
+    let uploadResumeObserver: (() => void) | undefined;
+    let uploadDrainObserver: (() => void) | undefined;
+    let uploadTimer: ReturnType<typeof setInterval> | undefined;
+    let uploadPauseCount = 0, uploadResumeCount = 0, uploadDrainCount = 0;
+    let uploadPauseStarted: number | null = null, uploadPausedMillis = 0, uploadLastDrain: number | null = null;
+    let uploadLastTick = 0, uploadLastTickBytes = 0, uploadTickCount = 0, uploadDroppedTicks = 0, uploadObservationFailures = 0;
+    const uploadProgress: Record<string, unknown>[] = [];
     let uploadObservationDetached = false;
-    const stopObservingUploadData = () => {
+    const uploadNow = () => Number(process.hrtime.bigint() - uploadStarted) / 1e6;
+    const safelyObserveUpload = (action: () => void) => { try { action(); } catch { uploadObservationFailures++; } };
+    const uploadSnapshot = (now: number) => ({
+      elapsedMillis: now, tickGapMillis: now - uploadLastTick, requestBodyBytes: uploadBodyBytes,
+      deltaBodyBytes: uploadBodyBytes - uploadLastTickBytes,
+      requestPaused: req.isPaused(), requestReadableFlowing: req.readableFlowing, requestReadableLength: req.readableLength,
+      proxyWritableLength: uploadProxy?.writableLength ?? null, proxyWritableNeedDrain: uploadProxy?.writableNeedDrain ?? null,
+      pauseCount: uploadPauseCount, resumeCount: uploadResumeCount, drainCount: uploadDrainCount,
+      currentPauseMillis: uploadPauseStarted === null ? null : now - uploadPauseStarted,
+      pausedMillis: uploadPausedMillis + (uploadPauseStarted === null ? 0 : now - uploadPauseStarted),
+      lastDrainAgeMillis: uploadLastDrain === null ? null : now - uploadLastDrain,
+      lastBodyDataAgeMillis: uploadLastDataMillis === null ? null : now - uploadLastDataMillis,
+    });
+    const stopObservingUploadData = (stopEvent = "OBSERVATION_CLOSED") => {
+      if (uploadObservationDetached) return;
       uploadObservationDetached = true;
+      if (uploadTimer) { clearInterval(uploadTimer); uploadTimer = undefined; }
       if (uploadDataObserver) {
         req.off("data", uploadDataObserver);
         uploadDataObserver = undefined;
+      }
+      if (uploadPauseObserver) { req.off("pause", uploadPauseObserver); uploadPauseObserver = undefined; }
+      if (uploadResumeObserver) { req.off("resume", uploadResumeObserver); uploadResumeObserver = undefined; }
+      if (uploadDrainObserver) { uploadProxy?.off("drain", uploadDrainObserver); uploadDrainObserver = undefined; }
+      if (upload) {
+        let final: Record<string, unknown> | null = null;
+        safelyObserveUpload(() => { final = uploadSnapshot(uploadNow()); });
+        safelyObserveUpload(() => console.info("FILE_TRANSFER_UPLOAD_FLOW_DIAGNOSTIC " + JSON.stringify({
+          uploadId: upload[1], chunkIndex: Number(upload[2]), requestId: uploadStarted.toString(), startedAtUtc: uploadStartedAtUtc,
+          stopEvent, sampleIntervalMillis: 1000, sampleLimit: 16, sampleCount: uploadTickCount, droppedSamples: uploadDroppedTicks,
+          requestBodyBytes: uploadBodyBytes, pauseCount: uploadPauseCount, resumeCount: uploadResumeCount, drainCount: uploadDrainCount,
+          observationFailures: uploadObservationFailures, samples: uploadProgress, final,
+          queueMeaning: "NODE_STREAM_BUFFERS_NOT_OS_OR_UPSTREAM_RECEIPT",
+          tickGapMeaning: "MONOTONIC_SAMPLING_INTERVAL_NOT_A_SINGLE_CAUSE",
+        })));
       }
     };
     const observeUpload = upload ? (event: string, error?: unknown) => {
@@ -62,9 +100,9 @@ const server = http.createServer((req, res) => {
     } : undefined;
     observeUpload?.("REQUEST_BEGIN");
     if (observeUpload) {
-      req.once("end", () => { observeUpload("REQUEST_END"); stopObservingUploadData(); });
-      req.once("close", stopObservingUploadData);
-      res.once("close", stopObservingUploadData);
+      req.once("end", () => { observeUpload("REQUEST_END"); stopObservingUploadData("REQUEST_END"); });
+      req.once("close", () => stopObservingUploadData("REQUEST_CLOSE"));
+      res.once("close", () => stopObservingUploadData("DOWNSTREAM_CLOSE"));
       res.once("finish", () => observeUpload("DOWNSTREAM_FINISH"));
     }
     const downloadVersion = /^\/api\/versions\/([0-9a-f]{32})\/download$/.exec(url.pathname)?.[1];
@@ -139,9 +177,9 @@ const server = http.createServer((req, res) => {
         uploadResponse = response;
         if (observeUpload) {
           observeUpload("UPSTREAM_RESPONSE_HEADERS");
-          response.once("aborted", () => { observeUpload("RESPONSE_ABORTED"); stopObservingUploadData(); });
+          response.once("aborted", () => { observeUpload("RESPONSE_ABORTED"); stopObservingUploadData("RESPONSE_ABORTED"); });
           response.once("close", () => {
-            if (!response.complete) { observeUpload("RESPONSE_CLOSE_INCOMPLETE"); stopObservingUploadData(); }
+            if (!response.complete) { observeUpload("RESPONSE_CLOSE_INCOMPLETE"); stopObservingUploadData("RESPONSE_CLOSE_INCOMPLETE"); }
           });
         }
         upstreamResponse = response;
@@ -221,7 +259,7 @@ const server = http.createServer((req, res) => {
           });
           response.on("error", (error) => {
             observeUpload?.("RESPONSE_ERROR", error);
-            if (observeUpload) stopObservingUploadData();
+            if (observeUpload) stopObservingUploadData("RESPONSE_ERROR");
             diagnose?.("RESPONSE_ERROR", error);
             protocolFailure();
           });
@@ -246,18 +284,18 @@ const server = http.createServer((req, res) => {
     uploadProxy = proxy;
     if (observeUpload) {
       proxy.once("finish", () => observeUpload("PROXY_FINISH_LOCAL_OS_DELIVERY_ONLY"));
-      proxy.on("unpipe", (source) => { if (source === req) stopObservingUploadData(); });
-      proxy.once("close", stopObservingUploadData);
+      proxy.on("unpipe", (source) => { if (source === req) stopObservingUploadData("REQUEST_UNPIPE"); });
+      proxy.once("close", () => stopObservingUploadData("PROXY_CLOSE"));
     }
     proxy.on("timeout", () => {
       observeUpload?.("UPSTREAM_TIMEOUT");
-      if (observeUpload) stopObservingUploadData();
+      if (observeUpload) stopObservingUploadData("UPSTREAM_TIMEOUT");
       diagnose?.("UPSTREAM_TIMEOUT");
       proxy.destroy(new Error("upstream timeout"));
     });
     proxy.on("error", (error) => {
       observeUpload?.("PROXY_ERROR", error);
-      if (observeUpload) stopObservingUploadData();
+      if (observeUpload) stopObservingUploadData("PROXY_ERROR");
       diagnose?.("PROXY_ERROR", error);
       if (!res.headersSent) {
         res.writeHead(502, { "Content-Type": "application/json" });
@@ -266,27 +304,44 @@ const server = http.createServer((req, res) => {
     });
     req.on("aborted", () => {
       observeUpload?.("REQUEST_ABORTED");
-      if (observeUpload) stopObservingUploadData();
+      if (observeUpload) stopObservingUploadData("REQUEST_ABORTED");
       diagnose?.("REQUEST_ABORTED");
       proxy.destroy();
     });
     res.on("close", () => {
       if (!res.writableFinished) {
         observeUpload?.("DOWNSTREAM_CLOSE_INCOMPLETE");
-        if (observeUpload) stopObservingUploadData();
+        if (observeUpload) stopObservingUploadData("DOWNSTREAM_CLOSE_INCOMPLETE");
         diagnose?.("DOWNSTREAM_CLOSE_INCOMPLETE");
         proxy.destroy();
       }
     });
     req.pipe(proxy);
     if (observeUpload && !uploadObservationDetached) {
-      uploadDataObserver = (chunk: Buffer) => {
-        if (chunk.length > 0) {
-          uploadBodyBytes += chunk.length;
-          uploadLastDataMillis = Number(process.hrtime.bigint() - uploadStarted) / 1e6;
-        }
-      };
-      req.on("data", uploadDataObserver);
+      try {
+        uploadDataObserver = (chunk: Buffer) => safelyObserveUpload(() => {
+          if (chunk.length > 0) {
+            uploadBodyBytes += chunk.length;
+            uploadLastDataMillis = Number(process.hrtime.bigint() - uploadStarted) / 1e6;
+          }
+        });
+        req.on("data", uploadDataObserver);
+        uploadPauseObserver = () => safelyObserveUpload(() => { uploadPauseCount++; if (uploadPauseStarted === null) uploadPauseStarted = uploadNow(); });
+        uploadResumeObserver = () => safelyObserveUpload(() => {
+          uploadResumeCount++;
+          if (uploadPauseStarted !== null) { uploadPausedMillis += uploadNow() - uploadPauseStarted; uploadPauseStarted = null; }
+        });
+        uploadDrainObserver = () => safelyObserveUpload(() => { uploadDrainCount++; uploadLastDrain = uploadNow(); });
+        req.on("pause", uploadPauseObserver); req.on("resume", uploadResumeObserver); proxy.on("drain", uploadDrainObserver);
+        uploadTimer = setInterval(() => safelyObserveUpload(() => {
+          if (uploadObservationDetached) return;
+          const now = uploadNow(); const sample = uploadSnapshot(now);
+          uploadTickCount++;
+          if (uploadProgress.length === 16) { uploadProgress.splice(1, 1); uploadDroppedTicks++; }
+          uploadProgress.push(sample); uploadLastTick = now; uploadLastTickBytes = uploadBodyBytes;
+        }), 1000);
+        uploadTimer.unref();
+      } catch { uploadObservationFailures++; stopObservingUploadData("OBSERVATION_SETUP_ERROR"); }
     }
     return;
   }

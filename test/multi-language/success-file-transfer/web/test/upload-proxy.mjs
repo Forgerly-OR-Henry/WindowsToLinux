@@ -11,6 +11,7 @@ import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const prefix = "FILE_TRANSFER_UPLOAD_PROXY_DIAGNOSTIC ";
+const flowPrefix = "FILE_TRANSFER_UPLOAD_FLOW_DIAGNOSTIC ";
 async function waitFor(predicate) {
   const until = performance.now() + 3000;
   while (!predicate()) {
@@ -19,7 +20,7 @@ async function waitFor(predicate) {
   }
 }
 
-async function gateway(origin) {
+async function gateway(origin, options = {}) {
   assert.match(origin, /^http:\/\/127\.0\.0\.1:[0-9]+$/);
   const tempRoot = await fs.realpath(os.tmpdir());
   const temporary = await fs.mkdtemp(path.join(tempRoot, "wtl-upload-proxy-"));
@@ -29,10 +30,21 @@ async function gateway(origin) {
   assert.equal(source.split('from "./contracts.js"').length, 2);
   await fs.writeFile(path.join(temporary, "server.mjs"), stripTypeScriptTypes(source.replace('from "./contracts.js"', 'from "./contracts.mjs"')));
   await fs.writeFile(path.join(temporary, "contracts.mjs"), stripTypeScriptTypes(contracts));
-  const original = { createServer: http.createServer, request: http.request, info: console.info };
+  const original = { createServer: http.createServer, request: http.request, info: console.info,
+    setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval, hrtime: process.hrtime.bigint };
   const env = Object.fromEntries(["HOST", "PORT", "API_URL", "API_TIMEOUT_MS"].map((key) => [key, process.env[key]]));
   Object.assign(process.env, { HOST: "127.0.0.1", PORT: "0", API_URL: origin, API_TIMEOUT_MS: "30000" });
-  const trace = { records: [], requests: [], proxies: [], unpipeDataListenerCounts: [] };
+  const trace = { records: [], flowRecords: [], requests: [], proxies: [], unpipeDataListenerCounts: [], intervals: [] };
+  globalThis.setInterval = (callback, millis, ...args) => {
+    if (options.failTimer) throw new Error("TEST_SECRET_CANARY");
+    const entry = { callback, millis, active: true, fires: 0 };
+    const handle = original.setInterval(() => { entry.fires++; callback(...args); }, millis);
+    entry.handle = handle; trace.intervals.push(entry); return handle;
+  };
+  globalThis.clearInterval = (handle) => {
+    const observed = trace.intervals.find((entry) => entry.handle === handle); if (observed) observed.active = false;
+    return original.clearInterval(handle);
+  };
   const backendAgent = new http.Agent({ keepAlive: true });
   let server;
   const ready = new Promise((resolve, reject) => {
@@ -45,7 +57,11 @@ async function gateway(origin) {
     assert.equal(args[1].timeout, 30000);
     args[1] = { ...args[1], agent: backendAgent };
     const proxy = original.request.apply(this, args);
-    const record = { destroyCalls: 0, timeouts: [] }; trace.proxies.push(record);
+    const record = { destroyCalls: 0, timeouts: [], stream: proxy }; trace.proxies.push(record);
+    if (options.corkProxy) proxy.once("socket", (socket) => {
+      const hold = () => { proxy.cork(); record.corked = true; };
+      if (socket.connecting) socket.once("connect", hold); else hold();
+    });
     const destroy = proxy.destroy;
     proxy.destroy = function (...values) { record.destroyCalls++; return destroy.apply(this, values); };
     const setTimeout = proxy.setTimeout;
@@ -54,16 +70,24 @@ async function gateway(origin) {
     return proxy;
   };
   console.info = function (...args) {
+    if (options.failLog) throw new Error("TEST_SECRET_CANARY");
     if (typeof args[0] === "string" && args[0].startsWith(prefix)) trace.records.push(JSON.parse(args[0].slice(prefix.length)));
+    else if (typeof args[0] === "string" && args[0].startsWith(flowPrefix)) trace.flowRecords.push(JSON.parse(args[0].slice(flowPrefix.length)));
     else original.info.apply(this, args);
   };
   async function close() {
     http.createServer = original.createServer; http.request = original.request; backendAgent.destroy();
     if (server?.listening) { const stopped = new Promise((resolve) => server.close(resolve)); server.closeAllConnections(); await stopped; }
     console.info = original.info;
+    globalThis.setInterval = original.setInterval; globalThis.clearInterval = original.clearInterval; process.hrtime.bigint = original.hrtime;
+    const outstanding = trace.intervals.filter((entry) => entry.active);
+    for (const entry of outstanding) original.clearInterval(entry.handle);
     for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
     assert.ok(!server?.listening);
     for (const req of trace.requests) assert.equal(req.listenerCount("data"), 0, "upload observer must detach when its original pipe ends");
+    for (const req of trace.requests) { assert.equal(req.listenerCount("pause"), 0); assert.equal(req.listenerCount("resume"), 0); }
+    for (const entry of trace.proxies) assert.equal(entry.stream.listenerCount("drain"), 0);
+    assert.equal(outstanding.length, 0, "all upload sampling timers must be cleared before harness cleanup");
     const stat = await fs.lstat(temporary); const resolved = await fs.realpath(temporary);
     assert.ok(stat.isDirectory() && !stat.isSymbolicLink() && path.isAbsolute(resolved));
     assert.equal(resolved, temporary); assert.equal(path.dirname(resolved), tempRoot); assert.ok(path.basename(resolved).startsWith("wtl-upload-proxy-"));
@@ -73,6 +97,12 @@ async function gateway(origin) {
   try { await import(pathToFileURL(path.join(temporary, "server.mjs")).href); http.createServer = original.createServer; await ready; }
   catch (error) { await close(); throw error; }
   return { ...trace, url: `http://127.0.0.1:${server.address().port}`, request: original.request, close,
+    tick: (fail = false) => {
+      try {
+        if (fail) process.hrtime.bigint = () => { throw new Error("TEST_SECRET_CANARY"); };
+        for (const entry of trace.intervals) if (entry.active) entry.callback();
+      } finally { process.hrtime.bigint = original.hrtime; }
+    },
     sourceSha256: createHash("sha256").update(source).digest("hex") };
 }
 
@@ -95,6 +125,157 @@ function verifyRecords(records) {
   }
   assert.ok(!JSON.stringify(records).includes("TEST_SECRET_CANARY"));
 }
+
+function verifyFlowRecords(records) {
+  const fields = ["uploadId", "chunkIndex", "requestId", "startedAtUtc", "stopEvent", "sampleIntervalMillis", "sampleLimit",
+    "sampleCount", "droppedSamples", "requestBodyBytes", "pauseCount", "resumeCount", "drainCount", "observationFailures", "samples", "final", "queueMeaning", "tickGapMeaning"];
+  const sampleFields = ["elapsedMillis", "tickGapMillis", "requestBodyBytes", "deltaBodyBytes", "requestPaused", "requestReadableFlowing",
+    "requestReadableLength", "proxyWritableLength", "proxyWritableNeedDrain", "pauseCount", "resumeCount", "drainCount", "currentPauseMillis", "pausedMillis", "lastDrainAgeMillis", "lastBodyDataAgeMillis"];
+  for (const entry of records) {
+    assert.deepEqual(Object.keys(entry).sort(), [...fields].sort());
+    assert.equal(entry.sampleIntervalMillis, 1000); assert.equal(entry.sampleLimit, 16);
+    assert.equal(entry.samples.length, Math.min(16, entry.sampleCount)); assert.equal(entry.droppedSamples, Math.max(0, entry.sampleCount - 16));
+    assert.equal(entry.queueMeaning, "NODE_STREAM_BUFFERS_NOT_OS_OR_UPSTREAM_RECEIPT");
+    assert.equal(entry.tickGapMeaning, "MONOTONIC_SAMPLING_INTERVAL_NOT_A_SINGLE_CAUSE");
+    assert.ok(Buffer.byteLength(JSON.stringify(entry)) < 16384);
+    for (const sample of [...entry.samples, ...(entry.final ? [entry.final] : [])]) {
+      assert.deepEqual(Object.keys(sample).sort(), [...sampleFields].sort());
+      assert.ok(sample.elapsedMillis >= 0 && sample.tickGapMillis >= 0 && sample.deltaBodyBytes >= 0);
+    }
+  }
+  for (const entries of Map.groupBy(records, (entry) => entry.requestId).values()) assert.equal(entries.length, 1);
+  assert.ok(!JSON.stringify(records).includes("TEST_SECRET_CANARY"));
+}
+
+const uploadId = "0123456789abcdef0123456789abcdef";
+const uploadBody = Buffer.alloc(1 << 20, 0x5a);
+uploadBody.write("TEST_SECRET_CANARY");
+function startUpload(proxy, write = (request) => request.end(uploadBody)) {
+  let request;
+  const result = new Promise((resolve, reject) => {
+    const deadline = setTimeout(() => reject(new Error("LOCAL_UPLOAD_HTTP_DEADLINE")), 3000);
+    request = proxy.request(`${proxy.url}/api/uploads/${uploadId}/chunks/0?secret=TEST_SECRET_CANARY`, {
+      method: "PUT", agent: false, headers: { "Content-Length": uploadBody.length, Authorization: "Bearer TEST_SECRET_CANARY" },
+    }, (response) => {
+      const parts = []; response.on("data", (part) => parts.push(part)); response.on("error", reject);
+      response.on("end", () => { clearTimeout(deadline); resolve({ status: response.statusCode, body: JSON.parse(Buffer.concat(parts).toString()) }); });
+    });
+    request.on("error", reject); request.once("close", () => clearTimeout(deadline)); write(request);
+  }).then((response) => ({ response }), (error) => ({ errorCode: error.code || error.name }));
+  return { request, result };
+}
+
+test("upload flow samples actual Node backpressure and bounded tick gaps", { timeout: 8000 }, async (t) => {
+  let received = 0;
+  const upstream = http.createServer((req, res) => {
+    req.on("data", (chunk) => { received += chunk.length; });
+    req.on("end", () => { res.writeHead(200, { "X-Sample-Protocol": "2" }); res.end(JSON.stringify({ number: 0, sha256: createHash("sha256").update(uploadBody).digest("hex"), duplicate: false })); });
+  });
+  upstream.listen(0, "127.0.0.1"); await once(upstream, "listening"); let proxy, client;
+  try {
+    proxy = await gateway(`http://127.0.0.1:${upstream.address().port}`, { corkProxy: true }); client = startUpload(proxy);
+    await waitFor(() => proxy.proxies[0]?.corked && proxy.requests[0]?.isPaused() && proxy.proxies[0]?.stream.writableNeedDrain && proxy.requests[0].listenerCount("data") === 2);
+    assert.equal(proxy.intervals.length, 1); assert.equal(proxy.intervals[0].millis, 1000); assert.equal(proxy.intervals[0].handle.hasRef(), false);
+    const heldUntil = performance.now() + 1150;
+    while (performance.now() < heldUntil) {} // A controlled local scheduling stall, not a network diagnosis.
+    await waitFor(() => proxy.intervals[0].fires === 1);
+    for (let index = 0; index < 19; index++) proxy.tick();
+    assert.equal(proxy.records.length, 1, "progress does not consume the original event quota"); assert.equal(proxy.flowRecords.length, 0);
+    const receivedWhileHeld = received; assert.ok(receivedWhileHeld < uploadBody.length);
+    proxy.proxies[0].stream.uncork(); const result = await client.result;
+    if (result.response?.status !== 200) t.diagnostic(JSON.stringify({ received, result, events: proxy.records.map((entry) => ({ event: entry.event, bytes: entry.requestBodyBytes, error: entry.error })), flow: proxy.flowRecords }));
+    assert.equal(result.response?.status, 200, JSON.stringify(result)); assert.equal(received, uploadBody.length);
+    await waitFor(() => proxy.flowRecords.length === 1 && proxy.intervals.every((entry) => !entry.active));
+    const flow = proxy.flowRecords[0]; verifyFlowRecords(proxy.flowRecords); verifyRecords(proxy.records);
+    assert.equal(flow.sampleCount, 20); assert.equal(flow.droppedSamples, 4); assert.ok(flow.samples[0].elapsedMillis < flow.samples[1].elapsedMillis);
+    assert.ok(flow.samples.some((sample) => sample.requestPaused && sample.proxyWritableNeedDrain && sample.proxyWritableLength > 0));
+    assert.ok(flow.samples[0].requestBodyBytes > receivedWhileHeld, "the observed Node queue is not an upstream body receipt");
+    assert.ok(flow.samples[0].tickGapMillis >= 1100, "native monotonic time records the deliberately delayed first timer tick");
+    assert.ok(flow.pauseCount > 0 && flow.resumeCount > 0 && flow.drainCount > 0); assert.equal(flow.final.requestBodyBytes, uploadBody.length);
+    assert.ok(proxy.records.some((entry) => entry.event === "REQUEST_END" && entry.requestBodyBytes === uploadBody.length));
+    assert.deepEqual(proxy.proxies[0].timeouts, []); t.diagnostic("NODE_BACKPRESSURE_PASSIVE_RING_AND_FINAL_COUNTERS_VERIFIED=true");
+  } finally {
+    client?.request.destroy(); await proxy?.close(); const stopped = new Promise((resolve) => upstream.close(resolve)); upstream.closeAllConnections(); await stopped;
+  }
+});
+
+for (const ending of ["abort", "error", "timeout", "unpipe", "response-aborted"]) test(`upload flow cleans observers on ${ending} without spending terminal quota`, { timeout: 8000 }, async () => {
+  let heldResponse;
+  const upstream = http.createServer((req, res) => {
+    req.on("error", () => {});
+    if (ending === "response-aborted") {
+      req.resume(); heldResponse = res;
+      res.writeHead(200, { "X-Sample-Protocol": "2", "Content-Type": "application/json", "Content-Length": 128 }); res.write("{");
+    }
+  });
+  upstream.listen(0, "127.0.0.1"); await once(upstream, "listening"); let proxy, client;
+  try {
+    proxy = await gateway(`http://127.0.0.1:${upstream.address().port}`); client = startUpload(proxy, (request) => request.write(uploadBody.subarray(0, 32768)));
+    await waitFor(() => proxy.requests[0]?.listenerCount("data") === 2 && proxy.proxies.length === 1);
+    if (ending === "response-aborted") await waitFor(() => proxy.records.some((entry) => entry.event === "UPSTREAM_RESPONSE_HEADERS"));
+    for (let index = 0; index < 40; index++) proxy.tick();
+    assert.equal(proxy.records.length, ending === "response-aborted" ? 2 : 1); const stream = proxy.proxies[0].stream;
+    if (ending === "abort") client.request.destroy();
+    else if (ending === "error") stream.destroy(Object.assign(new Error("TEST_SECRET_CANARY"), { code: "ECONNRESET" }));
+    else if (ending === "timeout") stream.emit("timeout");
+    else if (ending === "response-aborted") heldResponse.destroy();
+    else { proxy.requests[0].unpipe(stream); stream.destroy(Object.assign(new Error("TEST_SECRET_CANARY"), { code: "ECONNRESET" })); }
+    await client.result; await waitFor(() => proxy.flowRecords.length === 1 && proxy.intervals.every((entry) => !entry.active));
+    const first = proxy.records.find((entry) => entry.firstObservedTerminationEvent !== null);
+    assert.equal(first.firstObservedTerminationEvent, ending === "abort" ? "REQUEST_ABORTED" : ending === "timeout" ? "UPSTREAM_TIMEOUT" : ending === "response-aborted" ? "RESPONSE_ABORTED" : "PROXY_ERROR");
+    if (ending === "error") { for (let index = 0; index < 20; index++) stream.emit("error", Object.assign(new Error("TEST_SECRET_CANARY"), { code: "EPIPE" })); assert.equal(proxy.records.length, 12); }
+    assert.equal(proxy.flowRecords.length, 1); assert.equal(proxy.flowRecords[0].sampleCount, 40); assert.equal(proxy.flowRecords[0].droppedSamples, 24);
+    verifyFlowRecords(proxy.flowRecords); verifyRecords(proxy.records); assert.deepEqual(proxy.proxies[0].timeouts, []);
+    assert.equal(proxy.requests[0].listenerCount("pause"), 0); assert.equal(proxy.requests[0].listenerCount("resume"), 0);
+  } finally {
+    client?.request.destroy(); await proxy?.close(); const stopped = new Promise((resolve) => upstream.close(resolve)); upstream.closeAllConnections(); await stopped;
+  }
+});
+
+for (const fault of ["clock", "log", "setup"]) test(`upload flow observation ${fault} failure preserves the response and timeout`, { timeout: 8000 }, async () => {
+  let received = 0;
+  const upstream = http.createServer((req, res) => {
+    req.on("data", (chunk) => { received += chunk.length; });
+    req.on("end", () => { res.writeHead(200, { "X-Sample-Protocol": "2" }); res.end(JSON.stringify({ number: 0, sha256: createHash("sha256").update(uploadBody).digest("hex"), duplicate: false })); });
+  });
+  upstream.listen(0, "127.0.0.1"); await once(upstream, "listening"); let proxy, client;
+  try {
+    proxy = await gateway(`http://127.0.0.1:${upstream.address().port}`, { failLog: fault === "log", failTimer: fault === "setup" });
+    client = startUpload(proxy, (request) => request.write(uploadBody.subarray(0, 32768)));
+    await waitFor(() => proxy.proxies.length === 1 && (fault === "setup" || proxy.intervals.length === 1));
+    if (fault === "clock") proxy.tick(true);
+    client.request.end(uploadBody.subarray(32768)); const result = await client.result;
+    assert.equal(result.response?.status, 200, JSON.stringify(result)); assert.equal(received, uploadBody.length); assert.deepEqual(proxy.proxies[0].timeouts, []);
+    await waitFor(() => proxy.intervals.every((entry) => !entry.active));
+    if (fault !== "log") { verifyFlowRecords(proxy.flowRecords); assert.ok(proxy.flowRecords[0].observationFailures > 0); }
+  } finally {
+    client?.request.destroy(); await proxy?.close(); const stopped = new Promise((resolve) => upstream.close(resolve)); upstream.closeAllConnections(); await stopped;
+  }
+});
+
+test("upload flow does not schedule timers outside its upload guard", { timeout: 8000 }, async () => {
+  let upstreamRequests = 0;
+  const upstream = http.createServer((req, res) => { upstreamRequests++; res.end(); });
+  upstream.listen(0, "127.0.0.1"); await once(upstream, "listening"); let proxy;
+  try {
+    proxy = await gateway(`http://127.0.0.1:${upstream.address().port}`);
+    const source = await fs.readFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src/server/server.ts"), "utf8");
+    const guard = source.indexOf("    if (observeUpload && !uploadObservationDetached) {");
+    const guarded = source.slice(guard, source.indexOf("\n    return;", guard));
+    assert.equal(source.match(/setInterval\(/g).length, 1); assert.ok(guard >= 0 && guarded.includes("setInterval(") && guarded.includes("uploadTimer.unref()"));
+    assert.ok(source.includes('const uploadMatch = req.method === "PUT" ? /^\\/api\\/uploads\\/'));
+    assert.ok(source.includes('const observeUpload = upload ?')); assert.ok(source.includes('if (downloadVersion) proxy.setTimeout(0);'));
+    await new Promise((resolve, reject) => {
+      const request = proxy.request(proxy.url + "/healthz", { agent: false }, (response) => {
+        assert.equal(response.statusCode, 200); response.resume(); response.on("end", resolve); response.on("error", reject);
+      }); request.on("error", reject); request.end();
+    });
+    assert.equal(proxy.intervals.length, 0); assert.equal(proxy.flowRecords.length, 0); assert.equal(proxy.records.length, 0);
+    assert.equal(proxy.proxies.length, 0); assert.equal(upstreamRequests, 0);
+  } finally {
+    await proxy?.close(); const stopped = new Promise((resolve) => upstream.close(resolve)); upstream.closeAllConnections(); await stopped;
+  }
+});
 
 test("upload proxy distinguishes body transfer from processing and detaches observers", { timeout: 8000 }, async (t) => {
   const body = Buffer.alloc(1 << 20, 0x5a); const id = "0123456789abcdef0123456789abcdef";
@@ -149,6 +330,7 @@ test("upload proxy distinguishes body transfer from processing and detaches obse
     assert.ok(proxy.unpipeDataListenerCounts.every((count) => count === 0));
     assert.ok(proxy.proxies.every((record) => record.timeouts.length === 0), "upload must retain its original 30000ms timeout");
     verifyRecords(proxy.records);
+    verifyFlowRecords(proxy.flowRecords);
     t.diagnostic(JSON.stringify({ marker: "LOCAL_UPLOAD_PROXY_BODY_VS_PROCESSING_VERIFIED", bytes: body.length, sourceSha256: proxy.sourceSha256,
       unpipeDataListenerCounts: proxy.unpipeDataListenerCounts, proxyDestroyCalls: proxy.proxies.map((entry) => entry.destroyCalls),
       requests: proxy.proxies.length, events: proxy.records.map((entry) => ({ chunkIndex: entry.chunkIndex, event: entry.event, bytes: entry.requestBodyBytes })) }));
@@ -192,7 +374,8 @@ test("early rejection drains request before next keepalive request", { timeout: 
   const seen = [];
   const upstream = http.createServer((req,res) => {
     seen.push(req.url);
-    res.writeHead(409, {"X-Sample-Protocol":"2", "Content-Type":"application/json", "Connection":"close"});
+    req.on("error", () => {}); req.resume();
+    res.writeHead(409, {"X-Sample-Protocol":"2", "Content-Type":"application/json", "Connection":"keep-alive"});
     res.end(JSON.stringify({error:"cancelled"}));
   });
   upstream.listen(0,"127.0.0.1"); await once(upstream,"listening");
