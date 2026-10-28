@@ -128,7 +128,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable, 
     /** Original-identity resource reconciliation action. / 原身份资源核对动作。 */
     private final JButton reconcile;
 
-    /** In-memory task polling, stopped on actual page disposal. / 内存任务轮询，在页面实际销毁时停止。 */
+    /** Visible unlocked task presentation polling, independent of task execution. / 可见且解锁时的任务展示轮询，独立于任务执行。 */
     private final Timer timer;
 
     /** Visual regions independent of task and selection ownership. / 独立于任务与选择归属的展示区域。 */
@@ -212,7 +212,9 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable, 
         add(presentation, BorderLayout.CENTER);
         checks.addActionListener(event -> controls());
         timer = new Timer(250, event -> poll());
-        timer.start();
+        addHierarchyListener(event -> {
+            if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0) updatePolling();
+        });
         controls();
     }
 
@@ -268,6 +270,16 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable, 
             refresh();
         }
         controls();
+        updatePolling();
+    }
+
+    /** Suspends hidden presentation and synchronizes immediately when it becomes visible. / 暂停隐藏展示，并在重新可见时立即同步。 */
+    private void updatePolling() {
+        if (view.closed || view.locked || !isShowing()) timer.stop();
+        else if (!timer.isRunning()) {
+            poll();
+            if (!view.closed && !view.locked && isShowing()) timer.start();
+        }
     }
 
     /**

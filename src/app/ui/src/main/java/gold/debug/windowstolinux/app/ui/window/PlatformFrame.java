@@ -1237,7 +1237,7 @@ public final class PlatformFrame extends JFrame {
                         gold.debug.windowstolinux.app.service.mod.PlatformModIntents.PagePin::ownerId)
                     .thenComparing(gold.debug.windowstolinux.app.service.mod.PlatformModIntents.PagePin::pageId)).toList(),
                 navigation::pinTitle, modOrderService::reorderPins, navigation::confirmedOrder);
-            orderSubscription = navigation.onChange(navigationOrder::refresh);
+            orderSubscription = navigation.onMetadataChange(navigationOrder::refreshWhenShowing);
             navigationOrder.refresh();
         }
 

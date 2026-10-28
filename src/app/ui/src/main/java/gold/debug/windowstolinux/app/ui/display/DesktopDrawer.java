@@ -28,7 +28,13 @@ public final class DesktopDrawer implements AutoCloseable {
 
     private BufferedImage outgoing;
 
-    private Dimension size;
+    private JComponent inventory;
+
+    private final Rectangle bounds = new Rectangle();
+
+    private int detailWidth;
+
+    private boolean layingOut;
 
     private final HierarchyListener lifetime = this::hierarchyChanged;
 
@@ -70,8 +76,7 @@ public final class DesktopDrawer implements AutoCloseable {
             inventoryFraction = fromWidth + (toWidth - fromWidth) * progress;
             spacing = fromSpacing + (toSpacing - fromSpacing) * progress;
             if (progress == 1) outgoing = null;
-            owner.revalidate();
-            owner.repaint();
+            layoutFrame();
         });
     }
 
@@ -83,26 +88,55 @@ public final class DesktopDrawer implements AutoCloseable {
         inventoryFraction = next ? targetFraction : 1;
         spacing = next ? targetGap : 0;
         detail.setVisible(next);
-        owner.revalidate();
+        layoutFrame();
+    }
+
+    private void layoutFrame() {
+        if (!layingOut) {
+            if (inventory == null) owner.revalidate();
+            else if (boundsChanged()) owner.doLayout();
+        }
         owner.repaint();
+    }
+
+    private boolean boundsChanged() {
+        int left = (int) Math.round(bounds.width * inventoryFraction);
+        int detailX = bounds.x + left + (int) Math.round(spacing);
+        return inventory.getX() != bounds.x || inventory.getY() != bounds.y
+            || inventory.getWidth() != left || inventory.getHeight() != bounds.height
+            || detail.getX() != detailX || detail.getY() != bounds.y
+            || detail.getWidth() != detailWidth || detail.getHeight() != bounds.height;
     }
 
     /** Only positions existing components; never recreates a business view per frame. */
     public void layout(JComponent inventory, Rectangle bounds, int finalLeft, int gap) {
-        var currentSize = new Dimension(bounds.width, bounds.height);
         finalLeft = Math.max(0, Math.min(bounds.width, finalLeft));
         double nextFraction = bounds.width <= 0 ? 1 : finalLeft / (double) bounds.width;
-        boolean resized = size == null || !size.equals(currentSize);
+        boolean resized = this.inventory != inventory || this.bounds.width != bounds.width || this.bounds.height != bounds.height;
         boolean retargeted = targetFraction != nextFraction || targetGap != gap;
+        this.inventory = inventory;
+        this.bounds.setBounds(bounds);
+        detailWidth = Math.max(0, bounds.width - finalLeft - gap);
         targetFraction = nextFraction;
         targetGap = gap;
-        if (resized) reset(expanded);
-        else if (retargeted && expanded) move();
-        size = currentSize;
-        int detailWidth = Math.max(0, bounds.width - finalLeft - gap);
-        int left = (int) Math.round(bounds.width * inventoryFraction);
-        inventory.setBounds(bounds.x, bounds.y, left, bounds.height);
-        detail.setBounds(bounds.x + left + (int) Math.round(spacing), bounds.y, detailWidth, bounds.height);
+        layingOut = true;
+        try {
+            if (resized) reset(expanded);
+            else if (retargeted && expanded) move();
+            int left = (int) Math.round(bounds.width * inventoryFraction);
+            position(inventory, bounds.x, bounds.y, left, bounds.height);
+            position(detail, bounds.x + left + (int) Math.round(spacing), bounds.y, detailWidth, bounds.height);
+        } finally {
+            layingOut = false;
+        }
+    }
+
+    private static void position(JComponent component, int x, int y, int width, int height) {
+        boolean resized = component.getWidth() != width || component.getHeight() != height;
+        if (resized || component.getX() != x || component.getY() != y) {
+            component.setBounds(x, y, width, height);
+            if (resized) component.revalidate();
+        }
     }
 
     public void paint(Graphics graphics) {

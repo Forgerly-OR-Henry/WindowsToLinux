@@ -30,6 +30,9 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
     /** Privacy and disposal state blocking section operations. / 阻止分区操作的隐私及销毁状态。 */
     private boolean locked = true, closed;
 
+    /** Coalesced metadata change awaiting visible presentation. / 等待可见展示的已合并元数据变化。 */
+    private boolean refreshPending;
+
     /** Creates the appearance-owned editor. / 创建外观所属编辑器。
      * @param components current controls / 当前控件
      * @param messages safe localized messages / 安全本地化消息 */
@@ -40,6 +43,10 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
         setName("navigation.order");
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setOpaque(false);
+        addHierarchyListener(event -> {
+            if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0
+                && isShowing() && refreshPending) refresh();
+        });
     }
 
     /** Adds one independently persisted section. / 添加独立持久化分区。
@@ -64,9 +71,17 @@ public final class NavigationOrderPane extends JPanel implements AutoCloseable, 
     /** Reloads when entering appearance or publication changes. / 进入外观或发布变化时重读。 */
     public void refresh() {
         if (locked || closed) return;
+        refreshPending = false;
         sections.forEach(section -> section.session.savePending().thenAccept(ok -> {
             if (ok) section.reload();
         }));
+    }
+
+    /** Coalesces publication notifications while the editor is hidden. / 编辑器隐藏时合并发布通知。 */
+    public void refreshWhenShowing() {
+        if (closed) return;
+        refreshPending = true;
+        if (isShowing()) refresh();
     }
 
     @Override

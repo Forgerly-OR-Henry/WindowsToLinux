@@ -37,6 +37,15 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
     /** Main navigation entries, never author components. / 主导航入口，不持有作者组件。 */
     private final JPanel entries = new JPanel();
 
+    /** Retains original actions across selection and metadata refreshes. / 跨选中及元数据刷新保留原操作。 */
+    private final Map<PageKey, DesktopNavigationButton> buttons = new LinkedHashMap<>();
+
+    /** Last metadata delivered to dependent editors. / 上次向依赖编辑器发送的元数据。 */
+    private List<PageContribution> notifiedPages = List.of();
+
+    /** Last saved order delivered to dependent editors. / 上次向依赖编辑器发送的已存顺序。 */
+    private List<PagePin> notifiedPins = List.of();
+
     /** Current safe persistence or opening feedback. / 当前安全持久化或打开反馈。 */
     private final JLabel status = new JLabel();
 
@@ -54,6 +63,12 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
 
     /** Installed-page observers sharing this navigation state. / 共用此导航状态的已下载页面观察器。 */
     private final Set<Runnable> listeners = new LinkedHashSet<>();
+
+    /** Metadata-only observers do not react to transient worker availability. / 仅元数据观察器不响应临时工作线程可用状态。 */
+    private final Set<Runnable> metadataListeners = new LinkedHashSet<>();
+
+    /** Last interactive availability delivered to dependent controls. / 上次向依赖控件发送的交互可用状态。 */
+    private boolean notifiedAvailable;
 
     /** Current privacy and worker state. / 当前隐私与工作线程状态。 */
     private boolean locked = true, closed, busy;
@@ -104,6 +119,14 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
         return () -> listeners.remove(listener);
     }
 
+    /** Observes actual publication or saved-order changes. / 观察实际发布或已保存顺序变化。
+     * @param listener event-thread listener / 事件线程监听器
+     * @return removable listener / 可移除监听器 */
+    public AutoCloseable onMetadataChange(Runnable listener) {
+        metadataListeners.add(listener);
+        return () -> metadataListeners.remove(listener);
+    }
+
     /** Lists visible metadata for one exact owner. / 列出一个精确所有者的可见元数据。
      * @param owner actual Mod identity / 实际 Mod 身份
      * @return current published pages / 当前已发布页面 */
@@ -151,8 +174,10 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
      * @param key visible root, or null on a platform page / 可见根，平台页时为空 */
     public void selected(PageKey key) {
         if (Objects.equals(selected, key)) return;
+        var previous = selected;
         selected = key;
-        render();
+        if (buttons.containsKey(previous)) style(buttons.get(previous), false);
+        if (buttons.containsKey(key)) style(buttons.get(key), true);
     }
 
     /** Returns published display text with stable identity fallback. / 返回发布展示文字，以稳定身份为后备。
@@ -233,7 +258,8 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
 
     /** Renders the intersection of saved preferences and current published identities. / 渲染已存偏好与当前发布身份的交集。 */
     private void render() {
-        entries.removeAll();
+        var ordered = new ArrayList<DesktopNavigationButton>();
+        var retained = new HashSet<PageKey>();
         if (!closed)
             for (var pin : visiblePins(pins)) {
                 var page = published.stream()
@@ -242,9 +268,9 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
                 if (page.isEmpty())
                     continue;
                 var entry = page.get();
-                var button = components.navigationButton(entry.spec().defaultTitle());
+                var button = buttons.computeIfAbsent(entry.key(), key -> createButton(key));
+                button.setText(entry.spec().defaultTitle());
                 button.presentation(folded);
-                button.setIcon(DesktopIcons.icon("navigation/panels-top-left", 19, button::getForeground));
                 button.putClientProperty("JComponent.minimumWidth", 0);
                 button.setMinimumSize(new java.awt.Dimension(0, com.formdev.flatlaf.util.UIScale.scale(38)));
                 button.setMaximumSize(
@@ -256,25 +282,51 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
                 button.getAccessibleContext().setAccessibleName(entry.spec().defaultTitle());
                 button.putClientProperty("html.disable", true);
                 button.putClientProperty("mod.pageKey", entry.key());
-                button.setName("mods.pinned." + entries.getComponentCount());
+                button.setName("mods.pinned." + ordered.size());
                 button.setToolTipText(entry.spec().defaultTitle() + " · " + pin.ownerId());
                 button.putClientProperty("desktop.navigation", true);
                 button.setBorderPainted(false);
                 button.putClientProperty("JButton.buttonType", null);
-                boolean active = entry.key().equals(selected);
-                var background = UIManager.getColor(active ? "List.selectionBackground" : "Panel.background");
-                DesktopButtonStyle.navigation(button, background,
-                    UIManager.getColor(active ? "List.selectionForeground" : "Label.foreground"),
-                    active ? background.darker() : UIManager.getColor("Button.background"),
-                    active ? background.darker().darker() : UIManager.getColor("List.selectionBackground"));
+                style(button, entry.key().equals(selected));
                 button.setEnabled(!closed);
-                button.addActionListener(event -> open(entry.key()));
-                entries.add(button);
+                ordered.add(button);
+                retained.add(entry.key());
             }
-        entries.revalidate();
-        entries.repaint();
-        for (var listener : List.copyOf(listeners))
-            listener.run();
+        buttons.keySet().retainAll(retained);
+        if (!Arrays.equals(entries.getComponents(), ordered.toArray())) {
+            entries.removeAll();
+            ordered.forEach(entries::add);
+            entries.revalidate();
+            entries.repaint();
+        }
+        boolean metadataChanged = !notifiedPages.equals(published) || !notifiedPins.equals(pins);
+        boolean availabilityChanged = notifiedAvailable != available();
+        notifiedAvailable = available();
+        if (metadataChanged) {
+            notifiedPages = List.copyOf(published);
+            notifiedPins = List.copyOf(pins);
+        }
+        if (metadataChanged || availabilityChanged)
+            for (var listener : List.copyOf(listeners)) listener.run();
+        if (metadataChanged)
+            for (var listener : List.copyOf(metadataListeners)) listener.run();
+    }
+
+    /** Creates one stable action for a published identity. / 为发布身份创建一个稳定操作。 */
+    private DesktopNavigationButton createButton(PageKey key) {
+        var button = components.navigationButton("");
+        button.setIcon(DesktopIcons.icon("navigation/panels-top-left", 19, button::getForeground));
+        button.addActionListener(event -> open(key));
+        return button;
+    }
+
+    /** Updates selection on the original control. / 在原控件上更新选中状态。 */
+    private void style(DesktopNavigationButton button, boolean active) {
+        var background = UIManager.getColor(active ? "List.selectionBackground" : "Panel.background");
+        DesktopButtonStyle.navigation(button, background,
+            UIManager.getColor(active ? "List.selectionForeground" : "Label.foreground"),
+            active ? background.darker() : UIManager.getColor("Button.background"),
+            active ? background.darker().darker() : UIManager.getColor("List.selectionBackground"));
     }
 
     /** Reads or writes preferences off the EDT without replaying uncertain mutations. / 在 EDT 外读写偏好，不重放未确认修改。
@@ -329,5 +381,6 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
         }
         render();
         listeners.clear();
+        metadataListeners.clear();
     }
 }

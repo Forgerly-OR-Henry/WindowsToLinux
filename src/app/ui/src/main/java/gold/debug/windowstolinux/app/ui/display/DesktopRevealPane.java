@@ -39,8 +39,7 @@ public final class DesktopRevealPane extends JPanel implements AutoCloseable {
         if (motion != null) motion.close();
         motion = scope.animate(this, UiMotionKind.POPUP, p -> {
             alpha = (float) p;
-            offset = (int) Math.round(com.formdev.flatlaf.util.UIScale.scale(6) * (1 - p));
-            doLayout();
+            offset((int) Math.round(com.formdev.flatlaf.util.UIScale.scale(6) * (1 - p)));
             repaint();
         });
     }
@@ -48,14 +47,22 @@ public final class DesktopRevealPane extends JPanel implements AutoCloseable {
     private void stop() {
         if (motion != null) motion.close();
         alpha = 1;
-        offset = 0;
+        offset(0);
+    }
+
+    private void offset(int next) {
+        int delta = next - offset;
+        offset = next;
+        if (delta != 0)
+            content.setBounds(content.getX(), content.getY() + delta, content.getWidth(), content.getHeight());
     }
 
     @Override
     public void doLayout() {
         super.doLayout();
         // Keep local bounds: JPopupMenu.setLocation recreates the popup in screen coordinates.
-        content.setBounds(content.getX(), content.getY() + offset, content.getWidth(), content.getHeight());
+        if (offset != 0)
+            content.setBounds(content.getX(), content.getY() + offset, content.getWidth(), content.getHeight());
     }
 
     @Override

@@ -31,6 +31,145 @@ class PlatformServersWindowTest {
     }
 
     @Test
+    void hiddenServerPagePausesDisplayPollingAndResumesWithoutCancellingAcceptedWork() throws Exception {
+        var presentations = new java.util.concurrent.atomic.AtomicInteger();
+        var available = new java.util.concurrent.atomic.AtomicBoolean(true);
+        var reported = new java.util.concurrent.atomic.AtomicBoolean(true);
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var completed = new java.util.concurrent.atomic.AtomicInteger();
+        try (var runtime = PlatformRuntime.open(root.resolve("visible-polling"), PlatformStartupTest.PROTECTION)) {
+            runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
+            runtime.started();
+            runtime.setInteractionPresenter(new PlatformRemoteCapabilitiesTest.Reviews());
+            var extensions = new gold.debug.windowstolinux.app.ui.mod.UiExtensionRegistry(
+                new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
+            var scope = extensions.begin("example.polling", false, new gold.debug.windowstolinux.app.ui.mod.UiExtensionAccess() {
+                public String version() {
+                    return "1.0.0";
+                }
+
+                public boolean active() {
+                    return true;
+                }
+
+                public void checkContextType(Class<?> type, boolean owned) {
+                    assertEquals(gold.debug.windowstolinux.appapi.server.model.ServerId.class, type);
+                }
+
+                public void checkTarget(gold.debug.windowstolinux.appapi.ui.extension.UiExtensionPoint<?> target,
+                                        Optional<String> version) {
+                    assertEquals(gold.debug.windowstolinux.appapi.ui.extension.PlatformUiExtensions.SERVER_MORE, target);
+                }
+
+                public Object copy(Object value) {
+                    return value;
+                }
+            });
+            scope.registerAction(gold.debug.windowstolinux.appapi.ui.extension.PlatformUiExtensions.SERVER_MORE,
+                new gold.debug.windowstolinux.appapi.ui.extension.UiExtensionSpec("dynamic", 0),
+                new gold.debug.windowstolinux.appapi.ui.extension.UiAction<gold.debug.windowstolinux.appapi.server.model.ServerId>() {
+                    public gold.debug.windowstolinux.appapi.ui.extension.UiActionPresentation presentation(
+                        Optional<gold.debug.windowstolinux.appapi.server.model.ServerId> context, UiEnvironment environment) {
+                        presentations.incrementAndGet();
+                        reported.set(available.get());
+                        return new gold.debug.windowstolinux.appapi.ui.extension.UiActionPresentation("Dynamic", true, available.get());
+                    }
+
+                    public void invoke(Optional<gold.debug.windowstolinux.appapi.server.model.ServerId> context) {
+                        fail("Polling must not invoke business actions");
+                    }
+                });
+            scope.publish();
+            var cards = new CardLayout();
+            var frame = onEdt(() -> new JFrame("Server display polling"));
+            var pane = onEdt(() -> {
+                var value = new gold.debug.windowstolinux.app.ui.server.PlatformServersPane(frame,
+                    runtime.servers(), new gold.debug.windowstolinux.app.ui.control.DesktopPartFactory(ThemePalette.light()),
+                    new gold.debug.windowstolinux.app.ui.error.PageMessagePresenter(MessageCatalog.forLanguageTag("zh-CN")));
+                value.installExtensions(extensions.platform());
+                var content = new JPanel(cards);
+                content.add(value, "servers");
+                content.add(new JPanel(), "other");
+                cards.show(content, "other");
+                frame.setContentPane(content);
+                frame.setSize(900, 600);
+                frame.setVisible(true);
+                value.setLocked(false);
+                return value;
+            });
+            var timerField = pane.getClass().getDeclaredField("timer");
+            timerField.setAccessible(true);
+            var timer = (javax.swing.Timer) timerField.get(pane);
+            var work = pane.getClass().getDeclaredMethod("work", java.util.concurrent.Callable.class, java.util.function.Consumer.class);
+            work.setAccessible(true);
+            try {
+                await(() -> named(pane, "servers.refresh").isEnabled());
+                onEdt(() -> {
+                    assertFalse(timer.isRunning());
+                    int before = presentations.get();
+                    cards.show(frame.getContentPane(), "servers");
+                    assertTrue(timer.isRunning());
+                    assertTrue(presentations.get() > before, "Showing must refresh before the first timer interval");
+                    available.set(false);
+                    int visible = presentations.get();
+                    for (var listener : timer.getActionListeners())
+                        listener.actionPerformed(
+                            new java.awt.event.ActionEvent(timer, java.awt.event.ActionEvent.ACTION_PERFORMED, "poll"));
+                    assertTrue(presentations.get() > visible);
+                    assertFalse(reported.get(), "Visible polling must retain dynamic action presentation with the same context");
+                    work.invoke(pane, (java.util.concurrent.Callable<Integer>) () -> {
+                        assertFalse(SwingUtilities.isEventDispatchThread());
+                        entered.countDown();
+                        assertTrue(release.await(8, java.util.concurrent.TimeUnit.SECONDS));
+                        return 1;
+                    }, (java.util.function.Consumer<Integer>) completed::set);
+                    return null;
+                });
+                assertTrue(entered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+                onEdt(() -> {
+                    cards.show(frame.getContentPane(), "other");
+                    assertFalse(timer.isRunning());
+                    return null;
+                });
+                release.countDown();
+                await(() -> completed.get() == 1);
+                onEdt(() -> {
+                    assertFalse(timer.isRunning());
+                    int before = presentations.get();
+                    available.set(true);
+                    cards.show(frame.getContentPane(), "servers");
+                    assertTrue(timer.isRunning());
+                    assertTrue(presentations.get() > before);
+                    assertTrue(reported.get());
+                    pane.setLocked(true);
+                    assertFalse(timer.isRunning());
+                    pane.setLocked(false);
+                    assertTrue(timer.isRunning());
+                    frame.setVisible(false);
+                    assertFalse(timer.isRunning());
+                    frame.setVisible(true);
+                    assertTrue(timer.isRunning());
+                    pane.close();
+                    cards.show(frame.getContentPane(), "other");
+                    cards.show(frame.getContentPane(), "servers");
+                    assertFalse(timer.isRunning());
+                    return null;
+                });
+            } finally {
+                release.countDown();
+                onEdt(() -> {
+                    pane.close();
+                    frame.dispose();
+                    return null;
+                });
+                scope.close();
+                await(() -> !gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner.hasActiveTasks());
+            }
+        }
+    }
+
+    @Test
     void serverWorkCompletionCannotCrossLockGenerationOrClearNewBusyState() throws Exception {
         var oldEntered = new java.util.concurrent.CountDownLatch(1);
         var oldRelease = new java.util.concurrent.CountDownLatch(1);
