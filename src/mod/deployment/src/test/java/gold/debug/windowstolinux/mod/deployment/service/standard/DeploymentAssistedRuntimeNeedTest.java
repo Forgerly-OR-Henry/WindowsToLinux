@@ -21,6 +21,12 @@ import gold.debug.windowstolinux.mod.deployment.file.*;
 import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
 import gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.plan.ReviewedPlanIdentity;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.*;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.*;
+import gold.debug.windowstolinux.mod.deployment.linux.build.*;
+import gold.debug.windowstolinux.appapi.linux.command.*;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -28,6 +34,156 @@ import org.junit.jupiter.params.provider.ValueSource;
 class DeploymentAssistedRuntimeNeedTest {
     @TempDir
     Path directory;
+
+    @ParameterizedTest
+    @ValueSource(strings = {"APPROVE", "DENY", "PLAN", "SOURCE", "ARCHIVE", "LAYOUT", "TASK", "SERVER", "REVISION", "ROUTE",
+        "NO_PLAN", "NO_RECEIPT", "UNBOUND_OBSERVER", "OBSERVER_PLAN", "OBSERVER_SAME_TOOLS", "OBSERVER_SOURCE", "VERSION", "DIRECTORY", "ORIGIN", "SHA", "REQUIREMENT",
+        "CATALOG", "MISSING", "EXTRA", "CANONICAL", "STDIN", "SIBLING_SAME_TOOLS", "POST_PLAN", "POST_SAME_PLAN", "POST_ROUTE"})
+    void componentBindingsRequireTheirCurrentPlanAndExactPreparationReceipts(String mutation) throws Exception {
+        Files.createDirectories(directory.resolve("frontend")); Files.createDirectories(directory.resolve("backend"));
+        Files.writeString(directory.resolve("frontend/package.json"), "{\"engines\":{\"node\":\">=24 <25\"},\"scripts\":{\"build\":\"vite build\"}}");
+        Files.writeString(directory.resolve("backend/pom.xml"), "<project><modelVersion>4.0.0</modelVersion><groupId>fixture</groupId><artifactId>backend</artifactId><version>1</version><properties><java.version>21</java.version></properties></project>");
+        var sourceId = new AtomicReference<>(UUID.randomUUID()); var archiveId = new AtomicReference<>(UUID.randomUUID());
+        var source = snapshot(sourceId, "a".repeat(64));
+        var material = new DeploymentSourceMaterial("task-board", source, List.of("backend/pom.xml", "frontend/package.json"), List.of());
+        var frontArchive = new DeploymentSourceArchive(snapshot(archiveId, "c".repeat(64)), "b".repeat(64), 1, 1, sourceId.get(), source.sha256(), "frontend");
+        var backArchive = new DeploymentSourceArchive(snapshot(new AtomicReference<>(UUID.randomUUID()), "e".repeat(64)), "d".repeat(64), 1, 1, sourceId.get(), source.sha256(), "backend");
+        var fixture = new NativeAiFixture(); var server = new ServerId("fixture"); var layout = DeploymentRemoteLayout.original();
+        var frontend = DeploymentAssistedApprovalBudgetLiveTest.staticSitePlan(material, frontArchive, "wtl-task-frontend", layout, server);
+        var sibling = DeploymentAssistedApprovalBudgetLiveTest.staticSitePlan(material, frontArchive, "wtl-other-frontend", layout, server);
+        var backend = javaComponentPlan(material, backArchive, server);
+        var scopeRef = new AtomicReference<DeploymentAssistedScope>();
+        var freshGrant = new AtomicReference<ApprovalGrant>();
+        var exactIntent = new AtomicReference<ActionIntent>(); var exactRequest = new AtomicReference<CommandRequest>();
+        var frontendPhase = new AtomicBoolean(); var grants = new AtomicInteger(); var binds = new AtomicInteger();
+        var host = (InteractionService) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{InteractionService.class}, (p,m,a) -> {
+            if (m.getName().equals("openReviewedWorkflow")) return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of((WorkflowGrant) () -> {}), Optional.empty());
+            assertEquals("approveReviewedAction", m.getName()); assertSame(exactIntent.get(), a[0]);
+            assertSame(exactRequest.get(), ((Optional<?>) a[1]).orElseThrow()); assertSame(fixture.task, a[4]); grants.incrementAndGet();
+            if (frontendPhase.get() && mutation.equals("POST_PLAN")) scopeRef.get().bindPreparation(backend, fixture.task);
+            if (frontendPhase.get() && mutation.equals("POST_SAME_PLAN")) scopeRef.get().bindPreparation(new ReviewedDeploymentPlan(frontend.request(), frontend.steps()), fixture.task);
+            if (frontendPhase.get() && mutation.equals("POST_ROUTE")) fixture.configurationRevision = "changed";
+            freshGrant.set(new ApprovalGrant(UUID.randomUUID()));
+            return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(freshGrant.get()), Optional.empty());
+        });
+        var context = (ModContext) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{ModContext.class}, (p,m,a) -> {
+            if (m.getName().equals("interaction")) return host;
+            if (m.getName().equals("ui")) return Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{gold.debug.windowstolinux.appapi.ui.UiService.class}, (q,n,b) -> {
+                assertEquals("environment", n.getName()); return new gold.debug.windowstolinux.appapi.ui.page.UiEnvironment(Locale.ENGLISH, "LIGHT", false);
+            });
+            try { return m.invoke(fixture.context, a); } catch (InvocationTargetException e) { throw e.getCause(); }
+        });
+        var scope = new DeploymentAssistedScope(context, fixture.task, fixture.configurationRevision, "AUTOMATIC", true); scopeRef.set(scope);
+        try (var permission = DeploymentWorkflowAuthorization.open(context, fixture.task, server, fixture.configurationRevision, "AUTOMATIC", true, "Deploy original Java backend and static frontend")) {
+            scope.workflowOpened(permission); scope.sourceCaptured(server, material, fixture.task);
+            scope.archiveCaptured(material, backArchive, backend.request().facts().toolchainRequirements(), fixture.task);
+            scope.archiveCaptured(material, frontArchive, frontend.request().facts().toolchainRequirements(), fixture.task);
+            class Flow {
+                OperationResult<DeploymentResolvedToolchains> run(ReviewedDeploymentPlan plan, boolean front) throws Exception {
+                    frontendPhase.set(front); scope.bindPreparation(plan, fixture.task);
+                    var boundObserver = scope.preparationObserver(plan, fixture.task);
+                    var tools = preparedTools(plan);
+                    var review = (DeploymentCommandReview) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{DeploymentCommandReview.class}, (p,m,a) -> {
+                        assertEquals("approveCommand", m.getName()); var original = (ActionIntent) a[0]; var command = (CommandRequest) a[1];
+                        if (!original.semantics().orElseThrow().operation().equals("deployment.toolchain.bind.v1"))
+                            return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())), Optional.empty());
+                        var currentTools = tools;
+                        if (front && Set.of("VERSION", "DIRECTORY", "ORIGIN", "SHA", "REQUIREMENT", "CATALOG", "MISSING", "EXTRA").contains(mutation)) {
+                            var selections = new ArrayList<>(tools.selections()); var first = selections.getFirst(); var need = first.requirement();
+                            if (mutation.equals("REQUIREMENT")) need = new ToolchainRequirement(need.ecosystem(), need.declaration()+" changed", need.source(), need.purpose(), need.constraint(), need.version());
+                            selections.set(0, new DeploymentResolvedToolchains.Selection(need,
+                                mutation.equals("VERSION") ? DeploymentToolchainVersion.parse(need.ecosystem(), "24.22.2").orElseThrow() : first.version(),
+                                mutation.equals("DIRECTORY") ? first.directory()+"-changed" : first.directory(),
+                                mutation.equals("ORIGIN") ? DeploymentResolvedToolchains.OriginType.SYSTEM : first.origin(), first.source(), mutation.equals("SHA") ? "f".repeat(64) : first.sha256()));
+                            if (mutation.equals("MISSING")) selections.removeLast(); if (mutation.equals("EXTRA")) selections.add(preparedTools(backend).selections().getFirst());
+                            currentTools = new DeploymentResolvedToolchains(mutation.equals("CATALOG") ? "changed" : tools.catalogRevision(), selections);
+                        }
+                        String canonical = DeploymentToolchainBindingCodec.encode(currentTools) + (front && mutation.equals("CANONICAL") ? "\n" : "");
+                        String encoded = Base64.getEncoder().encodeToString(canonical.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        var actualLayout = front && mutation.equals("LAYOUT") ? new DeploymentRemoteLayout(new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths("/srv/helper", "/srv/apps", "/srv/state", "/srv/config", "/srv/data")) : layout;
+                        try (var actual = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand("'"+actualLayout.helperPath()+"' prepare-toolchains 'bind' '"+encoded+"'", actualLayout),
+                            front && mutation.equals("STDIN") ? new byte[]{1} : new byte[0], command.timeout(), command.outputLimitBytes())) {
+                            var actualServer = front && mutation.equals("SERVER") ? new ServerId("other") : server;
+                            String actualRevision = front && mutation.equals("REVISION") ? "f".repeat(64) : original.revision();
+                            if (front && mutation.equals("SIBLING_SAME_TOOLS")) {
+                                scope.bindPreparation(sibling, fixture.task); actualRevision = ReviewedPlanIdentity.from(sibling.request());
+                            }
+                            var intent = RemoteActions.command(actualServer, actualRevision, actual).withSemantics(new ActionSemantics(
+                                "deployment.toolchain.bind.v1", Set.of(new ActionTarget(actualServer.id(), "deployment-build", actualLayout.toolchains()))));
+                            if (front && mutation.equals("PLAN")) scope.bindPreparation(backend, fixture.task);
+                            if (front && mutation.equals("SOURCE")) sourceId.set(UUID.randomUUID()); if (front && mutation.equals("ARCHIVE")) archiveId.set(UUID.randomUUID());
+                            if (front && mutation.equals("ROUTE")) fixture.configurationRevision = "changed";
+                            if (front && mutation.equals("NO_PLAN")) { var field=DeploymentAssistedScope.class.getDeclaredField("toolchainPlan"); field.setAccessible(true); field.set(scope,null); }
+                            exactIntent.set(intent); exactRequest.set(actual);
+                            fixture.nativeReply(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("bind-"+(front ? "front" : "back"), "submit_result",
+                                "{\"decision\":\""+(front && mutation.equals("DENY") ? "DENY" : "APPROVE")+"\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled independent binding verdict\"}"));
+                            var result = ((DeploymentCommandReview) scope.interaction()).approveCommand(intent, actual, front && mutation.equals("TASK") ? new NativeAiFixture().task : fixture.task);
+                            var facts = new ObjectMapper().valueToTree(scope.facts(intent, actual, fixture.task));
+                            assertEquals(plan.request().facts().applicationId(), facts.at("/currentToolchainPlan/application").asText());
+                            assertEquals(front ? "frontend" : "backend", facts.at("/currentToolchainPlan/relativeRoot").asText());
+                            assertEquals(2, facts.at("/sourceArchiveObservations/archives").size(), "Sibling source context is retained");
+                            if (front) assertTrue(facts.at("/currentToolchainPlan/runtimeDependencyReason").asText().contains("Python 3.12"));
+                            return result;
+                        }
+                    });
+                    var peer = (RemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{RemoteSession.class}, (p,m,a) -> {
+                        if (m.getName().equals("facts")) return new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("linux", "amd64", "SHA256:controlled");
+                        assertEquals("execute", m.getName()); String script = DeploymentManagedHelperBundle.verifiedBody(((CommandRequest)a[0]).script());
+                        String output;
+                        if (script.contains("'bind' '")) {
+                            assertSame(freshGrant.get(), a[1]); assertEquals(exactRequest.get().script(), ((CommandRequest)a[0]).script());
+                            assertArrayEquals(exactRequest.get().stdin(), ((CommandRequest)a[0]).stdin());
+                            binds.incrementAndGet(); output="TOOLCHAIN_BINDING="+DeploymentToolchainBindingCodec.identity(tools)+"\n";
+                        }
+                        else {
+                            var diagnostic=DeploymentToolchainDiagnostics.decode(((CommandRequest)a[0]).stdin());
+                            var selected=tools.selections().stream().filter(s -> s.requirement().ecosystem().name().equals(diagnostic.preparationArguments().get("ecosystem"))).findFirst().orElseThrow();
+                            output="TOOLCHAIN="+selected.requirement().ecosystem()+"|"+selected.version().text()+"|"+selected.directory()+"|"+selected.origin()+"|"+selected.source()+"|"+selected.sha256()+"\n";
+                        }
+                        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new CommandResult(Optional.of(0), output, "", false)), Optional.empty());
+                    });
+                    var channel=new DeploymentBuildCommandChannel(peer, review, server, fixture.task, ReviewedPlanIdentity.from(plan.request()), new DeploymentBuildBudget(3600),
+                        gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard.NONE, layout, new DeploymentPreparationObserver() {
+                            @Override public void toolsPrepared(ServerId observedServer, DeploymentResolvedToolchains observed, gold.debug.windowstolinux.appapi.task.run.TaskContext task) throws ApiException {
+                                if (front && mutation.equals("NO_RECEIPT")) return;
+                                if (front && mutation.equals("UNBOUND_OBSERVER")) { scope.preparationObserver().toolsPrepared(observedServer, observed, task); return; }
+                                if (front && mutation.equals("OBSERVER_PLAN")) scope.bindPreparation(backend, task);
+                                if (front && mutation.equals("OBSERVER_SAME_TOOLS")) scope.bindPreparation(sibling, task);
+                                if (front && mutation.equals("OBSERVER_SOURCE")) archiveId.set(UUID.randomUUID());
+                                boundObserver.toolsPrepared(observedServer, observed, task);
+                            }
+                        });
+                    return new gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainSetup(channel, DeploymentToolchainCatalog.defaults())
+                        .prepare(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentProjectToolchainRequirements.from(plan.request().facts(), plan.request().runtime()), 0, 120);
+                }
+            }
+            var flow = new Flow(); assertEquals(TaskResult.SUCCEEDED, flow.run(backend,false).outcome());
+            if (mutation.equals("APPROVE")) assertEquals(TaskResult.SUCCEEDED, flow.run(frontend,true).outcome());
+            else {
+                var refused=assertThrows(Exception.class, () -> flow.run(frontend,true));
+                assertTrue(refused instanceof ApiException || refused instanceof IllegalArgumentException, refused::toString);
+                if (mutation.equals("DENY")) assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", ((ApiException)refused).problem().eventCode());
+            }
+            assertEquals(mutation.equals("APPROVE") || mutation.startsWith("POST_") ? 2 : 1,grants.get());
+            assertEquals(mutation.equals("APPROVE") ? 2 : 1,binds.get(), "Rejected frontend never dispatches its binding");
+            assertEquals(mutation.equals("APPROVE") || mutation.equals("DENY") || mutation.startsWith("POST_") ? 2 : 1,fixture.requests.size());
+        }
+    }
+
+    private ReviewedDeploymentPlan javaComponentPlan(DeploymentSourceMaterial material, DeploymentSourceArchive archive, ServerId server) throws Exception {
+        var facts = new gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts(directory.resolve("backend"), "wtl-task-backend",
+            gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind.SPRING_BOOT,
+            gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType.MAVEN, List.of(),List.of(),List.of())
+            .withToolchains(new gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.toolchain.ToolchainSpecChecker().inspect(directory.resolve("backend")));
+        return new ReviewedDeploymentPlan(new ReviewedDeploymentRequest(server,facts,material,archive,
+            gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot.create("wtl-task-backend",1,"fixture",java.time.Instant.EPOCH,List.of()),
+            List.of(),new gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings(List.of(),Optional.of(List.of())),
+            new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition.SpringBoot("21",
+                new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck.Process(5,1)),Optional.empty(),
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().limits(),
+            new DeploymentReviewConsent("wtl-task-backend",server.id(),material.snapshot().sha256(),archive.sha256(),java.time.Instant.EPOCH),false,true,DeploymentRemoteLayout.original()),
+            List.of(DeploymentPlanAction.VERIFY_SOURCE_IDENTITY,DeploymentPlanAction.CHECK_HEALTH,DeploymentPlanAction.ROLLBACK_ON_FAILURE));
+    }
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
@@ -326,7 +482,7 @@ class DeploymentAssistedRuntimeNeedTest {
             .from(plan.request().facts(), plan.request().runtime()).stream().map(need ->
                 new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains.Selection(need,
                     gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainVersion.parse(need.ecosystem(),
-                        need.ecosystem().name().equals("NODE") ? "24.0.0" : "3.12.0").orElseThrow(),
+                        need.ecosystem().name().equals("JAVA") ? "21.0.13+9" : need.ecosystem().name().equals("NODE") ? "24.0.0" : "3.12.0").orElseThrow(),
                     "/opt/fixture/" + need.ecosystem().name().toLowerCase(Locale.ROOT),
                     gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains.OriginType.MANAGED,
                     "fixture", "e".repeat(64))).toList();

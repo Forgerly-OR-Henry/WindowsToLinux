@@ -70,6 +70,12 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
 
     private volatile ToolchainPlan toolchainPlan;
 
+    private record PreparedBinding(ToolchainPlan plan,
+        gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
+        String canonical) { }
+
+    private PreparedBinding preparedBinding;
+
     public void bindPreparation(
         gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
         TaskContext supplied) throws ApiException {
@@ -81,6 +87,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         toolchainPreparationPlanned(plan, rendered.value().orElseThrow().reviewedPlanSha256(), supplied);
     }
 
+    /** Keeps standalone diagnostics and bounded display history; only a plan-bound observer supplies binding receipts. */
     public gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentPreparationObserver preparationObserver() {
         return new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentPreparationObserver() {
             @Override
@@ -117,11 +124,66 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         };
     }
 
+    /** Captures the actual reviewed plan before its channel can prepare anything. */
+    public synchronized gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentPreparationObserver preparationObserver(
+        gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
+        TaskContext supplied) throws ApiException {
+        sameTask(supplied);
+        var captured = currentPreparation(plan.request().server(), supplied);
+        if (captured.plan() != plan) throw new IllegalArgumentException("Observer belongs to another reviewed plan");
+        var permission = workflow;
+        var observations = preparationObserver();
+        return new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentPreparationObserver() {
+            private void requireCurrent(TaskContext actual) throws ApiException {
+                sameTask(actual);
+                var current = toolchainPlan;
+                if (workflow != permission || current == null || current.plan() != captured.plan() || !current.identity().equals(captured.identity()))
+                    throw new IllegalArgumentException("Original preparation observer plan changed");
+                currentPreparation(new ServerId(captured.server()), actual);
+            }
+
+            @Override public void diagnosticRequested(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.Request request,
+                                                       TaskContext actual) throws ApiException {
+                synchronized (DeploymentAssistedScope.this) {
+                    requireCurrent(actual);
+                    if (!request.planRevision().equals(captured.identity()) || !request.serverId().equals(captured.server())
+                        || !request.layout().equals(captured.plan().request().layout()))
+                        throw new IllegalArgumentException("Diagnostic differs from captured preparation plan");
+                    observations.diagnosticRequested(request, actual);
+                }
+            }
+
+            @Override public void toolsPrepared(ServerId server,
+                gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
+                TaskContext actual) throws ApiException {
+                synchronized (DeploymentAssistedScope.this) {
+                    requireCurrent(actual);
+                    toolchainsPrepared(server, tools, actual);
+                    preparedBinding = new PreparedBinding(toolchainPlan, tools,
+                        gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec.encode(tools));
+                }
+            }
+
+            @Override public void hostObserved(String identity,
+                gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts host,
+                gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
+                TaskContext actual) throws ApiException {
+                synchronized (DeploymentAssistedScope.this) {
+                    requireCurrent(actual);
+                    if (!captured.identity().equals(identity)) throw new IllegalArgumentException("Host observation plan changed");
+                    observations.hostObserved(identity, host, tools, actual);
+                }
+            }
+        };
+    }
+
     public synchronized void toolchainPreparationPlanned(
         gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
         String expected, TaskContext supplied) throws ApiException {
         sameTask(supplied);
         verify();
+        var previous = toolchainPlan;
+        if (previous == null || previous.plan() != plan || !previous.identity().equals(expected)) preparedBinding = null;
         toolchainPlan = null;
         var request = plan.request();
         var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied);
@@ -269,13 +331,84 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                                                 TaskContext supplied) throws ApiException {
         sameTask(supplied);
         verify();
-        if (workflow == null || tools.selections().isEmpty()) return;
+        var planned = currentPreparation(server, supplied);
+        requireSelections(planned, tools);
+        if (tools.selections().isEmpty()) return;
         validateWorkflow(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(workflow, task, server));
         String binding = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec.identity(tools);
         preparedToolchains.remove(binding);
         if (preparedToolchains.size() == 32) preparedToolchains.remove(preparedToolchains.keySet().iterator().next());
         preparedToolchains.put(binding, Map.of("bindingSha256", binding, "selectionCount", tools.selections().size(),
             "recordedAt", java.time.Instant.now().toString(), "server", server.id(), "task", task.id().toString()));
+    }
+
+    private ToolchainPlan currentPreparation(ServerId server, TaskContext supplied) throws ApiException {
+        var planned = toolchainPlan;
+        if (planned == null || !planned.server().equals(server.id()))
+            throw new IllegalArgumentException("Current reviewed preparation plan required");
+        toolchainPreparationPlanned(planned.plan(), planned.identity(), supplied);
+        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied);
+        if (!planned.plan().request().layout().equals(layout))
+            throw new IllegalArgumentException("Preparation layout differs from original task");
+        return toolchainPlan;
+    }
+
+    private static void requireSelections(ToolchainPlan planned,
+        gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools) {
+        var catalog = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.defaults();
+        if (!catalog.revision().equals(tools.catalogRevision())) throw new IllegalArgumentException("Prepared catalog changed");
+        var expected = new ArrayList<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement>();
+        for (var requirement : planned.requirements()) {
+            var branches = catalog.candidates(requirement);
+            if (branches.isEmpty()) throw new IllegalArgumentException("Unsupported preparation requirement");
+            if (branches.getFirst().installation() != gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.InstallationType.SYSTEM_COMPILER)
+                expected.add(requirement);
+        }
+        if (!expected.equals(tools.selections().stream().map(value -> value.requirement()).toList()))
+            throw new IllegalArgumentException("Prepared selections differ from current component requirements");
+        var policy = new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainSelectionPolicy(catalog);
+        for (var selection : tools.selections()) {
+            var branch = catalog.candidates(selection.requirement()).stream()
+                .filter(value -> value.version().equals(selection.version().branch())).findFirst().orElseThrow();
+            policy.resolve(selection.requirement(), branch, List.of(selection.version()));
+        }
+    }
+
+    private synchronized Map<String, ?> bindingPlanFacts(ActionIntent intent,
+        gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, TaskContext supplied) throws ApiException {
+        sameTask(supplied);
+        if (!intent.type().equals("platform.ssh.execute") || intent.serverIds().size() != 1)
+            throw new IllegalArgumentException("Original binding command required");
+        var planned = currentPreparation(new ServerId(intent.serverIds().getFirst()), supplied);
+        var layout = planned.plan().request().layout();
+        if (!planned.identity().equals(intent.revision()) || !intent.semantics().orElseThrow().targets().equals(Set.of(
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(planned.server(), "deployment-build", layout.toolchains()))))
+            throw new IllegalArgumentException("Binding differs from current preparation identity or target");
+        String invocation = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout);
+        String prefix = "'" + layout.helperPath() + "' prepare-toolchains 'bind' '";
+        if (!invocation.startsWith(prefix) || !invocation.endsWith("'") || request.stdin().length != 0)
+            throw new IllegalArgumentException("Binding literal frame changed");
+        String encoded = invocation.substring(prefix.length(), invocation.length() - 1);
+        if (!encoded.matches("[A-Za-z0-9+/=]{8,87384}")) throw new IllegalArgumentException("Binding encoding changed");
+        byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
+        try {
+            String canonical = java.nio.charset.StandardCharsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT).decode(java.nio.ByteBuffer.wrap(bytes)).toString();
+            var tools = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec.decode(canonical);
+            if (bytes.length > 65536 || !java.util.Base64.getEncoder().encodeToString(bytes).equals(encoded)
+                || !gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec.encode(tools).equals(canonical))
+                throw new IllegalArgumentException("Binding is not canonical");
+            requireSelections(planned, tools);
+            var observed = preparedBinding;
+            if (observed == null || observed.plan().plan() != planned.plan() || !observed.plan().identity().equals(planned.identity())
+                || !observed.canonical().equals(canonical) || !observed.tools().equals(tools))
+                throw new IllegalArgumentException("Binding differs from actual current-plan preparation receipts");
+            return planned.evidence();
+        } catch (java.io.IOException invalid) {
+            throw new IllegalArgumentException("Binding requires complete canonical UTF-8", invalid);
+        } finally {
+            java.util.Arrays.fill(bytes, (byte) 0);
+        }
     }
 
     /** Records the actual post-picker frozen selection, not executable trust or a command grant. */
@@ -307,6 +440,8 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                                 TaskContext supplied) throws ApiException {
         var facts = new LinkedHashMap<String, Object>(effectFacts(intent, supplied));
+        if (intent.semantics().filter(value -> value.operation().equals("deployment.toolchain.bind.v1")).isPresent())
+            facts.put("currentToolchainPlan", bindingPlanFacts(intent, request, supplied));
         if (intent.semantics().filter(value -> value.operation().equals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION)).isPresent())
             facts.put("currentNativeBuildPrerequisites", nativeDependencyFacts(intent, request, supplied));
         if (intent.semantics().filter(value -> value.operation().startsWith(

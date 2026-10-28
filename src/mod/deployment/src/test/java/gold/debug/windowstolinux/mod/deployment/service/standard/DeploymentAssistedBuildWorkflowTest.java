@@ -122,6 +122,11 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
     }
 
     @org.junit.jupiter.api.Test
+    void actualAssistedPreparationAndRecoveryUseCapturedPlanObservers() throws Exception {
+        run(1, "AUTOMATIC", true, false);
+    }
+
+    @org.junit.jupiter.api.Test
     void sameContentComponentArchivesKeepTheirOriginalRootsThroughCorrectionAndPublication() throws Exception {
         sameContent = true;
         run(2, "MANUAL_REVIEW", true, false);

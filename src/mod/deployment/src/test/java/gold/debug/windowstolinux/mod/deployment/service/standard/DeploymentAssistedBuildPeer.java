@@ -149,8 +149,19 @@ final class DeploymentAssistedBuildPeer {
             return reply("");
         if (script.contains("prepare-toolchains '") && script.contains("-tracked'"))
             return tracked(request, script);
-        if (script.contains("prepare-toolchains 'prepare'")) {
-            String version = script.contains("'1.25'") ? "1.25.1" : "1.24.1";
+        if (script.contains("prepare-toolchains 'prepare'") || script.contains("prepare-toolchains 'prepare-diagnosed'")) {
+            String branch = script.contains("'1.25'") ? "1.25" : "1.24";
+            if (script.contains("prepare-toolchains 'prepare-diagnosed'")) {
+                var diagnostic = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.decode(request.stdin());
+                assertEquals(script, gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.command("prepare-diagnosed", diagnostic));
+                assertEquals(Set.of(UUID.fromString(diagnostic.taskId())), tasks);
+                assertEquals("server", diagnostic.serverId());
+                assertEquals(DeploymentTrackedToolchains.sha256(fingerprint.getBytes(StandardCharsets.UTF_8)), diagnostic.fingerprintSha256());
+                assertEquals("GO", diagnostic.arguments().get(1));
+                branch = diagnostic.arguments().get(2);
+                assertTrue(Set.of("1.24", "1.25").contains(branch));
+            }
+            String version = branch + ".1";
             toolBranches.add(version.startsWith("1.25") ? "1.25" : "1.24");
             String sha = version.startsWith("1.25") ? "d".repeat(64) : "b".repeat(64);
             return reply("TOOLCHAIN=GO|" + version + "|/usr/local/lib/windowstolinux/toolchains/versions/go-" + sha

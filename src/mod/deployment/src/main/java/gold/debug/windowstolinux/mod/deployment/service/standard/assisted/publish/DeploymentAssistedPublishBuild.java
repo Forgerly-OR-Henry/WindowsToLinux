@@ -76,7 +76,7 @@ final class DeploymentAssistedPublishBuild {
         if (!(capabilities instanceof gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope assisted))
             throw new IllegalArgumentException("Original assisted scope required");
         scope = assisted;
-        this.candidates = Objects.requireNonNull(candidates).observing(scope.preparationObserver());
+        this.candidates = Objects.requireNonNull(candidates);
         executions = new DeploymentExecutionStore(context.db());
     }
 
@@ -98,7 +98,7 @@ final class DeploymentAssistedPublishBuild {
         if (!allowance.identity().equals(identity))
             throw new IllegalStateException("Original preparation identity changed");
         scope.bindPreparation(plan, task);
-        return candidates.prepare(plan, session, context.interaction(), task, fallbackAvailable(), 0,
+        return candidates.observing(scope.preparationObserver(plan, task)).prepare(plan, session, context.interaction(), task, fallbackAvailable(), 0,
             allowance.budget(), allowance.workspace());
     }
 
@@ -217,7 +217,8 @@ final class DeploymentAssistedPublishBuild {
                 sha(session.facts().fingerprint()));
             var tracked = new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.Session(trackedIdentity,
                 new DeploymentAssistedToolchainLog(executions, task, original.identity().executionId(), trackedIdentity));
-            var recovered = candidates.recoverSelection(current, corrected.plan(), corrected.catalogBranch(), session, context.interaction(), task, tracked);
+            var recovered = candidates.observing(scope.preparationObserver(corrected.plan(), task))
+                .recoverSelection(current, corrected.plan(), corrected.catalogBranch(), session, context.interaction(), task, tracked);
             if (recovered.outcome() != TaskResult.SUCCEEDED)
                 return new Completed(current.plan(), uncertain("DEPLOYMENT_ASSISTED_ENVIRONMENT_UNCONFIRMED"));
             var next = recovered.value().orElseThrow();

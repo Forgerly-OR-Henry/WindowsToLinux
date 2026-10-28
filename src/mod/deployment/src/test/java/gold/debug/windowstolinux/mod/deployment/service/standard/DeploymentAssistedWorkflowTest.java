@@ -610,6 +610,8 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
 
         volatile Throwable lastFailure;
 
+        private final AtomicReference<String> authenticatedFingerprint = new AtomicReference<>();
+
         void policy(String selected) {
             assertTrue(Set.of("MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL").contains(selected));
             policy.set(selected);
@@ -636,6 +638,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                     throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
                         gold.debug.windowstolinux.appapi.task.result.ProblemCode.ACCESS_DENIED, "DEPLOYMENT_TEST_WIRE_CHANGED",
                         "The controlled transport rejects a different actual wire before any command", Map.of(), Optional.of(task.id())));
+                authenticatedFingerprint.compareAndSet(null, session.facts().fingerprint());
                 return session;
             } catch (ApiException failure) {
                 try {
@@ -695,7 +698,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                 assertEquals("server", originalRequest.serverId());
                 assertEquals(facts.path("businessRevision").asText(), originalRequest.planRevision());
                 assertEquals(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.sha256(
-                    ("SHA256:" + "A".repeat(43)).getBytes(StandardCharsets.UTF_8)), originalRequest.fingerprintSha256());
+                    Objects.requireNonNull(authenticatedFingerprint.get()).getBytes(StandardCharsets.UTF_8)), originalRequest.fingerprintSha256());
                 assertEquals(new ObjectMapper().valueToTree(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.reviewFacts(
                     "prepare-diagnosed", gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.command("prepare-diagnosed", originalRequest),
                     originalRequest.bytes(), "server", Set.of(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(
@@ -948,6 +951,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
         }
 
         RemoteSession session(RemoteSession originalSession, TaskContext task) {
+            authenticatedFingerprint.compareAndSet(null, originalSession.facts().fingerprint());
             return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
                 new Class<?>[]{RemoteSession.class}, (proxy, method, arguments) -> {
                     if (method.getName().equals("execute")) {
