@@ -8,7 +8,8 @@
 
 | 轮次 | 冻结版本 | 清场复查 | 首次结果 | 结论 |
 | --- | --- | --- | --- | --- |
-| round-01 | 5f1f66119cfd20dcdfdc6e424f7ea7a0f178baa3 | 清场执行及独立复查通过 | 八项各一次：首过4、失败/UNKNOWN4 | 本轮未达成；原驱动正常退出，等待修复验证后清场新轮 |
+| round-01 | 5f1f66119cfd20dcdfdc6e424f7ea7a0f178baa3 | 清场执行及独立复查通过 | 八项各一次：首过4、失败/UNKNOWN4 | 未达成；保留失败，修复已合入，新轮另记 |
+| round-02 | d5257d7ff4cecec8f2c75e31b92308c5743743e9 | 产品清场及独立复查通过 | 八项各一次：首过7、失败/UNKNOWN1 | 未达成；CSV有一次内部恢复，额外strict=false；FTP修订已合入，第三轮待开始 |
 
 ## 失败原因与解决方案
 
@@ -17,10 +18,11 @@
 | 记录 | 阶段与现象 | 确认原因与未知项 | 解决方案 | 复验结果 |
 | --- | --- | --- | --- | --- |
 | round-01/P01 | 连接预检被固定指纹守卫拒绝；connection-01退出1，SSH_TRUST_CANCELLED，无远端清理或部署 | 当前端点返回的SSH密钥与历史预期不同；密钥变化原因未知。不是已证实的产品部署缺陷 | 用户明确确认目标及新指纹后，建立新隔离连接状态并固定获准指纹，继续产品认证；保留旧指纹拒绝证据 | connection-02用最新图片凭据产品认证成功、退出0；该预检阶段无部署尝试 |
-| round-01/F01 | FTP部署成功，业务backend STOP任务UNKNOWN | 当前首次派发前过早登记attempted，独立审批将其误认为历史未确认重放 | 在APP及fresh grant后、同一请求execute前，通过现有guard进行attempted CAS；旧UNKNOWN不重放 | 隔离提交7eb991c8，22个不同定点最终通过；新轮实机待验证 |
-| round-01/F02 | Asset Lending审批HTTP_CHUNK_INCOMPLETE、accepted0，原任务UNKNOWN | 外部断流具体位置未知；ASSISTED调用者未选择平台已有恢复能力 | 显式选择现有有界纯生成恢复；保留原Problem、尝试历史及未知usage，禁止业务重放 | 部分正文CHUNK本地恢复通过；零正文CHUNK忠实注入未验证，新轮实机待验证 |
-| round-01/F03 | CSV Inspector审批HTTP_CHUNK_INCOMPLETE、accepted4083，原任务UNKNOWN | 与F02同类传输错误，外部是否同因未知 | 同F02；不将原UNKNOWN改写为成功 | 同F02，新轮实机待验证 |
-| round-01/F04 | Log Analyzer原部署UNKNOWN，无完整业务验收 | 独立审批完整DENY补装命令；标准准备跳过SYSTEM_COMPILER，未自动补native前置工具；不是断流 | 实际缺口时一次受控NATIVE_BUILD准备、严格receipt及fresh probe；完整source/当前scope/APP和fresh grant保留 | 7a321fa1已本地提交并合入，61相关JUnit场景分组有通过证据；新轮实机待验证 |
+| round-01/F01 | FTP部署成功，业务backend STOP任务UNKNOWN | 当前首次派发前过早登记attempted，独立审批将其误认为历史未确认重放 | 在APP及fresh grant后、同一请求execute前，通过现有guard进行attempted CAS；旧UNKNOWN不重放 | 提交7eb991c8，22个不同定点最终通过；R02未到STOP，实机仍待新轮验证 |
+| round-01/F02 | Asset Lending审批HTTP_CHUNK_INCOMPLETE、accepted0，原任务UNKNOWN | 外部断流具体位置未知；ASSISTED调用者未选择平台已有恢复能力 | 显式选择现有有界纯生成恢复；保留原Problem、尝试历史及未知usage，禁止业务重放 | 部分正文CHUNK本地恢复通过；R02原任务完整首过但未触断流；零正文CHUNK忠实注入未验证 |
+| round-01/F03 | CSV Inspector审批HTTP_CHUNK_INCOMPLETE、accepted4083，原任务UNKNOWN | 与F02同类传输错误，外部是否同因未知 | 同F02；不将原UNKNOWN改写为成功 | R02同一原任务内真实CHUNK恢复后完整首过；accepted字节数未知，旧失败保留 |
+| round-01/F04 | Log Analyzer原部署UNKNOWN，无完整业务验收 | 独立审批完整DENY补装命令；标准准备跳过SYSTEM_COMPILER，未自动补native前置工具；不是断流 | 实际缺口时一次受控NATIVE_BUILD准备、严格receipt及fresh probe；完整source/当前scope/APP和fresh grant保留 | 7a321fa1及61相关定点；R02新native准备→fresh probe/Matcher→build→完整CLI首次通过，旧UNKNOWN保留 |
+| round-02/F01 | FTP原部署在构建前完整DENY后UNKNOWN，无下载业务 | 审批将Agent参数布局误套标准build-run，判断与源码不符；审阅说明仅显式列Agent布局，可能促成混淆 | 补清标准/Agent布局及已校验请求的有序参数事实，保留完整审核和绑定，不改实际argv/重试DENY | 提交117a01cb，12定点通过；R02结束后已合入，新轮实机待验证 |
 
 自动审批曾拒绝“固定未经用户确认的新指纹后继续清理和部署”，该命令未执行。随后用户明确确认目标及具体新指纹，才继续产品认证和后续操作；没有绕过指纹检查。
 
@@ -111,7 +113,7 @@ Binary Inspector原root5533f7a1-4dfb-4300-bb9f-6fdc154d206b，应用wtl-assisted
 
 八项目各只有一次launch，没有外层retry/recovery启动；初始清场、HEAD、源码、实际参数及模型配置一致性均通过。monitor-final-inspection-01.json给出goalEligible=false，唯一拒绝门为allAttemptsEligible；不能把已通过4项与后续新轮拼为8/8。monitor-final-usage-01.json记录known tokens合计4606956、496个唯一generation attempt id；Asset/CSV的2次物理调用usage未知，32条能力探测的provider usage/调用数亦未知，因此不是完整账单。
 
-本轮driver17758正常quit并打印RUNNER_EXIT、进程退出0；独立核查本轮驱动和主仓测试JVM匹配0，clean28r01已按绝对路径及非reparse检查删除。原失败数据库、UNKNOWN及所有原证据保留；未重放失败效果。相关回执见runner-exit.json、main-live-process-final-01.json和temporary-cleanup-final-01.json。随后修复已合入主仓，尚未清场或开始round-02。
+本轮driver17758正常quit并打印RUNNER_EXIT、进程退出0；独立核查本轮驱动和主仓测试JVM匹配0，clean28r01已按绝对路径及非reparse检查删除。原失败数据库、UNKNOWN及所有原证据保留；未重放失败效果。相关回执见runner-exit.json、main-live-process-final-01.json和temporary-cleanup-final-01.json。随后修复合入主仓，再清场执行独立round-02（结果见后文）。
 
 ### F04定点与下一轮准备
 
@@ -119,4 +121,60 @@ Binary Inspector原root5533f7a1-4dfb-4300-bb9f-6fdc154d206b，应用wtl-assisted
 
 首两批测试失败涉及夹具元数据/typed诊断入口、来源伴随声明及测试断言，原失败保留；生产保护未因此放宽。父代码审阅发现并修复的两项直接边界为receipt确证前取消优先级、32位纯数字operation的JSON类型校验。两资源原字节SHA不变、R100移动，最终隔离打包通过且JAR仅含新共享路径。证据见native-prereq-verification-data.json及native-prereq-*原始命令/XML/退出文件。n28已清、自有进程0，源码工作树干净。
 
-主仓已由冻结5f快进至7a321fa1，包含F01、恢复接入、组合反例及F04；论文已有修改保留、未推送。下一步只清部署编译输出，保留其他任务的target截图/证据，跳过测试重建实际CLASS/Mod描述符；之后在新冻结HEAD下产品清场、独立复查，再执行八项首次完整新轮。当前没有round-02业务结果，所有实机修复效果仍待新轮证明。
+主仓已由冻结5f快进至7a321fa1，包含F01、恢复接入、组合反例及F04；论文已有修改保留、未推送。下一步只清部署编译输出，保留其他任务的target截图/证据，跳过测试重建实际CLASS/Mod描述符；之后在新冻结HEAD下产品清场、独立复查，再执行八项首次完整新轮。这是R02启动前的准备状态；后续实机结果见round-02记录。
+
+round-02已冻结在报告提交d5257d7f（源码为7a321fa1），主仓实际输出重建通过，Maven0/28.126秒、测试跳过；新JAR及CLASS资源无旧路径残留、descriptor及55项classpath已核。仅清理部署编译目录，其他target截图/验证资料保留。driver14832使用原获准指纹及隔离凭据，先执行清场及独立复查，再启动项目。下一轮独立原始证据位于`.ai-workspace/evidence/assisted-continuous-20261028/round-02/`，不复用本轮业务结论。
+
+随后plan/apply/独立after均通过。计划SHA9d64d8999a519e1a793dfd1b56cc5dc0dc307358194e56d5c93e347525cf13cd，实际清除5受管根/9账户/10服务文件，停止10服务、卸载40开发包并清APT缓存。新任务独立盘点与postInventory相同，受管根、服务、账户、目标包与缓存均空；initial-clean-verification-01.json及严格核查通过。06:06启动Task Board原root a9ef5190-1359-4c27-8dfe-410e321bc271，其余七项已排队，仅实际launch才计尝试；该时点尚无本轮完整PASS；最终结果见下表。
+
+### round-02 项目结果
+
+| 项目 | 首次结果 | 原始验证及收尾 |
+| --- | --- | --- |
+| task-board | PASS | JUnit1/0失败/0错误/0跳过，1693.642秒，Maven0；业务/重启持久化/交付及额外cleanup0 STOPPED/DISABLED，内部异常/重试0 |
+| file-transfer | NOT_PASS | 构建请求完整DENY，原部署UNKNOWN；JUnit1失败/0错误/0跳过，394.754秒、Maven1，无下载/业务/交付 |
+| asset-lending | PASS | JUnit1/0失败/0错误/0跳过，1240.842秒，Maven0；完整业务/交付及额外cleanup0 STOPPED/DISABLED，内部异常/重试0 |
+| csv-inspector | PASS | JUnit1/0失败/0错误/0跳过，1355.917秒，Maven0；业务/交付及额外cleanup0 STOPPED/DISABLED；有一次SDK内部CHUNK恢复，整任务eligible=true、额外strict=false |
+| survey-scoring | PASS | JUnit1/0失败/0错误/0跳过，2182.627秒，Maven0；业务/交付及额外cleanup0 STOPPED/DISABLED，内部异常/重试0 |
+| log-analyzer | PASS | JUnit1/0失败/0错误/0跳过，825.757秒，Maven0；新native准备及完整CLI业务/CLI_CLEAN、交付INSTALLED/N/A通过，内部异常/重试0 |
+| directory-diff | PASS | JUnit1/0失败/0错误/0跳过，423.554秒，Maven0；完整CLI业务/CLI_CLEAN及交付INSTALLED/N/A通过，内部异常/重试0 |
+| binary-inspector | PASS | JUnit1/0失败/0错误/0跳过，378.235秒，Maven0；完整CLI业务/CLI_CLEAN及交付INSTALLED/N/A通过，内部异常/重试0 |
+
+Task Board原root a9ef5190-1359-4c27-8dfe-410e321bc271，应用wtl-assisted-task-board-9w0efnlbk，修订33e313225f42f6c9139c2f5d860807e9079ba55ec887f88ba46962bd5bfc87e4，隔离库assisted-live-task-board-9w0edym3s；严格eligible及无内部异常指标true。known tokens109955+870229=980184，90个generation attempt id，统计边界与R01一致；不将其与R01的其他PASS拼接。
+
+### round-02/F01：FTP构建请求被完整拒绝
+
+原root6a99ea19-e827-430f-a0ac-6d4e91a632dc，应用wtl-assisted-file-transfer-aj4jz64vw，隔离库assisted-live-file-transfer-aj4jxhsic；known tokens82942+247243=330185，47个generation attempt id。原部署UNKNOWN，无任何下载业务，尚未到上一轮的后端STOP；不能据此说旧时序修复复现或通过。
+
+原库UTC22:43:02.024的DEPLOYMENT_COMMAND_REVIEW_DENIED认为build-run的8参数缺少source revision、candidate/task重复且顺序与规定不符；随后ACCESS_DENIED及DEPLOYMENT_GRAPH_REMOTE_UNCONFIRMED。最后模型生成SUCCEEDED/transport NONE不代表审批APPROVE，本命令未派发。该理由已保留，真实参数合同仍待源码对照，不把审查者判断直接当成已证构造缺陷。原库task/execution均UNKNOWN，真只读审计3根文件SHA/mtime/长度不变、Java自然退出0；旧效果不重放。调查及修复在隔离树完成，本轮全部结束前主仓维持冻结。
+
+源码对照已确认：标准build-run的9参为application,candidate,seconds,processes,memory,output,engine,inputSha256,binding，生产者与22-restricted-build.sh消费一致；Agent agent-run的另一9参包含task/sourceRevision，并由适配器转标准入口。合同SYSTEM文本只显式列Agent布局，审批的参数判断与标准合同不符。实际每个值未从原exactAction独立导出，合法布局结论来自审批前强制collector round-trip和源码链；不把推导写成原日志完整取值，也不将缺说明认定为可读出的模型内部因果。修复仅澄清两入口及已校验请求的有序参数导航，保留源/任务/工作流完整链、字节和目标守卫、独立DENY；nb28隔离实施并验证；本轮全部结束前main源码/HEAD维持冻结。
+
+隔离分支已提交117a01cbfb4ee56d0d810011da923b43965f7d49，2生产+3测试、108+/3-；唯一一批相关12项通过、19.853秒、Maven0，不是全类/全模块测试。导航仅在完整collector render round-trip与stdin SHA校验后生成，明确原task/workflow/sourceArchive须另行核验，不形成执行许可。完整APPROVE、DENY零grant及6种字节/参数篡改反例保留；实际命令、两个消费者、原守卫、权限与预算未改。消费者原字节不变，Java producer段的首次CRLF审计差异已在audit02按LF及gitdiff核清，原audit01仍保留，不当作产品失败。自有进程0/b28已清，详见build-review-fix-verification.md及原JUnit/命令/退出码。R02全八项完成并正常退出后，主仓已快进117a01cb；完整业务和收尾效果待第三轮清场首测。
+
+Asset Lending原root dade8824-7a7a-4aa4-9d55-b98aa1f93a86，应用wtl-assisted-asset-lending-ao8py7w14，修订c0514b91b31e78cd1beef4fc122cb675f2339a1c120272bd49437df26825ab41，隔离库assisted-live-asset-lending-ao8pwoj7g；严格eligible及无内部异常指标true。known tokens70469+659047=729516，79个generation attempt id，统计不是完整账单。R01原F02仍保留，不因新任务通过改写原UNKNOWN；本次没有观察到不完整响应，不能称实机零正文恢复分支已经验证。
+
+CSV Inspector（原root f010db63-1ec0-4694-8119-1fb0438f4129）运行中已观察到一次真实SDK纯生成恢复：同一APPROVAL/candidate.host-probe窗口及generation ID71e781a7-fedf-405a-ad62-3f7fd0d505e6，number1为UNKNOWN/HTTP_CHUNK_INCOMPLETE、46961毫秒，number2为SUCCEEDED、7713毫秒，最终logical outcome SUCCEEDED；accounting为physicalAttempts2、unknownUsageAttempts1。原任务仍运行，没有进入UNKNOWN或retained uncertainty，后续继续工具链步骤。此为内部恢复而非整项目重试，额外无内部异常指标已false；项目最终是否完整首过仍待业务/交付/收尾。accepted body字节未打印，不能宣称零正文复现或直接观测了重试输入完整hash；随后另一个独立成功请求不是本恢复证据。最终统计将区分唯一generation IDs与物理事件数，未知usage不补0。
+
+CSV最终完整首过通过，应用wtl-assisted-csv-inspector-b5kgn2t8g，修订0c91665f63808518346d2a7df7a5fb0a88db39b099564f4127f438371bc16d39，隔离库assisted-live-csv-inspector-b5kglit3w；原task从未转UNKNOWN，完整业务/交付/最终STOPPED-DISABLED和退出均通过，既定整任务首过口径eligible=true。内部恢复事实不删除，因此额外无内部异常指标false。known tokens40386+642593=682979，唯一generation IDs65、原始物理event66、唯一(id,number)66；源码统计逐physical累加已知usage，第二次成功调用未漏计，未知usage不填0。R01原CSV UNKNOWN依旧保留，此新任务不重放旧效果。
+
+Survey Scoring原root9732c5a0-77c9-456c-ab66-8b42cb0be25e，应用wtl-assisted-survey-scoring-bof5rdzyf，修订788c79e52cc87935f3d1f14374077bf20fda070fbb9a5c169948b35e76901829，隔离库assisted-live-survey-scoring-bof5pi7dc；eligible/无内部异常指标均true。known tokens93049+1074223=1167272，118唯一generation IDs及118物理events，额外调用/能力探测不含。Log Analyzer已启动原root667e6513-cae3-4ca8-989d-b73e125e2404，后续实际native准备及业务结果仍待证明。
+
+Log Analyzer已真实执行新增受控原生准备：原日志882行直接NATIVE_BUILD/APT回执，operation51eba14403dc4def9c747f2b2d5dbbe5；请求包cmake3.28.3-1build7、ninja-build1.11.1-2、gcc/g++4:13.2.0-7ubuntu1，紧邻命令SUCCEEDED/exit0/未截断。其后fresh host-probe及candidate create/query/upload/build已出现；源码强制严格receipt、重新探测及完整Matcher门禁，因此可推导准备准入验证已过。回执字段是直接观察，完整门禁是源码加控制流证据；不把4个请求包当完整依赖闭包或4次安装，不伪造未打印的独立fresh grant marker。native-prerequisites-runtime-proof-01.json保留父核查；该项随后完整CLI业务首次通过；R01原F04 UNKNOWN仍保留。
+
+Log Analyzer最终完整首次通过：root667e6513-cae3-4ca8-989d-b73e125e2404，应用wtl-assisted-log-analyzer-ciha39k9w，隔离库assisted-live-log-analyzer-ciha1o800；eligible及无内部异常指标true。known tokens47900+368536=416436，40唯一generation IDs=40物理events/对；完整CLI业务、CLI_CLEAN、INSTALLED/N/A及实际app-run用法核对通过。R01缺口对应的新受控准备和完整业务现有同一首次任务实机证据，未使用旧任务恢复或重试覆盖原失败。
+
+Directory Diff原root26b7c4e3-fa9d-4b04-8607-c0dc9fcd955d，应用wtl-assisted-directory-diff-ct3ggz96o，隔离库assisted-live-directory-diff-ct3gfayfg；eligible及无内部异常指标true。known tokens76475+297578=374053，42唯一generation IDs=42物理events/对；完整CLI业务、CLI_CLEAN与交付用法匹配。Binary Inspector随后首次完整通过；本轮仍保留FTP首次失败，不能与下一轮结果拼接。
+
+
+### round-02 整轮核查与收尾
+
+Binary Inspector原root aa9151da-dbda-466c-ab79-7b40fe8a404a，应用wtl-assisted-binary-inspector-cykt1y0xw，隔离库assisted-live-binary-inspector-cykt09cww；eligible及无内部异常指标均true，known tokens73511+288809=362320，40唯一generation IDs及40物理事件。
+
+八项目各一次，无外层retry/recovery；清场、冻结HEAD/源码/参数/模型配置及尝试数门槛全部通过。monitor-final-inspection-01.json仅因allAttemptsEligible拒绝，本轮7/8、goalEligible=false。CSV的内部纯生成恢复不改变整任务首次通过，但额外无内部异常指标false，不能称八项无异常通过。
+
+monitor-final-usage-01.json：known tokens5042945，唯一generation IDs521、物理事件522、唯一(id,number)522；CSV有1次未知usage。32条能力探测的用量与实际调用数未知，额外收尾不在此统计内，因此不是完整账单。
+
+driver14832正常quit，RUNNER_EXIT及实际退出0均已观察；独立CIM核查驱动和主仓验证消费者0，clean28r02经绝对路径与非reparse检查后删除。回执为runner-exit.json、main-live-process-final-01.json、temporary-cleanup-final-01.json。原失败数据库、UNKNOWN与原始证据继续保留。
+
+轮末主仓由d5257d7f快进至117a01cb，包含FTP构建审阅合同澄清，论文既有修改保留且未推送。第三轮脚本已准备；下一步重建实际CLASS/Mod输出、执行新一轮产品清场及独立复查，再在新的冻结HEAD下八项目各首次执行，不复用前两轮PASS。
