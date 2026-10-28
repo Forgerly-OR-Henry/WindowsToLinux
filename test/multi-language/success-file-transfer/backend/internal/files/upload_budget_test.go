@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -361,9 +362,23 @@ func TestChunkLateSyncAndQueuedLockCannotStartCommit(t *testing.T) {
 }
 
 func TestChunkUninterruptibleSyncHasFiniteNodeFailureAndNoLateCommit(t *testing.T) {
+	node := os.Getenv("FILE_TRANSFER_NODE_TEST_BINARY")
+	if node == "" {
+		var err error
+		node, err = exec.LookPath("node")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	script, err := filepath.Abs("../../../web/test/upload-proxy.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
 	s, _, _ := uploadFixture(t)
 	id := createBudgetUpload(t, s, 65536, 65536, bytes.Repeat([]byte{0x5a}, 65536))
 	entered, release, returned := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
@@ -379,13 +394,9 @@ func TestChunkUninterruptibleSyncHasFiniteNodeFailureAndNoLateCommit(t *testing.
 		_, e = s.chunk(ctx, id, 0, chunkBudgetReader{r.Body, b}, func(f *os.File) error { close(entered); <-release; return f.Sync() })
 		returned <- e
 	}))
+	t.Cleanup(func() { unblock(); server.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	node := os.Getenv("FILE_TRANSFER_NODE_TEST_BINARY")
-	if node == "" {
-		t.Fatal("explicit Node test binary required")
-	}
-	script, _ := filepath.Abs("../../../web/test/upload-proxy.mjs")
 	cmd := exec.CommandContext(ctx, node, "--test", "--test-isolation=none", "--test-name-pattern=^upload deadline bounds blocked actual Go sync$", script)
 	cmd.Env = append(os.Environ(), "UPLOAD_TEST_GO_ORIGIN="+server.URL, "UPLOAD_TEST_GO_ID="+id)
 	output, err := cmd.CombinedOutput()
@@ -399,7 +410,7 @@ func TestChunkUninterruptibleSyncHasFiniteNodeFailureAndNoLateCommit(t *testing.
 		t.Error("uninterruptible sync claimed exited before release", e)
 	default:
 	}
-	close(release)
+	unblock()
 	select {
 	case e := <-returned:
 		if !errors.Is(e, context.DeadlineExceeded) && !errors.Is(e, context.Canceled) {
@@ -408,7 +419,6 @@ func TestChunkUninterruptibleSyncHasFiniteNodeFailureAndNoLateCommit(t *testing.
 	case <-time.After(time.Second):
 		t.Error("released owned worker did not exit")
 	}
-	server.Close()
 	t.Logf("NODE_ACTUAL_SYNC_OUTPUT\n%s", output)
 	if err != nil {
 		t.Fatal(err)
