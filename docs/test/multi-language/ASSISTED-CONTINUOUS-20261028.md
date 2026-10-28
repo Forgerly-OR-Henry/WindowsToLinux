@@ -644,3 +644,13 @@ Asset原root`ed1a6b10-2f24-423e-b40b-25c3eb7f794c`，app`wtl-assisted-asset-lend
 凭据只从本机新主resume-01经严格两端allowlist、已保存host/PIN核验及char[]内存桥导入本树全新vault，不复制旧DPAPI/UNKNOWN整库。桥02未安装交互presenter，target.servers()在PlatformRuntime.java477因prompts为空报错，已创建部分r07-01但无远端；这是新辅助初始化遗漏，不是旧DPAPI/readonly或部署问题。保留原源码/log/exit/部分库，桥03补本地deny-only presenter（不放宽原fixture守卫，不调用started或远端），另建r07-02后真实wait0；char[]清零，source/target正常开库可能写本地账本。
 
 独立原产品连接定点DeploymentStaticLiveAcceptanceTest#connectsThroughTheRealPlatform从r07-02复用，JUnit1/0失败/错误/跳过、6.777秒、Maven0/BUILD SUCCESS，实际wire指纹为已授权BiNl，host45.192.105.213:22/root，新进程无密码env/无生成marker。连接是准备验证，不计八项；R07尚无正式reset/run。待最终控制器、scope audit和8MiB policy核查后，必须完整产品inventory/plan/apply/独立after通过，再从零执行全新八项原尝试，不能接续R06未跑五项来拼轮。
+
+### R07/P-FILES-01：首个准备盘点被本地Mod校验拒绝
+
+最终控制器01及27项纯本地门禁通过后，首个host-before-01原盘点测试在DeploymentRuntimeFixture.enable162拒绝本树files Mod，MOD_DEVELOPMENT_INVALID；JUnit1失败、0错误/跳过、3.017秒、Maven1。失败发生在reset fixture.enable：其内部已open自己的新本地状态库，尚未到reset方法后续openFixture与SSH check，无host-before-01.json、模型或正式项目launch，不能混入八项业务分母。此前连接复用仅connectionOnly=true，不足以证明所有运行期Mod已准备完整；已确认本树files整个target不存在；54项JUnit类路径及deployment/git两输出核查漏了catalog动态扫描的第三个Mod，不是已存在descriptor指向旧路径，也不是产品或远端故障。
+
+父正常quit原driver9355/44768，真实工具exit0；CreateNew显式观察停止请求后原monitor76637/34276意图exit3、工具包装实际exit1，非自然八终态。原inventory进程39120实际exit1。宿主CIM独立确认三个PID均不存在，原测试未强杀，正式项目0，旧policy01/源码/raw均保留。首次受限CIM查询报不可访问而数组为空，原start-01不是进程不存在证明；start-02宿主核验与最终closeout已明确纠正。后续准备用新02文件和标签，不能覆盖原失败或改写其退出码；全部运行期Mod实际输出须加入下一冻结核验后重新盘点。
+
+仅对本树files及必要依赖执行skipTests package，实际wait0/BUILD SUCCESS、5.306秒。随后调用实际DevelopmentModFinder.scan（含DevelopmentInfo.read与ModCodeChecker），3个候选/0拒绝、Java实际0；此辅助未构造PlatformRuntime、未开库/网络/启动作者Mod。Files新增47个classes文件及marker，JUnit仍54项16本树输出+38公共JAR，构建前后原54内容完全一致；动态发现的额外Files输出另列，使受守卫的本树输出共17。三Mod manifest集合、entry、descriptor有效内容/实际raw、inputDigest/compiled marker、声明输出及依赖列入新02冻结门禁。未修改生产代码、旧policy01或失败回执，不能把本地准备修正写成服务器清场或完整业务通过。
+
+父另用本树新r07-02在内存核对准备文本，privacy-audit-preparation-01覆盖207文件及主当前正式报告/进度，敏感字面/XML属性0，实际Java31712退出0且宿主CIM确认不存在；只正常打开该本机新库（本地ledger可能更新），无旧copied/UNKNOWN或远端请求。此为当时准备文本范围，不是未来整轮最终隐私审计。
