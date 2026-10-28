@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active。R07已在独立保留工作树、冻结65f8dfd1及policy02下完成产品清场和独立复查，八项命令各提交一次，TaskBoard、FTP和Asset已完整首过3/8，CSV原任务UNKNOWN/测试失败，本轮已未达标；当前Survey原任务运行、后三待原队列，不重发队列。FTP本轮按用户授权使用8MiB，其余既定业务不减。R06前三项原完整回执PASS/后五未启，因并行主源码漂移整轮未达标；旧64MiB与新轮不拼接。R07准备盘点01的本地Files产物覆盖失败另记，已补齐并实际产品scan3/0，不称零异常。仅测试代码，无真实界面、浏览器或Computer Use。
+状态：目标active。R07已在独立保留工作树、冻结65f8dfd1及policy02下完成产品清场和独立复查，八项命令各提交一次，TaskBoard、FTP、Asset、Survey、Log和Directory已完整首过6/8，CSV原任务UNKNOWN/测试失败，本轮已未达标；当前仅Binary Inspector原任务运行，不重发队列。FTP本轮按用户授权使用8MiB，其余既定业务不减。R06前三项原完整回执PASS/后五未启，因并行主源码漂移整轮未达标；旧64MiB与新轮不拼接。R07准备盘点01的本地Files产物覆盖失败另记，已补齐并实际产品scan3/0，不称零异常。仅测试代码，无真实界面、浏览器或Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -24,7 +24,7 @@
 | round-04 | f03ebfccf070c029f3fcaf124092906412f77449 | 原P01漂移拒绝保留，服务静止后完整清场及独立复查通过 | 八项各一次：首过7、FTP业务错误1 | 未达成；无内部生成恢复，预算修复已于轮末合入，准备R05 |
 | round-05 | abc7abd1fa8db25626854eece961ca43347913e8 | 首个清场执行和独立复查均通过 | 八项各一次：首过7、FTP业务失败1 | 未达成；无内部生成恢复，分阶段上传修复已轮末合入9259ee92，准备R06 |
 | round-06 | 818ac8acb065182cfd90b090db42d322e605436e | 产品清场及独立复查通过 | 计划八项，仅前三项原完整回执PASS、后五未启动；0项已观察业务失败 | 未达标；运行期主工作区发生并行源码/HEAD漂移，原守卫在CSV前退出；准备问题单列，原64MiB保留，FTP恢复1/未知usage1 |
-| round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八命令各提交一次；TaskBoard/FTP/Asset完整首过3，CSV原UNKNOWN/测试失败1，Survey运行、后三待原队列 | 已未达标、其余原项目继续；CSV原生审批格式违约与保守UNKNOWN传播已匹配，持久诊断未开库；FTP8MiB授权，不拼旧成绩 |
+| round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八命令各提交一次；TaskBoard/FTP/Asset/Survey/Log/Dir完整首过6，CSV原UNKNOWN/测试失败1，Binary原任务运行 | 已未达标、其余原项目继续；CSV原生审批格式违约与保守UNKNOWN传播已匹配，持久诊断未开库；FTP8MiB授权，不拼旧成绩 |
 
 ## 失败原因与解决方案
 
@@ -724,3 +724,37 @@ nr29保留树/branchcodex/assisted-native-feedback-20261029/base65已本地提�
 未来格式纠正应合并成功marker和GAP raw行，按(task,correction)并集去重、另列持久化缺口；UUID不是SDK generation重试身份。原两次模型请求和物理usage分别保留，缺marker或旧R07 parser缺字段不证明零纠正。不能把本地受控native响应当真实provider已改好。类路径初次空段相对audit cwd误读及临时清单拼写失败单列更正；最终实际XML55段/54非空/1空，非空项全部nr29或公共缓存，空项按真实test user.dir nr29/src/mod/deployment解释，非main target泄漏，不把辅助错误计入八项分母。
 
 父回读隔离提交七文件范围、验证MD/最终清单/进程/commit四SHA、六实际输入源SHA，核green02/03原XML和实际wait0；Astra03受审末SHA不变。父独立宿主CIM确认五个自有Maven包装及nr29 cmd/java/python签名均不存在，不停止R07原任务，无需删除的自有辅助临时目录；raw/基线/targets为证据保留。验证说明在nr29/docs/test/multi-language/ASSISTED-NATIVE-SUBMISSION-FEEDBACK-20261029.md；R07/native-submission-enhancement-parent-review-01.json与native-enhancement-parent-process-01.json为父审。活动R07 source65/policy6fd3及CSV原raw未变，仍完整首过3/8且整轮未达标；Survey原队列已进入业务阶段，后三项继续，不重发。原provider违约诱因及旧SSH物理原因未因此查明或修复。
+
+
+### R07 Survey完整首次通过，累计4/8；整轮失败结论保持
+
+原root90eeed19-5dae-4490-8cae-7986e152271e、app wtl-assisted-survey-scoring-cj89dhszo、新state assisted-live-survey-scoring-cj89baz10、revision39cfeb9627a1aa469b04133570c44e14ea2494d1decdae17639ba74a6e862a66。原JUnit1/0失败错误跳过、2112.719秒，Maven18496实际wait0；额外产品cleanup原JSON PID36736实际wait0、STOPPED/DISABLED。原root唯一SUCCEEDED、整项目一次launch、无原UNKNOWN恢复；原inspector eligible/clean均true，完整交付身份及操作说明齐。父回读三派生关键门与三SHA，七raw前后SHA一致，另核原XML/actual exit/cleanup marker及宿主CIM两原PID均已退出；源65/policy02及实际LOW-LOW等参数匹配。
+
+既定业务为revisionId1、单次answers participated=yes/quality4/support docs+peer/friction2，score84.21±0.001，产品restart后HTTP API持久化及前端API路由断言均通过。方法名browserApi是Java HTTP测试接口，没有启动真实浏览器或UI；证据层级为冻结源码断言、原成功JUnit和完整业务marker，响应体未单独导出，不称全部BUSINESS容量矩阵。独立模型LANGUAGE27/APPROVAL84，requiredApprovals0仅人工高风险计数，不是模型审批缺失。
+
+111 logical IDs/111 physical(id,number)/111 raw，known deployment94168+approval1079548=1173716、role-minus-physical0/0；非成功physical/未知usage/纯生成恢复/number大于1/duplicate/conflict/unparsed均观测0。结构SUBMISSION_REJECTED反馈raw5/unique5，zeroObservedAbnormality=false，不能称零异常；已知用量不含能力探测/额外操作，非完整账单。四个完整PASS合计known4188985、412 logical/physical、结构反馈33，仍不是全轮结算；CSV原失败和195081已知token另在原账，不能删掉或拼成四项分母。
+
+完整首过现4/8，但本轮因CSV原UNKNOWN仍已未达标。原37576自动消费Log Analyzer，Maven40516（UTC21:43:26.153978）、rootd58f49ad-f32b-48cd-a843-a2e1f513e26a、app wtl-assisted-log-analyzer-dcjb2a9hw/stateassisted-live-log-analyzer-dcjb0fhvc；Dir/Binary待唯一原队列。Log启动前全冻结门通过，父CIM核25764/5844/40516身份准确，0信号/删除，不重发或换版。原111生成记录、代码和参数不混入nr29增强或未来合成计数样例。
+
+下一轮辅助计数仅在next-round-native-preparation通过15纯合成Python样例及只读审查：成功/GAP按(task,correction)并集去重、raw/typed重复/存储缺口分列，malformed只固定reason/行号/hash。它未集成未来控制器、未读live日志、未改变原02账本或R07 verdict，无marker不证明零纠正；merge可能保留旧zeroObservedAbnormality=true，仅旧账未观察异常，不能作格式0或首过证明。rawSuccessPrefixRows含无效前缀，实际合规数用validSuccessRows，其他预算仍须冻结源码及执行另证。准备验证不计八项分母。
+
+另已启用独立Sol在保留r08树做纯本地集成准备：固定main4b27d6e7正常合并ff83，候选merge f3acc0e9dc3bd086d7ff44e3fcdf71a528d2f0f1无冲突，已含当前已提交UI及FTP8MiB/格式增强；子代理已报告指定Files+Deployment skipTests构建实际0/BUILD SUCCESS/39.097秒、限定定点测试实际0/7.186秒；实际用例数、类路径和产物仍由子代理核对，父尚未验收本地准备。初次Git写入沙箱拒绝后按现有授权宿主成功，准备失败另记。该树未复制/打开私有配置或凭据、未连接/清理服务器、未执行正式项目，不称R08启动；仍须本轮原八项全部结束收尾，再最终凭据/连接/产物/策略核验、产品清场独立复查后才能新鲜八项。当前r07代码/实际输出不受该本地候选构建影响。
+
+
+### R07 Log与Directory完整首次通过，累计6/8
+
+Log原rootd58f49ad-f32b-48cd-a843-a2e1f513e26a/appwtl-assisted-log-analyzer-dcjb2a9hw/stateassisted-live-log-analyzer-dcjb0fhvc，revision0bf62da74afa715ae5cbb86224430bb6fd1b729fe2205966a80f70fccb5eaf81；完整CLI selector的原JUnit1/0失败错误跳过、783.786s、Maven40516实际wait0。样例--input samples/events.log --format json和输出包含matched6按冻结COMMAND健康探针及原成功断言链核定；未另跑CLI或导出任意stdout，不称所有BUSINESS场景。
+
+Directory原root0762f4ff-3ba6-40f3-b173-56d5f12c46a0/appwtl-assisted-directory-diff-dmo2qokl8/stateassisted-live-directory-diff-dmo2okskw，revision7c11bbdf3fc584389df6943c31e7c5a84562fe00bb2cd5608494020ee3815197；完整CLI selector原JUnit1/0失败错误跳过、466.051s、Maven41800实际wait0。所选样例--format json snapshot --root samples/baseline --name live-baseline，预期status complete，同样依冻结COMMAND探针/原JUnit强断言链，不称全部目录比较/容量矩阵。
+
+两者都在原selector部署后交付时重开各自同一新本地库，通过产品list+inspect核唯一原publication、同application/revision/ownership、ON_DEMAND命令使用方式及INSTALLED/NOT_APPLICABLE安装持久化；CLI网站额外cleanup不适用，不把null/false网站字段当失败或伪造0。原root均唯一SUCCEEDED、一次launch，无原UNKNOWN恢复，原inspector eligible/clean均true。各三派生仅CreateNew，父回读关键门/六SHA及每项五raw SHA，均一致；父宿主CIM核原40516/41800身份均退，当前25764/5844/Binary35348身份准确。第一次父观察仍期待Dir活动时原队列已正常进入Binary，身份门禁退出1且未写证明/发信号；已从原driver实际0→Binary与新CIM纠正，属于观察时序更新，不是项目失败。
+
+Log40 logical/physical/raw（LANGUAGE12/APPROVAL28），known40945+362769=403714、role差0，工具/提交反馈raw3/unique3；Directory39 logical/physical/raw（LANGUAGE13/APPROVAL26），known63268+307728=370996、role差0，反馈raw6/unique6，其中OTHER3/SUBMISSION_REJECTED3，未把OTHER擅写成已知拒绝原因。两项SDK同generation恢复/未知usage/number大于1/非SUC/duplicate/conflict/unparsed均观测0；zeroObservedAbnormality=false，不能称无内部异常/完整账单。六个完整PASS合计known4963695、491 logical/physical、工具/提交反馈42；CSV原失败和195081仍独立保留，八项分母不变，最终全轮账本待第八终态。
+
+原八队列均已各启动一次，当前仅Binary原Maven35348（UTC22:04:36.029072）、rootc0e4bf3e-ce9e-485f-bac6-9922ede2158f/appwtl-assisted-binary-inspector-dsr0j0qs4/stateassisted-live-binary-inspector-dsr0h1cpw运行，启动前全冻结门通过。完整首过6/8，本轮仍因CSV原UNKNOWN已未达标；不重发、不修改活动source65/policy02、不拼新候选或跨轮成绩。
+
+### 后续R08仅本地集成阶段父审完成，正式项目0
+
+保留树r08从固定main4b27+ff83正常merge f3acc并本地提交准备说明，候选HEAD73bbbbbb07346a09155d8d3ddc23c5dd08756d38、clean，未push/merge main/r07。父核45证据逐字节SHA/长度、实际32 XML/live flagsfalse、54非空cp/本树17输出/唯一实际CLASSf102、3候选0拒绝、ASM8MiB2+6/12超时反射、源/marker/16JAR末次不变；package0/39.097s、指定32定点0/7.186s，独立CIM三launcher与R08 cmd/java/python0、精确proof tmp已清。初次父只读清单把list误当mapping而退出1，未写文件/运行项目，已按真实shape复读成功并在父proof单列；原数据不动。正式记录为r08/docs/test/multi-language/ASSISTED-R08-LOCAL-PREPARATION-20261029.md，父proof R07/r08-local-preparation-parent-review-01.json及r08-local-parent-process-check-01.json。
+
+另已安排同Sol仅在新round-08-preparation-only准备03 driver/guard/monitor/SDK+格式账和DRAFT政策：不改HEAD73、现有产物/45证据或任何旧R07文件，不复制/打开私密信息或DB，不启动driver/observer后台或任何真实模型/远端/新项目。统一在副作用前拒DRAFT/缺父最终release，纯本地新验证尚待完成及父审；原目标不要求零内部恢复，允许有界纯生成/格式纠正并单列如实，不以旧zeroObserved或缺marker证明0、不新增绝对零纠正门槛。R08正式项目0，仍须R07结束收尾后新凭据/产品连接/最终policy及清场独立after才能八项，不能把本地准备当部署验收。
