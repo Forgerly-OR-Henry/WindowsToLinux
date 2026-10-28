@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active。R07已在独立保留工作树、冻结65f8dfd1及policy02下完成产品清场和独立复查，八项命令各提交一次，当前TaskBoard原任务运行，尚无完整终态，不重发队列。FTP本轮按用户授权使用8MiB，其余既定业务不减。R06前三项原完整回执PASS/后五未启，因并行主源码漂移整轮未达标；旧64MiB与新轮不拼接。R07准备盘点01的本地Files产物覆盖失败另记，已补齐并实际产品scan3/0，不称零异常。仅测试代码，无真实界面、浏览器或Computer Use。
+状态：目标active。R07已在独立保留工作树、冻结65f8dfd1及policy02下完成产品清场和独立复查，八项命令各提交一次，TaskBoard已完整首过，当前FTP原任务运行，累计1/8，不重发队列。FTP本轮按用户授权使用8MiB，其余既定业务不减。R06前三项原完整回执PASS/后五未启，因并行主源码漂移整轮未达标；旧64MiB与新轮不拼接。R07准备盘点01的本地Files产物覆盖失败另记，已补齐并实际产品scan3/0，不称零异常。仅测试代码，无真实界面、浏览器或Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -12,7 +12,7 @@
 
 每项修复在实施前对照原失败、历史确认原因、旧修复提交及所保护行为，分类为新问题、已确认旧问题复发、症状相似但原因未明或旧判断经反证修正；证据不足保留未知。记录本次为何需要改变旧策略、保留哪些旧保护及回归反例，合入时同时验证新故障和旧修复保护的行为。若拟撤销旧修复，须有反证和新旧场景对照结果；不因下一轮再次报错就回滚为旧实现或在同一组参数之间反复切换。复发无新证据时先调整调查方法，不把诊断增强当根因修复。已有R01-R05修复链另作只读回查，原失败/UNKNOWN及用户论文修改继续保留。
 
-用户随后因当前网速慢，明确授权**下一次新冻结验收将FTP文件改为8MiB（8388608字节）**。此明确授权仅替代原64MiB文件大小及其派生分片数：1MiB分片、双版本、五次全量下载/SHA、10并发complete、重复冲突、取消持久化、错误SHA、部分上传重启续传、真实后端停启/502、交付和清理场景继续保留。部分上传按原1/4位置由16/64改为2/8后重启，再续6片；两个版本加三个辅助单片的正常trace由131组改为19组。不得把历史64MiB结果改标为8MiB或混算为同一冻结轮。当前R06仍用64MiB及原实际产物，不中途换参数；8MiB变更先在独立工作树准备验证和本地提交，原轮收尾后才可合入，未来轮另记实际冻结版本与口径。该请求不授权改产品大小上限、上传时限或共享安全保护。
+用户随后因当前网速慢，明确授权**下一次新冻结验收将FTP文件改为8MiB（8388608字节）**。此明确授权仅替代原64MiB文件大小及其派生分片数：1MiB分片、双版本、五次全量下载/SHA、10并发complete、重复冲突、取消持久化、错误SHA、部分上传重启续传、真实后端停启/502、交付和清理场景继续保留。部分上传按原1/4位置由16/64改为2/8后重启，再续6片；两个版本加三个辅助单片的正常trace由131组改为19组。不得把历史64MiB结果改标为8MiB或混算为同一冻结轮。该指示时R06仍用64MiB及原实际产物，不中途换参数；8MiB变更先在独立工作树准备验证和本地提交，原轮收尾后才可合入，未来轮另记实际冻结版本与口径。该请求不授权改产品大小上限、上传时限或共享安全保护。
 
 ## 逐轮结果
 
@@ -24,7 +24,7 @@
 | round-04 | f03ebfccf070c029f3fcaf124092906412f77449 | 原P01漂移拒绝保留，服务静止后完整清场及独立复查通过 | 八项各一次：首过7、FTP业务错误1 | 未达成；无内部生成恢复，预算修复已于轮末合入，准备R05 |
 | round-05 | abc7abd1fa8db25626854eece961ca43347913e8 | 首个清场执行和独立复查均通过 | 八项各一次：首过7、FTP业务失败1 | 未达成；无内部生成恢复，分阶段上传修复已轮末合入9259ee92，准备R06 |
 | round-06 | 818ac8acb065182cfd90b090db42d322e605436e | 产品清场及独立复查通过 | 计划八项，仅前三项原完整回执PASS、后五未启动；0项已观察业务失败 | 未达标；运行期主工作区发生并行源码/HEAD漂移，原守卫在CSV前退出；准备问题单列，原64MiB保留，FTP恢复1/未知usage1 |
-| round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八命令各提交一次；TaskBoard原任务运行、后七待原队列，完整终态0 | 进行中；FTP8MiB为用户授权新口径，不拼旧成绩，不称已达标 |
+| round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八命令各提交一次；TaskBoard完整首过1，FTP原任务运行、后六待原队列 | 进行中；FTP8MiB为用户授权新口径，不拼旧成绩，不称已达标 |
 
 ## 失败原因与解决方案
 
@@ -663,3 +663,11 @@ Asset原root`ed1a6b10-2f24-423e-b40b-25c3eb7f794c`，app`wtl-assisted-asset-lend
 新host-before02 JUnit27.165s/0、plan02 23.836s/0，计划原receipt SHA13bbaac087ab8921c795e33cfebae7eeb19ca6c53f362dddd1c30ecef20cd8de、内层plan SHA7898b193c4e3879c574594732eaaa995d8a87c4a247e2c9cc4d8f349b30df770；apply02 34.605s/0，独立after02 24.375s/0，均1test/0失败错误跳过且Maven实际0。8根均不存在，相关受管集合为空，APT缓存三项0，after与apply postInventory逐字段一致；原initial_reset verified=true。派生parent-verification文件被原glob枚举为非有效候选不等于额外执行，真正host-reset02原回执全部门槛通过。
 
 UTC19:16:36通过初清门槛后，仅一次提交八条原run，eight-original-command-submission-01与intent留证，不能重发。唯一root持有driver37576/Python25764、observer66898/Python5844；首TaskBoard Maven44392，原root70213c5c-583c-42ae-8ac8-b61a1d8b9096、app wtl-assisted-task-board-a86sa4z7w、新state assisted-live-task-board-a86s83rvo运行。其余七项待原队列，尚无本轮完整业务/交付/清理终态，不提前记首过。旧9355/76637及更早16741/37339都已结束，不poll旧句柄或重启旧队列；所有修复另树调查，活动轮不换版。
+
+### R07 TaskBoard完整首次通过，累计1/8
+
+原root70213c5c-583c-42ae-8ac8-b61a1d8b9096，app wtl-assisted-task-board-a86sa4z7w，新state assisted-live-task-board-a86s83rvo，应用revision6a4c18713fca8b192518d78299e24bc66baaacd1ed349562b9ed17d748603b22。JUnit1/0失败错误跳过、1980.756秒，Maven0；既定完整业务/持久化、交付和额外产品cleanup43940/0及STOPPED-DISABLED齐备。原inspector eligibleAttempt=true、cleanExecutionWithoutInternalRetry=true；原任务唯一SUCCEEDED，无原UNKNOWN或整项目重试。全部原始证据前后SHA未改，派生assessment/gen-accounting/parent-verification仅CreateNew一次，父回读关键判据和三SHA，并独立核原Maven44392与cleanup43940两PID已退出。
+
+known tokens deployment70297+approval941423=1011720，85 logical IDs/85 physical(id,number)/85 raw events，duplicate/conflict/unparsed均0；physical非成功0、未知usage0、纯生成恢复链及number>1均0，角色与physical已知token差0。另有SUBMISSION_REJECTED结构提交反馈raw12/unique call-feedback12、原反馈明确no action executed，不能算整项目重试，也不能称零异常；独立zeroObservedAbnormality=false与原inspector较窄的clean指标分别保留。能力探测和额外操作用量不含，非完整账单。
+
+当前首过1/8。原37576已自动消费此前唯一队列的FTP，Maven42900（UTC19:51:52.843688）、root79db8d6b-aa3a-4ac4-b9fc-59b89dad4233、app wtl-assisted-file-transfer-az4jedu78、新state assisted-live-file-transfer-az4jcew6s部署进行中，后六条不重发。FTP启动前新全冻结守卫通过，source65/policy02保持；FTP真实8MiB业务尚未开始，不提前计业务通过。
