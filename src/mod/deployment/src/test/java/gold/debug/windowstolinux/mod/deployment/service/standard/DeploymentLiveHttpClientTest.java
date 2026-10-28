@@ -265,6 +265,49 @@ class DeploymentLiveHttpClientTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"ACK", "SILENT"})
+    @Timeout(15)
+    void interruptedChunkPeerCloseStillStopsOwnedServerAndWorkers(String mode) throws Exception {
+        var peer = new ChunkPeer(mode, mode.equals("ACK") ? 25000 : 0, true);
+        var client = java.util.concurrent.Executors.newSingleThreadExecutor();
+        var closeFailure = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        var retainedInterrupt = new java.util.concurrent.atomic.AtomicBoolean();
+        Thread closer = null;
+        try {
+            var request = client.submit(() -> {
+                try { chunk(peer.upload("8".repeat(32))); return (Throwable) new AssertionError("No ACK expected"); }
+                catch (Throwable failure) { return failure; }
+            });
+            assertTrue(peer.accepted.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            closer = new Thread(() -> {
+                Thread.currentThread().interrupt();
+                try { peer.close(); }
+                catch (Throwable failure) { closeFailure.set(failure); }
+                finally { retainedInterrupt.set(Thread.currentThread().isInterrupted()); }
+            }, "local-interrupted-peer-close");
+            closer.start(); closer.join(5000);
+            assertFalse(closer.isAlive());
+            assertInstanceOf(InterruptedException.class, closeFailure.get());
+            assertTrue(peer.executor.isTerminated(), "Interrupted close must stop its owned executor");
+            assertTrue(peer.threads.stream().noneMatch(Thread::isAlive));
+            assertTrue(retainedInterrupt.get(), "Cleanup must retain the caller's interruption");
+            assertInstanceOf(IOException.class, request.get(5, java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(1, peer.requests.get());
+        } finally {
+            // Keep this test safe even if the close assertions expose a leak.
+            boolean fallbackNeeded = !peer.executor.isTerminated();
+            peer.release.countDown();
+            try { peer.server.stop(0); }
+            finally { peer.executor.shutdownNow(); client.shutdownNow(); }
+            assertTrue(peer.executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(client.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
+            for (var thread : peer.threads) { thread.join(1000); assertFalse(thread.isAlive()); }
+            if (closer != null) { closer.join(1000); assertFalse(closer.isAlive()); }
+            System.out.println("LOCAL_INTERRUPTED_CLOSE_FALLBACK needed=" + fallbackNeeded + " ownedWorkers=0");
+        }
+    }
+
     private static byte[] chunkRequest(String upload, int status, boolean traced) throws Exception {
         var traceType = java.util.Arrays.stream(DeploymentStaticLiveAcceptanceTest.class.getDeclaredClasses())
             .filter(type -> type.getSimpleName().equals("FileTransferChunkTrace")).findFirst().orElseThrow();
@@ -353,12 +396,37 @@ class DeploymentLiveHttpClientTest {
 
         @Override
         public void close() throws Exception {
-            if (mode.equals("SILENT")) release.countDown();
-            boolean done = finished.await(8, java.util.concurrent.TimeUnit.SECONDS);
-            if (!done) release.countDown();
-            server.stop(0); executor.shutdown();
-            assertTrue(executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS), "Peer executor must exit");
-            for (var thread : threads) { thread.join(1000); assertFalse(thread.isAlive()); }
+            boolean done = false;
+            InterruptedException interrupted = null;
+            try {
+                if (mode.equals("SILENT")) release.countDown();
+                done = finished.await(8, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException failure) {
+                interrupted = failure;
+            } finally {
+                release.countDown();
+                try { server.stop(0); }
+                finally {
+                    executor.shutdown();
+                    long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+                    while (!executor.isTerminated() && System.nanoTime() < deadline) {
+                        try { executor.awaitTermination(Math.max(1, deadline - System.nanoTime()), java.util.concurrent.TimeUnit.NANOSECONDS); }
+                        catch (InterruptedException failure) {
+                            if (interrupted == null) interrupted = failure; else interrupted.addSuppressed(failure);
+                        }
+                    }
+                    for (var thread : threads) while (thread.isAlive() && System.nanoTime() < deadline) {
+                        try { thread.join(java.time.Duration.ofNanos(Math.max(1, deadline - System.nanoTime()))); }
+                        catch (InterruptedException failure) {
+                            if (interrupted == null) interrupted = failure; else interrupted.addSuppressed(failure);
+                        }
+                    }
+                    if (interrupted != null) Thread.currentThread().interrupt();
+                }
+            }
+            if (interrupted != null) throw interrupted;
+            assertTrue(executor.isTerminated(), "Peer executor must exit");
+            for (var thread : threads) assertFalse(thread.isAlive());
             assertTrue(done, "Controlled response handler must exit");
             assertEquals(1, requests.get(), "No retry, redirect, GET recovery or second PUT");
             assertNull(failure.get(), () -> "Controlled peer failed: " + failure.get());
