@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active。R07已在独立保留工作树、冻结65f8dfd1及policy02下完成产品清场和独立复查，八项命令各提交一次，TaskBoard、FTP和Asset已完整首过，当前CSV原任务运行，累计3/8，不重发队列。FTP本轮按用户授权使用8MiB，其余既定业务不减。R06前三项原完整回执PASS/后五未启，因并行主源码漂移整轮未达标；旧64MiB与新轮不拼接。R07准备盘点01的本地Files产物覆盖失败另记，已补齐并实际产品scan3/0，不称零异常。仅测试代码，无真实界面、浏览器或Computer Use。
+状态：目标active。R07已在独立保留工作树、冻结65f8dfd1及policy02下完成产品清场和独立复查，八项命令各提交一次，TaskBoard、FTP和Asset已完整首过3/8，CSV原任务UNKNOWN/测试失败，本轮已未达标；当前Survey原任务运行、后三待原队列，不重发队列。FTP本轮按用户授权使用8MiB，其余既定业务不减。R06前三项原完整回执PASS/后五未启，因并行主源码漂移整轮未达标；旧64MiB与新轮不拼接。R07准备盘点01的本地Files产物覆盖失败另记，已补齐并实际产品scan3/0，不称零异常。仅测试代码，无真实界面、浏览器或Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -24,7 +24,7 @@
 | round-04 | f03ebfccf070c029f3fcaf124092906412f77449 | 原P01漂移拒绝保留，服务静止后完整清场及独立复查通过 | 八项各一次：首过7、FTP业务错误1 | 未达成；无内部生成恢复，预算修复已于轮末合入，准备R05 |
 | round-05 | abc7abd1fa8db25626854eece961ca43347913e8 | 首个清场执行和独立复查均通过 | 八项各一次：首过7、FTP业务失败1 | 未达成；无内部生成恢复，分阶段上传修复已轮末合入9259ee92，准备R06 |
 | round-06 | 818ac8acb065182cfd90b090db42d322e605436e | 产品清场及独立复查通过 | 计划八项，仅前三项原完整回执PASS、后五未启动；0项已观察业务失败 | 未达标；运行期主工作区发生并行源码/HEAD漂移，原守卫在CSV前退出；准备问题单列，原64MiB保留，FTP恢复1/未知usage1 |
-| round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八命令各提交一次；TaskBoard/FTP/Asset完整首过3，CSV原任务运行、后四待原队列 | 进行中；FTP8MiB为用户授权新口径，不拼旧成绩，不称已达标 |
+| round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八命令各提交一次；TaskBoard/FTP/Asset完整首过3，CSV原UNKNOWN/测试失败1，Survey运行、后三待原队列 | 已未达标、其余原项目继续；CSV原生审批格式违约与保守UNKNOWN传播已匹配，持久诊断未开库；FTP8MiB授权，不拼旧成绩 |
 
 ## 失败原因与解决方案
 
@@ -698,3 +698,16 @@ known tokens deployment137694+approval1094584=1232278；139 logical IDs/139 phys
 known tokens deployment61853+approval709418=771271；77 logical IDs/77 physical(id,number)/77 raw，非成功physical/未知usage/纯生成恢复/number大于1/duplicate/conflict/unparsed均0，role-minus-physical0/0。另有SUBMISSION_REJECTED反馈raw8/unique call-feedback8，zeroObservedAbnormality=false，不称零异常；能力探测和额外操作未计，非完整账单。前三项合计known3015269、301 logical/physical、恢复及未知usage0、结构反馈28，仍非整轮或完整账单。
 
 目前完整首过3/8。原37576自动消费已提交队列的CSV：Maven28408（UTC21:01:10.417032）、rootf5b1dea5-a69a-4105-92fd-e94e3320ac02、app wtl-assisted-csv-inspector-cg6di3xqr、新state assisted-live-csv-inspector-cg6dg72i0，后四项待原队列。CSV启动前全冻结守卫通过，source65/policy02保持；不重发、不换版、不混旧轮。父宿主CIM确认25764/5844/28408当前身份准确，无用户进程信号或文件删除。当前活动轮原进程及独占r07t继续使用，整轮结束才统一核退/清理；保留r07源码、产物、状态、原始证据和旧失败/UNKNOWN。
+
+
+### R07 CSV原UNKNOWN导致整轮未达标，后续原项目继续
+
+原rootf5b1dea5-a69a-4105-92fd-e94e3320ac02、app wtl-assisted-csv-inspector-cg6di3xqr、新state assisted-live-csv-inspector-cg6dg72i0；原Maven28408实际exit1/wait完成，JUnit1fail/0error/skip、229.781秒。根任务在prepare阶段保留UNKNOWN/reconciliation，完整CSV业务、最终交付和cleanup均未完成；revision与cleanup exit没有回执，不编造或补零。原inspector eligibleAttempt=false、clean=false，原项目仅一次launch，不能恢复UNKNOWN、补部署或另跑业务来改首过。本轮完整首过仍3/8，但已未达标；八项分母不变。
+
+原log947-956最后APPROVAL生成SUCCEEDED，response finish=stop、仅正文APPROVE，未提交native submit_result；SUCCEEDED是生成传输/响应结果，不是有效审批或grant。冻结DeploymentAiJson157-158拒绝该格式，FixedCommandApproval166-171包装REVIEW_INVALID，BuildCommandChannel507的审批先于execute516；该确定分支在本次prepare命令授权和发送之前终止。异常经同步prepare链到GraphPublishRunner283-285通用catch，转REMOTE_UNCONFIRMED，再由TaskRuntime2433-2467/TaskLedger1141-1143保守记录UNKNOWN。原957的AI_TOOL_RESULT prepare早在815已出现，不是本次失败调用commit成功。此为原response标记与冻结源码分支匹配，exact持久诊断未开库独立核实，不据此宣称前序prepare/组件完全无远端效果。UNKNOWN断言后的drain/captureDenials重开库OverlappingFileLock属于次生收尾，不倒置为首因。
+
+历史分类为本轮新观察的模型原生提交违约，触发现有明确fail-closed保护；不是已证产品守卫缺陷。与R01 CHUNK/未知usage、R03 publication.inspect typed SSH窗口超时机制不同，没有确认旧故障复发；模型为何输出stop正文仍未知，旧SSH物理原因也不能借此称已修。现有RequiredReviewSubmissionTest92-104明确锁定stop正文一次调用/0grant/0dispatch；a4a367171e6d183f13d53c2ac4b81f05342f578f及旧HTTP400证据要求保留AUTO/LOW兼容和恰一次native校验，不能反向改回强制named tool_choice，也不能接受文本APPROVE或重试完整合法DENY。详见csv-inspector-first-01-failure-history-assessment-01.json及独立unknown-propagation-judgment-01.json。
+
+本次22 logical IDs/22 physical(id,number)/22 raw，generation outcome全SUCCEEDED；实际LANGUAGE7/独立APPROVAL15。known deployment33528+approval161553=195081，role-minus-physical0/0，已观察生成未知usage/纯生成恢复/结构反馈/duplicate/conflict/unparsed均0。原root仍UNKNOWN且zeroObservedAbnormality=false，绝不能据生成计数称整体无异常；未打印的人工高风险计数不填0。未计能力探测和额外操作，非完整账单。四份派生CreateNew，父回读关键门及四SHA，四份原raw前后hash一致；新UNKNOWN74文件仅filesystem元数据/字节SHA留存，未打开DB、复制、改写或重放，旧UNKNOWN不动。父宿主CIM确认原28408已退出，无强杀或用户进程信号。
+
+原37576已自动继续此前唯一队列的Survey：Maven18496（UTC21:05:09.572836）、root90eeed19-5dae-4490-8cae-7986e152271e、app wtl-assisted-survey-scoring-cj89dhszo、新state assisted-live-survey-scoring-cj89baz10，后三项待原队列；启动前65/policy02完整守卫通过，不因失败立即终止余项，也不在轮中换版。父仅另建nr29保留修复树/base65/branchcodex/assisted-native-feedback-20261029，已安排Sol在现有两次submit预算内评估审批格式纠正增强及本地反例；当前没有已完成或通过验证的增强，仍需保持AUTO、native schema、fresh exact grant、DENY、取消/route/UNKNOWN并记录额外物理生成。若实现验证完成，仅隔离本地提交，轮末后才审合入；不能把该增强称供应商违约、旧网络故障或原失败已修复，不能用新版本补本轮成绩。
