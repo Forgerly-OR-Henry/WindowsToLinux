@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active。R07已在独立保留工作树、冻结65f8dfd1及policy02下完成产品清场和独立复查，八项命令各提交一次，TaskBoard和FTP已完整首过，当前Asset Lending原任务运行，累计2/8，不重发队列。FTP本轮按用户授权使用8MiB，其余既定业务不减。R06前三项原完整回执PASS/后五未启，因并行主源码漂移整轮未达标；旧64MiB与新轮不拼接。R07准备盘点01的本地Files产物覆盖失败另记，已补齐并实际产品scan3/0，不称零异常。仅测试代码，无真实界面、浏览器或Computer Use。
+状态：目标active。R07已在独立保留工作树、冻结65f8dfd1及policy02下完成产品清场和独立复查，八项命令各提交一次，TaskBoard、FTP和Asset已完整首过，当前CSV原任务运行，累计3/8，不重发队列。FTP本轮按用户授权使用8MiB，其余既定业务不减。R06前三项原完整回执PASS/后五未启，因并行主源码漂移整轮未达标；旧64MiB与新轮不拼接。R07准备盘点01的本地Files产物覆盖失败另记，已补齐并实际产品scan3/0，不称零异常。仅测试代码，无真实界面、浏览器或Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -24,7 +24,7 @@
 | round-04 | f03ebfccf070c029f3fcaf124092906412f77449 | 原P01漂移拒绝保留，服务静止后完整清场及独立复查通过 | 八项各一次：首过7、FTP业务错误1 | 未达成；无内部生成恢复，预算修复已于轮末合入，准备R05 |
 | round-05 | abc7abd1fa8db25626854eece961ca43347913e8 | 首个清场执行和独立复查均通过 | 八项各一次：首过7、FTP业务失败1 | 未达成；无内部生成恢复，分阶段上传修复已轮末合入9259ee92，准备R06 |
 | round-06 | 818ac8acb065182cfd90b090db42d322e605436e | 产品清场及独立复查通过 | 计划八项，仅前三项原完整回执PASS、后五未启动；0项已观察业务失败 | 未达标；运行期主工作区发生并行源码/HEAD漂移，原守卫在CSV前退出；准备问题单列，原64MiB保留，FTP恢复1/未知usage1 |
-| round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八命令各提交一次；TaskBoard/FTP完整首过2，Asset原任务运行、后五待原队列 | 进行中；FTP8MiB为用户授权新口径，不拼旧成绩，不称已达标 |
+| round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八命令各提交一次；TaskBoard/FTP/Asset完整首过3，CSV原任务运行、后四待原队列 | 进行中；FTP8MiB为用户授权新口径，不拼旧成绩，不称已达标 |
 
 ## 失败原因与解决方案
 
@@ -687,3 +687,14 @@ UTC20:29原FTP已五笔完整下载8388608字节/SHA VERIFIED，顺序v1/v1/v2/v
 known tokens deployment137694+approval1094584=1232278；139 logical IDs/139 physical(id,number)/139 raw，非成功physical/未知usage/纯生成恢复链/number大于1/duplicate/conflict/unparsed均0，role-minus-physical0/0。结构SUBMISSION_REJECTED反馈raw8/unique call-feedback8，zeroObservedAbnormality=false，非零异常；不含能力探测/额外操作，非完整账单。原LANGUAGE31与独立APPROVAL108另记，requiredApprovals0为人工高风险计数，不是独立模型审批缺失。前两项合计known2243998、224 logical/physical、恢复及未知usage0、结构反馈20；不是整轮或完整账单。
 
 目前完整首过2/8。原37576已继续Asset：Maven36704（UTC20:35:05.083434）、rootaf0a624b-ba3e-42ba-8b6e-d8ef3f953ba8、app wtl-assisted-asset-lending-bw74k4s0n、新state assisted-live-asset-lending-bw74hsy70部署中，后五仍原队列。source65/policy02未变、Asset启动前全冻结守卫通过，不换版、不重发；本轮未达成最终八项目标。
+
+
+### R07 Asset完整首次通过，累计3/8
+
+原rootaf0a624b-ba3e-42ba-8b6e-d8ef3f953ba8，app wtl-assisted-asset-lending-bw74k4s0n，新state assisted-live-asset-lending-bw74hsy70，应用revisioncbaabc15717d8cc3cdc64d9398e041abbdc787894020afcaedfe579a753abe15。原JUnit1/0失败错误跳过、1443.007秒，Maven36704实际0；额外产品cleanup原JSON PID13140实际0，STOPPED/DISABLED，交付身份与使用方式齐备。原inspector eligibleAttempt及cleanExecutionWithoutInternalRetry均true，原root唯一SUCCEEDED、整项目仅一次launch，无原UNKNOWN恢复。父回读三份CreateNew派生关键判据与SHA，另独立核两原退出JSON、JUnit及清理marker，宿主CIM确认两原PID不存在；全部七份原raw前后SHA一致。cleanup PID以原JSON为准，不采用终端VT重绘数字。
+
+既定业务为单类别/单资产/单借用的submit→approve→checkout→return(good)→closed，原产品重启后closed持久化；证据来自冻结源码、原成功JUnit断言链和完整业务marker，单独HTTP响应体未导出，不称全部10000资产矩阵。独立模型LANGUAGE21/APPROVAL56，requiredApprovals0仍仅人工高风险计数，业务借用approve亦与模型审批不同。launch绑定冻结65/policy02，实际XML的LOW-LOW/1500000/65536/90等参数与原launch匹配，不改原冻结输入。
+
+known tokens deployment61853+approval709418=771271；77 logical IDs/77 physical(id,number)/77 raw，非成功physical/未知usage/纯生成恢复/number大于1/duplicate/conflict/unparsed均0，role-minus-physical0/0。另有SUBMISSION_REJECTED反馈raw8/unique call-feedback8，zeroObservedAbnormality=false，不称零异常；能力探测和额外操作未计，非完整账单。前三项合计known3015269、301 logical/physical、恢复及未知usage0、结构反馈28，仍非整轮或完整账单。
+
+目前完整首过3/8。原37576自动消费已提交队列的CSV：Maven28408（UTC21:01:10.417032）、rootf5b1dea5-a69a-4105-92fd-e94e3320ac02、app wtl-assisted-csv-inspector-cg6di3xqr、新state assisted-live-csv-inspector-cg6dg72i0，后四项待原队列。CSV启动前全冻结守卫通过，source65/policy02保持；不重发、不换版、不混旧轮。父宿主CIM确认25764/5844/28408当前身份准确，无用户进程信号或文件删除。当前活动轮原进程及独占r07t继续使用，整轮结束才统一核退/清理；保留r07源码、产物、状态、原始证据和旧失败/UNKNOWN。
