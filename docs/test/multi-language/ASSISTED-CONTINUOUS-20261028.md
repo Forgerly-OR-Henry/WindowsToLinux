@@ -711,3 +711,16 @@ known tokens deployment61853+approval709418=771271；77 logical IDs/77 physical(
 本次22 logical IDs/22 physical(id,number)/22 raw，generation outcome全SUCCEEDED；实际LANGUAGE7/独立APPROVAL15。known deployment33528+approval161553=195081，role-minus-physical0/0，已观察生成未知usage/纯生成恢复/结构反馈/duplicate/conflict/unparsed均0。原root仍UNKNOWN且zeroObservedAbnormality=false，绝不能据生成计数称整体无异常；未打印的人工高风险计数不填0。未计能力探测和额外操作，非完整账单。四份派生CreateNew，父回读关键门及四SHA，四份原raw前后hash一致；新UNKNOWN74文件仅filesystem元数据/字节SHA留存，未打开DB、复制、改写或重放，旧UNKNOWN不动。父宿主CIM确认原28408已退出，无强杀或用户进程信号。
 
 原37576已自动继续此前唯一队列的Survey：Maven18496（UTC21:05:09.572836）、root90eeed19-5dae-4490-8cae-7986e152271e、app wtl-assisted-survey-scoring-cj89dhszo、新state assisted-live-survey-scoring-cj89baz10，后三项待原队列；启动前65/policy02完整守卫通过，不因失败立即终止余项，也不在轮中换版。父仅另建nr29保留修复树/base65/branchcodex/assisted-native-feedback-20261029，已安排Sol在现有两次submit预算内评估审批格式纠正增强及本地反例；当前没有已完成或通过验证的增强，仍需保持AUTO、native schema、fresh exact grant、DENY、取消/route/UNKNOWN并记录额外物理生成。若实现验证完成，仅隔离本地提交，轮末后才审合入；不能把该增强称供应商违约、旧网络故障或原失败已修复，不能用新版本补本轮成绩。
+
+
+### R07后续隔离候选：原生格式有界纠正已本地提交，活动轮仍不换版
+
+nr29保留树/branchcodex/assisted-native-feedback-20261029/base65已本地提交ff83bda9820b45794b45f47d8e1f4ddb37add546，共7文件（1生产/5测试/1验证文档），工作树clean、未推送或合入main/r07。仅审批第一次完整stop且无nativecall时增加固定当前请求格式提示，与既有坏native形状纠正共享两次submit预算；不伪造无ID的tool_result、不接受文本APPROVE、不改AUTO/LOW/native schema、合法DENY/UNKNOWN/取消/route/fresh grant。该增强在当前命令授权/dispatch之前，仍需有效原生决策才能取得原精确许可；两次是能力提交上限，不是含既有transport recovery的物理HTTP上限。共享APPROVAL调用可能影响多个项目，下一轮仍完整八项，不能用它修补R07原UNKNOWN或拼成绩。
+
+本地TDD原red01为23项/4failure+4error/实际1；green01为58项/3failure+2error/实际1。仅失败5方法切回原AiJson作基线：旧stop单次断言原实现通过，按本增强两次上限适配；另4项原实现同样失败，其中陈旧8192断言与37039后随包65536不符，仅改测试核当前配置，未改实际预算。其余三个CurrentSource前置拒绝原用例继续保留未解决，未修改生产保护/夹具，不能声称整个类或58项全通过。随后直接改动组green02 31项0失败错误跳过/真实wait0；没有重跑全suite。
+
+增量审查P-NATIVE-LOG-01发现新增投影误把正常返回等同保存成功，正例double也返回null：这是本次辅助观测/覆盖盲点，非正式八项目故障或供应商根因。原review02和green02回执均保留，仅给日志返回值新增DATABASE/无problem/未truncated门槛；NOT_SAVED、EMERGENCY_FILE、problem、truncated、null输出固定COVERAGE_GAP。green03只重跑受影响Monitoring7项0失败错误跳过/真实wait0；Astra-review03按最终两fixture SHA确认关闭该阻断，无新增阻断。产品纠正事件及stdout仅固定字段和task/correction UUID，无任意模型正文或错误内容；日志抛异常时诊断覆盖仍可能未知。
+
+未来格式纠正应合并成功marker和GAP raw行，按(task,correction)并集去重、另列持久化缺口；UUID不是SDK generation重试身份。原两次模型请求和物理usage分别保留，缺marker或旧R07 parser缺字段不证明零纠正。不能把本地受控native响应当真实provider已改好。类路径初次空段相对audit cwd误读及临时清单拼写失败单列更正；最终实际XML55段/54非空/1空，非空项全部nr29或公共缓存，空项按真实test user.dir nr29/src/mod/deployment解释，非main target泄漏，不把辅助错误计入八项分母。
+
+父回读隔离提交七文件范围、验证MD/最终清单/进程/commit四SHA、六实际输入源SHA，核green02/03原XML和实际wait0；Astra03受审末SHA不变。父独立宿主CIM确认五个自有Maven包装及nr29 cmd/java/python签名均不存在，不停止R07原任务，无需删除的自有辅助临时目录；raw/基线/targets为证据保留。验证说明在nr29/docs/test/multi-language/ASSISTED-NATIVE-SUBMISSION-FEEDBACK-20261029.md；R07/native-submission-enhancement-parent-review-01.json与native-enhancement-parent-process-01.json为父审。活动R07 source65/policy6fd3及CSV原raw未变，仍完整首过3/8且整轮未达标；Survey原队列已进入业务阶段，后三项继续，不重发。原provider违约诱因及旧SSH物理原因未因此查明或修复。
