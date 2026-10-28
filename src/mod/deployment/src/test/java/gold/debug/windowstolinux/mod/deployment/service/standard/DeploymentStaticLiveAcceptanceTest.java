@@ -10021,14 +10021,25 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         }
     }
 
+    /** Chunk ACK reads retain the service's 30s window plus fixed return margin, not a total request deadline. */
+    private static int responseReadTimeoutMillis(java.net.URI endpoint, String method) {
+        if (!method.equals("PUT")) return 20000;
+        var chunk = java.util.regex.Pattern.compile("/api/uploads/[0-9a-f]{32}/chunks/(0|[1-9][0-9]{0,15})")
+            .matcher(endpoint.getRawPath());
+        return chunk.matches() && Long.parseLong(chunk.group(1)) <= 9007199254740991L ? 40000 : 20000;
+    }
+
     private static byte[] http(String url, String method, byte[] body, String type, int expectedStatus,
                                FileTransferChunkTrace trace) throws Exception {
-        var connection = (java.net.HttpURLConnection) java.net.URI.create(url).toURL().openConnection(java.net.Proxy.NO_PROXY);
+        var endpoint = java.net.URI.create(url);
+        var connection = (java.net.HttpURLConnection) endpoint.toURL().openConnection(java.net.Proxy.NO_PROXY);
         connection.setConnectTimeout(10000);
-        connection.setReadTimeout(20000);
+        int readTimeoutMillis = responseReadTimeoutMillis(endpoint, method);
+        connection.setReadTimeout(readTimeoutMillis);
         connection.setRequestMethod(method);
         long started = trace == null ? 0 : System.nanoTime();
         long phaseStarted = started;
+        long responseStarted = 0;
         String phase = "OUTPUT_OPEN";
         try {
             if (body != null) {
@@ -10056,8 +10067,9 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             if (trace != null) {
                 phase = "RESPONSE_WAIT";
                 phaseStarted = System.nanoTime();
-                trace.emit("RESPONSE_WAIT_BEGIN", started, phaseStarted, "");
+                trace.emit("RESPONSE_WAIT_BEGIN", started, phaseStarted, " responseReadTimeoutMillis=" + readTimeoutMillis);
             }
+            responseStarted = System.nanoTime();
             int status = connection.getResponseCode();
             if (trace != null) {
                 trace.emit("RESPONSE_HEADERS_RECEIVED", started, phaseStarted, " status=" + status);
@@ -10070,11 +10082,19 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             }
             if (trace != null)
                 trace.emit("RESPONSE_BODY_READ", started, phaseStarted, " responseBytes=" + response.length);
+            if (readTimeoutMillis == 40000)
+                System.out.println("FILE_TRANSFER_CHUNK_RESPONSE readTimeoutMillis=" + readTimeoutMillis
+                    + " timeoutMeaning=PER_READ_WAIT_NOT_TOTAL_DEADLINE status=" + status + " responseBytes=" + response.length
+                    + " responseElapsedMillis=" + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - responseStarted));
             assertTrue(expectedStatus == 0 ? status >= 200 && status < 300 : status == expectedStatus,
                 () -> url + " status=" + status + " expected=" + (expectedStatus == 0 ? "2xx" : expectedStatus)
                     + " body=" + new String(response, java.nio.charset.StandardCharsets.UTF_8));
             return response;
         } catch (java.io.IOException failure) {
+            if (readTimeoutMillis == 40000)
+                System.out.println("FILE_TRANSFER_CHUNK_RESPONSE readTimeoutMillis=" + readTimeoutMillis
+                    + " timeoutMeaning=PER_READ_WAIT_NOT_TOTAL_DEADLINE exceptionType=" + failure.getClass().getSimpleName()
+                    + " responseElapsedMillis=" + (responseStarted == 0 ? -1 : TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - responseStarted)));
             if (trace != null) trace.emit("IO_EXCEPTION", started, phaseStarted,
                 " phase=" + phase + " exceptionType=" + failure.getClass().getSimpleName());
             throw failure;
