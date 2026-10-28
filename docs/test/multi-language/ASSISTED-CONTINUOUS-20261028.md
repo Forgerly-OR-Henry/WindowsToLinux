@@ -11,6 +11,7 @@
 | round-01 | 5f1f66119cfd20dcdfdc6e424f7ea7a0f178baa3 | 清场执行及独立复查通过 | 八项各一次：首过4、失败/UNKNOWN4 | 未达成；保留失败，修复已合入，新轮另记 |
 | round-02 | d5257d7ff4cecec8f2c75e31b92308c5743743e9 | 产品清场及独立复查通过 | 八项各一次：首过7、失败/UNKNOWN1 | 未达成；CSV内部恢复1，额外strict=false；FTP修订已合入 |
 | round-03 | 37ecb0c1b0bc21dfbf0f40622b2bfdd94e48f537 | 预检P01失败，维护后完整清场及独立复查通过 | 八项各一次：首过4、失败/UNKNOWN4 | 未达成；四项失败保留，三项改动轮末合入，准备R04 |
+| round-04 | f03ebfccf070c029f3fcaf124092906412f77449 | 原P01漂移拒绝保留，服务静止后完整清场及独立复查通过 | 八项各一次：首过7、FTP业务错误1 | 未达成；无内部生成恢复，预算修复已于轮末合入，准备R05 |
 
 ## 失败原因与解决方案
 
@@ -19,16 +20,20 @@
 | 记录 | 阶段与现象 | 确认原因与未知项 | 解决方案 | 复验结果 |
 | --- | --- | --- | --- | --- |
 | round-01/P01 | 连接预检被固定指纹守卫拒绝；connection-01退出1，SSH_TRUST_CANCELLED，无远端清理或部署 | 当前端点返回的SSH密钥与历史预期不同；密钥变化原因未知。不是已证实的产品部署缺陷 | 用户明确确认目标及新指纹后，建立新隔离连接状态并固定获准指纹，继续产品认证；保留旧指纹拒绝证据 | connection-02用最新图片凭据产品认证成功、退出0；该预检阶段无部署尝试 |
-| round-01/F01 | FTP部署成功，业务backend STOP任务UNKNOWN | 当前首次派发前过早登记attempted，独立审批将其误认为历史未确认重放 | 在APP及fresh grant后、同一请求execute前，通过现有guard进行attempted CAS；旧UNKNOWN不重放 | 提交7eb991c8，22个不同定点最终通过；R02构建拒绝、R03上传超时均未到选定STOP，完整业务待R04 |
+| round-01/F01 | FTP部署成功，业务backend STOP任务UNKNOWN | 当前首次派发前过早登记attempted，独立审批将其误认为历史未确认重放 | 在APP及fresh grant后、同一请求execute前，通过现有guard进行attempted CAS；旧UNKNOWN不重放 | 提交7eb991c8，22个不同定点最终通过；R02构建拒绝、R03首上传超时、R04第二版本上传超时均未到选定STOP，完整业务待后续新轮 |
 | round-01/F02 | Asset Lending审批HTTP_CHUNK_INCOMPLETE、accepted0，原任务UNKNOWN | 外部断流具体位置未知；ASSISTED调用者未选择平台已有恢复能力 | 显式选择现有有界纯生成恢复；保留原Problem、尝试历史及未知usage，禁止业务重放 | 部分正文CHUNK本地恢复通过；R02原任务完整首过但未触断流；零正文CHUNK忠实注入未验证 |
 | round-01/F03 | CSV Inspector审批HTTP_CHUNK_INCOMPLETE、accepted4083，原任务UNKNOWN | 与F02同类传输错误，外部是否同因未知 | 同F02；不将原UNKNOWN改写为成功 | R02同一原任务内真实CHUNK恢复后完整首过；accepted字节数未知，旧失败保留 |
 | round-01/F04 | Log Analyzer原部署UNKNOWN，无完整业务验收 | 独立审批完整DENY补装命令；标准准备跳过SYSTEM_COMPILER，未自动补native前置工具；不是断流 | 实际缺口时一次受控NATIVE_BUILD准备、严格receipt及fresh probe；完整source/当前scope/APP和fresh grant保留 | 7a321fa1及61相关定点；R02新native准备→fresh probe/Matcher→build→完整CLI首次通过，旧UNKNOWN保留 |
 | round-02/F01 | FTP原部署在构建前完整DENY后UNKNOWN，无下载业务 | 审批将Agent参数布局误套标准build-run，判断与源码不符；审阅说明仅显式列Agent布局，可能促成混淆 | 补清标准/Agent布局及已校验请求的有序参数事实，保留完整审核和绑定，不改实际argv/重试DENY | 提交117a01cb，12定点通过；R03原部署SUC、已跨拒绝点，完整FTP业务因上传超时仍未过 |
 | round-03/P01 | 清场inventory因受管根中挂载而拒绝，项目尚0启动 | R02 FTP UNKNOWN保留候选ext4 loop卷；reset在stop之前拒绝含挂载根，守卫有效 | 新维护任务调用完整校验的既有candidate-cleanup，正常卸载/分离，再执行完整清场与独立复查 | 维护exit0/CANDIDATE_CLEANED=1；后续reset及独立after通过，原UNKNOWN保留 |
-| round-03/F01 | TaskBoard最后工具链bind完整DENY后UNKNOWN | 审批以backend JAVA要求审查NODE/PYTHON绑定；bind缺当前组件计划锚点，跨组件混淆为源码链支持的工程判断 | 精确绑定当前typed计划、canonical实际准备回执与命令；两准备路径捕获原计划observer，保留全图和独立审批 | eb21655e、38去重定点有适用通过证据；轮末合入，新轮实机待验证 |
+| round-03/F01 | TaskBoard最后工具链bind完整DENY后UNKNOWN | 审批以backend JAVA要求审查NODE/PYTHON绑定；bind缺当前组件计划锚点，跨组件混淆为源码链支持的工程判断 | 精确绑定当前typed计划、canonical实际准备回执与命令；两准备路径捕获原计划observer，保留全图和独立审批 | eb21655e、38去重定点有适用通过证据；R04新原任务跨绑定点并完整首过，旧UNKNOWN保留 |
 | round-03/F02 | FTP部署SUC，首1MiB上传响应20秒超时，无完整业务 | Node/Go约30秒仅读入213808字节，读耗时远大于写；具体网络/client/Node原因未知 | 保留原失败及窄窗口证据；新增被动流控/有界进度诊断，不改负载/期限 | 3a1f3f05、12相关场景适用通过；仅诊断增强，根因未定，额外下载夹具失败保留 |
-| round-03/F03 | CSV publication.inspect SSH输入等待20秒超时，原UNKNOWN | 通道已开、输入线程等远端窗口；具体SDK/链路/远端原因未知，日志遗漏SDK已有结构字段 | 补严格typed安全日志白名单及正反例，不改SDK/期限/权限/重试 | e587ead1、3方法修后全过，原红证据保留；诊断改善，具体根因未解 |
-| round-03/F04 | Survey prepare完整DENY后UNKNOWN | 拒绝理由与既有fd桥接合同不符；源码/挂载链无已证矛盾，末次APP全文未独立导出 | 真只读审计并核既有桥接/合同/挂载，不复制已有说明、不强制APP、不重试DENY；新轮另证 | 原3文件前后及最终审计全同、诊断exit0；未发现可证新代码缺陷，不声称根治模型误判 |
+| round-03/F03 | CSV publication.inspect SSH输入等待20秒超时，原UNKNOWN | 通道已开、输入线程等远端窗口；具体SDK/链路/远端原因未知，日志遗漏SDK已有结构字段 | 补严格typed安全日志白名单及正反例，不改SDK/期限/权限/重试 | e587ead1、3方法修后全过；R04新原任务完整首过且未复现SSH UNKNOWN，原红及未知根因保留，不称根治 |
+| round-03/F04 | Survey prepare完整DENY后UNKNOWN | 拒绝理由与既有fd桥接合同不符；源码/挂载链无已证矛盾，末次APP全文未独立导出 | 真只读审计并核既有桥接/合同/挂载，不复制已有说明、不强制APP、不重试DENY；新轮另证 | 原3文件审计全同、诊断exit0；R04新原任务完整首过，未发现可证新缺陷，不声称根治误判 |
+| round-04/P01 | 清场apply在删除前因PLAN_DRIFT_OR_TAMPERING拒绝，项目0启动 | 仅受管数据树SHA变化，原CSV服务仍active；不能唯一指认写入文件或函数 | 新维护任务严格核已选unit身份后正常停止，服务静止后重新plan/apply及独立after，不改漂移守卫 | reset02及独立after通过；原失败apply01保留，部署八项均在清场验证后才启动 |
+| round-04/F01 | FTP部署SUC、首64MiB下载校验通过，第二版chunk49等待响应20秒后超时 | Go读满1MiB约25.1秒、暂存写11.1毫秒，随后取消并在元数据前返回400；恢复的FLOW未见Node背压队列/长tick，进入Node前的具体慢供给原因未定 | 保留原失败及收尾，不重发分块；修正只读日志采集遗漏，独立评估20秒客户端/30秒服务端预算边界，后续6项照原队列 | JUnit1/0失败/1错误/0跳过，2830.854秒，Maven1；不能计完整首过，未声称网络已修 |
+| round-04/D01 | 辅助采集输出中没有目标FLOW，初始采集器未报告拒绝 | journalctl JSON默认将超过4096字节字段置null，采集器跳过非字符串；不是已证旧包或journald分段 | 新label采集仅加--all，保留2MiB/30秒/typed隐私边界和旧原证据 | 完整7393字节目标FLOW恢复，LINE_BREAK缺省、无重组；25ticks/16保留/观察失败0，未改原业务结果 |
+| round-04/D02 | 预算修复的新受控peer在预中断close时未终止executor，本地红例1失败 | finished.await抛中断时位于清理finally之外，跳过stop/shutdown/join | 独立追加提交fc95d8e9，将owned资源收尾放入finally、有限窗口等待、保留并重抛中断；红例用独立fallback确保不留进程 | 修后13个直接相关场景通过，含ACK/SILENT两个中断反例；辅助fixture问题，不增加远端部署失败分母 |
 
 自动审批曾拒绝“固定未经用户确认的新指纹后继续清理和部署”，该命令未执行。随后用户明确确认目标及具体新指纹，才继续产品认证和后续操作；没有绕过指纹检查。
 
@@ -291,3 +296,128 @@ driver83083/Python35772正常quit并实际exit0，RUNNER_EXIT已观察；采样�
 所有8项终止且自有进程退出后，主仓才从37ecb0c1快进e587ead1，合入eb21655e组件绑定证据、3a1f3f05上传被动诊断、e587ead1安全SSH字段日志；源码与配套测试已分别本地提交，未推送，论文既有修改保留。后两项仅诊断改善、FTP/CSV具体根因仍未定；Survey未发现可证新代码缺陷，完整DENY未重试。本轮4/8不能与旧轮PASS拼接。
 
 第四轮脚本仅准备，下一步提交本轮报告、重建实际CLASS/Mod输出，清理已确认受管候选卷（如存在）后完整plan/apply/独立after，在新冻结版本开始八项首次测试。当前目标仍active。
+
+
+## round-04 准备与冻结
+
+冻结版本f03ebfccf070c029f3fcaf124092906412f77449（R03报告提交，包含三项已验证代码/诊断提交）。仅选择清部署classes/test-classes并保留其它target截图/旧证据后，skipTests实际打包通过、19.555秒、Maven0；verify_outputs.py核实际JAR/CLASS的PreparedBinding/带原计划observer重载、typed日志测试CLASS、Node源SHA、共享资源/descriptor与55项classpath。此步骤未执行Node tsc/npm production build，真实项目构建在本轮另证。
+
+driver9847/Python43724已启动，使用原获准Dyq指纹和加密隔离凭据。新只读维护任务核明仅两受管挂载，对应R03 CSV原日志记录的analyzer/web候选，loop back-file逐项一致；新清场维护task50ee063a-a8b6-4a88-9ab0-be12538156b1通过现有verifiedCommand固定两个candidate-cleanup，返回SUC/exit0/未截断及两CANDIDATE_CLEANED，JVM自然退出0。原UNKNOWN库/日志保留，没有重发原prepare/build/部署或业务，未放宽挂载守卫。相关原mount-observation、expected-retained-candidates、mount-cleanup回执保留。
+
+随后host-before-01开始产品盘点；八项目尚0启动，完整plan/apply及独立after通过前不排项目。模型/LOW/已知Token阈值/输出上限/90分钟等待与原FTP两64MiB版本、1MiB chunks及五次完整下载等负载保持。目标仍active。
+
+
+### round-04/P01：清场计划漂移，受管服务静止后重计划
+
+inventory01和plan01均JUnit1/exit0；planSHA032842cdcc7af5ab147905e0f31a1e0ce7dc3248e7fb7404d31fc78b256ecd56，5存在根/10units/11unitFiles/9账户/40开发包。apply01返回PLAN_DRIFT_OR_TAMPERING、phase apt-simulation、Maven1。源码在current=plan/canonical比较后才开始stop/disable/delete/purge，因此此次拒绝没有这些清理效果；八项目0启动，原回执保留为预检失败。
+
+新plan02通过，SHA27ba3c046ab1d38bdcb370a5ff0650194c9ff3fdd04e5ccc00e00ad4ec0e8139。与01逐字段比较仅/var/opt/windowstolinux数据树treeSha256变化，服务定义/账户/包清单等不变；plan02记录CSV两个服务仍active/running。这支持先使受管服务静止再取清场快照，不唯一指认某文件或后台写入函数。plan-drift-comparison-01.json保留原差异。
+
+父以新产品SDK清场维护任务，对plan02十个精确主unit定义核完整stat、root ownership、无symlink、权限、FragmentPath后，正常systemctl stop；逐项核MainPID0、inactive/failed及已知cgroup无进程。host-quiesce-01返回ok、exit0，维护JVM自然退出0；仅停止已选受管服务，保留SSH/系统服务，原部署UNKNOWN没有重放。随后plan03重新取快照，仍须完整apply和独立after通过后才开始八项目；不放宽计划漂移守卫或原业务参数。
+
+R04服务静止后的plan03 SHA880101eb531034415293de3e7c394a355cf839ceb2ab869af297d3e5175a96d6，host-reset02通过：停止10unit、删除10定义文件/9账户/5根、卸载40开发包并清缓存。独立host-after01亦JUnit1/exit0，与postInventory精确一致，受管根/服务/账户/目标包/缓存为空，initial-clean-verification-01.json和固定核查器通过；原P01失败保留。八项在此后才启动，源码f03及参数全轮冻结。
+
+R04 TaskBoard的R03绑定拒绝点已有新任务阶段性实机证据：NODE24.22.1、PYTHON3.12.16准备receipt分别在1391/1407行，第二TOOLCHAIN_BINDING afc549762756545fb20c7be61d1235716f3eb8a8e48585b855d13f084f989504在1424行，三者均紧邻SDK SUCCEEDED/exit0/不截断；随后fresh probe、capacity、create/query/upload/verify及build.run已推进。原Java21绑定是更早独立窗口。component-binding-runtime-proof01.json保存父核原行；actualcomponent/完整APP输入未独立打印，不把该阶段证据当原root或完整业务首过。
+
+### round-04 TaskBoard首次完整通过
+
+原root1b4745cb-0eda-4c85-b3ca-d23b2d27c594，应用wtl-assisted-task-board-g5spx4i9c，隔离库assisted-live-task-board-g5spvbtms，修订6f19aa6ec5c7700d3bcf46027ec864bf2179bdfee2d0912a8fb9643dc50c12c5。JUnit1/0失败/0错误/0跳过、1855.269秒、Maven0；完整业务/重启持久化/交付和额外cleanup0、STOPPED/DISABLED齐备，eligible和extra strict均true。known tokens1005309，91唯一generation IDs/91物理事件，未知usage0；能力探测/额外操作仍不含。R03绑定拒绝点及后续完整流程在同一新原任务中通过，旧UNKNOWN未重放/改写；累计本轮1/8完整首过，FTP及余项继续。
+
+### round-04 FTP业务进行中：首个完整下载已校验
+
+原部署root27c4593e-8cd8-4c5c-ad8e-dfb2663b076e已SUCCEEDED，应用wtl-assisted-file-transfer-gv132ubro、隔离库assisted-live-file-transfer-gv1311ng8。原两64MiB版本、1MiB分块和五次完整下载等负载保持。第一版64块均HTTP200，16块后的受管重启恢复、重复/冲突拒绝及10并发complete一致性断言已越过；首个下载version32de86f9370670397f4b7fd4d67211d9实际BODY_RETURNED/VERIFIED，67108864字节、SHA一致、1020301毫秒。第二版开始上传，尚不能计FTP完整首过。
+
+首下载长读期间，一次本地jcmd只读诊断核准自有JVM40316及创建时间，线程在原assertFileTransferDownload→readAllBytes→SocketInputStream.read，jcmd退出0。一次新产品维护taskd2ead748-73af-4dd6-8697-b784b1288b29通过固定获准指纹和fresh grant，只读当前两unit的窄窗口原诊断及socket计数；SDK SUCCEEDED/exit0/未截断，JVM3240自然退出0。没有新增HTTP、取消/重发原请求或改变服务/配置。ftp-download-local-thread01、ftp-download-journal01及ftp-long-download-source-review01保存证据和限制。
+
+Node该version的3条原记录为UPSTREAM_HEADERS/UPSTREAM_END/DOWNSTREAM_FINISH，upstreamDataBytes67108864、upstreamComplete=true、writableFinished=true；Node自身elapsed820548.276毫秒、paused820452.267毫秒。此为下游背压/进程缓冲观察，不能代替Java接收证明或唯一归因网络/客户端/Node；两端时钟未独立同步核验，不直接对齐UTC推断因果。socket快照采集时已进入后续上传，不能作为此前下载进度。最终字节/SHA以Java实际VERIFIED为准。
+
+源码核查确认Java20秒是read等待限制，Node成功下载关闭代理timeout、Go清WriteDeadline；Java helper没有自身整次下载deadline或途中计数，故长读本身不足以判定卡死。此为验收可观测/有界性限制，未修改本轮冻结期限，也未宣称已修底层变慢原因。本地tsc依赖缺失，未在传输期间安装；后续对原远端完整构建输出解码已核npm/tsc/build.mjs成功，见下段，不再重复安装本地依赖。
+
+### round-04/F01：FTP第二版本分块响应超时
+
+上述同一原任务的第二upload7935e5ba252a125a734705dd484beb68、chunkIndex49（第50块）于Java UTC04:19:13.286805Z在RESPONSE_WAIT报SocketTimeoutException，total20010毫秒；本地BODY_WRITE_RETURNED为0毫秒并不证明服务端收齐。JUnit1/0失败/1错误/0跳过、2830.854秒、Maven1，无完整业务PASS或delivery。原deploy为SUCCEEDED、无retained uncertainty或内部生成恢复，不能误记成原root UNKNOWN。known tokens795907（部署114547/审批681360），87唯一generation IDs/87物理事件/未知usage0；能力探测及额外操作仍不含。原finally在4004行记录stopped/disabled，但没有完整交付及额外成功cleanup门槛，eligible/extra strict均false。
+
+原Maven结束后，新只读产品维护task1fae64b0-12b0-4312-919e-0e98f29e6435、隔离state static-live-maintenance-hx2h1wdcs通过获准指纹与fresh grant，只采集两已知unit的04:18:30–04:20:00 UTC日志。SDK SUCCEEDED/exit0/未截断，JVM37472自然退出0；没有HTTP重发、服务操作或原UNKNOWN重放。ftp-failed-chunk-journal01及脚本SHA/launch/exit保留，collectionComplete=true仅表示既定有界采集和校验完成，不证明所有应用事件已被输出/保留。
+
+Go原BODY_COPY_END实读/写staging均1048576字节、417次；sourceReadCallMillis25090.701、stagingWriteCallMillis11.109、整体BODY_COPY_END25105.621毫秒。锁/查询/创建均不足1毫秒；sync约4.2毫秒后contextCancelled=true，CHUNK_RETURN为files.businessError、HTTP400，没有后续元数据/rename/commit成功证据。Node约25109.236毫秒才REQUEST_END、完整body1048576；约25111.330毫秒先观察DOWNSTREAM_CLOSE_INCOMPLETE，随后ECONNRESET。不能把后者当最初慢传原因，也不把暂存完整写入当已提交分块。
+
+主要耗时在读取而非暂存写入。初次采集尚无可信FLOW ring，不能仅以filtered FLOW为0断言原journal没有该前缀或远端必为旧包。只读源码追踪已确认harness实时copyFixture并重新snapshot/tar，R04 web archive与R02/R03不同，未发现预制zip入口；后续恢复FLOW的结果见下文。不为通过测试延长本轮期限或增加重试，Asset及其余五项按原队列继续冻结版本。
+
+父进一步独立核原log1601的NPM WTL_BUILD_REPORT：相邻SDK SUCCEEDED/exit0/不截断，报告EXIT0、HEAD=TAIL完整829字节且SHA匹配6a4a17b3017d29f1ef988d3fcfe2cde11a0b6e2ec563e1f8c370f80d4b061fd7。完整stdout包含精确`tsc -p tsconfig.server.json && tsc -p tsconfig.client.json && node build.mjs`和ARTIFACT package.json，证明原远端npm/TypeScript生产构建实际成功，ftp-node-build-runtime-proof01.json保留检查项与原日志SHA。不把此提升为运行中server成员字节已独立比对或FTP业务已通过；也不重复安装本地依赖作为无新增问题的验证。
+
+### round-04/D01：日志JSON长字段采集遗漏及修正
+
+新只读分段分类task eef90dca-740a-4172-afe4-62c47b0afe83（JVM12000自然退出0）发现同窗口2条MESSAGE非字符串、只保留1条较短FLOW；未发现可用于拼接的目标分段。[systemd官方journalctl文档](https://www.freedesktop.org/software/systemd/man/latest/journalctl.html#json)说明，JSON输出默认将超过4096字节的字段编码为null，--all可关闭此显示限制。此为采集命令的格式化边界，不能误认成日志源缺失。
+
+父保留旧脚本和原输出，新label只加--all，仍固定同web unit及90秒窗口、2MiB硬上限/30秒及严格typed隐私校验。新维护task ba273092-d5fd-429b-8340-ed2733584bad（state static-live-maintenance-i73nlqrws、JVM46388自然退出0）返回SDK SUCCEEDED/exit0/未截断；ftp-flow-full-fields01.json恢复目标同requestId的7393字节完整FLOW，LINE_BREAK缺省、无需分段重组，非文本/invalid均0。原分段假设没有作为已证事实保留；运行中新诊断已实际输出，但未做全部发布成员字节比对。
+
+目标FLOW：25次采样、保留首个+最近15个、丢弃9个、观察异常0。全部保留sample及final均pause/drain=0、pausedMillis0，request flowing=true/paused=false/readableLength0、proxy writableLength0/needDrain=false；保留sample的tickGap约999.690–1001.400毫秒。Node自身elapsed20009.972毫秒仅累计474944字节，最终25109.346毫秒1048576字节。ftp-flow-parent-proof01.json核同原Node requestId、原JSON SHA及检查项。
+
+这排除了已观测时点的Node背压排队和长事件循环停顿，更支持慢在进入Node前的供给；不能唯一指认客户端OS、链路节点或网络运营商，也不能把9个丢弃sample填为已知。没有重发原HTTP或放宽本轮期限。客户端20秒等待与服务端30秒读取预算是否失配，另作源码和受控验证判断，不宣称外部慢传已根治。
+
+### round-04 Asset Lending首次完整通过
+
+原rootf6bbfefe-7a53-4705-8424-e75accaa1958，应用wtl-assisted-asset-lending-hv8g9n0n8，隔离库assisted-live-asset-lending-hv8g7w1to，修订734c9e92d40ea0461bcf665cc1ca050275c2b2afb03eaed31c82c39ee40f3c6c。JUnit1/0失败/0错误/0跳过、1279.005秒、Maven0；完整业务、交付和额外cleanup0均通过，最终STOPPED/DISABLED。known tokens759681、80唯一generation IDs/80物理事件；能力探测和额外操作不含。父已生成原assessment，累计本轮2完整首过+1失败；CSV及其余四项继续按原队列首次执行。
+
+### round-04/F01的后续隔离修复方向
+
+Astra仅针对客户端预算的具体判断已保存ftp-timeout-budget-assessment01：浏览器上传没有应用层20秒自动期限、业务文档没有20秒ACK SLA，而Go/Node保留约30秒服务端保护；本例存在25.1秒完整收体但Java20秒先终止的实际相关性。推荐下一轮仅chunk PUT（包括duplicate/conflict）的响应readTimeout固定40000毫秒，给现有服务端窗口留固定10秒余量；其他HTTP20000/连接10000毫秒及SDK、服务端期限保持。此为有限验收预算修正方向，不是网络修复或40秒总请求deadline，不能据此推定原块更久等待就一定成功。
+
+父已建fb28隔离工作树，Sol仅实现该测试适配器及直接定点反例：真实20–30秒/完整1MiB的两次独立请求对照，旧20秒预期超时、新40秒须得到有效ACK，另保留停滞/坏ACK/非2xx/截断/取消及无重发边界。若仅使用受控HTTP peer，结论只覆盖Java预算和清理，不冒充真实Go提交；下一新原任务另验。64MiB/1MiB/两版本/五下载/10并发和独立APP不减。本轮主HEAD和实际输出继续冻结f03；修复通过、本地提交且整轮八项结束退出后才考虑合入，不提前改本轮或覆盖FTP原失败。
+
+隔离提交32e4da11bb01a79b4497b4d315bf4e9b5ef9601b仅两个测试Java文件：以canonical chunk PUT操作语义选固定40000毫秒（包括duplicate/conflict/cancel后PUT），不依赖trace；原ACK/status/SHA、NO_PROXY、fixed长度、单次write/response、IOException/finally.disconnect、业务负载及Node/Go/SDK逐字不变。日志记录per-read预算和实际response elapsed，不把body返回当已通过ACK。
+
+原20秒baseline01受控1MiB/SHA、25秒ACK，实际20126毫秒预期超时，1PUT/无重发；新策略独立请求25043毫秒得到正确number/SHA，silent peer40035毫秒仍超时。local01的15项通过，local02只将7负例断言收紧并复验通过；原25/40秒场景未重复。父复核完整两文件diff、原JUnit/退出及精确-Dtest，接受预算语义，但发现新fixture中断收尾D02。
+
+D02原interrupt-red01：JUnit1失败、0错误/跳过、0.228秒、Maven1，断言executor未终止；独立fallback已清owned workers0，原失败保留。追加fc95d8e97330b8ef40220dec3930604699f175e1只修一测试文件，保留32e历史；finally固定release/stop/shutdown并在共享5秒单调窗口等待termination/join，保留首次中断、恢复flag后重抛。interrupt-green01的13项全过，两个ACK/SILENT预中断关闭均fallbackNeeded=false、workers0；另11项为直接fixture复验，精确7负例未倒退。
+
+最终17个去重逻辑场景的适用通过证据为：新增中断2、复验快组11、先前未受逻辑改变的25/40秒2和legacy2，非一次17项或批次数相加。ABORT/取消覆盖本地peer关闭和cancelled409，非真实产品Task/UI/Go取消集成。父已审fc95完整diff和原红/绿JUnit，source-audit分别12项/5项全真，parent-review02接受为后续轮合入候选。所有worker自有进程0、ca28安全清、fb28干净保留，未push/merge；真实Go提交、外部慢供给及下一轮首过仍待新任务验证。
+
+父另读主仓实际test CLASS，确认不含隔离新增responseReadTimeoutMillis方法；部署JAR仍为本轮初始SHA aae858642f2ba6c2f5093b6e8c2306cd5d8678c7f67ab10b586c5fd046939248。main-class/main-jar-freeze-after-worker01保存核验；当前R04仍源/输出f03，不能提前套用新预算。全部5批原命令、log、XML、exit及源SHA见chunk-ack-budget-fix-verification.md，原红例不删除。
+
+### round-04 CSV Inspector首次完整通过
+
+原root3bba4995-8f32-470c-ac95-225cfe995e90，应用wtl-assisted-csv-inspector-id57msnxg，隔离库assisted-live-csv-inspector-id57lakpg，修订0c58b44a6430331082108276bcc2ad212607dee532de144522f81be2f8a05bd0。JUnit1/0失败/0错误/0跳过、1369.913秒、Maven0；完整业务、交付及额外cleanup0均通过，最终STOPPED/DISABLED，eligible及extra strict均true。known tokens722632、65唯一generation IDs/65物理事件、未知usage0；能力探测及额外操作不含。R03的SSH UNKNOWN在本新原任务未复现；原失败及具体SDK/链路/远端未知根因保留，未修改SSH期限或据此称根治。父已生成原assessment，累计本轮3完整首过+FTP失败，Survey及后三CLI继续。
+
+### round-04 Survey Scoring首次完整通过
+
+原roote42991f3-9051-44dc-af24-59cea1488a94，应用wtl-assisted-survey-scoring-iwi9la25k，隔离库assisted-live-survey-scoring-iwi9jlvvg，修订d213369b319b1bd1b83165b83addbcc22607fbadd51683a1fb571db50be45302。JUnit1/0失败/0错误/0跳过、2329.126秒、Maven0；完整业务、交付及额外cleanup0均通过，最终STOPPED/DISABLED，eligible及extra strict均true。known tokens1228397、123唯一generation IDs/123物理事件、未知usage0；能力探测/额外操作不含。R03准备审批拒绝在新原任务未复现，没有重试原DENY或给旧UNKNOWN改写成功；现有fd桥接合同保持，不能称已根治模型误判。父已生成原assessment，累计本轮4完整首过+FTP失败，Log及其余两CLI继续。
+
+### round-04 Log Analyzer首次完整通过
+
+原rootf4c8675f-c52c-4882-b93f-1818ab6d65ae，应用wtl-assisted-log-analyzer-jsinohu10，隔离库assisted-live-log-analyzer-jsinmgloo，修订f7a13b3bcda9c0225bad4592caa5faab3a43e67b63fb2b2cff1a1c6c496709d0。JUnit1/0失败/0错误/0跳过、687.065秒、Maven0；完整CLI业务、交付/实际app-run用法与CLI_CLEAN INSTALLED/NOT_APPLICABLE齐备，eligible和extra strict均true。known tokens432445、43唯一generation IDs/43物理事件、未知usage0；能力探测/额外操作不含。父已生成assessment，累计5完整首过+FTP失败，Directory及Binary继续。
+
+父核原log923行NATIVE_BUILD/APT receipt，operation57d3f05cf8a84743b2638029dfb7ee4e，cmake/ninja-build/gcc/g++四请求包；邻接SDK SUCCEEDED/exit0/未截断，后续fresh probe及完整CLI通过。log-native-preparation-proof01保存原日志SHA与检查项。四包不是完整依赖闭包或四次安装事务；mandatory Matcher/完整grant内部以源码必经链作工程推断，不伪称独立导出完整审批输入。本项没有R03的内部生成恢复。
+
+### round-04 Directory Diff首次完整通过
+
+原root34fbdb34-229e-4701-8183-e748dcab5d24，应用wtl-assisted-directory-diff-k1d0h7a5c，隔离库assisted-live-directory-diff-k1d0fowz0，修订4891abc6b31fac48c372da33a9ce735868727e29a81c1a2f7981038a02a13b7e。JUnit1/0失败/0错误/0跳过、416.762秒、Maven0；完整CLI业务、交付/实际app-run用法和CLI_CLEAN INSTALLED/NOT_APPLICABLE通过，eligible/extra strict均true。known tokens417526、42唯一generation IDs/42物理事件、未知usage0；能力探测及额外操作不含。父已生成assessment，累计本轮6完整首过+FTP失败，Binary最后一项继续。
+
+### round-04 Binary Inspector首次完整通过
+
+原rootf3992624-5429-4881-94b2-673f12a39aaf，应用wtl-assisted-binary-inspector-k6r8i1otw，隔离库assisted-live-binary-inspector-k6r8g7z38，修订6615865a7c2e31c1d83e7d893dfd0096fdf538bbaf0fe2fb359d4c8b71dd2026。JUnit1/0失败/0错误/0跳过、415.060秒、Maven0；完整CLI业务、交付/实际app-run用法与CLI_CLEAN INSTALLED/NOT_APPLICABLE通过，eligible/extra strict均true。known tokens347956、38唯一generation IDs/38物理事件、未知usage0；能力探测及额外操作不含。八项已全部终止，本轮7完整首过、FTP唯一业务失败，不能达成目标。
+
+### round-04 最终结果与整轮收尾
+
+| 项目 | 首次完整结果 | 原始验证与收尾 |
+| --- | --- | --- |
+| task-board | PASS | JUnit1/0失败/0错误/0跳过，1855.269秒，Maven0；完整业务/交付/额外cleanup0、STOPPED/DISABLED，strict=true |
+| file-transfer | NOT_PASS | 原部署SUC，首个64MiB下载SHA通过；第二版chunk49响应等待20秒超时；JUnit1/0失败/1错误/0跳过，2830.854秒，Maven1；原finally同应用stopped/disabled，完整业务/交付未过 |
+| asset-lending | PASS | JUnit1/0失败/0错误/0跳过，1279.005秒，Maven0；完整业务/交付/额外cleanup0、STOPPED/DISABLED，strict=true |
+| csv-inspector | PASS | JUnit1/0失败/0错误/0跳过，1369.913秒，Maven0；完整业务/交付/额外cleanup0、STOPPED/DISABLED，strict=true |
+| survey-scoring | PASS | JUnit1/0失败/0错误/0跳过，2329.126秒，Maven0；完整业务/交付/额外cleanup0、STOPPED/DISABLED，strict=true |
+| log-analyzer | PASS | JUnit1/0失败/0错误/0跳过，687.065秒，Maven0；完整CLI业务/交付/INSTALLED+N/A，strict=true |
+| directory-diff | PASS | JUnit1/0失败/0错误/0跳过，416.762秒，Maven0；完整CLI业务/交付/INSTALLED+N/A，strict=true |
+| binary-inspector | PASS | JUnit1/0失败/0错误/0跳过，415.060秒，Maven0；完整CLI业务/交付/INSTALLED+N/A，strict=true |
+
+固定inspector的goalEligible=false，唯一自动拒绝项allAttemptsEligible；exactlyEightSingleAttempts/noRecoveryOrUnclassifiedLaunches/initialCleanReset/frozenVersionAndParameters/expectedHeadMatches均true。八项各一个原任务，无完整项目外层retry、原UNKNOWN重放或内部生成恢复；七个完整PASS均extra strict=true，整轮extra strict=false来自FTP业务失败。前置计划漂移P01及辅助D01/D02独立记录，不塞进/删出项目分母。
+
+父复核8份原assessment与最终raw核查：known tokens5709853，569唯一generation IDs、569物理事件/唯一(id,number)，记录内未知usage0。32条能力探测的实际调用/usage未知，额外操作不含，不是完整账单。monitor-final-inspection/usage、round-final-parent-verification01保存原结果；模型/参数/版本一致性均通过。
+
+FTP原NPM/tsc构建已由完整829字节输出及SHA独立核实。监测初版漏解码而记“未证明”，随后monitor-tsc-proof-addendum01再次核真并澄清，旧文件未改；这不改变FTP失败，也不提升为全部部署运行字节一致。
+
+采样器43960在ALL_EIGHT_TERMINAL自然exit0、原exec19869真实返回0；父driver9847/Python43724在八项终止后正常quit，实际exit0/RUNNER_EXIT。父CIM核精确任务命令及原PID+创建时间，R04自有消费者0；没有终止用户或其它进程。clean28r04按精确绝对路径/全链non-reparse核对后删除，原状态库/UNKNOWN、所有raw证据及论文已有修改保留。runner-exit、main-live-process-final01、temporary-cleanup-final01及采样退出审计保存。
+
+仅在上述整轮结束及进程退出后，主仓才从f03快进fc95d8e9，合入32e4da11分块响应读取预算和fc95d8e9 fixture中断收尾；两份源码均已本地提交，未推送。fb28经干净状态/提交身份、精确worktree及Git metadata路径、non-reparse核对后移除，分支提交和全部原证据保留。fix-merge-final01和worker-worktree-cleanup-final01保存操作。
+
+R05目前只准备辅助脚本和实际CLASS策略验证器，无新driver/远端清理。下一步提交本轮报告，重建实际CLASS/Mod输出，核实际chunk PUT40000/其它HTTP20000策略，再完成新一轮产品清场和独立after复查，之后才排八项各首次。R04仍为7/8，不与新旧轮PASS拼接；目标保持active。
