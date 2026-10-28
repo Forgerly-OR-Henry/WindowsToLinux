@@ -223,6 +223,7 @@ class FilesInteractionTest {
                 robot.keyPress(KeyEvent.VK_F2);
                 robot.keyRelease(KeyEvent.VK_F2);
                 await(() -> findDialog("files.dialog.name") != null);
+                click(robot, findDialog("files.dialog.name"));
                 type(robot, "after.txt");
                 click(robot, findDialog("files.dialog.ok"));
                 assertTrue(entered.await(20, java.util.concurrent.TimeUnit.SECONDS));

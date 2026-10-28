@@ -93,7 +93,6 @@ final class FilesFeedback extends JPanel {
 
     /** Re-renders original facts in the current language without discarding progress. / 以当前语言重绘原事实，不丢弃进度。 */
     void render() {
-        int caret = text.getCaretPosition();
         var output = new StringBuilder(messages.text("evidence")).append('\n');
         if (!problem.isEmpty()) output.append(problem).append('\n');
         for (var state : states.values()) {
@@ -121,7 +120,10 @@ final class FilesFeedback extends JPanel {
                 log.problem().ifPresent(failure -> output.append(failure.eventCode()).append(": ").append(failure.message()).append('\n'));
             }
         }
-        text.setText(output.toString());
+        String rendered = output.toString();
+        if (rendered.equals(text.getText())) return;
+        int caret = text.getCaretPosition();
+        text.setText(rendered);
         text.setCaretPosition(Math.min(caret, text.getDocument().getLength()));
     }
 

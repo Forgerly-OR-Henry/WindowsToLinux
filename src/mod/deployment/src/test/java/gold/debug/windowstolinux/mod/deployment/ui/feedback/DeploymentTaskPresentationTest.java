@@ -22,6 +22,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JButton;
 import javax.swing.JFrame;
@@ -30,6 +31,8 @@ import javax.swing.JProgressBar;
 import javax.swing.JTextArea;
 import javax.swing.JToggleButton;
 import javax.swing.SwingUtilities;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.imageio.ImageIO;
 
 import gold.debug.windowstolinux.app.ui.display.DesktopThemeService;
@@ -146,6 +149,80 @@ class DeploymentTaskPresentationTest {
             fixture.refresh(TaskState.RUNNING, Optional.empty(), "agent.stage.build");
             fixture.await(() -> fixture.text("state").contains("正在复制项目文件并准备应用"));
             assertEquals("暂无法计算进度", fixture.label("percentage"));
+        }
+    }
+
+    @Test
+    void repeatedFeedbackPreservesDocumentsWhileNewStagesLogsAndLanguageRemainVisible() throws Exception {
+        try (var fixture = new Fixture("deployment-publication")) {
+            var freeze = fixture.stage("stage.freezeSource");
+            fixture.records.set(List.of(freeze));
+            fixture.refresh(TaskState.RUNNING, Optional.empty(), "stage.freezeSource");
+            var changes = new java.util.LinkedHashMap<String, AtomicInteger>();
+            fixture.onEdt(() -> {
+                for (String suffix : List.of("state", "events", "details")) {
+                    var count = new AtomicInteger();
+                    changes.put(suffix, count);
+                    ((JTextArea) fixture.named(suffix)).getDocument().addDocumentListener(new DocumentListener() {
+                        public void insertUpdate(DocumentEvent event) {
+                            count.incrementAndGet();
+                        }
+
+                        public void removeUpdate(DocumentEvent event) {
+                            count.incrementAndGet();
+                        }
+
+                        public void changedUpdate(DocumentEvent event) {
+                            count.incrementAndGet();
+                        }
+                    });
+                }
+                return null;
+            });
+            fixture.refresh(TaskState.RUNNING, Optional.empty(), "stage.freezeSource");
+            fixture.refresh(TaskState.RUNNING, Optional.empty(), "stage.freezeSource");
+            changes.forEach((suffix, count) -> assertEquals(0, count.get(), suffix));
+
+            var build = fixture.stage("stage.buildComponent");
+            fixture.records.set(List.of(build, freeze));
+            fixture.refresh(TaskState.RUNNING, Optional.empty(), "stage.buildComponent");
+            assertTrue(fixture.text("events").contains("正在复制项目文件并准备应用"));
+            assertEquals(2, fixture.text("events").lines().count());
+            changes.forEach((suffix, count) -> assertTrue(count.get() > 0, suffix));
+
+            changes.values().forEach(count -> count.set(0));
+            var diagnostic = new LogReadResult.Record(UUID.randomUUID(), Instant.now(), new LogEvent(LogLevel.INFO,
+                "FIXTURE_NEW_DIAGNOSTIC", "New original diagnostic", Optional.empty(), Optional.of(fixture.id),
+                Optional.of(fixture.id), Optional.empty()), false);
+            fixture.records.set(List.of(diagnostic, build, freeze));
+            fixture.refresh(TaskState.RUNNING, Optional.empty(), "stage.buildComponent");
+            assertTrue(fixture.text("details").contains("New original diagnostic"));
+            assertEquals(0, changes.get("state").get());
+            assertEquals(0, changes.get("events").get());
+            assertTrue(changes.get("details").get() > 0);
+
+            fixture.refresh(TaskState.CANCEL_REQUESTED, Optional.empty(), "stage.buildComponent");
+            assertTrue(fixture.text("state").contains("正在停止，等待收尾"));
+            assertTrue(fixture.text("details").contains("CANCEL_REQUESTED"));
+            changes.values().forEach(count -> count.set(0));
+            fixture.onEdt(() -> {
+                fixture.feedback.configure(Locale.ENGLISH, false);
+                return null;
+            });
+            fixture.drain();
+            assertTrue(fixture.text("events").contains("Copying project files and preparing the application"));
+            assertFalse(fixture.text("state").contains("正在停止"));
+            assertTrue(fixture.text("details").contains("New original diagnostic"));
+            assertTrue(changes.get("state").get() > 0);
+            assertTrue(changes.get("events").get() > 0);
+
+            changes.values().forEach(count -> count.set(0));
+            fixture.onEdt(() -> {
+                fixture.feedback.configure(Locale.ENGLISH, false);
+                return null;
+            });
+            fixture.drain();
+            changes.forEach((suffix, count) -> assertEquals(0, count.get(), suffix));
         }
     }
 

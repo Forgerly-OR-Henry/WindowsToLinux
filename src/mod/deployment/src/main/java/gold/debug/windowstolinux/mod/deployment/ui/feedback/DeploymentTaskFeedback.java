@@ -578,7 +578,8 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
         if (observationUnavailable) summary.append('\n').append(messages.getString("unavailable"));
         if (!observationNotice.isEmpty() && snapshot.endedAt().isEmpty())
             summary.append('\n').append(messages.getString(observationNotice));
-        state.setText(summary.toString());
+        String summaryText = summary.toString();
+        if (!summaryText.equals(state.getText())) state.setText(summaryText);
 
         Optional<Double> fraction = projection.flatMap(Presentation::fraction);
         boolean estimated = projection.map(Presentation::estimated).orElse(false);
@@ -610,13 +611,15 @@ public final class DeploymentTaskFeedback implements AutoCloseable {
         progress.setToolTipText(messages.getString(estimated ? "progress.estimated" : "progress.measured"));
         int pending = projection.map(Presentation::pendingInterventions).orElse(0);
         interventionCount.setText(new java.text.MessageFormat(messages.getString("interventionCount"), locale).format(new Object[]{pending}));
-        events.setText(retainedStages.stream().map(messages::getString).collect(java.util.stream.Collectors.joining("\n")));
+        String eventText = retainedStages.stream().map(messages::getString).collect(java.util.stream.Collectors.joining("\n"));
+        if (!eventText.equals(events.getText())) events.setText(eventText);
         String extraDetails = Objects.requireNonNullElse(additionalDetails.get(), "");
-        details.setText(snapshot.id() + " · " + snapshot.state() + "\n" + snapshot.progressText()
+        String detailText = snapshot.id() + " · " + snapshot.state() + "\n" + snapshot.progressText()
             + (snapshot.blockers().isEmpty() ? "" : "\n" + String.join("\n", snapshot.blockers()))
             + (completionDetails.isEmpty() ? "" : "\n" + completionDetails)
             + (retainedEvents.isEmpty() ? "" : "\n" + retainedEvents)
-            + (extraDetails.isBlank() ? "" : "\n" + extraDetails));
+            + (extraDetails.isBlank() ? "" : "\n" + extraDetails);
+        if (!detailText.equals(details.getText())) details.setText(detailText);
     }
 
     /** Stops every refresh callback without changing the accepted original task. / 停止所有刷新回调，不改变已准入原任务。 */
