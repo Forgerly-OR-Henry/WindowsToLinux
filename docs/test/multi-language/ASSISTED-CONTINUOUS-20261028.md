@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active。R07八项目各一次原尝试均已结束，完整首过7/8，仅CSV原UNKNOWN/测试失败，本轮未达标；driver37576/observer66898均已观察实际tool0，自有进程及专用r07t核退清理，原失败/UNKNOWN保留。FTP按用户授权实际8MiB，其余既定业务不减。全轮已知5507842/552物理生成/47工具提交反馈，非零异常或完整账单。R08局部候选及新凭据/原产品连接准备已过，正式0；下一目标回合完成最终冻结与产品清场独立after后才全新八项。R07隐私1683文本及其后四说明补核均过，后续R08文本另核。仅测试代码，无真实UI、浏览器或Computer Use。
+状态：目标active。R07八项目各一次原尝试均已结束，完整首过7/8，仅CSV原UNKNOWN/测试失败，本轮未达标；driver37576/observer66898均已观察实际tool0，自有进程及专用r07t核退清理，原失败/UNKNOWN保留。FTP按用户授权实际8MiB，其余既定业务不减。全轮已知5507842/552物理生成/47工具提交反馈，非零异常或完整账单。R08正式0；04原产品盘点0、本地无参JUnit名称解析误拒，旧控制器已核退，06单点辅助修正准备中；尚未清场或原八项。R07隐私1683文本及其后四说明补核均过，后续R08文本另核。仅测试代码，无真实UI、浏览器或Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -809,3 +809,15 @@ final01与02的自有Java/javac均宿主CIM核退、任务签名0、各专用pva
 四个本预检进程原wait均0，宿主CIM按PID+creation及精确cp0804/桥/probe/launcher签名核退0；只精确nonreparse清cp0804六自有临时文件，保留newvault、连接state、targets及所有原证据，无其他用户或05进程信号。credential-preflight-process-temp-04 SHAf075669a6755a9ef3a655fd147e771b8e515163d2dffa1ffb106eea5d8b524b6。没有声称曾观测到已自然结束的Maven后代JVM PID/exit。本阶段后续公共文本隐私补核以04/preflight-privacy-04的新CreateNew原结果/实际退出/进程临时目录回执为准；R07旧02/03快照不覆盖这里的后续字节。
 
 下一目标回合先读最新CURRENT/交接和上述proof。05唯一支持入口为adapter05.py的driver/monitor/inspect三模式，继续复用04身份/原八项目/54cp；父最终policy须合并05当前launch-plan中的三个冻结输入与cleanupEntrySource，同时绑定new-04 credential-source-identity、product-connection-proof和实际final-source-policy，再创建正确FINAL policy/release和全新t04。当前这些FINAL/release/t04均未创建，服务器未再次清场。之后按原产品inventory→plan→apply→独立after，initialReset通过才一次排入全新八项各一个原run。任何正式失败整轮失败、仍按原冻结继续其余；不改活动版本/参数、不重放旧UNKNOWN、不拼7项旧成绩，格式/SDK内部恢复分别如实记录。FTP仍授权8MiB/1MiB/2+6，五下载、10并发及其余既定完整业务/独立审批/交付清理不减，LOW/LOW/1500000/65536/90不变。
+
+### R08/P-JUNIT-NAME-01：原盘点通过，辅助无参JUnit名称解析误拒
+
+本回合父审并原字节发放04策略5efcc074/releasec736fa38/source-snapshot1cc89045，完整released freeze通过，ROOT仍73/f102。唯一driver88554/Python25736与observer80497/Python35328启动并核live后，只发一条reset inventory host-inventory-04；原Maven10972 actualwait0，JUnit1/0失败错误跳过，原产品receipt ok=true/mode=inventory/8根。没有plan、apply、独立after或任何八项目原run；此为准备阶段，正式分母仍既定8、已启动0，不记作项目失败或0/8验收结果。
+
+父本地parent-verify-reset-stage-04.py退出1，未写通过证明、未发送下一条命令。host-inventory-04-parent-diagnostic-01.json逐门证实身份/prepareOnly/模式/actualwait0/原参数/文件时序均true，class-only JUnit valid=true；唯一method约束false。真实XML testcase name=runsExplicitDisposableHostResetThroughProduct无括号，retained_inspector04.py:52只接受expected_method+'('前缀。源@Test无参数及Astra只读判断相符，确认是新辅助解析器兼容缺陷，不是已证产品或服务器故障，也不是旧审批格式/SSH问题复发。原21/15/局部合成检查未覆盖这一真实无参报告形状，不能倒改原通过记录或当作新故障已覆盖。
+
+Astra建议独立06有界快照：只将method判定改为名称完全相等或原参数化前缀；类/单测试/failure-error-skip/参数/identity/时序/唯一原任务/业务/交付/清理/独立初清全部保留。只patch外层不够，因为Java05独立Python清理child仍pins并读取旧04 helper。旧04/05运行源码、原策略、XML及全部raw不修改；06机械重绑定路径/依赖/hash/新身份，继续ROOT73及已有new-04凭据、原24d/70cc连接证明、54cp/17输出，不新迁移/连接、不重跑32或无关测试。旧04盘点只作同原字节red/green回归输入，06 inventory→plan→apply→after须真实重取，不能移植改标。
+
+父已关闭这组0正式项目actors：一次normal quit后driver88554实际tool0；observer80497经本地stop request退出，原intended3、真实tool1，如实保留不称自然0。宿主CIM25736/35328/10972及旧入口/t04签名0，精确t04非reparse核真后清理，内0文件；编译根、私密新vault、连接state、原inventory/策略/失败checker均保留。parent-preparation04-closeout-01.json收存原十二文件SHA、actual exit及临时目录核退；两个旧句柄已终态，禁止再poll/重启/重发。目标active，服务器尚未清场，R07仍7/8未达标，旧UNKNOWN不打开或重放。
+
+Sol仅拥有新06及QA tmp，当前在做真实旧XML red/new helper green、参数化兼容及错方法/类/fail/skip等必要反例、06 DRAFT/缺release副作用前拒、必要Java编译/真实DRAFT负例、完整只读freeze及不可执行名字候选。新-04 credentialState必须刻意保留，不能机械改成新-06库。尚未父审通过06或发放其固定FINAL，不能提前称修复已完整验收。所有业务/FTP8MiB其余负载、LOW/LOW/1500000/65536/90及独立审批不变。
