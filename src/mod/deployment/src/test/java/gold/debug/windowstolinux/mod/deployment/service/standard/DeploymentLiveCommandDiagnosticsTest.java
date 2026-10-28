@@ -31,6 +31,32 @@ class DeploymentLiveCommandDiagnosticsTest {
     }
 
     @Test
+    void keepsTypedFrameAndWindowFactsIncludingZeroAndNestedProblems() {
+        var facts = List.of(
+            "context.scriptBytes=16777216",
+            "problem[0].context.stdinBytes=0",
+            "context.frameWritePhase=NOT_STARTED",
+            "problem[0].context.frameWritePhase=WRITING_LENGTH",
+            "context.frameWritePhase=WRITING_SCRIPT",
+            "context.frameWritePhase=WRITING_STDIN",
+            "context.frameWritePhase=FLUSHING",
+            "context.frameWritePhase=WRITTEN",
+            "context.authorPayloadState=NOT_SENT",
+            "problem[0].context.authorPayloadState=MAY_HAVE_BEEN_SENT",
+            "context.inputSenderCreated=false",
+            "problem[0].context.inputSenderCreated=true",
+            "context.channelPeerAssigned=false",
+            "problem[0].context.channelPeerAssigned=true",
+            "context.remoteWindowOpenMaxSize=4294967295",
+            "context.remoteWindowOpenSize=0",
+            "context.remoteWindowOpenPacketSize=32768",
+            "problem[0].context.remoteWindowFailureMaxSize=4294967295",
+            "problem[0].context.remoteWindowFailureSize=0",
+            "problem[0].context.remoteWindowFailurePacketSize=999999999999");
+        assertEquals(facts, DeploymentStaticLiveAcceptanceTest.safeOriginalCallCauses(String.join("\n", facts)));
+    }
+
+    @Test
     void excludesPeerMessagesPathsCredentialsAndMalformedTypedValues() {
         var privateFacts = List.of(
             "context.transportFailureMessage=password=private-value",
@@ -48,7 +74,28 @@ class DeploymentLiveCommandDiagnosticsTest {
             "context.transportReadThreadState=private-value",
             "context.transportReadStack[6]=org.apache.sshd.common.Session#read:42",
             "context.transportReadStack[0]=org.apache.sshd.common.Session#read:/private/source.java:42",
-            "context.transportReadStack[0]=external.PrivateProvider#read:42");
+            "context.transportReadStack[0]=external.PrivateProvider#read:42",
+            "context.script=echo private-value",
+            "context.stdin=private-value",
+            "context.scriptBytes=-1",
+            "context.scriptBytes=1234567890123",
+            "context.stdinBytes=",
+            "problem[0].context.stdinBytes=1 private-value",
+            "context.frameWritePhase=WRITING_PRIVATE_VALUE",
+            "problem[0].context.frameWritePhase=WRITTEN private-value",
+            "context.authorPayloadState=SENT",
+            "problem[0].context.authorPayloadState=MAY_HAVE_BEEN_SENT private-value",
+            "context.inputSenderCreated=TRUE",
+            "problem[0].context.channelPeerAssigned=1",
+            "context.remoteWindowOpenMaxSize=-1",
+            "context.remoteWindowOpenSize=+0",
+            "context.remoteWindowOpenPacketSize=1.0",
+            "problem[0].context.remoteWindowFailureMaxSize=1234567890123",
+            "problem[0].context.remoteWindowFailureSize=0 private-value",
+            "context.remoteWindowFailurePacketSize=UNKNOWN",
+            "context.remoteWindowFailureMessage=private-value",
+            "context.remoteWindowOpenPeerAddress=private-host:22",
+            "context.remoteWindowOpenPath=/private/source");
         assertTrue(DeploymentStaticLiveAcceptanceTest.safeOriginalCallCauses(String.join("\n", privateFacts)).isEmpty());
     }
 }
