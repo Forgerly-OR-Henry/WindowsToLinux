@@ -5,9 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
 import java.util.Arrays;
-import java.util.HexFormat;
 import java.util.concurrent.TimeUnit;
 
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
@@ -22,10 +20,16 @@ class DeploymentAgentHelperInstallerScriptTest {
     Path temporary;
 
     @Test
-    void defaultFilesInstallerRetainsItsOriginalBytes() throws Exception {
-        assertEquals("0ac82ab0aa2b4b54c2271097fda264bd5d5d10876fbfffd1d37a49b21f3a2fed",
-            HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                .digest(DeploymentHelperInstallerScript.renderFiles().getBytes(StandardCharsets.UTF_8))));
+    void defaultFilesInstallerChecksCurrentPriorIdentityBeforeLayoutAndPackages() {
+        String script = DeploymentHelperInstallerScript.renderFiles();
+        int admission = script.indexOf("\ninstaller_prior_files\n");
+        int lock = script.indexOf("prepare_stage=installer-lock");
+        int initialization = script.indexOf("PREPARE_REJECT=host-layout-conflict");
+        assertTrue(admission >= 0 && admission < lock && lock < initialization);
+        assertTrue(initialization < script.indexOf("prepare_stage=platform-packages"));
+        assertTrue(script.indexOf(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.EXPECTED_SHA256) < admission);
+        assertTrue(script.indexOf(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.buildEntrySha256()) < admission);
+        assertTrue(script.contains("PREPARE_REJECT=%s-prior-content-untrusted"));
     }
 
     @Test

@@ -19,6 +19,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class DeploymentHelperInstallerContractTest {
+    private static final String UNTRUSTED_PRIOR = "#!/bin/sh\n# untrusted prior bytes\n";
+    private static final String CHANGED_PRIOR = "#!/bin/sh\n# changed after admission\n";
     @TempDir Path temporary;
 
     @Test
@@ -44,6 +46,11 @@ class DeploymentHelperInstallerContractTest {
             reconstructed.write(input, start, end - start);
         }
         assertArrayEquals(body.getBytes(StandardCharsets.UTF_8), reconstructed.toByteArray());
+        assertTrue(body.contains(DeploymentHelperInstallerScript.BODY_AFTER_RECEIPT));
+        assertTrue(new String(reconstructed.toByteArray(), StandardCharsets.UTF_8)
+            .contains("installer_prior_file() {"), "Pre-receipt guards must remain inside the body digest ranges");
+        assertTrue(new String(reconstructed.toByteArray(), StandardCharsets.UTF_8)
+            .contains("/usr/bin/flock -x \"$installer_lock\""), "The original lock must remain inside the body digest ranges");
         DeploymentInstallerEvidence.verify(evidence, request);
         var changed = evidence.deepCopy();
         ((ObjectNode) changed.at("/digestScopes/requestDigest")).put("value", sha(body));
@@ -77,8 +84,8 @@ class DeploymentHelperInstallerContractTest {
         var fixture = fixture(false, damaged);
         var result = execute(fixture.script());
         assertEquals(64, result.exit(), result.output());
-        assertEquals("original helper", Files.readString(temporary.resolve("helper/managed-helper")));
-        assertEquals("original entry", Files.readString(temporary.resolve("helper/build-entry")));
+        assertEquals(DeploymentManagedHelperBundle.renderScript(), Files.readString(temporary.resolve("helper/managed-helper")));
+        assertEquals(DeploymentManagedHelperBundle.renderBuildEntry(), Files.readString(temporary.resolve("helper/build-entry")));
         assertFalse(Files.exists(temporary.resolve("effects")), "No publication, service or probe may follow a corrupt payload");
         String receipt = Files.readString(fixture.receipt());
         assertTrue(receipt.endsWith("PHASE=STARTED\n"));
@@ -120,7 +127,69 @@ class DeploymentHelperInstallerContractTest {
         assertTrue(installer.lastIndexOf("PREPARE_REJECT=build-entry-installed-digest") < installer.indexOf("helper_probe="));
     }
 
+    @Test
+    void absentExecutablesPermitCleanInstallation() throws Exception {
+        var fixture = fixture(false, "none", "absent", "none");
+        var result = execute(fixture.script());
+        assertEquals(0, result.exit(), result.output());
+        assertEquals(DeploymentManagedHelperBundle.renderScript(), Files.readString(temporary.resolve("helper/managed-helper")));
+        assertEquals(DeploymentManagedHelperBundle.renderBuildEntry(), Files.readString(temporary.resolve("helper/build-entry")));
+        assertTrue(Files.readString(fixture.receipt()).endsWith("PHASE=SUCCEEDED\n"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"helper", "entry", "metadata"})
+    void untrustedPriorExecutableRejectsBeforeLayoutPackagesOrReceipt(String prior) throws Exception {
+        var fixture = fixture(false, "none", prior, "none");
+        var result = execute(fixture.script());
+        assertEquals(64, result.exit(), result.output());
+        assertTrue(result.output().contains(prior.equals("metadata") ? "helper-prior-file-identity"
+            : (prior.equals("helper") ? "helper" : "build-entry") + "-prior-content-untrusted"), result.output());
+        assertFalse(Files.exists(temporary.resolve("preflight-effects")), "No layout or package effects before admission");
+        assertFalse(Files.exists(temporary.resolve("effects")), "No publication or service effects before admission");
+        assertFalse(Files.exists(fixture.receipt()), "Rejected prior files must not create a STARTED receipt");
+        if (!prior.equals("metadata")) assertEquals(UNTRUSTED_PRIOR, Files.readString(temporary.resolve(
+            prior.equals("helper") ? "helper/managed-helper" : "helper/build-entry")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"lock", "staging"})
+    void changedPriorBytesAreRecheckedUnderLockAndBeforePublication(String mutation) throws Exception {
+        var fixture = fixture(false, "none", "same", mutation);
+        var result = execute(fixture.script());
+        assertEquals(64, result.exit(), result.output());
+        assertTrue(result.output().contains("helper-prior-content-untrusted"), result.output());
+        assertEquals(CHANGED_PRIOR, Files.readString(temporary.resolve("helper/managed-helper")));
+        assertFalse(Files.exists(temporary.resolve("effects")), "No replacement may follow a failed locked recheck");
+        if (mutation.equals("lock")) {
+            assertFalse(Files.exists(temporary.resolve("preflight-effects")));
+            assertFalse(Files.exists(fixture.receipt()));
+        } else {
+            assertTrue(Files.exists(temporary.resolve("preflight-effects")), "Earlier admitted layout/package effects are not rolled back");
+            assertTrue(Files.readString(fixture.receipt()).endsWith("PHASE=STARTED\n"));
+        }
+    }
+
+    @Test
+    void allInstallerEntrypointsCheckPriorBytesBeforeTheirFirstSideEffect() {
+        var layout = DeploymentRemoteLayout.original();
+        for (String script : java.util.List.of(DeploymentHelperInstallerScript.render(layout),
+                DeploymentHelperInstallerScript.renderFiles(layout), DeploymentHelperInstallerScript.renderHelperInstallation(layout))) {
+            int check = script.indexOf("\ninstaller_prior_files\n");
+            int lock = script.indexOf("prepare_stage=installer-lock");
+            int initialization = script.indexOf(DeploymentRemoteLayoutAdmission.initialize(layout));
+            assertTrue(check >= 0 && check < lock && lock < initialization);
+            assertTrue(script.substring(lock, initialization).contains("\ninstaller_prior_files\n"));
+            assertTrue(script.indexOf(DeploymentManagedHelperBundle.helperSha256(layout)) < check);
+            assertTrue(script.indexOf(DeploymentManagedHelperBundle.buildEntrySha256(layout)) < check);
+        }
+    }
+
     private Fixture fixture(boolean probeFailure, String damaged) throws Exception {
+        return fixture(probeFailure, damaged, "same", "none");
+    }
+
+    private Fixture fixture(boolean probeFailure, String damaged, String prior, String mutation) throws Exception {
         var layout = DeploymentRemoteLayout.original();
         var operation = UUID.randomUUID();
         String original = DeploymentHelperInstallerScript.renderTracked(UUID.randomUUID(), operation, "a".repeat(64),
@@ -135,7 +204,7 @@ class DeploymentHelperInstallerContractTest {
                 mapped.append(DeploymentHelperInstallerScript.quote(corrupt ? "corrupted payload" : evidence.path("sources").path(name).asText()));
             } else {
                 String text = segment.path("text").asText()
-                    .replace(DeploymentRemoteLayoutAdmission.initialize(layout), "")
+                    .replace(DeploymentRemoteLayoutAdmission.initialize(layout), "fixture_layout\n")
                     .replace(layout.paths().helperDirectory(), base + "/helper")
                     .replace(layout.paths().stateRoot(), base + "/state")
                     .replace("/usr/bin/stat", "fixture_stat")
@@ -152,19 +221,32 @@ class DeploymentHelperInstallerContractTest {
             }
         }
         Files.createDirectories(temporary.resolve("helper"));
-        Files.writeString(temporary.resolve("helper/managed-helper"), "original helper");
-        Files.writeString(temporary.resolve("helper/build-entry"), "original entry");
-        String hooks = "fixture=" + DeploymentHelperInstallerScript.quote(base) + "\n" + """
+        if (!prior.equals("absent")) {
+            Files.writeString(temporary.resolve("helper/managed-helper"), prior.equals("helper") ? UNTRUSTED_PRIOR : DeploymentManagedHelperBundle.renderScript());
+            Files.writeString(temporary.resolve("helper/build-entry"), prior.equals("entry") ? UNTRUSTED_PRIOR : DeploymentManagedHelperBundle.renderBuildEntry());
+        }
+        String hooks = "fixture=" + DeploymentHelperInstallerScript.quote(base) + "\nfixture_prior="
+            + DeploymentHelperInstallerScript.quote(prior) + "\nfixture_mutation=" + DeploymentHelperInstallerScript.quote(mutation) + "\n" + """
+            for file in "$fixture/helper/managed-helper" "$fixture/helper/build-entry"; do
+              [ ! -e "$file" ] || /usr/bin/chmod 755 -- "$file"
+            done
             id() { printf '0\n'; }
-            apt-get() { [ "${fixture_lock_held:-}" = 1 ]; }
+            fixture_layout() { printf 'layout\n' >> "$fixture/preflight-effects"; }
+            apt-get() { [ "${fixture_lock_held:-}" = 1 ]; printf 'packages\n' >> "$fixture/preflight-effects"; }
             systemctl() { case "$1" in daemon-reload | enable) printf '%s\n' "$1" >> "$fixture/effects";; esac; }
             fixture_chown() { :; }
             fixture_chmod() { :; }
-            fixture_sync() { :; }
+            fixture_sync() {
+              if [ "$fixture_mutation" = staging ] && [[ "${@: -1}" = */.build-entry.* ]]; then
+                printf '#!/bin/sh\n# changed after admission\n' > "$fixture/helper/managed-helper"
+              fi
+            }
             fixture_stat() {
               case "$2" in
                 '%u:%g') printf '0:0\n';;
-                '%u:%g:%a:%h') printf '0:0:755:1\n';;
+                '%u:%g:%a:%h')
+                  if [ "$fixture_prior" = metadata ] && [[ "${@: -1}" = */managed-helper ]]; then printf '0:0:755:2\n'
+                  else printf '0:0:755:1\n'; fi;;
                 '%u:%g:%a') case "${@: -1}" in */helper-install-operations) printf '0:0:700\n';; *.receipt) printf '0:0:600\n';; *) printf '0:0:755\n';; esac;;
                 '%a') printf '755\n';;
                 *) /usr/bin/stat "$@";;
@@ -178,7 +260,10 @@ class DeploymentHelperInstallerContractTest {
               /usr/bin/mkdir -p -- "${arguments[@]}"
             }
             # Git Bash has no flock; this fixture checks lifetime/order, while Linux uses the real directory flock.
-            fixture_flock() { [ "$1" = -x ] && [ -e "/dev/fd/$2" ]; fixture_lock_held=1; }
+            fixture_flock() {
+              [ "$1" = -x ] && [ -e "/dev/fd/$2" ]; fixture_lock_held=1
+              if [ "$fixture_mutation" = lock ]; then printf '#!/bin/sh\n# changed after admission\n' > "$fixture/helper/managed-helper"; fi
+            }
             fixture_mv() {
               [ -e "/dev/fd/$installer_lock" ] && [ "/dev/fd/$installer_lock" -ef "$fixture/helper" ] || return 28
               case "${@: -1}" in *.receipt) printf 'receipt\n' >> "$fixture/effects";; *) printf 'publish\n' >> "$fixture/effects";; esac
