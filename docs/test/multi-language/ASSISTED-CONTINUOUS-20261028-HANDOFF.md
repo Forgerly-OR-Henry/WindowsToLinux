@@ -1,10 +1,10 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R08原八队列已启动，TaskBoard进行中
+## 现行入口：R08累计1/8，TaskBoard完整首过，FTP原任务进行中
 
 目标active，R06未达标：计划八项，仅TaskBoard/FTP/Asset三个原完整回执PASS、后五项未启动；不是3/3，也不是五项业务失败。运行期主工作区出现并行UI源码及818→da3e提交，原冻结守卫在CSV launch前拒绝，不能继续声称整轮保持冻结。FTP原64MiB全业务通过，含纯生成恢复1/未知usage1；Asset原JUnit/交付/清理均0，源码变更对在途运行的全部影响不作无证断言。R06原始证据及额外冻结审计见[已关闭轮](../../../.ai-workspace/evidence/assisted-continuous-20261028/round-06/README.md)。原driver16741实际exit1，observer37339有意终止后实际exit1，CIM自有进程0，clean28r06已清，1447文本敏感值审计通过；关闭文档修改后的02检查覆盖1453文本、零匹配、实际0，独占临时目录已清。不得poll/重启旧句柄或重发旧八队列。
 
-正式后续验收根改为`H:/Program/WindowsToLinux/.ai-workspace/wt/r07`，分支`codex/assisted-frozen-r07-20261029`，正式冻结`65f8dfd1e70ddac4debd0ea6243ddd83393e30e5`（保留9068/da3e双parent）。已纳入授权8MiB和已选提交快照，主分支后续7487等及WIP不随入活动轮。JUnit的16个workspace输出及额外Files输出（共17）、全部源码、state、delivery与原证据必须在该树，38个E缓存JAR逐一hash，禁止引用会变的主target；实际54cp、三Mod descriptor、8MiB CLASS及300000/20000已核，编译仅skipTests，不是业务通过。此树是保留验收根，不随tmp回收，不在运行后移动绝对路径。
+R07历史验收根为`H:/Program/WindowsToLinux/.ai-workspace/wt/r07`，分支`codex/assisted-frozen-r07-20261029`，正式冻结`65f8dfd1e70ddac4debd0ea6243ddd83393e30e5`（保留9068/da3e双parent）。已纳入授权8MiB和已选提交快照，主分支后续7487等及WIP不随入该轮。JUnit的16个workspace输出及额外Files输出（共17）、全部源码、state、delivery与原证据均在该树，38个E缓存JAR逐一hash，未引用会变的主target；实际54cp、三Mod descriptor、8MiB CLASS及300000/20000已核，编译仅skipTests，不是业务通过。此树继续保留，不随tmp回收或移动；当前R08入口见下节。
 
 新凭据根为该树`src/app/db/data/agent-live-credential-20261029-r07-02`。本地桥02因未安装presenter失败、部分r07-01保留；桥03仅补deny-only presenter后把**主机新resume-01**凭据通过char[]内存导入全新r07-02，实际0，无旧copied/UNKNOWN开库/复制，无远端。独立产品连接connection-reuse-01 JUnit1/0、6.777秒、Maven0，实际已授权BiNl pin匹配、root/45.192.105.213:22，无密码env/模型请求。短独占临时根`H:/Program/WindowsToLinux/.ai-workspace/wt/r07t`已在原进程核退后精确清理，不是源码/原证据根，不能直接复用。
 
@@ -24,7 +24,9 @@ CSV原审计四文件及Astra传播判定已CreateNew，父回读关键判据和
 
 真实06 inventory43992/plan45996/apply300/独立after11432均Maven actualwait0/JUnit1/0，after==postInventory、8根无/受管集合空/APTcache0，原initialReset真，四个parent-validation源SHA可查。第一次apply被auto-review前置拒绝未发送；当前身份两次全guard/3descriptor/f102与同计划重核后同原工具唯一有效apply通过。原拒绝和全部raw保留，未旁路。
 
-root唯一driver工具47579/Python16120现活动；八条run已经一次全部写入原TTY队列，顺序TaskBoard、FTP、Asset、CSV、Survey、Log、Dir、Binary，不要再送任何run或reset。实际首TaskBoard Maven35680/创建UTC00:07:32.597711、source启动全冻通过，当前AI部署进行，尚未完整业务/交付/清理，首过暂0。读取原launch/log/console和eight-original-command-submission-intent06/submission06，接47579原句柄；不要把状态采样27generation/未知usage0当终态或完整账单。后续一般项目失败仍原冻结继续；诊断/修复隔离，不拼旧7项。
+root唯一driver工具47579/Python16120现活动；八条run已经一次全部写入原TTY队列，顺序TaskBoard、FTP、Asset、CSV、Survey、Log、Dir、Binary，不要再送任何run或reset。TaskBoard已完整首过：原Maven35680 actual0/JUnit1/0/0/0、唯一root86ecb551 SUCCEEDED、精确BUSINESS标记、交付及额外Java46016 cleanup0/STOPPED DISABLED齐。原entry06 inspect仅一次actual0，子审74a46eab/账7ff312c8/closeout7cfb3ad7，父接受11ee9d13及八原文件SHA/长度再核通过；35680/Java30436/46016与审计39980/3148宿主CIM均0。TaskBoard累计1/8；UTC00:41:32.440336原队列自动启动FTP Maven6636/Java43912，当前真实AI部署。读取原47579/66809句柄及原文件，不能重跑TaskBoard或重新发送FTP/后六项。SOURCE73、政策71b/release5b仍冻结。
+
+TaskBoard最终90 logical/90 physical、已知1012306 token（deployment90738/approval921568），SDK同generation恢复/未知usage观测0；结构反馈raw/unique10/10，均SUBMISSION_REJECTED、明确未执行动作，不折算为10次SDK恢复或整项目重试。格式success/GAP marker观测0，但coverage不完整、zeroCorrectionsProven及zeroObservedAbnormality均false，不能称零异常或完整账单。旧legacy clean=true不替代新strict指标。原八文件及scope均保留，当前余七尚未完整终态，整轮goalEligible=false正常。后续一般项目失败仍原冻结继续；修复隔离，不拼旧7项。
 
 原monitor工具94607/Python37992已真实exit1/FileNotFoundError终态，绝不能poll/重启/覆盖。诊断工具10053已actual0/Python39240已结束：一次FNF为Maven期间Git开发descriptor缺失，13完整guard/14数据采样成功；构建prepare源码会删旧descriptor/marker后生成，时间路径相符但无OS写作者证明。旧04解析器误拒已用06 exact method OR原参数前缀局部修正，原04策略/XML/0c014f93/actors88554 actual0、80497 actual1/intended3均保留。两个准备观察问题都不混为八项目失败，不称零异常。
 

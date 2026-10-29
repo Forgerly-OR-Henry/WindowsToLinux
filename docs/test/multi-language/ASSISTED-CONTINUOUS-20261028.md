@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active。R08已在独立保留Root、SOURCE73及06策略71b/release5b下完成真实产品清场和独立复查/initialReset=true，一次排入八个原始完整项目。当前TaskBoard原Maven35680进行AI部署，完整首过暂0；其余七条在原队列不重发。唯一driver47579/Python16120活动。准备JUnit误拒修正及原observer94607失败/采样缺口单列保留，不称零异常。R07最终7/8、CSV原UNKNOWN保留，不拼旧成绩。FTP实际8MiB，其余既定业务与独立审批/交付清理不减；仅测试代码，无真实UI/浏览器/Computer Use。
+状态：目标active。R08同一SOURCE73及06策略71b/release5b，真实产品初清及独立复查通过；TaskBoard原任务、既定完整业务、交付和额外清理均首次通过，累计1/8。FTP原Maven6636/Java43912已由原队列自动启动，后六项仍排队，不重发。唯一driver47579/Python16120及非授权补充采样66809/Python9292活动。TaskBoard有10条内部提交结构反馈，格式绝对0未证明，不称零异常；准备JUnit误拒、原observer94607失败和采样缺口仍单列。R07最终7/8、CSV原UNKNOWN保留，不拼旧成绩。FTP实际8MiB，其余既定业务与独立审批/交付清理不减；仅测试代码，无真实UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -25,7 +25,7 @@
 | round-05 | abc7abd1fa8db25626854eece961ca43347913e8 | 首个清场执行和独立复查均通过 | 八项各一次：首过7、FTP业务失败1 | 未达成；无内部生成恢复，分阶段上传修复已轮末合入9259ee92，准备R06 |
 | round-06 | 818ac8acb065182cfd90b090db42d322e605436e | 产品清场及独立复查通过 | 计划八项，仅前三项原完整回执PASS、后五未启动；0项已观察业务失败 | 未达标；运行期主工作区发生并行源码/HEAD漂移，原守卫在CSV前退出；准备问题单列，原64MiB保留，FTP恢复1/未知usage1 |
 | round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八项目各一次：完整首过7、CSV原UNKNOWN/测试失败1 | 未达标；全部原测试及driver/observer结束，未知与原失败保留；8MiB仅授权改大小，不拼旧成绩 |
-| round-08 | 73bbbbbb07346a09155d8d3ddc23c5dd08756d38 + 06策略71b11497 | 04准备误拒另记；06原产品4阶段及独立after/initialReset通过 | 八命令一次提交，TaskBoard原任务进行中，完整首过暂0 | 进行中；原观察失败及诊断缺口保留，非零异常；不混旧R07成绩 |
+| round-08 | 73bbbbbb07346a09155d8d3ddc23c5dd08756d38 + 06策略71b11497 | 04准备误拒另记；06原产品4阶段及独立after/initialReset通过 | 八命令一次提交，TaskBoard完整首过，累计1/8；FTP进行中、后六待启动 | 进行中；内部结构反馈、原观察失败及诊断缺口保留，非零异常；不混旧R07成绩 |
 
 ## 失败原因与解决方案
 
@@ -840,3 +840,15 @@ Astra只读observer-metadata-window-judgment01接受不同输出名的非授权�
 UTC2026-10-29T00:07:32.597711Z，原初清门与完整冻结通过后，仅一次向root唯一driver工具47579/Python16120送八条原run：TaskBoard、FTP、Asset、CSV、Survey、Log、Directory、Binary。eight-original-command-submission-intent-06及submission-06记录原payload SHA、初清proof、首次launch和双CIM；实际首Maven35680及driver16120身份已核live。其余七条已经在原TTY队列，不能重发。当前只有TaskBoard一个原launch、无完整业务/交付/清理终态，完整首过暂0，不能预记8/8或把旧七项拼入。一次安全状态采样见其DEPLOYMENT/APPROVAL helper.install.tracked，27条generation、累计未知usage0仅该时点，不是终态账单或零异常结论。
 
 SOURCE73、同一06策略/模式、LOW/LOW/1500000/65536/90及用户授权FTP8MiB/1MiB/2+6/19 trace/双版五下载SHA/10并发/取消持久化/错SHA/真实停启等业务不变；无UI/浏览器/Computer Use。一般项目失败保留并继续原冻结余项，冻结或安全守卫异常阻断；所有修复另隔离，不重放旧UNKNOWN、不修改活动源。当前driver47579活动是授权原八队列，整轮结束才统一核退/清t06；原94607及旧88554/80497、37576/66898都已终态不能poll。目标active，未完成。
+
+### R08 TaskBoard完整首次通过，累计1/8；FTP原任务已自动接续
+
+原TaskBoard只一次run，root86ecb551-2a65-463a-a9e1-f4b5fedb1a68唯一SUCCEEDED；Maven35680 actualwait=true/exit0，原JUnit指定类/参数化方法单case，1/0/0/0、实际全部参数与launch一致，BUILD SUCCESS/31:53。原log3442精确STATIC_LIVE_BUSINESS task-board real HTTP + cross-language flow + restart + persistence passed仅一行，3444/3445原PASS齐。交付绑定application wtl-assisted-task-board-geve2qvs8、原state assisted-live-task-board-geve0jqbo、revision1924aa47c40da01b89f4dc2b023186f645698a935fcedc4db968a49123dbb241及ownership42341e649a441107922b5975c3ec035096ea6180e2e0fb43e8da1ec8a469d318。交付时RUNNING；独立Java46016随后actualwait=true/exit0，于UTC00:41:27.715290完成，精确PRODUCT_CLEANUP_VERIFIED同app/revision、STOPPED/DISABLED仅一次。
+
+原entry06 inspect只执行一次、actual0；06强化的六身份、精确argv/JUnit、唯一原root、原四artifact seal、cleanup原五文件绑定/argv/delivery SHA/时间链和initialReset均通过。子审parent-task-board-review-01/task-board-parent-review-01 SHA74a46eaba23cef722ab64fbfaf1e3294ce8472f085921cc8d34b17a0c501824b，生成账7ff312c8f50aaee5ade00b37e34504f551b738bff7f42ddfda9437d6e1c832e0，closeout7cfb3ad70dfca462199902957270315565f798acea1358850db9dcdbe3b892f6。父重新核八原文件SHA/长度及九审计产物、宿主CIM审计39980/3148均0，parent-task-board-review-acceptance-01 SHA11ee9d13c9814b3d33fbc70f1ef8945d970c224fbb7ffe23c2ad7ed1ddc5b7ce接受完整首过；原Maven35680/Java30436/cleanup46016也已CIM核0，过程proof3e3a8e3d4fa77edb55c7af482e32624e4d99176ce8c889765778ffe360688881。未新查远端、开DB或重跑任务；证据范围为原回执与冻结断言链，不扩大为UI或所有BUSINESS矩阵。
+
+本项最终90 logical/90 physical/raw，全部物理结果SUCCEEDED，known1012306=deployment90738+approval921568、角色账差0；SDK同generation恢复、未知usage、冲突/未解析/重复记录观测0。结构反馈raw/unique10/10，均SUBMISSION_REJECTED、每条明确未执行动作；反馈条数不等同HTTP恢复或完整项目重试。新格式success/GAP marker观测0，但coverage仍为日志可能抛错或不可用，zeroCorrectionsProven=false、strictNoInternalRecoveryProven=false、zeroObservedAbnormality=false，不称零异常或完整账单。原monitor94607失败及准备期FNF缺口不消除。
+
+原BUSINESS/PASS后的重复current-status可由测试finally的STOP/inspect/DISABLE和交付Runtime重新START/inspect/usage、再由独立Java最终清理的正常序列解释；源码有各TaskHandle/请求边界，没有测试层无限轮询或重部署整项目。此正常源码解释由本次实际封存成功支持，不把先前重复日志猜成已确认故障。该段没有新增修复、人工补救或UNKNOWN恢复。
+
+UTC00:41:32.440336，原driver47579/Python16120从此前一次写入的原队列自动启动FTP Maven6636/Java43912；新原STATIC_LIVE_STATE与初始AI调用已出现，补充66809/Python9292活动。SOURCE73/policy71b/release5b、49输入/实际产物与FTP8MiB其余完整负载不变，原八命令不重发。当前只核定TaskBoard完整1/8，FTP进行中、后六尚未启动，整轮goalEligible=false正常，目标active。t06仍在用，最终整轮收尾及新文本隐私核验尚须完成。
