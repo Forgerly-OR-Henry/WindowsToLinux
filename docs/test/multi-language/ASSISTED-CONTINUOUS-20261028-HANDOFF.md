@@ -1,6 +1,6 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R08原验收6/8已结束，R09 Linux收尾观察合同未闭合
+## 现行入口：R08原6/8失败，R09待TTL准备态调查及独立期限验证
 
 R08固定73/P71b/R5b与原参数、FTP授权8MiB，八项各一次/extra无：TaskBoard、FTP、Asset、CSV、Survey、Binary完整首过，Log/Directory原native1/root UNKNOWN/无完整业务交付，失败保留八分母。全轮577logical/578physical/known5803641/反馈47，Survey内部SDK恢复1/未知usage1、观察gap1单列，非零异常/完整账单。原47579/66809及所有旧终态句柄禁止poll/重启，原UNKNOWN不恢复/重放。
 
@@ -18,7 +18,9 @@ R08-only真实进程核退补证完成：原query01 actual exit1/unresolved1保�
 
 真实02探针edf87685：第一门PASS，第二门因active/exited后ControlGroup空/cgroup目录消失而DEPENDENCY_UNIT_IDENTITY/UNKNOWN70；未继续九场景。原unit随后用03严格原InvocationID/Description/nonce重复核验后stop0→not-found，107当前进程标记候选0/不可读0；actual c578c81b、父2e75885d，原从未验空与probe70不改判。native89511 actual70和75721 actual0均已终止禁poll，各JVM/outer actualwait/CIM退/tmp清。当前new04正常Runtime可能写ledger单列，原UNKNOWN库不开，模型/包管理/正式业务0。
 
-下一目标回合从judgment fd5e028f接续：先核宿主kernel/systemd，并用新无包fixture验证提前绑定cgroup.events FD、ready/ack及真实populated0/精确ENODEV退役路线，包含活setsid后代/错误身份/无FD/EOF/其它errno负例；该设计尚未实验或进生产。完成归属与cleanup归属分离，保持原累计T与所有审批/源保护。通过后才改生产并定点验证，再亲代/worker退出、setsid/忽略TERM与预算到期；不得用missing直接当空、Delegate切换或单元模拟代替实际证明。通过后才新源码实际产物/参数冻结，再产品inventory→plan→apply→独立after、全新八项各一次。服务器未整轮重新清场，R09正式0/目标active；APT禁止移除及ff83保护不回退，论文5项保留。详见逐轮报告的新阶段与CURRENT。
+宿主已经真实inventory0/bb15d80e核为Ubuntu kernel6.8.0-48.48、systemd255.4-1ubuntu8.18/cgroup2；无需再跑inventory。04首normal原2107f440实际70：heldFD初读1/ack后，节点退役在seek0阶段errno19，仍UNKNOWN；unitstop0/client0/notfound、103proc0，随后snapshot-bound nonce文件cleanup0/b89a0c24/105proc0，两组CIM退/tmp清，父82a31799。该检查点共享空根创建归属未证而保留，cases-01原descendants未运行，后续06收尾另记。对应Ubuntu源码judgment-final2c7335d9已确认llseek存活守卫与pread0刷新语义，以及默认ExitType=main解除timer的独立缺口；尚未实测活后代逃过旧期限，不据源码改原70。source05下载partial不是完整orig源码包，owner0ee557aa纠正原零文件删除表述并核退，保留失败证据。
+
+新cases-02已实际逐项运行：normal478b3303诊断0，真实heldFD pread0退役19；desc79804f74诊断0，MainPID0但running/pop1拒绝完成，stop0后pread19，但client实际1/unit failed timeout保留。创建unit前直接读运行manager255.4-1ubuntu8.18，源码版本对上。TTL25a55a21原70/INVOCATION_IDENTITY在READY前结束，无ready/ack/result/anchor、无pidfd注入、无独立期限证据；拒绝那次show未保存，确切原因未知，不能把疑似准备态窗口当查明。三个nonce文件各snapshot-bound清理0/完整原快照保留，6JVM+outer12PID原生wait/CIM退/tmp清，父7e499a5b；desc failed transient与共享空根随后06已精确关闭：全21匹配才reset-failed0→notfound，TTL/normal只读核notfound，100proc0/不可读0、三nonce目录不存在，固定空根非递归rmdir0/absent，actuala5bff3a0/父47a445cd；JVM16856/outer36160原生wait/CIM退/tmp清，90546actual0终止禁poll。下一步仅新测试版本修准备态协议：源码已证检查ready前强验InvocationID、无尚未绑定PENDING；原触发值仍未知。先存同一次21字段/阶段/单调时间，仅独占创建且未绑定/静态属性匹配时容许空/全零ID在原累计预算内PENDING，不写ownership/ack；非空错误、已绑定变化及FD/ack/完成保持拒绝。用直接反例及新operation验证期限，之后才生产实现；不重放/改判旧02 TTL70、旧01 seek70或最早unitprobe70，不拼三项全过。保持原累计T及所有审批/source保护，局部观测成功不当业务成功；之后才生产修正/直接定点/必要编译/本地提交、实际产物与参数新冻结，再产品inventory→plan→apply→独立after、全新八项各一次。R09正式0/服务器未整轮重新清场/目标active，APT禁止移除与ff83不回退、FTP8MiB其余负载不减、论文5项保留。详见报告最新阶段与CURRENT。
 
 ### 五网站检查点（历史，Log失败前）
 

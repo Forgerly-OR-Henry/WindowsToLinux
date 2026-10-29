@@ -4,6 +4,32 @@
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
+## 后续FD实验与精确宿主源码核对：旧失败保留，生产仍未改
+
+根线程的只读inventory实际0（bb15d80e），取得Ubuntu24.04.1、kernel6.8.0-48.48/version_signature6.8.12、systemctl客户端255.4-1ubuntu8.18及真实cgroup2挂载。该入口不创建unit、不作包查询或业务；JVM28660/outer5468实际wait/CIM退/tmp清，父bc55d2e9。原生61438已经实际0终止，不可再poll。
+
+04/cases-01仅11条本地纯判断和必要javac通过，18输入冻结a4ec2ecd。根随后只执行一个新normal operation，原[FD观测结果](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/events-fd-kernel-fixture-04/cases-01/actual-d967687aac1843dc9707f987dbcf2b63-normal.json) SHA2107f440实际70/UNKNOWN：同一cgroup2目录及events FD已锚定、初读populated1、ready/ack取得；正常主进程退出、同InvocationID终态成立，延迟2秒后原路径消失，但errno19在seek0阶段出现，原合同只接纳fresh read阶段，因此拒绝。没有把此seek19改填read/PASS，也没有重跑原normal。旧descendants因已知相同seek合同不能完成后验而未执行；这是辅助实验，不是更改八项正式队列。
+
+该case finally已精确stop0→not-found/clientwait0，当前103proc标记候选0/不可读0，controller及其transport祖先按实际startTicks/commandSHA单列。公开manifest/ready/ack/result/receipt等完整JSON快照已本地保存后，另显式snapshot-bound cleanup实际0（b89a0c24），核同digest/source/nonce/task后只删该nonce普通文件，directoryAbsent及当前105proc候选0/不可读0。父82a31799；normal/cleanup两组JVM、outer、private tmp实际核退，1829 actual70及23302 actual0均终止禁poll。原正常场景仍失败，源码/CLASS/冻结/原结果不覆盖。共享空根没有独立创建归属回执，该检查点保留，后续06收尾另记；caller本地tmp回执noUnitsCreatedOrStopped模板字段不用于远端推断，范围更正另存errata。
+
+[精确宿主源码判断](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/host-kernel-events-source-05/judgment-final.json) SHA2c7335d9取得Ubuntu kernel tag Ubuntu-6.8.0-48.48→880882dc，以及systemd import255.4-1ubuntu8.18→3c6d9a46和DSC匹配的下游补丁投影。对应[kernfs llseek及read入口](https://git.launchpad.net/~ubuntu-kernel/ubuntu/+source/linux/+git/noble/plain/fs/kernfs/file.c?h=Ubuntu-6.8.0-48.48)与[seq_file](https://git.launchpad.net/~ubuntu-kernel/ubuntu/+source/linux/+git/noble/plain/fs/seq_file.c?h=Ubuntu-6.8.0-48.48)解释了seek先检查节点存活、退役即ENODEV；正长度pread0会清seq缓存并重新进入start，支持下一新实验换读取方式，不支持回填旧70。该源码版本对应不是宿主运行二进制的可复现来源证明。
+
+另有独立的已确认源码保证缺口：[该systemd service.c](https://git.launchpad.net/ubuntu/+source/systemd/plain/src/core/service.c?id=3c6d9a46048bf3a615bf577467b80e836fdf80ec)在默认ExitType=main、主进程退出时可进入EXITED并清RuntimeMax timer，即使还有后代；RuntimeMax属性仍显示原数值不代表计时器仍运行。原unit没有读取ExitType，尚未实测活后代越过期限，不能这样写。候选显式ExitType=cgroup并纳入show/identity，使活后代仍RUNNING；必须独立验证leader先退、setsid后代忽略TERM、自有launcher被pidfd核杀后，RuntimeMax+Stop确实触发清退。FD正例即使通过也不能替代这个期限证明。
+
+源码检索中三个orig压缩包下载被中断actual1，部分文件保留为失败证据，均非DSC验证完整orig包；只有debian补丁包的匹配校验用于对应下游路径分析。原判断“零长度临时文件已删”表述不准确，保留原文并由[owner closeout](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/host-kernel-events-source-05/owner-closeout-01.json) 0ee557aa纠正。限定owner提权CIM匹配0、partial均可独占读；没有继续下载或测试。源码、tag/DSC签名未验及未覆盖全kernel路径的限制保留，不能将该局部判断说成所有Linux保证。
+
+新cases-02的10条pread判断、2条ExitType契约与必要javac实际0，31308/20268 wait/CIM/tmp清，冻结5339ec9d；父读Java/caller及三Python完整差异（ba1282/7ace28）并核18输入（834c9e）。创建unit之前直接读取运行manager Version，实际255.4-1ubuntu8.18，与此前client版本相同；核原kernel签名及公开binary未漂移。
+
+随后三个新operation原结果分别保留：[normal](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/events-fd-kernel-fixture-04/cases-02/actual-67d724c525eb49b2a74431c56c0e7fb8-normal.json) 478b3303实际0，heldFD初pop1后正常退出，再同FD pread0实际errno19，记录KERNEL_CORE_EVENTS_RETIRED_CANDIDATE；[descendants](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/events-fd-kernel-fixture-04/cases-02/actual-8d4add34da6f4c87be15620278336ab3-descendants.json) 79804f74诊断0，MainPID0但ExitType=cgroup的unit仍running/FD pop1，正常完成被拒；精确stop0后同FD pread19、当前标记0，但远端client实际1、unit failed/Resulttimeout必须单列，不称零异常或业务成功。上述两项支持当前宿主的观测机制，不等于完整生命周期修复。
+
+[ttl](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/events-fd-kernel-fixture-04/cases-02/actual-60f0c69e5e9442e69fdd8efe137a35cc-ttl.json) 25a55a21原实际70/INVOCATION_IDENTITY，在READY前即停止，没有ready/ack/result/anchor，没有pidfd注入或独立期限证据。触发拒绝的那一次show未保存，确切值与原因未证；准备态InvocationID尚不可用是待证假设，不写成已查明，也不把正常/活后代两个结果拼成三项全过。finally对原unit完整归属stop0→not-found/clientwait0/104proc候选0，随后只做snapshot-bound文件清理。下一步先调查准备态协议与该拒绝的触发条件，再新operation验证独立期限；不重放这个原TTL70。
+
+三个nonce的公开JSON快照均已保存后各自精确文件cleanup0（375ba93f/fa52708a/c79946cb），所有6个JVM与outer共12PID经原生wait和宿主CIM退出、private tmp清。原生23962/87065/15392/82206/50352/4649均终态禁poll；父汇总7e499a5b明确normal0/desc诊断0但client1/ttl70及无独立期限证据。当时desc仍有已停止的failed transient记录、共享空根，随后06已做精确收尾：原desc全部21属性匹配后reset-failed0→not-found，TTL/normal只读核not-found；当前100proc标记候选0/不可读0，三nonce目录均不存在，固定testroot逐祖先非alias/root-owned/mode0700/dev25/ino13994且全空后非递归rmdir0→absent。actual a5bff3a0、父47a445cd；JVM16856/outer36160 actualwait/CIM退/private tmp清，90546实际0终止禁poll。原desc client1、TTL70、独立期限未证均不改判。此为诊断资源清理，不是正式整轮产品清场。
+
+源码已证准备态协议缺口：controller检查ready前即调用cleanup_ownership，后者立即把空、全零、格式错误或已绑定变化统一强验为INVOCATION_IDENTITY，没有未绑定PENDING分支。原触发show值未存，不能反推本次具体哪种物理情况。下回合先只在新测试代码记录同一次有界21字段/阶段/单调时间；仅独占创建、尚未绑定、静态属性匹配时允许空/全零ID在原累计期限内PENDING，不写ownership/不ack；非空错身份、已绑定变化及running/FD/ack/完成各门继续严格。已只读定位，尚未修改或验证新观察代码。
+
+生产r09f da90及实际targets仍未改，原APT禁止移除、累计预算、独立审批、source/owner/hook/签名保护和ff83均保留。R08仍6/8，正式R09仍0、服务器未整轮重新清场；FTP8MiB、其余既定负载不减。辅助准备、清理、网络失败和注入非零不混正式八项分母；只有必要无包能力及生产实现/定点/必要构建/本地提交完成后，才新实际产物与参数冻结、产品清场、独立after及全新八项。
+
 ## R09首次受控Linux探针：第二能力门未通过，正式轮未启动
 
 这是R08收尾后的新阶段，不在postdoc07五输入旧字节快照内。R08固定补审已实际PASS5（080963cc），父接纳69e01073；四个inner原生wait0、五身份CIM退、pd07/classes/t06均清。outer原工具退出UNKNOWN_OUTPUT_TRUNCATED仍按3465e086保留，不能由CIM absent推断自然0。R08仍6/8，原失败、UNKNOWN与所有原库不重放。当前FTP维持用户明确授权的8MiB，其余既定业务不减。
