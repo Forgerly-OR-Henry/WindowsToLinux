@@ -54,6 +54,8 @@ class DeploymentAiOutputConfigTest {
                 selected.call(purpose, List.of(new AiMessage(AiRole.USER, "current", List.of())), List.of(new AiToolDefinition("submit_result", "complete", "{\"type\":\"object\"}")),
                     "fixture-route", fixture.task, false);
                 assertEquals(extra, fixture.requests.getLast().generationRecoveryAttempts());
+                assertTrue(fixture.requests.getLast().reasoningOverride().isEmpty(), "Deployment inherits each purpose's host reasoning setting");
+                assertTrue(fixture.requests.getLast().modelId().isEmpty(), "Deployment keeps host recommendation routing");
                 assertEquals(Optional.empty(), fixture.requests.getLast().requiredToolName(), "The raw call preserves automatic tool selection; strict submissions are validated by askCommand");
                 assertEquals("submit_result", fixture.requests.getLast().tools().getFirst().name());
             }

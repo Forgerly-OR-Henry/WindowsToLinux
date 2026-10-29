@@ -5,19 +5,43 @@ import java.nio.ByteOrder;
 import java.time.Duration;
 import java.util.Objects;
 
-/** Complete WAV input: PCM16 little-endian, mono, 24 kHz, at most 25 MB. / 完整 WAV 输入：小端 PCM16、单声道、24 kHz，最多 25 MB。
- * @param audio complete RIFF/WAVE bytes / 完整 RIFF/WAVE 字节
- * @param filename safe extension-bearing name / 带扩展名的安全文件名
- * @param timeout total positive deadline, at most 30 minutes / 整体正时限，最多 30 分钟 */
-public record VoiceRequest(byte[] audio, String filename, Duration timeout) {
+/** Complete WAV input with optional exact model selection. / 带可选精确模型选择的完整 WAV 输入。
+ * @param audio complete mono PCM16 24 kHz WAV, at most 25 MB / 完整单声道 PCM16 24 kHz WAV，最多 25 MB
+ * @param filename safe WAV upload filename / 安全 WAV 上传文件名
+ * @param timeout whole operation deadline, at most 30 minutes / 整体操作期限，最多 30 分钟
+ * @param modelId exact configured model or empty to use voice recommendations / 精确配置模型，空值使用语音推荐
+ */
+public record VoiceRequest(byte[] audio, String filename, Duration timeout, java.util.Optional<String> modelId) {
+    /** Captures inputs at the VoiceRequest ownership boundary. / 在 VoiceRequest 所有权边界捕获输入。
+     * @param audio captured audio at this validated model boundary / 此已校验模型边界捕获的 audio
+     * @param filename captured filename at this validated model boundary / 此已校验模型边界捕获的 filename
+     * @param timeout captured timeout at this validated model boundary / 此已校验模型边界捕获的 timeout
+     */
+    public VoiceRequest(byte[] audio, String filename, Duration timeout) {
+        this(audio, filename, timeout, java.util.Optional.empty());
+    }
+
+    /** Selects one configured model without fallback. / 选择单个配置模型，不切换后备。
+     * @param id exact platform model configuration identity / 精确平台模型配置标识
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     */
+    public VoiceRequest withModel(String id) {
+        return new VoiceRequest(audio, filename, timeout, java.util.Optional.of(id));
+    }
+
     /** Provider upload ceiling in bytes. / 提供方上传字节上限。 */
     public static final int MAX_BYTES = 25_000_000;
 
-    /** Copies and validates audio before any provider request. / 在发送请求前复制并校验音频。
-     * @param audio complete RIFF/WAVE input / 完整 RIFF/WAVE 输入
-     * @param filename safe WAV upload name / 安全 WAV 上传名称
-     * @param timeout whole operation deadline / 整体操作时限 */
+    /** Copies validated WAV input while retaining its selected model. / 复制已校验 WAV 输入并保留所选模型。
+     * @param audio complete bounded WAV input / 完整有界 WAV 输入
+     * @param filename safe WAV upload filename / 安全 WAV 上传文件名
+     * @param timeout positive whole operation deadline / 正的整体操作期限
+     * @param modelId exact configuration or empty for voice recommendations / 精确配置，空值使用语音推荐
+     */
     public VoiceRequest {
+        java.util.Objects.requireNonNull(modelId);
+        if (modelId.isPresent() && !modelId.orElseThrow().matches("[a-z][a-z0-9-]{0,63}"))
+            throw new IllegalArgumentException("Invalid model configuration identity");
         Objects.requireNonNull(audio);
         filename = Objects.requireNonNull(filename).strip();
         if (!filename.matches("[A-Za-z0-9._-]{1,120}\\.wav"))

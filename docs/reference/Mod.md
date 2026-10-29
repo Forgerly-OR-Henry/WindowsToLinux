@@ -1895,13 +1895,16 @@ public record AiMessage(AiRole role, String text, List<AiImage> images,
     List<AiToolCall> toolCalls, Optional<AiToolResult> toolResult,
     Optional<AiContinuation> continuation) {}
 public record AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<Integer> maxOutputTokens,
-    Duration timeout, boolean jsonObjectResponse, List<AiToolDefinition> tools, int maxRequestBytes) {}
+    Duration timeout, boolean jsonObjectResponse, List<AiToolDefinition> tools, int maxRequestBytes,
+    Optional<String> requiredToolName, int generationRecoveryAttempts,
+    Optional<String> modelId, Optional<AiReasoningMode> reasoningOverride) {}
 public record AiUsage(Optional<Long> inputTokens, Optional<Long> outputTokens,
                       Optional<Long> cachedInputTokens, Optional<Long> cacheMissInputTokens,
                       Optional<Long> reasoningOutputTokens) {}
 public record AiResponse(String text, String modelId, String finishReason, AiUsage usage,
     List<AiToolCall> toolCalls, Optional<AiContinuation> continuation, Optional<Integer> encodedRequestBytes,
-    Optional<Integer> effectiveMaxOutputTokens) {}
+    Optional<Integer> effectiveMaxOutputTokens, List<AiGenerationAttempt> generationAttempts,
+    Optional<AiReasoningMode> effectiveReasoning) {}
 public record AiToolDefinition(String name, String description, String inputSchema) {}
 public record AiToolCall(String id, String name, String arguments) {}
 public record AiToolResult(String callId, String text, boolean error) {}
@@ -1926,8 +1929,8 @@ import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import java.time.Duration;
 import java.util.List;
 
-public record VoiceRequest(byte[] audio, String filename, Duration timeout) {}
-public record VoiceOptions(Duration timeout, int maxBufferedBytes) {}
+public record VoiceRequest(byte[] audio, String filename, Duration timeout, java.util.Optional<String> modelId) {}
+public record VoiceOptions(Duration timeout, int maxBufferedBytes, java.util.Optional<String> modelId) {}
 public record VoiceEvent(String segmentId, int contentIndex, long sequence, long inputOrder,
     boolean finalResult, String text) {}
 public record VoiceResponse(String text, String modelId, List<VoiceEvent> segments) {}
@@ -1944,7 +1947,7 @@ public interface VoiceSession extends AutoCloseable {
 
 模型选择、验证和用途分组沿用平台配置；输入图片仅限 VISION，支持 PNG/JPEG，单张最多 10 MiB、单次最多 4 张；文本 UTF-8 合计最多 1 MiB。`maxOutputTokens` 为空时申请使用 APP 推荐额度；非空值必须是正整数。APP 允许覆写时使用申请值，关闭覆写时统一使用推荐值，非法申请值始终拒绝。平台集中解析后发送三种协议各自的输出参数，不受旧逐模型额度限制；Anthropic 的必填 `max_tokens` 始终存在。文字、视觉、原生工具能力验证使用独立配置额度，语音接口不增加此参数。输入预算或能力不满足在发送前拒绝。`jsonObjectResponse` 是输出格式请求，业务字段和语义仍由作者校验。用量缺失为 Optional.empty，不伪造为零。文字和视觉公开调用一次返回完整结果；Provider 内部文本流式接收不作为业务自动执行指令。调用取消及超时不证明服务商没有处理请求，不自动重发来掩盖未知结果。
 
-可恢复的模型决策可先调用 `configurationRevision` 冻结不透明修订，再使用带 `expectedRevision` 的 `call`。宿主捕获所有用途的全部已配置成员、顺序、启用/禁用状态、模型修订、精确凭据引用，并将启动快照的推荐额度及覆写开关纳入修订；旧模型编辑器额度不参与摘要，也不改变验证修订。每个候选发送前重新核对完整冻结修订，配置漂移返回 `AI_CONFIGURATION_CHANGED` 并拒绝本次后续发送，不在网络调用期间持有平台事务锁。既有不带修订的调用仍保留开始时的成员快照。当前宿主适配按一次调用开始时取得的用途成员顺序执行，在取用凭据时重新核验模型修订、能力及用途启用状态。文字/视觉调用只在收到明确非成功 HTTP 响应后尝试下一成员；成功响应格式不合法直接报告失败，发送后的取消、超时、断连或正文超限保持 UNKNOWN，不继续尝试其他模型。文件语音与实时语音按各自能力选定首个匹配成员，调用过程中不换模型。所有文字/视觉候选共用请求总时限，实际客户端终止后才释放连接占用；释放登记失败由原任务显式核对。
+可恢复的模型决策可先调用 `configurationRevision` 冻结不透明修订，再使用带 `expectedRevision` 的 `call`。宿主捕获全部模型配置及四种用途的成员和顺序、能力状态、厂商、协议、用途推理设置、模型修订、精确凭据引用，并将启动快照的推荐额度及覆写开关纳入修订；旧模型编辑器额度不参与摘要，也不改变验证修订。每个候选发送前重新核对完整冻结修订，配置漂移返回 `AI_CONFIGURATION_CHANGED` 并拒绝本次后续发送，不在网络调用期间持有平台事务锁。既有不带修订的调用仍保留开始时的成员快照。当前宿主适配按一次调用开始时取得的用途成员顺序执行，在取用凭据时重新核验模型修订、能力及用途启用状态。文字/视觉调用只在收到明确非成功 HTTP 响应后尝试下一成员；成功响应格式不合法直接报告失败，发送后的取消、超时、断连或正文超限保持 UNKNOWN，不继续尝试其他模型。文件语音在明确的 429 或 5xx HTTP 拒绝后可使用下一匹配成员；不兼容输入、取消或 UNKNOWN 不后备。实时语音仅在会话打开前的连接失败或握手拒绝且资源已确认关闭时尝试下一匹配成员；已返回会话后不更换模型。显式指定配置的四种入口都不后备。所有文字/视觉候选共用请求总时限，实际客户端终止后才释放连接占用；释放登记失败由原任务显式核对。
 
 单次消息数量为 1～1024，完整响应正文最多 8 MiB；图片检查声明的 MIME、签名和字节容量，不在平台中解码像素。APP 推荐额度是请求预算，不表示模型真实能力上限；提供方拒绝时沿用既有错误处理，不自动降额重试。`AiResponse.effectiveMaxOutputTokens` 回传宿主实际发送的正数额度，未测量夹具可为空；失败诊断的 `effectiveMaxOutputTokens` 携带已解析额度。日志应区分申请值与实际值，无法取得实际值时记为未知。部署调用的 `requestedMaximumOutputTokens` 记录申请值，原 `maximumOutputTokens` 记录实际值。公开用量来自提供方报告，缺失字段保留为空。平台不记录 API Key、请求消息或提供者原始错误正文；JDK HTTP 请求头会持有凭据 String，临时 char[] 和所属请求/响应 byte[] 按实际使用寿命清理，不承诺清除 JDK 内部副本。
 
@@ -1957,7 +1960,7 @@ var result = context.ai().call(requested, task);
 var actualBudget = result.value().flatMap(AiResponse::effectiveMaxOutputTokens);
 ```
 
-语音共用模型清单和 `VOICE` 用途，有独立的文件转写 HTTP 地址及实时转写 WebSocket 地址。保存配置与能力验证分开；纯语音模型不需要聊天地址或文字探测，界面允许留空文字 Token 上限。宿主保存接口仍接受正的统一上限值；纯语音表单沿用原保存值，新记录内部填入 128，音频协议和语音预算不使用此值。配置聊天地址后须明确填写正的文字上限。文字、视觉、文件语音、实时语音四种验证分别绑定相关地址、模型及凭据修订；显示名或无关协议地址的变化不使其他有效验证失效。真实提供方验证状态按实际调用记录，本机协议模拟不能代替真实提供方验收。
+语音共用模型清单和 `VOICE` 用途，有独立的文件转写 HTTP 地址及实时转写 WebSocket 地址。保存配置与能力验证分开；纯语音模型不需要聊天地址或文字探测，界面允许留空文字 Token 上限。宿主保存接口仍接受正的统一上限值；纯语音表单沿用原保存值，新记录内部填入 128，音频协议和语音预算不使用此值。配置聊天地址后须明确填写正的文字上限。文字、视觉、文件语音、实时语音四种验证分别绑定相关地址、模型及凭据修订；显示名变化不使有效验证失效；厂商、型号、协议和用途推理设置变化会更新修订并撤销旧验证。真实提供方验证状态按实际调用记录，本机协议模拟不能代替真实提供方验收。
 
 `VoiceRequest` 校验并复制完整 RIFF/WAVE 输入：小端 PCM16、24 kHz、单声道、至少 100 ms，最多 25,000,000 字节，文件名为安全 `.wav` 名称。实时会话接收同格式原始 PCM，单块最多 65,536 字节并保持样本对齐；队列由 `maxBufferedBytes` 限在 64 KiB～1 MiB，满时 `BUSY` 表示未接收，不丢音频。请求/会话总时限为正且最多 30 分钟。平台不录音、不转码；调用方负责准备符合格式的音频。
 
@@ -2673,3 +2676,26 @@ public interface DeploymentApi {
 - [Spring Boot 对嵌套 JAR 的说明](https://docs.spring.io/spring-boot/specification/executable-jar/nested-jars.html)：Java 没有通用的标准嵌套 JAR 加载机制；专用加载器与解包加载属于不同实现选择。
 - [H2 连接模式](https://h2database.com/html/features.html#connection_modes)：嵌入式、服务器和混合模式的差异，及单个 JVM/类加载器统一打开嵌入式数据库的约束。
 - [H2 Schema 命令](https://h2database.com/html/commands.html#create_schema)：Schema 的所有权、创建和删除权限，以及部分结构变更提交当前事务的行为。
+
+## AI 模型查询、指定调用与推理覆写
+
+`context.ai().models(task)` 返回全部配置的非秘密元数据（包括未验证项）；`models(AiPurpose, task)` 返回对应用途的有序推荐。清单仅包含平台配置 ID、名称、型号、厂商、协议、修订、验证状态、已收录推理选项与各用途当前偏好，不提供 API Key、凭据引用或端点。
+
+```java
+var ai = context.ai();
+var inventory = ai.models(task);
+var request = new AiRequest(AiPurpose.LANGUAGE, messages, timeout, false);
+// 不指定模型：使用平台该用途的推荐顺序。
+var recommended = ai.call(request, task);
+// 指定配置：能力必须已验证；即使失败也不自动换模型。
+var direct = ai.call(request.withModel(selectedConfigurationId), task);
+// 可选：仅覆写本次推理控制，不保存到数据库。
+var overridden = ai.call(request.withModel(selectedConfigurationId)
+    .withReasoning(AiReasoningMode.HIGH), task);
+```
+
+未覆写强度时，语言、审批与视觉分别继承所选模型的用途偏好；显式 `AiReasoningMode.DEFAULT` 省略提供方控制，不等于继承，也不等于标准模式。只选择元数据中已确认支持的选项。未知型号不声明支持档位；已有通用协议旧设置仍保留，新的明确不支持选择会报错，不静默降档。
+
+需要冻结指定模型时，先调用 `modelConfigurationRevision(selectedConfigurationId, task)`，再使用已有带修订的 `call` 重载。文字/视觉通过 `AiRequest.withModel`、文件语音通过 `VoiceRequest.withModel`、实时语音通过 `VoiceOptions.withModel` 指定配置。不得用未通过能力验证的模型绕过平台验证，也不得在结果未知时自动重放原业务效果。部署 Mod 保持原推荐路由，不主动使用推理覆写或新增独立模型选择 UI。
+
+静态能力表只为代码明确收录的型号和协议声明控制选项；未收录及第三方显示未知。Claude Opus 4.5 的档位映射为官方输出 effort，不自动分配旧式 thinking Token 预算；支持 adaptive 的 4.6/4.7/4.8 在选择档位时显式开启 adaptive thinking。已知不支持的工具与推理组合返回 `AI_PROVIDER_REQUEST_UNSUPPORTED`，不自动改档或删参数。`effectiveReasoning=DEFAULT` 只表示平台省略控制，不声明提供方实际计算量。

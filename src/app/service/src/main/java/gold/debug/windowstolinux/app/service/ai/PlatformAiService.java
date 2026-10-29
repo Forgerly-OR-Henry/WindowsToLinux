@@ -20,6 +20,7 @@ import gold.debug.windowstolinux.app.ai.voice.*;
 import gold.debug.windowstolinux.app.ai.voice.VoiceHttpCall;
 import gold.debug.windowstolinux.app.ai.voice.VoiceSocketSession;
 import gold.debug.windowstolinux.app.db.ai.AiModelStore;
+import gold.debug.windowstolinux.app.db.ai.AiReasoningStore;
 import gold.debug.windowstolinux.app.config.AppConfig;
 import gold.debug.windowstolinux.app.db.ai.StoredAiModelInfo;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
@@ -30,6 +31,10 @@ import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 import gold.debug.windowstolinux.app.service.task.TaskCapabilityScope;
 import gold.debug.windowstolinux.appapi.ai.*;
+import gold.debug.windowstolinux.appapi.ai.model.AiModelMetadata;
+import gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode;
+import gold.debug.windowstolinux.app.ai.provider.ModelProviderRegistry;
+import gold.debug.windowstolinux.app.ai.provider.adapter.ModelProviderCatalog;
 import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
 import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
 import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
@@ -52,6 +57,14 @@ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 /** Routes generic model calls through frozen purpose selections and original task credentials. / 经冻结用途选择及原任务凭据路由通用模型调用。 */
 public final class PlatformAiService implements AiService, AutoCloseable {
     private final NativeModelContinuations continuations;
+
+    /** Original owner of initialization and actual provider parameter mapping. / 初始化与实际厂商参数映射的原所有者。
+     */
+    final ModelReasoningSettings reasoning;
+
+    /** Captured inventory for this model capability boundary. / 此模型能力边界捕获的 inventory。
+     */
+    private final ModelInventoryAccess inventory;
 
     /** Configured model connection timeout in seconds. / 已配置的模型连接超时秒数。 */
     private final int connectSeconds;
@@ -109,6 +122,22 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @param settings startup AI policy / 启动 AI 策略 */
     public PlatformAiService(PlatformDatabase database, PlatformTaskRuntime tasks, DesktopSecurityService security,
                              AiModelStore profiles, String owner, String version, AppConfig.Ai settings) {
+        this(database, tasks, security, profiles, owner, version, settings, ModelProviderCatalog.create());
+    }
+
+    /** Captures inputs at the PlatformAiService ownership boundary. / 在 PlatformAiService 所有权边界捕获输入。
+     * @param database captured database at this validated model boundary / 此已校验模型边界捕获的 database
+     * @param tasks captured tasks at this validated model boundary / 此已校验模型边界捕获的 tasks
+     * @param security captured security at this validated model boundary / 此已校验模型边界捕获的 security
+     * @param profiles authoritative model inventory repository / 权威模型清单仓库
+     * @param owner captured owner at this validated model boundary / 此已校验模型边界捕获的 owner
+     * @param version captured version at this validated model boundary / 此已校验模型边界捕获的 version
+     * @param settings captured settings at this validated model boundary / 此已校验模型边界捕获的 settings
+     * @param providers complete injected provider registry / 注入的完整厂商注册表
+     */
+    public PlatformAiService(PlatformDatabase database, PlatformTaskRuntime tasks, DesktopSecurityService security,
+                             AiModelStore profiles, String owner, String version, AppConfig.Ai settings, ModelProviderRegistry providers) {
+        this.reasoning = new ModelReasoningSettings(profiles, providers, settings.reasoning());
         this.settings = Objects.requireNonNull(settings);
         this.continuations = new NativeModelContinuations(settings.nativeState());
         this.connectSeconds = settings.connectSeconds();
@@ -120,6 +149,39 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         bootId = database.bootId();
         scope = new TaskCapabilityScope(database, tasks, owner, version, Optional.empty(), "ai-access-",
             Optional.of(new ResourceRecovery("ai-process.v1", Map.of("bootId", bootId.toString(), "kind", "access"))));
+        inventory = new ModelInventoryAccess(profiles, reasoning, scope, () -> routingSnapshot().revision());
+    }
+
+    /** Reads non-secret model metadata inside the original task admission. / 在原任务准入内读取非秘密模型元数据。
+     * @param task authentic original task context / 真实原任务上下文
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     * @throws ApiException if original admission, storage or configuration validation fails / 原准入、存储或配置校验失败时
+     */
+    @Override
+    public List<AiModelMetadata> models(TaskContext task) throws ApiException {
+        return inventory.models(task);
+    }
+
+    /** Reads non-secret model metadata inside the original task admission. / 在原任务准入内读取非秘密模型元数据。
+     * @param purpose declared invocation purpose / 声明的调用用途
+     * @param task authentic original task context / 真实原任务上下文
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     * @throws ApiException if original admission, storage or configuration validation fails / 原准入、存储或配置校验失败时
+     */
+    @Override
+    public List<AiModelMetadata> models(AiPurpose purpose, TaskContext task) throws ApiException {
+        return inventory.models(purpose, task);
+    }
+
+    /** Captures the inventory revision without requiring recommendation membership. / 捕获清单修订，不要求推荐成员资格。
+     * @param modelId optional or exact platform model configuration identity / 可选或精确的平台模型配置标识
+     * @param task authentic original task context / 真实原任务上下文
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     * @throws ApiException if original admission, storage or configuration validation fails / 原准入、存储或配置校验失败时
+     */
+    @Override
+    public String modelConfigurationRevision(String modelId, TaskContext task) throws ApiException {
+        return inventory.modelConfigurationRevision(modelId, task);
     }
 
     /**
@@ -169,10 +231,17 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         long start = System.nanoTime();
         try {
             return scope.call(task, false, () -> {
-                var candidate = voiceCandidate(AiCapabilityType.VOICE_FILE, expectedRevision);
-                try (var prepared = capture(candidate, AiPurposeType.VOICE, task, expectedRevision)) {
-                    return sendVoice(candidate.profile(), prepared.key(), request, task, start);
+                OperationResult<VoiceResponse> result = null;
+                for (var candidate : voiceCandidates(AiCapabilityType.VOICE_FILE, expectedRevision, request.modelId())) {
+                    try (var prepared = capture(candidate, AiPurposeType.VOICE, task, expectedRevision, request.modelId().isEmpty())) {
+                        result = sendVoice(candidate.profile(), prepared.key(), request, task, start);
+                    }
+                    if (request.modelId().isPresent() || result.outcome() != TaskResult.FAILED
+                        || result.problem().filter(problem -> problem.eventCode().equals("VOICE_HTTP_REJECTED")
+                        && problem.context().getOrDefault("httpStatus", "").matches("429|5[0-9]{2}")).isEmpty())
+                        return result;
                 }
+                return Objects.requireNonNull(result);
             });
         } catch (SQLException failure) {
             throw error(ProblemCode.IO_FAILURE, "AI_CONFIGURATION_STORAGE", "Model configuration could not be read");
@@ -193,30 +262,44 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         long start = System.nanoTime();
         try {
             return scope.call(task, false, () -> {
-                var candidate = voiceCandidate(AiCapabilityType.VOICE_REALTIME, Optional.empty());
-                try (var prepared = capture(candidate, AiPurposeType.VOICE, task, Optional.empty())) {
-                    return openVoice(candidate.profile(), prepared.key(), VoiceBudget.remaining(options, start), listener, task);
+                ApiException rejected = null;
+                for (var candidate : voiceCandidates(AiCapabilityType.VOICE_REALTIME, Optional.empty(), options.modelId())) {
+                    try (var prepared = capture(candidate, AiPurposeType.VOICE, task, Optional.empty(), options.modelId().isEmpty())) {
+                        return openVoice(candidate.profile(), prepared.key(), VoiceBudget.remaining(options, start), listener, task);
+                    } catch (ApiException failure) {
+                        if (options.modelId().isPresent() || failure.getSuppressed().length != 0
+                            || !Set.of("VOICE_CONNECTION_REJECTED", "VOICE_CONNECTION_FAILED").contains(failure.problem().eventCode()))
+                            throw failure;
+                        rejected = failure;
+                    }
                 }
+                throw Objects.requireNonNull(rejected);
             });
         } catch (SQLException failure) {
             throw error(ProblemCode.IO_FAILURE, "AI_CONFIGURATION_STORAGE", "Model configuration could not be read");
         }
     }
 
-    /** Selects the first explicitly routed model with the requested verified input mode. / 选择明确用途路由中首个已验证所需输入方式的模型。
+    /** Captures ordered models with the requested verified input mode. / 捕获已验证所需输入方式的有序模型。
      * @param capability exact voice input mode / 精确语音输入方式
      * @param revision optional frozen whole-route digest / 可选冻结整路由摘要
-     * @return selected frozen configuration / 所选冻结配置
+     * @param modelId optional or exact platform model configuration identity / 可选或精确的平台模型配置标识
+     * @return ordered frozen configurations / 有序冻结配置
      * @throws SQLException if route storage cannot be read / 路由存储无法读取时
      * @throws ApiException if mode, route or revision is unavailable / 方式、路由或修订不可用时 */
-    private StoredAiModelInfo voiceCandidate(AiCapabilityType capability, Optional<String> revision)
+
+    private List<StoredAiModelInfo> voiceCandidates(AiCapabilityType capability, Optional<String> revision, Optional<String> modelId)
         throws SQLException, ApiException {
+        if (modelId.isPresent()) return List.of(inventory.selected(modelId.orElseThrow(), capability, revision));
+        reasoning.initialize();
         var candidates = revision.isPresent() ? routingSnapshotFor(revision.orElseThrow(), AiPurposeType.VOICE)
             : profiles.configuredFor(AiPurposeType.VOICE);
         if (candidates.isEmpty())
             throw error(ProblemCode.UNAVAILABLE, "AI_PURPOSE_UNAVAILABLE", "No enabled verified voice model is configured");
-        return candidates.stream().filter(value -> value.verified(capability)).findFirst().orElseThrow(() ->
-            error(ProblemCode.UNAVAILABLE, "VOICE_MODE_UNAVAILABLE", "No selected model supports the requested voice input mode"));
+        var admitted = candidates.stream().filter(value -> value.verified(capability)).toList();
+        if (admitted.isEmpty())
+            throw error(ProblemCode.UNAVAILABLE, "VOICE_MODE_UNAVAILABLE", "No selected model supports the requested voice input mode");
+        return admitted;
     }
 
     /** Requires a complete non-secret routing digest. / 要求完整且不含秘密的路由摘要。
@@ -348,7 +431,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
          * @return limits with the remaining original deadline / 使用原剩余期限的限制
          * @throws ApiException if admission exhausted the deadline / 准入已耗尽期限时 */
         private static VoiceOptions remaining(VoiceOptions options, long start) throws ApiException {
-            return new VoiceOptions(remaining(options.timeout(), start), options.maxBufferedBytes());
+            return new VoiceOptions(remaining(options.timeout(), start), options.maxBufferedBytes(), options.modelId());
         }
     }
 
@@ -478,6 +561,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                 tasks.snapshots().stream().filter(v -> v.state() == gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED)
                     .forEach(v -> continuations.clear(v.id()));
                 String nativeRevision = expectedRevision.isPresent() ? expectedRevision.orElseThrow()
+                    : request.modelId().isPresent() ? modelConfigurationRevision(request.modelId().orElseThrow(), task)
                     : configurationRevision(request.purpose(), task);
                 Optional<gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile> binding;
                 try {
@@ -485,7 +569,9 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                 } catch (IllegalArgumentException invalid) {
                     throw error(ProblemCode.UNAVAILABLE, "AI_SESSION_BINDING_CHANGED", "Native history identity or configuration revision changed");
                 }
-                var candidates = firstOnly ? firstLanguage() : expectedRevision.isPresent()
+                var candidates = request.modelId().isPresent()
+                    ? List.of(inventory.selected(request.modelId().orElseThrow(), request.purpose() == AiPurpose.VISION ? AiCapabilityType.VISION : AiCapabilityType.TEXT, expectedRevision))
+                    : firstOnly ? firstLanguage() : expectedRevision.isPresent()
                     ? routingSnapshotFor(expectedRevision.orElseThrow(), purpose)
                     : profiles.configuredFor(purpose);
                 if (candidates.isEmpty())
@@ -502,12 +588,12 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                     throw error(ProblemCode.UNAVAILABLE, "AI_TOOLS_UNVERIFIED", "The selected model needs native tool round-trip verification");
                 OperationResult<AiResponse> result = null;
                 for (var candidate : candidates) {
-                    try (var prepared = capture(candidate, purpose, task, expectedRevision)) {
+                    try (var prepared = capture(candidate, purpose, task, expectedRevision, request.modelId().isEmpty())) {
                         result = send(candidate.profile(), prepared, request, effectiveMaxOutputTokens, task, start, timeout, false);
                         returnedAttempts.set(result.value().map(AiResponse::generationAttempts)
                             .orElse(result.problem().map(AiGenerationAttempt::fromProblem).orElse(List.of())));
                     }
-                    if (binding.isPresent() || result.outcome() != TaskResult.FAILED || result.problem().isEmpty()
+                    if (request.modelId().isPresent() || binding.isPresent() || result.outcome() != TaskResult.FAILED || result.problem().isEmpty()
                         || !result.problem().orElseThrow().eventCode().equals("AI_HTTP_REJECTED"))
                         return result;
                 }
@@ -572,10 +658,20 @@ public final class PlatformAiService implements AiService, AutoCloseable {
     private OperationResult<AiResponse> send(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
                                              Prepared prepared, AiRequest request, int effectiveMaxOutputTokens, TaskContext task, long start, long timeout, boolean probe) throws ApiException {
         byte[] body;
+        AiReasoningMode effectiveReasoning = request.reasoningOverride().orElseGet(() -> profile.reasoningDefaults()
+            .getOrDefault(request.purpose(), AiReasoningStore.legacyReasoning(profile.reasoningEffort())));
+        try {
+            reasoning.validate(AiModelProfile.fromStored(profile), effectiveReasoning, request.reasoningOverride().isPresent());
+        } catch (IllegalArgumentException invalid) {
+            throw error(ProblemCode.INVALID_INPUT, "AI_REASONING_UNSUPPORTED", "Reasoning setting is not supported by the selected model");
+        }
         String revision = nativeRevision(profile, request, task, probe);
         try {
             body = ModelProtocolCodec.forProtocol(profile.protocol()).encode(profile.model(), request,
-                effectiveMaxOutputTokens, profile.reasoningEffort(), continuations.values(task.id(), request, profile, revision));
+                effectiveMaxOutputTokens, gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.DEFAULT,
+                continuations.values(task.id(), request, profile, revision), payload -> reasoning.apply(payload, profile, effectiveReasoning));
+        } catch (gold.debug.windowstolinux.app.ai.provider.ModelProviderRequestException incompatible) {
+            throw error(ProblemCode.INCOMPATIBLE, "AI_PROVIDER_REQUEST_UNSUPPORTED", incompatible.getMessage());
         } catch (IllegalArgumentException invalid) {
             var metadata = new LinkedHashMap<String, String>();
             metadata.put("maximumOutputTokens", Integer.toString(effectiveMaxOutputTokens));
@@ -642,7 +738,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                     if (result.value().isPresent()) {
                         var response = result.value().orElseThrow();
                         result = new OperationResult<>(result.outcome(), Optional.of(new AiResponse(response.text(), response.modelId(),
-                            response.finishReason(), response.usage(), response.toolCalls(), response.continuation(), Optional.of(body.length), Optional.of(effectiveMaxOutputTokens))), result.problem());
+                            response.finishReason(), response.usage(), response.toolCalls(), response.continuation(), Optional.of(body.length), Optional.of(effectiveMaxOutputTokens), List.of(), Optional.of(effectiveReasoning))), result.problem());
                     }
                 } finally {
                     synchronized (pending) {
@@ -670,14 +766,14 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                 var response = result.value().orElseThrow();
                 try {
                     var state = continuations.retain(task.id(), request.purpose(), profile,
-                        revision, continuationValue);
+                        revision, continuationValue, effectiveReasoning);
                     result = new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(response.text(),
-                        response.modelId(), response.finishReason(), response.usage(), response.toolCalls(), Optional.of(state), response.encodedRequestBytes(), response.effectiveMaxOutputTokens())), Optional.empty());
+                        response.modelId(), response.finishReason(), response.usage(), response.toolCalls(), Optional.of(state), response.encodedRequestBytes(), response.effectiveMaxOutputTokens(), response.generationAttempts(), response.effectiveReasoning())), Optional.empty());
                 } catch (IllegalArgumentException exhausted) {
                     continuations.stopAfterRetentionFailure(task.id(), request.purpose());
                     result = new OperationResult<>(TaskResult.FAILED,
                         Optional.of(new AiResponse("", response.modelId(), response.finishReason(), response.usage(), List.of(),
-                            Optional.empty(), response.encodedRequestBytes(), response.effectiveMaxOutputTokens())),
+                            Optional.empty(), response.encodedRequestBytes(), response.effectiveMaxOutputTokens(), response.generationAttempts(), response.effectiveReasoning())),
                         Optional.of(error(ProblemCode.UNAVAILABLE, "AI_SESSION_STATE_LIMIT", "Native continuation state cannot be retained").problem()));
                 }
             }
@@ -729,13 +825,14 @@ public final class PlatformAiService implements AiService, AutoCloseable {
     /** Exposes all physical attempts on success or on the original failure without a fabricated response. / 在成功或原失败中暴露所有物理尝试，不编造响应。 */
     private static OperationResult<AiResponse> generationTrace(OperationResult<AiResponse> result, List<AiGenerationAttempt> attempts) {
         var response = result.value().map(value -> new AiResponse(value.text(), value.modelId(), value.finishReason(), value.usage(),
-            value.toolCalls(), value.continuation(), value.encodedRequestBytes(), value.effectiveMaxOutputTokens(), attempts));
+            value.toolCalls(), value.continuation(), value.encodedRequestBytes(), value.effectiveMaxOutputTokens(), attempts, value.effectiveReasoning()));
         return new OperationResult<>(result.outcome(), response, result.problem().map(problem -> AiGenerationAttempt.attach(problem, attempts)));
     }
 
     private String nativeRevision(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
                                   AiRequest request, TaskContext task, boolean probe) throws ApiException {
-        if (!probe) return configurationRevision(request.purpose(), task);
+        if (!probe)
+            return request.modelId().isPresent() ? modelConfigurationRevision(profile.id(), task) : configurationRevision(request.purpose(), task);
         try {
             var saved = profiles.listConfigured().stream().filter(v -> v.profile().equals(profile)).findFirst()
                 .orElseThrow(() -> error(ProblemCode.UNAVAILABLE, "MODEL_PROBE_STALE", "The model configuration changed during verification"));
@@ -748,7 +845,8 @@ public final class PlatformAiService implements AiService, AutoCloseable {
     /** Maps the public purpose to the platform's persisted route. / 将公开用途映射到平台持久路由。
      * @param purpose public purpose / 公开用途
      * @return persisted purpose / 持久用途 */
-    private static AiPurposeType mapped(AiPurpose purpose) {
+
+    static AiPurposeType mapped(AiPurpose purpose) {
         return switch (purpose) {
             case LANGUAGE -> AiPurposeType.DEPLOYMENT;
             case APPROVAL -> AiPurposeType.APPROVAL;
@@ -760,8 +858,10 @@ public final class PlatformAiService implements AiService, AutoCloseable {
     /** One immutable selected route used for both revision comparison and actual candidate iteration. / 同时用于修订比较与实际候选迭代的一份不可变已选路由。
      * @param revision opaque digest / 不透明摘要
      * @param routes exact ordered candidates / 精确有序候选
+     * @param inventory captured inventory at this validated model boundary / 此已校验模型边界捕获的 inventory
      */
-    private record RoutingSnapshot(String revision, Map<AiPurposeType, List<StoredAiModelInfo>> routes) {
+    private record RoutingSnapshot(String revision, Map<AiPurposeType, List<StoredAiModelInfo>> routes,
+                                   List<StoredAiModelInfo> inventory) {
     }
 
     /** Requires the frozen revision and returns the same captured candidate list for sending. / 要求冻结修订并返回同份捕获的候选列表以供发送。
@@ -783,11 +883,26 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @return immutable route with opaque revision / 带不透明修订的不可变路由
      * @throws SQLException if model metadata is unavailable / 模型元数据不可用时 */
     private RoutingSnapshot routingSnapshot() throws SQLException {
+        reasoning.initialize();
         var state = profiles.routingState();
         var routes = state.routes();
         try {
             var digest = MessageDigest.getInstance("SHA-256");
-            append(digest, "ai-routing-v4");
+            append(digest, "ai-routing-v5");
+            for (var model : state.inventory()) {
+                var profile = model.profile();
+                append(digest, profile.id());
+                append(digest, profile.endpoint());
+                append(digest, profile.model());
+                append(digest, profile.provider().name());
+                append(digest, profile.protocol().name());
+                append(digest, profile.credentialKey());
+                append(digest, Long.toString(model.revision()));
+                for (var purpose : List.of(AiPurpose.LANGUAGE, AiPurpose.APPROVAL, AiPurpose.VISION))
+                    append(digest, profile.reasoningDefaults().get(purpose).name());
+                for (var capability : AiCapabilityType.values())
+                    append(digest, Boolean.toString(model.verified(capability)));
+            }
             append(digest, Integer.toString(settings.recommendedMaxOutputTokens()));
             append(digest, Boolean.toString(settings.allowOutputTokenOverride()));
             for (AiPurposeType purpose : AiPurposeType.values()) {
@@ -808,7 +923,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                         append(digest, Boolean.toString(candidate.verified(capability)));
                 }
             }
-            return new RoutingSnapshot(HexFormat.of().formatHex(digest.digest()), routes);
+            return new RoutingSnapshot(HexFormat.of().formatHex(digest.digest()), routes, state.inventory());
         } catch (NoSuchAlgorithmException impossible) {
             throw new IllegalStateException("JDK SHA-256 unavailable", impossible);
         }
@@ -823,17 +938,17 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         digest.update(bytes);
     }
 
-    /**
-     * Locks the selected revision while reading its exact credential in one transaction. / 在同一事务读取精确凭据期间锁定所选修订。
+    /** * Locks the selected revision while reading its exact credential in one transaction. / 在同一事务读取精确凭据期间锁定所选修订。
      * @param expected frozen purpose member / 冻结用途成员
      * @param purpose requested model purpose / 请求的模型用途
      * @param task authentic original task / 真实原任务
      * @param expectedRevision optional whole-route revision to recheck before each candidate / 每个候选调用前重核的可选整路由修订
+     * @param recommended whether recommended-list membership is required / 是否要求推荐列表成员资格
      * @return copied credential / 复制的凭据
      * @throws ApiException if configuration or credential authorization fails / 配置或凭据授权失败时
      */
     private Prepared capture(StoredAiModelInfo expected, AiPurposeType purpose, TaskContext task,
-                             Optional<String> expectedRevision) throws ApiException {
+                             Optional<String> expectedRevision, boolean recommended) throws ApiException {
         char[][] key = new char[1][];
         boolean[] changed = new boolean[1];
         try {
@@ -846,9 +961,9 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                             changed[0] = true;
                             throw new SQLException("Frozen AI configuration changed", "55000");
                         }
-                        if (!snapshot.routes().get(purpose).contains(expected))
+                        if (!(recommended ? snapshot.routes().get(purpose) : snapshot.inventory()).contains(expected))
                             throw new SQLException("Captured model is no longer in the purpose route", "55000");
-                        profiles.requireInvocation(expected, purpose);
+                        profiles.requireInvocation(expected, purpose, recommended);
                         key[0] = store.read(expected.profile().credentialKey())
                             .orElseThrow(() -> new SQLException("Model credential is unavailable", "02000"));
                     });

@@ -71,8 +71,9 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     private volatile ToolchainPlan toolchainPlan;
 
     private record PreparedBinding(ToolchainPlan plan,
-        gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
-        String canonical) { }
+                                   gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
+                                   String canonical) {
+    }
 
     private PreparedBinding preparedBinding;
 
@@ -142,8 +143,9 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 currentPreparation(new ServerId(captured.server()), actual);
             }
 
-            @Override public void diagnosticRequested(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.Request request,
-                                                       TaskContext actual) throws ApiException {
+            @Override
+            public void diagnosticRequested(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.Request request,
+                                            TaskContext actual) throws ApiException {
                 synchronized (DeploymentAssistedScope.this) {
                     requireCurrent(actual);
                     if (!request.planRevision().equals(captured.identity()) || !request.serverId().equals(captured.server())
@@ -153,9 +155,10 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 }
             }
 
-            @Override public void toolsPrepared(ServerId server,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
-                TaskContext actual) throws ApiException {
+            @Override
+            public void toolsPrepared(ServerId server,
+                                      gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
+                                      TaskContext actual) throws ApiException {
                 synchronized (DeploymentAssistedScope.this) {
                     requireCurrent(actual);
                     toolchainsPrepared(server, tools, actual);
@@ -164,13 +167,15 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 }
             }
 
-            @Override public void hostObserved(String identity,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts host,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
-                TaskContext actual) throws ApiException {
+            @Override
+            public void hostObserved(String identity,
+                                     gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts host,
+                                     gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
+                                     TaskContext actual) throws ApiException {
                 synchronized (DeploymentAssistedScope.this) {
                     requireCurrent(actual);
-                    if (!captured.identity().equals(identity)) throw new IllegalArgumentException("Host observation plan changed");
+                    if (!captured.identity().equals(identity))
+                        throw new IllegalArgumentException("Host observation plan changed");
                     observations.hostObserved(identity, host, tools, actual);
                 }
             }
@@ -183,7 +188,8 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         sameTask(supplied);
         verify();
         var previous = toolchainPlan;
-        if (previous == null || previous.plan() != plan || !previous.identity().equals(expected)) preparedBinding = null;
+        if (previous == null || previous.plan() != plan || !previous.identity().equals(expected))
+            preparedBinding = null;
         toolchainPlan = null;
         var request = plan.request();
         var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied);
@@ -354,9 +360,10 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     }
 
     private static void requireSelections(ToolchainPlan planned,
-        gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools) {
+                                          gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools) {
         var catalog = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.defaults();
-        if (!catalog.revision().equals(tools.catalogRevision())) throw new IllegalArgumentException("Prepared catalog changed");
+        if (!catalog.revision().equals(tools.catalogRevision()))
+            throw new IllegalArgumentException("Prepared catalog changed");
         var expected = new ArrayList<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement>();
         for (var requirement : planned.requirements()) {
             var branches = catalog.candidates(requirement);
@@ -375,7 +382,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     }
 
     private synchronized Map<String, ?> bindingPlanFacts(ActionIntent intent,
-        gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, TaskContext supplied) throws ApiException {
+                                                         gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, TaskContext supplied) throws ApiException {
         sameTask(supplied);
         if (!intent.type().equals("platform.ssh.execute") || intent.serverIds().size() != 1)
             throw new IllegalArgumentException("Original binding command required");
@@ -536,7 +543,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     }
 
     private synchronized Map<String, ?> nativeDependencyFacts(ActionIntent intent,
-            gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, TaskContext supplied) throws ApiException {
+                                                              gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, TaskContext supplied) throws ApiException {
         var planned = toolchainPlan;
         if (planned == null || !planned.identity().equals(intent.revision())
             || !intent.serverIds().equals(List.of(planned.server())))
@@ -552,7 +559,8 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         if (association == null || association.entrySet().stream().anyMatch(entry -> !entry.getValue().equals(observation.get(entry.getKey()))))
             throw new IllegalArgumentException("Native gap source association changed");
         var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied);
-        if (!r.layout().digest().equals(layout.digest())) throw new IllegalArgumentException("Native plan layout differs from original task");
+        if (!r.layout().digest().equals(layout.digest()))
+            throw new IllegalArgumentException("Native plan layout differs from original task");
         var binding = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.inspect(intent, request, layout);
         return Map.of("currentToolchainPlan", planned.evidence(), "observedGap", observation, "fixedTransaction", binding);
     }
@@ -854,6 +862,41 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     @Override
     public AiService ai() {
         return new AiService() {
+            /** Reads non-secret model metadata inside the original task admission. / 在原任务准入内读取非秘密模型元数据。
+             * @param supplied authentic original task context / 真实原任务上下文
+             * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+             * @throws ApiException if original admission, storage or configuration validation fails / 原准入、存储或配置校验失败时
+             */
+            public java.util.List<gold.debug.windowstolinux.appapi.ai.model.AiModelMetadata> models(TaskContext supplied) throws ApiException {
+                sameTask(supplied);
+                verify();
+                return original.ai().models(supplied);
+            }
+
+            /** Reads non-secret model metadata inside the original task admission. / 在原任务准入内读取非秘密模型元数据。
+             * @param purpose declared invocation purpose / 声明的调用用途
+             * @param supplied authentic original task context / 真实原任务上下文
+             * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+             * @throws ApiException if original admission, storage or configuration validation fails / 原准入、存储或配置校验失败时
+             */
+            public java.util.List<gold.debug.windowstolinux.appapi.ai.model.AiModelMetadata> models(AiPurpose purpose, TaskContext supplied) throws ApiException {
+                sameTask(supplied);
+                verify();
+                return original.ai().models(purpose, supplied);
+            }
+
+            /** Captures the inventory revision without requiring recommendation membership. / 捕获清单修订，不要求推荐成员资格。
+             * @param modelId optional or exact platform model configuration identity / 可选或精确的平台模型配置标识
+             * @param supplied authentic original task context / 真实原任务上下文
+             * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+             * @throws ApiException if original admission, storage or configuration validation fails / 原准入、存储或配置校验失败时
+             */
+            public String modelConfigurationRevision(String modelId, TaskContext supplied) throws ApiException {
+                sameTask(supplied);
+                verify();
+                return original.ai().modelConfigurationRevision(modelId, supplied);
+            }
+
             /** Rejects audio outside the frozen text/vision assisted decision budget. / 拒绝冻结文字与视觉辅助决策预算之外的音频。
              * @param request audio request / 音频请求
              * @param supplied original task / 原任务

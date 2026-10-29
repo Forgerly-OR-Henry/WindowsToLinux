@@ -54,6 +54,22 @@ abstract class NativeModelCodec implements ModelProtocolCodec {
     @Override
     public final byte[] encode(String model, AiRequest request, int effectiveMaxOutputTokens, ModelReasoningLevel effort,
                                Map<UUID, String> states) {
+        return encode(model, request, effectiveMaxOutputTokens, effort, states, body -> {
+        });
+    }
+
+    /** Keeps the original model capability ownership for encode. / 为 encode 保持原模型能力归属。
+     * @param model configured model identity or captured model metadata / 已配置型号或捕获的模型信息
+     * @param request captured request at this validated model boundary / 此已校验模型边界捕获的 request
+     * @param effectiveMaxOutputTokens actual host-resolved output ceiling / 宿主实际解析的输出上限
+     * @param effort explicit legacy protocol effort / 显式旧协议强度
+     * @param states task-owned native continuation payloads / 任务所属原生续接载荷
+     * @param adaptation provider customization applied before exact size validation / 精确大小校验前应用的厂商定制
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     */
+    @Override
+    public final byte[] encode(String model, AiRequest request, int effectiveMaxOutputTokens, ModelReasoningLevel effort,
+                               Map<UUID, String> states, java.util.function.Consumer<ObjectNode> adaptation) {
         Objects.requireNonNull(request);
         Objects.requireNonNull(effort);
         Objects.requireNonNull(states);
@@ -106,7 +122,9 @@ abstract class NativeModelCodec implements ModelProtocolCodec {
         if (size > 1024 * 1024)
             throw new IllegalArgumentException("Complete model text, schemas and continuation exceed one MiB");
         try {
-            byte[] encoded = JSON.writeValueAsBytes(body(model, request, effectiveMaxOutputTokens, effort, states));
+            var payload = body(model, request, effectiveMaxOutputTokens, effort, states);
+            adaptation.accept(payload);
+            byte[] encoded = JSON.writeValueAsBytes(payload);
             if (encoded.length > request.maxRequestBytes()) {
                 Arrays.fill(encoded, (byte) 0);
                 throw new ModelRequestBudgetException(encoded.length);

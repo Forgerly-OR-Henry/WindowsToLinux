@@ -21,6 +21,9 @@ common: # 所有运行模式的基础配置；应用启动读取快照，模式�
     recommended-max-output-tokens: 32768 # 未显式覆盖时的推荐输出预算，单位：token
     allow-output-token-override: true # 是否允许请求按公共策略显式覆盖输出预算
     verification-max-output-tokens: 8192 # 模型配置验证请求的输出预算，单位：token
+    reasoning: # 仅初始化数据库缺失的模型用途偏好
+      default-level: MEDIUM # 档位模型优先中等，使用官方映射；无映射则提供方默认
+      default-mode: STANDARD # 只有标准/思考模式的模型默认标准
     native-state: # 原任务全部用途共用的有限留存资源；耗尽后原用途会话关闭，不逐出旧句柄
       max-states: 4096 # 每原任务全部用途共用的 native state 数量上限，单位：条
       max-total-bytes: 67108864 # 每原任务留存 provider payload 的 UTF-8 总量，单位：字节

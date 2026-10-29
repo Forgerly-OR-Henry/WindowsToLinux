@@ -27,7 +27,7 @@ public final class ConfigLoader {
         "ui.advanced-expanded", "defaults.locale", "defaults.theme", "defaults.connect-seconds", "defaults.idle-seconds",
         "defaults.delete-ai-explanation", "ssh.heartbeat-seconds", "ssh.recovery.observation-seconds",
         "ssh.recovery.probe-interval-seconds", "ssh.recovery.probe-timeout-seconds", "ai.connect-seconds",
-        "ai.recommended-max-output-tokens", "ai.allow-output-token-override", "ai.verification-max-output-tokens",
+        "ai.reasoning.default-level", "ai.reasoning.default-mode", "ai.recommended-max-output-tokens", "ai.allow-output-token-override", "ai.verification-max-output-tokens",
         "ai.native-state.max-states", "ai.native-state.max-total-bytes", "ai.native-state.max-value-bytes",
         "ai.recovery.timeout-seconds", "ai.deletion.timeout-seconds", "ai.file.timeout-seconds",
         "logs.emergency-records", "mod.auto-load", "mod.store.base-url");
@@ -105,7 +105,7 @@ public final class ConfigLoader {
                     number(values, "ai.verification-max-output-tokens", Integer.MAX_VALUE),
                     new AppConfig.NativeState(number(values, "ai.native-state.max-states", Integer.MAX_VALUE),
                         positiveLong(values, "ai.native-state.max-total-bytes"), number(values, "ai.native-state.max-value-bytes", 1024 * 1024)),
-                    budget(values, "recovery"), budget(values, "deletion"), budget(values, "file")),
+                    budget(values, "recovery"), budget(values, "deletion"), budget(values, "file"), new AppConfig.Reasoning(string(values, "ai.reasoning.default-level"), string(values, "ai.reasoning.default-mode"))),
                 number(values, "logs.emergency-records", 100), !mode.equals("class") || bool(values, "mod.auto-load"), store);
         } catch (IllegalArgumentException invalid) {
             throw new IOException("Invalid configuration value: " + invalid.getMessage(), invalid);

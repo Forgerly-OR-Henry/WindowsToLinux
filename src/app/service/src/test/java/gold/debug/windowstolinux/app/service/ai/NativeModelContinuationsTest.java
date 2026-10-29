@@ -32,6 +32,16 @@ class NativeModelContinuationsTest {
     }
 
     @Test
+    void continuationKeepsTheOriginalReasoningOverrideAndModelBinding() {
+        var handle = states.retain(task, AiPurpose.LANGUAGE, model, "revision", "opaque", AiReasoningMode.HIGH);
+        var original = request(AiPurpose.LANGUAGE, handle).withModel("model").withReasoning(AiReasoningMode.HIGH);
+        assertEquals(model, states.bound(task, original, "revision").orElseThrow());
+        assertEquals("opaque", states.values(task, original, model, "revision").get(handle.id()));
+        assertThrows(IllegalArgumentException.class, () -> states.bound(task, original.withReasoning(AiReasoningMode.DEFAULT), "revision"));
+        assertThrows(IllegalArgumentException.class, () -> states.values(task, request(AiPurpose.LANGUAGE, handle), model, "revision"));
+    }
+
+    @Test
     void successfulBindingSurvivesHistoryRemovalAndFailureSealsSession() {
         var fresh = new AiRequest(AiPurpose.LANGUAGE, List.of(new AiMessage(AiRole.USER, "next", List.of())), 128, Duration.ofSeconds(5), false);
         assertTrue(states.bound(task, fresh, "revision").isEmpty());

@@ -130,11 +130,46 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
     @Override
     public List<AiModelInfo> listAiConfigurations() throws SQLException {
         settings();
+        ai.reasoning.initialize();
         return persistence.aiProfiles().listConfigured().stream()
             .map(value -> new AiModelInfo(AiModelProfile.fromStored(value.profile()), value.name(),
                 value.priority(), value.revision(), value.textVerifiedAt(), value.visionVerifiedAt(),
                 value.fileVoiceVerifiedAt(), value.realtimeVoiceVerifiedAt(), value.checks()))
             .toList();
+    }
+
+    /** Returns pure documented metadata without touching storage. / 返回纯静态能力，不读写存储。
+     * @param profile captured non-secret connection configuration / 已捕获非秘密连接配置
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     */
+    public gold.debug.windowstolinux.appapi.ai.model.AiReasoningCapabilities reasoningCapabilities(AiModelProfile profile) {
+        return ai.reasoning.capabilities(profile);
+    }
+
+    /** Saves independent purpose defaults with an optimistic model revision. / 按模型修订保存独立用途偏好。
+     * @param id exact platform model configuration identity / 精确平台模型配置标识
+     * @param revision captured configuration revision or revision source / 已捕获配置修订或修订来源
+     * @param values validated controls or implementations supplied by the owner / 所有者提供的已校验控制或实现
+     * @throws SQLException if original admission, storage or configuration validation fails / 原准入、存储或配置校验失败时
+     */
+    public void saveReasoning(String id, long revision, Map<gold.debug.windowstolinux.appapi.ai.model.AiPurpose,
+        gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode> values) throws SQLException {
+        settings();
+        if (probing.contains(id)) throw new IllegalStateException("Model verification is active");
+        var existing = persistence.aiProfiles().listConfigured().stream().filter(value -> value.profile().id().equals(id))
+            .findFirst().orElseThrow(() -> new SQLException("Model is absent", "02000"));
+        if (values.size() != 3 || !values.keySet().equals(java.util.Set.of(
+            gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE,
+            gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL,
+            gold.debug.windowstolinux.appapi.ai.model.AiPurpose.VISION)))
+            throw new IllegalArgumentException("Three independent text/vision purpose settings are required");
+        values.forEach((purpose, value) -> {
+            if (value != existing.profile().reasoningDefaults().get(purpose))
+                ai.reasoning.validate(AiModelProfile.fromStored(existing.profile()), value, true);
+        });
+        try (var operation = security.enterOperation()) {
+            persistence.aiProfiles().reasoning().save(id, revision, values);
+        }
     }
 
     /** Reads the retained legacy editor value. / 读取保留的旧编辑器值。
@@ -220,7 +255,11 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
                         ? "ai/provider/" + profile.id() + "/api-key/" + UUID.randomUUID()
                         : previous.orElseThrow().profile().credentialKey();
                     if (suppliedKey.length != 0) store.save(credential, suppliedKey);
-                    var candidate = new AiModelProfile(profile.id(), profile.endpoint(), profile.model(), credential, profile.reasoningEffort(), profile.protocol());
+                    var selectedDefaults = profile.reasoningDefaults().isEmpty()
+                        ? previous.map(value -> value.profile().reasoningDefaults()).orElseGet(() -> ai.reasoning.initial(profile))
+                        : profile.reasoningDefaults();
+                    var candidate = new AiModelProfile(profile.id(), profile.endpoint(), profile.model(), credential,
+                        profile.reasoningEffort(), profile.protocol(), profile.provider(), selectedDefaults);
                     persistence.aiProfiles().saveConfiguration(candidate.stored(), name);
                     persistence.aiProfiles().saveOutputLimit(profile.id(), outputLimit);
                 });
@@ -308,7 +347,13 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
     private OperationResult<Void> probe(StoredAiModelInfo observed, AiCapabilityType capability,
                                         VoiceRequest audio, String expected, int ceiling, char[] key, TaskContext task) {
         try {
-            if (capability == AiCapabilityType.TOOL_CALLING) return probeTools(observed, ceiling, key, task);
+            if (capability == AiCapabilityType.TOOL_CALLING) {
+                for (var purpose : verificationPurposes(observed.profile(), capability)) {
+                    var result = probeTools(observed, ceiling, key, task, purpose);
+                    if (result.outcome() != TaskResult.SUCCEEDED) return result;
+                }
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+            }
             if (capability == AiCapabilityType.TEXT || capability == AiCapabilityType.VISION) {
                 ModelCapabilityProbe challenge;
                 if (capability == AiCapabilityType.VISION) {
@@ -317,11 +362,16 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
                 } else {
                     challenge = ModelCapabilityProbe.create(ceiling);
                 }
-                var result = ai.probe(observed.profile(), key, challenge.request(), task);
-                if (result.outcome() != TaskResult.SUCCEEDED)
-                    return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
-                if (!challenge.accepts(result.value().orElseThrow()))
-                    return failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_PROBE_ANSWER", "The model did not answer the generated capability challenge");
+                for (var purpose : verificationPurposes(observed.profile(), capability)) {
+                    var original = challenge.request();
+                    var request = new gold.debug.windowstolinux.appapi.ai.model.AiRequest(purpose, original.messages(), original.maxOutputTokens(),
+                        original.timeout(), original.jsonObjectResponse(), original.tools(), original.maxRequestBytes());
+                    var result = ai.probe(observed.profile(), key, request, task);
+                    if (result.outcome() != TaskResult.SUCCEEDED)
+                        return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+                    if (!challenge.accepts(result.value().orElseThrow()))
+                        return failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_PROBE_ANSWER", "The model did not answer the generated capability challenge");
+                }
             } else {
                 OperationResult<VoiceResponse> result;
                 if (capability == AiCapabilityType.VOICE_FILE)
@@ -351,7 +401,31 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
         }
     }
 
-    private OperationResult<Void> probeTools(StoredAiModelInfo observed, int ceiling, char[] key, TaskContext task) throws ApiException {
+    /** Tests each distinct configured language/approval setting once. / 每组不同语言或审批设置分别验证一次。
+     * @param profile captured non-secret connection configuration / 已捕获非秘密连接配置
+     * @param capability captured capability at this validated model boundary / 此已校验模型边界捕获的 capability
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     */
+    private static List<gold.debug.windowstolinux.appapi.ai.model.AiPurpose> verificationPurposes(
+        gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile, AiCapabilityType capability) {
+        var language = gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE;
+        var approval = gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL;
+        if (capability == AiCapabilityType.VISION)
+            return List.of(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.VISION);
+        return profile.reasoningDefaults().get(language) == profile.reasoningDefaults().get(approval)
+            ? List.of(language) : List.of(language, approval);
+    }
+
+    /** Keeps the original model capability ownership for probeTools. / 为 probeTools 保持原模型能力归属。
+     * @param observed captured observed at this validated model boundary / 此已校验模型边界捕获的 observed
+     * @param ceiling captured ceiling at this validated model boundary / 此已校验模型边界捕获的 ceiling
+     * @param key captured key at this validated model boundary / 此已校验模型边界捕获的 key
+     * @param task authentic original task context / 真实原任务上下文
+     * @param purpose declared invocation purpose / 声明的调用用途
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     * @throws ApiException if original admission, storage or configuration validation fails / 原准入、存储或配置校验失败时
+     */
+    private OperationResult<Void> probeTools(StoredAiModelInfo observed, int ceiling, char[] key, TaskContext task, gold.debug.windowstolinux.appapi.ai.model.AiPurpose purpose) throws ApiException {
         var json = new com.fasterxml.jackson.databind.ObjectMapper()
             .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
             .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
@@ -365,7 +439,7 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
             "Call roundtrip_probe with challenge " + challenge + ". Then reply with exactly the text returned by the tool.", List.of()));
         long started = System.nanoTime();
         var request = new gold.debug.windowstolinux.appapi.ai.model.AiRequest(
-            gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, messages, ceiling,
+            purpose, messages, ceiling,
             java.time.Duration.ofSeconds(30), false, List.of(tool));
         var first = ai.probe(observed.profile(), key, request, task);
         if (first.outcome() != TaskResult.SUCCEEDED)

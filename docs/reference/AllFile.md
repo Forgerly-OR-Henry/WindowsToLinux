@@ -35,9 +35,24 @@ WindowsToLinux/
    │  │  │  ├─ ModelProtocol.java  # 用户显式选择的模型接口协议
    │  │  │  ├─ ModelProtocolCodec.java  # 按已选协议分派请求与响应编解码
    │  │  │  ├─ ModelProtocolDiagnostics.java  # 有界协议失败诊断及实际用量
-   │  │  │  ├─ ModelReasoningLevel.java  # 可选文字协议推理强度，默认不发送，须验证所选模型支持
+   │  │  │  ├─ ModelReasoningLevel.java  # 旧模型单值迁移与底层协议兼容词表
    │  │  │  ├─ NativeModelCodec.java  # 原生工具定义、调用和结果的通用严格编码
    │  │  │  └─ ResponsesCodec.java  # Responses 请求、工具结果、输出与推理续接编码
+   │  │  ├─ provider/  # 显式厂商适配合同、类型及注入注册器
+   │  │  │  ├─ ModelProviderAdapter.java  # 厂商适配公共合同与选择
+   │  │  │  ├─ ModelProviderRegistry.java  # 厂商适配公共合同与选择
+   │  │  │  ├─ ModelProviderRequestException.java  # 发送前拒绝已知不兼容组合
+   │  │  │  ├─ ModelProviderType.java  # 厂商适配公共合同与选择
+   │  │  │  └─ adapter/  # 已收录型号规则与通用适配
+   │  │  │     ├─ AnthropicModelAdapter.java  # 静态官方能力与请求参数适配
+   │  │  │     ├─ DeepSeekModelAdapter.java  # 静态官方能力与请求参数适配
+   │  │  │     ├─ GeminiModelAdapter.java  # 静态官方能力与请求参数适配
+   │  │  │     ├─ GrokModelAdapter.java  # 静态官方能力与请求参数适配
+   │  │  │     ├─ ModelProviderCatalog.java  # 静态官方能力与请求参数适配
+   │  │  │     ├─ ModelReasoningRules.java  # 静态官方能力与请求参数适配
+   │  │  │     ├─ OpenAiModelAdapter.java  # 静态官方能力与请求参数适配
+   │  │  │     ├─ QwenModelAdapter.java  # 静态官方能力与请求参数适配
+   │  │  │     └─ ThirdPartyModelAdapter.java  # 静态官方能力与请求参数适配
    │  │  ├─ vision/  # 图像校验、消息编码与图像能力验证样本
    │  │  │  ├─ VisionCapabilityProbe.java  # 生成带平台持有预期答案的全新视觉挑战
    │  │  │  └─ VisionMessageCodec.java  # 在共用模型消息协议内校验和编码图像附件
@@ -61,6 +76,7 @@ WindowsToLinux/
    │  │  ├─ pom.xml  # Maven 模块与依赖声明
    │  │  ├─ PlatformStorage.java  # 在受保护 H2 引擎上装配平台所属配置仓库
    │  │  ├─ ai/  # 模型配置、用途选择与能力验证记录
+   │  │  │  ├─ AiReasoningStore.java  # 模型用途推理偏好与幂等旧值迁移
    │  │  │  ├─ AiModelStore.java  # 在一行中保存模型连接、能力及路由状态
    │  │  │  ├─ AiPurposeStore.java  # 在模型行维护独立用途成员及顺序
    │  │  │  ├─ StoredAiModelInfo.java  # 同一模型绑定修订的分协议能力
@@ -280,6 +296,8 @@ WindowsToLinux/
    │  │  │  ├─ AiModelProfile.java  # 同一模型及明确配置的分协议端点
    │  │  │  ├─ NativeModelContinuations.java  # 绑定任务、模型、协议和配置修订的不透明续接
    │  │  │  ├─ PlatformAiService.java  # 冻结用途路由模型调用，记录安全失败来源并核对原进程占用
+   │  │  │  ├─ ModelReasoningSettings.java  # 静态能力、初始化与实际参数映射
+   │  │  │  ├─ ModelInventoryAccess.java  # 任务准入下的全部清单、推荐与指定候选
    │  │  │  └─ PlatformModelService.java  # 持有已验证模型配置及明确用途选择
    │  │  ├─ db/  # 任务所属 Mod 的受限数据库访问
    │  │  │  └─ TaskModDatabase.java  # 将所属业务 JDBC 直接连接到原始任务的资源账本
@@ -374,6 +392,7 @@ WindowsToLinux/
    │  ├─ ui/  # 平台 Swing 界面与公共控件
    │  │  ├─ pom.xml  # Maven 模块与依赖声明
    │  │  ├─ ai/  # 模型清单、用途选择与能力状态展示
+   │  │  │  ├─ ModelReasoningPane.java  # 按用途独立保存推理设置
    │  │  │  ├─ AiModelListPane.java  # 内联编辑用途时保持原模型清单可见
    │  │  │  ├─ AiModelListState.java  # 外观变化时保留的非秘密内联编辑状态
    │  │  │  ├─ PlatformModelDialog.java  # 保存明确模型配置并单独观察能力验证
@@ -597,6 +616,9 @@ WindowsToLinux/
    │  │  │  ├─ AiContinuation.java  # 绑定原模型会话的不透明续接标识
    │  │  │  ├─ AiMessage.java  # 包含独立图像附件列表的有序模型消息
    │  │  │  ├─ AiPurpose.java  # 平台调用选用的配置模型组
+   │  │  │  ├─ AiModelMetadata.java  # Mod 可见的非秘密模型元数据
+   │  │  │  ├─ AiReasoningCapabilities.java  # 带官方来源的已收录推理选项
+   │  │  │  ├─ AiReasoningMode.java  # 区分档位、模式与提供方默认的控制选项
    │  │  │  ├─ AiRequest.java  # 具有明确时间及输出预算的模型调用
    │  │  │  ├─ AiResponse.java  # 不暴露提供方实现类型的模型响应及用量
    │  │  │  ├─ AiRole.java  # 有序模型对话中的消息角色

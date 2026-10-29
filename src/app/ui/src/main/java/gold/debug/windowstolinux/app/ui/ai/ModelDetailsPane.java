@@ -15,12 +15,17 @@ import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.appapi.task.model.*;
 
-/** Checks and unfinished tasks owned by one stable model identity. / 一个稳定模型身份的核验及未结束任务。 */
-final class ModelDetailsPane extends JPanel implements AutoCloseable {
+/** Checks and unfinished tasks owned by one stable model identity. / 一个稳定模型身份的核验及未结束任务。
+ */
+final class ModelDetailsPane extends JPanel implements AutoCloseable, gold.debug.windowstolinux.app.ui.control.PendingCardEdits {
     private static final List<AiCapabilityType> CAPABILITIES = List.of(AiCapabilityType.TEXT, AiCapabilityType.TOOL_CALLING,
         AiCapabilityType.VISION, AiCapabilityType.VOICE_FILE, AiCapabilityType.VOICE_REALTIME);
 
     private final PlatformModelService service;
+
+    /** Original owner of initialization and actual provider parameter mapping. / 初始化与实际厂商参数映射的原所有者。
+     */
+    private final ModelReasoningPane reasoning;
 
     private final AiModelInfo model;
 
@@ -115,6 +120,9 @@ final class ModelDetailsPane extends JPanel implements AutoCloseable {
         }
         config.add(properties);
         body.add(config);
+        body.add(Box.createVerticalStrut(18));
+        reasoning = new ModelReasoningPane(service, model, c, messages, refresh);
+        body.add(reasoning);
         body.add(Box.createVerticalStrut(18));
         var checks = c.outlinedCard(new BorderLayout(0, 14));
         checks.setName("models.capabilities.surface");
@@ -288,6 +296,7 @@ final class ModelDetailsPane extends JPanel implements AutoCloseable {
         boolean ready = !closed && !locked && !busy;
         boolean unfinished = !service.checks(model.profile().id()).isEmpty();
         edit.setEnabled(ready && !unfinished);
+        reasoning.availability(ready && !unfinished);
         verify.forEach((capability, button) -> {
             boolean supported = PlatformModelService.supports(model.profile().endpoint().toString(), capability);
             button.setEnabled(ready && !unfinished && supported);
@@ -303,9 +312,47 @@ final class ModelDetailsPane extends JPanel implements AutoCloseable {
         controls();
     }
 
+    /** Detects changes against the last confirmed purpose preferences. / 比较最近确认的用途偏好以检测修改。
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     */
+    @Override
+    public boolean hasPendingEdits() {
+        return reasoning.hasPendingEdits();
+    }
+
+    /** Captures controls before localization rebuilds this detail. / 在本地化重建详情前捕获控件。
+     * @return current independent purpose controls / 当前独立用途控件
+     */
+    java.util.Map<gold.debug.windowstolinux.appapi.ai.model.AiPurpose, gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode> reasoningDraft() {
+        return reasoning.draft();
+    }
+
+    /** Restores a localized draft without persistence. / 恢复本地化草稿，不触发持久化。
+     * @param values captured controls / 捕获的控件
+     */
+    void restoreReasoning(java.util.Map<gold.debug.windowstolinux.appapi.ai.model.AiPurpose, gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode> values) {
+        reasoning.restore(values);
+    }
+
+    /** Retains the original view while a write is pending. / 写入待完成时保留原视图。
+     * @return whether preferences are being saved / 是否正在保存偏好
+     */
+    boolean savingReasoning() {
+        return reasoning.saving();
+    }
+
+    /** Completes admitted preference writes before the containing view leaves. / 在所属视图离开前完成已准入偏好写入。
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     */
+    @Override
+    public java.util.concurrent.CompletionStage<Boolean> saveBeforeLeave() {
+        return reasoning.saveBeforeLeave();
+    }
+
     @Override
     public void close() {
         closed = true;
         timer.stop();
+        reasoning.close();
     }
 }

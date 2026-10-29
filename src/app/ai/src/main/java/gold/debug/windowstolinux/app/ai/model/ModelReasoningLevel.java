@@ -15,6 +15,17 @@ public enum ModelReasoningLevel {
     /** Requests a higher reasoning budget. / 请求较高推理预算。 */
     HIGH;
 
+    /** Seeds all applicable purposes when restoring the old single value. / 旧单值恢复时初始化适用用途。
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     */
+    public java.util.Map<gold.debug.windowstolinux.appapi.ai.model.AiPurpose, gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode> defaults() {
+        var selected = this == NONE ? gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode.STANDARD
+            : gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode.valueOf(name());
+        return java.util.Map.of(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, selected,
+            gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL, selected,
+            gold.debug.windowstolinux.appapi.ai.model.AiPurpose.VISION, selected);
+    }
+
     /** Returns the exact protocol value for an explicitly configured effort. / 返回明确配置强度的精确协议值。
      * @return lowercase protocol value / 小写协议值 */
     public String protocolValue() {

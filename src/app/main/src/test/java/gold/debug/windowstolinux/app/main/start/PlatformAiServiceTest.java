@@ -534,7 +534,12 @@ class PlatformAiServiceTest {
             initialize(runtime, false);
             model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, 128);
             runtime.persistence().aiProfiles().saveVerified(new StoredAiModelProfile("text", "http://127.0.0.1:" + server.getLocalPort() + "/chat",
-                "fixture/text", "ai/fixture/text"), "text", Instant.now(), AiCapabilityType.TEXT);
+                "gpt-5.4", "ai/fixture/text", gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.DEFAULT,
+                gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS,
+                gold.debug.windowstolinux.app.ai.provider.ModelProviderType.OPENAI, Map.of(
+                AiPurpose.LANGUAGE, gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode.MEDIUM,
+                AiPurpose.APPROVAL, gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode.MEDIUM,
+                AiPurpose.VISION, gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode.MEDIUM)), "text", Instant.now(), AiCapabilityType.TEXT);
             route(runtime, AiPurposeType.DEPLOYMENT, "text");
             var peer = Thread.ofPlatform().daemon(true).start(() -> {
                 try {
@@ -570,9 +575,10 @@ class PlatformAiServiceTest {
             });
             try {
                 var ai = runtime.capabilities().ai(OWNER, VERSION);
-                var result = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> ai.call(message(AiPurpose.LANGUAGE).withGenerationRecovery(1), task)));
+                var result = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> ai.call(message(AiPurpose.LANGUAGE).withModel("text").withReasoning(gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode.HIGH).withGenerationRecovery(1), task)));
                 assertEquals(List.of(TaskResult.UNKNOWN, TaskResult.SUCCEEDED), result.generationAttempts().stream().map(gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt::outcome).toList());
                 assertEquals("HTTP_CHUNK_INCOMPLETE", result.generationAttempts().getFirst().transportFailureKind());
+                assertEquals(gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode.HIGH, result.effectiveReasoning().orElseThrow());
             } finally {
                 server.close();
                 peer.join(7000);
@@ -582,6 +588,8 @@ class PlatformAiServiceTest {
             assertEquals(2, ports.size(), "New generation owns a distinct physical HTTP client");
             assertEquals(2, requests.size());
             assertEquals(requests.getFirst(), requests.getLast());
+            assertEquals("high", JSON.readTree(requests.getFirst()).path("reasoning_effort").asText());
+            assertEquals("gpt-5.4", JSON.readTree(requests.getFirst()).path("model").asText());
         }
     }
 

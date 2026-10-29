@@ -85,19 +85,55 @@ public record AppConfig(String dataDirectory, Ui ui, Defaults defaults, Ssh ssh,
      * @param recommendedMaxOutputTokens default output budget / 默认推荐输出额度
      * @param allowOutputTokenOverride whether ordinary callers may override the recommendation / 是否允许普通调用方覆写推荐额度
      * @param verificationMaxOutputTokens independent capability verification budget / 独立能力验证额度
+     * @param nativeState captured nativeState at this validated model boundary / 此已校验模型边界捕获的 nativeState
      * @param recovery SSH recovery timeout / SSH救援超时
      * @param deletion deletion review timeout / 删除审核超时
-     * @param file file judgement timeout / 文件判断超时 */
+     * @param file file judgement timeout / 文件判断超时
+     * @param reasoning captured reasoning control or settings owner /捕获的推理控制或设置所有者
+     */
+
     public record Ai(int connectSeconds, int recommendedMaxOutputTokens, boolean allowOutputTokenOverride,
                      int verificationMaxOutputTokens, NativeState nativeState, Budget recovery, Budget deletion,
-                     Budget file) {
+                     Budget file, Reasoning reasoning) {
+        /** Captures inputs at the AppConfig ownership boundary. / 在 AppConfig 所有权边界捕获输入。
+         * @param connectSeconds captured connectSeconds at this validated model boundary / 此已校验模型边界捕获的 connectSeconds
+         * @param recommendedMaxOutputTokens captured recommendedMaxOutputTokens at this validated model boundary / 此已校验模型边界捕获的 recommendedMaxOutputTokens
+         * @param allowOutputTokenOverride captured allowOutputTokenOverride at this validated model boundary / 此已校验模型边界捕获的 allowOutputTokenOverride
+         * @param verificationMaxOutputTokens captured verificationMaxOutputTokens at this validated model boundary / 此已校验模型边界捕获的 verificationMaxOutputTokens
+         * @param nativeState captured nativeState at this validated model boundary / 此已校验模型边界捕获的 nativeState
+         * @param recovery captured recovery at this validated model boundary / 此已校验模型边界捕获的 recovery
+         * @param deletion captured deletion at this validated model boundary / 此已校验模型边界捕获的 deletion
+         * @param file captured file at this validated model boundary / 此已校验模型边界捕获的 file
+         */
+        public Ai(int connectSeconds, int recommendedMaxOutputTokens, boolean allowOutputTokenOverride, int verificationMaxOutputTokens, NativeState nativeState, Budget recovery, Budget deletion, Budget file) {
+            this(connectSeconds, recommendedMaxOutputTokens, allowOutputTokenOverride, verificationMaxOutputTokens, nativeState, recovery, deletion, file, new Reasoning("MEDIUM", "STANDARD"));
+        }
+
         public Ai {
             if (connectSeconds < 1 || recommendedMaxOutputTokens < 1 || verificationMaxOutputTokens < 1)
                 throw new IllegalArgumentException("AI transport and output budgets must be positive");
+            Objects.requireNonNull(reasoning);
             Objects.requireNonNull(recovery);
             Objects.requireNonNull(nativeState);
             Objects.requireNonNull(deletion);
             Objects.requireNonNull(file);
         }
     }
+
+    /** Initialization defaults only, never overrides existing preferences. / 仅初始化缺失偏好。
+     * @param defaultLevel initial effort target for models with discrete levels / 档位模型的初始强度目标
+     * @param defaultMode initial standard/thinking mode for binary models / 双模式模型的初始标准或思考选项
+     */
+    public record Reasoning(String defaultLevel, String defaultMode) {
+        /** Captures inputs at the AppConfig ownership boundary. / 在 AppConfig 所有权边界捕获输入。
+         * @param defaultLevel initial effort target for models with discrete levels / 档位模型的初始强度目标
+         * @param defaultMode initial standard/thinking mode for binary models / 双模式模型的初始标准或思考选项
+         */
+        public Reasoning {
+            if (!java.util.Set.of("DEFAULT", "MINIMAL", "LOW", "MEDIUM", "HIGH", "XHIGH", "MAX").contains(defaultLevel)
+                || !java.util.Set.of("STANDARD", "THINKING").contains(defaultMode))
+                throw new IllegalArgumentException("Invalid reasoning defaults");
+        }
+    }
+
 }

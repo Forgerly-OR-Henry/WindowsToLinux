@@ -60,7 +60,8 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
             drawer.layout(left, new Rectangle(0, 0, getWidth(), getHeight()), leftWidth, gap);
         }
 
-        @Override protected void paintChildren(Graphics graphics) {
+        @Override
+        protected void paintChildren(Graphics graphics) {
             super.paintChildren(graphics);
             if (drawer != null) drawer.paint(graphics);
         }
@@ -286,10 +287,15 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
 
     private void choose() {
         if (blocked() || purpose != null) return;
-        showDetail(current());
+        var model = current();
+        if (model != null && model.profile().id().equals(detailId)) return;
+        before(() -> showDetail(model));
     }
 
     private void showDetail(AiModelInfo model) {
+        if (detail instanceof ModelDetailsPane pane && pane.savingReasoning()) return;
+        var draft = model != null && model.profile().id().equals(detailId) && detail instanceof ModelDetailsPane pane && pane.hasPendingEdits()
+            ? pane.reasoningDraft() : java.util.Map.<gold.debug.windowstolinux.appapi.ai.model.AiPurpose, gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode>of();
         drawer.expanded(model != null || purpose != null);
         detailHost.content(model == null ? null : model.profile().id());
         if (detail instanceof AutoCloseable closeable) {
@@ -300,12 +306,15 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
         }
         detailId = model == null ? null : model.profile().id();
         detail = model == null ? null : details.apply(model);
+        if (detail instanceof ModelDetailsPane pane) pane.restoreReasoning(draft);
         layoutColumns();
     }
 
     void collapse() {
-        inventory.clearSelection();
-        showDetail(null);
+        before(() -> {
+            inventory.clearSelection();
+            showDetail(null);
+        });
     }
 
     private void layoutColumns() {
@@ -495,7 +504,8 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
 
     @Override
     public boolean hasPendingEdits() {
-        return order.hasPendingEdits() || purposes.values().stream().anyMatch(CardOrderSession::hasPendingEdits);
+        return order.hasPendingEdits() || purposes.values().stream().anyMatch(CardOrderSession::hasPendingEdits)
+            || detail instanceof PendingCardEdits edits && edits.hasPendingEdits();
     }
 
     @Override
@@ -512,6 +522,8 @@ final class AiModelListPane extends JPanel implements PendingCardEdits {
         for (var session : purposes.values())
             result = result.thenCompose(ok -> ok
                 ? leave ? session.saveBeforeLeave() : session.savePending() : CompletableFuture.completedFuture(false));
+        if (detail instanceof PendingCardEdits edits)
+            result = result.thenCompose(ok -> ok ? edits.saveBeforeLeave() : CompletableFuture.completedFuture(false));
         return result;
     }
 

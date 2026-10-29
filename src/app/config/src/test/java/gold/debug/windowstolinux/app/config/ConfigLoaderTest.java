@@ -32,7 +32,7 @@ class ConfigLoaderTest {
 
     @Test
     void fieldMergeSelectsOnlyCurrentModeAndKeepsExplicitFalse() throws Exception {
-        String yaml = sample().replace("jar: {}", "jar:\n  ui:\n    navigation-collapsed: true\n  defaults:\n    connect-seconds: 45");
+        String yaml = sample().replace("auto-load: true", "auto-load: false").replace("jar: {}", "jar:\n  ui:\n    navigation-collapsed: true\n  defaults:\n    connect-seconds: 45");
         var jar = load(yaml, "jar");
         assertTrue(jar.ui().navigationCollapsed());
         assertTrue(jar.modLoad());
@@ -68,7 +68,7 @@ class ConfigLoaderTest {
 
     @Test
     void onlyClassAllowsModSwitchAndReleaseModesAlwaysLoad() throws Exception {
-        String yaml = sample();
+        String yaml = sample().replace("auto-load: true", "auto-load: false");
         assertFalse(load(yaml, "class").modLoad());
         assertTrue(load(yaml.replace("auto-load: false", "auto-load: true"), "class").modLoad());
         for (String mode : new String[]{"class", "jar", "app"}) {

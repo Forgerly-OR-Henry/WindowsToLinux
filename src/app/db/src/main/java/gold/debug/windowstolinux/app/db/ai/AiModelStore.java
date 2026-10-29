@@ -16,6 +16,13 @@ import gold.debug.windowstolinux.app.ai.model.AiCapabilityStatus;
 import gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel;
 import gold.debug.windowstolinux.app.ai.model.ModelProtocol;
 
+import gold.debug.windowstolinux.app.ai.provider.ModelProviderType;
+
+import static gold.debug.windowstolinux.app.db.ai.AiReasoningStore.*;
+
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode;
+
 /** Stores model connection, capability and routing state in one row. / 在一行中保存模型连接、能力及路由状态。 */
 public final class AiModelStore {
     /** Scoped database connection factory. / 限定数据库连接工厂。
@@ -74,8 +81,11 @@ public final class AiModelStore {
                         update.executeUpdate();
                     }
                 }
-                new DesktopPreferenceStore(connections).save(reasoningEffortKey(profile.id()), profile.reasoningEffort().name());
+                new DesktopPreferenceStore(connections).save(legacyKey(profile.id()), profile.reasoningEffort().name());
                 new DesktopPreferenceStore(connections).save(protocolKey(profile.id()), profile.protocol().name());
+                new DesktopPreferenceStore(connections).save(providerKey(profile.id()), profile.provider().name());
+                for (var entry : profile.reasoningDefaults().entrySet())
+                    new DesktopPreferenceStore(connections).save(purposeReasoningKey(profile.id(), entry.getKey()), entry.getValue().name());
                 for (var capability : AiCapabilityType.values())
                     writeVerification(c, profile.id(), capability, checks.get(capability));
             }
@@ -278,7 +288,7 @@ public final class AiModelStore {
                     }
                     members.put(purpose, List.copyOf(selected));
                 }
-                result[0] = new RoutingState(routes, Map.copyOf(members));
+                result[0] = new RoutingState(routes, Map.copyOf(members), inventory.values().stream().sorted(java.util.Comparator.comparingInt(StoredAiModelInfo::priority)).toList());
             }
         });
         return result[0];
@@ -292,9 +302,10 @@ public final class AiModelStore {
     /** One transaction-consistent AI routing view. / 一份事务一致的 AI 路由视图。
      * @param routes purpose-ordered model chains / 按用途排序的模型链
      * @param members all ordered assignments including invalid members / 全部有序分配，包括失效成员
+     * @param inventory captured inventory at this validated model boundary / 此已校验模型边界捕获的 inventory
      */
     public record RoutingState(Map<AiPurposeType, List<StoredAiModelInfo>> routes,
-                               Map<AiPurposeType, List<RoutingMember>> members) {
+                               Map<AiPurposeType, List<RoutingMember>> members, List<StoredAiModelInfo> inventory) {
     }
 
     /** Returns the repository for independent purpose routing settings. / 返回独立用途路由设置仓库。
@@ -348,13 +359,13 @@ public final class AiModelStore {
         }
     }
 
-    /**
-     * Locks and revalidates a selected revision before the caller captures its credential. / 调用方取得凭据前锁定并重新核验所选修订。
+    /** Locks and revalidates a selected revision before the caller captures its credential. / 调用方取得凭据前锁定并重新核验所选修订。
      * @param expected captured model revision / 已捕获模型修订
      * @param purpose selected purpose / 所选用途
+     * @param recommended whether recommended-list membership is required / 是否要求推荐列表成员资格
      * @throws SQLException if the model changed or the caller has no owning transaction / 模型已变化或调用方无所属事务时
      */
-    public void requireInvocation(StoredAiModelInfo expected, AiPurposeType purpose) throws SQLException {
+    public void requireInvocation(StoredAiModelInfo expected, AiPurposeType purpose, boolean recommended) throws SQLException {
         try (var connection = connections.open()) {
             if (connection.getAutoCommit())
                 throw new SQLException("Model capture requires a transaction");
@@ -365,7 +376,7 @@ public final class AiModelStore {
                     if (!rows.next() || !configuration(rows).profile().equals(expected.profile())
                         || rows.getLong("configuration_revision") != expected.revision()
                         || !configuration(rows).verified(purpose)
-                        || rows.getObject(prefix + "_call_order") == null)
+                        || recommended && rows.getObject(prefix + "_call_order") == null)
                         throw new SQLException("Captured model configuration is no longer available", "55000");
                 }
             }
@@ -381,12 +392,11 @@ public final class AiModelStore {
         return "ai_model_output_limit_" + id.replace('-', '_');
     }
 
-    /** Maps reasoning configuration to the existing non-secret preference store. / 将推理配置映射到已有非秘密偏好仓库。
-     * @param id exact model identity / 精确模型身份
-     * @return preference key / 偏好键 */
-    private static String reasoningEffortKey(String id) {
-        outputLimitKey(id);
-        return "ai_model_reasoning_effort_" + id.replace('-', '_');
+    /** Returns the purpose-preference repository in the same transaction scope. / 返回共用事务范围的用途偏好仓库。
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     */
+    public AiReasoningStore reasoning() {
+        return new AiReasoningStore(connections);
     }
 
     private static String protocolKey(String id) {
@@ -471,11 +481,22 @@ public final class AiModelStore {
         ModelReasoningLevel effort;
         try {
             effort = ModelReasoningLevel.valueOf(new DesktopPreferenceStore(connections)
-                .find(reasoningEffortKey(rows.getString("model_id"))).orElse("DEFAULT"));
+                .find(legacyKey(rows.getString("model_id"))).orElse("DEFAULT"));
         } catch (IllegalArgumentException invalid) {
             throw new SQLException("Invalid stored model reasoning effort", "55000");
         }
-        return new StoredAiModelProfile(rows.getString("model_id"), rows.getString("endpoint_url"), rows.getString("model_name"), rows.getString("credential_id"), effort, storedProtocol(rows.getString("model_id")));
+        String id = rows.getString("model_id");
+        try {
+            var preferences = new DesktopPreferenceStore(connections);
+            var defaults = new EnumMap<AiPurpose, AiReasoningMode>(AiPurpose.class);
+            for (var purpose : List.of(AiPurpose.LANGUAGE, AiPurpose.APPROVAL, AiPurpose.VISION))
+                defaults.put(purpose, AiReasoningMode.valueOf(preferences.find(purposeReasoningKey(id, purpose))
+                    .orElse(legacyReasoning(effort).name())));
+            return new StoredAiModelProfile(id, rows.getString("endpoint_url"), rows.getString("model_name"), rows.getString("credential_id"), effort, storedProtocol(id),
+                ModelProviderType.valueOf(preferences.find(providerKey(id)).orElse("THIRD_PARTY")), defaults);
+        } catch (IllegalArgumentException invalid) {
+            throw new SQLException("Invalid provider or purpose reasoning preference", "55000", invalid);
+        }
     }
 
     private ModelProtocol storedProtocol(String id) throws SQLException {

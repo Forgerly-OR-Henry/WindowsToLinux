@@ -62,6 +62,8 @@ YAML 的资源位置不改变数据目录的相对路径基准：
 | `ai.recommended-max-output-tokens` | 普通模型调用未指定额度时的推荐最大输出 Token；关闭覆写时强制使用 | 整数 / Token | 32768 | 1～2147483647 | `32768` | CLASS / JAR / APP |
 | `ai.allow-output-token-override` | 允许调用方为本次普通模型调用覆写推荐额度 | 布尔 | true | true / false | `false` | CLASS / JAR / APP |
 | `ai.verification-max-output-tokens` | 文字、视觉及原生工具能力验证的独立输出额度 | 整数 / Token | 8192 | 1～2147483647 | `8192` | CLASS / JAR / APP |
+| `ai.reasoning.default-level` | 仅初始化缺失的模型用途强度 | 枚举 | MEDIUM | DEFAULT / MINIMAL / LOW / MEDIUM / HIGH / XHIGH / MAX；使用已收录官方映射，无映射则提供方默认 | `MEDIUM` | CLASS / JAR / APP |
+| `ai.reasoning.default-mode` | 只有标准/思考模式的模型的初始化选择 | 枚举 | STANDARD | STANDARD / THINKING | `STANDARD` | CLASS / JAR / APP |
 | `ai.native-state.max-states` | 每个原任务所有用途共享的 native 状态数量上限 | 整数 / 条 | 4096 | 1～2147483647 | `8192` | CLASS / JAR / APP |
 | `ai.native-state.max-total-bytes` | 每个原任务全部 native 状态实际 UTF-8 载荷上限 | 整数 / 字节 | 67108864 | 1～9223372036854775807，且不小于 max-value-bytes | `134217728` | CLASS / JAR / APP |
 | `ai.native-state.max-value-bytes` | 单个 native 状态实际 UTF-8 载荷上限 | 整数 / 字节 | 1048576 | 1～1048576，受公共 continuation 契约约束 | `1048576` | CLASS / JAR / APP |
@@ -102,7 +104,9 @@ CLASS 开启自动加载时，开始发现前，使用当前 JDK 及本机 Maven
 
 启动页面同样由 DB 偏好管理，不新增 YAML 配置：`ui_restore_last_page` 保存恢复开关（缺失时为 false），`ui_last_page` 保存正常关闭时的页面身份 JSON；未启用恢复或找不到原页面时进入首页。记录不包含输入草稿、弹窗或凭据。
 
-模型编辑窗口的推理强度属于每模型DB配置，不新增YAML字段。通过已有非秘密偏好保存`ai_model_reasoning_effort_<模型标识>`，标识中的连字符映射为下划线；缺失时为`DEFAULT`且不发送协议参数。`NONE`明确请求关闭思考，与省略参数的`DEFAULT`不同；Chat Completions发送`reasoning_effort=none`，Responses发送`reasoning.effort=none`，Anthropic Messages发送`thinking.type=disabled`。`LOW`、`MEDIUM`、`HIGH`按所选协议发送对应推理强度。明确值须所选模型支持并重新验证文字/视觉及原生工具；失败不删除参数或回退默认。该值纳入配置修订和冻结路由；非法已存值报错，不替换成默认。实际使用说明见[模型用途](PRODUCT-MANUAL.md#163-全部模型与四种用途)。
+模型编辑窗口分别选择厂商适配与线协议，推理偏好在模型详情中按语言、审批、视觉用途独立保存。偏好键为 `ai_model_reasoning_<language|approval|vision>_<模型标识>`，厂商键为 `ai_model_provider_<模型标识>`；标识连字符映射为下划线。旧 `ai_model_reasoning_effort_<模型标识>` 单值只初始化尚不存在的用途偏好，`NONE` 迁移为 `STANDARD`；旧值及已存在偏好不覆盖。新模型缺失偏好由 Config 初始化：优先中等及官方映射，只有标准/思考模式时默认标准，无映射或未知型号使用提供方默认。Config 改动不覆盖数据库。
+
+公共 API 可以查询全部模型、用途推荐、能力和当前用途强度，也可在请求中指定模型配置 ID 或仅覆写当前请求的强度。未指定强度时继承所选模型对应用途的偏好；显式 `DEFAULT` 省略提供方控制，区别于关闭思考。指定模型不要求加入推荐用途，但仍需能力验证，不提供跨模型后备；推荐路由保留已知 HTTP 拒绝时的顺序后备。部署 Mod 暂不设置覆写。强度纳入冻结修订与原生续接身份，非法值或不支持的明确选择报错，不静默降档。
 
 ## 完整可加载示例
 
@@ -132,6 +136,9 @@ common:
     recommended-max-output-tokens: 32768
     allow-output-token-override: true
     verification-max-output-tokens: 8192
+    reasoning:
+      default-level: MEDIUM
+      default-mode: STANDARD
     native-state:
       max-states: 4096
       max-total-bytes: 67108864
@@ -151,7 +158,7 @@ class:
   database:
     data-directory: src/app/db/data
   mod:
-    auto-load: false
+    auto-load: true
 jar: {}
 app: {}
 ```

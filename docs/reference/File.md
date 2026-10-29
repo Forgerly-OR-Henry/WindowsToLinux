@@ -51,6 +51,8 @@ WindowsToLinux/                           # [聚合]     工程构建入口，�
    │  │  ├─ pom.xml                       # [构建文件] Maven 模块与依赖声明
    │  │  ├─ http/                         # [包]       共用 HTTP 地址校验与有界响应读取
    │  │  ├─ model/                        # [包]       模型用途、能力状态与通用消息编解码
+   │  │  ├─ provider/                      # [包]       显式厂商适配合同、类型与注入注册器
+   │  │  │  └─ adapter/                    # [包]       六家官方型号规则与第三方通用适配
    │  │  ├─ vision/                       # [包]       图像校验、消息编码与图像能力验证样本
    │  │  └─ voice/                        # [包]       音频 HTTP 转写、实时会话与转写结果组装
    │  ├─ config/                          # [模块]     独立 YAML 加载与不可变启动配置
@@ -457,7 +459,7 @@ APP 包名使用小写英文，采用常见、准确的名词或动词；`instal
 | APP 功能 | 当前归属与边界 |
 | --- | --- |
 | 文件基础 | `app/file` 根包保存引擎、传输计划和本机后端；`file/model` 仅承载后端、操作日志、链接维护及回收回执的内部合同，`file/source` 保存已选及冻结来源。文件公开合同在 `appapi/file`；任务和受管执行归 `service/file`，审批及后端准入归 `service/file/check`。 |
-| 模型调用 | `app/ai/model` 保存模型能力、用途、常规文字调用及共用消息协议；`vision` 保存图片校验、视觉消息编码和能力挑战；`voice` 保存音频转写与实时会话；`http` 保存共用端点校验和有界响应读取。SSH 救援专用模型和协议归 `app/linux/ssh/recover/ai`，共享动作及目标值归 `recover/model`，通过启动装配注入已授权通用模型调用。 |
+| 模型调用 | `app/ai/model` 保存模型能力、用途、常规文字调用及共用消息协议；`vision` 保存图片校验、视觉消息编码和能力挑战；`voice` 保存音频转写与实时会话；`http` 保存共用端点校验和有界响应读取；`provider` 保存显式厂商类型、适配合同与注入注册器，`provider/adapter` 保存六家官方型号的静态规则及第三方通用适配。SSH 救援专用模型和协议归 `app/linux/ssh/recover/ai`，共享动作及目标值归 `recover/model`，通过启动装配注入已授权通用模型调用。 |
 | 数据库 | `app/db/connect` 保存连接与事务基础，`schema` 保存命名空间和访问隔离；记录与读写按 `ai`、`server`、`security`、`setting`、`sshrecover`、`task`、`file` 等实际功能归包。 |
 | 平台服务 | 模型配置与通用调用适配归 `app/service/ai`；其它接口与专属数据分别归 `server`、`file`、`security`、`task` 等功能；文件、传输与导航偏好服务归 `setting`；通用服务错误归 `error`。完整 SSH 救援归 `app/linux/ssh/recover`，Service 不另建救援包。 |
 | SSH 与 SFTP | `app/linux/ssh/connect` 和 `ssh/recover` 有实际独立职责；`ssh/recover` 根包持有救援状态机和原任务恢复；`ai` 保存专用模型与协议，`browser` 保存浏览器及终端控制，`model` 保存共享目标、动作及观测值；`app/linux/sftp` 使用已有受管 SSH 会话承担远端文件协议。DB 的救援存储保留 `db/sshrecover`，救援对话框归 `ui/server`；Service 不保留救援专属包，通用 AI 模块不保存救援专属协议。 |
@@ -1795,3 +1797,11 @@ APP共23表，官方部署Mod共19表，共412字段；AI表见上节，其余41
 | 真实运行验收 | 本机、受控回包、真实 Linux、模型/语音提供方和云控制台分开记录；SSH Git 凭据与信任接线仍按现行证据保留未验证范围。见 [1.1 当前状态](../development/PHASE-1.1.md)与 [1.2 开发文档](../development/PHASE-1.2.md)。 |
 
 运行数据根和目录行为统一见 [Runtime.md](Runtime.md#desktop-data)，发布/安装目录见 [APP.md](APP.md)，不在源码树重复维护。
+
+## AI 厂商与公开模型选择
+
+`app/ai/provider` 不引用其 `adapter` 子包；启动装配注入实现，协议编码通过 JDK Consumer 定制线对象后统一校验最终字节预算。厂商、型号、协议与用途推理偏好分别建模。静态能力记录官方来源和核对日期，未收录组合不猜测档位。
+
+公开 `AiService.models(task)` 列出全部非秘密配置及真实验证状态，`models(purpose, task)` 提供四用途的有序推荐；`modelConfigurationRevision(id, task)` 支持未加入推荐的指定模型。请求的 `withModel(id)` 只绑定平台配置，不接受任意端点或凭据。指定调用仅绕过推荐成员检查，不绕过能力验证与任务准入；失败不切换其他模型。`withReasoning(mode)` 只覆写当前文字/视觉请求，空值继承模型用途偏好，显式 DEFAULT 省略提供方控制。响应的 effectiveReasoning 表示宿主采用的控制，不代表提供方实际计算量。语音请求和实时选项同样可指定模型，但不发送推理参数。
+
+模型用途偏好与一次性旧值迁移由 `app/db/ai/AiReasoningStore` 持有；Config 只初始化缺失项。配置、推荐、验证及推理设置进入冻结修订。部署 Mod 不新增调节控件、不主动覆写请求，继续使用主 APP 的用途设置。

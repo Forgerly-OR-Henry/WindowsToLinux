@@ -18,6 +18,41 @@ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
  */
 public interface AiService {
 
+    /** Lists every host model without credentials, including unverified configurations. / 列出全部不含凭据的配置，包含未验证模型。
+     * @param task authentic original task context / 真实原任务上下文
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     * @throws ApiException if original admission, storage or configuration validation fails / 原准入、存储或配置校验失败时
+     */
+    default java.util.List<gold.debug.windowstolinux.appapi.ai.model.AiModelMetadata> models(TaskContext task) throws ApiException {
+        throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.ACCESS_DENIED, "AI_DISCOVERY_SCOPE",
+            "This scoped AI service does not expose model discovery", java.util.Map.of(), java.util.Optional.empty()));
+    }
+
+    /** Lists ordered recommendations and their actual verification states. / 列出有序推荐及实际验证状态。
+     * @param purpose declared invocation purpose / 声明的调用用途
+     * @param task authentic original task context / 真实原任务上下文
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     * @throws ApiException if original admission, storage or configuration validation fails / 原准入、存储或配置校验失败时
+     */
+    default java.util.List<gold.debug.windowstolinux.appapi.ai.model.AiModelMetadata> models(AiPurpose purpose, TaskContext task) throws ApiException {
+        throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.ACCESS_DENIED, "AI_DISCOVERY_SCOPE",
+            "This scoped AI service does not expose model discovery", java.util.Map.of(), java.util.Optional.empty()));
+    }
+
+    /** Captures configuration for direct selection without requiring a recommended member. / 直接选择的配置修订，不要求推荐成员。
+     * @param modelId optional or exact platform model configuration identity / 可选或精确的平台模型配置标识
+     * @param task authentic original task context / 真实原任务上下文
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     * @throws ApiException if original admission, storage or configuration validation fails / 原准入、存储或配置校验失败时
+     */
+    default String modelConfigurationRevision(String modelId, TaskContext task) throws ApiException {
+        throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.ACCESS_DENIED, "AI_DISCOVERY_SCOPE",
+            "This scoped AI service does not expose model discovery", java.util.Map.of(), java.util.Optional.empty()));
+    }
+
     /** Transcribes a complete validated WAV through the configured voice-purpose route. / 经已配置语音用途路由转写完整已校验 WAV。
      * @param request complete bounded audio / 完整有界音频
      * @param task authentic executing task / 真实执行任务

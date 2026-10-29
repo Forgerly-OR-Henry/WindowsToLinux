@@ -4,8 +4,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Bounded model invocation with a deadline and optional requested output budget. / 具有期限及可选申请输出额度的模型调用。
+/** * Bounded model invocation with a deadline and optional requested output budget. / 具有期限及可选申请输出额度的模型调用。
  * @param purpose declared purpose used for routing or authorization / 路由或授权使用的声明用途
  * @param messages copied model conversation in request order / 按请求顺序复制的模型对话
  * @param maxOutputTokens optional positive requested budget; empty uses the host recommendation / 可选正数申请额度，空值使用宿主推荐值
@@ -15,11 +14,50 @@ import java.util.Optional;
  * @param maxRequestBytes exact encoded request ceiling enforced before network send / 网络发送前执行的精确编码请求字节上限
  * @param requiredToolName optional registered native tool to require; empty retains automatic selection / 可选必须调用的已注册原生工具，空值保留自动选择
  * @param generationRecoveryAttempts extra pure-generation attempts after an incomplete HTTP body, 0..16; no tool or business operation replay / HTTP 正文不完整后的额外纯生成次数，0..16，不重放工具或业务操作
+ * @param modelId optional or exact platform model configuration identity / 可选或精确的平台模型配置标识
+ * @param reasoningOverride empty inherits purpose preferences; DEFAULT explicitly omits controls / 空值继承用途偏好，DEFAULT 明确省略控制参数
  */
 public record AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<Integer> maxOutputTokens,
                         Duration timeout,
                         boolean jsonObjectResponse, List<AiToolDefinition> tools, int maxRequestBytes,
-                        Optional<String> requiredToolName, int generationRecoveryAttempts) {
+                        Optional<String> requiredToolName, int generationRecoveryAttempts,
+                        Optional<String> modelId, Optional<AiReasoningMode> reasoningOverride) {
+    /** Captures inputs at the AiRequest ownership boundary. / 在 AiRequest 所有权边界捕获输入。
+     * @param purpose declared invocation purpose / 声明的调用用途
+     * @param messages complete immutable conversation / 完整不可变对话
+     * @param maxOutputTokens captured maxOutputTokens at this validated model boundary / 此已校验模型边界捕获的 maxOutputTokens
+     * @param timeout captured timeout at this validated model boundary / 此已校验模型边界捕获的 timeout
+     * @param jsonObjectResponse captured jsonObjectResponse at this validated model boundary / 此已校验模型边界捕获的 jsonObjectResponse
+     * @param tools captured tools at this validated model boundary / 此已校验模型边界捕获的 tools
+     * @param maxRequestBytes captured maxRequestBytes at this validated model boundary / 此已校验模型边界捕获的 maxRequestBytes
+     * @param requiredToolName captured requiredToolName at this validated model boundary / 此已校验模型边界捕获的 requiredToolName
+     * @param generationRecoveryAttempts captured generationRecoveryAttempts at this validated model boundary / 此已校验模型边界捕获的 generationRecoveryAttempts
+     */
+    public AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<Integer> maxOutputTokens, Duration timeout,
+                     boolean jsonObjectResponse, List<AiToolDefinition> tools, int maxRequestBytes,
+                     Optional<String> requiredToolName, int generationRecoveryAttempts) {
+        this(purpose, messages, maxOutputTokens, timeout, jsonObjectResponse, tools, maxRequestBytes,
+            requiredToolName, generationRecoveryAttempts, Optional.empty(), Optional.empty());
+    }
+
+    /** Selects one host configuration without fallback. / 选择一个宿主配置，不切换后备模型。
+     * @param id exact platform model configuration identity / 精确平台模型配置标识
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     */
+    public AiRequest withModel(String id) {
+        return new AiRequest(purpose, messages, maxOutputTokens, timeout, jsonObjectResponse, tools, maxRequestBytes,
+            requiredToolName, generationRecoveryAttempts, Optional.of(id), reasoningOverride);
+    }
+
+    /** Overrides this request only; DEFAULT explicitly omits provider controls. / 仅覆写本次请求，DEFAULT 明确省略控制参数。
+     * @param setting requested reasoning control / 请求的推理控制
+     * @return validated immutable result or admitted completion / 已校验不可变结果或已准入完成状态
+     */
+    public AiRequest withReasoning(AiReasoningMode setting) {
+        return new AiRequest(purpose, messages, maxOutputTokens, timeout, jsonObjectResponse, tools, maxRequestBytes,
+            requiredToolName, generationRecoveryAttempts, modelId, Optional.of(setting));
+    }
+
     public AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<Integer> maxOutputTokens, Duration timeout,
                      boolean jsonObjectResponse, List<AiToolDefinition> tools, int maxRequestBytes,
                      Optional<String> requiredToolName) {
@@ -72,7 +110,7 @@ public record AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<In
      * @throws IllegalArgumentException if the name is not a registered tool / 名称不是已注册工具时 */
     public AiRequest withRequiredTool(String name) {
         return new AiRequest(purpose, messages, maxOutputTokens, timeout, jsonObjectResponse, tools, maxRequestBytes,
-            Optional.of(java.util.Objects.requireNonNull(name, "name")), generationRecoveryAttempts);
+            Optional.of(java.util.Objects.requireNonNull(name, "name")), generationRecoveryAttempts, modelId, reasoningOverride);
     }
 
     /** Selects bounded new generation attempts within this request's original deadline. Each old attempt remains UNKNOWN; a new complete response alone is accepted. / 在原请求期限内选择有限的新生成；旧尝试保持 UNKNOWN，仅接纳新完整响应。
@@ -80,19 +118,28 @@ public record AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<In
      * @return immutable request retaining messages, tools, history and budgets / 保留消息、工具、历史和预算的不可变请求 */
     public AiRequest withGenerationRecovery(int extraAttempts) {
         return new AiRequest(purpose, messages, maxOutputTokens, timeout, jsonObjectResponse, tools, maxRequestBytes,
-            requiredToolName, extraAttempts);
+            requiredToolName, extraAttempts, modelId, reasoningOverride);
     }
 
-    /**
-     * Validates the immutable boundary value and copies mutable input. / 校验不可变边界值并复制可变输入。
-     * @param purpose declared purpose used for routing or authorization / 路由或授权使用的声明用途
-     * @param messages copied model conversation in request order / 按请求顺序复制的模型对话
-     * @param maxOutputTokens optional positive requested output budget / 可选正数申请输出额度
-     * @param timeout strictly positive operation deadline / 严格为正的操作期限
-     * @param jsonObjectResponse whether the response must contain a JSON object / 是否要求响应包含 JSON 对象
+    /** Validates and freezes the invocation, selector and optional override. / 校验并冻结调用、选择器及可选覆写。
+     * @param purpose declared invocation purpose / 声明的调用用途
+     * @param messages complete immutable conversation / 完整不可变对话
+     * @param maxOutputTokens optional requested positive output ceiling / 可选正数申请输出上限
+     * @param timeout positive operation deadline / 正的操作期限
+     * @param jsonObjectResponse whether JSON object output is required / 是否要求 JSON 对象输出
+     * @param tools registered native function definitions / 已注册原生函数定义
+     * @param maxRequestBytes exact serialized request byte ceiling / 精确序列化请求字节上限
+     * @param requiredToolName optional forced registered tool / 可选强制已注册工具
+     * @param generationRecoveryAttempts bounded incomplete-body generation recovery attempts / 有界不完整正文生成恢复次数
+     * @param modelId exact model configuration or empty for recommendations / 精确模型配置，空值使用推荐
+     * @param reasoningOverride empty inherits preferences; DEFAULT explicitly omits controls / 空值继承偏好，DEFAULT 明确省略控制
      */
     public AiRequest {
         java.util.Objects.requireNonNull(purpose, "purpose");
+        java.util.Objects.requireNonNull(modelId, "modelId");
+        java.util.Objects.requireNonNull(reasoningOverride, "reasoningOverride");
+        if (modelId.isPresent() && !modelId.orElseThrow().matches("[a-z][a-z0-9-]{0,63}"))
+            throw new IllegalArgumentException("Invalid model configuration identity");
         if (generationRecoveryAttempts < 0 || generationRecoveryAttempts > 16)
             throw new IllegalArgumentException("Generation recovery attempts must be in 0..16");
         messages = List.copyOf(messages);

@@ -6,6 +6,7 @@ import java.util.*;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.ai.model.*;
+import gold.debug.windowstolinux.app.ai.provider.ModelProviderType;
 import gold.debug.windowstolinux.app.service.ai.*;
 import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import gold.debug.windowstolinux.app.ui.control.DesktopDialogs;
@@ -28,7 +29,9 @@ final class PlatformModelDialog extends JDialog {
 
     private final JPasswordField key = new JPasswordField(28);
 
-    private final JComboBox<ModelReasoningLevel> reasoning = new JComboBox<>(ModelReasoningLevel.values());
+    /** Captured provider for this model capability boundary. / 此模型能力边界捕获的 provider。
+     */
+    private final JComboBox<ModelProviderType> provider = new JComboBox<>(ModelProviderType.values());
 
     private final JComboBox<ModelProtocol> protocol = new JComboBox<>(ModelProtocol.values());
 
@@ -59,17 +62,18 @@ final class PlatformModelDialog extends JDialog {
             fields[i].setName(names[i]);
             c.addField(form, i, 0, messages, labels[i], fields[i]);
         }
-        reasoning.setName("model.reasoningEffort");
+        provider.setName("model.provider");
+        provider.setSelectedItem(ModelProviderType.THIRD_PARTY);
         protocol.setName("model.protocol");
-        messages.localize(reasoning, "ai.models.reasoningEffort.");
+        messages.localize(provider, "ai.models.provider.");
         messages.localize(protocol, "ai.models.protocol.");
-        c.addField(form, 4, 0, messages, "ai.models.reasoningEffort", reasoning);
+        c.addField(form, 4, 0, messages, "ai.models.provider", provider);
         c.addField(form, 5, 0, messages, "ai.models.protocol", protocol);
         if (existing != null) {
             name.setText(existing.name());
             endpoint.setText(existing.profile().endpoint().toString());
             model.setText(existing.profile().model());
-            reasoning.setSelectedItem(existing.profile().reasoningEffort());
+            provider.setSelectedItem(existing.profile().provider());
             protocol.setSelectedItem(existing.profile().protocol());
             key.putClientProperty("JTextField.placeholderText", messages.text("ai.models.keepKey"));
         }
@@ -106,7 +110,7 @@ final class PlatformModelDialog extends JDialog {
         key.setText("");
         try {
             var profile = new AiModelProfile(id, URI.create(endpoint.getText().strip()), model.getText().strip(), credential,
-                (ModelReasoningLevel) reasoning.getSelectedItem(), (ModelProtocol) protocol.getSelectedItem());
+                ModelReasoningLevel.DEFAULT, (ModelProtocol) protocol.getSelectedItem(), (ModelProviderType) provider.getSelectedItem(), Map.of());
             var displayName = name.getText().strip();
 
             busy = true;

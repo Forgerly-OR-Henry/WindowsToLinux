@@ -30,7 +30,7 @@ class PlatformModelsWindowTest {
     @TempDir
     Path root;
 
-    private static PlatformFrame window(PlatformRuntime runtime, ThemeMode theme, int scale) throws Exception {
+    static PlatformFrame window(PlatformRuntime runtime, ThemeMode theme, int scale) throws Exception {
         var service = runtime.models();
         return onEdt(() -> {
             DesktopThemeService.install(theme, scale);
@@ -305,7 +305,7 @@ class PlatformModelsWindowTest {
         }
     }
 
-    private static void click(JList<?> list, int row) throws Exception {
+    static void click(JList<?> list, int row) throws Exception {
         var point = onEdt(() -> {
             var bounds = list.getCellBounds(row, row);
             var pointOnList = new Point(bounds.width / 2, bounds.y + bounds.height / 2);
