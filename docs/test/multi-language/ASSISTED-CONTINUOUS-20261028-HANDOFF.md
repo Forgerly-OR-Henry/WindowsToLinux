@@ -1,6 +1,6 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R08原验收6/8已结束，R09隔离修复待Linux定点
+## 现行入口：R08原验收6/8已结束，R09 Linux收尾观察合同未闭合
 
 R08固定73/P71b/R5b与原参数、FTP授权8MiB，八项各一次/extra无：TaskBoard、FTP、Asset、CSV、Survey、Binary完整首过，Log/Directory原native1/root UNKNOWN/无完整业务交付，失败保留八分母。全轮577logical/578physical/known5803641/反馈47，Survey内部SDK恢复1/未知usage1、观察gap1单列，非零异常/完整账单。原47579/66809及所有旧终态句柄禁止poll/重启，原UNKNOWN不恢复/重放。
 
@@ -10,11 +10,15 @@ R08-only真实进程核退补证完成：原query01 actual exit1/unresolved1保�
 
 首次完整文本privacy已实际PASS：826选定文本、SSH/API字面0、敏感XML属性0，报告44a38d70。javac29224/Java42568/root12952/transport7284 actual0且host CIM核退；只在逐项nonreparse/精确边界/文件hash核对后清r08/.ai-workspace/t06，控制回执0c273cd7确认不存在。原source/targets/state/证据/论文保留，未动r09f或其它任务。最终四文字更新后的补审以固定[postdoc07五输入JSON](H:/Program/WindowsToLinux/.ai-workspace/wt/r08/.ai-workspace/evidence/round-08-preparation-only/06/round-closeout-preparation-01/privacy-audit-round-final-06-postdoc07.json)的status及inputInventory为准；自身新控制回执在其范围外，后续R09文字修改另查，不无限递归。没有把局部privacy或诊断称业务PASS。
 
-修复树r09f、branch codex/assisted-r09-toolchain-boundaries-20261029：APT cff67及后续da90a574e1eec01eee0266591f0401402a1ceb03均本地提交，未推送/未并main。三共享入口standard/Agent alias/HELPER_RUNTIME预算合同、systemd独立全动作时限/精确unit/验空、原子ready/result发布与有界整数收口已实现；断连未知仍UNKNOWN，不保证本地绝对同步截止、D状态有限核退或跨unit maintainer服务无副作用。最后新HEAD package05实际17reactor成功/skipTests，最终actual artifact ledger以worker closeout为准，禁止用R08 cp/旧JAR代替。当前Linux未实测，不能直接新开R09。
+修复树r09f、branch codex/assisted-r09-toolchain-boundaries-20261029：APT cff67及后续da90a574e1eec01eee0266591f0401402a1ceb03均本地提交，未推送/未并main。三共享入口standard/Agent alias/HELPER_RUNTIME预算合同、systemd独立全动作时限/精确unit/验空、原子ready/result发布与有界整数收口已实现；断连未知仍UNKNOWN，不保证本地绝对同步截止、D状态有限核退或跨unit maintainer服务无副作用。最后新HEAD package05实际17reactor成功/skipTests，最终actual artifact ledger以worker closeout为准，禁止用R08 cp/旧JAR代替。当前真实Linux一次无包探针的not-found19属性门通过，active/exited后ControlGroup空/目录消失，第二门UNKNOWN70，不能直接新开R09。
 
 已保存首组pure12、首轮9XML JUnit64(63pass/1旧tamper no-op)、failed/直接影响组5XML19/0、末次两Python/一Java及数字InvocationID反例0；不合成唯一数量或全suite。失败夹具改为确实改变新五参数字节而parser继续拒绝。三旧CurrentSource红走legacy prepare.v1/+15/EMPTY stdin旧段，本次未纳入/未改路径，继续未解。所有launcher、testCompile、JUnit失败及日期守卫拒绝各自保留，不混正式八分母。
 
-下一步先接r08_local_preparation最终代码/实际产物closeout，不重复测试或派发旧句柄；只实施必要受控Linux测试代码验证（无真实APT/业务/手工部署），至少实际验证not-found show属性与active/exited真实cgroup验空，再覆盖亲代/worker退出、setsid/忽略TERM与预算到期。确认后新源码实际产物/参数冻结，再产品inventory→plan→apply→独立after，才启动全新八项各一次。服务器未再次清场，R09未启动，目标active。main正式记录/进度与证据回执保持一致，本地提交不推送、论文5项保留。
+最终r09f closeout88b6d607及artifact045f2870已接纳，父520ee8核65文件/16JAR/三Mod对应/17输出；不需要重跑已通过组。R08 postdoc07也实际PASS5/080963cc、pd07/classes清，outer工具UNKNOWN_OUTPUT_TRUNCATED按3465e086保留。本段为postdoc之后新scope，不冒充旧五文件字节已覆盖。夹具01四条未canonical路径已由02隔离修正，01原件和子代理CreateProcess前授权拒绝e093d776均保留，根线程依据原服务器授权执行实际探针；不是Java/Linux失败的重复尝试。
+
+真实02探针edf87685：第一门PASS，第二门因active/exited后ControlGroup空/cgroup目录消失而DEPENDENCY_UNIT_IDENTITY/UNKNOWN70；未继续九场景。原unit随后用03严格原InvocationID/Description/nonce重复核验后stop0→not-found，107当前进程标记候选0/不可读0；actual c578c81b、父2e75885d，原从未验空与probe70不改判。native89511 actual70和75721 actual0均已终止禁poll，各JVM/outer actualwait/CIM退/tmp清。当前new04正常Runtime可能写ledger单列，原UNKNOWN库不开，模型/包管理/正式业务0。
+
+下一目标回合从judgment fd5e028f接续：先核宿主kernel/systemd，并用新无包fixture验证提前绑定cgroup.events FD、ready/ack及真实populated0/精确ENODEV退役路线，包含活setsid后代/错误身份/无FD/EOF/其它errno负例；该设计尚未实验或进生产。完成归属与cleanup归属分离，保持原累计T与所有审批/源保护。通过后才改生产并定点验证，再亲代/worker退出、setsid/忽略TERM与预算到期；不得用missing直接当空、Delegate切换或单元模拟代替实际证明。通过后才新源码实际产物/参数冻结，再产品inventory→plan→apply→独立after、全新八项各一次。服务器未整轮重新清场，R09正式0/目标active；APT禁止移除及ff83保护不回退，论文5项保留。详见逐轮报告的新阶段与CURRENT。
 
 ### 五网站检查点（历史，Log失败前）
 

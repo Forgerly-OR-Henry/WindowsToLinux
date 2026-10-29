@@ -1,8 +1,24 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active，R08最终完整首过6/8，未达成。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期修复尚在新r09f树实施。原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；后续仅独立辅助取证/修复准备。全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
+状态：目标active，R08最终完整首过6/8，未达成。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，但真实Linux第二能力门未满足，观察合同待修正。原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；后续仅独立辅助取证/修复准备。全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
+
+## R09首次受控Linux探针：第二能力门未通过，正式轮未启动
+
+这是R08收尾后的新阶段，不在postdoc07五输入旧字节快照内。R08固定补审已实际PASS5（080963cc），父接纳69e01073；四个inner原生wait0、五身份CIM退、pd07/classes/t06均清。outer原工具退出UNKNOWN_OUTPUT_TRUNCATED仍按3465e086保留，不能由CIM absent推断自然0。R08仍6/8，原失败、UNKNOWN与所有原库不重放。当前FTP维持用户明确授权的8MiB，其余既定业务不减。
+
+隔离r09f首版为cff67（APT --no-remove）加da90（生命周期）。最终package05实际17 reactor成功且skipTests，父520ee8另核65实际文件记录、16JAR、10个deployment.jar成员、三Mod descriptor/marker/JAR及17输出目录；实际产物相符，不代表Linux行为通过。先前单元/参数测试的失败与重跑分别保留，不合成一轮全绿，也不修饰旧三CurrentSource未解。
+
+辅助夹具01发现四个file/provider路径保留deployment/../../app，被自身exact校验拒绝的静态缺陷；无实际Java/SSH。它的启动在CreateProcess前另遭auto-review拒绝，理由是该子代理被识别的授权仅含源码/编译，不能凭父消息扩为凭据/网络操作；原文e093d776保留。02只修canonical读取/元数据和诊断日志，原54cp顺序/来源与be9生产函数不变，AST/javac/seal各一次actual0及CIM/tmp清。根线程依据用户既有服务器连接和完整操作授权执行，未绕过该委派边界，也没有再次要求同一指纹确认。
+
+根线程实际一次[无包能力探针原结果](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/linux-kernel-fixture-02/actual-52da1cda799c4f92a59b26c7951bdf02-probe.json)，SHA edf87685f028877d5220ca51233249fe444ad4df3873046cf764c8a00a8c762e：产品SSH验证BiNl后认证，当前new04内存凭据/正常Runtime ledger例外已发生；原UNKNOWN库不打开，模型/API/APT/DNF/业务请求均0。第一门实际not-found全19属性及原生0通过。第二门真实Type=exec/RemainAfterExit=yes服务已active/exited、MainPID0/ExecMainStatus0/Resultsuccess，但ControlGroup为空，原cgroup路径消失；严格identity拒绝DEPENDENCY_UNIT_IDENTITY，完整能力false/UNKNOWN70。没有继续异常场景或正式项目，不用路径缺失补成空组。
+
+此为da90新设计的Linux观察前提被真实反例否定，不是R08实际APT残留、卸载的证据，也不是ff83旧问题复发。原probe finally在完整identity失败后尚未取得InvocationID，故未stop该unit；自有systemd-run client实际kill/wait-9，不能说当时远端已清。之后按原输出精确InvocationID、Description/sourceSHA、nonce和完整属性做独立[自有unit收尾](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/linux-probe-unit-closeout-03/actual-exact-unit-closeout-03.json)，SHA c578c81b：重复核归属后stop实际0，后show为not-found，当前107个/proc标记检查候选0/不可读0，未向扫描PID发信号。父接纳2e75885d；probe70及originalCgroupEmptyNeverProven=true保持，诊断清理不认证业务或验空通过。
+
+[本次观察合同判断](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/dependency-lifecycle-kernel-judgment-03/judgment.json) SHA fd5e028f建议下一回合先做提前绑定cgroup.events FD的独立无包实验：先核宿主kernel/systemd与核心events语义，ready时取得同一对象及populated=1后ack，再区分真实populated=0和精确ENODEV退役证据。错误身份、未取得FD、EOF/其它errno、裸missing、活setsid后代都应拒绝；目录nlink0和仅Delegate切换不作为修法。该路线尚未实验或进入生产，不能称观察合同已修复；cleanup归属需与业务完成判断分离。
+
+root probe native session89511实际70、cleanup75721实际0均终止禁poll；各JVM与outer经actualwait及CIM核退、自有private tmp清理，原r09f源/targets、R08原证据与论文保持。服务器没有做整轮重新清场，R09正式0。下一步只解决观察合同并做必要真实无包反例；通过后再冻结、产品清场及独立after，才开始八项。未知边界、前置授权拒绝及辅助失败单列，不混正式八项分母。
 
 ## 用户2026-10-29确认的现行执行与修复规则
 
