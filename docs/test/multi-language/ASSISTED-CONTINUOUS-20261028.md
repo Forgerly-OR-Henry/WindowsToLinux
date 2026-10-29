@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active。R08同一SOURCE73/f102及06策略71b/release5b，初清及独立复查通过；TaskBoard、FTP、Asset、本轮新CSV的原任务、既定业务、交付及额外清理均完整首次通过，累计4/8。Survey原Maven12956/Java27972由原队列自动启动，后三CLI仍排队，不重发；旧CSV UNKNOWN未恢复或重放。driver47579/16120及非授权采样66809/9292活动；补充采样累计1次生成metadata读取缺口如实保留，后续pass不抹，原94607失败及其余辅助失败也保留。已完成四项有26条内部提交结构反馈，格式绝对0未证明，不称零异常或完整账单。FTP按授权8MiB、其余负载/独立审批/交付清理不减；仅测试代码，无真实UI/浏览器/Computer Use。
+状态：目标active。R08同一SOURCE73/f102及06策略71b/release5b，初清及独立复查通过；五网站TaskBoard/FTP/Asset/本轮新CSV/Survey原任务、既定业务、交付及额外清理均完整首次通过，累计5/8。Log原32192/Java37480、root41b15552已自动启动，后两CLI仍排队，不重发。Survey有1次SDK同generation纯生成恢复、1次未知usage，原物理UNKNOWN保留，原部署root无UNKNOWN/FAILED终态；不计整项目重试，不称零异常。完整五项491logical/492physical、known4904221、结构反馈38，非完整账单。补充采样缺口1、原94607及全部辅助失败/旧UNKNOWN保留；不混八项分母。FTP8MiB及其余既定负载/独立审批不减，仅测试代码，无真实UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -25,7 +25,7 @@
 | round-05 | abc7abd1fa8db25626854eece961ca43347913e8 | 首个清场执行和独立复查均通过 | 八项各一次：首过7、FTP业务失败1 | 未达成；无内部生成恢复，分阶段上传修复已轮末合入9259ee92，准备R06 |
 | round-06 | 818ac8acb065182cfd90b090db42d322e605436e | 产品清场及独立复查通过 | 计划八项，仅前三项原完整回执PASS、后五未启动；0项已观察业务失败 | 未达标；运行期主工作区发生并行源码/HEAD漂移，原守卫在CSV前退出；准备问题单列，原64MiB保留，FTP恢复1/未知usage1 |
 | round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八项目各一次：完整首过7、CSV原UNKNOWN/测试失败1 | 未达标；全部原测试及driver/observer结束，未知与原失败保留；8MiB仅授权改大小，不拼旧成绩 |
-| round-08 | 73bbbbbb07346a09155d8d3ddc23c5dd08756d38 + 06策略71b11497 | 04准备误拒另记；06原产品4阶段及独立after/initialReset通过 | 八命令一次提交，前四项含本轮新CSV完整首过，累计4/8；Survey进行中、后三CLI待启动 | 进行中；内部反馈、原观察失败及补充缺口1/辅助失败保留，非零异常；不混旧UNKNOWN或旧轮成绩 |
+| round-08 | 73bbbbbb07346a09155d8d3ddc23c5dd08756d38 + 06策略71b11497 | 04准备误拒另记；06原产品4阶段及独立after/initialReset通过 | 八命令一次提交，五网站完整首过，累计5/8；Log进行中、后两CLI待启动 | 进行中；Survey内部生成恢复1/未知usage1及结构反馈、原观察失败/缺口1与辅助错误另记，非零异常；不混旧UNKNOWN或旧轮成绩 |
 
 ## 失败原因与解决方案
 
@@ -888,3 +888,21 @@ CSV最终67logical/67physical/raw均SUCCEEDED，known743080=deployment77029+appr
 Survey Maven12956于UTC02:13:16.753254启动后，非授权补充采样cycle222/原events行829在02:13:22.184972记录一次FREEZE_READ_INCOMPLETE：FileNotFoundError、src/mod/deployment/target/wtlmod-development.json，状态UNKNOWN_INCOMPLETE，符合原六文件白名单。随后同次观察2次完整原guard读取返回VERIFIED、incompleteReadCount1；累计缺口1原件保留，不以新pass抹除。父摘录原事件行及SHA/后续完整样本，proof eabb275170ee095dd787b0213bb68df0d33cf1818f348d8f293cf521eaa521f7。路径和时间与既知MavenDevelopmentInputs删旧descriptor/marker再生成窗口相符，但未做OS逐文件写者归因，不声称唯一物理删除者或底层已修；该缺口本身不能证明源码或class发生漂移，后续完整核验通过。原driver/guard/49输入未改、未重启原monitor、未发额外部署/恢复；时点采样不证明连续不变。原94607失败及先前准备诊断FNF继续分开保留，辅助观察不混正式分母。
 
 原队列已自动启动Survey Maven12956/Java27972、root4b2e65d7-4c5f-4e6c-89d9-869d0932de72，state assisted-live-survey-scoring-j35cvobfk，当前AI部署；后三CLI尚未启动。SOURCE73/f102、policy71b/release5b及参数冻结，47579/66809原句柄继续，不重发run/reset或任何已完成项目。当前仅核4/8，整轮goalEligible=false正常，目标active；当前公共文本隐私与整轮自有process/t06收尾尚未完成。
+
+### R08 Survey完整首次通过，五网站累计5/8；内部生成恢复与未知用量另列
+
+Survey唯一原root4b2e65d7-4c5f-4e6c-89d9-869d0932de72为SUCCEEDED，原Maven12956 actualwait0，指定JUnit1/0/0/0、3195.592s，UTC03:06:39.815610结束；原business3435/PASS3437齐。冻结业务断言为revision1固定答案、score84.21±0.001、原submission重启持久化和首页HTTP。原RESTART c90af780自然SUCCEEDED（typed log2772/3434），其ASSISTED实际wait预算为15分钟；原进度行无UTC，不伪造精确耗时，也不把数分钟正常等待写成挂起或底层故障。依据原回执及冻结成功JUnit断言链，不声称逐HTTP全文、全BUSINESS压力矩阵或真实UI验收。
+
+原交付app wtl-assisted-survey-scoring-j35cxtr8o、state assisted-live-survey-scoring-j35cvobfk、revision29a9b156ea349b7fd0b32f7061be0a84f1b459d83551944fdf8c0ef24eb834fa、ownershipcaf1d21661c89966da5d41f6dd8e4baf1c775dbbb22a9fd62c6e3091d187eaab，交付原件RUNNING/DISABLED、四artifact seal齐。原额外Java11952（不从PTY折行猜PID）actualwait0，UTC03:09:57.490738结束，同app/revision最终STOPPED/DISABLED，精确marker80恰一次。父实际CIM12956/27972/11952 absent，过程proof cc8d3a055d84f4ef0745338793b0b3632ec3fafd8a4269c58515f818647f8dee；原cleanup活体创建时间/observed cmdSHA亦保留于c84c4c2b，未发送信号。
+
+下一Log原STATE后UTC03:11:30完整guard VERIFIED，Survey仅一次原entry06 inspect实际0、外层实际0，六身份/完整argv及XML/root/seal/cleanup五绑定及initialReset强门全通过。子审c20a057a328bb67d0fc2af31678e53478a8b3355580b258b8c9eca8c5b2404df、账6c4641e62db16d6f3b8bb05f7ea561ff22db628a5dace413ad3b19e0f15a2529、ledger226cd056a7ab0a76489a609752d5f5f566349c63d341dd670f6a95e54eefd098、closeoutfca52e58f4ddf8118cbe8483ceb7d8c8a5886fd1fcb3bb5f3cd8077f734aa90f。父原八文件SHA/长度及ledger12文件逐一再核同，审计43844/16644宿主CIM再次确认原身份absent；接受038a70f7c475e898a85832b94ef2bded37e699f999e7d99759109246ff168455。没有重跑原inspect、业务、部署或旧UNKNOWN。
+
+本项114logical/115physical，114 SUCCEEDED、1 UNKNOWN。APPROVAL generation59444fe7-5163-422f-a874-5a776f5b01c6第1次AI_TRANSPORT_UNKNOWN/HTTP_CHUNK_INCOMPLETE，496909ms、usage全部null；同generation第2次39599ms成功。两次encodedRequestBytes均47854、maxOutput65536，计数相同不冒充独立payload字节相等证明。原#1 UNKNOWN及未知费用原样保留，不补成0。实际最大number2、连续编号、同purpose，属于冻结SDK内有界纯生成恢复；与APPROVAL原生格式纠正的预算/计数分开。原部署root只有一次且没有UNKNOWN/FAILED终态，不是旧R07原任务UNKNOWN恢复、完整项目重试或人工补救。
+
+这是同类生成传输不完整现象再次观测；没有证据确认与旧轮相同的底层诱因或当前代码修复回退。现行有界恢复使原尝试继续，未对此更改代码，也不宣称供应商/链路根因已查明或根治。已知tokens1218388=deployment100834+approval1117554、角色差0，但usage1仍未知，已知tokens不能代表完整费用。提交结构反馈raw/unique12/12均SUBMISSION_REJECTED且明确无动作；冲突/重复/未解析观测0。格式success/GAP观测0但coverage不完整，zeroCorrectionsProven/strictNoInternalRecovery/zeroObservedAbnormality false，不能称零异常或完整账单。
+
+完整五项合计491logical/492physical、known4904221、结构反馈38、SDK生成恢复链1/未知usage1；活动Log不混入。原队列UTC03:10:02.206436自动启动Log Maven32192/Java37480，原root41b15552-c919-4741-a1ea-7e5772d632ab，后两CLI尚排队。PID32192被新Log复用，旧CSV auditor32192的早前退出/absent结论只对应当时创建时间，父新CIM已明确两生命周期；不能按裸PID停止。SOURCE73/f102、P71b/R5b、49闭包/参数不变，47579/66809继续，不发run/reset/quit或重跑已完整五项。整轮goalEligible=false因余三未完属正常，目标active。
+
+辅助准备与错误另记：Survey/CLI终态脚本及整轮隐私候选仅在隔离ignored辅助目录，未改冻结源或全套测试。actor清单46 PID桶/84来源由父逐一SHA/长度再核，13缺creation、37缺observed cmdSHA如实unknown；27有绑定native wait，不把父Maven wait替代Java子wait，也不声称瞬时Git已逐PID记录。privacy v1的历史元数据强制前提经静态审查过强，未实际运行；新增v2仅允许确切当前ABSENT/查询成功/所有权来源齐时显式null，两root身份仍精确且须任务范围查询0。32纯合成准入边界native0通过；QA13760已wait/HasExited，尚待最终CIM。原Java4ab/v1/原manifest0a八文件不改，未来只用已父审v2 96a7d269同标签一次；当前Java/实际scanner/needle/vault/真实terminal proof均未执行，不是隐私PASS。父v2接受012f59dd，t06仍被本轮使用。
+
+新增本地辅助错误均保留且不混分母：父猜不存在run_review.py导致只读tool1，改用rg定位实际inspect_once.py（proof447aeebd）；84源核对的PowerShell Split重载误把第二string作为count导致tool1，仅换同一path检查为regex后通过（父接受aac42d91）；父观测cleanup时假定独立-cp槽导致前置tool1，未发host/产品命令，改为无必要argv解析的实际driver子进程观察并由native11952绑定（proofc84c4c2b）。最后一项属于此前“未核实际元数据形状”同类辅助假设再次出现的不同位置，不包装为新业务问题；已以实际schema/查询取代假设，没有把已修代码改回原样。旧04 JUnit误拒、原94607失败、补充缺口1及全部旧失败/UNKNOWN继续保留。当前公共文本隐私及整轮自有进程/t06收尾尚待全部八项后完成。

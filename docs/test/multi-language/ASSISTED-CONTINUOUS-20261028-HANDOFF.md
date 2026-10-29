@@ -1,6 +1,19 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R08累计4/8，前四项完整首过，Survey原任务进行中
+## 现行入口：R08累计5/8，五网站完整首过，Log原任务进行中
+
+### 当前状态与接续
+
+Survey原12956/27972/root4b2e65d7唯一SUCCEEDED，JUnit1/0/0/0/3195.592s、原business3435/PASS3437、四封存及原交付齐；额外Java11952 actualwait0于UTC03:09:57.490738结束，同app/revision STOPPED DISABLED marker80唯一。app j35cxtr8o/state j35cvobfk，revision29a9b156/ownershipcaf1d216。下一Log STATE后新全guard VERIFIED，原entry06 inspect仅一次实际0，子审c20a057a/账6c4641e6/closeoutfca52e58；父八原SHA及12清单文件再核同、审计43844/16644及原三进程CIM absent，父接受038a70f7c475e898a85832b94ef2bded37e699f999e7d99759109246ff168455。五网站完整5/8，已完成五项inspect均不可重跑。
+
+本Survey114logical/115physical：APPROVAL generation59444fe7第1次HTTP_CHUNK_INCOMPLETE/UNKNOWN、usage null，496909ms；第2次39599ms成功，原UNKNOWN保留，known1218388/反馈12。SDK有界纯生成恢复1/未知usage1，原部署root没有UNKNOWN/FAILED终态，不是完整项目重试或旧R07任务恢复；同类传输症状底层诱因未知，未修改代码或称根治。完整五项491logical/492physical、known4904221、结构反馈38；格式marker0不能证明绝对0，非零异常/非完整账单，不含活动Log。
+
+原队列UTC03:10:02.206436启动Log Maven32192/Java37480、root41b15552-c919-4741-a1ea-7e5772d632ab，后两CLI仍排队。32192复用此前CSV auditor数字PID，但创建时间/命令不同；父新CIM证明cc8d3a05已区分，旧absence是历史时点，不按裸PID终止。driver47579/16120及补充66809/9292继续，SOURCE73/f102、P71b/R5b、49链/参数不改，不发run/reset/quit，不重放旧UNKNOWN。补充累计缺口仍1，原94607失败不重启。当前这节优先于下方较早4/8快照。
+
+后续CLI使用06/cli-audit-preparation-01/inspect_cli_once.py（c84aad91），五原文件、INSTALLED/NOT_APPLICABLE、无网站额外cleanup，按原root PROGRESS并核RESULT取得--expected-root，每项终态单次原inspect，不从STATIC_LIVE_STATE猜UUID。整轮隐私未来只用round-closeout-preparation-01/run-round-final-text-audit-06-v2.py（96a7d269），Java4ab/原v1/manifest0a均保留；32项纯本地准入边界通过，实际Java/needle/vault/scanner/terminal proof仍0。84源actor清单父接受aac42d91，未知creation/cmd保留null；最终真实工具wait+host CIM+任务范围查询齐后才扫描整个R08保留文本及main四记录，scanner核退后仅删除精确nonreparse t06。v2父接受012f59dd，QA13760需最终核退。辅助路径/Split/argv形状错误分别保留，不混正式分母；metadata假设同类问题再次出现已如实记，不称业务退化或代码修复回退。main论文5项保留、不push；目标active，整轮最终隐私/process/tmp及全八资格尚未完成。
+
+### 此前接续快照（历史，累计4/8时）
+
 
 目标active，R06未达标：计划八项，仅TaskBoard/FTP/Asset三个原完整回执PASS、后五项未启动；不是3/3，也不是五项业务失败。运行期主工作区出现并行UI源码及818→da3e提交，原冻结守卫在CSV launch前拒绝，不能继续声称整轮保持冻结。FTP原64MiB全业务通过，含纯生成恢复1/未知usage1；Asset原JUnit/交付/清理均0，源码变更对在途运行的全部影响不作无证断言。R06原始证据及额外冻结审计见[已关闭轮](../../../.ai-workspace/evidence/assisted-continuous-20261028/round-06/README.md)。原driver16741实际exit1，observer37339有意终止后实际exit1，CIM自有进程0，clean28r06已清，1447文本敏感值审计通过；关闭文档修改后的02检查覆盖1453文本、零匹配、实际0，独占临时目录已清。不得poll/重启旧句柄或重发旧八队列。
 
