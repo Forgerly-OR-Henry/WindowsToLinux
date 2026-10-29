@@ -4,11 +4,13 @@
 
 2026-10-30，长期目标保持active，R11正式轮未启动，服务器未再次清场。当前候选仍为r11f的`27f9a876`，两修复0701b3ed／27f9a876不变。必要skipTests package已实际0；父重核54项classpath、38公共JAR、17输出目录3838成员、6唯一provider及相关当前JAR／descriptor。完整工厂stdin607517B、纯Responses预览689569B均保留；预览不等同后续真实Task／workflow请求。必要javac和纯受控反例均0，不重复14／11个已过定点，不称完整业务验证。
 
-父仅审批诊断release `712d21ac77b78383389f807cc9e9c571381e9b54a86a963a55bd52ad4d8eee60`已绑定24项公开输入：gpt-6-luna／Responses，主App LANGUAGE与APPROVAL均HIGH，Mod不覆写；预算4个capability操作和1个独立review逻辑调用，产品原有格式提交及SDK有界恢复须另记物理次数。正常本地fresh Runtime、随机dummy凭据加密保存及真实close-only workflow允许；逐命令host grant、SSH、RemoteSession、BeforeExecute、dispatch全部禁止。APPROVE加诊断host阻断不等于部署PASS，scope导致DENY亦不证明底层环境修复失败。
+父仅审批诊断release `712d21ac77b78383389f807cc9e9c571381e9b54a86a963a55bd52ad4d8eee60`已绑定24项可审查的非凭据输入：gpt-6-luna／Responses，主App LANGUAGE与APPROVAL均HIGH，Mod不覆写；预算4个capability操作和1个独立review逻辑调用，产品原有格式提交及SDK有界恢复须另记物理次数。正常本地fresh Runtime、随机dummy凭据加密保存及真实close-only workflow允许；逐命令host grant、SSH、RemoteSession、BeforeExecute、dispatch全部禁止。APPROVE加诊断host阻断不等于部署PASS，scope导致DENY亦不证明底层环境修复失败。
 
 实际启动被automatic approval review在CreateProcess前拒绝：其理由为完整安装脚本、审批提示和证据可能含未公开内容，需要明确确认经所配置GPT接口发送这些具体材料。父已提出最小授权问题，当前待答，未旁路或重试。不是API连通失败、模型DENY或原生exit1；无原生PID，execution-started／parent-execute-launch／新state／am11均不存在，capability、review、SSH实际均0。仅安全投影确认当前接口为本机`http://127.0.0.1:33333/v1`、选中gpt／gpt-6-luna／responses；未输出key或发请求，本机代理地址不等于已获上游材料发送放行。原拒绝证据[9f45f38e](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/approval-material-diagnostic-11-01/parent-autoreview-rejection-11-01.json)保留，不计进正式八项分母。
 
 待答期间仅准备R11控制DRAFT和历史修复回退审计，无Runtime／API／SSH／新清场或正式driver。获准后先执行上述一次有界诊断并按独立verdict和调用实数记录；不能为了APPROVE反复整套重试。之后仍须新凭据／获准指纹产品连接、实际产物与新冻结、产品inventory→plan→apply→独立after，再仅投一次八项原队列。旧失败、UNKNOWN、论文五项和用户代理均保留，默认不推送。
+
+待答期间的本地工作已收口：[限定历史回退审计](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/r11-fix-recurrence-audit-01/fix-recurrence-ledger-01.json)SHA1d49dd6e，8个只读Git查询实际0，所核R09／R10／R11审批DENY→host段及receipt方法组一致，未发现旧硬门撤回证据；不穷尽全历史，也不证明新provider或真实环境已通过。R11控制13core＋3aux为不可执行DRAFT，v2候选SHA51562257；monitor逐条分记readgapCount与unknownObservationEvents，晚到／耗尽／普通／投影异常保留安全UNKNOWN，成功不清零，driver等执行守卫不重采。首生成尾部Java自hash错误、首4方法3过1错误（FTP bootstrap漏import）、只复测失败1过均保留；计数新增3纯方法通过，无真实watch／guard／Java编译／Runtime／API／SSH。候选v1及原失败回执未覆盖，v2[收尾](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/round-11-control-draft-01/control-draft-closeout-11-v2.json)SHAeac7700c；自身验证身份与私有tmp已收尾。实际新轮metadata／vault／连接／P-R依赖仍缺，本DRAFT不能直接运行。
 
 ## R10终审：八项原验收0/8，原件已封存，两项隔离修复已提交
 
