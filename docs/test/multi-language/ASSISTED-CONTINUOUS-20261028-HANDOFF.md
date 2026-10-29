@@ -1,22 +1,20 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R08最终6/8，Log与Directory原UNKNOWN，取证与修复准备
+## 现行入口：R08原验收6/8已结束，R09隔离修复待Linux定点
 
-### 当前状态与接续
+R08固定73/P71b/R5b与原参数、FTP授权8MiB，八项各一次/extra无：TaskBoard、FTP、Asset、CSV、Survey、Binary完整首过，Log/Directory原native1/root UNKNOWN/无完整业务交付，失败保留八分母。全轮577logical/578physical/known5803641/反馈47，Survey内部SDK恢复1/未知usage1、观察gap1单列，非零异常/完整账单。原47579/66809及所有旧终态句柄禁止poll/重启，原UNKNOWN不恢复/重放。
 
-R08最终完整首过6/8：五网站+Binary通过，Log与Directory原native1/JUnit1失败/rootUNKNOWN、无RESULT/完整业务/delivery，原失败保留八分母。八原attempt各一次、extra无，原source73/P71b/R5b/49链/参数不变，不拼R07成绩。Binary父c56758bd、同一snapshot八项总览6913d154；两失败父2000d03e，两个UNKNOWN原文件108份39983898B已字节封存f93dce6e并派生复核34952c4f，未原库DB-open/重放。全轮577logical/578physical、known5803641、反馈47，Survey内部SDK恢复1/未知usage1、观察缺口1分别保留，不称零异常/完整账单。
+两阶段四次私有副本取证均退出/清理、原108字节同：Log具体拒绝固定1800秒与独立会话进程缺收尾，Directory具体拒绝APT无--no-remove；已确认相应源码保护缺口，未证实际apt残留/卸载、1513仍仅模型所述，不认同底层原因或ff83回退。第二阶段父9f68be64，SSH/API/master内存脱敏与整JSON检查均通过；new04 Runtime/ledger可能写单列，原UNKNOWN库engine/Runtime0。
 
-原driver47579已单次quit后actual0、补充66809自然actual0，16120/9292及末Binary8036/41408已host CIM核退（87b29937）。这些及原94607等所有旧terminal句柄禁止再poll/重启，不能重发八原命令。独立取证工具准备及合成验证已结束，8个自有进程wait/HasExited及hostCIM核退、3个私有QA tmp已清；最终隐私/t06尚未收尾；服务器没有再次清场，R09未启动。所有源码、targets、state及原证据保留；R08记录的本地提交以进度索引和提交回执为准；论文5项保留，不push。
+R08-only真实进程核退补证完成：原query01 actual exit1/unresolved1保留；40828原a7bc wait结束早于同snapshot当前创建，closure02只重分类该row且history空不补，无新global query。v3 ced7/父fbb源绑定验证及18metadata定点通过，QA43776/transport40856实际退出/CIM退；75行父terminal proof eb234d96已CreateNew。该准入不宣称实际query原为0，不操作当前系统服务。
 
-已确认Log原最后response为tool_calls+单submit_result，不是R07纯text无native同支；ff83真实集成、无漂移/可见预算耗尽。原native decision/JSON正文未读取；下文副本已证独立审批拒绝事件，具体拒绝理由仍未知。inspect-host只是前一成功commit的旧进度，不能认SSH根因或回退ff83。3旧CurrentSource红属不同Agent/prepare路径，无typed栈连通，仍未解决。Sol安全分析261b02ff、Astra具体判断见log-directory-unknown-judgment-01：现有DEPLOYMENT_PREPARATION_EXCEPTION/RESULT安全码可能已保存但原ASSISTED失败导出漏事件/重开锁失败。优先查现有应急日志，必要时审核copy-only/只读JDBC定表定root投影；绝不用Runtime/PlatformDatabase打开原UNKNOWN，不输出正文/密钥，不强制APPROVE或增加预算。源码存在不证明本次写成功，诊断增强不等于底层故障修复。
+首次完整文本privacy已实际PASS：826选定文本、SSH/API字面0、敏感XML属性0，报告44a38d70。javac29224/Java42568/root12952/transport7284 actual0且host CIM核退；只在逐项nonreparse/精确边界/文件hash核对后清r08/.ai-workspace/t06，控制回执0c273cd7确认不存在。原source/targets/state/证据/论文保留，未动r09f或其它任务。最终四文字更新后的补审以固定[postdoc07五输入JSON](H:/Program/WindowsToLinux/.ai-workspace/wt/r08/.ai-workspace/evidence/round-08-preparation-only/06/round-closeout-preparation-01/privacy-audit-round-final-06-postdoc07.json)的status及inputInventory为准；自身新控制回执在其范围外，后续R09文字修改另查，不无限递归。没有把局部privacy或诊断称业务PASS。
 
-两阶段实际副本取证均完成，禁止重复旧四次调用。第一阶段父dab71cb1确认各root的COMMAND_REVIEW_DENIED→OPERATION_FAILURE；第二阶段父20533a75完整审后按两精确logId/时间各读一次message，三针SSH/API/master脱敏及全JSON残留检查通过。Log安全输出86ac8886（91chars）指出固定1800秒长于所述外层1513秒及setsid子进程缺受控收尾；Directory70f60127（68chars）指出APT install缺--no-remove。源码分别确认生命周期保证缺口和禁止移除约束缺失，两个担忧不同；未证明本次发生apt残留/卸载，1513仍只模型理由支持。Astra困难设计timeout-specific-analysis-03 SHA8a36097b已父全文读，不能只缩时长/改prompt或称独立期限等于即时取消。ff83/native保护、参数布局、fd-bridge及认证/source/owner/hook等不回退。
+修复树r09f、branch codex/assisted-r09-toolchain-boundaries-20261029：APT cff67及后续da90a574e1eec01eee0266591f0401402a1ceb03均本地提交，未推送/未并main。三共享入口standard/Agent alias/HELPER_RUNTIME预算合同、systemd独立全动作时限/精确unit/验空、原子ready/result发布与有界整数收口已实现；断连未知仍UNKNOWN，不保证本地绝对同步截止、D状态有限核退或跨unit maintainer服务无副作用。最后新HEAD package05实际17reactor成功/skipTests，最终actual artifact ledger以worker closeout为准，禁止用R08 cp/旧JAR代替。当前Linux未实测，不能直接新开R09。
 
-第二阶段新27清单5532e51b/actual closeout e71ec22a，父逐hash接纳9f68be64；JVM32880/44240 actual0/CIM退，两私有目录清，原108及准备38前后同。new04 Runtime.open两次/ledger可能写（未测次数）单列，原UNKNOWN引擎/Runtime0/无重放/远端/模型。第一阶段38132/13900和第二阶段QA38728/11040也已核退清tmp，旧四原始release/输出均保留。取证不升级原UNKNOWN或R08的6/8失败。
+已保存首组pure12、首轮9XML JUnit64(63pass/1旧tamper no-op)、failed/直接影响组5XML19/0、末次两Python/一Java及数字InvocationID反例0；不合成唯一数量或全suite。失败夹具改为确实改变新五参数字节而parser继续拒绝。三旧CurrentSource红走legacy prepare.v1/+15/EMPTY stdin旧段，本次未纳入/未改路径，继续未解。所有launcher、testCompile、JUnit失败及日期守卫拒绝各自保留，不混正式八分母。
 
-隔离修复树r09f（branch codex/assisted-r09-toolchain-boundaries-20261029）已从73建立：APT --no-remove及测试shared资源路径/断言、正式记录四文件本地提交cff67b66，七指定pure/mock方法通过，10704 actual0/CIM退；无真实APT/新轮验证。超时完整动作systemd监督/精确预算/原unit验空修复由Sol在r09f继续实施，尚未验证新实际产物或受控Linux，不能把设计/诊断写成已修；下一回合先接该子代理，不重复派发。同源被影响standard/Agent/HELPER_RUNTIME合同要一并保留强校验。r08源码/targets/状态/冻结不动，main当前de41d1f4之后第二阶段记录待本地提交，论文5项保留，不推送。
-
-R08收尾补证已父审：一次真实query01(216e0f98)原unresolved1/工具exit1保留；40828原a7bc实际wait于23:41:30结束早于当前系统进程04:24:06创建，数字复用已证，不补history/不动系统服务。closure02仅改该row分类/Absent，actual1与derived0分记，无新global query。v3 ced7/fbb父审、18metadata定点通过，QA43776/transport40856核退；真实75行privacy release尚未创建。postdoc07源7077机械补审五指定文件也已准备，尚未编译/Runtime/针/scan。下一步父单次v3全扫、真实wait/CIM后精确清t06，再更新四记录并按新postdoc release补扫固定五份，以各JSON inputInventory为准；不重复旧标签、不无限自审。03候选51dbd32b非执行，68PID/97源及历史缺项/32192两epoch保留，不补造未知Java或Git瞬时PID。新r09f验证属于下一准备阶段，不能以R08-only scope的0冒充全任务未来0。最终隐私v2 96a7d269与t06仍待相关辅助稳定后实际执行；服务器未再次清场，R09未启。下一轮必须已确认修复/相关验证和本地commit、新源码实际产物冻结、产品清场与独立after齐备，目标active未达成。
+下一步先接r08_local_preparation最终代码/实际产物closeout，不重复测试或派发旧句柄；只实施必要受控Linux测试代码验证（无真实APT/业务/手工部署），至少实际验证not-found show属性与active/exited真实cgroup验空，再覆盖亲代/worker退出、setsid/忽略TERM与预算到期。确认后新源码实际产物/参数冻结，再产品inventory→plan→apply→独立after，才启动全新八项各一次。服务器未再次清场，R09未启动，目标active。main正式记录/进度与证据回执保持一致，本地提交不推送、论文5项保留。
 
 ### 五网站检查点（历史，Log失败前）
 

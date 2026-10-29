@@ -968,3 +968,14 @@ v3源ced7f878、父接纳fbb2c8a0会自行打开并hash核验固定closure/query
 最终全R08保留文本及main四记录隐私入口将仅运行v3一次，沿原Java4ab/new04/54cp边界；当前真实编译/needle/扫描0，t06仍保留。补审源码postdoc07（7077db6f）仅机械改变为main四文件+明确process/temp收尾JSON五输入，原针加载/verify不变，当前未执行。先全扫真实退出/CIM/t06清除、再更新最终文字，后以固定postdoc JSON的inputInventory与结果补审五份已写定字节；补扫后不再修改本阶段四文本，不为自身新元数据递归扫描。R09f及后续阶段/字节另记，不在R08-only退出或隐私覆盖声明中。
 
 并行r09f修复当前进展另记：package-04实际17 reactor BUILD SUCCESS、测试全部显式跳过，已生成本树实际输出；首轮指定方法JUnit64为63通过/1失败，后者是旧篡改样例未改到现有五参数字节，非放宽parser处理。最后20个StandardCandidateRunner参数case通过218.6s，不因修失败夹具重跑。生产新自查的ready/result半写窗口和BigInteger溢出将加直接反例，修复及复测尚未结束；不能拿旧产物或64概括最终通过。三个旧CurrentSource baseline红本轮未执行，legacy prepare.v1段未改，不称已闭合。两次cmd前置启动失败、第一次有效package的testCompile失败与后续JUnit失败均分别留原证据，不混正式八分母。服务器未清场，R09未启。
+
+
+### R08原验收及本轮进程/临时目录收尾完成：6/8失败不变
+
+首次实际v3全范围文本审计原生0，检查826份选定文本（R08保留03/04/05/06及main四记录），SSH/API已加载、字面匹配0、敏感XML属性0；报告44a38d709fafecabd13babdc52739ab7318a07216d0ed0084c62197fe9f2d5d3。范围以inputInventory逐项bytes/SHA为准，排除DB/binary/private配置/其它任务和自身新输出，不宣称所有秘密种类、所有文件或未来字节覆盖。仅new04正常Runtime本地needle读取，ledger可能写；原UNKNOWN库没有engine/Runtime-open或重放，没有SSH/HTTP/模型/业务请求。
+
+新增javac29224/Java42568、root Python12952和同步transport7284均actualwait/工具0并精确host CIM原身份不存在。父逐全祖先和子项核nonreparse、精确绝对边界及文件SHA后，仅删除本轮专用r08/.ai-workspace/t06并确认不存在；源码/真实targets/原state/失败/UNKNOWN/用户论文不动，未停止其它阶段进程。process/temp控制回执0c273cd7507c89df7d3f2909642ffa217ba61cf7d39488f1fadff237b8175077绑定上述结果。原scope query exit1/unresolved1、40828补证派生0、各准备/fixture失败均原样保留，收尾准入修正不升级原项目。
+
+最终交接文字是在首次审计后更新，故另以[固定五输入postdoc07回执](H:/Program/WindowsToLinux/.ai-workspace/wt/r08/.ai-workspace/evidence/round-08-preparation-only/06/round-closeout-preparation-01/privacy-audit-round-final-06-postdoc07.json)的status/inputInventory为准核对main四文字及该process/temp控制文件。本阶段文字写定后才补审；补审自身新source/classes/launch/log/exit/cleanup元数据在这五输入范围外，不用未来文件冒充已扫描，也不递归改写这四文本。后续R09新阶段修改另行记录和检查。R08原八项各一次，最终六完整首过、两UNKNOWN失败，无extra项目，577logical/578physical/known5803641、Survey SDK恢复1/未知usage1、观察gap1继续保留；目标active未达成。
+
+隔离修复最新状态：r09f本地提交da90a574e1eec01eee0266591f0401402a1ceb03承接cff67，共享依赖生命周期/五参数精确预算、unit身份/真实验空、APT禁止移除及直接相关测试和正式说明已提交；新HEAD最终package05实际17 reactor BUILD SUCCESS，测试显式跳过，不沿用旧package04。首轮指定JUnit64/1、修失败及直接影响组19/0、末次两Python/一Java及数字InvocationID反例检查各0分别保留，不拼成同一源码全量通过。真实Linux/systemd两能力门与受控进程树实测尚未运行，旧三CurrentSource baseline红未执行/未解决。修复尚未并入main、均未推送，论文5项保留。下一步只做必要Linux定点与实际产物复核，完成后再新冻结、产品清场/独立after和全新八项验收；服务器当前未再次清场，R09尚未启动。
