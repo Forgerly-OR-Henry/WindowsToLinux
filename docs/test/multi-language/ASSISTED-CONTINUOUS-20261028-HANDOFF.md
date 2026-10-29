@@ -1,6 +1,20 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：host-02清场及独立复查通过，R09八项原队列已启动
+## 现行入口：用户为切换API明确暂停，R09中断，目标未达成
+
+用户于2026-10-29要求暂停。已停止driver及进行中的FTP本机执行进程，monitor按显式stop退出；禁止自动恢复、重放本轮队列或启动后续项目。R09同冻结下TaskBoard已完整首过；FTP整项验收因用户暂停中断，其原根任务没有终态记录；Asset、CSV、Survey、Log、Directory、Binary六项未启动。分母仍为既定八项，不能把中断和未启动六项记作七项业务失败，也不能拼接下一轮成功结果。
+
+TaskBoard一次真实冻结inspect核定eligibleAttempt=true、21检查全真、JUnit1/0/0/0，原native27900及额外cleanup27060均wait0，原根1c0733bd-3e9a-449b-b7da-e465439c3fa4唯一SUCCEEDED，交付JSON封存及STOPPED/DISABLED均通过。审计task-board-verdict-09.json SHA2f8b420f；真实inspect stdout7343a034。此交付按既定入口核验描述及生命周期，不含另导出/执行安装器；业务是既定HTML/创建/重启持久化断言链，不扩称额外压测。85 logical/85 physical，已知token957433，8条提交反馈；格式覆盖不完整，不能称零异常或provider完整账单。
+
+FTP原根9a44eec4-ebff-4d31-8745-214475c68974对应native30508，原状态库assisted-live-file-transfer-3z6kifsms保留。未伪造原FTP退出/JUnit/交付或driver-exit：原controller已停止，外部强停记录与原native wait分开。driver15972和monitor24586均已实际工具退出1，旧句柄禁止再poll。九个当时仍需核退的本机原身份均CIM退出/执行签名0，精确t09中6个临时文件清理并确认目录不存在；TaskBoard已结束六actor另有5806c095证明，审计四actor也已独立核退。没有停止无关进程或清用户文件。
+
+[暂停原证据封存](H:/Program/WindowsToLinux/.ai-workspace/wt/r09/.ai-workspace/evidence/round-09-preparation-host-02/09/parent-user-pause-evidence-seal-09.json)SHA39d79ceb：92文件/28534997B，原FTP库仅原字节hash，无engine-open/解密/恢复/重放。其49条逻辑请求与49条结果行只是已观察日志，provider是否仍有在途完成未独立证明。[本机暂停收尾](H:/Program/WindowsToLinux/.ai-workspace/wt/r09/.ai-workspace/evidence/round-09-preparation-host-02/09/parent-user-pause-final-local-closeout-09.json)SHAaa03c3fe。远端FTP中断后效果、残留worker/服务尚未重新核实，服务器未重新清场；不能写成远端所有进程已停。
+
+TaskBoard独立审计前的辅助launcher路径数组错误已保留：首个Python未执行entry就实际1，新v2仅加括号后首次真实inspect0；不混正式分母。另一次辅助收尾脚本419c1b空输出actual1，原因尚未确认；后来独立host CIM核四PID退出，不把核退补证写成底层脚本已修。全部原件和18文件清单保留在parent-project-audit-09/task-board-01，其他既有准备失败/UNKNOWN不变。
+
+须等用户明确恢复后，核对实际API配置、工具/产物及同指纹BiNl授权，再用全新冻结身份和独立产品inventory→plan→apply→after开启完整八项。不要继续R09的FTP或剩余六项来凑首过；既有TaskBoard成功不带入新轮。API是否修改了项目配置尚未假定，私密值不写记录。生产aa804及所有原证据/论文五项保留，不推送。
+
+## 前一检查点：host-02清场及独立复查通过，R09八项原队列启动
 
 目标active未达成。ROOT仍为H:/Program/WindowsToLinux/.ai-workspace/wt/r09，HEAD aa80428e，当前BASE改为ROOT/.ai-workspace/evidence/round-09-preparation-host-02/09。生产源码和实际产物未改，没有重新构建、迁移凭据或重跑连接；仅迁移辅助入口BASE路径和必要trusted SHA。新105输入/54cp/3Mod/17输出/87条保护证据guard通过，owner收尾247bef38。父完整核验后放行P=`d2188add7b5489bd6a0b94a5320efc8cb69b8e31bb127eb42ae046c4e64c24a1`、R=`e347a84e87d1f62ae40242d59b45eef010b5873e85432c9ce34cd8603c33ef78`、S=`ef5d6e7e5fb0a27a3dae3c638d5b2e1f10c116838a8adef307098bcaa882470b`。入口必须使用require_escalated宿主环境；旧BASE及其失败/P-R不可复用。
 

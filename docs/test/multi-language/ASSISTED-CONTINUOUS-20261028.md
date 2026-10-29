@@ -1,10 +1,22 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active未达成；R09 host-02已完成产品四阶段清场和独立复查，八原队列一次提交，TaskBoard原验收运行、正式完成0；原环境准备失败单列保留。R08最终完整首过6/8。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产无包Linux矩阵前一阶段已执行（见后文），该准备检查点当时未做真实包/完整验收，当前R09原验收状态见上文。R08原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；R08后续仅做独立辅助取证/修复准备。R08全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
+状态：用户明确为切换API暂停，目标未达成。R09已中断：TaskBoard完整首过1项，FTP用户中断且无原终态，六项未启动；不混为七项业务失败，不跨轮拼接。原环境准备失败单列保留。R08最终完整首过6/8。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产无包Linux矩阵前一阶段已执行（见后文），该准备检查点当时未做真实包/完整验收，当前R09原验收状态见上文。R08原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；R08后续仅做独立辅助取证/修复准备。R08全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
-## R09 host-02：产品清场及独立复查通过，八项原队列已启动
+## R09因用户切换API暂停：TaskBoard完整首过，FTP中断，六项未启动
+
+R09已中断，目标未达成，暂停后不自动继续。两个原项目实际launch；TaskBoard完整首过通过，FTP因用户暂停被停止且原根无终态，六项未尝试；八项分母保留，不按七项业务失败计，也不跨轮拼接。
+
+TaskBoard独立冻结entry仅一次真实执行，native0，eligibleAttempt=true/21检查全真，JUnit1/0/0/0，原根唯一SUCCEEDED、原native wait0、交付描述seal和额外cleanup wait0同P/R通过，最终STOPPED/DISABLED。verdict SHA2f8b420f，raw inspect7343a034，六个已记录原/cleanup身份另经CIM核退5806c095。原既定业务链是HTML、创建id>0、STOP/START/RESTART后GET持久化；交付为backend/frontend描述与生命周期/端点，不声称另导出或执行安装器、额外压力矩阵。完整85逻辑/85物理，LANGUAGE26/APPROVAL59、已知token77326+880107=957433、unknown usage0、number>1为0；8条提交反馈及格式覆盖缺口保留，非零异常/非provider完整账单。
+
+暂停先按创建时间及本任务命令签名停止driver，阻止六条排队命令；随后只终止其仍存活的FTP自有Java/cmd并独立wait，外部观察退出-1与原controller未写退出回执分开，不生成虚假FTP native0或原JUnit成功。driver/monitor原工具均实际1终态，九个当时记录原身份CIM均退出、执行签名0，t09六临时文件仅在精确边界/nonreparse核对后移除。用户论文和无关进程不动；已有审计辅助四PID及TaskBoard六PID原核退证明保留。
+
+[暂停seal](H:/Program/WindowsToLinux/.ai-workspace/wt/r09/.ai-workspace/evidence/round-09-preparation-host-02/09/parent-user-pause-evidence-seal-09.json)39d79ceb保留92文件/28534997B，含FTP原状态库，只有字节hash、无engine-open/解密/重放。其49请求/49结果行不证明provider所有在途完成。远端中断后worker/服务与效果未复查、未重新清场；本机已停不等于远端已全停。恢复前必须重新核API实际配置、身份/产物及产品清场独立复查，按新冻结从八项首个开始，不重放本轮FTP或复用TaskBoard成功。
+
+审计辅助失败另列：launcher v1路径数组构造错误使Python实际1且entry未执行，修正括号后首次真实inspect0；后一次收尾脚本419c1b空输出actual1原因unknown，独立host CIM后证四PID均退，不冒充修好了该脚本。18文件ledger与原日志均保留。暂停本机收尾aa03c3fe，源aa804未改；未新增模型/服务器采样、未推送。
+
+## 前一检查点：R09 host-02产品清场及独立复查通过，八项原队列启动
 
 同一ROOT/aa804生产源码和实际产物不改，新的round-09-preparation-host-02/09只作辅助BASE路径及trusted SHA重绑；未重建、未重新迁移凭据或重复产品连接。一次候选guard及父最终完整guard均通过105输入/54cp/3Mod/17输出，保护87份LOCAL证据。新P d2188add、R e347a84e、S ef5d6e7e的完整SHA见交接；本次实际driver/monitor均按require_escalated宿主边界启动。
 
