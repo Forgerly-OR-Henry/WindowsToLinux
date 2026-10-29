@@ -1068,7 +1068,7 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
             }, attempt::approve, layout);
         try {
             value(installer.installFilesWithPrerequisites(DeploymentAgentHelperInstallerScript.LAUNCHER,
-                DeploymentAgentHelperInstallerScript.prerequisites(bootstrapOperation, layout)));
+                DeploymentAgentHelperInstallerScript.prerequisites(bootstrapOperation, layout, server, task.id().toString())));
         } catch (ApiException | DeploymentAiJson.CapabilityOutcomeException failure) {
             if (!attempt.dispatchBoundaryReached && attempt.requestSha256 != null
                 && (attempt.apiFailure == failure || failure instanceof DeploymentAiJson.CapabilityOutcomeException classified

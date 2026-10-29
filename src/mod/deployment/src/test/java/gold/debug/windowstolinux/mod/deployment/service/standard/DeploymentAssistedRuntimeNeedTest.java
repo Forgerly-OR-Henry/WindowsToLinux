@@ -352,11 +352,11 @@ class DeploymentAssistedRuntimeNeedTest {
                         "/srv/other/helper", "/srv/other/apps", "/srv/other/state", "/srv/other/config", "/srv/other/data")) : layout;
                     String program = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencies(actualLayout);
                     try (var command = new gold.debug.windowstolinux.appapi.linux.command.CommandRequest(
-                        gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.command(List.of("NATIVE_BUILD", "a".repeat(32))),
+                        gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.command(List.of("NATIVE_BUILD", "a".repeat(32), "60", server.id(), fixture.task.id().toString())),
                         program.getBytes(java.nio.charset.StandardCharsets.UTF_8), java.time.Duration.ofSeconds(60), 65536)) {
                         var intent = RemoteActions.command(server, mutation.equals("NATIVE_PLAN") ? "d".repeat(64) : identity, command).withSemantics(new ActionSemantics(
                             gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION,
-                            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(server, "NATIVE_BUILD")));
+                            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(server, "NATIVE_BUILD", "a".repeat(32), actualLayout)));
                         exactNativeIntent.set(intent); exactNativeRequest.set(command);
                         var supplied = mutation.equals("NATIVE_TASK") ? new NativeAiFixture().task : fixture.task;
                         if (Set.of("NATIVE_VALID", "NATIVE_DENY", "NATIVE_APPROVE").contains(mutation) || mutation.startsWith("NATIVE_POST_")) {

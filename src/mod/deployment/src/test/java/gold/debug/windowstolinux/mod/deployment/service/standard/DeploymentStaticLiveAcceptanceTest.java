@@ -6575,13 +6575,41 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                 }
                 return result;
             });
+        var logs = (gold.debug.windowstolinux.appapi.task.log.LogService) Proxy.newProxyInstance(
+            gold.debug.windowstolinux.appapi.task.log.LogService.class.getClassLoader(),
+            new Class<?>[]{gold.debug.windowstolinux.appapi.task.log.LogService.class}, (proxy, method, args) -> {
+                Object result = invoke(method, actual.logs(), args);
+                if (method.getName().equals("write") && args[1] instanceof gold.debug.windowstolinux.appapi.task.log.LogEvent event)
+                    liveSubmissionCorrectionProjection(event).ifPresent(projected -> {
+                        if (result instanceof gold.debug.windowstolinux.appapi.task.log.LogWriteResult saved
+                            && saved.storage() == gold.debug.windowstolinux.appapi.task.log.LogStorage.DATABASE
+                            && !saved.truncated() && saved.problem().isEmpty()) System.out.println(projected);
+                        else System.out.println("AI_LIVE_SUBMISSION_CORRECTION_COVERAGE_GAP"
+                            + projected.substring("AI_LIVE_SUBMISSION_CORRECTION".length())
+                            + " storage=" + (result instanceof gold.debug.windowstolinux.appapi.task.log.LogWriteResult saved ? saved.storage() : "UNKNOWN")
+                            + " truncated=" + (result instanceof gold.debug.windowstolinux.appapi.task.log.LogWriteResult saved ? saved.truncated() : "UNKNOWN")
+                            + " hasProblem=" + (result instanceof gold.debug.windowstolinux.appapi.task.log.LogWriteResult saved ? saved.problem().isPresent() : "UNKNOWN"));
+                    });
+                return result;
+            });
         return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
             (proxy, method, args) -> switch (method.getName()) {
                 case "ai" -> ai;
                 case "linux" -> linux;
                 case "interaction" -> interaction;
+                case "logs" -> logs;
                 default -> invoke(method, actual, args);
             });
+    }
+
+    static Optional<String> liveSubmissionCorrectionProjection(gold.debug.windowstolinux.appapi.task.log.LogEvent event) {
+        if (!event.eventCode().equals("DEPLOYMENT_AI_SUBMISSION_CORRECTION") || event.taskId().isEmpty()
+            || event.operationId().isEmpty() || event.outcome().isPresent()
+            || !event.details().orElse("").equals("{\"purpose\":\"APPROVAL\",\"reason\":\"MISSING_NATIVE_CALL\",\"rejectedSubmission\":\"1\",\"nextSubmission\":\"2\",\"maximumSubmissions\":\"2\"}"))
+            return Optional.empty();
+        return Optional.of("AI_LIVE_SUBMISSION_CORRECTION task=" + event.taskId().orElseThrow()
+            + " correction=" + event.operationId().orElseThrow()
+            + " purpose=APPROVAL reason=MISSING_NATIVE_CALL rejectedSubmission=1 nextSubmission=2 maximumSubmissions=2");
     }
 
     /** Records physical known usage once, falling back only for legacy uninstrumented responses. / 仅记录一次物理已知用量，仅旧未测量响应回退。 */
@@ -9818,18 +9846,21 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
 
         long folder = post(web + "/api/folders", Map.of("name", "Agent-v2-" + java.util.UUID.randomUUID())).path("id").asLong();
         assertTrue(folder > 0);
-        byte[] bytes = new byte[64 * 1024 * 1024];
+        int chunkBytes = 1024 * 1024;
+        byte[] bytes = new byte[8 * chunkBytes];
+        int chunkCount = bytes.length / chunkBytes;
+        int partialChunkCount = chunkCount / 4;
         new java.util.Random(20261006).nextBytes(bytes);
         String firstSha = byteSha256(bytes);
         String upload = fileTransferUpload(web, folder, "full-v2.bin", bytes, firstSha);
-        for (int index = 0; index < 16; index++) fileTransferChunk(upload, index, bytes);
+        for (int index = 0; index < partialChunkCount; index++) fileTransferChunk(upload, index, bytes);
         var before = get(upload);
         assertEquals("receiving", before.path("state").asText());
-        assertEquals(16, before.path("chunks").size());
-        var duplicate = JSON.readTree(http(upload + "/chunks/0", "PUT", Arrays.copyOfRange(bytes, 0, 1024 * 1024), "application/octet-stream"));
+        assertEquals(partialChunkCount, before.path("chunks").size());
+        var duplicate = JSON.readTree(http(upload + "/chunks/0", "PUT", Arrays.copyOfRange(bytes, 0, chunkBytes), "application/octet-stream"));
         assertTrue(duplicate.path("duplicate").asBoolean());
-        assertEquals(byteSha256(Arrays.copyOfRange(bytes, 0, 1024 * 1024)), duplicate.path("sha256").asText());
-        byte[] conflict = Arrays.copyOfRange(bytes, 0, 1024 * 1024);
+        assertEquals(byteSha256(Arrays.copyOfRange(bytes, 0, chunkBytes)), duplicate.path("sha256").asText());
+        byte[] conflict = Arrays.copyOfRange(bytes, 0, chunkBytes);
         conflict[0] ^= 1;
         http(upload + "/chunks/0", "PUT", conflict, "application/octet-stream", 409);
         http(upload + "/complete", "POST", new byte[0], "application/json", 409);
@@ -9838,7 +9869,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         var resumed = get(upload);
         assertEquals("receiving", resumed.path("state").asText());
         assertEquals(before.path("chunks"), resumed.path("chunks"));
-        for (int index = 16; index < 64; index++) fileTransferChunk(upload, index, bytes);
+        for (int index = partialChunkCount; index < chunkCount; index++) fileTransferChunk(upload, index, bytes);
 
         var pool = java.util.concurrent.Executors.newFixedThreadPool(10);
         var completions = new ArrayList<java.util.concurrent.Future<com.fasterxml.jackson.databind.JsonNode>>();
@@ -9866,7 +9897,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         bytes[0] ^= 0x55;
         String secondSha = byteSha256(bytes);
         String secondUpload = fileTransferUpload(web, folder, "full-v2.bin", bytes, secondSha);
-        for (int index = 0; index < 64; index++) fileTransferChunk(secondUpload, index, bytes);
+        for (int index = 0; index < chunkCount; index++) fileTransferChunk(secondUpload, index, bytes);
         var second = post(secondUpload + "/complete", Map.of());
         assertEquals(first.path("fileId"), second.path("fileId"));
         assertNotEquals(first.path("id"), second.path("id"));
@@ -9877,12 +9908,12 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         String cancelled = fileTransferUpload(web, folder, "cancel-v2.bin", bytes, secondSha);
         fileTransferChunk(cancelled, 0, bytes);
         assertEquals("cancelled", post(cancelled + "/cancel", Map.of()).path("state").asText());
-        http(cancelled + "/chunks/1", "PUT", Arrays.copyOfRange(bytes, 1024 * 1024, 2 * 1024 * 1024), "application/octet-stream", 409);
+        http(cancelled + "/chunks/1", "PUT", Arrays.copyOfRange(bytes, chunkBytes, 2 * chunkBytes), "application/octet-stream", 409);
         http(cancelled + "/complete", "POST", new byte[0], "application/json", 409);
         restart(applications, app);
         assertEquals("cancelled", get(cancelled).path("state").asText());
 
-        byte[] rejectedBytes = Arrays.copyOf(bytes, 1024 * 1024);
+        byte[] rejectedBytes = Arrays.copyOf(bytes, chunkBytes);
         String rejected = fileTransferUpload(web, folder, "wrong-sha-v2.bin", rejectedBytes, "0".repeat(64));
         fileTransferChunk(rejected, 0, rejectedBytes);
         http(rejected + "/complete", "POST", new byte[0], "application/json", 422);

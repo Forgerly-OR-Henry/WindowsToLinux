@@ -236,8 +236,8 @@ class DeploymentStandardCandidateRunnerTest extends DeploymentRuntimeFixture {
                         var packages = new LinkedHashMap<String, String>();
                         gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.packages("APT", "NATIVE_BUILD")
                             .forEach(name -> packages.put(name, "1.0"));
-                        return reply("TOOLCHAIN_DEPENDENCIES=" + new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(
-                            Map.of("operation", bound.get("operationId"), "ecosystem", "NATIVE_BUILD", "manager", "APT", "packages", packages)) + "\n");
+                        return reply(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DependencyReceiptFixture.receipt(command, "APT",
+                            gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()));
                     }
                     if (script.contains("DISTRO_ID=")) {
                         actions.add("host-facts");

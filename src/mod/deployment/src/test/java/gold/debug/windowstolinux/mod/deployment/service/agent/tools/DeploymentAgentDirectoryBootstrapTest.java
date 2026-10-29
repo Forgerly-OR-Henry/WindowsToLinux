@@ -22,7 +22,7 @@ class DeploymentAgentDirectoryBootstrapTest {
     @Test
     void canonicalInstallerEvidenceAndEffectTargetsBindAllRootsAndRecoveryAnchor() {
         String operation = "a".repeat(32);
-        String source = DeploymentAgentHelperInstallerScript.render(operation, LAYOUT);
+        String source = DeploymentAgentHelperInstallerScript.render(operation, LAYOUT, SERVER, "11111111-2222-3333-4444-555555555555");
         assertEquals(operation, DeploymentAgentHelperInstallerScript.parseOperation(source, LAYOUT));
         assertThrows(IllegalArgumentException.class, () -> DeploymentAgentHelperInstallerScript.parseOperation(source));
         assertThrows(IllegalArgumentException.class, () -> DeploymentAgentHelperInstallerScript.parseOperation(source + "\n# altered", LAYOUT));
@@ -33,7 +33,7 @@ class DeploymentAgentDirectoryBootstrapTest {
                 DeploymentAgentHelperBootstrapEvidence.OPERATION, gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper.installationTargets(SERVER, LAYOUT)));
             var reviewed = DeploymentAgentHelperBootstrapEvidence.upgrade(original, request, SERVER, "b".repeat(64), operation, LAYOUT);
             assertEquals(original.exactAction(), reviewed.exactAction());
-            assertEquals(DeploymentAgentHelperBootstrapEvidence.targets(SERVER, LAYOUT), reviewed.semantics().orElseThrow().targets());
+            assertEquals(DeploymentAgentHelperBootstrapEvidence.targets(SERVER, LAYOUT, operation), reviewed.semantics().orElseThrow().targets());
             for (String root : List.of(LAYOUT.paths().helperDirectory(), LAYOUT.paths().applicationsRoot(), LAYOUT.paths().stateRoot(), LAYOUT.paths().configurationRoot(), LAYOUT.paths().dataRoot()))
                 assertTrue(reviewed.semantics().orElseThrow().targets().contains(new ActionTarget(SERVER.id(), "directory", root)));
             assertTrue(reviewed.semantics().orElseThrow().targets().contains(new ActionTarget(SERVER.id(), "file", DeploymentRemoteLayoutAdmission.UNIT_PATH)));

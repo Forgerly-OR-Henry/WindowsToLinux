@@ -114,7 +114,8 @@ class DeploymentAiJsonTest {
             assertTrue(input.startsWith("{\"completeExecutableInput\":"));
             assertEquals(json.valueToTree(facts), json.readTree(input), "Every original field and byte remains in the same untrusted data message");
             assertEquals(2, fixture.requests.getLast().messages().size());
-            assertEquals(8192, fixture.requests.getLast().maxOutputTokens().orElseThrow());
+            assertEquals(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().approvalMaxOutputTokens(),
+                fixture.requests.getLast().maxOutputTokens().orElseThrow());
         }
         String first = fixture.requests.getFirst().messages().getLast().text();
         String second = fixture.requests.getLast().messages().getLast().text();

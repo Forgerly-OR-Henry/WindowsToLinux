@@ -89,11 +89,10 @@ class DeploymentRequiredReviewSubmissionTest {
     }
 
     @Test
-    void plainTextHealthReviewStopsBeforeHostAuthorizationAndDispatchWithoutRetry() throws Exception {
+    void plainTextHealthReviewStopsBeforeHostAuthorizationAndDispatchAfterOneFormatCorrection() throws Exception {
         var fixture = new NativeAiFixture();
-        fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED,
-            Optional.of(new AiResponse("Unsubmitted controlled review", "fixture-model", "stop",
-                new AiUsage(Optional.of(3558L), Optional.of(659L), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
+        textReply(fixture);
+        textReply(fixture);
         var boundary = boundary(fixture);
         var failure = assertThrows(ApiException.class, () -> boundary.channel().healthCheck(unit(), check()));
 
@@ -101,7 +100,117 @@ class DeploymentRequiredReviewSubmissionTest {
         assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", failure.problem().eventCode());
         assertInstanceOf(IOException.class, failure.getCause());
         assertEquals("A complete native result submission is required", failure.getCause().getMessage());
-        assertStopped(fixture, boundary, 1);
+        assertStopped(fixture, boundary, 2);
+        assertCorrection(fixture);
+    }
+
+    @ParameterizedTest
+    @MethodSource("correctedReviews")
+    void completeTextGetsOneLocalCorrectionAndStillRequiresANativeDecision(boolean retained, String decision) throws Exception {
+        var fixture = new NativeAiFixture();
+        textReply(fixture);
+        fixture.nativeReply(new AiToolCall("corrected", "submit_result", "{\"decision\":\"" + decision
+            + "\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled native review\"}"));
+        var ai = retained ? new DeploymentAiJson(fixture.context, conversation(fixture)) : new DeploymentAiJson(fixture.context);
+        var result = ai.askCommand("Review the exact current request", facts("first"), REVISION,
+            fixture.task, DeploymentReviewDecision::malformed);
+
+        assertEquals(decision, result.path("decision").asText());
+        assertEquals(2, fixture.requests.size());
+        assertCorrection(fixture);
+        var first = fixture.requests.getFirst();
+        var second = fixture.requests.getLast();
+        assertEquals(first.tools(), second.tools());
+        assertEquals(first.timeout(), second.timeout());
+        assertEquals(first.maxOutputTokens(), second.maxOutputTokens());
+        assertEquals(first.generationRecoveryAttempts(), second.generationRecoveryAttempts());
+        assertTrue(second.messages().stream().noneMatch(m -> m.toolResult().isPresent()), "No call id existed for a tool result");
+        var withoutCorrection = new ArrayList<>(second.messages());
+        var correction = withoutCorrection.remove(withoutCorrection.size() - 2);
+        assertEquals(first.messages(), withoutCorrection, "All original evidence stays unchanged and current facts stay last");
+        assertEquals(AiRole.USER, correction.role());
+        assertTrue(correction.text().startsWith("SUBMISSION_REJECTED: native submit_result is missing."));
+        assertTrue(correction.text().contains("Text alone is not a decision or execution permission"));
+        assertTrue(second.messages().stream().noneMatch(m -> m.text().contains("UNTRUSTED_TEXT_APPROVE")));
+
+        if (retained) {
+            deny(fixture, "next-command");
+            ai.askCommand("Review another exact request", facts("second"), REVISION,
+                fixture.task, DeploymentReviewDecision::malformed);
+            var next = fixture.requests.getLast().messages();
+            assertTrue(next.stream().noneMatch(m -> m.text().startsWith("SUBMISSION_REJECTED: native submit_result is missing.")),
+                "A local missing-call correction must not pollute the next command");
+            assertEquals("second", JSON.readTree(next.getLast().text()).path("exactAction").asText());
+            assertTrue(next.stream().anyMatch(m -> m.toolResult().map(r -> r.callId().equals("corrected")).orElse(false)));
+        }
+    }
+
+    private static Stream<Arguments> correctedReviews() {
+        return Stream.of(false, true).flatMap(retained -> Stream.of("APPROVE", "DENY")
+            .map(decision -> Arguments.of(retained, decision)));
+    }
+
+    @ParameterizedTest
+    @MethodSource("mixedInvalidReviews")
+    void missingCallAndInvalidNativeShapeShareTheSameTwoSubmissionBudget(boolean retained, boolean textFirst) throws Exception {
+        var fixture = new NativeAiFixture();
+        if (textFirst) textReply(fixture);
+        fixture.nativeReply(new AiToolCall("bad-native", "submit_result", "{\"decision\":\"APPROVE\"}"));
+        if (!textFirst) textReply(fixture);
+        deny(fixture, "unreachable-third");
+        var ai = retained ? new DeploymentAiJson(fixture.context, conversation(fixture)) : new DeploymentAiJson(fixture.context);
+
+        if (retained) {
+            assertThrows(IOException.class, () -> ai.askCommand("Review current request", facts("first"), REVISION,
+                fixture.task, DeploymentReviewDecision::malformed));
+        } else {
+            var boundary = boundary(fixture);
+            assertThrows(ApiException.class, () -> boundary.channel().healthCheck(unit(), check()));
+            assertStopped(fixture, boundary, 2);
+        }
+        assertEquals(2, fixture.requests.size());
+        assertEquals(1, fixture.replies.size(), "No third model call may escape the common budget");
+        assertEquals(textFirst ? 1 : 0, corrections(fixture).size());
+        assertTrue(fixture.requests.stream().allMatch(r -> r.requiredToolName().isEmpty()));
+    }
+
+    private static Stream<Arguments> mixedInvalidReviews() {
+        return Stream.of(false, true).flatMap(retained -> Stream.of(false, true).map(first -> Arguments.of(retained, first)));
+    }
+
+    @Test
+    void transportUnknownAfterFormatCorrectionStaysUnknownAndDoesNotGetAnotherCall() {
+        var fixture = new NativeAiFixture();
+        textReply(fixture);
+        fixture.replies.add(new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(
+            ProblemCode.UNKNOWN, "MODEL_UNKNOWN", "Controlled unknown transport", Map.of(), Optional.empty()))));
+        deny(fixture, "unreachable-third");
+        var failure = assertThrows(DeploymentAiJson.CapabilityOutcomeException.class, () -> new DeploymentAiJson(fixture.context)
+            .askCommand("Review current request", facts("first"), REVISION, fixture.task, DeploymentReviewDecision::malformed));
+        assertEquals(TaskResult.UNKNOWN, failure.outcome());
+        assertEquals(2, fixture.requests.size());
+        assertEquals(1, fixture.replies.size());
+        assertEquals(1, corrections(fixture).size());
+    }
+
+    @Test
+    void correctionIsNotOfferedForLanguageOtherFinishReasonsOrInconsistentNativeCalls() {
+        for (String finish : List.of("content_filter", "tool_calls", "stop")) {
+            var fixture = new NativeAiFixture();
+            var calls = finish.equals("stop") ? List.of(new AiToolCall("unexpected", "submit_result", "{}")) : List.<AiToolCall>of();
+            fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("Controlled incomplete",
+                "fixture-model", finish, new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
+                calls, Optional.empty())), Optional.empty()));
+            assertThrows(IOException.class, () -> new DeploymentAiJson(fixture.context).askCommand("Review", facts("first"),
+                REVISION, fixture.task, DeploymentReviewDecision::malformed));
+            assertEquals(1, fixture.requests.size());
+            assertTrue(corrections(fixture).isEmpty());
+        }
+        var language = new NativeAiFixture();
+        textReply(language);
+        assertThrows(IOException.class, () -> new DeploymentAiJson(language.context).ask(AiPurpose.LANGUAGE, "Analyse", Map.of(), REVISION, language.task));
+        assertEquals(1, language.requests.size());
+        assertTrue(corrections(language).isEmpty());
     }
 
     @Test
@@ -172,6 +281,30 @@ class DeploymentRequiredReviewSubmissionTest {
     private static void deny(NativeAiFixture fixture, String id) {
         fixture.nativeReply(new AiToolCall(id, "submit_result",
             "{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled current request denial\"}"));
+    }
+
+    private static void textReply(NativeAiFixture fixture) {
+        fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED,
+            Optional.of(new AiResponse("UNTRUSTED_TEXT_APPROVE", "fixture-model", "stop",
+                new AiUsage(Optional.of(3558L), Optional.of(659L), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
+    }
+
+    private static List<gold.debug.windowstolinux.appapi.task.log.LogEvent> corrections(NativeAiFixture fixture) {
+        return fixture.events.stream().filter(event -> event.eventCode().equals("DEPLOYMENT_AI_SUBMISSION_CORRECTION")).toList();
+    }
+
+    private static void assertCorrection(NativeAiFixture fixture) throws Exception {
+        var events = corrections(fixture);
+        assertEquals(1, events.size());
+        var event = events.getFirst();
+        assertEquals(Optional.of(fixture.task.id()), event.taskId());
+        assertTrue(event.operationId().isPresent(), "Each correction has an independent diagnostic identity, not a generation retry number");
+        assertTrue(event.outcome().isEmpty(), "A format correction is not a terminal task result");
+        assertEquals(Map.of("purpose", "APPROVAL", "reason", "MISSING_NATIVE_CALL", "rejectedSubmission", "1",
+            "nextSubmission", "2", "maximumSubmissions", "2"), JSON.readValue(event.details().orElseThrow(), Map.class));
+        assertTrue(event.details().orElseThrow().length() < 256);
+        assertTrue(fixture.requests.stream().allMatch(r -> r.requiredToolName().isEmpty()));
+        assertEquals(2, fixture.events.stream().filter(e -> e.eventCode().equals("DEPLOYMENT_AI_USAGE")).count());
     }
 
     private static DeploymentUnitIdentity unit() {
