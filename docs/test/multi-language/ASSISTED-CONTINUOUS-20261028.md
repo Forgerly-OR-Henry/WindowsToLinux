@@ -957,3 +957,14 @@ Directory脱敏输出70f60127ab29416f2582a41e939bece129376fe6927a1c1da81ba0589bd
 修复树r09f从73全新建立。APT已增加--no-remove，原包表、认证/source/owner/hook保护不变；既有测试夹具资源位置修正到生产shared路径，七个明确指定pure/mock方法通过，0.058秒、10704 actual0/CIM退，无真实APT/SSH/模型/UI/全suite。源/两测试/正式定点记录四文件本地提交cff67b662c3711d084d77b3b30e850acb4b21a04，未推送；主工作区/论文不动。此为新确认的既有边界缺口，当前可追溯文件历史no-remove搜索未见先加再撤，不是撤销ff83、R02参数布局或fd-bridge保护。超时生命周期修复正在同一隔离树实施，受影响standard/Agent/HELPER_RUNTIME共享合同须同步、定点/必要编译及受控Linux验证后才可新冻。尚无新轮完整验收或新实际JAR证明。
 
 父辅助只读查询问题另记：3cc50c在安全Directory理由读完后猜错DeploymentToolchainCommands.java路径，rg报2/外层1，后a53031按文件发现实际StandardCandidateRunner；无状态写入或原入口重跑。204764探查rg管道在100行输出后非零中止，具体native值未记录，不能把前100行当完整查询；后1cf1a7用AST/直接范围读取恢复，不把查询失败称产品测试失败。两项不混正式八分母。最终R08actor/scope、公共文本隐私与t06仍待所有相关辅助稳定后收尾；服务器未再次清场，R09未启动，目标active。
+
+
+### R08进程核退补证与最终隐私准备（尚未执行真实扫描）
+
+一次真实host CIM query01的ownedAlive=0、任务签名匹配0，但原history空的40828当前指向系统服务，原unresolved=1/工具exit1原样保留（216e0f98）。已封存06-validation-check-exit a7bc207b同对象绑定launcherPid40828、真实wait0/UTC结束23:41:30，严格早于该snapshot当前PID创建04:24:06，证实数字复用；不凭服务名称、不补原creation/cmd，也未操作系统服务。新closure02只改变原74行中40828的分类/Absent，实际CIM unresolved1与派生unresolved0分记，未再跑global query。
+
+v3源ced7f878、父接纳fbb2c8a0会自行打开并hash核验固定closure/query/原exit/query自身真实工具exit1四源，保留root身份及八native/五cleanup强门。新增18项metadata定点通过（3受控接纳、15预期拒绝），旧32未重跑；新增QA43776和同步transport40856已真实wait/工具0及精确CIM核退，75行父proof只能在原74行后附该QA，不伪称snapshot后从无新actor。此为辅助核退守卫的补证准入，原query失败不抹除，不改变八项目分母、原UNKNOWN或6/8结论。
+
+最终全R08保留文本及main四记录隐私入口将仅运行v3一次，沿原Java4ab/new04/54cp边界；当前真实编译/needle/扫描0，t06仍保留。补审源码postdoc07（7077db6f）仅机械改变为main四文件+明确process/temp收尾JSON五输入，原针加载/verify不变，当前未执行。先全扫真实退出/CIM/t06清除、再更新最终文字，后以固定postdoc JSON的inputInventory与结果补审五份已写定字节；补扫后不再修改本阶段四文本，不为自身新元数据递归扫描。R09f及后续阶段/字节另记，不在R08-only退出或隐私覆盖声明中。
+
+并行r09f修复当前进展另记：package-04实际17 reactor BUILD SUCCESS、测试全部显式跳过，已生成本树实际输出；首轮指定方法JUnit64为63通过/1失败，后者是旧篡改样例未改到现有五参数字节，非放宽parser处理。最后20个StandardCandidateRunner参数case通过218.6s，不因修失败夹具重跑。生产新自查的ready/result半写窗口和BigInteger溢出将加直接反例，修复及复测尚未结束；不能拿旧产物或64概括最终通过。三个旧CurrentSource baseline红本轮未执行，legacy prepare.v1段未改，不称已闭合。两次cmd前置启动失败、第一次有效package的testCompile失败与后续JUnit失败均分别留原证据，不混正式八分母。服务器未清场，R09未启。
