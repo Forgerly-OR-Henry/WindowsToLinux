@@ -6,11 +6,11 @@
 
 R08最终完整首过6/8：五网站+Binary通过，Log与Directory原native1/JUnit1失败/rootUNKNOWN、无RESULT/完整业务/delivery，原失败保留八分母。八原attempt各一次、extra无，原source73/P71b/R5b/49链/参数不变，不拼R07成绩。Binary父c56758bd、同一snapshot八项总览6913d154；两失败父2000d03e，两个UNKNOWN原文件108份39983898B已字节封存f93dce6e并派生复核34952c4f，未原库DB-open/重放。全轮577logical/578physical、known5803641、反馈47，Survey内部SDK恢复1/未知usage1、观察缺口1分别保留，不称零异常/完整账单。
 
-原driver47579已单次quit后actual0、补充66809自然actual0，16120/9292及末Binary8036/41408已host CIM核退（87b29937）。这些及原94607等所有旧terminal句柄禁止再poll/重启，不能重发八原命令。当前只有独立取证工具准备/合成验证在推进，不能说全部辅助进程/隐私/t06已收尾；服务器没有再次清场，R09未启动。所有源码、targets、state及原证据保留；R08记录的本地提交以进度索引和提交回执为准；论文5项保留，不push。
+原driver47579已单次quit后actual0、补充66809自然actual0，16120/9292及末Binary8036/41408已host CIM核退（87b29937）。这些及原94607等所有旧terminal句柄禁止再poll/重启，不能重发八原命令。独立取证工具准备及合成验证已结束，8个自有进程wait/HasExited及hostCIM核退、3个私有QA tmp已清；最终隐私/t06尚未收尾；服务器没有再次清场，R09未启动。所有源码、targets、state及原证据保留；R08记录的本地提交以进度索引和提交回执为准；论文5项保留，不push。
 
 已确认Log原最后response为tool_calls+单submit_result，不是R07纯text无native同支；ff83真实集成、无漂移/可见预算耗尽。实际decision/JSON与具体审批/后置route/evidence/grant/执行错误仍未知，inspect-host只是前一成功commit的旧进度，不能认SSH根因或回退ff83。3旧CurrentSource红属不同Agent/prepare路径，无typed栈连通，仍未解决。Sol安全分析261b02ff、Astra具体判断见log-directory-unknown-judgment-01：现有DEPLOYMENT_PREPARATION_EXCEPTION/RESULT安全码可能已保存但原ASSISTED失败导出漏事件/重开锁失败。优先查现有应急日志，必要时审核copy-only/只读JDBC定表定root投影；绝不用Runtime/PlatformDatabase打开原UNKNOWN，不输出正文/密钥，不强制APPROVE或增加预算。源码存在不证明本次写成功，诊断增强不等于底层故障修复。
 
-Sol在06/offline-preparation-diagnostics-01准备reader，仅必要编译/合成验证获授权，真实原态copy/decrypt/JDBC尚须父审后另行授权；前两次合成JVM失败已保留，第一tmp前提过强、第二在完成8项后改schema fixture阶段失败，尚不称全组绿。原保护及108指纹不改。待该helper完整回报后父审源/原件前后hash/只读门，再执行受控本地取证；实际语义修复有证后才隔离改/定点/本地commit，活动R08永不换版。未来清场与独立after齐备才能开新冻R09。最终R08隐私scanner只用已审v2 96a7d269，正式actor和全部辅助核退后扫描当前全文，再精确nonreparse清task tmp/t06；原Java4ab/v1/manifest0a保留，尚未实际scanner/needle/vault。目标active未达成。
+Sol在06/offline-preparation-diagnostics-01已完成reader准备，helper源7f51750d/CLASS de06cbf8、plan50c45683、closeout90c2bf20、73项ledger c7e5baad，父已逐一核73文件/现存2份同CLASS及回执（parent-offline-preparation-receipt-review-01），只是准备回执接纳，尚未完整实现/类路径审阅或授权实际copy。必要10项由8+2分段检查支持，3次辅助JVM1及90097未知物理原因保留，不称原整合进程全绿；4 javac0、8进程核退、3私有QA tmp清理、原108前后同。清单内runtime emergency文件0，不代表DB无记录。真实原态copy/DPAPI/JDBC仍0，DRAFT false、无实际release。下一回合先完整读审OfflinePreparationDiagnostics.java及COPY-ONLY-PLAN，固定classes-02+原54cp/H2 2.5.250/Jackson/JNA/CurrentUserProtection来源，再按仅私有副本/定root/只读/安全投影门执行，原库从不由引擎打开；实际语义修复有证后才隔离改/定点/本地commit，活动R08永不换版。未来清场与独立after齐备才能开新冻R09。最终R08隐私scanner只用已审v2 96a7d269，正式actor和全部辅助核退后扫描当前全文，再精确nonreparse清task tmp/t06；原Java4ab/v1/manifest0a保留，尚未实际scanner/needle/vault。目标active未达成。
 
 ### 五网站检查点（历史，Log失败前）
 
