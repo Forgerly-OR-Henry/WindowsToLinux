@@ -1,6 +1,6 @@
 # 工具链依赖事务边界定点验证（2026-10-29）
 
-当前在r09f隔离树修复两项不同的依赖事务边界：APT禁止移除，以及完整固定依赖动作的独占systemd服务、累计预算与可验证收尾。已进行本地定点验证及新树打包；真实Linux/systemd、APT、SSH、模型和新一轮原业务尚未执行。R08仍为6/8失败，Log和Directory原UNKNOWN不重放、不改判，没有启动R09或重新清场。
+当前在r09f隔离树修复两项不同的依赖事务边界：APT禁止移除，以及完整固定依赖动作的独占systemd服务、累计预算与可验证收尾。首版已本地提交da90并打包；随后真实无包Linux诊断确认了cgroup路径退役和默认ExitType计时缺口，v2准入、完成证明和独立清理现已同步并完成所列本地定点。真实包事务、模型、新一轮原业务及生产v2的Linux验证尚未执行。R08仍为6/8失败，Log和Directory原UNKNOWN不重放、不改判，没有启动R09或重新整轮清场。
 
 ## 已证问题与未知边界
 
@@ -24,23 +24,41 @@ R08 Log的已脱敏独立审批理由指出每条内层命令1800秒可能超过
 
 standard NativeBuild、Agent dependencies别名和HELPER_RUNTIME嵌入入口使用同一完整固定Python源。规范参数为profile、operation、整数T、server、task；T必须与最终CommandRequest.timeout精确一致且在45至7200秒。完整源、stdin长度/SHA、exact action、layout及包/自有unit/manifest文件targets仍由inspect交叉校验。外层channel若把T再次缩短，在独立审批和dispatch之前拒绝；已经获得的旧grant不能静默执行另一预算。HELPER_RUNTIME继续绑定原固定两小时files-install envelope，不依赖本来尚待安装的managed-helper。
 
-完整依赖worker及包管理后代先进入operation独占的root transient service。入组及实际属性/InvocationID/cgroup/MainPID验证之前，没有包事务或包数据库查询。没有所需systemd/cgroup v2/属性/路径能力就拒绝，不fallback裸Popen。服务使用Type=exec、RemainAfterExit=yes、KillMode=control-group、SendSIGKILL=yes、有限TimeoutStartSec和TimeoutStopSec；未照搬vendor DynamicUser沙箱，root包维护仍是现有OS信任边界。
+完整依赖worker及包管理后代先进入operation独占的root transient service。v2在worker核实入组、实际属性/InvocationID/cgroup/MainPID并写READY后，仍须等待监督端完成核心cgroup.events FD绑定、初读populated=1及独立ACK；ACK及原期限核对通过之前，没有包事务或包数据库查询。没有所需systemd/cgroup v2/属性/路径能力就拒绝，不fallback裸Popen。服务使用Type=exec、ExitType=cgroup、RemainAfterExit=yes、KillMode=control-group、SendSIGKILL=yes、有限TimeoutStartSec和TimeoutStopSec；未照搬vendor DynamicUser沙箱，root包维护仍是现有OS信任边界。
 
 动作在远端开始时建立一个monotonic总deadline，配置/owner查询、update/install/query及回执共享该额度，不为下一条命令重置1800秒。实际RuntimeMaxSec在worker源持久化后扣除已消耗的准备时间，并满足RuntimeMaxSec+5秒stop+25秒启动/观察预留不超过精确T；manifest持久化后、启动服务前再核一次，准备过慢不能扩大总额度。worker同时使用同一初始时间导出的总工作deadline。独立systemd期限可以覆盖SSH/launcher/worker亲代异常退出，不依赖Python finally；它不是与本地SSH request绝对同一瞬间的截止，也不是即时取消协议。
 
-自有路径为捕获layout.stateRoot下dependency-operations/operation，unit为windowstolinux-dependency-operation.service。全新root-owned独占目录和manifest绑定task/server/operation、源digest、unit与预算；碰撞/身份漂移拒绝，不复用旧操作。worker、manifest、ready、result和receipt均先完整写入/fsync临时文件，再用无覆盖link发布，避免controller读到最终名半文件；这复用了既有tracked binding的发布方式。自有文件/目录别名拒绝，现有OS工具正常路径守卫保持原规则。
+自有路径为捕获layout.stateRoot下dependency-operations/operation，unit为windowstolinux-dependency-operation.service。全新root-owned独占目录和manifest绑定task/server/operation、源digest、unit与预算；碰撞/身份漂移拒绝，不复用旧操作。v2 manifest、Description、独立cleanup-ownership、READY、ACK和内部结果envelope共同绑定同次原操作。源、manifest及各JSON文件先完整写入/fsync临时文件，再用无覆盖link发布，避免controller读到最终名半文件；这复用了既有tracked binding的发布方式。自有文件/目录别名拒绝，现有OS工具正常路径守卫保持原规则。
 
-正常成功要求原包命令真实成功、完整精确版本回执、loaded/exited且MainPID=0/ExecMainStatus=0/Result=success、匹配InvocationID及原cgroup inode、实际递归cgroup.procs为空，再有限stop精确unit并wait launcher。RemainAfterExit下先并发观察完成和验空，不能先阻塞wait再尝试stop。停止后not-found只有在此前独立完成身份和真实空组证据齐备时才可解释为已collect；not-found或目录缺失本身永不当空。客户端还严格校验生命周期回执的整数、小数/溢出、身份、源及boolean证明字段。
+正常成功要求原包命令真实成功、完整精确版本回执及结果envelope、loaded/exited且MainPID=0/ExecMainStatus=0/Result=success、匹配InvocationID，以及从准入起持续持有的同一核心cgroup2 events FD的终止证明。仅接受正长度pread(offset=0)完整读到populated=0，或先核核心文件/文件系统/devino及初值1后，同一FD的pread实际返回ENODEV。二者使用不同proofKind；退役分支不能声称直接递归读取cgroup.procs为空。目录缺失、普通FD、EOF、seek失败、其它errno、未绑定或错身份均不提供成功证明。
 
-显式产品清理inventory/plan/after识别新prefix仅作为候选；必须有root-owned manifest/worker源和ready InvocationID，与实际loaded unit的Description/Transient/InvocationID一致才认领。apply在停止前再次比较该绑定，拒绝foreign/colliding unit。不通配kill，不杀全局apt/dpkg，不认领旧UNKNOWN。成功后manifest/回执保留，供后续独立清理核验。现有disposable-host-reset仅认本轮原默认layout，不据prefix接管其他layout的unit。
+监督端先并发观察正常完成与held-FD证明，随后才有限stop精确unit、真实wait launcher0并核终态；不能先stop后用杀净来补业务成功。v2回执严格校验27个生命周期字段、实际ACK/独立归属规范字节SHA、整数、小数/溢出、身份、源及boolean。缺少或额外带旧recursiveCgroupEmptyObserved均拒绝，未增加生产旧合同兼容。
+
+显式产品清理inventory/plan/after识别新prefix仅作为候选；v2必须有root-owned manifest/实际worker源和独立cleanup-ownership，与实际loaded unit的完整静态属性、预算、Description、InvocationID一致才认领，不依赖READY已经出现。apply在停止前再次比较该绑定，reset-failed前另核原归属和terminal/MainPID0，拒绝foreign/colliding unit。不通配kill，不杀全局apt/dpkg，不认领旧UNKNOWN。成功后manifest/回执保留，供后续独立清理核验。现有disposable-host-reset仅认本轮原默认layout，不据prefix接管其他layout的unit。
 
 ## 保证与尚未验证的Linux边界
 
-取消、断连、stop失败、身份不明、缺少真实验空证据都保留UNKNOWN；独立期限不是已观测的停止回执。不可中断D状态可能无法在有限时间核退，强制停止APT也不证明包数据库一致或事务回滚，不自动重跑修复。root maintainer script可通过systemctl启动其他unit；本服务cgroup空不代表全主机无跨unit副作用，也不授权停止合法系统服务。
+取消、断连、stop失败、身份不明、缺少完整正常完成与已绑定核心FD证明都保留UNKNOWN；独立期限不是已观测的停止回执。不可中断D状态可能无法在有限时间核退，强制停止APT也不证明包数据库一致或事务回滚，不自动重跑修复。root maintainer script可通过systemctl启动其他unit；本服务cgroup终止不代表全主机无跨unit副作用，也不授权停止合法系统服务。
 
-后续受控Linux阶段必须先验证两项实际能力：不存在unit时systemctl show是否返回当前严格观察合同要求的全部属性；Type=exec/RemainAfterExit的active/exited状态是否保留可实际读取的cgroup路径和空组证据。任一不满足就停止并修实际观察合同，不能用mock或not-found补成通过。随后才可用无包副作用的父/子/孙、setsid、忽略TERM、leader先退等固定fixture验证launcher/worker退出与独立期限。当前没有执行这些Linux步骤。
+首版真实Linux探针的not-found19字段门通过，但active/exited后ControlGroup为空且目录退役，原UNKNOWN70保留。后续FD首版实际在lseek阶段errno19，仍UNKNOWN70；不能回填为pread通过。新版本改用正长度pread0并显式ExitType=cgroup：正常延迟读取取得同一held FD退役19；leader先退但活setsid后代时MainPID0/running/populated1，正确拒绝正常成功。对应精确Ubuntu源码支持核心文件退役与默认ExitType=main在leader退出后解除RuntimeMax的判断；这不是原R08曾实际残留包进程的证明。
 
-## 实际验证与交付边界
+第一次TTL夹具在READY前身份检查UNKNOWN70，触发的原show值未保存，保持未知。新cases-03只修已证准备态协议：同次21字段有界留存，原期限内仅未绑定/未READY/静态完全一致的空或零ID可PENDING，绑定后漂移严格拒绝。新TTL实际两次startup均BOUND，没有实际触发PENDING；44.110311秒进入stop-sigterm/populated1，49.356519秒failed/Resulttimeout，同held FD pread19，原client实际-9。独立期限机制观察完成，不是零异常或八项业务通过。快照绑定清理已精确核unit notfound、自有nonce/marker/空根非递归删除及JVM/outer/tmp退出。证据见[父TTL收尾](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/events-fd-kernel-fixture-04/cases-03/parent-cases03-actual-closeout-01.json)。这些prototype结果不能代替新生产源的后续Linux矩阵。
+
+## v2实际本地定点与产物边界
+
+producer原始资源SHA为f6d63fb499d58430cfd57618372cc79f57c1c56ca9f4689aa97eb107422d8b6b，实际完整bundled源SHA为20911b7d038244f1e5d3c8a9118d0eb9ed95388052e73f7f70aabac281642df3；两者范围不同，不互相替代。v2实施保留首版累计T/frame5/APT禁止移除/原审批/source保护，没有把原问题改回裸包进程。
+
+监督端11个明确Python方法首次11/11通过、0.244秒。包含正常完成必须先于stop、两个proof、最小T45、READY前独立归属、worker无ACK不能包动作、严格ACK类型、核心FD/文件系统/初值、准备态身份和原期限。自查还修正finally中client wait异常跳过FD关闭/诊断并可能掩盖原拒绝的缺口：资源与观察始终收尾，原失败保留，成功回执延后到finally完成后；直接反例分别覆盖已有主失败和正常完成后的wait异常。这是新实现自查，不能说R08已发生过同样故障。
+
+清理归属四方法actual0/0.131秒；另新增apply在stop后、reset前归属漂移的单方法，首次因测试在mock恢复后读取PHASE而exit1，原失败保留。去掉该过期断言，四事件序列及reset/Popen/kill零调用断言保留，仅复测同方法1/0/0/0、0.014秒；原四未重跑。v2本阶段Python共16个唯一方法、17次执行，不能称一次16全绿或全类通过。生成器/解释器实际wait、CIM和自有tmp关闭以[worker收尾](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-lifecycle-v2-08/producer-worker-local-closeout-01.json)及[清理反例收尾](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-lifecycle-v2-08/cleanup-apply-drift-review-closeout-01.json)为准。
+
+Java仅18个明确方法、8类，首组实际51个参数用例：50通过，1个旧冻结源码SHA断言失败；没有错误或跳过。新实际Python canonical record函数生成的14键ownership/16键ACK字节，经Java消费端校验通过；正常populated0和退役null/19两个正例、29类回执反例、原审批/grant、完整源/targets/导航，以及Native选定16个参数用例均已执行。唯一失败停在旧bundle SHA0ebcde53断言，后续profile循环当时未执行；更新为已审新源20911b7d后只复测该方法，JUnit1/0/0/0与Maven actual0。未重跑其余50或原Native16，不合并成单次51全绿，旧三CurrentSource仍未解决。
+
+两处旧frame夹具仅同步dependencies/native的五参数与完整targets，RUST负例保留合法形状而只改profile，不增加生产旧兼容。显式selector覆盖其4方法/10次参数调用。首次XML归档长输出路径失败和辅助时间投影错误另保留，后用短名独立封存8份原XML再复测，没有改掉原51/1。实际[原组结果](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-lifecycle-v2-08/java-targeted-02-original-results.json)及[单方法复测](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-lifecycle-v2-08/java-failed-only-03-results.json)单列。
+
+验证后仅本地提交本次源、测试与本说明，默认不推送。提交后的必要package显式skipTests；实际结果、当前源与CLASS/JAR资源对应及任务进程/tmp关闭，以[本阶段最终产物与收尾](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-lifecycle-v2-08/parent-final-artifact-closeout-08.json)为准，不能拿首版package05或prototype CLASS代替。该构建不是全量测试或生产Linux证明。下一步受控新生产Linux矩阵完成后才新冻结、产品清场和八项完整原验收；FTP8MiB、其余既定负载与独立审批不减。
+
+## 首版实际验证与交付边界（历史结果）
 
 APT基础仅指定七个Python unittest方法，0失败，0.058秒，Python10704实际wait/exit0及CIM退；该历史结果保留。生命周期阶段先运行5个新增方法加直接受影响原7个，共12方法0失败；随后Ready/manifest类型收紧及新增cleanup辨认，运行7个直接方法0失败；再只验证原子发布新增反例和2个直接监督方法，共3方法0失败；持久化后预算门只复测直接2方法，0失败。生命周期阶段为15个唯一方法、24次方法执行，不能把重跑合成24个唯一测试；内部subTest不另算方法。没有真实Linux、APT或SSH调用。
 

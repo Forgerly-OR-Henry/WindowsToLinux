@@ -101,7 +101,7 @@ class DeploymentCommandProtocolTest {
     @Test
     void sharedDependencyBytesAndStrictReceiptsPreserveOriginalProfiles() throws Exception {
         String source = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencies(layout);
-        assertEquals("0ebcde53c0172acaa0f1d641d3f00091ab6f48df822062d4d21391926192fcd4", java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8))));
+        assertEquals("20911b7d038244f1e5d3c8a9118d0eb9ed95388052e73f7f70aabac281642df3", java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8))));
         assertEquals(source, DeploymentAgentToolchainPrograms.dependencies(layout));
         assertEquals(DeploymentAgentToolchainPrograms.BOOTSTRAP, gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.BOOTSTRAP);
         assertEquals(DeploymentAgentToolchainPrograms.command(List.of("NATIVE_BUILD", "a".repeat(32))),
@@ -110,7 +110,7 @@ class DeploymentCommandProtocolTest {
             var names = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.packages(manager, profile);
             assertEquals(names, DeploymentAgentToolchainPrograms.packages(manager, profile));
             var packages = new LinkedHashMap<String, String>(); names.forEach(name -> packages.put(name, "1.0"));
-            var value = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(Map.of("operation", "a".repeat(32), "ecosystem", profile, "manager", manager, "packages", packages, "lifecycle", gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DependencyReceiptFixture.lifecycle("a".repeat(32), 60, server, DEPENDENCY_TASK, layout)));
+            var value = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(Map.of("operation", "a".repeat(32), "ecosystem", profile, "manager", manager, "packages", packages, "lifecycle", gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DependencyReceiptFixture.lifecycle(profile, "a".repeat(32), 60, server, DEPENDENCY_TASK, layout)));
             String line = "TOOLCHAIN_DEPENDENCIES=" + value + "\n";
             var numeric = (com.fasterxml.jackson.databind.node.ObjectNode) value.deepCopy();
             numeric.put("operation", new java.math.BigInteger("1".repeat(32)));
@@ -163,13 +163,70 @@ class DeploymentCommandProtocolTest {
     }
 
     @Test
+    void pythonProducerRecordBytesMatchTheJavaReceiptConsumer(@org.junit.jupiter.api.io.TempDir java.nio.file.Path temporary) throws Exception {
+        String operation = "a".repeat(32);
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        var root = json.valueToTree(Map.of("operation", operation, "ecosystem", "NATIVE_BUILD", "manager", "APT",
+            "packages", gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.packages("APT", "NATIVE_BUILD")
+                .stream().collect(java.util.stream.Collectors.toMap(name -> name, name -> "1.0")),
+            "lifecycle", gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DependencyReceiptFixture.lifecycle("NATIVE_BUILD", operation, 60, server, DEPENDENCY_TASK, layout)));
+        String checks = """
+            import sys,json,hashlib
+            payload=json.load(sys.stdin)
+            g={'__name__':'pure_record_fixture'}
+            exec(compile(payload['source'],'<current-canonical-dependency-source>','exec'),g)
+            root=payload['receipt']; life=root['lifecycle']
+            m={k:life[k] for k in ('unit','workerSourceSha256','server','task','totalSeconds','runtimeSeconds')}
+            m.update(operation=root['operation'],profile=root['ecosystem'])
+            m['description']='WTL_DEPENDENCY_2:'+m['operation']+':'+m['workerSourceSha256']
+            ownership=g['dependency_ownership_record'](m,life['invocationId'])
+            ownership_sha=hashlib.sha256(g['dependency_encode'](ownership)).hexdigest()
+            ready={'invocationId':life['invocationId'],'groupIdentity':life['groupIdentity']}
+            ack=g['dependency_ack_record'](m,ready,{'eventsIdentity':life['eventsIdentity']},ownership_sha)
+            life['cleanupOwnershipSha256']=ownership_sha
+            life['ackSha256']=hashlib.sha256(g['dependency_encode'](ack)).hexdigest()
+            print('TOOLCHAIN_DEPENDENCIES='+json.dumps(root,sort_keys=True,separators=(',',':')))
+            """;
+        var python = java.nio.file.Path.of(System.getProperty("managed.test.python",
+            java.nio.file.Files.isRegularFile(java.nio.file.Path.of("E:/Program/Python/Python3.12/python.exe"))
+                ? "E:/Program/Python/Python3.12/python.exe" : "/usr/bin/python3"));
+        assertTrue(java.nio.file.Files.isExecutable(python), "A real local Python interpreter is required");
+        var log = temporary.resolve("record-interoperability.log");
+        var process = new ProcessBuilder(python.toString(), "-I", "-B", "-S", "-c", checks)
+            .redirectErrorStream(true).redirectOutput(log.toFile()).start();
+        try {
+            try (var input = process.getOutputStream()) {
+                input.write(json.writeValueAsBytes(Map.of("source",
+                    gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencies(layout), "receipt", root)));
+            }
+            assertTrue(process.waitFor(20, java.util.concurrent.TimeUnit.SECONDS));
+            String result = java.nio.file.Files.readString(log, StandardCharsets.UTF_8);
+            assertEquals(0, process.exitValue(), result);
+            assertTrue(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyReceipt(
+                result, "NATIVE_BUILD", operation, 60, server, DEPENDENCY_TASK, layout), "Actual Python canonical record bytes must bind the Java consumer");
+        } finally {
+            if (process.isAlive()) { process.destroyForcibly(); assertTrue(process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)); }
+        }
+    }
+
+    @Test
     void dependencyLifecycleReceiptRejectsMissingStaleOrUnprovenTermination() throws Exception {
         String operation = "a".repeat(32);
         var frame = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.frame("NATIVE_BUILD", operation, 60, server, DEPENDENCY_TASK);
         try (var request = new CommandRequest(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.command(frame), new byte[0], Duration.ofSeconds(60), 65536)) {
             String valid = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DependencyReceiptFixture.receipt(request, "APT", layout);
             var json = new com.fasterxml.jackson.databind.ObjectMapper();
-            for (String fault : List.of("MISSING", "UNIT", "SOURCE", "TIME", "OVERFLOW", "TASK", "EMPTY_INVOCATION", "NUMERIC_INVOCATION", "NONEMPTY", "STRING_BOOLEAN")) {
+            assertTrue(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyReceipt(
+                valid, "NATIVE_BUILD", operation, 60, server, DEPENDENCY_TASK, layout));
+            var retired = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(valid.substring("TOOLCHAIN_DEPENDENCIES=".length()));
+            var retiredLife = (com.fasterxml.jackson.databind.node.ObjectNode) retired.get("lifecycle");
+            retiredLife.put("proofKind", "KERNEL_CORE_EVENTS_RETIRED");retiredLife.putNull("finalPopulated");retiredLife.put("readErrno", 19);
+            assertTrue(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyReceipt(
+                "TOOLCHAIN_DEPENDENCIES=" + retired + "\n", "NATIVE_BUILD", operation, 60, server, DEPENDENCY_TASK, layout));
+            for (String fault : List.of("MISSING", "UNIT", "SOURCE", "TIME", "OVERFLOW", "TASK", "EMPTY_INVOCATION", "NUMERIC_INVOCATION",
+                "NONEMPTY", "LEGACY_FIELD", "STRING_BOOLEAN", "FORMAT_FLOAT", "NO_ACK", "NO_CORE_FD", "ACK_SHA", "OWNERSHIP_SHA",
+                "NO_WAIT", "NONZERO_EXIT", "FLOAT_EXIT", "MAGIC", "READ_METHOD", "IDENTITY_BOOLEAN", "IDENTITY_OVERFLOW",
+                "EVENTS_DEVICE", "SAME_INODE", "RETIRED_VALUE", "RETIRED_ERRNO", "MISSING_FINAL", "UNKNOWN_PROOF")) {
                 var root = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(valid.substring("TOOLCHAIN_DEPENDENCIES=".length()));
                 var life = (com.fasterxml.jackson.databind.node.ObjectNode) root.get("lifecycle");
                 switch (fault) {
@@ -181,8 +238,27 @@ class DeploymentCommandProtocolTest {
                     case "TASK" -> life.put("task", "22222222-2222-2222-2222-222222222222");
                     case "EMPTY_INVOCATION" -> life.put("invocationId", "0".repeat(32));
                     case "NUMERIC_INVOCATION" -> life.put("invocationId", new java.math.BigInteger("1".repeat(32)));
-                    case "NONEMPTY" -> life.put("recursiveCgroupEmptyObserved", false);
+                    case "NONEMPTY" -> life.put("finalPopulated", 1);
+                    case "LEGACY_FIELD" -> life.put("recursiveCgroupEmptyObserved", true);
                     case "STRING_BOOLEAN" -> life.put("stopCompleted", "true");
+                    case "FORMAT_FLOAT" -> life.put("formatVersion", 2.0);
+                    case "NO_ACK" -> life.put("ackVerified", false);
+                    case "NO_CORE_FD" -> life.put("coreEventsBound", false);
+                    case "ACK_SHA" -> life.put("ackSha256", "a".repeat(64));
+                    case "OWNERSHIP_SHA" -> life.put("cleanupOwnershipSha256", "a".repeat(64));
+                    case "NO_WAIT" -> life.put("launcherWaitCompleted", false);
+                    case "NONZERO_EXIT" -> life.put("launcherExitCode", 1);
+                    case "FLOAT_EXIT" -> life.put("launcherExitCode", 0.0);
+                    case "MAGIC" -> life.put("coreEventsFilesystemMagic", 0);
+                    case "READ_METHOD" -> life.put("freshReadMethod", "SEEK_THEN_READ");
+                    case "IDENTITY_BOOLEAN" -> life.putArray("groupIdentity").add(true).add(1001);
+                    case "IDENTITY_OVERFLOW" -> life.putArray("eventsIdentity").add(29).add(java.math.BigInteger.ONE.shiftLeft(64).add(java.math.BigInteger.valueOf(1002)));
+                    case "EVENTS_DEVICE" -> life.putArray("eventsIdentity").add(30).add(1002);
+                    case "SAME_INODE" -> life.set("eventsIdentity", life.get("groupIdentity").deepCopy());
+                    case "RETIRED_VALUE" -> { life.put("proofKind", "KERNEL_CORE_EVENTS_RETIRED");life.put("readErrno", 19); }
+                    case "RETIRED_ERRNO" -> { life.put("proofKind", "KERNEL_CORE_EVENTS_RETIRED");life.putNull("finalPopulated");life.put("readErrno", 5); }
+                    case "MISSING_FINAL" -> life.remove("finalPopulated");
+                    case "UNKNOWN_PROOF" -> life.put("proofKind", "PATH_MISSING");
                 }
                 assertFalse(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyReceipt(
                     "TOOLCHAIN_DEPENDENCIES=" + root + "\n", "NATIVE_BUILD", operation, 60, server, DEPENDENCY_TASK, layout), fault);

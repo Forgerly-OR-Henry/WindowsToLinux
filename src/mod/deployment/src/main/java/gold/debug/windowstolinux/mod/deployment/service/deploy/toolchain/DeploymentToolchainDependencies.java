@@ -32,7 +32,9 @@ public final class DeploymentToolchainDependencies {
         "dependency_apt_hook_owners", "dependency_apt_binaries", "dependency_apt_options", "dependency_validate_dpkg",
         "dependency_apt_source_authentication", "dependency_apt_sources", "dependency_validate_apt", "dependency_dnf_config",
         "dependency_validate_dnf", "dependency_versions", "dependency_transaction", "dependency_frame", "dependency_remaining",
-        "dependency_worker", "dependency_supervise", "dependency_unit_identity", "dependency_group", "dependency_main", "dependency_cli");
+        "dependency_worker", "dependency_supervise", "dependency_unit_identity", "dependency_group",
+        "dependency_observe_startup", "dependency_open_core_events", "dependency_events_read", "dependency_validate_ack",
+        "dependency_completion_proof", "dependency_stop_owned", "dependency_main", "dependency_cli");
     private DeploymentToolchainDependencies() {}
 
     public static String dependencies() {
@@ -188,7 +190,8 @@ public final class DeploymentToolchainDependencies {
         targets.add(target(server, "systemd-unit", unit(operation)));
         targets.add(target(server, "directory", operationsRoot(layout)));
         targets.add(target(server, "directory", base));
-        for (String file : List.of("manifest.json", "worker.py", "ready.json", "result.json", "receipt.json"))
+        for (String file : List.of("manifest.json", "worker.py", "cleanup-ownership.json", "ready.json", "ack.json",
+            "result.json", "receipt.json", "observations.json"))
             targets.add(target(server, "file", base + "/" + file));
         return Set.copyOf(targets);
     }
@@ -210,6 +213,7 @@ public final class DeploymentToolchainDependencies {
             return false;
         try (var parser = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
             .createParser(stdout.substring(prefix.length()))) {
+            frame(ecosystem, operation, seconds, server, task);
             JsonNode root = new ObjectMapper().readTree(parser);
             if (root == null || parser.nextToken() != null || !root.isObject() || root.size() != 5
                 || !root.path("operation").isTextual() || !root.path("ecosystem").isTextual() || !root.path("manager").isTextual()
@@ -228,23 +232,70 @@ public final class DeploymentToolchainDependencies {
                 actual.add(field.getKey());
             }
             JsonNode life = root.path("lifecycle");
-            if (!life.isObject() || life.size() != 13 || !life.path("formatVersion").isInt() || life.path("formatVersion").intValue() != 1
+            var required = Set.of("formatVersion", "unit", "invocationId", "workerSourceSha256", "totalSeconds",
+                "runtimeSeconds", "stopSeconds", "reserveSeconds", "exitType", "server", "task",
+                "loadedCompletionObserved", "ackVerified", "proofKind", "coreEventsFilesystemMagic", "groupIdentity",
+                "eventsIdentity", "initialPopulated", "finalPopulated", "readErrno", "freshReadMethod", "stopCompleted",
+                "launcherWaitCompleted", "launcherExitCode", "ackSha256", "cleanupOwnershipSha256", "coreEventsBound");
+            var keys = new HashSet<String>();
+            life.fieldNames().forEachRemaining(keys::add);
+            if (!life.isObject() || !keys.equals(required) || !integer(life, "formatVersion", 2)
                 || !life.path("unit").isTextual() || !life.path("invocationId").isTextual() || !life.path("workerSourceSha256").isTextual()
                 || !life.path("server").isTextual() || !life.path("task").isTextual()
                 || !unit(operation).equals(life.path("unit").asText()) || !life.path("invocationId").asText().matches("[a-f0-9]{32}")
                 || life.path("invocationId").asText().equals("0".repeat(32))
                 || !workerDigest(layout).equals(life.path("workerSourceSha256").asText())
-                || !life.path("totalSeconds").isInt() || life.path("totalSeconds").intValue() != seconds
-                || !life.path("runtimeSeconds").isInt() || life.path("runtimeSeconds").intValue() < 1
-                || life.path("runtimeSeconds").intValue() > seconds - 30 || !life.path("stopSeconds").isInt() || life.path("stopSeconds").intValue() != 5
-                || !life.path("reserveSeconds").isInt() || life.path("reserveSeconds").intValue() != 25
+                || !integer(life, "totalSeconds", seconds) || !life.path("runtimeSeconds").isIntegralNumber()
+                || !life.path("runtimeSeconds").canConvertToLong() || life.path("runtimeSeconds").longValue() < 1
+                || life.path("runtimeSeconds").longValue() > seconds - 30 || !integer(life, "stopSeconds", 5)
+                || !integer(life, "reserveSeconds", 25) || !"cgroup".equals(text(life, "exitType"))
                 || !server.id().equals(life.path("server").asText()) || !task.equals(life.path("task").asText())) return false;
-            for (String proof : List.of("loadedCompletionObserved", "recursiveCgroupEmptyObserved", "stopCompleted"))
+            for (String proof : List.of("loadedCompletionObserved", "ackVerified", "stopCompleted", "launcherWaitCompleted", "coreEventsBound"))
                 if (!life.path(proof).isBoolean() || !life.path(proof).booleanValue()) return false;
-            return seconds >= 45 && seconds <= 7200 && actual.equals(Set.copyOf(DeploymentToolchainDependencies.packages(manager, ecosystem)));
+            if (!integer(life, "launcherExitCode", 0) || !integer(life, "coreEventsFilesystemMagic", 1667723888)
+                || !integer(life, "initialPopulated", 1) || !"PREAD_OFFSET_ZERO".equals(text(life, "freshReadMethod"))) return false;
+            var group = identityPair(life.path("groupIdentity"));
+            var events = identityPair(life.path("eventsIdentity"));
+            if (!group.getFirst().equals(events.getFirst()) || group.equals(events)) return false;
+            String proofKind = text(life, "proofKind");
+            if (proofKind.equals("KERNEL_POPULATED_ZERO")) {
+                if (!integer(life, "finalPopulated", 0) || !integer(life, "readErrno", 0)) return false;
+            } else if (proofKind.equals("KERNEL_CORE_EVENTS_RETIRED")) {
+                if (!life.path("finalPopulated").isNull() || !integer(life, "readErrno", 19)) return false;
+            } else return false;
+            var ownership = new TreeMap<String, Object>();
+            ownership.put("formatVersion", 2);ownership.put("operation", operation);ownership.put("profile", ecosystem);
+            for (String field : List.of("unit", "description", "workerSourceSha256", "server", "task", "exitType", "invocationId"))
+                ownership.put(field, field.equals("description") ? "WTL_DEPENDENCY_2:" + operation + ":" + text(life, "workerSourceSha256") : text(life, field));
+            for (String field : List.of("totalSeconds", "runtimeSeconds", "stopSeconds", "reserveSeconds"))
+                ownership.put(field, life.path(field).longValue());
+            String ownershipSha = sha256(JSON.writeValueAsBytes(ownership));
+            if (!ownershipSha.equals(text(life, "cleanupOwnershipSha256"))) return false;
+            var ack = new TreeMap<String, Object>(ownership);
+            ack.remove("description");ack.remove("stopSeconds");ack.remove("reserveSeconds");ack.remove("exitType");
+            ack.put("groupIdentity", group);ack.put("eventsIdentity", events);ack.put("coreEventsFilesystemMagic", 1667723888);
+            ack.put("initialPopulated", 1);ack.put("freshReadMethod", "PREAD_OFFSET_ZERO");ack.put("cleanupOwnershipSha256", ownershipSha);
+            return sha256(JSON.writeValueAsBytes(ack)).equals(text(life, "ackSha256"))
+                && actual.equals(Set.copyOf(DeploymentToolchainDependencies.packages(manager, ecosystem)));
         } catch (java.io.IOException | IllegalArgumentException malformed) {
             return false;
         }
+    }
+
+    private static boolean integer(JsonNode node, String field, long expected) {
+        var value = node.path(field);
+        return value.isIntegralNumber() && value.canConvertToLong() && value.longValue() == expected;
+    }
+
+    private static List<Long> identityPair(JsonNode value) {
+        if (!value.isArray() || value.size() != 2) throw new IllegalArgumentException("Core cgroup identity required");
+        var result = new ArrayList<Long>();
+        for (var part : value) {
+            if (!part.isIntegralNumber() || !part.canConvertToLong() || part.longValue() < 1)
+                throw new IllegalArgumentException("Positive integral core cgroup identity required");
+            result.add(part.longValue());
+        }
+        return List.copyOf(result);
     }
 
     private static List<Map<String, Object>> sourceLocations(String body, List<String> required, String sourcePointer) {
@@ -378,7 +429,8 @@ public final class DeploymentToolchainDependencies {
                 "totalSeconds", timeout.getSeconds(), "maximumRuntimeSeconds", timeout.getSeconds() - 30,
                 "stopSeconds", 5, "observationAndStartupReserveSeconds", 25,
                 "workerSourceSha256", workerDigest(layout),
-                "termination", "Type=exec root-owned transient service; independent RuntimeMaxSec, KillMode=control-group and SendSIGKILL. Completion requires loaded unit identity, actual recursive empty-cgroup evidence, exact stop and launcher wait. Missing cgroup or unconfirmed cancellation/disconnect remains UNKNOWN; no global apt/dpkg kill or replay."));
+                "exitType", "cgroup", "receiptFormatVersion", 2,
+                "termination", "Type=exec/ExitType=cgroup root-owned transient service; independent RuntimeMaxSec, KillMode=control-group and SendSIGKILL. Worker requires READY, bound core cgroup2 events FD and ACK before package actions. Completion requires loaded normal-exit identity, fresh pread0 of the same held core FD (populated0 or distinct retirement proof), exact stop and actual launcher wait0. Missing path/EOF/other errno or unconfirmed cancellation/disconnect remains UNKNOWN; no global apt/dpkg kill or replay."));
             facts.put("server", server.id());
             facts.put("businessRevision", revision);
             facts.put("inputMatchesRenderer", true);
