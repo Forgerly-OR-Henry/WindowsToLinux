@@ -1,6 +1,16 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：用户为切换API明确暂停，R09中断，目标未达成
+## 现行入口：Luna HIGH调用已确认，按用户最新要求继续暂停
+
+2026-10-29已完成本机GPT代理调用调查。`http://127.0.0.1:33333/v1` 的 `gpt-6-luna` Responses HIGH两次实际HTTP 200，完成状态与工具参数校验均通过：原请求578B和产品格式请求593B分别报告446、368 token。两份JSON请求体与此前失败样本的SHA完全一致；此次去掉探测脚本强制的 `Connection: close`。无鉴权根路径另做两轮头部对照，不带close的6次均200，带close的4次均10054重置。已确认这条本机代理调用链存在请求头相关重置，不能据旧失败认定HIGH不支持；代理内部为何重置仍未知，未修改代理服务或宣称底层故障已修复。
+
+当前GPT key与代理配置仅在内存比对且匹配，TLS配置关闭，HTTP成功结果不支持早期条件式TLS错配推测。早期跨urllib/http.client/curl失败均复制了close头，不能排除共同请求特征。初次私有配置编辑因model键两侧空格漏插protocol、初次key解析漏识别区块，均保留原报告并另记纠正。当前主私有配置已选gpt/gpt-6-luna/responses，DeepSeek区块和冻结R09私有文件未改，未输出或提交秘密值。本阶段10次客户端模型POST中3次成功、7次无响应/重置，成功已知token1260；失败上游用量未知，代理有重试配置，不能当作完整物理调用或账单。没有直接调用DeepSeek。
+
+这是受控HTTP定点诊断，不是产品SDK或完整部署验收。隔离树 `.ai-workspace/wt/r10f`、branch `codex/assisted-luna-responses-20261029`、base aa80428e保留3份接入测试WIP（DeploymentStaticLiveAcceptanceTest、LiveModelSettings、LiveModelSettingsTest），尚未编译/执行/提交，不声称产品接入完成。未来如恢复，TEXT与TOOL均采用HIGH；先完成接入验证及新实际产物冻结，再按新轮规则执行，不能仅靠私有配置的选中状态认为旧入口已支持新区块。
+
+用户最新要求为“排查完确认连接没有问题之后先暂停一下”，覆盖此前连接成功即恢复的安排。没有启动新轮、重新清场、SSH或续跑R09。9个记录的本次诊断原生PID已独立CIM核实不存在，未发进程信号；用户代理未停止，无本次诊断临时文件待清。原失败、UNKNOWN、隔离WIP及论文五项均保留。[诊断汇总](H:/Program/WindowsToLinux/.ai-workspace/evidence/luna-api-connectivity-20261029-01/diagnostic-summary.json)与其绑定的原结果/收尾证据为准。当前阶段只用Sol High协作，未使用Astra、Terra或Computer Use。目标仍未达成，须等用户调整任务并明确恢复。
+
+## 前一检查点：用户为切换API明确暂停，R09中断，目标未达成
 
 用户于2026-10-29要求暂停。已停止driver及进行中的FTP本机执行进程，monitor按显式stop退出；禁止自动恢复、重放本轮队列或启动后续项目。R09同冻结下TaskBoard已完整首过；FTP整项验收因用户暂停中断，其原根任务没有终态记录；Asset、CSV、Survey、Log、Directory、Binary六项未启动。分母仍为既定八项，不能把中断和未启动六项记作七项业务失败，也不能拼接下一轮成功结果。
 
