@@ -1,10 +1,26 @@
 # ASSISTED 连续首过验证记录
 
-状态：新主App用途API的测试适配、相关本地定点及真实Luna HIGH产品能力验证已完成；八项整轮仍暂停，未恢复部署或开启新轮，目标未达成。R09已中断：TaskBoard完整首过1项，FTP用户中断且无原终态，六项未启动；不混为七项业务失败，不跨轮拼接。原环境准备失败单列保留。R08最终完整首过6/8。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产无包Linux矩阵前一阶段已执行（见后文），该准备检查点当时未做真实包/完整验收，当前R09原验收状态见上文。R08原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；R08后续仅做独立辅助取证/修复准备。R08全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
+状态：用户已明确恢复，goal active。R10新隔离整合4e38851b、实际产物／新凭据／产品连接已核；host-02冻结已核、首盘被残留挂载拒绝，正在清理并准备新控制epoch，正式项目0，目标未达成。以下保留此前各轮／暂停原结果。R09已中断：TaskBoard完整首过1项，FTP用户中断且无原终态，六项未启动；不混为七项业务失败，不跨轮拼接。原环境准备失败单列保留。R08最终完整首过6/8。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产无包Linux矩阵前一阶段已执行（见后文），该准备检查点当时未做真实包/完整验收，当前R09原验收状态见上文。R08原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；R08后续仅做独立辅助取证/修复准备。R08全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
-## 新用途API测试适配完成：真实Luna HIGH能力验证通过
+## R10清场准备失败：目标目录含R09 FTP候选挂载，正式项目0
+
+同一4e38851b、Luna Responses HIGH／HIGH冻结已实际完整核验160输入／7外部输入／17输出，host-02最终P985ff833／R86d8ad6b／S495ca6e7。此前元数据尾部失败保留，独立finalize仅补缺失候选；未把原生成失败改判成功。前台PS wrapper另因检查09自文件名在原生启动前退出1，保留冻结原件后用同一冻结entry直接启动。
+
+唯一产品初盘 `host-inventory-10` Maven37504实际wait1、JUnit1／1／0／0，远端65报 `TARGET_CONTAINS_MOUNT`，发生于inventory-roots、删除前。尚无plan／apply／after或正式项目，八项分母仍8、原尝试数0。一次产品只读诊断发现 `/var/lib/windowstolinux/work/wtl-assisted-file-transfer-3z6kkqmnk-backend-9d294372013e5301/mutable` 挂载：ext4／7:3／id63／parent30，目标树唯一、self与PID1同namespace。父仅读R09原日志字节确认其候选和原FTP任务9a44…匹配；创建者、创建时间及当前占用原因未证明。清场拒绝的直接原因已确认，底层资源存活原因仍未知。
+
+解决范围：新owner单次常规umount，严格核原挂载与目录身份，不使用force／lazy或人工部署；此项已实际退出0，目标树postMounts为空；loop3仍绑定同一候选`.workspace.ext4`且autoclear=false，单次标准detach仍待核归属后执行，尚不能记清场完成。首次自动审批拒绝发生在CreateProcess前；父提交原用户全部远端清理授权及具体边界复核后获放行，仅执行一次。之后新控制epoch重新完成产品四阶段清场和独立复查，才启动八项原队列；不覆盖或重放旧盘点失败。host-02 driver已正常quit实际0；monitor显式stop原生3／外层1；五PID核退、t10已清。原monitor创建时间缺失如实保留，不能补造。新只读诊断也已实际退出并清私有tmp。原失败、UNKNOWN及论文修改不动，goal active、目标未达成。
+
+## 前一准备检查点：Luna HIGH，整合产物及新产品连接通过，正式项目0
+
+2026-10-30用户明确恢复，当前goal active。新隔离r10／本地merge 4e38851b保留c17新主App／测试API与aa804生产修复，无冲突／tracked clean；直接8纯定点0、必要skipTests package0，三Mod3／0、54cp、16JAR／17输出3837文件，真实CLASS8MiB／1MiB／2+6／12超时已核。旧三CurrentSource失败组未重跑或宣称修复，不重复已过纯解析／Runtime偏好／Modscan组。
+
+安全CopyNew私有GPT／Luna／Responses配置并锁ACL，原文件SHA99db不变。全新凭据桥CRED10-02以独立正常r09库为源，char[]内存重包／清零、无DB或trust复制；正常Runtime可能写本地ledger／schema，不触碰旧FTP／UNKNOWN。新产品连接首次native0／JUnit1-0-0-0，已授权BiNl pin，原55split只移末尾空项、实际54cp同序。父post独立核16JAR／17trees3837文件SHA同、三Mod完整描述结构／数组／marker同（仅deployment raw序列化变），不据原始SHA变化放宽字段。
+
+辅助准备首失败6aa5cb／1：wrapper将cp文本末尾LF当路径，在javac／Runtime前拒绝。原件保留，新canonical54项及新10-02阶段Compile0、DRAFT70预期拒绝／wrapper0、Execute0通过；确认是新辅助传输适配问题，不是生产回退。新控制DRAFT13＋3＋wrapper的8项纯parser／argv检查0；首套九DRAFT metadata生成0（144输入／7外部／10保护文件）；父在任何full guard／S／P／R前发现当前LOCAL日期硬码20261029遗漏，新实际为20261030，原件不改，转新host-02 BASE最小修scope及trusted SHA并补纯检查，未重跑产品连接或已过产物。该辅助迁移问题不是H2／SSH／生产回退，尚无执行许可。父raw复核R09封存92文件28534997B全SHA同，不开engine／重放。正式R10仍0、尚未新清场；准备失败不混八项分母。[本阶段检查点](H:/Program/WindowsToLinux/.ai-workspace/wt/r10/.ai-workspace/evidence/assisted-r10-local-preparation-20261030/parent-local-preparation-checkpoint-10.json)为准，下一步新冻结、产品四阶段及独立after后八项原试，绝不续R09或拼接旧成功。
+
+## 前一检查点：新用途API测试适配完成，真实Luna HIGH能力验证通过
 
 2026-10-30在主工作区fc45594b之上更新3份测试源：显式GPT区块／OPENAI／Responses，测试通过主App当前revision保存LANGUAGE和APPROVAL为HIGH并保留VISION；Mod仍无推理覆写或新设置。新夹具首次19项18通过／1 ERROR（重复保存旧凭据引用），主App继承与Mod不覆写各1通过；修正引用后仅复测失败1项通过。全部原结果保留，非首次全绿。真实产品API-only首次JUnit1/0/0/0，2配置、4能力任务成功；未配置服务器或运行八项。详见[阶段报告](LUNA-HIGH-TEST-20261030.md)及其限定测试／证据边界。
 

@@ -1,6 +1,26 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：新用途API测试适配完成，Luna HIGH产品能力验证通过
+## 现行入口：R10冻结已核定，清场盘点被残留挂载拒绝，正式项目仍未启动
+
+R10使用隔离源码 `4e38851b`、`gpt-6-luna`／Responses、LANGUAGE与APPROVAL均HIGH，Mod继承主App；八项顺序、FTP 8MiB及其它既定完整负载不变。host-02元数据尾部迁移失败已保留，新独立finalize仅补缺失候选，未覆盖九份原件；随后父发行并实际完整核验160冻结输入、7外部输入、17产物输出。P=`985ff83303ec909c7003011355791cb8e59d570b46f4f4f14bda1e93271248c9`，R=`86d8ad6b9461f946ee41b9bdbb98d5888c824ca48288cfbeca5e0d7c9ed46095`，S=`495ca6e79d54a51b03f0e224bbb4ca019bc2e733e5db3cff5b4bd27e04eb385a`。这证明冻结核验通过，不代表业务通过。
+
+前台PS wrapper自路径误检查09文件名，实际在启动原生进程前退出1；原冻结源码保留。后由同一冻结entry直接启动，未替换controller／validator算法。产品 `host-inventory-10` 仅执行一次：原生Maven退出1、JUnit 1／1／0／0，远端65／`TARGET_CONTAINS_MOUNT`，位置为 `/var/lib/windowstolinux`。尚未plan、apply或独立after，无正式项目launch；八项原尝试数0，不能记成八项业务失败。旧盘点标签及控制epoch已经关闭，不能复用或覆盖。
+
+一次产品只读诊断确认目标树内恰有一处ext4挂载，mountId63／parent30／device7:3，self与PID1均在mnt4026531841。路径对应R09 FTP原任务 `9a44eec4-ebff-4d31-8745-214475c68974` 的候选 `wtl-assisted-file-transfer-3z6kkqmnk-backend-9d294372013e5301/mutable`；父仅读取原日志字节核对，无engine打开或重放。已确认候选归属；具体创建命令、时间、当前占用者及资源存活原因仍未知。限定常规umount已经实际退出0，postMounts为空，无force／lazy；loop3仍configured且autoclear=false，实测镜像为该候选的`.workspace.ext4`，旧准备预期volume.ext4不符事实保留。正在准备核归属后的单次标准loop detach，不扩称已完整清场。清除后仍须新控制epoch完成产品inventory→plan→apply→独立after，全部通过才可一次提交八项原队列。
+
+host-02 controller正常quit／原生及外层0；monitor显式stop／原生3、外层1，均已实际终态。五个相关PID核实不存在，t10精确清理完成；monitor原始创建时间漏采事实保留。只读诊断进程及自身临时目录也已核退清理，挂载清理native13924／33420也已核退、私有tmp清理完成；loop释放仍待执行。详见 [host-02收尾](H:/Program/WindowsToLinux/.ai-workspace/wt/r10/.ai-workspace/evidence/round-10-preparation-host-02/10/parent-preparation-controller-closeout-10.json) 与 [候选归属核对](H:/Program/WindowsToLinux/.ai-workspace/wt/r10/.ai-workspace/evidence/assisted-r10-local-preparation-20261030/r09-mount-candidate-attribution-10.json)。goal active，目标未达成；旧失败／UNKNOWN／论文五项保留，未推送。
+
+## 前一检查点：已明确恢复，R10完成代码／凭据／产品连接准备
+
+用户2026-10-30明确要求继续完整验收，API使用gpt-6-luna，语言与审批HIGH，Mod仍继承主App。新ROOT为 `H:/Program/WindowsToLinux/.ai-workspace/wt/r10`，branch `codex/assisted-frozen-r10-20261030`，本地整合提交 `4e38851b0274ac23ae5078528edf8ab98a850d0c`（双亲c17e937b及aa80428e）。无冲突合并保留新用途API、测试适配及生产APT／生命周期修复；直接8项纯定点通过、必要skipTests构建0，实际54cp、16JAR、17输出／3837文件和三Mod扫描3／0。实际字节码8MiB／1MiB／2+6及12超时样例均核定，不是沿用旧产物。
+
+主私有配置实核gpt／gpt-6-luna／responses，245B、SHA99db62cd，CopyNew到新树时仅当前用户和SYSTEM可读写，未输出值。新凭据桥使用独立正常r09凭据状态，经产品char[]内存重包并清零，建立全新 `agent-live-credential-20261030-r10-01`；未复制DB／trust，未打开FTP失败或UNKNOWN库，正常Runtime本地ledger／schema可能写。单次新产品连接native0／JUnit1-0-0-0，获准BiNl指纹；原55split仅移1尾空，实际54cp同序。连接后16JAR／17输出3837文件SHA均同，三descriptor完整对象键规范化结构／数组／marker严格同，仅deployment原始序列化字节变化。没有重复已过Mod扫描。
+
+准备失败单列：首次桥wrapper `6aa5cb/1`在任何javac、Runtime、凭据读取前因类路径文本末尾LF被当作路径而拒绝；原候选／输入保留。新 `credential-preparation-10-02`使用54项原序、无末尾LF的canonical文件，Compile0、DRAFT原生70预期拒绝／wrapper0、Execute0；这是辅助传输适配问题，不是旧生产修复回退，不计入八正式项目。[本地准备检查点](H:/Program/WindowsToLinux/.ai-workspace/wt/r10/.ai-workspace/evidence/assisted-r10-local-preparation-20261030/parent-local-preparation-checkpoint-10.json)绑定真实来源；新连接proof为d8f31253。旧未执行post-check草稿已标DRAFT-unexecuted，实际独立核验为1029be／0。
+
+新13runtime＋3专项＋前台wrapper的DRAFT闭包已迁移，HIGH／HIGH、严格新模型行及R09 queueClosed前提均完成8项纯检查；不把用户中断的R09写成八项已完成。首套九元数据已生成0（144输入／7外部／10保护文件），但父发行前审查确认guard仍硬码当前LOCAL日期20261029，实际为20261030，尚未运行full guard或发任何S／P／R；原DRAFT全部保留，另建round-10-preparation-host-02/10最小修BASE／当前LOCAL及trusted SHA，补直接scope正反例，复用已有真实产物／连接。此为第二项辅助迁移问题，不是H2／SSH或生产回退。R10正式项目仍0、未新清场，不能直接运行DRAFT入口。父另以原始字节独立核R09封存92文件28534997B全SHA同，无engine／解密／重放。下一步产品inventory→plan→apply→独立after验证后只排一次八项原队列。FTP8MiB、其它既定负载／独立审批不减，普通失败记本轮失败但守卫安全时继续后项，修复另树；不续R09旧FTP／队列，不拼接其TaskBoard成功，不重放UNKNOWN。goal active，目标未达成；仅Sol High协作，无Astra／Terra／Computer Use，未推送，论文五项不动。
+
+## 前一检查点：新用途API测试适配完成，Luna HIGH产品能力验证通过
 
 2026-10-30按用户指定对话01a18842-f3e3-7562-b943-0a8d39120bf8及实际主工作区fc45594b更新测试夹具。测试通过主App保存LANGUAGE／APPROVAL的HIGH偏好、保留VISION；显式OPENAI＋Responses，旧单值DEFAULT／空defaults不覆盖用途设置。部署Mod生产请求仍不覆写推理、不加设置界面。真实产品API-only唯一尝试JUnit1/0/0/0，2配置各TEXT／TOOL_CALLING、4能力任务均SUCCEEDED；不是八项业务验收，物理调用／用量／内部恢复未另审计。
 
