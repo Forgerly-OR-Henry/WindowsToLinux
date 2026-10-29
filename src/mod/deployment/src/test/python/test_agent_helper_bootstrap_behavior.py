@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 
 
-SOURCE = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain'
+SOURCE = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/mod/deployment/service/deploy/toolchain'
 INSTALLER = pathlib.Path(__file__).resolve().parents[2] / 'main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentHelperInstallerScript.java'
 OPERATION = '0123456789abcdef0123456789abcdef'
 
@@ -112,6 +112,7 @@ class AgentHelperBootstrapBehaviorTest(unittest.TestCase):
         transactions = [command for command in self.commands if command[0].endswith('/apt-get')]
         self.assertEqual(2, len(transactions))
         self.assertIn('update', transactions[0])
+        self.assertIn('--no-remove', transactions[1])
         self.assertEqual(self.table['APT']['HELPER_RUNTIME'], transactions[1][-13:])
         for command in transactions:
             self.assertIn('APT::Get::AllowUnauthenticated=false', command)

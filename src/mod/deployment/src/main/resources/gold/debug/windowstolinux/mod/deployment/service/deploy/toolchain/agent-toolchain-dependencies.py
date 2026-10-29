@@ -584,7 +584,7 @@ def dependency_main(args):
                      '-o', 'Acquire::AllowWeakRepositories=false', '-o', 'Acquire::AllowDowngradeToInsecureRepositories=false',
                      '-o', 'Acquire::Check-Valid-Until=true', '-o', 'DPkg::Lock::Timeout=120']
             dependency_run([dependency_tool('apt-get'), *flags, 'update'])
-            dependency_run([dependency_tool('apt-get'), *flags, 'install', '-y', '--no-install-recommends', *packages])
+            dependency_run([dependency_tool('apt-get'), *flags, 'install', '-y', '--no-remove', '--no-install-recommends', *packages])
             output = dependency_run([dependency_tool('dpkg-query'), '-W', '-f=' + '$' + '{Package}\\t' + '$' + '{Version}\\n', *packages])
         else:
             if ecosystem == 'HELPER_RUNTIME':

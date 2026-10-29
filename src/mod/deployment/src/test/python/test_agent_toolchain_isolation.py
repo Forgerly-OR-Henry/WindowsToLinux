@@ -18,6 +18,7 @@ from unittest import mock
 
 RESOURCES = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/mod/deployment'
 AGENT = RESOURCES / 'service/agent/toolchain'
+DEPENDENCIES = RESOURCES / 'service/deploy/toolchain'
 SHARED = RESOURCES / 'linux/helper/toolchain'
 OPERATION = '1234567890abcdef1234567890abcdef'
 
@@ -42,8 +43,8 @@ def controller():
 
 
 def dependencies():
-    text = resource(AGENT / 'dependency-packages.json')
-    source = 'import json\nDEPENDENCY_PACKAGES=json.loads(' + repr(text) + ')\n' + resource(AGENT / 'agent-toolchain-dependencies.py')
+    text = resource(DEPENDENCIES / 'dependency-packages.json')
+    source = 'import json\nDEPENDENCY_PACKAGES=json.loads(' + repr(text) + ')\n' + resource(DEPENDENCIES / 'agent-toolchain-dependencies.py')
     namespace = types.ModuleType('dependency_contract')
     exec(compile(source, '<actual-dependency-resources>', 'exec'), namespace.__dict__)
     return namespace, source
@@ -210,7 +211,7 @@ class AgentToolchainIsolationTest(unittest.TestCase):
         self.assertFalse(hasattr(self.c, 'run'))
         d, source = dependencies()
         self.assertEqual(1, source.count('DEPENDENCY_PACKAGES='))
-        actual = json.loads(resource(AGENT / 'dependency-packages.json'))
+        actual = json.loads(resource(DEPENDENCIES / 'dependency-packages.json'))
         for manager in ('APT', 'DNF'):
             for ecosystem in ('PYTHON', 'PHP', 'RUBY'):
                 self.assertEqual(actual[manager][ecosystem], d.dependency_packages(manager, ecosystem))
@@ -1747,6 +1748,7 @@ class AgentToolchainDependenciesTest(unittest.TestCase):
         self.assertEqual(packages, transaction[-len(packages):])
         self.assertIn('APT::Get::AllowUnauthenticated=false', transaction)
         self.assertIn('Acquire::AllowInsecureRepositories=false', transaction)
+        self.assertIn('--no-remove', transaction)
         self.assertFalse(any('--allow-unauthenticated' in command for command in commands))
 
     def test_non_source_ecosystem_does_not_install_and_arbitrary_args_are_rejected(self):
@@ -1937,7 +1939,7 @@ APT::Planner "internal";
     def test_native_build_uses_exact_single_packaged_manifest_for_both_managers(self):
         expected = {'APT': ['cmake', 'ninja-build', 'gcc', 'g++'],
                     'DNF': ['cmake', 'ninja-build', 'gcc', 'gcc-c++']}
-        actual = json.loads(resource(AGENT / 'dependency-packages.json'))
+        actual = json.loads(resource(DEPENDENCIES / 'dependency-packages.json'))
         for manager, packages in expected.items():
             with self.subTest(manager=manager):
                 self.assertEqual({'PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD', 'HELPER_RUNTIME'}, set(actual[manager]))
@@ -1979,6 +1981,7 @@ APT::Planner "internal";
             if manager == 'APT':
                 self.assertIn('APT::Get::AllowUnauthenticated=false', transaction)
                 self.assertIn('Acquire::AllowInsecureRepositories=false', transaction)
+                self.assertIn('--no-remove', transaction)
             else:
                 self.assertIn('--disableplugin=*', transaction)
                 self.assertIn('--setopt=gpgcheck=1', transaction)
