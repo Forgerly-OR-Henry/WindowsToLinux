@@ -1,6 +1,18 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：按用户要求暂停，R08仍6/8，R09未启动
+## 现行入口：机制矩阵与诊断清理完成，正式R09待新冻结
+
+用户已明确继续，goal active，目标尚未达成。R08固定6/8、Log/Directory原UNKNOWN不改；正式R09仍0，服务器未进行新一轮产品整场清理。隔离r09f保持aa80428e clean，未merge/push。本阶段所有源、CLASS、快照及原失败留存，论文五项保留。
+
+p01全57文件保留，新p02仅修诊断无界wait/finally收割及Java close异常code70，六新增pure方法/必要javac通过，DRAFT原生70为预期拒绝；旧组未重跑。p02 canonical沿用原实际render e5d3b03b并标来源，60个生产函数仅替换无包事务，新worker9cbd07db。manifest d1b53cfd/父review76268128后，三个原场景各执行一次：normal99538318实际0（正常27键回执/launcher0/heldpread19）；leader acb1f491诊断0（Main0+两个活后代pop1时生产70/无receipt）；TTL2f3eb543诊断0（两client真实-9、原截止WNOHANG2poll、未先unitstop，首TERM采样29.027s/timeout终态34.224s/heldpread19）。各unit按归属收尾notfound，9/10/9文件原snapshot保留。不是包/AI/完整业务或八项通过。
+
+normal后旧cleanup d1836f4c远端126/Java70/wrapper1，exec参数过长，Python未启动；132643B快照编码后176860字符，精确系统阈值未另测。旧失败/once不改，p02冻结不改，三个场景不重跑。新cleanup-transport-11为cleanup-only，固定原p02闭包和actual SHA，以stdin传两个extra，8短argv；本地实传原快照/SHA通过后，manifest dd798c13/父review99756784下三新cleanup各0（7bd588cf/c4d44564/30a3b350），原9/10/9文件精确目录清理，三完成记录+同根归属+空目录核实后共享根非递归移除/absent。此为新辅助传输问题，不是生产修复回退；原126不得称首过。
+
+[父远端收尾](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-linux-matrix-10/cleanup-transport-11/parent-remote-cleanup-closeout-11.json)SHA1b075ce2；[最终阶段收尾](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-linux-matrix-10/cleanup-transport-11/parent-stage-closeout-11.json)SHA51dd47eb。p02八actor、cleanup11十二actor均实际wait/CIM核退，自有Python tmp/p10u/p11t清，无signal外部进程；全部旧终态session禁止poll。TTL最后TERM字段与outer派生时间范围分别有新clarification，不把旧字段误当起点/真实wrapper结束时间。旧privacy不覆盖新字节，未声称本阶段全部隐私扫描。
+
+new04正常Runtime ledger可能写、原UNKNOWN库未开/重放，获准BiNl pin匹配，无API/模型/真实包动作。下一目标回合按readiness-map-09新建独立R09工作树/实际build与Mod发现/freeze，安全新配置、新凭据及产品连接，修选observer元数据窗口，再产品inventory→plan→apply→独立after并八原各一次。FTP8MiB，其余负载/独立审批/noCU不减。保持goal active，当前阶段结束不代表目标完成。
+
+## 恢复前暂停检查点（历史）：R08仍6/8，R09未启动
 
 用户于2026-10-29要求在半小时内找合适点暂停，本阶段已选本地准备结束处收尾。验收工作停止，须用户明确恢复后继续；暂停不代表目标完成。R08原6/8失败、Log/Directory原UNKNOWN和原始证据不变，正式R09仍0。本回合没有产品Runtime打开、凭据/私有配置读取、SSH、API、Linux新unit或新一轮服务器清场。
 

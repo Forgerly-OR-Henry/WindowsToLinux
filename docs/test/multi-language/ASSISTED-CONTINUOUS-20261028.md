@@ -1,10 +1,32 @@
 # ASSISTED 连续首过验证记录
 
-状态：已按用户2026-10-29要求暂停，目标未达成。R08最终完整首过6/8。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产Linux矩阵/完整验收尚未执行。原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；后续仅独立辅助取证/修复准备。全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
+状态：用户已明确恢复，目标active未达成；本阶段三项无包机制诊断及快照清理完成，正式R09仍未启动。R08最终完整首过6/8。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产无包Linux矩阵本阶段已执行（见下节），真实包/完整验收尚未执行。原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；后续仅独立辅助取证/修复准备。全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
-## 本次暂停：生产Linux矩阵仅本地准备，未实际执行
+## 恢复后检查点：三项生产生命周期机制诊断及快照清理完成
+
+用户于2026-10-29明确继续，goal active，目标未达成。正式R09仍0，未进行新一轮产品全服务器清场。隔离r09f保持aa80428e、clean/未merge或push；本阶段仅新辅助夹具和记录变化，没有回退生产修复。FTP8MiB及其余既定负载、原AI辅助部署/独立审批、禁用CU/UI/浏览器均不变。
+
+preparation-01全57文件保留。新preparation-02先修无界waitpid为原绝对期限内WNOHANG，异常finally只收割已adopted且原身份匹配的launcher；ECHILD/超时不伪造退出。Java catch明确重置70，避免close异常后遗留0，关闭异常本身未实际注入。六个新增pure方法首次6/6、必要javac0，DRAFT实际70为预期拒绝，原生非零不改写0；未重跑前阶段已通过组。canonical仍原实际render e5d3b03b，来源单列；60个生产函数仅事务替身不同，诊断worker9cbd07db不冒充真实包授权。新manifest d1b53cfd/父review76268128，父重核97引用文件后放行三个新operation，各只执行一次。
+
+| 无包场景 | 当前生产路径的实际观察 | 原结果/快照 |
+| --- | --- | --- |
+| normal | 原ACK/cleanupOwnership绑定，27键生命周期；held核心FD初读1，正常loaded完成后pread0 errno19退休，finalPopulated=null；launcher真实wait0、supervisor0 | actual99538318；诊断0；9文件snapshot22ce6cba |
+| leader-first-live-setsid | MainPID0而两个后代仍同原cgroup/heldpopulated1；不授成功，生产supervisor实际70/无receipt，后按归属收尾 | actualacb1f491；期待拒绝的诊断0；10文件snapshot41a36ecb |
+| clients-abrupt-ttl | pidfd原身份约束下两client真实-9；launcher WNOHANG2poll在原截止内收割；未先unitstop；首保留TERM样本29.027s、timeout终态34.224s/heldpread19，无正常receipt | actual2f3eb543；诊断0；9文件snapshotdecc3fd4 |
+
+三unit在各自收尾中均notfound、固定marker扫描0/不可读0。TTL的ttlTerminationObserved在终止阶段反复覆盖，原parent回执terminationSeconds=34.113s是最后TERM采样，不是起点；新增parent-ttl-timing-clarification-10.json按原trace澄清，未改原actual。上述数值是采样时刻，不冒充信号实际送达精确时间。
+
+辅助清理失败单列：normal之后原cleanup actuald1836f4c，远端126/Java70/wrapper1，stderr为exec Argument list too long，Python清理程序未启动。原snapshot规范字节132643B、base64单参数176860字符；与Linux单参数限制机制相符，但未另测ARG_MAX/stack精确阈值。原126/once/日志保留，不计八正式项目分母，也不改判首过；这是新诊断传输尺寸问题，不是aa804生产生命周期或旧UNKNOWN复发。
+
+独立cleanup-transport-11只准清理，固定ORIGIN=p02、原manifest/原3actual SHA及完整18文件闭包；命令行保持8短参数，两个快照extra经可信stdin源码前缀放入内存argv，原p02 payload/协调器不变。必要javac/纯Java合成/本地真实Python stdin往返均0，证明原9文件/SHA完整，未执行真实payload或测Linux阈值。新manifest dd798c13/父review99756784后，三次snapshot-bound cleanup各实际0：7bd588cf、c4d44564、30a3b350，分别删除原9/10/9文件的精确目录；完整三完成记录、同根归属与空operations目录均核对后，共享/var/lib/windowstolinux-production-lifecycle-10非递归删除并确认absent。原失败126不覆盖，不重跑三个场景。
+
+父[远端清理证据](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-linux-matrix-10/cleanup-transport-11/parent-remote-cleanup-closeout-11.json)SHA1b075ce2及[阶段收尾](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-linux-matrix-10/cleanup-transport-11/parent-stage-closeout-11.json)SHA51dd47eb已保存：原p02四调用八actor、cleanup11准备/seal/实际三清理十二actor均真实工具wait及精确CIM核退，p10u/p11t和Python专用tmp已清，源/CLASS/原快照保留，未signal其它本机进程。p02派生outer行的finishedUtc来自native child而非实测wrapper结束时间，另以parent-wrapper-timestamp-clarification-10.json明确其范围；八次查询均current=null，未走该时间比较分支，实际wrapper退出以工具回执为准。
+
+只读取当前机new04凭据char[]，正常Runtime ledger可能写；获准BiNl指纹匹配，未开旧UNKNOWN库/重放，未读API配置或运行模型/真实包交易/完整业务。本阶段不称零异常或正式八项通过，也不把R08旧privacy快照扩成新字节全扫。两个Sol子代理完成局部实现/验证，无Astra/Terra或Computer Use。下一目标回合新建隔离R09冻结与实际产物、私有配置/新凭据和产品连接，处理已知observer元数据窗口，再产品inventory→plan→apply→独立after，随后八原项目各一次；失败仍继续剩余冻结项目并单独修复，不拼轮次。
+
+## 恢复前暂停检查点（历史）：生产Linux矩阵仅本地准备，未实际执行
 
 用户于2026-10-29要求在半小时内找合适点暂停，本阶段已选本地准备结束处收尾。验收工作停止，须用户明确恢复后继续；暂停不代表目标完成。R08原6/8失败、Log/Directory原UNKNOWN和原始证据不变，正式R09仍0。本回合没有产品Runtime打开、凭据/私有配置读取、SSH、API、Linux新unit或新一轮服务器清场。
 
