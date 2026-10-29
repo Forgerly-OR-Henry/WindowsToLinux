@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active。R08同一SOURCE73/f102及06策略71b/release5b，初清及独立复查通过；TaskBoard、FTP、Asset原任务、既定业务、交付及额外清理均完整首次通过，累计3/8。CSV原Maven18220/Java45440由原队列自动启动，后四项仍排队，不重发；旧CSV UNKNOWN不重放。driver47579/Python16120及非授权采样66809/Python9292活动。已完成三项有26条内部提交结构反馈，格式绝对0未证明，不称零异常；辅助准备/观察/字段读取失败全部另记。R07最终7/8、旧失败及UNKNOWN保留，不拼旧成绩。FTP实际8MiB，其余既定业务/独立审批/交付清理不减；仅测试代码，无真实UI/浏览器/Computer Use。
+状态：目标active。R08同一SOURCE73/f102及06策略71b/release5b，初清及独立复查通过；TaskBoard、FTP、Asset、本轮新CSV的原任务、既定业务、交付及额外清理均完整首次通过，累计4/8。Survey原Maven12956/Java27972由原队列自动启动，后三CLI仍排队，不重发；旧CSV UNKNOWN未恢复或重放。driver47579/16120及非授权采样66809/9292活动；补充采样累计1次生成metadata读取缺口如实保留，后续pass不抹，原94607失败及其余辅助失败也保留。已完成四项有26条内部提交结构反馈，格式绝对0未证明，不称零异常或完整账单。FTP按授权8MiB、其余负载/独立审批/交付清理不减；仅测试代码，无真实UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -25,7 +25,7 @@
 | round-05 | abc7abd1fa8db25626854eece961ca43347913e8 | 首个清场执行和独立复查均通过 | 八项各一次：首过7、FTP业务失败1 | 未达成；无内部生成恢复，分阶段上传修复已轮末合入9259ee92，准备R06 |
 | round-06 | 818ac8acb065182cfd90b090db42d322e605436e | 产品清场及独立复查通过 | 计划八项，仅前三项原完整回执PASS、后五未启动；0项已观察业务失败 | 未达标；运行期主工作区发生并行源码/HEAD漂移，原守卫在CSV前退出；准备问题单列，原64MiB保留，FTP恢复1/未知usage1 |
 | round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八项目各一次：完整首过7、CSV原UNKNOWN/测试失败1 | 未达标；全部原测试及driver/observer结束，未知与原失败保留；8MiB仅授权改大小，不拼旧成绩 |
-| round-08 | 73bbbbbb07346a09155d8d3ddc23c5dd08756d38 + 06策略71b11497 | 04准备误拒另记；06原产品4阶段及独立after/initialReset通过 | 八命令一次提交，TaskBoard/FTP/Asset完整首过，累计3/8；CSV进行中、后四待启动 | 进行中；内部结构反馈、原观察失败及辅助准备/收尾失败保留，非零异常；不混旧R07成绩 |
+| round-08 | 73bbbbbb07346a09155d8d3ddc23c5dd08756d38 + 06策略71b11497 | 04准备误拒另记；06原产品4阶段及独立after/initialReset通过 | 八命令一次提交，前四项含本轮新CSV完整首过，累计4/8；Survey进行中、后三CLI待启动 | 进行中；内部反馈、原观察失败及补充缺口1/辅助失败保留，非零异常；不混旧UNKNOWN或旧轮成绩 |
 
 ## 失败原因与解决方案
 
@@ -876,3 +876,15 @@ CSV新Maven已进入STATIC_LIVE_STATE后，Asset仅一次原entry06 inspect实�
 本项最终80logical/80physical/raw均SUCCEEDED，known747212=deployment69878+approval677334，角色差0；SDK同generation恢复、unknown usage、重复/冲突/未解析观测0。结构反馈raw/unique10/10均SUBMISSION_REJECTED且明确未执行动作；格式success/GAP观测0但coverage不完整，zeroCorrectionsProven/strictNoInternalRecovery/zeroObservedAbnormality均false。已完成三项共310logical/physical、known2942753、结构反馈26，不含当前CSV，不称零异常或完整账单。业务证据为原回执及冻结成功JUnit断言链，不伪造逐HTTP正文、全BUSINESS矩阵或当前远端查询。
 
 UTC01:46:21.605737，原队列自动启动CSV Maven18220/Java45440、原root aafe9219-375d-430f-89fd-2c4101e41e0c；全新state assisted-live-csv-inspector-iij7t4vg8，与旧R07 UNKNOWN分开，不开旧库或重放。SOURCE73/f102、policy71b/release5b及原负载不改，原47579/66809继续，后四待启动，不重发任何run/reset。当前仅核3/8、整轮goalEligible=false正常，旧失败/UNKNOWN和所有辅助问题保留，目标active；整轮当前公共文本隐私及全部自有process/t06收尾尚待完成。
+
+### R08全新CSV完整首次通过，累计4/8；旧UNKNOWN保持原样
+
+本轮新CSV root aafe9219-375d-430f-89fd-2c4101e41e0c唯一SUCCEEDED、原Maven18220 actualwait=true/exit0，指定单case JUnit1/0/0/0、1470.704s；原business2328/PASS2330/2331齐。既定断言为worker pid>0、demo/basic原job在40s内completed、summary rows3/issueCount6/validRows1；RESTART后worker PID改变、原job仍completed、export含issueCount。交付app wtl-assisted-csv-inspector-iij7vedeg、新state assisted-live-csv-inspector-iij7t4vg8、revision35e8476113be273b929dafa42be65c619aa4e604049236ce00926cf65cd50060、ownershipb3faa3299c44a02a6df0b599f3985a97a89b03d56fb8d095efe2f8beb146a906齐。额外Java42316 actualwait=true/exit0，UTC02:13:11.863336结束，同app/revision STOPPED/DISABLED精确marker56仅一次。
+
+Survey新原STATIC_LIVE_STATE后，仅一次原entry06 inspect实际0，六身份、精确argv/XML、原四artifact seal、唯一原root、cleanup原五文件绑定/新鲜时序及initialReset强门通过。新报告用稳定originalInspectorProjectRow，closing直接从原stdout.attempts按csv-inspector筛选，未重复Asset旧键误读。子审a2350070aa398b094b01040f31f8862c48be83b05e98c00f5ebee0f68fda6e6e、账8bf3c89a3357d8057107777c43dd4eb66d22304e8cc670a020c9e2be1d608794、closeout5de49b36e83c890e6ec3f216f73b3cb637ffd604e5fd450cc2b71656bec31c84；父原八SHA/长度及9审计产物再核、CIM32192/35856 absent，接受2a9972729f12473f8f4dac5b9f772a80c7eb49acdf7a50d9e1fb2f25304feaab。原CSV18220/Java45440/cleanup42316均CIM absent，过程proof7eae55a382b9891e4e0a340f5aaa16aee5de7bea11e4f26c6a25e294bd3e14f0。仅原回执/冻结断言链，不伪造逐HTTP正文、全BUSINESS矩阵或当前远端证明。
+
+CSV最终67logical/67physical/raw均SUCCEEDED，known743080=deployment77029+approval666051、角色差0；SDK同generation恢复、unknown usage、重复/冲突/未解析/结构反馈观测0。格式success/GAP marker观测0但coverage不完整，zeroCorrectionsProven/strictNoInternalRecovery/zeroObservedAbnormality仍false，旧legacySdkZero=true不作绝对零证明。已完整四项合计377logical/physical、known3685833、结构反馈26，不含活动Survey，不称零异常或完整账单。这是R08全新原尝试完整首过，不是旧R07 UNKNOWN恢复；旧库未开/未重放，不据新成功宣称旧provider诱因查明或永久根治，亦不声称新格式提醒实际触发。
+
+Survey Maven12956于UTC02:13:16.753254启动后，非授权补充采样cycle222/原events行829在02:13:22.184972记录一次FREEZE_READ_INCOMPLETE：FileNotFoundError、src/mod/deployment/target/wtlmod-development.json，状态UNKNOWN_INCOMPLETE，符合原六文件白名单。随后同次观察2次完整原guard读取返回VERIFIED、incompleteReadCount1；累计缺口1原件保留，不以新pass抹除。父摘录原事件行及SHA/后续完整样本，proof eabb275170ee095dd787b0213bb68df0d33cf1818f348d8f293cf521eaa521f7。路径和时间与既知MavenDevelopmentInputs删旧descriptor/marker再生成窗口相符，但未做OS逐文件写者归因，不声称唯一物理删除者或底层已修；该缺口本身不能证明源码或class发生漂移，后续完整核验通过。原driver/guard/49输入未改、未重启原monitor、未发额外部署/恢复；时点采样不证明连续不变。原94607失败及先前准备诊断FNF继续分开保留，辅助观察不混正式分母。
+
+原队列已自动启动Survey Maven12956/Java27972、root4b2e65d7-4c5f-4e6c-89d9-869d0932de72，state assisted-live-survey-scoring-j35cvobfk，当前AI部署；后三CLI尚未启动。SOURCE73/f102、policy71b/release5b及参数冻结，47579/66809原句柄继续，不重发run/reset或任何已完成项目。当前仅核4/8，整轮goalEligible=false正常，目标active；当前公共文本隐私与整轮自有process/t06收尾尚未完成。

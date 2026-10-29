@@ -1,6 +1,6 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R08累计3/8，前三项完整首过，CSV全新原任务进行中
+## 现行入口：R08累计4/8，前四项完整首过，Survey原任务进行中
 
 目标active，R06未达标：计划八项，仅TaskBoard/FTP/Asset三个原完整回执PASS、后五项未启动；不是3/3，也不是五项业务失败。运行期主工作区出现并行UI源码及818→da3e提交，原冻结守卫在CSV launch前拒绝，不能继续声称整轮保持冻结。FTP原64MiB全业务通过，含纯生成恢复1/未知usage1；Asset原JUnit/交付/清理均0，源码变更对在途运行的全部影响不作无证断言。R06原始证据及额外冻结审计见[已关闭轮](../../../.ai-workspace/evidence/assisted-continuous-20261028/round-06/README.md)。原driver16741实际exit1，observer37339有意终止后实际exit1，CIM自有进程0，clean28r06已清，1447文本敏感值审计通过；关闭文档修改后的02检查覆盖1453文本、零匹配、实际0，独占临时目录已清。不得poll/重启旧句柄或重发旧八队列。
 
@@ -24,13 +24,15 @@ CSV原审计四文件及Astra传播判定已CreateNew，父回读关键判据和
 
 真实06 inventory43992/plan45996/apply300/独立after11432均Maven actualwait0/JUnit1/0，after==postInventory、8根无/受管集合空/APTcache0，原initialReset真，四个parent-validation源SHA可查。第一次apply被auto-review前置拒绝未发送；当前身份两次全guard/3descriptor/f102与同计划重核后同原工具唯一有效apply通过。原拒绝和全部raw保留，未旁路。
 
-root唯一driver47579/Python16120与非授权补充66809/Python9292活动；八run仅一次已全排入原TTY，顺序TaskBoard、FTP、Asset、CSV、Survey、Log、Dir、Binary，绝不重发run/reset或已完成项目。前三项完整首过3/8，原Maven/JUnit1/0/0/0、既定业务、交付及额外cleanup0/STOPPED DISABLED齐：TaskBoard父11ee9d13，FTP父2f4a83c6/负载681fc37c，Asset父5db0734c/子d7e0fe44/closeout7778c7e3，原文件SHA/长度均再核同。原TaskBoard/FTP/Asset Maven、Java、cleanup及自有审计进程均已CIM核退；Asset清理实际PID4560，以native JSON为准。原队列UTC01:46:21.605737自动启动CSV Maven18220/Java45440、root aafe9219-375d-430f-89fd-2c4101e41e0c，新state assisted-live-csv-inspector-iij7t4vg8，后四仍排队。旧CSV UNKNOWN仅保留，不开库/重放。接原两个句柄继续，SOURCE73/f102、policy71b/release5b冻结不改，t06仍在用。
+root唯一driver47579/Python16120与非授权补充66809/Python9292活动；八run仅一次已排入原TTY，顺序TaskBoard、FTP、Asset、CSV、Survey、Log、Dir、Binary，绝不重发run/reset或已完成项目。前四项完整首过4/8，原Maven/JUnit1/0/0/0、既定业务、交付及额外cleanup0/STOPPED DISABLED齐。父接受TaskBoard11ee9d13、FTP2f4a83c6、Asset5db0734c、本轮新CSV2a997272（子a2350070/closeout5de49b36）；各原文件SHA/长度及自有原/审计进程均再核同并CIM退出。CSV原18220/45440/cleanup42316及审计32192/35856均absent，旧R07 UNKNOWN库未开/未重放，不据新成功声称旧provider诱因已知/根治。Survey原12956/Java27972、root4b2e65d7、新state j35cvobfk已自动启动，创建UTC02:13:16.753254，后三CLI仍排队。SOURCE73/f102、policy71b/release5b、new-04凭据及原24d70cc证明不重建，t06仍在用。
 
-前三项最终统计分别为TaskBoard90logical/physical、known1012306、结构反馈10；FTP140/1183235/6；Asset80/747212/10。已完成三项合计310logical/physical、known2942753、结构反馈26，均SUBMISSION_REJECTED且明确无动作；SDK同generation恢复/未知usage观测0，格式success/GAP marker观测0但覆盖不完整，不能证明绝对0格式、零异常或完整账单，不含活动CSV。原八文件/各scope保留：FTP五笔8MiB/19trace及原V2全部通过，ACK/digest与部分状态细节依源+JUnit链；Asset单借还closed及重启持久化通过，不称全BUSINESS矩阵。整轮余五未完整终态、goalEligible=false正常；一般正式失败仍原冻结继续，修复隔离，不拼旧成绩。Asset附加收尾字段lookup actual1原件单列：新JSON键为originalInspectorAssetRow，旧键读取误拒，只修收尾lookup并新存closeout，不重跑inspect或改原输出；与旧04 bare-JUnit解析为不同代码路径，不能当业务复发或底层修复。
+已完整四项统计：TaskBoard90logical/physical、known1012306、结构反馈10；FTP140/1183235/6；Asset80/747212/10；新CSV67/743080/反馈观测0。合计377logical/physical、known3685833、结构反馈26，SDK同generation恢复/未知usage观测0；格式success/GAP marker观测0但覆盖不完整，不证明绝对0格式、零异常或完整账单，不含活动Survey。CSV demo/basic的rows3/issue6/valid1、worker重启PID改变及持久化/export由冻结成功JUnit链证明，不伪造逐正文/全矩阵。FTP/Asset原scope及所有旧失败/UNKNOWN保留。Asset附加收尾旧JSON键误读actual1已单列只修lookup，不重跑inspect或改原件，与旧04 bare-JUnit解析不同；本轮CSV改用稳定row键并直接按原snapshot project读取，无新lookup失败。全轮余四未完整终态、goalEligible=false正常，修复仍隔离、冻结及原负载不改。
 
 原monitor工具94607/Python37992已真实exit1/FileNotFoundError终态，绝不能poll/重启/覆盖。诊断工具10053已actual0/Python39240已结束：一次FNF为Maven期间Git开发descriptor缺失，13完整guard/14数据采样成功；构建prepare源码会删旧descriptor/marker后生成，时间路径相符但无OS写作者证明。旧04解析器误拒已用06 exact method OR原参数前缀局部修正，原04策略/XML/0c014f93/actors88554 actual0、80497 actual1/intended3均保留。两个准备观察问题都不混为八项目失败，不称零异常。
 
 Astra06/observer-metadata-window-judgment01接受非授权补充读数方案，Sol在06/supplemental-observation-01完成source d71783ea及16个纯本地控制用例。父读审并以root工具66809/Python9292实际启动，UTC00:13:35.815998，现活动；可接此新句柄，原94607仍终态。每个六元生成metadata缺口须UNKNOWN/INCOMPLETE单列且小预算重读全guard，其他源码/hash/class/JSON/身份异常立即报；不能修改49冻结源或执行grants。最终八项资格仍原entry06 inspect及原JUnit/任务/业务/delivery/cleanup，时点采样不是连续不变证明。parent-supplement-observation-start-01留真实CIM及独立初清审计SHA24533ea677d64868f249af7ae017a1916880df836a94b3eb99d2df12e19f9b6a；该审计确认四原回执/20原SHA/六身份/after早于首任务，保留基础OS包651，受管集合空。首次本地审计误要求基础包空而退出1，修正审计口径后通过，原错误保留，不作远端失败或整机包清空。
+
+补充采样新缺口：cycle222/events行829、UTC02:13:22.184972、Deployment target/wtlmod-development.json FileNotFoundError，UNKNOWN_INCOMPLETE原件保留；同次2个完整guard读取后VERIFIED，累计incomplete1，不清零或称连续不变。父gap proof eabb275170ee095dd787b0213bb68df0d33cf1818f348d8f293cf521eaa521f7，路径/时间与Maven生成窗口相符但无逐文件OS写者归因，未改guard/49冻结链或重放原任务。原94607失败和准备诊断FNF也继续保留，不混正式八项。
 
 现行业务参数仍LOW/LOW/1500000/65536/90，FTP8MiB及全部其余V2/既定业务/独立审批不减。主树论文等5项修改保留，默认仅相关定点和必要compile、不全suite、不push。三个既有Source夹具失败继续披露，局部32不等于全套。整轮8结束才driver一次quit、所有自有进程/CIM/t06收尾及隐私/完整证据审计；保持目标active直到同轮8/8实证。无用户待答项。
 
