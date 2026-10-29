@@ -1,10 +1,28 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active，R08最终完整首过6/8，未达成。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，但真实Linux第二能力门未满足，观察合同待修正。原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；后续仅独立辅助取证/修复准备。全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
+状态：目标active，R08最终完整首过6/8，未达成。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产Linux矩阵/完整验收尚未执行。原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；后续仅独立辅助取证/修复准备。全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
-## 后续FD实验与精确宿主源码核对：旧失败保留，生产仍未改
+## 当前阶段：新TTL机制诊断与生产v2本地修复/产物核对完成
+
+本回合只在新cases-03做准备态准入12行及缺字段/原期限/拒绝快照保留3个直接场景、一次必要javac，各actual0。原02实际拒绝show没有保留，未知仍未知；新代码确认修复无未绑定PENDING准备态的协议缺口，不把诊断增强当旧故障已查明。18冻结输入核实后，仅执行一个新TTL operation，无APT/DNF/模型/正式项目。
+
+新TTL actual ee08c559实际0：startup两次均BOUND，完整同次21字段和原deadline保留，没有实际PENDING；leader正常退后MainPID0/running/heldFD populated1，pidfd核实完整argv/父子/startTicks后只kill本systemd-run client，实际-9。未先controller stop，按原activation独立计算，44.110311秒进入stop-sigterm且populated1，49.356519秒failed/Resulttimeout，同held核心events FD正长度pread(offset0)返回19。诊断只证明对应宿主的独立期限机制，client被杀和unit timeout如实保留，不称零异常或八项首过。
+
+先保存完整11文件snapshot c313681f，父独立核10个JSON规范字节长度/SHA及实际worker payload；finally精确归属stop0、保留原failed facts再reset-failed0→notfound。随后snapshot-bound cleanup actual1bce5a30实际0，仅自有nonce/marker及同dev25/ino14284空-03根非递归删除，unit notfound、当前102proc marker0/不可读0。JVM37596/19932实际wait0/CIM absent/private tmp清，outer38120/41756另核absent，无signal。父[实际期限及收尾证据](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/events-fd-kernel-fixture-04/cases-03/parent-cases03-actual-closeout-01.json)SHA91ec3ced；native40149/53869终态禁再poll。new04正常凭据ledger可能写单列，原UNKNOWN库未开/未重放。
+
+隔离生产v2现已本地提交aa80428e41393f72f35faa29850eff2d7c21f5cb，9文件，未并main/未推送，源码clean。held核心FD与ACK、ExitType=cgroup、同次观察/原期限、独立cleanup-ownership、严格27键两proof receipt、8文件targets/导航与清场stop/reset前复绑已同步；退役不写recursiveCgroupEmptyObserved=true。固定T/frame5/APT禁止移除/原审批/source/ff83保持，不回退上轮修复。自查修正finally wait异常跳过FD/观察并掩盖原失败，成功回执延后至finally后，直接反例覆盖；不是R08实证故障。
+
+producer11个Python方法首次11/11、0.244s；清理4方法0/0.131s及新增apply身份漂移单方法首次测试观察位置错误1、仅复测1/0/0.014s分别记录，原失败保留。16唯一方法/17次执行，不称一次全绿或全类。Java18明确方法/8类，首组51参数case为50pass/1旧bundle SHA断言fail；实际新源20911b7d更新该快照后只复测失败方法1pass，原50未重跑。真实本地Python canonical record→Java通过、两proof正例/29反例、Native16、旧frame夹具4方法10invocations均已执行。完整原8XML与单项复测分开封存，不拼单次51全绿。旧三CurrentSource继续未解。
+
+提交后必要package-final-01 actual0/17reactor成功、skipTests15条/执行测试0。实际产物9689acb8核16JAR、17输出目录3809文件、54非空cp、三Mod descriptor/marker/JAR及10个部署JAR成员；deployment.jar SHAa7044cd7b2c697b728e8af919eddb23e79474831915e94664888c4b69f16b266。未沿用da90旧package05或旧CLASS/manifest119值。10次本地native28身份actualwait+CIM absent/private tmp清，五root outer另CIM absent，所有旧handles终态禁poll；[最终产物及收尾](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-lifecycle-v2-08/parent-final-artifact-closeout-08.json)SHA37ab06b004ccfb17bbc13431de7fcde0828e5981de60b62c0563951d06f4e466。此次未另调ModCodeChecker，后续正式冻结还须产品实际Mod发现门。
+
+原TTL70、seek70、原取证/UNKNOWN和R08 6/8不改，new04凭据ledger可能写单列。辅助1B文件误判已独立证为PS投影.Length，不是原证据损坏；Python11与Java5profile入口混淆、XML时间/长副本路径、生成目录guard拒绝和新增测试观察失误均各记辅助问题，没有混八分母或覆盖原文件。旧privacy826/postdoc5仅覆盖原输入字节，不扩称新阶段已全扫。
+
+下一目标回合按production-linux-matrix-10/EXECUTION-PLAN-10.md，仅3个新operation验证当前生产函数正常/活后代拒绝/监督端和launcher退出后独立期限，重绑定aa804/新实际产物，事务替身与生产包动作分列。随后按readiness-map-09完成新freeze、私有配置/凭据/产品连接、observer窗口、产品清场及独立after，再新八项各一次。正式R09仍0、服务器未整轮重清，FTP8MiB和其余既定负载/独立审批/noCU不减，目标active未达成。
+
+## 历史检查点：后续FD实验与精确宿主源码核对
 
 根线程的只读inventory实际0（bb15d80e），取得Ubuntu24.04.1、kernel6.8.0-48.48/version_signature6.8.12、systemctl客户端255.4-1ubuntu8.18及真实cgroup2挂载。该入口不创建unit、不作包查询或业务；JVM28660/outer5468实际wait/CIM退/tmp清，父bc55d2e9。原生61438已经实际0终止，不可再poll。
 

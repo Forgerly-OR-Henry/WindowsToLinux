@@ -1,6 +1,18 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R08原6/8失败，R09待TTL准备态调查及独立期限验证
+## 现行入口：R08原6/8失败，新TTL诊断及生产v2本地修复/产物核对完成
+
+本回合cases-03新operation只做无包期限诊断。原始TTL actual `ee08c559d5adbf12118ce4cc7997b90767bd5341e35f583089183a89c7ef7d52`实际0：两次startup同次21字段均BOUND，原deadline相同；没有实际PENDING，不能把旧TTL70的未知触发值补为空/零。leader正常退后MainPID0/running/populated1；pidfd只杀核实身份的本次systemd-run client，实际wait-9。未先stop，44.110311秒进入stop-sigterm且populated1，49.356519秒failed/Resulttimeout，同held核心FD正长度pread0 errno19。该宿主独立timer机制观察完成，异常事实仍保留，不是完整部署或零异常。
+
+完整11文件snapshot已保留，后续显式snapshot-bound cleanup actual `1bce5a304e0c3e5d02762be8ea72be1d54bdc778a91e92ae60a4b3dc0ad0dafd`实际0：本unit notfound，自有nonce/marker和同devino空-03根非递归删除，当前marker102/0/不可读0；两JVM及outer均退出，private tmp清。父[本次实际结果与收尾](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/events-fd-kernel-fixture-04/cases-03/parent-cases03-actual-closeout-01.json)SHA91ec3ced。40149/53869已终态禁再poll。旧02原TTL70/01 seek70/最早probe70均不重放、不改判。
+
+隔离r09f生产v2已本地提交 `aa80428e41393f72f35faa29850eff2d7c21f5cb`（9文件），承接da90/cff67，未合入main或推送，当前源码clean。ExitType=cgroup、核心FD准入ACK、同次观察/原期限、独立cleanup-ownership、两proof严格27键receipt、8文件targets及stop/reset前复绑已同步；原T/frame5/APT禁止移除/ff83/审批/source保护不回退。producer11方法首次全过；清理4方法全过及新增apply方法先测试观察位置错误1、仅重跑1通过，原失败保留。Java18明确方法/8类首组51case为50pass/1旧源码SHA断言fail，更新新源码快照后仅失败方法1pass；原跨语言实际Python record→Java、29反例和Native16已通过，未重跑其余50，不拼单次51全绿。旧三CurrentSource仍未解。
+
+提交后package-final-01实际17reactor成功/exit0、skipTests15条/执行测试0。新实际产物9689acb8：16JAR、17输出目录/3809文件、54项非空cp、三Mod descriptor/marker/JAR及10个部署JAR成员对应；deployment.jar SHAa7044cd7。当前[实际classpath](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-lifecycle-v2-08/classpath-54-08.txt)及[最终产物/收尾](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-lifecycle-v2-08/parent-final-artifact-closeout-08.json)SHA37ab06b0为本阶段依据，不能沿用da90旧package05/旧manifest119哈希。10次本地native/28身份行均actualwait+CIM absent，专用tmp均清，5根outer另CIM absent；34834/45583/72093等原句柄已终态禁再poll。未另调ModCodeChecker，后续正式freeze还须实际product Mod发现门。旧R08 privacy826/postdoc5不覆盖本阶段新字节。
+
+下一目标回合直接按[生产Linux矩阵计划10](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-linux-matrix-10/EXECUTION-PLAN-10.md)准备3个新operation（正常、leader退但活后代拒成功、监督端及launcher退出后独立timer）；必须重新绑定aa804、新CLASS/JAR/cp/原审批边界，事务替身显式列诊断，不冒称原包、真实部署或完整业务。然后新冻结、产品inventory→plan→apply→独立after、八项各一次。入口[readiness-map-09](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-lifecycle-v2-08/readiness-map-09.json)仅地图，不是发布。新轮私有配置/凭据/产品连接与observer窗口还待新freeze处理；不再重复本轮已经通过的本地组。R09正式0、服务器未整轮重清，FTP8MiB及其余负载/独立审批/noCU不变，目标active未达成。
+
+### R08与首版历史检查点（后续以本节开头为准）
 
 R08固定73/P71b/R5b与原参数、FTP授权8MiB，八项各一次/extra无：TaskBoard、FTP、Asset、CSV、Survey、Binary完整首过，Log/Directory原native1/root UNKNOWN/无完整业务交付，失败保留八分母。全轮577logical/578physical/known5803641/反馈47，Survey内部SDK恢复1/未知usage1、观察gap1单列，非零异常/完整账单。原47579/66809及所有旧终态句柄禁止poll/重启，原UNKNOWN不恢复/重放。
 
@@ -20,7 +32,7 @@ R08-only真实进程核退补证完成：原query01 actual exit1/unresolved1保�
 
 宿主已经真实inventory0/bb15d80e核为Ubuntu kernel6.8.0-48.48、systemd255.4-1ubuntu8.18/cgroup2；无需再跑inventory。04首normal原2107f440实际70：heldFD初读1/ack后，节点退役在seek0阶段errno19，仍UNKNOWN；unitstop0/client0/notfound、103proc0，随后snapshot-bound nonce文件cleanup0/b89a0c24/105proc0，两组CIM退/tmp清，父82a31799。该检查点共享空根创建归属未证而保留，cases-01原descendants未运行，后续06收尾另记。对应Ubuntu源码judgment-final2c7335d9已确认llseek存活守卫与pread0刷新语义，以及默认ExitType=main解除timer的独立缺口；尚未实测活后代逃过旧期限，不据源码改原70。source05下载partial不是完整orig源码包，owner0ee557aa纠正原零文件删除表述并核退，保留失败证据。
 
-新cases-02已实际逐项运行：normal478b3303诊断0，真实heldFD pread0退役19；desc79804f74诊断0，MainPID0但running/pop1拒绝完成，stop0后pread19，但client实际1/unit failed timeout保留。创建unit前直接读运行manager255.4-1ubuntu8.18，源码版本对上。TTL25a55a21原70/INVOCATION_IDENTITY在READY前结束，无ready/ack/result/anchor、无pidfd注入、无独立期限证据；拒绝那次show未保存，确切原因未知，不能把疑似准备态窗口当查明。三个nonce文件各snapshot-bound清理0/完整原快照保留，6JVM+outer12PID原生wait/CIM退/tmp清，父7e499a5b；desc failed transient与共享空根随后06已精确关闭：全21匹配才reset-failed0→notfound，TTL/normal只读核notfound，100proc0/不可读0、三nonce目录不存在，固定空根非递归rmdir0/absent，actuala5bff3a0/父47a445cd；JVM16856/outer36160原生wait/CIM退/tmp清，90546actual0终止禁poll。下一步仅新测试版本修准备态协议：源码已证检查ready前强验InvocationID、无尚未绑定PENDING；原触发值仍未知。先存同一次21字段/阶段/单调时间，仅独占创建且未绑定/静态属性匹配时容许空/全零ID在原累计预算内PENDING，不写ownership/ack；非空错误、已绑定变化及FD/ack/完成保持拒绝。用直接反例及新operation验证期限，之后才生产实现；不重放/改判旧02 TTL70、旧01 seek70或最早unitprobe70，不拼三项全过。保持原累计T及所有审批/source保护，局部观测成功不当业务成功；之后才生产修正/直接定点/必要编译/本地提交、实际产物与参数新冻结，再产品inventory→plan→apply→独立after、全新八项各一次。R09正式0/服务器未整轮重新清场/目标active，APT禁止移除与ff83不回退、FTP8MiB其余负载不减、论文5项保留。详见报告最新阶段与CURRENT。
+新cases-02已实际逐项运行：normal478b3303诊断0，真实heldFD pread0退役19；desc79804f74诊断0，MainPID0但running/pop1拒绝完成，stop0后pread19，但client实际1/unit failed timeout保留。创建unit前直接读运行manager255.4-1ubuntu8.18，源码版本对上。TTL25a55a21原70/INVOCATION_IDENTITY在READY前结束，无ready/ack/result/anchor、无pidfd注入、无独立期限证据；拒绝那次show未保存，确切原因未知，不能把疑似准备态窗口当查明。三个nonce文件各snapshot-bound清理0/完整原快照保留，6JVM+outer12PID原生wait/CIM退/tmp清，父7e499a5b；desc failed transient与共享空根随后06已精确关闭：全21匹配才reset-failed0→notfound，TTL/normal只读核notfound，100proc0/不可读0、三nonce目录不存在，固定空根非递归rmdir0/absent，actuala5bff3a0/父47a445cd；JVM16856/outer36160原生wait/CIM退/tmp清，90546actual0终止禁poll。以上为02及06阶段检查点；随后03与当前生产同步状态见本节开头。原02触发show值仍未知，不能因新operation通过就改判。R08 6/8、正式R09 0及原全部失败保持。
 
 ### 五网站检查点（历史，Log失败前）
 
