@@ -4,6 +4,16 @@
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
+## R11前准备：有界材料诊断尚未发出API请求
+
+2026-10-30，r11f HEAD27f9a876不变。必要skipTests package、helper javac02和pure02均实际0；父重核54cp、38公共JAR、17输出3838成员、6个唯一provider及当前相关JAR／三descriptor，未重复此前14／11个定点。完整工厂tracked stdin607517B、纯Responses预览689569B保留；预览Task／workflow字段与真实调用不同，不声称部署等价。父caller只做静态解析和13参数核验，未启动Runtime。
+
+仅审批release SHA712d21ac77b78383389f807cc9e9c571381e9b54a86a963a55bd52ad4d8eee60固定24公开输入，预算4capability操作+1独立review逻辑调用。gpt-6-luna／Responses／主App两用途HIGH、Mod继承；原native格式提交与SDK有界恢复物理次数另记。真实本地close-only workflow和正常加密随机dummy profile允许，逐命令host grant／SSH／RemoteSession／BeforeExecute／dispatch禁止。诊断APPROVE不是部署PASS；若因材料scope缺安装授权而DENY，结论仍有限，不写成底层环境故障已证或修复失败。
+
+实际tools.exec_command被automatic approval review在CreateProcess前拒绝，理由为材料可能含未公开源码／证据，需要明确授权经所配置GPT接口发送这些具体内容。已提出最小用户授权问题待答，未旁路／间接执行／重试。独立检查启动标记、新state和am11均不存在，实际capability/review/SSH均0，无原生PID；这不是API错误或模型DENY。拒绝receipt SHA9f45f38e13a42d8fdbc48ba71c6ad819c59201b7cd49e80da653c1f0f61ea5f3保留。配置仅安全投影确认gpt-6-luna／Responses、本机127.0.0.1:33333/v1，未输出key、未发网络请求。
+
+R11正式轮未启动、服务器未再清场，八项分母不变，goal active未达成。待答期间只做本地控制DRAFT及历史修复回退审计，不改R10封存／UNKNOWN或论文五项。获准后的单次材料诊断、全新产品连接／冻结／四阶段清场及独立after仍须分别取得实际证据，不能以本段准备代替。
+
 ## R10最终：八项各一次原试，完整首过0/8
 
 冻结源码4e38851b，Luna Responses HIGH／HIGH、Mod继承、FTP8MiB及其它既定负载不变。host03实际185输入／7外部／17输出guard通过（P b832afb3／R3389e789／S0f3e46d7），产品四阶段及独立after各wait0／JUnit1-0-0-0，initialReset真。旧候选umount0／loop3 detach0和之前准备失败单列保留。队列885cba仅提交一次；最终canonical inspect7060f3／0核8唯一原试、同冻结／参数与初清真，但八项均DENY，原根FAILED8／UNKNOWN0、native1／JUnit1 failure，无完整业务／交付PASS，无整项目重试。不能把API可连或只读前置成功等同业务通过。

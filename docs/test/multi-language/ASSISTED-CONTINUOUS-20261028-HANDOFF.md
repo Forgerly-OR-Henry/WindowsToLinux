@@ -1,6 +1,16 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R10八项原验收0/8，原件已封存，两项隔离修复已提交
+## 现行入口：R11前材料诊断准备完成，实际调用待材料发送授权
+
+2026-10-30，长期目标保持active，R11正式轮未启动，服务器未再次清场。当前候选仍为r11f的`27f9a876`，两修复0701b3ed／27f9a876不变。必要skipTests package已实际0；父重核54项classpath、38公共JAR、17输出目录3838成员、6唯一provider及相关当前JAR／descriptor。完整工厂stdin607517B、纯Responses预览689569B均保留；预览不等同后续真实Task／workflow请求。必要javac和纯受控反例均0，不重复14／11个已过定点，不称完整业务验证。
+
+父仅审批诊断release `712d21ac77b78383389f807cc9e9c571381e9b54a86a963a55bd52ad4d8eee60`已绑定24项公开输入：gpt-6-luna／Responses，主App LANGUAGE与APPROVAL均HIGH，Mod不覆写；预算4个capability操作和1个独立review逻辑调用，产品原有格式提交及SDK有界恢复须另记物理次数。正常本地fresh Runtime、随机dummy凭据加密保存及真实close-only workflow允许；逐命令host grant、SSH、RemoteSession、BeforeExecute、dispatch全部禁止。APPROVE加诊断host阻断不等于部署PASS，scope导致DENY亦不证明底层环境修复失败。
+
+实际启动被automatic approval review在CreateProcess前拒绝：其理由为完整安装脚本、审批提示和证据可能含未公开内容，需要明确确认经所配置GPT接口发送这些具体材料。父已提出最小授权问题，当前待答，未旁路或重试。不是API连通失败、模型DENY或原生exit1；无原生PID，execution-started／parent-execute-launch／新state／am11均不存在，capability、review、SSH实际均0。仅安全投影确认当前接口为本机`http://127.0.0.1:33333/v1`、选中gpt／gpt-6-luna／responses；未输出key或发请求，本机代理地址不等于已获上游材料发送放行。原拒绝证据[9f45f38e](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/approval-material-diagnostic-11-01/parent-autoreview-rejection-11-01.json)保留，不计进正式八项分母。
+
+待答期间仅准备R11控制DRAFT和历史修复回退审计，无Runtime／API／SSH／新清场或正式driver。获准后先执行上述一次有界诊断并按独立verdict和调用实数记录；不能为了APPROVE反复整套重试。之后仍须新凭据／获准指纹产品连接、实际产物与新冻结、产品inventory→plan→apply→独立after，再仅投一次八项原队列。旧失败、UNKNOWN、论文五项和用户代理均保留，默认不推送。
+
+## R10终审：八项原验收0/8，原件已封存，两项隔离修复已提交
 
 R10在冻结源码 `4e38851b`、gpt-6-luna／Responses、LANGUAGE与APPROVAL均HIGH（Mod继承）下完成八项各一次原试：八项均native1／JUnit1 failure、原根明确FAILED／独立审批DENY，无UNKNOWN原根、无项目重试，无完整业务／交付PASS；最终完整首过 **0/8**。FTP 8MiB／1MiB／2+6及其它既定负载未改，不能把未进入业务解释成业务负载已通过。goal保持active，目标未达成，R11尚未启动。
 
