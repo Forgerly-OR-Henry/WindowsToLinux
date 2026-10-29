@@ -1,6 +1,18 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R09产物/新凭据/产品连接准备完成，待最终冻结与清场
+## 现行入口：R09已冻结，首次清场盘点在本地准备失败，正式项目0
+
+目标active未达成，R08仍6/8。本轮新元数据只读guard通过，父最终P=`fa70f0a912377aa6137b9bc41c3a4bffe08839a3a4924b753b1e79b440fc06d9`、R=`300ff0f7a13f9e183312f0b9d23fad9eb719b5d8daedb1845e17158f63968316`、source-policy=`e66e618aa8961702ffc8b7930d5fab172f213982002a60735da100ff7e39716c`。冻结105输入/54cp/3Mod/17输出，含前台wrapper；两个DRAFT候选原样保留，不再称最终P/R尚未生成。
+
+唯一`host-inventory-09`原生33640实际wait1，JUnit1/0/1/0。`enableFixture()`正常建库并关闭后，`openFixture()`再次打开本地库，在`UPDATE app_state ... STARTING`处收到H2 `90097-250 database is read only`。此时尚未调用saveServer/SSH/远端盘点，plan/apply/after均0，八个正式项目仍0；这是清场准备失败，不把未开始项目写成八项业务失败。底层原因正在调查，现有文件没有ReadOnly属性不能据此认定运行时权限正常或已修复。
+
+driver已quit：原生/外层工具0；monitor按显式stop自然结束：原生3、外层工具实际1，分别保留，不能改写成全0。父精确CIM核六个记录PID均不存在、执行签名0；仅删除本任务t09临时目录。失败库`static-live-reset-27j3s9d2w`及19份原证据逐文件hash封存，未engine-open或重放。见[准备失败收尾](H:/Program/WindowsToLinux/.ai-workspace/wt/r09/.ai-workspace/evidence/round-09-preparation-only/09/parent-inventory-preparation-failure-closeout-09.json)，SHA `4dfb30194082069f98985e56f6d7ed082905191c3c6765260fcf9b2e3b3c7fc5`。旧终态85537/6355禁止再poll；不能在原BASE覆盖或复用同名盘点/P-R/入口。
+
+历史比对见BASE/preparation-failure-history-09-01/history-assessment-09-01.json（8678b65c）：找到三处同码先例，其中两处曾确认受限环境可写性检查差异；两数据库源在R01、resume、R07、R08、R09五个HEAD的Git blob均相同，未找到数据库关闭修复被回退的证据。新的同一公开普通文件对比已实际完成：default JVM21812的File.canWrite=true、Files.isWritable=false；host JVM24264两者均true，两边FileChannel WRITE均成功且原字节未变。当前H2 JAR字节码明确FilePathDisk.canWrite用Files.isWritable，已有.mv.db返回false则Engine选择ACCESS_MODE_DATA=r，Database据此只读并可能抛90097。因此已复现相同环境机制，证据支持本次与执行边界有关；未给失败库原时点分支插桩，不能声称穷尽其所有触发因素，也未重开失败库。
+
+不改数据库源码、ACL或URL，不撤销旧生产修复。准备新的BASE `ROOT/.ai-workspace/evidence/round-09-preparation-host-02/09`，仍用同一ROOT/aa804实际产物与原连接证明，只迁移辅助入口路径/哈希并重新冻结；必须以tools.exec_command的require_escalated授权宿主边界启动。新的真实盘点还未执行，普通文件对比不算产品清场修复已验证。旧BASE及失败原样保留；不重跑已通过连接或旧UNKNOWN，不绕过产品清场。FTP8MiB、其余负载、独立审批/noCU不变。
+
+## 前一检查点：R09产物/新凭据/产品连接准备完成，待最终冻结与清场
 
 目标active未达成，R08仍6/8、原UNKNOWN不变。新独立ROOT H:/Program/WindowsToLinux/.ai-workspace/wt/r09，branch codex/assisted-frozen-r09-20261029，HEAD aa80428e clean。正式R09项目0，未整场清理；目前只有round-policy-09.DRAFT.json，没有整轮最终P/R/runtime bindings，不可直接运行入口。
 
