@@ -1,8 +1,18 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R08累计5/8，五网站完整首过，Log原任务进行中
+## 现行入口：R08最终6/8，Log与Directory原UNKNOWN，取证与修复准备
 
 ### 当前状态与接续
+
+R08最终完整首过6/8：五网站+Binary通过，Log与Directory原native1/JUnit1失败/rootUNKNOWN、无RESULT/完整业务/delivery，原失败保留八分母。八原attempt各一次、extra无，原source73/P71b/R5b/49链/参数不变，不拼R07成绩。Binary父c56758bd、同一snapshot八项总览6913d154；两失败父2000d03e，两个UNKNOWN原文件108份39983898B已字节封存f93dce6e并派生复核34952c4f，未原库DB-open/重放。全轮577logical/578physical、known5803641、反馈47，Survey内部SDK恢复1/未知usage1、观察缺口1分别保留，不称零异常/完整账单。
+
+原driver47579已单次quit后actual0、补充66809自然actual0，16120/9292及末Binary8036/41408已host CIM核退（87b29937）。这些及原94607等所有旧terminal句柄禁止再poll/重启，不能重发八原命令。当前只有独立取证工具准备/合成验证在推进，不能说全部辅助进程/隐私/t06已收尾；服务器没有再次清场，R09未启动。所有源码、targets、state及原证据保留；R08记录的本地提交以进度索引和提交回执为准；论文5项保留，不push。
+
+已确认Log原最后response为tool_calls+单submit_result，不是R07纯text无native同支；ff83真实集成、无漂移/可见预算耗尽。实际decision/JSON与具体审批/后置route/evidence/grant/执行错误仍未知，inspect-host只是前一成功commit的旧进度，不能认SSH根因或回退ff83。3旧CurrentSource红属不同Agent/prepare路径，无typed栈连通，仍未解决。Sol安全分析261b02ff、Astra具体判断见log-directory-unknown-judgment-01：现有DEPLOYMENT_PREPARATION_EXCEPTION/RESULT安全码可能已保存但原ASSISTED失败导出漏事件/重开锁失败。优先查现有应急日志，必要时审核copy-only/只读JDBC定表定root投影；绝不用Runtime/PlatformDatabase打开原UNKNOWN，不输出正文/密钥，不强制APPROVE或增加预算。源码存在不证明本次写成功，诊断增强不等于底层故障修复。
+
+Sol在06/offline-preparation-diagnostics-01准备reader，仅必要编译/合成验证获授权，真实原态copy/decrypt/JDBC尚须父审后另行授权；前两次合成JVM失败已保留，第一tmp前提过强、第二在完成8项后改schema fixture阶段失败，尚不称全组绿。原保护及108指纹不改。待该helper完整回报后父审源/原件前后hash/只读门，再执行受控本地取证；实际语义修复有证后才隔离改/定点/本地commit，活动R08永不换版。未来清场与独立after齐备才能开新冻R09。最终R08隐私scanner只用已审v2 96a7d269，正式actor和全部辅助核退后扫描当前全文，再精确nonreparse清task tmp/t06；原Java4ab/v1/manifest0a保留，尚未实际scanner/needle/vault。目标active未达成。
+
+### 五网站检查点（历史，Log失败前）
 
 Survey原12956/27972/root4b2e65d7唯一SUCCEEDED，JUnit1/0/0/0/3195.592s、原business3435/PASS3437、四封存及原交付齐；额外Java11952 actualwait0于UTC03:09:57.490738结束，同app/revision STOPPED DISABLED marker80唯一。app j35cxtr8o/state j35cvobfk，revision29a9b156/ownershipcaf1d216。下一Log STATE后新全guard VERIFIED，原entry06 inspect仅一次实际0，子审c20a057a/账6c4641e6/closeoutfca52e58；父八原SHA及12清单文件再核同、审计43844/16644及原三进程CIM absent，父接受038a70f7c475e898a85832b94ef2bded37e699f999e7d99759109246ff168455。五网站完整5/8，已完成五项inspect均不可重跑。
 

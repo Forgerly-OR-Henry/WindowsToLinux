@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active。R08同一SOURCE73/f102及06策略71b/release5b，初清及独立复查通过；五网站TaskBoard/FTP/Asset/本轮新CSV/Survey原任务、既定业务、交付及额外清理均完整首次通过，累计5/8。Log原32192/Java37480、root41b15552已自动启动，后两CLI仍排队，不重发。Survey有1次SDK同generation纯生成恢复、1次未知usage，原物理UNKNOWN保留，原部署root无UNKNOWN/FAILED终态；不计整项目重试，不称零异常。完整五项491logical/492physical、known4904221、结构反馈38，非完整账单。补充采样缺口1、原94607及全部辅助失败/旧UNKNOWN保留；不混八项分母。FTP8MiB及其余既定负载/独立审批不减，仅测试代码，无真实UI/浏览器/Computer Use。
+状态：目标active，R08最终完整首过6/8，未达成。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。二者具体底层原因仍在取证，不能直接认同因或旧修复回退。原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；后续仅独立辅助取证/修复准备。全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -25,7 +25,7 @@
 | round-05 | abc7abd1fa8db25626854eece961ca43347913e8 | 首个清场执行和独立复查均通过 | 八项各一次：首过7、FTP业务失败1 | 未达成；无内部生成恢复，分阶段上传修复已轮末合入9259ee92，准备R06 |
 | round-06 | 818ac8acb065182cfd90b090db42d322e605436e | 产品清场及独立复查通过 | 计划八项，仅前三项原完整回执PASS、后五未启动；0项已观察业务失败 | 未达标；运行期主工作区发生并行源码/HEAD漂移，原守卫在CSV前退出；准备问题单列，原64MiB保留，FTP恢复1/未知usage1 |
 | round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八项目各一次：完整首过7、CSV原UNKNOWN/测试失败1 | 未达标；全部原测试及driver/observer结束，未知与原失败保留；8MiB仅授权改大小，不拼旧成绩 |
-| round-08 | 73bbbbbb07346a09155d8d3ddc23c5dd08756d38 + 06策略71b11497 | 04准备误拒另记；06原产品4阶段及独立after/initialReset通过 | 八命令一次提交，五网站完整首过，累计5/8；Log进行中、后两CLI待启动 | 进行中；Survey内部生成恢复1/未知usage1及结构反馈、原观察失败/缺口1与辅助错误另记，非零异常；不混旧UNKNOWN或旧轮成绩 |
+| round-08 | 73bbbbbb07346a09155d8d3ddc23c5dd08756d38 + 06策略71b11497 | 04准备误拒另记；06原产品4阶段及独立after/initialReset通过 | 八原尝试各一次：完整首过6、Log/Directory原UNKNOWN失败2；无额外项目 | 未达成；原队列/补充实际0且核退，UNKNOWN未重放，具体原因取证中；Survey内部恢复1/未知usage1、反馈/观察缺口/辅助失败单列，最终隐私及辅助tmp收尾仍待完成 |
 
 ## 失败原因与解决方案
 
@@ -906,3 +906,23 @@ Survey唯一原root4b2e65d7-4c5f-4e6c-89d9-869d0932de72为SUCCEEDED，原Maven12
 辅助准备与错误另记：Survey/CLI终态脚本及整轮隐私候选仅在隔离ignored辅助目录，未改冻结源或全套测试。actor清单46 PID桶/84来源由父逐一SHA/长度再核，13缺creation、37缺observed cmdSHA如实unknown；27有绑定native wait，不把父Maven wait替代Java子wait，也不声称瞬时Git已逐PID记录。privacy v1的历史元数据强制前提经静态审查过强，未实际运行；新增v2仅允许确切当前ABSENT/查询成功/所有权来源齐时显式null，两root身份仍精确且须任务范围查询0。32纯合成准入边界native0通过；QA13760已wait/HasExited，尚待最终CIM。原Java4ab/v1/原manifest0a八文件不改，未来只用已父审v2 96a7d269同标签一次；当前Java/实际scanner/needle/vault/真实terminal proof均未执行，不是隐私PASS。父v2接受012f59dd，t06仍被本轮使用。
 
 新增本地辅助错误均保留且不混分母：父猜不存在run_review.py导致只读tool1，改用rg定位实际inspect_once.py（proof447aeebd）；84源核对的PowerShell Split重载误把第二string作为count导致tool1，仅换同一path检查为regex后通过（父接受aac42d91）；父观测cleanup时假定独立-cp槽导致前置tool1，未发host/产品命令，改为无必要argv解析的实际driver子进程观察并由native11952绑定（proofc84c4c2b）。最后一项属于此前“未核实际元数据形状”同类辅助假设再次出现的不同位置，不包装为新业务问题；已以实际schema/查询取代假设，没有把已修代码改回原样。旧04 JUnit误拒、原94607失败、补充缺口1及全部旧失败/UNKNOWN继续保留。当前公共文本隐私及整轮自有进程/t06收尾尚待全部八项后完成。
+
+### R08最终6/8：Log与Directory原UNKNOWN保留，Binary完整首过
+
+八原尝试已各执行一次：TaskBoard、FTP、Asset、CSV、Survey、Binary共六项完整首过；Log和Directory原任务UNKNOWN导致两项JUnit失败，整轮未达成。没有额外项目launch、没有从失败分母删项、没有拼R07结果。Binary原root a2972f9c-513c-427b-ba8c-76591428fd2b唯一SUCCEEDED，原8036 actualwait0/JUnit1/0/0/0/673.179s，原COMMAND业务marker1287/CLI CLEAN1328唯一，delivery/components为ON_DEMAND、INSTALLED/NOT_APPLICABLE、四artifact seal及完整selector/实际XML参数齐；CLI额外网站cleanup不适用，不能写成执行过STOP/DISABLE。原五文件SHA/长度及九审计文件由父再核，审计16056/31916原身份CIM absent。子审4c70cf4168b6dfdc2d94c4671713531810b0967c5d50cb83d743545ef69ff328、账3b72e0e40f33682ab461bf7661212f561592aef8c88d5d5921ba8cebff643077、同一stdout八项总览6913d154fbbee80f211d0a06e59df528c41171f648da8f187225b9e09c8d53c8、closeout9dc116de19dc8aedbb7778aa94a5300450676291271ea1baf572cb0d974da0ef；父接受c56758bd5e7a2a8ab08a3a098fdc6c871d796dd6733f41e86d5f5d3e16ad4b8f。原entry每项审计均仅一次，Binary共享CLI helper首次实际运行无辅助错误。
+
+Log原root41b15552-c919-4741-a1ea-7e5772d632ab、native32192 actualwait1，JUnit1/1/0/0/732.479s；Directory原roota61da983-01f9-4084-9581-29c4f471a96e、native40988 actualwait1，JUnit1/1/0/0/463.39s。两个root均UNKNOWN、无最终RESULT、无原完整业务/交付；各仅有四失败原件，未伪造第五delivery或成功seal。两次只读原entry failure capture工具本身0并不表示原业务通过，eligible均false。Log失败审计84527f95/closeout49f82df6，Directory失败审计0cf62259/closeout7e971107；父逐一再核各四原件及九审计文件、六共同身份与真实native1，审计39964/11788及5548/24072原身份宿主CIM核退，父失败保留接受2000d03e9fe27d1634c410d635bb3139e9b8c7f7776beb407f1923b7062e2781。
+
+直接已证触发是原UNKNOWN状态使fixture completed:6892对未完成future抛AssertionFailedError，不是90min耗尽。最后记录的审批operation均dependencies.v1，但不能凭时序断定拒绝、解析或SSH执行哪个是底层故障。Log最后生成number1/SDK SUCCEEDED/NONE，finish=tool_calls、空text、一条submit_result、arguments160字符，input23355/output34300（reasoning34174为output子集）、encoded91227B；native参数正文/decision/字段类型及本次具体异常code未导出。没有可见输出/Token预算耗尽。上一成功进度inspect-host只在tool成功commit后更新，不能倒置为最后inspect-host SSH失败。
+
+ff83已实际集成，原AiJson源码f08a/JAR5983/fixturef102和唯一provider CLASS与冻结JAR一致，无产物漂移证据。原Log可见11次APPROVAL均tool_calls+单submit_result，不满足新增首次stop+空tool提醒分支；不把marker0当绝对格式0，也不能说该修复触发后预算耗尽。R07 CSV最后是prepare.v1/stop/纯text、0native，直接形状与本次不同；目前只能说UNKNOWN表面症状相似，不能确认同一旧问题复发或把修复改回原样。三个既有CurrentSource红用例在Agent retained conversation/prepare selector，当前ASSISTED stateless/native dependencies路径不同，没有typed栈连接，不能直接认定同因或声称这些旧红已解决。
+
+确认的诊断缺口是：RefFlow尝试持久化DEPLOYMENT_PREPARATION_EXCEPTION/RESULT的安全code/有限栈，但ASSISTED captureDenials只取另外三类事件，且UNKNOWN后重开原Runtime可能lock-suppressed；安全facts还未投影reviewStage等字段。这是已证导出范围/时机缺口，不能据此说底层故障已修或本次日志一定保存成功。Astra仅针对该未解问题静态判断：优先查现有应急/准备日志；如需要，仅在原件先封存、写者退出后设计离线副本定表定root只读JDBC，不用PlatformRuntime/PlatformDatabase.open或初始化/重放。当前原160字符正文未发现持久化路径，取证目标是已有错误码/栈而非补造正文。安全投影不含reason、参数、headers、Problem context全文或密钥；独立helper仍在合成验证，尚未对原状态执行副本DB读取。诊断增强如后续实施也须隔离、相关定点验证，不能写成底层修复，不加预算、不强制批准。
+
+两原UNKNOWN状态仅作文件字节封存：Log56文件、Directory52文件，共108文件39983898B，未用DB引擎或产品Runtime打开原件，也未重放。原指纹f93dce6e6ae0709e87cf514fc3527ac56a1d15f1b92b0aa5618ce8fb91b9b3ee各文件长度/SHA完整；早先aggregate字段为null原样保留，另以34952c4fb7e51d1473b98d91641163c87aa9a224b5bade5639725a8077654302从个体数值派生正确总数并再次逐一匹配。原Log32192/37480、Dir40988宿主CIM原身份absent，状态签名writer查询0；Directory旧JVM PID未录，保持unknown，不补造历史清单。Binary8036/41408创建时间与observed cmdSHA另已保存。原库/旧R07 UNKNOWN不作恢复。
+
+全轮同一原stdout的577logical/578physical：SDK物理SUCCEEDED577/UNKNOWN1，唯一未知为Survey第一物理生成（非Log/Dir原任务UNKNOWN）；已知tokens5803641，角色差均0。提交反馈raw/unique47/47、明确无动作，内部SDK恢复链1/未知usage1，格式success/GAP观测0但coverage不完整，不称零异常或完整账单。Binary40/40、known429617=55909+373708、反馈3；Log26/26、known252018=86161+165857、反馈4；Directory20/20、known217785=44553+173232、反馈2。SDK调用成功不升级两个UNKNOWN原任务。
+
+原八验收进程结束后，父仅一次向driver发quit（900159），随后47579实际exit0（3bbb48）；补充66809在八原native终态后自然actualexit0（27f4c3）。16120/9292及Binary8036/41408已宿主CIM核退，receipt87b29937c083b589525ce15db766a03e84c92be416bfb7bb2806cd9c08cbb0ff。两旧句柄不能再poll/重启或重排八原命令。辅助取证准备/临时合成验证尚在进行，不能据正式队列退出声称所有任务自有进程或t06已完成清理；最终公共文本隐私、取证tmp和t06仍待收尾，服务器未再次清场，R09未启动。
+
+辅助问题继续单列：父94f14d猜ledger字段originalFiveRawFiles并直接索引null导致只读tool1，schema-first读取f2c14d确认实际originalFiles/newFiles，未重新inspect或改原数据；这是同类未核元数据形状假设再次出现，不包装为产品新故障。父19cfba曾要求Directory仍live，但其原进程已进入自然终态，后续原工具确认native1并启动Binary；该前置拒绝未写状态指纹，也不构成身份漂移证据。取证helper合成验证前两次JVM分别因“整个tmp应为空”（JVM/JNA正常目录）和后续schema版本fixture写阶段退出1，原件未copy/decrypt/DB-open，均单列保留并只修相关fixture，不混八项目；目前不能把未完合成组称全绿。全轮源73/49闭包、参数和负载不改，真实R08结果6/8固定；目标active，下一轮须先完成原因调查/已确认修复及相关定点，再产品清场与独立复查。
