@@ -1,6 +1,6 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R08累计1/8，TaskBoard完整首过，FTP原任务进行中
+## 现行入口：R08累计2/8，TaskBoard及FTP完整首过，Asset原任务进行中
 
 目标active，R06未达标：计划八项，仅TaskBoard/FTP/Asset三个原完整回执PASS、后五项未启动；不是3/3，也不是五项业务失败。运行期主工作区出现并行UI源码及818→da3e提交，原冻结守卫在CSV launch前拒绝，不能继续声称整轮保持冻结。FTP原64MiB全业务通过，含纯生成恢复1/未知usage1；Asset原JUnit/交付/清理均0，源码变更对在途运行的全部影响不作无证断言。R06原始证据及额外冻结审计见[已关闭轮](../../../.ai-workspace/evidence/assisted-continuous-20261028/round-06/README.md)。原driver16741实际exit1，observer37339有意终止后实际exit1，CIM自有进程0，clean28r06已清，1447文本敏感值审计通过；关闭文档修改后的02检查覆盖1453文本、零匹配、实际0，独占临时目录已清。不得poll/重启旧句柄或重发旧八队列。
 
@@ -24,9 +24,9 @@ CSV原审计四文件及Astra传播判定已CreateNew，父回读关键判据和
 
 真实06 inventory43992/plan45996/apply300/独立after11432均Maven actualwait0/JUnit1/0，after==postInventory、8根无/受管集合空/APTcache0，原initialReset真，四个parent-validation源SHA可查。第一次apply被auto-review前置拒绝未发送；当前身份两次全guard/3descriptor/f102与同计划重核后同原工具唯一有效apply通过。原拒绝和全部raw保留，未旁路。
 
-root唯一driver工具47579/Python16120现活动；八条run已经一次全部写入原TTY队列，顺序TaskBoard、FTP、Asset、CSV、Survey、Log、Dir、Binary，不要再送任何run或reset。TaskBoard已完整首过：原Maven35680 actual0/JUnit1/0/0/0、唯一root86ecb551 SUCCEEDED、精确BUSINESS标记、交付及额外Java46016 cleanup0/STOPPED DISABLED齐。原entry06 inspect仅一次actual0，子审74a46eab/账7ff312c8/closeout7cfb3ad7，父接受11ee9d13及八原文件SHA/长度再核通过；35680/Java30436/46016与审计39980/3148宿主CIM均0。TaskBoard累计1/8；UTC00:41:32.440336原队列自动启动FTP Maven6636/Java43912，当前真实AI部署。读取原47579/66809句柄及原文件，不能重跑TaskBoard或重新发送FTP/后六项。SOURCE73、政策71b/release5b仍冻结。
+root唯一driver工具47579/Python16120现活动；八条run已经一次全部写入原TTY队列，顺序TaskBoard、FTP、Asset、CSV、Survey、Log、Dir、Binary，不要再送任何run或reset。TaskBoard已完整首过：原Maven35680 actual0/JUnit1/0/0/0、唯一root86ecb551 SUCCEEDED、精确BUSINESS标记、交付及额外Java46016 cleanup0/STOPPED DISABLED齐。原entry06 inspect仅一次actual0，子审74a46eab/账7ff312c8/closeout7cfb3ad7，父接受11ee9d13及八原文件SHA/长度再核通过；35680/Java30436/46016与审计39980/3148宿主CIM均0。TaskBoard旧单项记录保留；FTP现已完整首过，累计2/8。FTP原Maven6636/JUnit1/0/0/0、五下载8MiB及完整V2、交付、Java13888额外cleanup0/STOPPED DISABLED齐；实际capture/原inspect/reader各一次0，负载proof681fc37c/closeout eb5d2f8e/父接受2f4a83c6，八原文件/17准备/15实际输出SHA再核同。原FTP6636/43912/13888及审计8572/41436/36936/44840 CIM0，inner inspect创建时间未记录不补造。原队列UTC01:21:58.304595自动启动Asset Maven43864/Java41260、root5695cf43，后五仍排队。接原47579/66809，不发任何run/reset、不给已完成TaskBoard/FTP重试。SOURCE73、政策71b/release5b仍冻结。
 
-TaskBoard最终90 logical/90 physical、已知1012306 token（deployment90738/approval921568），SDK同generation恢复/未知usage观测0；结构反馈raw/unique10/10，均SUBMISSION_REJECTED、明确未执行动作，不折算为10次SDK恢复或整项目重试。格式success/GAP marker观测0，但coverage不完整、zeroCorrectionsProven及zeroObservedAbnormality均false，不能称零异常或完整账单。旧legacy clean=true不替代新strict指标。原八文件及scope均保留，当前余七尚未完整终态，整轮goalEligible=false正常。后续一般项目失败仍原冻结继续；修复隔离，不拼旧7项。
+TaskBoard最终90 logical/90 physical、已知1012306 token（deployment90738/approval921568），SDK同generation恢复/未知usage观测0；结构反馈raw/unique10/10，均SUBMISSION_REJECTED、明确未执行动作，不折算为10次SDK恢复或整项目重试。格式success/GAP marker观测0，但coverage不完整、zeroCorrectionsProven及zeroObservedAbnormality均false，不能称零异常或完整账单。旧legacy clean=true不替代新strict指标。FTP另有140logical/physical、known1183235、反馈6全SUBMISSION_REJECTED，格式0未证明；两项合计230/known2195541/反馈16，仅已完成两项口径，不含活动Asset。FTP五笔8MiB v1/v1/v2/v1/v2、19正常trace/7阶段2xx及完整V2通过，实际digest文字未独立导出；2+6/并发/ACK及错误状态细节依原source/JUnit断言链。原八文件及scope均保留，当前余六尚未完整终态，整轮goalEligible=false正常。后续一般项目失败仍原冻结继续；修复隔离，不拼旧7项。
 
 原monitor工具94607/Python37992已真实exit1/FileNotFoundError终态，绝不能poll/重启/覆盖。诊断工具10053已actual0/Python39240已结束：一次FNF为Maven期间Git开发descriptor缺失，13完整guard/14数据采样成功；构建prepare源码会删旧descriptor/marker后生成，时间路径相符但无OS写作者证明。旧04解析器误拒已用06 exact method OR原参数前缀局部修正，原04策略/XML/0c014f93/actors88554 actual0、80497 actual1/intended3均保留。两个准备观察问题都不混为八项目失败，不称零异常。
 

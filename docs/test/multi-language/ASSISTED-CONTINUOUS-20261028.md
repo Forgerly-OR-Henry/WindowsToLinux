@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active。R08同一SOURCE73及06策略71b/release5b，真实产品初清及独立复查通过；TaskBoard原任务、既定完整业务、交付和额外清理均首次通过，累计1/8。FTP原Maven6636/Java43912已由原队列自动启动，后六项仍排队，不重发。唯一driver47579/Python16120及非授权补充采样66809/Python9292活动。TaskBoard有10条内部提交结构反馈，格式绝对0未证明，不称零异常；准备JUnit误拒、原observer94607失败和采样缺口仍单列。R07最终7/8、CSV原UNKNOWN保留，不拼旧成绩。FTP实际8MiB，其余既定业务与独立审批/交付清理不减；仅测试代码，无真实UI/浏览器/Computer Use。
+状态：目标active。R08同一SOURCE73及06策略71b/release5b，初清及独立复查通过；TaskBoard、FTP原任务、既定完整业务、交付及额外清理均首次通过，累计2/8。Asset原Maven43864/Java41260由原队列自动启动，后五项仍排队，不重发。driver47579/Python16120及非授权采样66809/Python9292活动。已完成两项有16条内部提交结构反馈，格式绝对0未证明，不称零异常；准备JUnit误拒、原observer94607失败及缺口、专项QA初次CIM失败均另记。R07最终7/8、CSV原UNKNOWN保留，不拼旧成绩。FTP实际8MiB，其余既定业务与独立审批/交付清理不减；仅测试代码，无真实UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -25,7 +25,7 @@
 | round-05 | abc7abd1fa8db25626854eece961ca43347913e8 | 首个清场执行和独立复查均通过 | 八项各一次：首过7、FTP业务失败1 | 未达成；无内部生成恢复，分阶段上传修复已轮末合入9259ee92，准备R06 |
 | round-06 | 818ac8acb065182cfd90b090db42d322e605436e | 产品清场及独立复查通过 | 计划八项，仅前三项原完整回执PASS、后五未启动；0项已观察业务失败 | 未达标；运行期主工作区发生并行源码/HEAD漂移，原守卫在CSV前退出；准备问题单列，原64MiB保留，FTP恢复1/未知usage1 |
 | round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八项目各一次：完整首过7、CSV原UNKNOWN/测试失败1 | 未达标；全部原测试及driver/observer结束，未知与原失败保留；8MiB仅授权改大小，不拼旧成绩 |
-| round-08 | 73bbbbbb07346a09155d8d3ddc23c5dd08756d38 + 06策略71b11497 | 04准备误拒另记；06原产品4阶段及独立after/initialReset通过 | 八命令一次提交，TaskBoard完整首过，累计1/8；FTP进行中、后六待启动 | 进行中；内部结构反馈、原观察失败及诊断缺口保留，非零异常；不混旧R07成绩 |
+| round-08 | 73bbbbbb07346a09155d8d3ddc23c5dd08756d38 + 06策略71b11497 | 04准备误拒另记；06原产品4阶段及独立after/initialReset通过 | 八命令一次提交，TaskBoard/FTP完整首过，累计2/8；Asset进行中、后五待启动 | 进行中；内部结构反馈、原观察失败及辅助准备失败保留，非零异常；不混旧R07成绩 |
 
 ## 失败原因与解决方案
 
@@ -852,3 +852,15 @@ SOURCE73、同一06策略/模式、LOW/LOW/1500000/65536/90及用户授权FTP8Mi
 原BUSINESS/PASS后的重复current-status可由测试finally的STOP/inspect/DISABLE和交付Runtime重新START/inspect/usage、再由独立Java最终清理的正常序列解释；源码有各TaskHandle/请求边界，没有测试层无限轮询或重部署整项目。此正常源码解释由本次实际封存成功支持，不把先前重复日志猜成已确认故障。该段没有新增修复、人工补救或UNKNOWN恢复。
 
 UTC00:41:32.440336，原driver47579/Python16120从此前一次写入的原队列自动启动FTP Maven6636/Java43912；新原STATIC_LIVE_STATE与初始AI调用已出现，补充66809/Python9292活动。SOURCE73/policy71b/release5b、49输入/实际产物与FTP8MiB其余完整负载不变，原八命令不重发。当前只核定TaskBoard完整1/8，FTP进行中、后六尚未启动，整轮goalEligible=false正常，目标active。t06仍在用，最终整轮收尾及新文本隐私核验尚须完成。
+
+### R08 FTP新授权8MiB完整首次通过，累计2/8；Asset原队列接续
+
+原FTP root22caf65c-ae80-4a4d-85c7-9dce67c9c895唯一SUCCEEDED，原Maven6636 actualwait=true/exit0，JUnit单case 1/0/0/0、2285.075s，交付及原四artifact seal齐。五笔下载均8388608B、BODY_RETURNED/VERIFIED完整，顺序v1/v1/v2/v1/v2，耗时5624/6525/15223/12484/34118ms。专项核19组正常1MiB trace、七阶段及2xx、8+8+1+1+1索引集合；2+6续传、双版本/10并发complete、重复冲突、取消持久化、错SHA422及真实backend STOP54c19c7b-c531-4542-8887-bc1420d718a6/START4d71de80-f49b-4594-b2ae-7290a6fcda58与502场景，均由原V2标记、原结果及冻结完整断言链核验。交付application wtl-assisted-file-transfer-h4whdnxyw、revision99310082adb155e2c4716ab67d26d392dd2150c45826221b9781e757490b8cd8一致；额外Java13888 actualwait=true/exit0，于UTC01:21:53.498069结束，同app/revision STOPPED/DISABLED精确marker仅一次。
+
+新FTP reader只读准备37+4合成用例通过，不作真实项目成绩；首沙箱CIM读取非终止错误产生空count0，原件保留且不采信，宿主ErrorActionStop02/final明确QA31068/41412退出。父首次按旧命名读取不存在的准备回执路径而tool1，无写入，改读实际文件后通过；均属辅助问题，不混八项。准备17文件、旧R07 checker及原冻结49输入不改。父在Asset启动STATIC_LIVE_STATE后，仅一次capture原entry06 inspect（inner/outer actual0）、再一次reader actual0，复用06六身份、原封存/唯一root/JUnit/cleanup强门。负载proof681fc37c70617958c92af6e24f39d43bbe0d006b91c4b17e5b4bd8a65199cb3a、实际closeout eb5d2f8ed737ec529c37ebe87bb57f814edb859d3648dc10e52a4160d4e72ba6；父再核原八文件SHA/长度、17准备文件和15实际输出，接受proof2f4a83c6e218fe8aca97c104016d2aca880661c823d87a81a4f596c4f3672741。原FTP6636/43912/13888及审计8572/41436/36936/44840宿主CIM均0，未kill；过程proof044a5584d79048a1d1ee0eda630d9bc23e1142353c61aa9867c0887deea92896。inner inspect未记录创建时间，保留此边界，不补造；实际PID/wait0及原stdout SHA均留。
+
+FTP最终140 logical/physical/raw，全部物理SUCCEEDED；known1183235=deployment117313+approval1065922，角色差0，SDK同generation恢复/未知usage/冲突重复未解析观测0。结构反馈raw/unique6/6均SUBMISSION_REJECTED且明确未执行动作，不折算为HTTP恢复或整项目重试。格式success/GAP marker观测0但coverage不完整，zeroCorrectionsProven/strictNoInternalRecovery/zeroObservedAbnormality均false。已完成两项共230 logical/physical、known2195541、结构反馈16；不含活动Asset，不称零异常或完整账单。
+
+实际文件/ACK digest文字、并发响应和部分409/422/502正文未逐一打印，相关内容由同冻source snapshot、原成功JUnit断言及标记共同证明；专项reader不伪造独立摘要或重下文件，不扩大为完整BUSINESS矩阵/UI/当前远端证明。旧64MiB结果不改标、不混入R08，五笔8MiB均来自本轮原请求。
+
+UTC01:21:58.304595，原队列自动启动Asset Maven43864/Java41260、root5695cf43-1518-4734-b2a9-4c490b82cf54，当前AI部署；后五尚未启动。SOURCE73/f102、policy71b/release5b与参数不变，原47579/66809继续，禁止重发run/reset或重试已完成项目。当前仅核定2/8、全轮goalEligible=false正常；原准备失败、observer94607/FNF和旧UNKNOWN保留，最终整轮隐私及process/t06收尾仍待完成。
