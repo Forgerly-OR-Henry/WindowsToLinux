@@ -1,6 +1,6 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R07已7/8，R08准备解析器误拒正在独立06修正
+## 现行入口：R08原八队列已启动，TaskBoard进行中
 
 目标active，R06未达标：计划八项，仅TaskBoard/FTP/Asset三个原完整回执PASS、后五项未启动；不是3/3，也不是五项业务失败。运行期主工作区出现并行UI源码及818→da3e提交，原冻结守卫在CSV launch前拒绝，不能继续声称整轮保持冻结。FTP原64MiB全业务通过，含纯生成恢复1/未知usage1；Asset原JUnit/交付/清理均0，源码变更对在途运行的全部影响不作无证断言。R06原始证据及额外冻结审计见[已关闭轮](../../../.ai-workspace/evidence/assisted-continuous-20261028/round-06/README.md)。原driver16741实际exit1，observer37339有意终止后实际exit1，CIM自有进程0，clean28r06已清，1447文本敏感值审计通过；关闭文档修改后的02检查覆盖1453文本、零匹配、实际0，独占临时目录已清。不得poll/重启旧句柄或重发旧八队列。
 
@@ -18,16 +18,19 @@ CSV原审计四文件及Astra传播判定已CreateNew，父回读关键判据和
 
 用户明确授权后续FTP文件由64MiB改8MiB，其余业务场景保留。原8MiB提交9068fe92仍在`codex/ftp-live-8m-20261029`，旧tmp/f8m29已正常move，不能再用旧路径。R07冻结65f8实际CLASS为8MiB，1MiB片共8/先2后6，五SHA/双版本/10并发/19正常trace和真实停启等保留；真实8MiB完整首过已核定：五笔完整下载均8388608字节/SHA，顺序v1/v1/v2/v1/v2，原完整V2及交付/清理齐，checker一次0/PASS。查看ftp-8m-full-workload-parent-proof-01.json和file-transfer-first-01-parent-verification.json；实际policy/launch workloadPolicySha256/新scope audit均绑定，旧64MiB成绩不改标或拼接，三连过门槛没有恢复。
 
-## 当前补充：R08本地候选及新凭据/原产品连接准备完成，正式0
-当前变化：04最终策略5ef/c736已实际发放，但唯一原产品盘点Maven10972/JUnit1/0/actual0后，本地helper因无参JUnit bare方法名不符合其括号前缀而误拒；其他身份/参数/时序全true，host-inventory-04-parent-diagnostic-01.json及Astra r08-reset-junit-name-judgment-01记录。plan/apply/after与八项均未启。旧driver88554实际0、observer80497有意stop后实际1（intended3）均终态，旧三PID/入口0、t04已精确清；parent-preparation04-closeout-01留原raw/策略SHA，禁止再poll/重启。当前只新06辅助快照修正exact method OR原参数前缀，同时绑定独立Java child，不动产品73/编译/旧04源码或原XML。Sol正在局部验证，未发放06固定FINAL。
+## 当前R08接续入口：接原47579，勿重发已入队八项
 
-保留根.ai-workspace/wt/r08、branch codex/assisted-r08-local-preparation-20261029、HEAD73bbbbbb07346a09155d8d3ddc23c5dd08756d38。生产源实际构建f3acc至73仅文档差异；必要package0/指定32定点0/54独立cp/3Mod17输出/CLASSf102/16JAR/8MiB2+6及12超时反射已父核。03/04历史红/绿和Astra记录保持；05 Java9441a5f6和adapter c414fa80完成最小缺release预子进程拒绝，父核60+171和16PID0，parent-readiness-review-05-01接受局部候选。真实main FINAL/cleanup尚未验证，3既有Source测试失败仍保留，不称全suite绿。
+保留Root.ai-workspace/wt/r08、HEAD73bbbbbb07346a09155d8d3ddc23c5dd08756d38。实际CODE/CLASSf102/16JAR/54cp/3Mod17输出仍冻结；BASE为该Root/.ai-workspace/evidence/round-08-preparation-only/06（目录历史名保留，实际FINAL/raw决定本轮身份）。固定policy71b1149784c6bbea959c430eac27e06a5222724c23aa8861ce4285d5f5c20a97/release5b10f1c36f68ba71b263da861eb2520d5d2b55278cbf35d2222ade7cede9b409/sourceSnapshot38b78115...已父原字节发放且完整guard通过，独占t06在用，不能清除保留Root或targets。原new-04 vault/24d70cc连接证明仍复用，不迁移/复制API/重连。
 
-新vault src/app/db/data/agent-live-credential-20261029-r08-04已从本机新main resume-01仅内存迁移，cf桥编译0/迁移0；源pin核BiNl，未复制旧DPAPI/UNKNOWN/DB或目标trust。API安全CopyNew到ignored/untracked私有配置105B，no plaintext。原产品连接selector一次Maven0/JUnit1/0/6.506s、wire BiNl/SUCCEEDED，credential-source-identity-04 SHA24d35b8e、product-connection-proof-04 SHA70ccb760。父parent-product-connection-verification-04再核原四raw/XML/所有属性及真实后置freeze54cp/17输出0。Git descriptor仅对象key raw重排，三份有效内容严格不变；初版过宽target旗标由新final closeout9e227787订正，原件保留。全段仍非正式八项。
+真实06 inventory43992/plan45996/apply300/独立after11432均Maven actualwait0/JUnit1/0，after==postInventory、8根无/受管集合空/APTcache0，原initialReset真，四个parent-validation源SHA可查。第一次apply被auto-review前置拒绝未发送；当前身份两次全guard/3descriptor/f102与同计划重核后同原工具唯一有效apply通过。原拒绝和全部raw保留，未旁路。
 
-连接准备的JUnit cleanup NEVER/受控_JAVA_OPTIONS长state与短JNA/UNIX安排，仅此PREPARATION；原Maven9588、bridge35924、javac44496、probe23708均actualwait0，自有CIM核0/专用cp0804已精确清六文件，process-temp SHAf075669a。新vault/data和独立connection-runtime/junit-5741360465431718999保留，不能删除/移动或视为旧UNKNOWN。后续本阶段公共文本补核见04/preflight-privacy-04新原回执，不将R07快照当覆盖未来文本。
+root唯一driver工具47579/Python16120现活动；八条run已经一次全部写入原TTY队列，顺序TaskBoard、FTP、Asset、CSV、Survey、Log、Dir、Binary，不要再送任何run或reset。实际首TaskBoard Maven35680/创建UTC00:07:32.597711、source启动全冻通过，当前AI部署进行，尚未完整业务/交付/清理，首过暂0。读取原launch/log/console和eight-original-command-submission-intent06/submission06，接47579原句柄；不要把状态采样27generation/未知usage0当终态或完整账单。后续一般项目失败仍原冻结继续；诊断/修复隔离，不拼旧7项。
 
-接续不要重复凭据/API复制/原连接，也不要启动旧04/05或两个已关闭句柄。先完成新06局部修正及父审，以原24d/70cc公开证明原字节/原时间有来源地绑定既有new-04 vault，不伪称06新连接。06固定FINAL/release及t06尚未创建；真实新inventory→plan→apply→独立after和initialReset通过才全新八条唯一原run。旧04成功盘点只作helper反例，不改名移植新冻结。来源73、54cp/3Mod17输出、LOW/LOW/1500000/65536/90、8MiB其余全部业务与独立审批不变；R07原7项不拼入R08，正式0，目标active。
+原monitor工具94607/Python37992已真实exit1/FileNotFoundError终态，绝不能poll/重启/覆盖。诊断工具10053已actual0/Python39240已结束：一次FNF为Maven期间Git开发descriptor缺失，13完整guard/14数据采样成功；构建prepare源码会删旧descriptor/marker后生成，时间路径相符但无OS写作者证明。旧04解析器误拒已用06 exact method OR原参数前缀局部修正，原04策略/XML/0c014f93/actors88554 actual0、80497 actual1/intended3均保留。两个准备观察问题都不混为八项目失败，不称零异常。
+
+Astra06/observer-metadata-window-judgment01接受非授权补充读数方案，Sol在06/supplemental-observation-01完成source d71783ea及16个纯本地控制用例。父读审并以root工具66809/Python9292实际启动，UTC00:13:35.815998，现活动；可接此新句柄，原94607仍终态。每个六元生成metadata缺口须UNKNOWN/INCOMPLETE单列且小预算重读全guard，其他源码/hash/class/JSON/身份异常立即报；不能修改49冻结源或执行grants。最终八项资格仍原entry06 inspect及原JUnit/任务/业务/delivery/cleanup，时点采样不是连续不变证明。parent-supplement-observation-start-01留真实CIM及独立初清审计SHA24533ea677d64868f249af7ae017a1916880df836a94b3eb99d2df12e19f9b6a；该审计确认四原回执/20原SHA/六身份/after早于首任务，保留基础OS包651，受管集合空。首次本地审计误要求基础包空而退出1，修正审计口径后通过，原错误保留，不作远端失败或整机包清空。
+
+现行业务参数仍LOW/LOW/1500000/65536/90，FTP8MiB及全部其余V2/既定业务/独立审批不减。主树论文等5项修改保留，默认仅相关定点和必要compile、不全suite、不push。三个既有Source夹具失败继续披露，局部32不等于全套。整轮8结束才driver一次quit、所有自有进程/CIM/t06收尾及隐私/完整证据审计；保持目标active直到同轮8/8实证。无用户待答项。
 
 ## 新机预检阶段交接（历史，本阶段已结束）
 

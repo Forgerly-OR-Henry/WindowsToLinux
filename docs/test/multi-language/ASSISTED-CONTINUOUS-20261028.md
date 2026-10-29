@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active。R07八项目各一次原尝试均已结束，完整首过7/8，仅CSV原UNKNOWN/测试失败，本轮未达标；driver37576/observer66898均已观察实际tool0，自有进程及专用r07t核退清理，原失败/UNKNOWN保留。FTP按用户授权实际8MiB，其余既定业务不减。全轮已知5507842/552物理生成/47工具提交反馈，非零异常或完整账单。R08正式0；04原产品盘点0、本地无参JUnit名称解析误拒，旧控制器已核退，06单点辅助修正准备中；尚未清场或原八项。R07隐私1683文本及其后四说明补核均过，后续R08文本另核。仅测试代码，无真实UI、浏览器或Computer Use。
+状态：目标active。R08已在独立保留Root、SOURCE73及06策略71b/release5b下完成真实产品清场和独立复查/initialReset=true，一次排入八个原始完整项目。当前TaskBoard原Maven35680进行AI部署，完整首过暂0；其余七条在原队列不重发。唯一driver47579/Python16120活动。准备JUnit误拒修正及原observer94607失败/采样缺口单列保留，不称零异常。R07最终7/8、CSV原UNKNOWN保留，不拼旧成绩。FTP实际8MiB，其余既定业务与独立审批/交付清理不减；仅测试代码，无真实UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -25,6 +25,7 @@
 | round-05 | abc7abd1fa8db25626854eece961ca43347913e8 | 首个清场执行和独立复查均通过 | 八项各一次：首过7、FTP业务失败1 | 未达成；无内部生成恢复，分阶段上传修复已轮末合入9259ee92，准备R06 |
 | round-06 | 818ac8acb065182cfd90b090db42d322e605436e | 产品清场及独立复查通过 | 计划八项，仅前三项原完整回执PASS、后五未启动；0项已观察业务失败 | 未达标；运行期主工作区发生并行源码/HEAD漂移，原守卫在CSV前退出；准备问题单列，原64MiB保留，FTP恢复1/未知usage1 |
 | round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八项目各一次：完整首过7、CSV原UNKNOWN/测试失败1 | 未达标；全部原测试及driver/observer结束，未知与原失败保留；8MiB仅授权改大小，不拼旧成绩 |
+| round-08 | 73bbbbbb07346a09155d8d3ddc23c5dd08756d38 + 06策略71b11497 | 04准备误拒另记；06原产品4阶段及独立after/initialReset通过 | 八命令一次提交，TaskBoard原任务进行中，完整首过暂0 | 进行中；原观察失败及诊断缺口保留，非零异常；不混旧R07成绩 |
 
 ## 失败原因与解决方案
 
@@ -821,3 +822,21 @@ Astra建议独立06有界快照：只将method判定改为名称完全相等或�
 父已关闭这组0正式项目actors：一次normal quit后driver88554实际tool0；observer80497经本地stop request退出，原intended3、真实tool1，如实保留不称自然0。宿主CIM25736/35328/10972及旧入口/t04签名0，精确t04非reparse核真后清理，内0文件；编译根、私密新vault、连接state、原inventory/策略/失败checker均保留。parent-preparation04-closeout-01.json收存原十二文件SHA、actual exit及临时目录核退；两个旧句柄已终态，禁止再poll/重启/重发。目标active，服务器尚未清场，R07仍7/8未达标，旧UNKNOWN不打开或重放。
 
 Sol仅拥有新06及QA tmp，当前在做真实旧XML red/new helper green、参数化兼容及错方法/类/fail/skip等必要反例、06 DRAFT/缺release副作用前拒、必要Java编译/真实DRAFT负例、完整只读freeze及不可执行名字候选。新-04 credentialState必须刻意保留，不能机械改成新-06库。尚未父审通过06或发放其固定FINAL，不能提前称修复已完整验收。所有业务/FTP8MiB其余负载、LOW/LOW/1500000/65536/90及独立审批不变。
+
+### R08正式全新八项已启动：同冻结73/06，当前TaskBoard原任务进行中
+
+父已核06的58自有文件/closeout、唯一JUnit方法兼容语义变化与独立Java child闭包，CreateNew原字节固定policy71b1149784c6bbea959c430eac27e06a5222724c23aa8861ce4285d5f5c20a97/release5b10f1c36f68ba71b263da861eb2520d5d2b55278cbf35d2222ade7cede9b409/sourceSnapshot38b78115fb3c0952e62cc4c10e899c2f70ff32e4a2612b6b049444bc19219269，完整released guard通过。产品Root仍.ai-workspace/wt/r08、HEAD73bbbbbb07346a09155d8d3ddc23c5dd08756d38、实际CLASSf102/16JAR/54cp/三Mod17输出；新t06专用，复用原new-04 vault及24d/70cc原字节/原时间证明，不新迁移或重连。06元数据命名空间独立于旧04，原缺陷及旧XML/策略/0c014f93文档提交保留；不是撤回产品修复。
+
+06四条原产品维护均各一次：inventory Maven43992、plan45996、apply300、独立after11432，各actual wait0/JUnit1/0；原plan SHA c9a2c08b1f88a8efd7fa2c334fc75e4a762dac48a2a80793a56b5e4c3bab0f67。parent-verify-reset-stage06逐门审核原JSON/XML/actual参数/六身份/时序/同host、8个管理根及35非essential构建包；after库存与apply postInventory完全相等，8根不存在、全部受管集合空、APTcache bytes/deb/partial全0，原initial_reset=true。独立after是新产品任务，不是仅重读apply；初清完成后才放行八项。
+
+apply首次write_stdin被自动复核前置拒绝，未发输入或远端执行，理由是descriptor缺失后冻结身份未重新确认。父以preapply-steady-freeze-verification01完成两次完整guard/49输入/17输出/54cp/三descriptor当前存在且canonical全同/CLASSf102，并再次核同主机与计划后，同原write_stdin获准发出唯一有效apply，原actual0；没有旁路或SSH手工替代，不把前置拒绝算两次远端apply，不抹除拒绝证据。
+
+原06 observer94607/Python37992真实exit1/OBSERVER_FAILURE_FileNotFoundError发生在准备期，保留全部原输出，禁止poll/重启/覆盖。60秒只读诊断10053/Python39240真实0：13次完整freeze、14次sample/initialReset成功，1次缺失准确为Git target/wtlmod-development.json、在plan Maven启动3秒内。源码MavenDevelopmentInputs.prepare49–55及父POM证明构建会删旧descriptor及marker再生成；时间和路径相符，无OS逐文件作者审计，不夸大唯一物理删除者或底层已修。稳态重新完整核验通过不清除旧观察缺口，不称零异常。
+
+Astra只读observer-metadata-window-judgment01接受不同输出名的非授权补充读取：复用冻结m.sample/i.initial_reset，设置同一m.POLICY_SHA，仅六个生成descriptor/marker的FNF可小预算重读完整原guard，每次UNKNOWN/INCOMPLETE保留，其他源码/class/hash/JSON/身份异常即停。新采样不是控制器或审批执行入口，最终仍原entry06 inspect与原8个完整测试证据判定，49冻结源/执行参数/独立Java校验不改。Sol在06/supplemental-observation-01完成程序及16个纯本地控制用例；父读审source d71783ea后以root工具66809/Python9292实际启动，UTC00:13:35.815998，原monitor失败保持。parent-supplement-observation-start-01记录真实CIM/角色/审查及原初清独立审计24533ea6；不能将补充采样称为原monitor自然恢复，也不能将时点采样当作连续不变证明。
+
+独立初清审计initial-clean-independent-parent-audit-01仅回读四个原维护回执及20原文件SHA、六身份和顺序，确认after==postInventory、8根不存在、受管集合空/APTcache0，且原after结束早于首TaskBoard启动。审计构造初次误要求651个基础OS包也为空，实际本地1、未产出通过证明；按清理计划仅要求受管集合空修正后，SHA24533ea677d64868f249af7ae017a1916880df836a94b3eb99d2df12e19f9b6a证明通过，原本地错误单列保留，不是远端清场失败或操作系统被清空。
+
+UTC2026-10-29T00:07:32.597711Z，原初清门与完整冻结通过后，仅一次向root唯一driver工具47579/Python16120送八条原run：TaskBoard、FTP、Asset、CSV、Survey、Log、Directory、Binary。eight-original-command-submission-intent-06及submission-06记录原payload SHA、初清proof、首次launch和双CIM；实际首Maven35680及driver16120身份已核live。其余七条已经在原TTY队列，不能重发。当前只有TaskBoard一个原launch、无完整业务/交付/清理终态，完整首过暂0，不能预记8/8或把旧七项拼入。一次安全状态采样见其DEPLOYMENT/APPROVAL helper.install.tracked，27条generation、累计未知usage0仅该时点，不是终态账单或零异常结论。
+
+SOURCE73、同一06策略/模式、LOW/LOW/1500000/65536/90及用户授权FTP8MiB/1MiB/2+6/19 trace/双版五下载SHA/10并发/取消持久化/错SHA/真实停启等业务不变；无UI/浏览器/Computer Use。一般项目失败保留并继续原冻结余项，冻结或安全守卫异常阻断；所有修复另隔离，不重放旧UNKNOWN、不修改活动源。当前driver47579活动是授权原八队列，整轮结束才统一核退/清t06；原94607及旧88554/80497、37576/66898都已终态不能poll。目标active，未完成。
