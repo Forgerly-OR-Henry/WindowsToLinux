@@ -182,6 +182,58 @@ def root_inventory(mounts):
     return values
 
 
+def dependency_unit_binding(unit):
+    match = re.fullmatch('windowstolinux-dependency-([a-f0-9]{32})\\.service', unit)
+    if match is None:
+        raise ResetError('DEPENDENCY_UNIT_IDENTITY')
+    base = pathlib.Path('/var/lib/windowstolinux/dependency-operations') / match[1]
+    def read(name, limit):
+        path = base / name
+        safe_ancestors(path)
+        info = metadata(path)
+        if info['type'] != 'file' or info['uid'] != 0 or info['gid'] != 0 or info['mode'] & 0o022 or info['size'] > limit:
+            raise ResetError('DEPENDENCY_OWNERSHIP_FILE')
+        data = path.read_bytes()
+        if len(data) != info['size']:
+            raise ResetError('DEPENDENCY_OWNERSHIP_CHANGED')
+        return data
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ResetError('DEPENDENCY_OWNERSHIP_DUPLICATE')
+            result[key] = value
+        return result
+    raw, ready_raw, worker = read('manifest.json', 16384), read('ready.json', 4096), read('worker.py', 1048576)
+    manifest, ready = json.loads(raw, object_pairs_hook=unique), json.loads(ready_raw, object_pairs_hook=unique)
+    source = digest(worker)
+    if (not isinstance(manifest, dict) or not isinstance(ready, dict) or type(manifest.get('formatVersion')) is not int or manifest.get('formatVersion') != 1
+        or manifest.get('operation') != match[1] or manifest.get('unit') != unit
+        or manifest.get('workerSourceSha256') != source or ready.get('operation') != match[1]
+        or ready.get('workerSourceSha256') != source or not re.fullmatch('[a-f0-9]{32}', ready.get('invocationId', ''))
+        or ready['invocationId'] == '0' * 32 or not isinstance(manifest.get('task'), str)
+        or not re.fullmatch('[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', manifest['task'])
+        or not isinstance(manifest.get('server'), str) or not re.fullmatch('[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', manifest['server'])
+        or manifest.get('description') != 'WTL_DEPENDENCY_1:' + match[1] + ':' + source):
+        raise ResetError('DEPENDENCY_UNIT_IDENTITY')
+    _, output = command(['/usr/bin/systemctl', 'show', '--no-pager',
+        '--property=LoadState,InvocationID,Description,Transient,ControlGroup', unit])
+    facts = {}
+    for line in output.splitlines():
+        key, sep, value = line.partition('=')
+        if not sep or key in facts:
+            raise ResetError('DEPENDENCY_UNIT_OBSERVATION')
+        facts[key] = value
+    if (set(facts) != {'LoadState', 'InvocationID', 'Description', 'Transient', 'ControlGroup'}
+        or facts['LoadState'] != 'loaded' or facts['InvocationID'] != ready['invocationId']
+        or facts['Description'] != manifest['description'] or facts['Transient'] != 'yes'
+        or facts['ControlGroup'] not in ('', '/system.slice/' + unit)):
+        raise ResetError('DEPENDENCY_UNIT_IDENTITY')
+    return {'operation': match[1], 'task': manifest['task'], 'server': manifest['server'],
+        'manifestSha256': digest(raw), 'readySha256': digest(ready_raw), 'workerSourceSha256': source,
+        'invocationId': ready['invocationId']}
+
+
 def unit_inventory(mounts):
     loaded, installed, files, states = set(), set(), {}, {}
     for option, names in (('list-units', loaded), ('list-unit-files', installed)):
@@ -228,6 +280,10 @@ def unit_inventory(mounts):
     names = sorted(loaded | installed)
     if len(names) > 2048 or len(files) > 8192:
         raise ResetError('UNIT_INVENTORY_LIMIT')
+    for name in names:
+        if name.startswith('windowstolinux-dependency-'):
+            # Prefix only selects candidates. A foreign/colliding unit is never claimed or killed.
+            states.setdefault(name, {})['dependencyOwnership'] = dependency_unit_binding(name)
     return names, sorted(installed), [files[key] for key in sorted(files)], dict(sorted(states.items()))
 
 
@@ -456,6 +512,8 @@ def apply(selected):
                'removedAccounts': 0, 'purgedPackages': 0, 'aptDownloadCacheCleaned': False}
     PHASE = 'stop-units'
     for unit in current['units']:
+        if unit.startswith('windowstolinux-dependency-') and dependency_unit_binding(unit) != current['unitStates'][unit]['dependencyOwnership']:
+            raise ResetError('DEPENDENCY_UNIT_DRIFT')
         command(['/usr/bin/systemctl', 'stop', '--', unit], timeout=180)
         summary['stoppedUnits'] += 1
     PHASE = 'reset-exact-failed-units'

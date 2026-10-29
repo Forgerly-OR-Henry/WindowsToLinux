@@ -31,7 +31,8 @@ public final class DeploymentToolchainDependencies {
         "dependency_registered", "dependency_tool", "dependency_run", "dependency_packages", "dependency_url", "dependency_key",
         "dependency_apt_hook_owners", "dependency_apt_binaries", "dependency_apt_options", "dependency_validate_dpkg",
         "dependency_apt_source_authentication", "dependency_apt_sources", "dependency_validate_apt", "dependency_dnf_config",
-        "dependency_validate_dnf", "dependency_versions", "dependency_main", "dependency_cli");
+        "dependency_validate_dnf", "dependency_versions", "dependency_transaction", "dependency_frame", "dependency_remaining",
+        "dependency_worker", "dependency_supervise", "dependency_unit_identity", "dependency_group", "dependency_main", "dependency_cli");
     private DeploymentToolchainDependencies() {}
 
     public static String dependencies() {
@@ -39,13 +40,59 @@ public final class DeploymentToolchainDependencies {
     }
 
     public static String dependencies(DeploymentRemoteLayout layout) {
+        String worker = workerSource(layout);
+        try {
+            return "DEPENDENCY_WORKER_SOURCE = " + JSON.writeValueAsString(worker) + "\n" + worker;
+        } catch (IOException failure) {
+            throw new IllegalStateException("Dependency worker source cannot be rendered", failure);
+        }
+    }
+
+    private static String workerSource(DeploymentRemoteLayout layout) {
         Objects.requireNonNull(layout);
         try {
             return "import json\nDEPENDENCY_PACKAGES = json.loads(" + JSON.writeValueAsString(PACKAGES_TEXT)
-                + ")\n" + resource("agent-toolchain-dependencies.py");
+                + ")\nDEPENDENCY_OPERATIONS_ROOT = " + JSON.writeValueAsString(operationsRoot(layout)) + "\n"
+                + resource("dependency-lifecycle.py") + "\n" + resource("agent-toolchain-dependencies.py");
         } catch (IOException failure) {
             throw new IllegalStateException("Dependency source cannot be rendered", failure);
         }
+    }
+
+    public static String operationsRoot(DeploymentRemoteLayout layout) {
+        return layout.paths().stateRoot() + "/dependency-operations";
+    }
+
+    public static String workerDigest(DeploymentRemoteLayout layout) {
+        return sha256(workerSource(layout).getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static String unit(String operation) {
+        return "windowstolinux-dependency-" + identity(operation) + ".service";
+    }
+
+    public static List<String> frame(String profile, String operation, long seconds, ServerId server, String task) {
+        if (!PROFILES.contains(profile) || seconds < 45 || seconds > 7200
+            || !server.id().matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+            || !UUID.fromString(task).toString().equals(task))
+            throw new IllegalArgumentException("Original dependency budget/server/task required");
+        return List.of(profile, identity(operation), Long.toString(seconds), server.id(), task);
+    }
+
+    /** A narrowed outer channel cannot execute a frame approved for a different total budget. */
+    public static void requireTimeout(CommandRequest request) {
+        var args = arguments(request.script());
+        if (args.size() != 5 || !args.get(2).matches("[1-9][0-9]{0,3}") || request.timeout().getNano() != 0
+            || !Long.toString(request.timeout().getSeconds()).equals(args.get(2))
+            || request.timeout().getSeconds() < 45 || request.timeout().getSeconds() > 7200)
+            throw new IllegalArgumentException("Dependency frame differs from final command timeout");
+    }
+
+    public static void requireOriginal(CommandRequest request, ServerId server, String task) {
+        requireTimeout(request);
+        var args = arguments(request.script());
+        if (!args.equals(frame(args.getFirst(), args.get(1), request.timeout().getSeconds(), server, task)))
+            throw new IllegalArgumentException("Dependency original server/task changed");
     }
 
     public static List<String> packages(String manager, DeploymentToolchainType ecosystem) {
@@ -135,18 +182,36 @@ public final class DeploymentToolchainDependencies {
         return Set.copyOf(targets);
     }
 
+    public static Set<ActionTarget> lifecycleTargets(ServerId server, String operation, DeploymentRemoteLayout layout) {
+        String base = operationsRoot(layout) + "/" + identity(operation);
+        var targets = new LinkedHashSet<ActionTarget>();
+        targets.add(target(server, "systemd-unit", unit(operation)));
+        targets.add(target(server, "directory", operationsRoot(layout)));
+        targets.add(target(server, "directory", base));
+        for (String file : List.of("manifest.json", "worker.py", "ready.json", "result.json", "receipt.json"))
+            targets.add(target(server, "file", base + "/" + file));
+        return Set.copyOf(targets);
+    }
+
+    public static Set<ActionTarget> dependencyTargets(ServerId server, String profile, String operation, DeploymentRemoteLayout layout) {
+        var targets = new LinkedHashSet<>(dependencyTargets(server, profile));
+        targets.addAll(lifecycleTargets(server, operation, layout));
+        return Set.copyOf(targets);
+    }
+
     private static ActionTarget target(ServerId server, String kind, String id) {
         return new ActionTarget(server.id(), kind, id);
     }
 
-    public static boolean dependencyReceipt(String stdout, String ecosystem, String operation) {
+    public static boolean dependencyReceipt(String stdout, String ecosystem, String operation, long seconds,
+                                             ServerId server, String task, DeploymentRemoteLayout layout) {
         String prefix = "TOOLCHAIN_DEPENDENCIES=";
         if (!stdout.startsWith(prefix) || !stdout.endsWith("\n") || stdout.indexOf('\n') != stdout.length() - 1)
             return false;
         try (var parser = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
             .createParser(stdout.substring(prefix.length()))) {
             JsonNode root = new ObjectMapper().readTree(parser);
-            if (root == null || parser.nextToken() != null || !root.isObject() || root.size() != 4
+            if (root == null || parser.nextToken() != null || !root.isObject() || root.size() != 5
                 || !root.path("operation").isTextual() || !root.path("ecosystem").isTextual() || !root.path("manager").isTextual()
                 || !operation.equals(root.path("operation").asText()) || !ecosystem.equals(root.path("ecosystem").asText()))
                 return false;
@@ -162,7 +227,21 @@ public final class DeploymentToolchainDependencies {
                     return false;
                 actual.add(field.getKey());
             }
-            return actual.equals(Set.copyOf(DeploymentToolchainDependencies.packages(manager, ecosystem)));
+            JsonNode life = root.path("lifecycle");
+            if (!life.isObject() || life.size() != 13 || !life.path("formatVersion").isInt() || life.path("formatVersion").intValue() != 1
+                || !life.path("unit").isTextual() || !life.path("invocationId").isTextual() || !life.path("workerSourceSha256").isTextual()
+                || !life.path("server").isTextual() || !life.path("task").isTextual()
+                || !unit(operation).equals(life.path("unit").asText()) || !life.path("invocationId").asText().matches("[a-f0-9]{32}")
+                || life.path("invocationId").asText().equals("0".repeat(32))
+                || !workerDigest(layout).equals(life.path("workerSourceSha256").asText())
+                || !life.path("totalSeconds").isInt() || life.path("totalSeconds").intValue() != seconds
+                || !life.path("runtimeSeconds").isInt() || life.path("runtimeSeconds").intValue() < 1
+                || life.path("runtimeSeconds").intValue() > seconds - 30 || !life.path("stopSeconds").isInt() || life.path("stopSeconds").intValue() != 5
+                || !life.path("reserveSeconds").isInt() || life.path("reserveSeconds").intValue() != 25
+                || !server.id().equals(life.path("server").asText()) || !task.equals(life.path("task").asText())) return false;
+            for (String proof : List.of("loadedCompletionObserved", "recursiveCgroupEmptyObserved", "stopCompleted"))
+                if (!life.path(proof).isBoolean() || !life.path(proof).booleanValue()) return false;
+            return seconds >= 45 && seconds <= 7200 && actual.equals(Set.copyOf(DeploymentToolchainDependencies.packages(manager, ecosystem)));
         } catch (java.io.IOException | IllegalArgumentException malformed) {
             return false;
         }
@@ -267,13 +346,15 @@ public final class DeploymentToolchainDependencies {
         if (!match.matches()) throw new IllegalArgumentException("Dependency exact action incomplete");
         Duration timeout = Duration.parse(match.group(1));
         long outputLimit = Long.parseLong(match.group(2));
-        if (timeout.getNano() != 0 || timeout.getSeconds() < 1 || timeout.getSeconds() > 7200 || outputLimit != 65536)
+        if (timeout.getNano() != 0 || timeout.getSeconds() < 45 || timeout.getSeconds() > 7200 || outputLimit != 65536)
             throw new IllegalArgumentException("Dependency bounds changed");
         var arguments = arguments(match.group(5));
-        if (arguments.size() != 2 || common && !arguments.getFirst().equals(PROFILE))
+        if (arguments.size() != 5 || common && !arguments.getFirst().equals(PROFILE))
             throw new IllegalArgumentException("Dependency profile/frame changed");
         String profile = arguments.getFirst(), identity = identity(arguments.get(1));
-        var targets = dependencyTargets(server, profile);
+        if (!arguments.equals(frame(profile, identity, timeout.getSeconds(), server, arguments.get(4))))
+            throw new IllegalArgumentException("Dependency budget/server/task frame changed");
+        var targets = dependencyTargets(server, profile, identity, layout);
         if (!targets.equals(targets(current.path("resourceTargets"))))
             throw new IllegalArgumentException("Dependency effect targets changed");
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
@@ -292,6 +373,12 @@ public final class DeploymentToolchainDependencies {
             facts.put("phase", "dependencies");
             facts.put("profile", profile);
             facts.put("operationId", identity);
+            facts.put("task", arguments.get(4));
+            facts.put("serviceLifecycle", Map.of("unit", unit(identity), "manifest", operationsRoot(layout) + "/" + identity + "/manifest.json",
+                "totalSeconds", timeout.getSeconds(), "maximumRuntimeSeconds", timeout.getSeconds() - 30,
+                "stopSeconds", 5, "observationAndStartupReserveSeconds", 25,
+                "workerSourceSha256", workerDigest(layout),
+                "termination", "Type=exec root-owned transient service; independent RuntimeMaxSec, KillMode=control-group and SendSIGKILL. Completion requires loaded unit identity, actual recursive empty-cgroup evidence, exact stop and launcher wait. Missing cgroup or unconfirmed cancellation/disconnect remains UNKNOWN; no global apt/dpkg kill or replay."));
             facts.put("server", server.id());
             facts.put("businessRevision", revision);
             facts.put("inputMatchesRenderer", true);

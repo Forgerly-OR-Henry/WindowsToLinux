@@ -687,7 +687,9 @@ class DeploymentAgentReviewStopTest extends DeploymentRuntimeFixture {
                 for (var row : facts.path("resourceTargets"))
                     targets.add(new ActionTarget(row.path("serverId").asText(), row.path("kind").asText(), row.path("id").asText()));
                 reviewedInstallTargets = Set.copyOf(targets);
-                assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.targets(server), targets);
+                String installerSource = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.reconstruct(facts.path("completeExecutableInput"));
+                String dependencyOperation = DeploymentAgentHelperInstallerScript.parseOperation(installerSource);
+                assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.targets(server, dependencyOperation), targets);
                 assertTrue(targets.stream().allMatch(target -> target.serverId().equals(server.id())));
                 assertTrue(targets.contains(new ActionTarget(server.id(), "deployment-helper", DeploymentManagedHelperBundle.PATH)));
                 assertTrue(targets.contains(new ActionTarget(server.id(), "file", DeploymentManagedHelperBundle.BUILD_ENTRY_PATH)));

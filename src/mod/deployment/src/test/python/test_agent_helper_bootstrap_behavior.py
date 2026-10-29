@@ -19,6 +19,7 @@ def dependencies():
     table = json.loads((SOURCE / 'dependency-packages.json').read_text(encoding='utf-8'))
     module = types.ModuleType('helper_bootstrap_fixture')
     module.DEPENDENCY_PACKAGES = table
+    exec(compile((SOURCE / 'dependency-lifecycle.py').read_text(encoding='utf-8'), '<fixed-dependency-lifecycle>', 'exec'), module.__dict__)
     exec(compile((SOURCE / 'agent-toolchain-dependencies.py').read_text(encoding='utf-8'), '<fixed-dependencies>', 'exec'), module.__dict__)
     return module, table
 
@@ -26,6 +27,8 @@ def dependencies():
 class AgentHelperBootstrapBehaviorTest(unittest.TestCase):
     def setUp(self):
         self.d, self.table = dependencies()
+        self.d.DEPENDENCY_WORKER_ADMITTED = True  # Package/configuration seam only; supervised entry has separate direct checks.
+        self.d.DEPENDENCY_DEADLINE_NS = self.d.time.monotonic_ns() + 60000000000
         self.commands = []
         self.profile = {'id': 'ubuntu', 'version': '24.04', 'manager': 'APT'}
         self.effective_apt = ''
@@ -63,7 +66,7 @@ class AgentHelperBootstrapBehaviorTest(unittest.TestCase):
 
     def execute(self, files, profile='HELPER_RUNTIME'):
         stream = io.StringIO()
-        with self.os_files(files), contextlib.redirect_stdout(stream):
+        with self.os_files(files), mock.patch.object(self.d, 'dependency_main', self.d.dependency_transaction), contextlib.redirect_stdout(stream):
             result = self.d.dependency_cli([profile, OPERATION])
         return result, stream.getvalue()
 
@@ -79,7 +82,7 @@ class AgentHelperBootstrapBehaviorTest(unittest.TestCase):
             for args in (['HELPER_RUNTIME', OPERATION, 'model-package'], ['MODEL_RUNTIME', OPERATION],
                          ['HELPER_RUNTIME', '../operation'], ['HELPER_RUNTIME', 'A' * 32]):
                 with self.subTest(args=args), self.assertRaises(self.d.DependencyFailure):
-                    self.d.dependency_main(args)
+                    self.d.dependency_transaction(args)
         self.assertEqual([], self.commands)
 
     def test_dangerous_apt_configuration_source_key_and_binary_are_rejected_before_transactions(self):
@@ -155,7 +158,7 @@ class AgentHelperBootstrapBehaviorTest(unittest.TestCase):
     def test_existing_native_build_profile_still_enables_crb(self):
         self.profile = {'id': 'centos', 'version': '9', 'manager': 'DNF'}
         with self.os_files({}), mock.patch.object(self.d, 'dependency_validate_dnf') as checked, contextlib.redirect_stdout(io.StringIO()):
-            self.d.dependency_main(['NATIVE_BUILD', OPERATION])
+            self.d.dependency_transaction(['NATIVE_BUILD', OPERATION])
         checked.assert_called_once_with()
         transaction = next(command for command in self.commands if command[0].endswith('/dnf'))
         self.assertIn('--enablerepo=crb', transaction)

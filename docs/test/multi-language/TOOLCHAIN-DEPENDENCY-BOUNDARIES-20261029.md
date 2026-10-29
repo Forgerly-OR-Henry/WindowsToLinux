@@ -1,6 +1,6 @@
 # 工具链依赖事务边界定点验证（2026-10-29）
 
-当前仅完成禁止APT依赖安装移除软件包这一项隔离修复及相关定点验证。R08仍为6/8失败；Log的超时与进程树收尾缺口另待修复，没有启动R09或重新清场。
+当前在r09f隔离树修复两项不同的依赖事务边界：APT禁止移除，以及完整固定依赖动作的独占systemd服务、累计预算与可验证收尾。已进行本地定点验证及新树打包；真实Linux/systemd、APT、SSH、模型和新一轮原业务尚未执行。R08仍为6/8失败，Log和Directory原UNKNOWN不重放、不改判，没有启动R09或重新清场。
 
 ## 已证问题与未知边界
 
@@ -8,16 +8,52 @@ R08 Directory原root a61da983-01f9-4084-9581-29c4f471a96e的持久化拒绝理�
 
 源码共享dependency_main确实仅传-y和--no-install-recommends，没有禁止移除。APT官方说明[--no-remove会在计划移除任何软件包时中止](https://manpages.debian.org/trixie/apt/apt-get.8.en.html)。因此确认的是命令缺少声明范围所需的禁止移除约束；本次在独立审批处已拒绝，不能说实际发生过卸载、解析器确实会卸载或整轮已修复通过。
 
-本问题与R07 CSV无native提交、ff83原生提醒分支不同；未撤销或改变ff83。共享资源从原Agent位置迁至service/deploy/toolchain时的7a321fa1及后续冻结原件保留，本改动仅收紧APT安装参数，不调整审批决定、预算、模型、任务状态或既有来源、签名、root-owned、配置与hook校验。
+本问题与R07 CSV无native提交、ff83原生提醒分支不同；未撤销或改变ff83。共享资源从原Agent位置迁至service/deploy/toolchain时的7a321fa1及后续冻结原件保留。APT基础补丁仅收紧安装参数，不改变独立审批决定、模型、任务状态或既有来源、签名、root-owned、配置与hook校验。
+
+R08 Log的已脱敏独立审批理由指出每条内层命令1800秒可能超过所述外层1513秒，而且仅在finally且leader仍存活时killpg不能保证完整进程树退出。源码确认的是：原dependency_run每次重置1800秒；默认signal终止不保证finally执行；leader先退而后代持有stdout时会跳过原组kill；setsid后代可离开原进程组。1513这个精确数仅见于审批理由，本次没有独立计时证据。该请求在审批处已拒绝，不能说APT已经dispatch、发生过超时或留下了进程。
 
 ## 隔离改动
 
-在独立r09f工作树、源73bbbbbb基础上，为共享APT install增加--no-remove，继续使用原包清单、认证选项和单次事务/回执。该路径供PYTHON/PHP/RUBY/NATIVE_BUILD/HELPER_RUNTIME使用；DNF没有更改。实际八项影响仍须下一统一冻结轮证明。
+在独立r09f工作树、源73bbbbbb基础上，为共享APT install增加--no-remove，继续使用原包清单、认证选项和单次事务/回执。该路径供PYTHON/PHP/RUBY/NATIVE_BUILD/HELPER_RUNTIME使用；APT基础补丁未改DNF包命令参数，生命周期监督同时覆盖两管理器。实际八项影响仍须下一统一冻结轮证明。
 
 两个既有Python测试夹具仍引用已迁出的service/agent/toolchain依赖资源，现修正为生产实际service/deploy/toolchain，并在既有PHP、native build和helper-runtime事务断言中检查禁止移除选项。不是增加旧路径兼容副本，也不把夹具路径修正当生产问题修复。
 
+以上APT/loader基础已提交cff67b662c3711d084d77b3b30e850acb4b21a04。其后的生命周期修改仍共享同一固定包表、APT/DNF认证、OS文件/owner/digest、hook和配置检查，不通过删守卫或强制批准解决拒绝。
+
+## 固定依赖动作的新执行合同
+
+standard NativeBuild、Agent dependencies别名和HELPER_RUNTIME嵌入入口使用同一完整固定Python源。规范参数为profile、operation、整数T、server、task；T必须与最终CommandRequest.timeout精确一致且在45至7200秒。完整源、stdin长度/SHA、exact action、layout及包/自有unit/manifest文件targets仍由inspect交叉校验。外层channel若把T再次缩短，在独立审批和dispatch之前拒绝；已经获得的旧grant不能静默执行另一预算。HELPER_RUNTIME继续绑定原固定两小时files-install envelope，不依赖本来尚待安装的managed-helper。
+
+完整依赖worker及包管理后代先进入operation独占的root transient service。入组及实际属性/InvocationID/cgroup/MainPID验证之前，没有包事务或包数据库查询。没有所需systemd/cgroup v2/属性/路径能力就拒绝，不fallback裸Popen。服务使用Type=exec、RemainAfterExit=yes、KillMode=control-group、SendSIGKILL=yes、有限TimeoutStartSec和TimeoutStopSec；未照搬vendor DynamicUser沙箱，root包维护仍是现有OS信任边界。
+
+动作在远端开始时建立一个monotonic总deadline，配置/owner查询、update/install/query及回执共享该额度，不为下一条命令重置1800秒。实际RuntimeMaxSec在worker源持久化后扣除已消耗的准备时间，并满足RuntimeMaxSec+5秒stop+25秒启动/观察预留不超过精确T；manifest持久化后、启动服务前再核一次，准备过慢不能扩大总额度。worker同时使用同一初始时间导出的总工作deadline。独立systemd期限可以覆盖SSH/launcher/worker亲代异常退出，不依赖Python finally；它不是与本地SSH request绝对同一瞬间的截止，也不是即时取消协议。
+
+自有路径为捕获layout.stateRoot下dependency-operations/operation，unit为windowstolinux-dependency-operation.service。全新root-owned独占目录和manifest绑定task/server/operation、源digest、unit与预算；碰撞/身份漂移拒绝，不复用旧操作。worker、manifest、ready、result和receipt均先完整写入/fsync临时文件，再用无覆盖link发布，避免controller读到最终名半文件；这复用了既有tracked binding的发布方式。自有文件/目录别名拒绝，现有OS工具正常路径守卫保持原规则。
+
+正常成功要求原包命令真实成功、完整精确版本回执、loaded/exited且MainPID=0/ExecMainStatus=0/Result=success、匹配InvocationID及原cgroup inode、实际递归cgroup.procs为空，再有限stop精确unit并wait launcher。RemainAfterExit下先并发观察完成和验空，不能先阻塞wait再尝试stop。停止后not-found只有在此前独立完成身份和真实空组证据齐备时才可解释为已collect；not-found或目录缺失本身永不当空。客户端还严格校验生命周期回执的整数、小数/溢出、身份、源及boolean证明字段。
+
+显式产品清理inventory/plan/after识别新prefix仅作为候选；必须有root-owned manifest/worker源和ready InvocationID，与实际loaded unit的Description/Transient/InvocationID一致才认领。apply在停止前再次比较该绑定，拒绝foreign/colliding unit。不通配kill，不杀全局apt/dpkg，不认领旧UNKNOWN。成功后manifest/回执保留，供后续独立清理核验。现有disposable-host-reset仅认本轮原默认layout，不据prefix接管其他layout的unit。
+
+## 保证与尚未验证的Linux边界
+
+取消、断连、stop失败、身份不明、缺少真实验空证据都保留UNKNOWN；独立期限不是已观测的停止回执。不可中断D状态可能无法在有限时间核退，强制停止APT也不证明包数据库一致或事务回滚，不自动重跑修复。root maintainer script可通过systemctl启动其他unit；本服务cgroup空不代表全主机无跨unit副作用，也不授权停止合法系统服务。
+
+后续受控Linux阶段必须先验证两项实际能力：不存在unit时systemctl show是否返回当前严格观察合同要求的全部属性；Type=exec/RemainAfterExit的active/exited状态是否保留可实际读取的cgroup路径和空组证据。任一不满足就停止并修实际观察合同，不能用mock或not-found补成通过。随后才可用无包副作用的父/子/孙、setsid、忽略TERM、leader先退等固定fixture验证launcher/worker退出与独立期限。当前没有执行这些Linux步骤。
+
 ## 实际验证与交付边界
 
-仅指定七个Python unittest方法，0失败，0.058秒：PHP原包/认证/单回执；native build APT与DNF事务/精确回执、拒绝不派发、伪造回执拒绝；APT认证放宽与自定义hook拒绝；helper-runtime受控APT事务及危险配置/来源/key/binary在事务前拒绝。内部subTest不另算方法。原始launch/stdout/stderr/exit/CIM位于主工作区[定点证据](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/)。Python10704实际wait/exit0，host CIM确认不存在，未留下验证进程；-B避免字节码缓存。
+APT基础仅指定七个Python unittest方法，0失败，0.058秒，Python10704实际wait/exit0及CIM退；该历史结果保留。生命周期阶段先运行5个新增方法加直接受影响原7个，共12方法0失败；随后Ready/manifest类型收紧及新增cleanup辨认，运行7个直接方法0失败；再只验证原子发布新增反例和2个直接监督方法，共3方法0失败；持久化后预算门只复测直接2方法，0失败。生命周期阶段为15个唯一方法、24次方法执行，不能把重跑合成24个唯一测试；内部subTest不另算方法。没有真实Linux、APT或SSH调用。
 
-这是本地纯模拟命令/OS接缝验证，没有运行真实APT、SSH、模型、UI或全套测试。尚未重建新工作树部署产物；必要打包待超时边界修复一起完成，不能沿用R08旧JAR冒充新修复。原R08工作树、targets、失败、UNKNOWN、两阶段取证与论文修改保留。所有正式代码及本记录完成相关验证后提交本地Git，默认不推送。
+首轮Java仅9类明确方法，实际XML64用例：63通过，1个旧篡改fixture失败。该fixture仍替换“两参数后紧接heredoc”的旧片段，在新五参数输入中替换实际为no-op；修为当前参数尾，先断言mutant字节确实不同再断言parser拒绝，不放宽生产parser。原9XML/失败原样封存；其中20个Native原参数用例全部通过（218.6秒），不因修fixture或原子发布重跑。
+
+随后只复测失败及直接受完整源、原子发布和整数收紧影响的5类8方法，实际19个参数用例，0失败/0错误/0跳过，Maven实际exit0/BUILD SUCCESS。未再跑其余首轮已过组；不表述成“单次64全绿”。原子发布反例证明fsync/close先于最终名发布、碰撞不覆盖；溢出反例使用2^64+60，不能借longValue回绕成T=60。它们是新实现自查收紧，不冒充原R08已经发生过的失败。
+
+最后预算准备复核只运行源字节/别名/严格回执一致性1方法；回执的文本身份类型收口只运行生命周期回执反例1方法，两次均实际1/0/0/0。数字InvocationID不能借asText当文本身份；未重跑Native20或旧三CurrentSource。各轮XML和原生退出分开保留。
+
+新树必要package明确-pl src/mod/files,src/mod/deployment -am -DskipTests，双公开Central settings、JDK21、staticLive/agentLive=false。package04实际BUILD SUCCESS、17 reactor项目成功，全部测试跳过，Files第三Mod已生成；它是后续原子发布/整数收紧之前的中间产物，不能当最终修复JAR。首个有效package03仅testCompile失败于一处直接fixture旧targets签名，修正后再构建；此前两次cmd launcher在Maven启动前失败，另行保留，不计构建/业务分母。本任务误建的12个空目录已在同一PowerShell按精确绝对边界、创建窗口、nonreparse及空目录条件非递归清理；没有改系统设置或原文件。
+
+提交后的最终skipTests package实际结果、JAR与CLASS/资源对应SHA、全部原生wait/CIM及临时收尾以[本任务最终收尾回执](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/dependency-lifecycle-02/r09-lifecycle-closeout-02.json)逐项绑定；不沿用中间package04产物。
+
+实际launch/stdout/stderr/exit、CIM、tmp及原XML位于[生命周期定点证据](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/dependency-lifecycle-02/)。实际JUnit非空classpath54项，当前user.dir/target均属于r09f；未引用r08 targets、classpath或t06。自有临时目录位于该证据目录，不涉及R08收尾。所有正式代码与本记录完成直接验证后仅本地提交，不推送。
+
+旧三个CurrentSource失败方法未纳入本次64，继续保留未解决状态：toolchainCurrentSourceClaimsAndChangedRequestsRejectBeforeApproval、toolchainCompleteEvidenceRetainsTheOriginalEncodedRequestLimit、toolchainPreparationSuppliesOneCurrentSourceAfterHistoryAndPreservesFinalDenial。它们构造installed managed-helper的deployment.toolchain.prepare.v1、prepare-toolchains和EMPTY stdin，走旧prepare_official_toolchains源证据；本次不改该路径，不以新dependencies五参数或64个定点结果称其已闭合。未执行全类、全模块或全项目测试，未取得真实provider、Linux内核收尾或新八项验收结果。R08工作树、冻结73/P71b/R5b、失败和UNKNOWN、全部取证、targets及论文修改保留。

@@ -185,7 +185,7 @@ class DeploymentApprovalConversationTest {
             "fixture-fingerprint", "a".repeat(64), "fixture-route");
         var ai = new DeploymentAiJson(boundary.context(), conversation);
         String operation = "1234567890abcdef1234567890abcdef";
-        String script = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.render(operation);
+        String script = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.render(operation, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), server, fixture.task.id().toString());
         reply(fixture, "deny-guarded-bootstrap", "DENY");
         try (var command = new CommandRequest(gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.LAUNCHER, script.getBytes(StandardCharsets.UTF_8),
             Duration.ofHours(2), 131072)) {

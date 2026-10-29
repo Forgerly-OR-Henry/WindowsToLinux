@@ -2481,7 +2481,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                                         assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.LAUNCHER,
                                             ((CommandRequest) arguments[0]).script());
                                         String operation = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.parseOperation(body);
-                                        assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.render(operation), body);
+                                        assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.render(operation, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), new ServerId(gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.parseFrame(body, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()).get(3)), gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.parseFrame(body, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()).get(4)), body);
                                     }
                                     assertTrue(bootstrapFilesAvailable.compareAndSet(false, true), "A matching helper is never reinstalled");
                                     filesInstallerSends.incrementAndGet();
@@ -3593,7 +3593,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                     assertTrue(routes.contains(business));
                     String reconstructed = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.reconstruct(facts.path("completeExecutableInput"));
                     String operation = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.parseOperation(reconstructed);
-                    String canonical = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.render(operation);
+                    String canonical = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.render(operation, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), new ServerId(gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.parseFrame(reconstructed, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()).get(3)), gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.parseFrame(reconstructed, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()).get(4));
                     assertEquals(canonical, reconstructed, "Every observed installer byte matches the current canonical Agent bootstrap");
                     var targets = new HashSet<gold.debug.windowstolinux.appapi.task.action.ActionTarget>();
                     for (var target : facts.path("resourceTargets")) {
@@ -3601,7 +3601,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                         assertTrue(targets.add(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(target.path("serverId").asText(),
                             target.path("kind").asText(), target.path("id").asText())));
                     }
-                    assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.targets(new ServerId("server")), targets);
+                    assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.targets(new ServerId("server"), operation), targets);
                     add(expected, task, "deployment.helper.install.files.custom.v1", business,
                         gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.LAUNCHER,
                         canonical.getBytes(StandardCharsets.UTF_8), Duration.ofHours(2), 131072, Optional.of(canonical),

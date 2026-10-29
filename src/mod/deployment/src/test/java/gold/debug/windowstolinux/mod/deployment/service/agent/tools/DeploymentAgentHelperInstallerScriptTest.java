@@ -38,8 +38,8 @@ class DeploymentAgentHelperInstallerScriptTest {
 
     @Test
     void completeCanonicalInstallerBindsOperationAndEveryGuardedSourceByte() {
-        String fragment = DeploymentAgentHelperInstallerScript.prerequisites(OPERATION);
-        String script = DeploymentAgentHelperInstallerScript.render(OPERATION);
+        String fragment = DeploymentAgentHelperInstallerScript.prerequisites(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), new gold.debug.windowstolinux.appapi.server.model.ServerId("bootstrap"), "11111111-2222-3333-4444-555555555555");
+        String script = DeploymentAgentHelperInstallerScript.render(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), new gold.debug.windowstolinux.appapi.server.model.ServerId("bootstrap"), "11111111-2222-3333-4444-555555555555");
         assertEquals(DeploymentHelperInstallerScript.renderFiles(fragment), script);
         assertEquals(OPERATION, DeploymentAgentHelperInstallerScript.parseOperation(script));
         assertTrue(fragment.contains(DeploymentAgentToolchainPrograms.dependencies()));
@@ -54,14 +54,16 @@ class DeploymentAgentHelperInstallerScriptTest {
 
     @Test
     void operationFrameAndSourceTamperingAreRejectedWithoutEchoingInputs() {
-        String script = DeploymentAgentHelperInstallerScript.render(OPERATION);
+        String script = DeploymentAgentHelperInstallerScript.render(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), new gold.debug.windowstolinux.appapi.server.model.ServerId("bootstrap"), "11111111-2222-3333-4444-555555555555");
         for (String changed : new String[]{script + "echo extra-effect\n", script.replace(OPERATION, "INVALID-OPERATION"),
-            script.replace("'" + OPERATION + "' <<", "'" + OPERATION + "' '--extra' <<"),
+            script.replace("'11111111-2222-3333-4444-555555555555' <<", "'11111111-2222-3333-4444-555555555555' '--extra' <<"),
             script.replace("DEPENDENCY_PACKAGES = json.loads(", "DEPENDENCY_PACKAGES = altered("),
-            script.replace("\n", "\r\n")})
+            script.replace("\n", "\r\n")}) {
+            assertNotEquals(script, changed, "The negative fixture must change actual current bytes");
             assertThrows(IllegalArgumentException.class, () -> DeploymentAgentHelperInstallerScript.parseOperation(changed));
+        }
         for (String invalid : new String[]{"", "a".repeat(31), "A".repeat(32), OPERATION + " --extra"})
-            assertThrows(IllegalArgumentException.class, () -> DeploymentAgentHelperInstallerScript.prerequisites(invalid));
+            assertThrows(IllegalArgumentException.class, () -> DeploymentAgentHelperInstallerScript.prerequisites(invalid, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), new gold.debug.windowstolinux.appapi.server.model.ServerId("bootstrap"), "11111111-2222-3333-4444-555555555555"));
     }
 
     @Test
@@ -73,7 +75,7 @@ class DeploymentAgentHelperInstallerScriptTest {
             + "files_trusted_runtime_path() { [ \"$1\" = /usr/bin/python3 ]; return 1; }\n"
             + "apt-get() { printf transaction > transaction; }\ndnf() { printf transaction > transaction; }\n"
             + "runtime_missing=1\nif [ \"$runtime_missing\" -ne 0 ]; then\n"
-            + DeploymentAgentHelperInstallerScript.prerequisites(OPERATION) + "fi\n"
+            + DeploymentAgentHelperInstallerScript.prerequisites(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), new gold.debug.windowstolinux.appapi.server.model.ServerId("bootstrap"), "11111111-2222-3333-4444-555555555555") + "fi\n"
             + "printf installed > helper-files\n");
         var process = new ProcessBuilder(bash.toString(), "--noprofile", "--norc", fixture.toString())
             .directory(temporary.toFile()).redirectErrorStream(true).start();
