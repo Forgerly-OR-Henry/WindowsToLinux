@@ -1,10 +1,22 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active，R08最终完整首过6/8，未达成。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产Linux矩阵/完整验收尚未执行。原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；后续仅独立辅助取证/修复准备。全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
+状态：已按用户2026-10-29要求暂停，目标未达成。R08最终完整首过6/8。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产Linux矩阵/完整验收尚未执行。原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；后续仅独立辅助取证/修复准备。全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
-## 当前阶段：新TTL机制诊断与生产v2本地修复/产物核对完成
+## 本次暂停：生产Linux矩阵仅本地准备，未实际执行
+
+用户于2026-10-29要求在半小时内找合适点暂停，本阶段已选本地准备结束处收尾。验收工作停止，须用户明确恢复后继续；暂停不代表目标完成。R08原6/8失败、Log/Directory原UNKNOWN和原始证据不变，正式R09仍0。本回合没有产品Runtime打开、凭据/私有配置读取、SSH、API、Linux新unit或新一轮服务器清场。
+
+生产源码仍为隔离r09f本地aa80428e、clean/未merge或push，前阶段实际产物9689acb8/收尾37ab保留。当前10/preparation-01完成实际产物重核Python0、必要javac0、纯Java render0；合法独占layout采用/var/lib/windowstolinux-production-lifecycle-10，/run旧建议未执行，未放宽生产路径守卫。新canonical e5d3b03b/worker581f1444，60个生产函数仅替换dependency_transaction的AST/字节/语法生成检查0。五个新纯准备方法首次4pass/1Windows mock ERROR（遗漏Linux-only SIGKILL），补mock后只复测该方法1pass，原失败和精确diff保留，不合并为首次全绿。
+
+候选payload f341a218明确不可执行：静态自查确认abrupt协调器有无上限os.waitpid(launcherPid,0)，尚未修；没有发生真实挂起，也不是生产aa804旧问题复发。恢复后的首要动作是保留本候选、最小改为原期限内有界WNOHANG等待并完成对应定点，然后联合审Java执行分支/协调器、正常快退竞争和收尾。当前没有最终fixture manifest、accepted parent review或可执行release，只有executionEnabled=false的DRAFT；三operation均未执行，不可直接运行这个候选。
+
+[父暂停证据](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-linux-matrix-10/preparation-01/parent-pause-10.json)SHA95cfadce0777ec4f7426590eb532bf5d0cf58460e608ff68e2fd121a42338494已重新核54份引用文件，两个owner收尾642f3327/6d99b545；根另核10个本阶段记录PID均CIM absent，四专用tmp目录不存在，无signal。原wrapper session72671 actual0已终态，禁止再poll；source、CLASS、render及原日志均保留，不重新编译已通过组。原R08 privacy826/postdoc5不扩称本阶段字节已扫，用户论文5项保留。
+
+恢复后先修未执行夹具并审新冻结，再运行三个无包生产路径场景；通过后重新冻结正式R09、建立新配置/凭据/产品连接、处理观察器窗口、产品inventory→plan→apply→独立after，最后同轮八项各一次。FTP固定8MiB，其余既定负载、原AI部署和独立审批不减，继续禁用Computer Use/UI/浏览器。
+
+## 暂停前检查点：新TTL机制诊断与生产v2本地修复/产物核对完成
 
 本回合只在新cases-03做准备态准入12行及缺字段/原期限/拒绝快照保留3个直接场景、一次必要javac，各actual0。原02实际拒绝show没有保留，未知仍未知；新代码确认修复无未绑定PENDING准备态的协议缺口，不把诊断增强当旧故障已查明。18冻结输入核实后，仅执行一个新TTL operation，无APT/DNF/模型/正式项目。
 

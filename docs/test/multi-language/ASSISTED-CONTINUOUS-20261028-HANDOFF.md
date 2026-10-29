@@ -1,6 +1,18 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R08原6/8失败，新TTL诊断及生产v2本地修复/产物核对完成
+## 现行入口：按用户要求暂停，R08仍6/8，R09未启动
+
+用户于2026-10-29要求在半小时内找合适点暂停，本阶段已选本地准备结束处收尾。验收工作停止，须用户明确恢复后继续；暂停不代表目标完成。R08原6/8失败、Log/Directory原UNKNOWN和原始证据不变，正式R09仍0。本回合没有产品Runtime打开、凭据/私有配置读取、SSH、API、Linux新unit或新一轮服务器清场。
+
+生产源码仍为隔离r09f本地aa80428e、clean/未merge或push，前阶段实际产物9689acb8/收尾37ab保留。当前10/preparation-01完成实际产物重核Python0、必要javac0、纯Java render0；合法独占layout采用/var/lib/windowstolinux-production-lifecycle-10，/run旧建议未执行，未放宽生产路径守卫。新canonical e5d3b03b/worker581f1444，60个生产函数仅替换dependency_transaction的AST/字节/语法生成检查0。五个新纯准备方法首次4pass/1Windows mock ERROR（遗漏Linux-only SIGKILL），补mock后只复测该方法1pass，原失败和精确diff保留，不合并为首次全绿。
+
+候选payload f341a218明确不可执行：静态自查确认abrupt协调器有无上限os.waitpid(launcherPid,0)，尚未修；没有发生真实挂起，也不是生产aa804旧问题复发。恢复后的首要动作是保留本候选、最小改为原期限内有界WNOHANG等待并完成对应定点，然后联合审Java执行分支/协调器、正常快退竞争和收尾。当前没有最终fixture manifest、accepted parent review或可执行release，只有executionEnabled=false的DRAFT；三operation均未执行，不可直接运行这个候选。
+
+[父暂停证据](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-continuous-20261028/r09-fix-only-01/production-linux-matrix-10/preparation-01/parent-pause-10.json)SHA95cfadce0777ec4f7426590eb532bf5d0cf58460e608ff68e2fd121a42338494已重新核54份引用文件，两个owner收尾642f3327/6d99b545；根另核10个本阶段记录PID均CIM absent，四专用tmp目录不存在，无signal。原wrapper session72671 actual0已终态，禁止再poll；source、CLASS、render及原日志均保留，不重新编译已通过组。原R08 privacy826/postdoc5不扩称本阶段字节已扫，用户论文5项保留。
+
+恢复后先修未执行夹具并审新冻结，再运行三个无包生产路径场景；通过后重新冻结正式R09、建立新配置/凭据/产品连接、处理观察器窗口、产品inventory→plan→apply→独立after，最后同轮八项各一次。FTP固定8MiB，其余既定负载、原AI部署和独立审批不减，继续禁用Computer Use/UI/浏览器。
+
+## 暂停前检查点：新TTL诊断及生产v2本地修复/产物核对完成
 
 本回合cases-03新operation只做无包期限诊断。原始TTL actual `ee08c559d5adbf12118ce4cc7997b90767bd5341e35f583089183a89c7ef7d52`实际0：两次startup同次21字段均BOUND，原deadline相同；没有实际PENDING，不能把旧TTL70的未知触发值补为空/零。leader正常退后MainPID0/running/populated1；pidfd只杀核实身份的本次systemd-run client，实际wait-9。未先stop，44.110311秒进入stop-sigterm且populated1，49.356519秒failed/Resulttimeout，同held核心FD正长度pread0 errno19。该宿主独立timer机制观察完成，异常事实仍保留，不是完整部署或零异常。
 
