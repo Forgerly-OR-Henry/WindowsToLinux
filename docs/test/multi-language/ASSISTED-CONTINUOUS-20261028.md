@@ -1,8 +1,28 @@
 # ASSISTED 连续首过验证记录
 
-状态：用户已明确恢复，目标active未达成；本阶段三项无包机制诊断及快照清理完成，正式R09仍未启动。R08最终完整首过6/8。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产无包Linux矩阵本阶段已执行（见下节），真实包/完整验收尚未执行。原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；后续仅独立辅助取证/修复准备。全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
+状态：目标active未达成；R09新树构建、凭据迁移和原产品连接已完成，最终冻结、清场及正式八项尚未启动。R08最终完整首过6/8。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产无包Linux矩阵前一阶段已执行（见后文），真实包/完整验收尚未执行。原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；后续仅独立辅助取证/修复准备。全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
+
+## R09新准备：新树产物、凭据桥及原产品连接已完成，待最终冻结
+
+新ROOT为H:/Program/WindowsToLinux/.ai-workspace/wt/r09，分支codex/assisted-frozen-r09-20261029、HEAD aa80428e41393f72f35faa29850eff2d7c21f5cb，源码clean。旧r08/r09f、全部失败/UNKNOWN及论文五项保留；尚未生成本轮最终policy/release/runtime-bindings，不可启动八项。R09正式0，新产品整场清理仍未执行，goal active未达成。
+
+必要新构建明确-pl files,deployment -am -DskipTests：native0/17reactor SUCCESS/测试0，32.186秒。原包装器因规范化绝对路径与未规范化Path.Combine混合分隔符比较而误拒收尾，外层2d817b实际1；保留原脚本/exit/cim，四native已核退后父另清精确b09-package-01，未重建。后续v2规范化双方并记录wrapper身份。新实际artifact7895e292测16JAR、17输出3809文件/资源与唯一provider；三个Mod由实际DevelopmentModFinder/ModCodeChecker接纳、拒绝0；实际新fixture CLASS f102确认8MiB/1MiB/2+6及12超时值。old08仅提供路径模板，不沿用其通过结论。
+
+私有配置105B整文件SHA核同后CopyNew到新ignored路径，先设置仅当前用户/SYSTEM ACL再写，值未打印、内存bytes清零。桥source b9c8df9f/caller fb65e53a经父完整审阅，必要javac0、DRAFT原生70为预期拒绝；新inputs a59fd9ee/父review57bde863/releasefef0341b后，仅正常打开当前机器new04源库和全新r09-01目标库，通过产品API以内存char[]重新保护并清零，实际25040 wait0/工具8f4833实际0。正常源/目标ledger可能写；源没有trust，未复制trust；没有拷加密DB或打开旧copied/UNKNOWN。
+
+限定DeploymentStaticLiveAcceptanceTest#connectsThroughTheRealPlatform仅新调用一次：Maven19164实际0、JUnit1/0/0/0、9.591秒，原产品OperationResult SUCCEEDED且指纹精确BiNl。原XML3819190e已封存，产品连接proof fecb8019；真实Surefire split55/非空54项与候选a66b1adc逐项原序一致，actual-junit-classpath-54-09.txt为新实测依据。SSH内部连接尝试数未另测；该回执OS/architecture为空，未据此声称重新验证系统身份字段或推断trust持久化位置，无AI/清场/正式项目。
+
+父辅助检查另列失败，不混八分母：一次解释器路径重复拼接导致未启动程序（9805ef外层0不是native验证0）；随后只读checker误用旧FRESH_CONNECTION_SUCCESS标记而原生1/b46b60，真实产品源码使用STATIC_LIVE_CONNECTION OperationResult。原XML已保留，核实际标记/指纹/JUnit/cp后新只读检查6d8975实际0，没有重跑产品连接。原始错误与范围写入parent-connection-checker-incidents-09.json。
+
+主运行闭包13源及FTP/CLI三辅助源已迁移。monitor仅对6精确生成元数据FNF重读完整guard，最多25次/5秒，每gap仍UNKNOWN_INCOMPLETE；部署/审批/清理authority不重读。新增6个pure方法首次全过。父审又发现initial_reset两条06后缀漏迁移，保留修前inspector/Java字节及d087旧快照后，仅改09路径与Java trustedSHA；1方法/3本地文件场景通过，未重跑已过observer或15旧parser组。最新主13源回执5f54977b，inspector808049b0/Java7d2cc3be；实际Java source-launch编译后DRAFT原生1为预期拒绝，未启动Python guard/Runtime。FTP业务parser/outcomes保持既定负载；辅助源元数据两处旧标签由父另保留修前字节后改正，当前三源以auxiliary-label-fix-09-02/parent-auxiliary-label-fix-09.json（1a5985c1）为准，不再沿用原辅助closeout的当前源码SHA。
+
+连接Maven后实际deployment descriptor原始SHA发生变化；16JAR及17输出3809文件重核仍与新build逐字节同，当前三Mod再次通过产品CodeChecker，新三descriptor原件均保存。未保存连接前完整JSON，因此不能只凭inputDigest相同就倒推仅对象键顺序变化；7895旧descriptor条目仅代表当时字节，下一冻结必须基于当前完整descriptor与严格规范化规则。post-connection-artifacts-09.json记录了此范围，不重跑连接或业务。
+
+[本阶段父收尾](H:/Program/WindowsToLinux/.ai-workspace/wt/r09/.ai-workspace/evidence/assisted-r09-local-preparation-20261029/parent-preparation-stage-closeout-09.json)SHA28c48523重新查询38条已记录actor行（非38个唯一进程）均原身份不存在；各本地owner也已wait/CIM退。b09/ct09及专用tmp均清，另在核退后只删除新R09 target明确识别的2个JNA临时DLL缓存并确认目录不存在；源/JAR/CLASS/新凭据/原XML/日志保留，无signal外部进程。旧package wrapper PID未采，保留未知，仅引用实际tool终态和当时当前签名查询0。后续短同步控制解释器以真实tool wait为据，不冒称逐PID全采样。
+
+下一目标回合从当前r09、上述最新source与actual cp接手：生成新accounting-schema/source-identity/runtime-bindings/17-output-Mod/cp manifest/保护证据清单/final-source-policy，完成完整只读guard及父P/R发放；再产品inventory→plan→apply→独立after，确认initialReset.verified后八项目各一次。现仅DRAFT，不直接运行entry/旧session。FTP8MiB和其余既定负载/独立审批/noCU保持，旧三CurrentSource红继续未解；本阶段为新产物/连接/入口定点准备，不是完整部署或零辅助异常，也未扩称旧privacy覆盖新字节。两个Sol协作，无Astra/Terra/CU。
 
 ## 恢复后检查点：三项生产生命周期机制诊断及快照清理完成
 

@@ -1,6 +1,22 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：机制矩阵与诊断清理完成，正式R09待新冻结
+## 现行入口：R09产物/新凭据/产品连接准备完成，待最终冻结与清场
+
+目标active未达成，R08仍6/8、原UNKNOWN不变。新独立ROOT H:/Program/WindowsToLinux/.ai-workspace/wt/r09，branch codex/assisted-frozen-r09-20261029，HEAD aa80428e clean。正式R09项目0，未整场清理；目前只有round-policy-09.DRAFT.json，没有整轮最终P/R/runtime bindings，不可直接运行入口。
+
+LOCAL=ROOT/.ai-workspace/evidence/assisted-r09-local-preparation-20261029。必要skipTests新build17reactor/native0；原wrapper路径比较收尾误拒tool1已保留，另核4native并精确清tmp，未重建，未来使用run-local-native-09-v2.ps1。artifact7895e292测16JAR/17输出3809files及唯一新provider，真实ModCodeChecker3/0，实际CLASS f102及8MiB/1MiB/2+6/12超时核验。新私有配置CopyNew/105B整SHA同/仅用户SYSTEM ACL，不输出值。
+
+安全桥已实际0（javac0/DRAFT70预期/inputs a59fd9ee/review57bde863/releasefef0341b），当前机r08-new04→全新r09-01只经产品char[]内存重包/清零，没有DB复制或开旧UNKNOWN，正常两Runtime ledger可能写。源无trust，未复制，后续产品连接独立验证。connection-01唯一限定原产品方法：native0/JUnit1/0/0/0/9.591s，OperationResult SUCCEEDED/授权BiNl pin，XML3819190e、proof fecb8019；实际55split/54非空cp逐项与候选a66b1adc一致，后续使用LOCAL/actual-junit-classpath-54-09.txt。未独立测SSH内部尝试数/OS-arch/trust存储位置。父checker误路径未启动、误旧日志marker原生1均保留，修读后0而原连接不重跑。
+
+主BASE=ROOT/.ai-workspace/evidence/round-09-preparation-only/09。最新13源回执public-source-closeout-09-v2.json SHA5f54977b；两reset后缀漏迁移已保留修前426b/017c及d087快照后最小修正，当前inspector808049b0/Java7d2cc3be；1方法3本地场景通过，旧六observer未重跑。monitor的六generated file窄重读只读/记录gap，authority严格；主13原observer新增6方法已过。当前Java源模式编译/DRAFT实际1为预期，未启动子guard/Runtime。FTP/CLI辅助三源及19组完整负载语义保留；最新metadata标签修正和三sourceSHA见BASE/auxiliary-label-fix-09-02/parent-auxiliary-label-fix-09.json SHA1a5985c1，原fb75039 source snapshot及修前字节保留。
+
+连接Maven改写deployment descriptor raw SHA；post-connection-artifacts-09.json确认16JAR/17输出3809files仍同，当前三Mod重新真实CodeChecker通过，新三descriptor原件存LOCAL/descriptor-after-connection-09-*.json。不要再拿7895中的旧descriptor raw SHA作为当前值；没有原完整JSON，未倒推仅键顺序变化。最终freeze须新规范化全字段/数组/marker。
+
+[父阶段收尾](H:/Program/WindowsToLinux/.ai-workspace/wt/r09/.ai-workspace/evidence/assisted-r09-local-preparation-20261029/parent-preparation-stage-closeout-09.json)SHA28c48523核38记录行原actor身份不存在（含重复），b09/ct09/专用tmp清，另只清新target中的2个JNA临时DLL缓存；源/CLASS/JAR/新vault/原XML/所有失败与论文5项保留，未push。package旧wrapper身份未采不补造，其actual tool1与范围查询0单列。所有旧terminal包括60261/76976禁止再poll。
+
+下个目标回合直接生成当前新metadata/完整guard/父P-R：accounting-schema/source-identity/runtime-bindings13源、实际54cp/17outputs/3Mods及保护清单/final-source-policy，绑定当前私有配置、桥/产品连接；再产品inventory-plan-apply-独立after及八原各一次。不要重跑本阶段已过组、旧连接、旧UNKNOWN或假定已清场。FTP8MiB，其余负载/独立审批/noCU不减，失败后续原项目继续，旧三CurrentSource红未解。本阶段旧privacy不覆盖新字节。
+
+## 前一检查点：机制矩阵与诊断清理完成，正式R09待新冻结
 
 用户已明确继续，goal active，目标尚未达成。R08固定6/8、Log/Directory原UNKNOWN不改；正式R09仍0，服务器未进行新一轮产品整场清理。隔离r09f保持aa80428e clean，未merge/push。本阶段所有源、CLASS、快照及原失败留存，论文五项保留。
 
