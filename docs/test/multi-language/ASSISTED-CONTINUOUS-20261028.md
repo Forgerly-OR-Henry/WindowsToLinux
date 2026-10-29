@@ -1,10 +1,35 @@
 # ASSISTED 连续首过验证记录
 
-状态：用户已明确恢复，goal active。R10新隔离整合4e38851b、实际产物／新凭据／产品连接已核；host-02冻结已核、首盘被残留挂载拒绝，正在清理并准备新控制epoch，正式项目0，目标未达成。以下保留此前各轮／暂停原结果。R09已中断：TaskBoard完整首过1项，FTP用户中断且无原终态，六项未启动；不混为七项业务失败，不跨轮拼接。原环境准备失败单列保留。R08最终完整首过6/8。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产无包Linux矩阵前一阶段已执行（见后文），该准备检查点当时未做真实包/完整验收，当前R09原验收状态见上文。R08原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；R08后续仅做独立辅助取证/修复准备。R08全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
+状态：goal active；R10八项原试均已结束，完整首过0/8、原根FAILED8/UNKNOWN0，八项均独立审批DENY，无完整业务／交付PASS。当前轮原件封存、自有进程及tmp已收尾；隔离两修复本地0701b3ed／27f9a876、14及11定点通过，真实模型／业务未复验；启动边界证据仍需限定诊断，R11未启动，目标未达成。以下保留此前各轮／暂停原结果。R09已中断：TaskBoard完整首过1项，FTP用户中断且无原终态，六项未启动；不混为七项业务失败，不跨轮拼接。原环境准备失败单列保留。R08最终完整首过6/8。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产无包Linux矩阵前一阶段已执行（见后文），该准备检查点当时未做真实包/完整验收，当前R09原验收状态见上文。R08原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；R08后续仅做独立辅助取证/修复准备。R08全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
-## R10清场准备失败：目标目录含R09 FTP候选挂载，正式项目0
+## R10最终：八项各一次原试，完整首过0/8
+
+冻结源码4e38851b，Luna Responses HIGH／HIGH、Mod继承、FTP8MiB及其它既定负载不变。host03实际185输入／7外部／17输出guard通过（P b832afb3／R3389e789／S0f3e46d7），产品四阶段及独立after各wait0／JUnit1-0-0-0，initialReset真。旧候选umount0／loop3 detach0和之前准备失败单列保留。队列885cba仅提交一次；最终canonical inspect7060f3／0核8唯一原试、同冻结／参数与初清真，但八项均DENY，原根FAILED8／UNKNOWN0、native1／JUnit1 failure，无完整业务／交付PASS，无整项目重试。不能把API可连或只读前置成功等同业务通过。
+
+| 项目 | 原native | 原最终结果 | 原独立审批理由摘要 |
+| --- | --- | --- | --- |
+| TaskBoard | 32736 | FAILED；JUnit1 failure | 覆盖旧helper／entry前缺不存在或旧摘要证明 |
+| File Transfer | 4416 | FAILED；JUnit1 failure | 缺该具体命令独立host许可；workflow不能替代 |
+| Asset Lending | 13584 | FAILED；JUnit1 failure | 缺精确远端命令独立host许可 |
+| CSV Inspector | 3000 | FAILED；JUnit1 failure | BASH_ENV启动环境未校验，且旧摘要保护不足 |
+| Survey Scoring | 2728 | FAILED；JUnit1 failure | 只读容量查询但未见精确命令host许可 |
+| Log Analyzer | 35224 | FAILED；JUnit1 failure | 旧helper／entry被覆盖前缺固定摘要保护 |
+| Directory Diff | 35576 | FAILED；JUnit1 failure | 无条件替换旧helper／entry且缺不存在／替换许可证明 |
+| Binary Inspector | 10584 | FAILED；JUnit1 failure | BASH_ENV隔离及root PATH工具可信性不足 |
+
+TaskBoard等安装路径已确认旧字节保护缺口：全量installer仅验owner／mode后mv，newtmp／写后SHA不证明旧字节。隔离0701b3ed4只准missing-or-current trusted payload SHA，副作用前／锁内／替换前核，保留完整digest范围；不同旧版无可信前版摘要的自动升级明确拒绝，不自签远端hash。最终14直接定点通过；先前20项8过12ERROR、12项8过4夹具失败以及一次包装器未启动Maven保留，未把复测写成首次全绿。无真实远端复验。
+
+FTP／Asset均helper.probe，Survey为容量查询相关许可拒绝，不能用installer修复宣称这些理由也已解决。源确认FixedCommandApproval先独立review，APPROVE后host.approveReviewedAction才签精确grant，再执行。原SYSTEM要求exact host permission但未说明后置阶段，存在表达歧义；原DENY传播／零dispatch正确，未证请求字段丢失或provider内部原因。隔离27f9a876仅真实调用点阶段事实与retained固定SYSTEM资源，保留global review／AUTO／独立DENY及后置硬门；首跑11/0/0/0，真实PublishChannel编码、DENY无grant／exec、APPROVE仍需host、host非成功零执行均验证。aa804→4e相关六审批／host／prompt文件及ManagedHelper无diff，未发现旧修复回退。
+
+CSV／Binary环境拒绝未完全闭合。App实际SSH frame已有BASH_ENV／ENV=/dev/null、两层-p Bash保护；但Mod公开API未绑定frame／provider证据，SSH服务端初始shell环境仍未知。Astra只读建议先固定一次仅审批材料诊断，用A/B真实完整输入，不假造host／handoff事实，不grant／SSH／dispatch，不无限试到APPROVE。它不是原业务重试或环境安全证明；若仍拒绝再分清payload／frame／初始shell，不能把补证据写成修复底层fault，也不无条件新增AppAPI架构。
+
+原SDK记账90逻辑／90物理、known1271344，SDK非成功／多次物理／有界生成恢复链观察0；另4条提交反馈，native格式覆盖不完备，32条capability provider用量／transport未知，不是零异常或完整账单。原monitor清场时目录摘要GateError／UNKNOWN_INCOMPLETE观察另记；3dummy只证可能marker瞬态，现场具体目录／成员／作者未知，后续guard通过不抹原失败。
+
+R10 driver26278工具58db62／0、monitor59144工具8f4847／1均已实际终态，禁poll／重启／重投。父ab25c7核18原身份退出，t10及JNA缓存精确清完，无signal／用户代理操作；两修复worker亦核退tmp。395文件／7917323B（12本轮状态目录）原字节封存SHA7a4322d0，无engine／解密／重放；[最终判定](H:/Program/WindowsToLinux/.ai-workspace/wt/r10/.ai-workspace/evidence/round-10-preparation-host-03/10/parent-round-final-assessment-10.json)SHA5022b838为准。r11f两提交未merge／push，论文五项保留；尚未最终新产物构建或真实模型／SSH／完整业务复验。goal active、R11未启；下一轮仍须实际产物／凭据／新冻结、重新清场与独立复查，不拼接旧结果。Sol实施／Astra限定设计，无Terra／Computer Use。
+
+## 此前R10清场准备失败：目标目录含R09 FTP候选挂载，正式项目当时0
 
 同一4e38851b、Luna Responses HIGH／HIGH冻结已实际完整核验160输入／7外部输入／17输出，host-02最终P985ff833／R86d8ad6b／S495ca6e7。此前元数据尾部失败保留，独立finalize仅补缺失候选；未把原生成失败改判成功。前台PS wrapper另因检查09自文件名在原生启动前退出1，保留冻结原件后用同一冻结entry直接启动。
 

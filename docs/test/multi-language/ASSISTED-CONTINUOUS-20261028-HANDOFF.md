@@ -1,6 +1,22 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R10冻结已核定，清场盘点被残留挂载拒绝，正式项目仍未启动
+## 现行入口：R10八项原验收0/8，原件已封存，两项隔离修复已提交
+
+R10在冻结源码 `4e38851b`、gpt-6-luna／Responses、LANGUAGE与APPROVAL均HIGH（Mod继承）下完成八项各一次原试：八项均native1／JUnit1 failure、原根明确FAILED／独立审批DENY，无UNKNOWN原根、无项目重试，无完整业务／交付PASS；最终完整首过 **0/8**。FTP 8MiB／1MiB／2+6及其它既定负载未改，不能把未进入业务解释成业务负载已通过。goal保持active，目标未达成，R11尚未启动。
+
+本轮前置资源处理、四阶段清场与冻结均保留原件：R09候选常规umount0及精确loop3 detach0；host03 inventory19700／plan28216／apply26560／独立after38072均wait0／JUnit1-0-0-0，initialReset.verified=true。最终P=`b832afb35d87435980c471a494fde559a17a1aea3fb77245b0003a74bcaee3e2`，R=`3389e789dde7adcd00e01309e098e84f78022bb6b75b2120f1c6701477062ce7`，S=`0f3e46d7c50a6d9d9e8530ff2583b5375faf8bd482cb3fd4590533a80755e994`，实际185输入／7外部／17输出full guard通过。八命令仅885cba投递一次，最终canonical inspect7060f3／native31528／0核8个唯一原尝试、同源码／参数／模型、初清全部门槛真，goalEligible=false。原各轮失败、UNKNOWN不覆盖、不重放、不拼接。
+
+失败区分：TaskBoard／Log／Directory指出全量installer覆盖旧helper／build-entry缺旧摘要或缺失证明；FTP／Asset／Survey指出缺逐命令host许可，源级已确认review先于后置host grant且原提示未解释顺序；CSV并列旧摘要与BASH_ENV；Binary指出BASH_ENV及root调用PATH工具的可信性。每项原理由保留，不能把这些全写成已证同一底层原因。两已确认问题均为既有机制新暴露，未发现aa804→4e审批／helper相关修复回退证据；不以相似文字恢复旧实现。
+
+隔离修复树 `r11f`（base4e、branch codex/assisted-helper-prior-digest-20261030）已本地提交 `0701b3ed40d4e34e8449ba36a820953da77db550`（4文件）和 `27f9a876d0dd7710f0692fd829bbc7798198c4d7`（4文件）。前者在副作用前、锁内和替换前只准缺失或匹配本次固定payload摘要，明确拒绝无可信前版摘要的不同旧版自动升级；tracked/plain完整digest范围仍精确一致。最终直接14/14通过，前20项8过12ERROR、后12项8过4夹具失败及一次native未启动包装器错误均保留，修正仅复测受影响组。后者仅在真实pre-grant阶段提供可信阶段说明及retained固定SYSTEM规则，保留原独立DENY、AUTO与host grant／dispatch硬门；首跑11/0/0/0，含真实PublishChannel／Responses序列化及host非成功零执行。两修复尚未做真实模型／SSH／完整业务复验，不能据此保证下一轮通过，当前R10冻结源未动。未推送，论文五项保留。
+
+启动环境仍有未闭合证据边界：App固定SSH frame已在两层显式Bash前设置BASH_ENV／ENV=/dev/null并用-p，但Mod API没有可绑定实际provider的frame合同；真实SSH服务端初始shell环境未知。不能Mod自签“宿主安全”，也不能用payload内unset冒充启动前修复。Astra限定只读设计建议先预注册一次CSV对应安装材料的产品仅审批诊断，采用A/B真实完整输入、禁止grant／SSH／dispatch，不注入假的handoff／远端状态／宿主frame保证，不反复试到APPROVE；若仍拒绝，再区分payload、固定frame与初始shell层，不无条件扩AppAPI。诊断只是定点材料验证，不是原项目重试或完整验收；R11前仍需真实产物／凭据／新冻结／新清场及独立after。
+
+原旁路monitor在清场期间目录摘要GateError退出，UNKNOWN_INCOMPLETE观察事件不抹；3个dummy只证marker暂缺机制，现场目录／成员／写者仍未知。后续完整guard成功不把原观察改判成功。SDK日志范围90逻辑／90物理、已知token1271344、内部传输／有界生成恢复链0，另4条提交反馈；八项格式覆盖均不完备，32条capability providerUsage／transport未知，不是完整账单或零异常。
+
+R10 driver session26278已quit，工具58db62／native0；monitor59144工具8f4847／native1，二者均终态禁poll／重启／重投。父ab25c7核18个原身份退出，精确t10与JNA缓存清理完成，未发进程信号、不动用户代理；两修复worker的自有测试／tmp也已核退。封存395文件／7917323B含12个本轮状态目录，只有原字节hash、无engine／解密／重放：[原件封存](H:/Program/WindowsToLinux/.ai-workspace/wt/r10/.ai-workspace/evidence/round-10-preparation-host-03/10/parent-round-original-evidence-seal-10.json)SHA7a4322d0，[最终判定](H:/Program/WindowsToLinux/.ai-workspace/wt/r10/.ai-workspace/evidence/round-10-preparation-host-03/10/parent-round-final-assessment-10.json)SHA5022b838。远端未在收尾再次清场，下一轮不得省略产品四阶段。Sol实施／Astra设计，无Terra或Computer Use。
+
+## 此前准备检查点：host-02清场盘点被残留挂载拒绝，正式项目当时未启动
 
 R10使用隔离源码 `4e38851b`、`gpt-6-luna`／Responses、LANGUAGE与APPROVAL均HIGH，Mod继承主App；八项顺序、FTP 8MiB及其它既定完整负载不变。host-02元数据尾部迁移失败已保留，新独立finalize仅补缺失候选，未覆盖九份原件；随后父发行并实际完整核验160冻结输入、7外部输入、17产物输出。P=`985ff83303ec909c7003011355791cb8e59d570b46f4f4f14bda1e93271248c9`，R=`86d8ad6b9461f946ee41b9bdbb98d5888c824ca48288cfbeca5e0d7c9ed46095`，S=`495ca6e79d54a51b03f0e224bbb4ca019bc2e733e5db3cff5b4bd27e04eb385a`。这证明冻结核验通过，不代表业务通过。
 
