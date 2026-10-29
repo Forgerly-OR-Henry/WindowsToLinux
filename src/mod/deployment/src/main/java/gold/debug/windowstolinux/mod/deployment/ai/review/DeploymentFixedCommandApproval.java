@@ -115,6 +115,9 @@ public final class DeploymentFixedCommandApproval {
             facts.put("authorizationPolicy", policy);
             facts.put("effectSummary", intent.effectSummary());
             facts.put("presentationLocale", context.ui().environment().locale().toLanguageTag());
+            facts.put("commandAuthorizationStage", Map.of("phase", "INDEPENDENT_REVIEW_BEFORE_HOST_GRANT",
+                "hostGrantRequestedOnlyAfterApprove", true, "hostGrantIssuedByThisBoundary", false,
+                "exactHostGrantRequiredBeforeDispatch", true));
             requireRoute(context, task, revision);
             var current = currentEvidence.facts(intent, request, task);
             if (!current.isEmpty()) {
@@ -123,7 +126,8 @@ public final class DeploymentFixedCommandApproval {
             }
             currentEvidence.verify(intent, request, task);
             String instruction = model.responseInstructions()
-                + DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review.md");
+                + DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review.md")
+                + DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review-stage.md");
             String supplement = currentEvidence.reviewInstructions(intent, request, task);
             if (supplement == null) throw new IOException("Current review instructions are missing");
             if (!supplement.isEmpty()) {
