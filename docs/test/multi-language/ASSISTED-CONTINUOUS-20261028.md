@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active。R08同一SOURCE73及06策略71b/release5b，初清及独立复查通过；TaskBoard、FTP原任务、既定完整业务、交付及额外清理均首次通过，累计2/8。Asset原Maven43864/Java41260由原队列自动启动，后五项仍排队，不重发。driver47579/Python16120及非授权采样66809/Python9292活动。已完成两项有16条内部提交结构反馈，格式绝对0未证明，不称零异常；准备JUnit误拒、原observer94607失败及缺口、专项QA初次CIM失败均另记。R07最终7/8、CSV原UNKNOWN保留，不拼旧成绩。FTP实际8MiB，其余既定业务与独立审批/交付清理不减；仅测试代码，无真实UI/浏览器/Computer Use。
+状态：目标active。R08同一SOURCE73/f102及06策略71b/release5b，初清及独立复查通过；TaskBoard、FTP、Asset原任务、既定业务、交付及额外清理均完整首次通过，累计3/8。CSV原Maven18220/Java45440由原队列自动启动，后四项仍排队，不重发；旧CSV UNKNOWN不重放。driver47579/Python16120及非授权采样66809/Python9292活动。已完成三项有26条内部提交结构反馈，格式绝对0未证明，不称零异常；辅助准备/观察/字段读取失败全部另记。R07最终7/8、旧失败及UNKNOWN保留，不拼旧成绩。FTP实际8MiB，其余既定业务/独立审批/交付清理不减；仅测试代码，无真实UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -25,7 +25,7 @@
 | round-05 | abc7abd1fa8db25626854eece961ca43347913e8 | 首个清场执行和独立复查均通过 | 八项各一次：首过7、FTP业务失败1 | 未达成；无内部生成恢复，分阶段上传修复已轮末合入9259ee92，准备R06 |
 | round-06 | 818ac8acb065182cfd90b090db42d322e605436e | 产品清场及独立复查通过 | 计划八项，仅前三项原完整回执PASS、后五未启动；0项已观察业务失败 | 未达标；运行期主工作区发生并行源码/HEAD漂移，原守卫在CSV前退出；准备问题单列，原64MiB保留，FTP恢复1/未知usage1 |
 | round-07 | 65f8dfd1e70ddac4debd0ea6243ddd83393e30e5 | 准备01本地失败单列；02产品清场/独立复查/initialReset通过 | 八项目各一次：完整首过7、CSV原UNKNOWN/测试失败1 | 未达标；全部原测试及driver/observer结束，未知与原失败保留；8MiB仅授权改大小，不拼旧成绩 |
-| round-08 | 73bbbbbb07346a09155d8d3ddc23c5dd08756d38 + 06策略71b11497 | 04准备误拒另记；06原产品4阶段及独立after/initialReset通过 | 八命令一次提交，TaskBoard/FTP完整首过，累计2/8；Asset进行中、后五待启动 | 进行中；内部结构反馈、原观察失败及辅助准备失败保留，非零异常；不混旧R07成绩 |
+| round-08 | 73bbbbbb07346a09155d8d3ddc23c5dd08756d38 + 06策略71b11497 | 04准备误拒另记；06原产品4阶段及独立after/initialReset通过 | 八命令一次提交，TaskBoard/FTP/Asset完整首过，累计3/8；CSV进行中、后四待启动 | 进行中；内部结构反馈、原观察失败及辅助准备/收尾失败保留，非零异常；不混旧R07成绩 |
 
 ## 失败原因与解决方案
 
@@ -864,3 +864,15 @@ FTP最终140 logical/physical/raw，全部物理SUCCEEDED；known1183235=deploym
 实际文件/ACK digest文字、并发响应和部分409/422/502正文未逐一打印，相关内容由同冻source snapshot、原成功JUnit断言及标记共同证明；专项reader不伪造独立摘要或重下文件，不扩大为完整BUSINESS矩阵/UI/当前远端证明。旧64MiB结果不改标、不混入R08，五笔8MiB均来自本轮原请求。
 
 UTC01:21:58.304595，原队列自动启动Asset Maven43864/Java41260、root5695cf43-1518-4734-b2a9-4c490b82cf54，当前AI部署；后五尚未启动。SOURCE73/f102、policy71b/release5b与参数不变，原47579/66809继续，禁止重发run/reset或重试已完成项目。当前仅核定2/8、全轮goalEligible=false正常；原准备失败、observer94607/FNF和旧UNKNOWN保留，最终整轮隐私及process/t06收尾仍待完成。
+
+### R08 Asset完整首次通过，累计3/8；CSV本轮原任务已自动接续
+
+原Asset root5695cf43-1518-4734-b2a9-4c490b82cf54唯一SUCCEEDED；原Maven43864 actualwait=true/exit0、JUnit指定单case 1/0/0/0、1330.089s。原log2528精确STATIC_LIVE_BUSINESS asset-lending real HTTP + cross-language flow + restart + persistence passed、2530/2531 PASS齐；实际断言为类别/资产/借单、submit→approve→checkout→return closed，原应用RESTART后同借单仍closed，并核首页doctype。交付app wtl-assisted-asset-lending-hzuxclyo4、revision e5b92428b26b091cefc211496215282c93c536507081ef169235ad0ba98e8655、ownership721c54361a6279afeecd8b8b9267c0e36f205c217824b2cc691a70f99971a91e齐；额外Java真实PID4560（以native JSON为准）actualwait=true/exit0，UTC01:46:16.896671结束，cleanup56行同app/revision STOPPED/DISABLED恰一次。
+
+CSV新Maven已进入STATIC_LIVE_STATE后，Asset仅一次原entry06 inspect实际0；六身份、精确argv/XML、原四artifact seal、唯一原root、cleanup原五文件绑定及initialReset强门全通过。子审d7e0fe445d635c16f18cb818c9acfd28d703b238d8a65181070179bd806c6a58、账1eb83fc82fece95f021b5b2c1edae23b5ebdc8ebada1f2cb7434776ccbe6061d、实际closeout7778c7e377fee9141afb6a7490b2de760cb793055f999c7dc5f71016a9c4c3cb；父八原文件SHA/长度及10审计产物再核、35268/3644宿主CIM absent，接受proof5db0734cd5f3fcd85fcdc13d6ffd7095374556c606d3f147fb5feed28c914a3b。原43864/Java41260/cleanup4560也已CIM absent，过程proof ff83cf01b3c7114913f5787b1fa0d24b1adb7d65931ca5e435aeeb0baf6a2847。
+
+附加收尾曾actual1：机械TaskBoard→Asset适配把结果JSON键改为originalInspectorAssetRow，收尾仍读originalInspectorTaskBoardRow而误拒。closeout-lookup-failure-01原件记录确认原因；仅按实际字段修正收尾读取并完成新closeout，未重跑inspect、业务或改原输出。这是新辅助字段lookup问题，与旧04无参JUnit名称解析误拒属不同代码路径；06 bare方法兼容修复和其余冻结12源均保持，不能写成业务复发或底层部署修复。后续新辅助报告应避免机械替换结构键，按实际schema明确读取；旧失败不覆盖。
+
+本项最终80logical/80physical/raw均SUCCEEDED，known747212=deployment69878+approval677334，角色差0；SDK同generation恢复、unknown usage、重复/冲突/未解析观测0。结构反馈raw/unique10/10均SUBMISSION_REJECTED且明确未执行动作；格式success/GAP观测0但coverage不完整，zeroCorrectionsProven/strictNoInternalRecovery/zeroObservedAbnormality均false。已完成三项共310logical/physical、known2942753、结构反馈26，不含当前CSV，不称零异常或完整账单。业务证据为原回执及冻结成功JUnit断言链，不伪造逐HTTP正文、全BUSINESS矩阵或当前远端查询。
+
+UTC01:46:21.605737，原队列自动启动CSV Maven18220/Java45440、原root aafe9219-375d-430f-89fd-2c4101e41e0c；全新state assisted-live-csv-inspector-iij7t4vg8，与旧R07 UNKNOWN分开，不开旧库或重放。SOURCE73/f102、policy71b/release5b及原负载不改，原47579/66809继续，后四待启动，不重发任何run/reset。当前仅核3/8、整轮goalEligible=false正常，旧失败/UNKNOWN和所有辅助问题保留，目标active；整轮当前公共文本隐私及全部自有process/t06收尾尚待完成。
