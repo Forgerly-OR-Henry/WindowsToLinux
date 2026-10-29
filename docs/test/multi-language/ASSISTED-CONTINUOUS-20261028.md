@@ -4,6 +4,18 @@
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
+## R11前独立准备：新凭据桥及产品认证通过
+
+2026-10-30，当前源码仍r11f／27f9a876，无正式R11原项目或清场。正常R10 vault→全新R11 `agent-live-credential-20261030-r11-01`仅经产品Security char[]读取／重新加密保存／finally清零，未复制数据库或trust，未打开旧失败／UNKNOWN；正常ledger可写。桥native22204实际0／外层4ac672／0，原回执2fa3ebe5。独立编译0、DRAFT native70按预期在Runtime前拒绝，不记成实际迁移错误。
+
+新产品`servers.check`只投一次：Task20b97098-1cbf-4658-8cda-ede722462295，原结果SUCCEEDED、未超时、BiNl获准指纹精确相同，Runtime.close正常；native19476实际0／外层b551c2／0。无模型／远端命令／Modscan／部署，OS及架构为空且未观测。此为直接产品API认证检查，不是JUnit／八项目业务，内部SSH物理尝试数未测。公开新连接proof SHA1455f61d、新凭据来源8e19eb49保存于r11f/assisted-r11-local-preparation-20261030。
+
+当前package派生54产品classpath＋helper1，共55；17目录3838成员／38公共JAR／12必要provider在连接入口前核定，不冒称Surefire新测。另16产品JAR只读SHA／CRC及2700可对应成员一致，未对应项不宣称源码等价。连接准备5个限定native全0，未重跑全suite。一次poll dispatch中断及桥源码生成工具输出截断不补造退出，独立编译／门禁／实际执行／CIM／专用临时目录清理回执均保留；不混正式八项分母。
+
+父SHAc90dfcfa独立核20个已记录原身份退出、当前精确准备命名空间0，ct11／各pc11／am11均不存在，无其它进程信号。新normal vault保留，原失败／UNKNOWN不打开／覆盖／重放。未采短命历史身份或工具截断退出仍未知，不补造。
+
+自动审批对GPT材料发送的拒绝仍待答，模型诊断0请求；本地桥／授权服务器认证不改变该边界。当前gpt-6-luna／Responses／HIGH两用途／Mod继承不变。R11未启动、服务器未新清场，后续有界诊断、最终实际产物冻结、四阶段清场及独立after仍须实际证据，目标未达成。
+
 ## R11前准备：有界材料诊断尚未发出API请求
 
 2026-10-30，r11f HEAD27f9a876不变。必要skipTests package、helper javac02和pure02均实际0；父重核54cp、38公共JAR、17输出3838成员、6个唯一provider及当前相关JAR／三descriptor，未重复此前14／11个定点。完整工厂tracked stdin607517B、纯Responses预览689569B保留；预览Task／workflow字段与真实调用不同，不声称部署等价。父caller只做静态解析和13参数核验，未启动Runtime。

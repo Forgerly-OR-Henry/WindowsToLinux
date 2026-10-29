@@ -1,6 +1,18 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R11前材料诊断准备完成，实际调用待材料发送授权
+## 现行入口：新R11凭据及产品认证通过，模型材料发送授权仍待答
+
+2026-10-30，r11f HEAD仍为`27f9a876`，两修复与待执行的材料诊断输入未改。独立前置检查已完成：正常R10凭据经产品Security接口在内存char[]传递、正常重新加密保存到全新`agent-live-credential-20261030-r11-01`，SSH／master数组finally清零，不复制DB或trust，不打开失败／UNKNOWN库；正常source／target打开可能写本地ledger。桥原native22204实际wait0，外层4ac672／0，公开回执SHA2fa3ebe5。此步骤无模型／连接／部署。
+
+随后只执行一次原产品`servers.check`认证任务`20b97098-1cbf-4658-8cda-ede722462295`：SUCCEEDED、未超时，first-use指纹与获准`SHA256:BiNl5kOr/2sc0vo657OtU0v6DjWAo/YUxZDUZRcjXlM`精确一致，Runtime.close正常返回；native19476／外层b551c2均0。当前产品facts的OS／架构为空，明确未观测；未发远端命令、模型或部署调用。该直接产品API helper不是JUnit或八项目验收，原认证Task一次不能推出SSH内部物理尝试数。[新连接证明](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/assisted-r11-local-preparation-20261030/product-connection-proof-11.json)SHA1455f61d，[新凭据来源](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/assisted-r11-local-preparation-20261030/credential-source-identity-11.json)SHA8e19eb49。
+
+当前17输出／3838成员／38公共JAR与必要provider均在实际入口前核验；产品classpath段54项来自当前package及路径模板，helper额外前置1项，共55，不能冒称新Surefire测量。父另只读核16产品JAR的SHA／CRC／无重复成员，2700条可对应当前class／resource字节一致；未对应archive项不声称source等价，未Maven重建或新Modscan。桥编译0、DRAFT原native70为预期前置拒绝；连接准备5个限定native各0。一次poll dispatch中断和桥源码生成工具输出截断原件保留，不补造原生退出；相关编译、门禁和实际执行均有独立回执。
+
+父独立收尾核20个已记录原进程身份均退出，当前精确准备命名空间0、ct11／各pc11／am11目录均不存在，未向其它进程发信号；原短命进程未采身份或原工具输出截断处不补造历史PID／退出。新normal vault保留供后续正常使用。[本阶段收尾](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/assisted-r11-local-preparation-20261030/parent-independent-preparation-closeout-11.json)SHAc90dfcfa。
+
+材料发送的automatic approval review阻断仍待用户答复，尚未发出模型诊断请求；上述本地桥和已授权服务器认证独立于该发送动作，未绕过或重试它。当前模型仍为gpt-6-luna／Responses／主App两用途HIGH、Mod继承。R11正式轮未启、服务器未新清场、目标未达成；后续先完成一次已预注册的有界材料诊断，再审定实际最终产物／新冻结和产品四阶段清场及独立after。旧失败／UNKNOWN／论文五项保留，不跨轮拼接，默认不推送。
+
+## 前一检查点：材料诊断准备完成，实际调用待材料发送授权
 
 2026-10-30，长期目标保持active，R11正式轮未启动，服务器未再次清场。当前候选仍为r11f的`27f9a876`，两修复0701b3ed／27f9a876不变。必要skipTests package已实际0；父重核54项classpath、38公共JAR、17输出目录3838成员、6唯一provider及相关当前JAR／descriptor。完整工厂stdin607517B、纯Responses预览689569B均保留；预览不等同后续真实Task／workflow请求。必要javac和纯受控反例均0，不重复14／11个已过定点，不称完整业务验证。
 
