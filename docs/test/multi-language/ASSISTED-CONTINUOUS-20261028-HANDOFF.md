@@ -1,6 +1,18 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R09已冻结，首次清场盘点在本地准备失败，正式项目0
+## 现行入口：host-02清场及独立复查通过，R09八项原队列已启动
+
+目标active未达成。ROOT仍为H:/Program/WindowsToLinux/.ai-workspace/wt/r09，HEAD aa80428e，当前BASE改为ROOT/.ai-workspace/evidence/round-09-preparation-host-02/09。生产源码和实际产物未改，没有重新构建、迁移凭据或重跑连接；仅迁移辅助入口BASE路径和必要trusted SHA。新105输入/54cp/3Mod/17输出/87条保护证据guard通过，owner收尾247bef38。父完整核验后放行P=`d2188add7b5489bd6a0b94a5320efc8cb69b8e31bb127eb42ae046c4e64c24a1`、R=`e347a84e87d1f62ae40242d59b45eef010b5873e85432c9ce34cd8603c33ef78`、S=`ef5d6e7e5fb0a27a3dae3c638d5b2e1f10c116838a8adef307098bcaa882470b`。入口必须使用require_escalated宿主环境；旧BASE及其失败/P-R不可复用。
+
+新产品inventory21832→plan29096→apply21500→独立after30584均实际wait0、各JUnit1/0/0/0；四原生已CIM核退。原计划绑定、时序、清场后盘点与独立复查完全一致、完整clean_inventory条件均通过。父[清场核验](H:/Program/WindowsToLinux/.ai-workspace/wt/r09/.ai-workspace/evidence/round-09-preparation-host-02/09/parent-initial-reset-review-09.json)SHA cc7466b6确认initialReset.verified=true，发生在任何正式项目launch之前。该新产品流程验证了宿主执行纠正的准备场景；旧只读失败仍保留，不称准备零异常。
+
+八项原命令已一次提交：TaskBoard、FTP、Asset、CSV、Survey、Log、Directory、Binary；[队列回执](H:/Program/WindowsToLinux/.ai-workspace/wt/r09/.ai-workspace/evidence/round-09-preparation-host-02/09/parent-eight-original-queue-submission-09.json)SHA63b8bb89。当前仅TaskBoard已launch，原task `1c0733bd-3e9a-449b-b7da-e465439c3fa4`、native27900运行，无正式完成结果，不能把八条排队说成八项已执行。原生及当前后代32300/19104/17856/17724的creation/cmd SHA已保存parent-task-board-actor-snapshot-09.json。
+
+本目标回合间保留实际前台driver session15972（Python13840、wrapper18976）与monitor24586（Python13756、wrapper6708），t09仍供当前原验收使用；不要quit、重启、补发队列或清临时目录来结束一次对话。继续只poll这两个有效句柄及新BASE原证据；85537/6355等旧终态禁止再poll。普通项目失败即本轮不达标，守卫安全时继续后续冻结原项目，修复另树；不修改当前版本/参数或重试项目。FTP8MiB、其它负载、独立AI审批/noCU不变。
+
+八终态后需完成原FTP/CLI独立业务审计、生成用量/SDK恢复/未知usage和异常记录，随后quit并核退本轮自有actor/清专用临时文件；不能把SDK恢复写成零异常或把UNKNOWN重放改成首过。原只读调查typed c1f18414/owner b7f4e064保留全部辅助失败；本次父actor checker的JSON DateTime误解析误拒f86729亦保留于parent-host02-foreground-actors-02.json，正确逐微秒身份已核对，未干预或重跑原产品。R08仍6/8，论文五项及其它任务均保留，未推送。
+
+## 前一检查点：R09冻结后首次清场盘点本地准备失败，正式项目0
 
 目标active未达成，R08仍6/8。本轮新元数据只读guard通过，父最终P=`fa70f0a912377aa6137b9bc41c3a4bffe08839a3a4924b753b1e79b440fc06d9`、R=`300ff0f7a13f9e183312f0b9d23fad9eb719b5d8daedb1845e17158f63968316`、source-policy=`e66e618aa8961702ffc8b7930d5fab172f213982002a60735da100ff7e39716c`。冻结105输入/54cp/3Mod/17输出，含前台wrapper；两个DRAFT候选原样保留，不再称最终P/R尚未生成。
 

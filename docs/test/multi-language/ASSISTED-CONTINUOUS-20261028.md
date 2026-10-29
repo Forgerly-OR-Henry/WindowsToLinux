@@ -1,10 +1,20 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active未达成；R09新树、凭据、产品连接和最终冻结已完成；首次清场盘点在本地既有库再次打开时H2只读失败，未执行远端盘点/清场或正式八项。R08最终完整首过6/8。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产无包Linux矩阵前一阶段已执行（见后文），真实包/完整验收尚未执行。原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；后续仅独立辅助取证/修复准备。全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
+状态：目标active未达成；R09 host-02已完成产品四阶段清场和独立复查，八原队列一次提交，TaskBoard原验收运行、正式完成0；原环境准备失败单列保留。R08最终完整首过6/8。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产无包Linux矩阵前一阶段已执行（见后文），该准备检查点当时未做真实包/完整验收，当前R09原验收状态见上文。R08原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；R08后续仅做独立辅助取证/修复准备。R08全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
-## R09清场准备失败：本地库第二次打开只读，正式项目尚未启动
+## R09 host-02：产品清场及独立复查通过，八项原队列已启动
+
+同一ROOT/aa804生产源码和实际产物不改，新的round-09-preparation-host-02/09只作辅助BASE路径及trusted SHA重绑；未重建、未重新迁移凭据或重复产品连接。一次候选guard及父最终完整guard均通过105输入/54cp/3Mod/17输出，保护87份LOCAL证据。新P d2188add、R e347a84e、S ef5d6e7e的完整SHA见交接；本次实际driver/monitor均按require_escalated宿主边界启动。
+
+四阶段按原产品流程顺序各一次：inventory21832、plan29096、apply21500、独立after30584均实际wait0，各JUnit tests1/failures0/errors0/skipped0。原同轮计划、时序、全部清场条件、apply后盘点与独立after一致均核真；[父初始清场核验](H:/Program/WindowsToLinux/.ai-workspace/wt/r09/.ai-workspace/evidence/round-09-preparation-host-02/09/parent-initial-reset-review-09.json)SHA cc7466b6确认initialReset.verified=true，审查时正式launch0。四原生随后CIM均不存在，原BASE失败库和19文件封存不变；新流程验证执行边界纠正的产品准备场景，不覆盖原失败，也不代表八项业务已通过。
+
+核验后固定八命令只提交一次（队列回执63b8bb89）；当前TaskBoard原task1c0733bd-3e9a-449b-b7da-e465439c3fa4/native27900运行，完成0/8，尚无通过结论。driver15972/monitor24586及t09保留用于持续原验收，不能为结束目标回合而取消/重启或重复投递。其余项目依固定队列继续，任何失败使本轮不达标但不随意跳过后续冻结原项目；无整项目重试。全部终态后再做FTP/CLI独立审计、SDK/用量边界和自有进程/临时目录收尾。
+
+辅助失败独立保留：原只读环境准备失败；探针helper路径规范化同类问题及诊断查询失败见c1f18414/b7f4e064；新父actor checker误将JSON已解析DateTime再次本地化字符串解析而丢时区/小数，f86729工具1原样记于parent-host02-foreground-actors-02.json，按原DateTime值精确对比后-1/-6个100ns tick符合CIM微秒精度。没有因此改测试/原始成功结果、信号进程或重跑业务。两个Sol已完成准备并核退自有诊断进程；当前无Astra/Terra/CU，论文五项不动，未push。
+
+## 前一检查点：R09清场准备失败，本地库第二次打开只读，正式0
 
 本轮实际生成九份新BASE元数据；只读完整guard首次通过102输入/87条准备保护证据/54cp/3Mod/17输出。父审前台启动源码并另绑定三份launch文件后，最终完整guard通过105输入/17输出，P=`fa70f0a9...`、R=`300ff0f7...`、source-policy=`e66e618a...`，完整值见交接。源码仍aa80428e，FTP8MiB及其余参数不变；这证明本地产物/输入冻结，不代表部署或业务验收成功。
 
