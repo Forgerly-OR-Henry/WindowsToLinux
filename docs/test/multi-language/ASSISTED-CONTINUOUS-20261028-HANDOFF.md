@@ -10,9 +10,13 @@ R08最终完整首过6/8：五网站+Binary通过，Log与Directory原native1/JU
 
 已确认Log原最后response为tool_calls+单submit_result，不是R07纯text无native同支；ff83真实集成、无漂移/可见预算耗尽。原native decision/JSON正文未读取；下文副本已证独立审批拒绝事件，具体拒绝理由仍未知。inspect-host只是前一成功commit的旧进度，不能认SSH根因或回退ff83。3旧CurrentSource红属不同Agent/prepare路径，无typed栈连通，仍未解决。Sol安全分析261b02ff、Astra具体判断见log-directory-unknown-judgment-01：现有DEPLOYMENT_PREPARATION_EXCEPTION/RESULT安全码可能已保存但原ASSISTED失败导出漏事件/重开锁失败。优先查现有应急日志，必要时审核copy-only/只读JDBC定表定root投影；绝不用Runtime/PlatformDatabase打开原UNKNOWN，不输出正文/密钥，不强制APPROVE或增加预算。源码存在不证明本次写成功，诊断增强不等于底层故障修复。
 
-第一阶段实际取证已完成，不要重复旧两次调用：父完整源/DPAPI/schema及实际54cp/provider审阅门a963fcce，两个root各一份新私有字节副本、各一次只读JDBC，原库engine0，无Runtime/Bootstrap/重放/网络。Log d637df80、Directory c5f12e46都保留COMMAND_REVIEW_DENIED→OPERATION_FAILURE（12/10ms），四条未截断，safeFacts空；源码证明前一事件来自完成review后非APPROVE路径，具体公开拒绝理由存message而本阶段有意未读。因此各自独立审批拒绝已证，理由/是否同底层原因仍未知，不回退ff83或加审批重试。无诊断UUID故未读app/runtime，不补造module版本/retention/未匹配字段计数。actual closeout ba863852、新28清单3483ee36，父逐hash接纳dab71cb1；两JVM38132/13900 actual0/CIM退、两私有分析目录清，原108及旧73准备文件前后同。原root UNKNOWN/本轮6/8不升级。
+两阶段实际副本取证均完成，禁止重复旧四次调用。第一阶段父dab71cb1确认各root的COMMAND_REVIEW_DENIED→OPERATION_FAILURE；第二阶段父20533a75完整审后按两精确logId/时间各读一次message，三针SSH/API/master脱敏及全JSON残留检查通过。Log安全输出86ac8886（91chars）指出固定1800秒长于所述外层1513秒及setsid子进程缺受控收尾；Directory70f60127（68chars）指出APT install缺--no-remove。源码分别确认生命周期保证缺口和禁止移除约束缺失，两个担忧不同；未证明本次发生apt残留/卸载，1513仍只模型理由支持。Astra困难设计timeout-specific-analysis-03 SHA8a36097b已父全文读，不能只缩时长/改prompt或称独立期限等于即时取消。ff83/native保护、参数布局、fd-bridge及认证/source/owner/hook等不回退。
 
-Astra具体判断续件judgment-02（3eb1dd12）已完成：第二阶段只读两条精确root/logId/时间的已公开message，内存遮SSH/API/master及疑似敏感span后保留可读理由；new04 needle加载可能写该新库本地ledger，必须单列，不能称全程0Runtime或沿旧仅SSH/API扫描冒充master已覆盖。Sol在新offline-denial-reasons-02目录仅准备实现和新增纯合成定点，实际针/新库/副本读取仍0，完整父审后才执行；这不是等待用户批准。不能把第一阶段空facts当无理由、盲猜根因、重放原任务或追绿重试。旧copy-only源7f51750d/CLASS de06cbf8、两次真实release/输出及所有原证据保留；原副本已清，不复用不存在路径。最终actor候选还在整理，不是真实terminal release；整轮隐私scanner只用已审v2 96a7d269、原Java4ab及new-04 vault边界，须所有辅助结束和记录稳定后再执行。t06尚保留；服务器未再次清场，R09未启。后续有证语义修复只在新隔离树实施/定点/本地commit，活动R08永不换版，目标active未达成。
+第二阶段新27清单5532e51b/actual closeout e71ec22a，父逐hash接纳9f68be64；JVM32880/44240 actual0/CIM退，两私有目录清，原108及准备38前后同。new04 Runtime.open两次/ledger可能写（未测次数）单列，原UNKNOWN引擎/Runtime0/无重放/远端/模型。第一阶段38132/13900和第二阶段QA38728/11040也已核退清tmp，旧四原始release/输出均保留。取证不升级原UNKNOWN或R08的6/8失败。
+
+隔离修复树r09f（branch codex/assisted-r09-toolchain-boundaries-20261029）已从73建立：APT --no-remove及测试shared资源路径/断言、正式记录四文件本地提交cff67b66，七指定pure/mock方法通过，10704 actual0/CIM退；无真实APT/新轮验证。超时完整动作systemd监督/精确预算/原unit验空修复由Sol在r09f继续实施，尚未验证新实际产物或受控Linux，不能把设计/诊断写成已修；下一回合先接该子代理，不重复派发。同源被影响standard/Agent/HELPER_RUNTIME合同要一并保留强校验。r08源码/targets/状态/冻结不动，main当前de41d1f4之后第二阶段记录待本地提交，论文5项保留，不推送。
+
+migration正在准备新actor/scope候选脚本，未来合并03候选+两阶段actual/QA核退，一次host CIM+任务签名范围查询；未生成真实privacy release。03候选51dbd32b非执行，68PID/97源及历史缺项/32192两epoch保留，不补造未知Java或Git瞬时PID。新r09f验证属于下一准备阶段，不能以R08-only scope的0冒充全任务未来0。最终隐私v2 96a7d269与t06仍待相关辅助稳定后实际执行；服务器未再次清场，R09未启。下一轮必须已确认修复/相关验证和本地commit、新源码实际产物冻结、产品清场与独立after齐备，目标active未达成。
 
 ### 五网站检查点（历史，Log失败前）
 

@@ -1,6 +1,6 @@
 # ASSISTED 连续首过验证记录
 
-状态：目标active，R08最终完整首过6/8，未达成。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。副本只读取证已确认两个原root各自保留独立审批拒绝事件；具体拒绝理由尚未读取，不能直接认定相同底层原因或旧修复回退。原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；后续仅独立辅助取证/修复准备。全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
+状态：目标active，R08最终完整首过6/8，未达成。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期修复尚在新r09f树实施。原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；后续仅独立辅助取证/修复准备。全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
 
@@ -942,3 +942,18 @@ Log第一阶段输出d637df8086c83fdd497b1ec62b0ca3be433e04f2ff0cf1a0c7b52b5c478
 Astra第二阶段具体判断judgment-02 SHA3eb1dd1232c6bb958d6bfb4f71dfcdc17c267ae71419409a109111efe606ec9e已父读：仅新增读取两条精确root/logId/event/时间匹配的公开message，先内存脱敏SSH/API/master及疑似敏感span，再输出可读自然语言拒绝理由。new04针加载会用该新库Runtime并可能写本地ledger，这与原UNKNOWN副本只读严格分记；旧最终privacy源码只检查SSH/API，不可冒充master覆盖。Sol仅在新offline-denial-reasons-02准备实现及必要新增pure定点，实际第二阶段copy/针/库读取仍0，待父完整审阅，不修改第一阶段reader或重试其调用。理由只是模型当时判断，之后仍须核具体事实，不能直接认产品缺陷或相同底层cause。
 
 最终actor非执行候选03已接收（51dbd32b，schema/缺口41600f15）：68个PID/97份源，八原native终态及五cleanup、两root actual0齐；历史creation缺14行、cmdSHA缺/多epoch55行，必须保留未知并用未来实际CIM及范围查询补当前核退。32192两真实epoch分记，候选02等时时间字符串尾零误分的辅助问题保留，03仅元数据归一，不是一次CIM/业务失败。当前execution/privacy/inventoryComplete均false、scope计数null，两次实际forensic及未来新增QA/scanner还须合并；不以此宣称整轮最终收尾完成。
+
+
+### R08第二阶段实际取证完成：两项具体拒绝理由不同，进入隔离修复
+
+父完整审阅第二阶段main/redactor/caller、新04针加载边界及实际38准备文件后，以20533a75真实门授权两条精确root/logId/时间记录各一次新的message范围。Log32880和Directory44240均actualwait0/HasExited、host CIM absent，两个私有副本目录精确nonreparse清理。原108文件39983898B每次前后逐hash/长度全同，副本pair全同，原38准备/两release未改。new04 Runtime.open两次仅内存获取SSH/API/master针，本地ledger可能写、写次数未测；原UNKNOWN库engine/Runtime均0，无重放/远端/模型请求。两输出reason及整个JSON三针残留检查均通过，替换计数空，91/68字符均未截断，原理覆盖不是任意未知秘密穷尽保证。
+
+Log脱敏输出86ac8886c1bac7c4574a13f9bb92c9975df5ce96b1a06f7e3ecb2cb7afdc22f1指出：内层依赖命令1800秒长于其所述本次1513秒外层，子进程以新会话启动，外层结束后root apt/dpkg可能未受控终止。源码确认每次子调用重置1800、setsid、finally仅在leader仍活时killpg，SSH超时/取消只关channel并保留UNKNOWN，没有远端树终止证明。未证明本次apt已启动/超时/残留；请求在审批处被拒绝。1513精确值目前只有模型理由支持，不能冒充独立计时证据。Astra具体设计8a36097b建议复用现有systemd完整动作期限/control-group/精确unit身份及验空，不只改常数或prompt；亲代退出独立期限也不等于即时断连取消或本地绝对时刻同步截止，D状态不能硬承诺有限核退。
+
+Directory脱敏输出70f60127ab29416f2582a41e939bece129376fe6927a1c1da81ba0589bd71aca指出：apt-get install -y没有--no-remove，解析器可能移除现有软件包，超出声明依赖闭包目标。源码确实没有该约束；[APT官方文档](https://manpages.debian.org/trixie/apt/apt-get.8.en.html)说明--no-remove会在计划移除任何包时中止。确认的是保护缺口，不是本次实际发生卸载或解析器必然要求卸载。两个拒绝的具体担忧不同，不再统称完全未知；底层物理风险是否发生仍未证，不把模型理由本身当全部事实证明。
+
+新27实际证据清单5532e51bb9d78fecd55f73b780c708624296e4d83f77b18b914cbd4c757c4c95、收尾e71ec22ad63839fc2a19237e636d447f5a49532c64fa9a9b265a4d9237b3aaf9，父逐27 hash/长度再核并接纳9f68be649cae0d90a8504cd1b97cc74e9a2404d95fcb94dd89b86a33d78d2abc。两阶段总四次各自新范围副本读取均保留，不包装成第一次读取；它们都不是原项目重试、部署或业务通过，R08仍6/8、原root UNKNOWN不改，原源码73/targets/P71b/R5b及负载冻结保留。
+
+修复树r09f从73全新建立。APT已增加--no-remove，原包表、认证/source/owner/hook保护不变；既有测试夹具资源位置修正到生产shared路径，七个明确指定pure/mock方法通过，0.058秒、10704 actual0/CIM退，无真实APT/SSH/模型/UI/全suite。源/两测试/正式定点记录四文件本地提交cff67b662c3711d084d77b3b30e850acb4b21a04，未推送；主工作区/论文不动。此为新确认的既有边界缺口，当前可追溯文件历史no-remove搜索未见先加再撤，不是撤销ff83、R02参数布局或fd-bridge保护。超时生命周期修复正在同一隔离树实施，受影响standard/Agent/HELPER_RUNTIME共享合同须同步、定点/必要编译及受控Linux验证后才可新冻。尚无新轮完整验收或新实际JAR证明。
+
+父辅助只读查询问题另记：3cc50c在安全Directory理由读完后猜错DeploymentToolchainCommands.java路径，rg报2/外层1，后a53031按文件发现实际StandardCandidateRunner；无状态写入或原入口重跑。204764探查rg管道在100行输出后非零中止，具体native值未记录，不能把前100行当完整查询；后1cf1a7用AST/直接范围读取恢复，不把查询失败称产品测试失败。两项不混正式八分母。最终R08actor/scope、公共文本隐私与t06仍待所有相关辅助稳定后收尾；服务器未再次清场，R09未启动，目标active。
