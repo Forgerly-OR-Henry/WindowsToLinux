@@ -73,11 +73,16 @@ import org.junit.jupiter.params.provider.MethodSource;
 @EnabledIf("liveOrIsolatedInputBridge")
 class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
     private static boolean liveOrIsolatedInputBridge() {
-        return "true".equals(System.getProperty("managed.runtime.staticLive")) || isolatedInputBridge() || isolatedStopDiagnostics()
+        return "true".equals(System.getProperty("managed.runtime.staticLive")) || apiOnlyModelSmoke() || isolatedInputBridge() || isolatedStopDiagnostics()
             || isolatedUserRequirements() || isolatedBackupGuard() || isolatedBackupBatchGuard() || backupOnlyLive()
             || isolatedBackupMetadata() || backupMetadataOnlyLive() || isolatedProtectedBackupGuard() || isolatedProtectedBackupSentinel()
             || backupCommandOnlyLive() || isolatedBackupCommandGuard() || isolatedBackupCurrentState() || currentBackupDownloadLive() || isolatedCurrentBackupBundle()
             || isolatedSnapshotProof() || backupReviewProbeOnlyLive() || isolatedSdkMetadataProtocol() || isolatedCurrentBackupContent() || currentBackupDownloadRecoveryLive();
+    }
+
+    private static boolean apiOnlyModelSmoke() {
+        return Boolean.getBoolean("managed.runtime.apiOnlyModelSmoke")
+            && "DeploymentStaticLiveAcceptanceTest#verifiesSelectedModelThroughProductApiOnly".equals(System.getProperty("test", ""));
     }
 
     private static boolean isolatedBackupGuard() {
@@ -8598,6 +8603,10 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
     }
 
     private void configureLiveModel(PlatformRuntime runtime, boolean backupApprovalOnly) throws Exception {
+        configureLiveModel(runtime, backupApprovalOnly, false);
+    }
+
+    private int configureLiveModel(PlatformRuntime runtime, boolean backupApprovalOnly, boolean apiOnly) throws Exception {
         if (backupApprovalOnly) {
             backupRequire(!mainOnlyDiagnostic && (backupCommandOnlyLive() || backupReviewProbeOnlyLive() || (backupOnlyLive()
                 && "DeploymentStaticLiveAcceptanceTest#downloadSelectiveBackupThroughProduct".equals(System.getProperty("test", "")))));
@@ -8605,24 +8614,18 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             backupRequire(output.deploymentMaxOutputTokens() == 32768 && output.approvalMaxOutputTokens() == 8192
                 && output.approvalMaxOutputTokens() <= output.deploymentMaxOutputTokens());
         }
-        var settings = new LinkedHashMap<String, String>();
-        for (String line : Files.readAllLines(workspace().resolve("test/apikey.txt"))) {
-            int separator = line.indexOf('=');
-            if (separator > 0)
-                settings.put(line.substring(0, separator).strip(), line.substring(separator + 1).strip());
+        var settings = LiveModelSettings.parse(Files.readAllLines(workspace().resolve("test/apikey.txt")));
+        var effort = settings.reasoning(System.getProperty("managed.live.reasoningEffort"));
+        var approvalEffort = settings.reasoning(System.getProperty("managed.live.approvalReasoningEffort", effort.name()));
+        if (apiOnly) {
+            assertTrue(aiEnabled && !backupApprovalOnly && !mainOnlyDiagnostic);
+            assertEquals("gpt", settings.provider(), "The API-only smoke requires the explicitly selected GPT provider");
+            assertEquals("gpt-6-luna", settings.model());
+            assertEquals(gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_RESPONSES, settings.protocol());
+            assertEquals(gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode.HIGH, effort);
+            assertEquals(gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode.HIGH, approvalEffort);
         }
-        String base = settings.get("base_url");
-        String model = settings.get("model");
-        String key = settings.get("api_key");
-        assertNotNull(base);
-        assertNotNull(model);
-        assertNotNull(key, "Credential file must supply api_key without logging its value");
-        var endpoint = java.net.URI.create(base.replaceAll("/+$", "") + "/chat/completions");
-        var effort = gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.valueOf(
-            System.getProperty("managed.live.reasoningEffort", "DEFAULT"));
-        var approvalEffort = gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.valueOf(
-            System.getProperty("managed.live.approvalReasoningEffort", effort.name()));
-        settings.clear();
+        int probes = 0;
         var purposes = backupApprovalOnly ? List.of(gold.debug.windowstolinux.app.ai.model.AiPurposeType.APPROVAL)
             : mainOnlyDiagnostic ? List.of(gold.debug.windowstolinux.app.ai.model.AiPurposeType.DEPLOYMENT)
             : List.of(gold.debug.windowstolinux.app.ai.model.AiPurposeType.DEPLOYMENT,
@@ -8635,8 +8638,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                 .filter(value -> value.profile().id().equals(profileId)).findFirst()
                 .map(value -> value.profile().credentialKey())
                 .orElse("ai/live/" + purpose.name().toLowerCase(java.util.Locale.ROOT));
-            var profile = new gold.debug.windowstolinux.app.service.ai.AiModelProfile(profileId, endpoint, model, credentialReference, selectedEffort);
-            char[] credential = key.toCharArray();
+            var profile = settings.profile(profileId, credentialReference);
+            char[] credential = settings.credential();
             try {
                 runtime.models().save(profile, "User-selected live model: " + purpose, credential,
                     backupApprovalOnly ? gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().approvalMaxOutputTokens()
@@ -8644,12 +8647,25 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             } finally {
                 Arrays.fill(credential, '\0');
             }
+            settings.configureReasoning(runtime.models(), profile.id(), effort, approvalEffort);
             for (var capability : List.of(gold.debug.windowstolinux.app.ai.model.AiCapabilityType.TEXT,
                 gold.debug.windowstolinux.app.ai.model.AiCapabilityType.TOOL_CALLING)) {
                 var verification = runtime.models().verify(profile.id(), capability);
                 System.out.println("AI_LIVE_CAPABILITY_PROBE task=" + verification.id() + " purpose=" + purpose
                     + " capability=" + capability + " providerUsage=UNKNOWN transportCallCount=UNKNOWN");
-                completed(verification, 3);
+                if (apiOnly) {
+                    final OperationResult<Void> result;
+                    try {
+                        result = verification.completion().toCompletableFuture().get(3, TimeUnit.MINUTES);
+                    } catch (Exception unavailable) {
+                        throw new AssertionError("API-only model probe did not complete: " + unavailable.getClass().getSimpleName());
+                    }
+                    System.out.println("AI_LIVE_API_ONLY_PROBE purpose=" + purpose + " modelId=" + profile.id()
+                        + " protocol=" + profile.protocol() + " reasoningEffort=" + selectedEffort
+                        + " capability=" + capability + " result=" + result.outcome());
+                    assertEquals(TaskResult.SUCCEEDED, result.outcome(), "API-only product capability probe failed; raw response is not printed");
+                } else completed(verification, 3);
+                probes++;
             }
             runtime.models().saveAiPurpose(purpose, List.of(new gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment(profile.id())));
             if (mainOnlyDiagnostic) {
@@ -8657,9 +8673,42 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                     List.of(new gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment(profile.id())));
                 System.out.println("MAIN_AGENT_ONLY_DIAGNOSTIC_ROUTE approval=DORMANT_VERIFIED_PROFILE judgment=USER_AUTHORIZED_DIAGNOSTIC");
             }
-            System.out.println("AI_LIVE_MODEL purpose=" + purpose + " endpoint=" + endpoint + " model=" + model
-                + " reasoningEffort=" + selectedEffort);
+            System.out.println("AI_LIVE_MODEL purpose=" + purpose + " endpoint=REDACTED model=" + profile.model()
+                + " reasoningEffort=" + selectedEffort + " protocol=" + profile.protocol() + " provider=" + profile.provider());
         }
+        return probes;
+    }
+
+    @Test
+    @EnabledIf("apiOnlyModelSmoke")
+    void verifiesSelectedModelThroughProductApiOnly() throws Exception {
+        assertTrue(Boolean.getBoolean("java.awt.headless"));
+        assertFalse(Boolean.getBoolean("managed.runtime.staticLive"));
+        assertFalse(Boolean.getBoolean("managed.runtime.agentLive"));
+        aiEnabled = true;
+        connectionOnly = false;
+        root = workspace().resolve("src/app/db/data/api-only-model-smoke-" + java.util.UUID.randomUUID());
+        Files.createDirectories(root.getParent());
+        Files.createDirectory(root);
+        System.out.println("AI_LIVE_API_ONLY_STATE " + root);
+        try (var runtime = open()) {
+            assertEquals(4, configureLiveModel(runtime, false, true));
+            var profiles = runtime.models().listAiConfigurations();
+            assertEquals(Set.of("live-deployment", "live-approval"),
+                profiles.stream().map(value -> value.profile().id()).collect(java.util.stream.Collectors.toSet()));
+            for (var profile : profiles) {
+                assertEquals(gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_RESPONSES, profile.profile().protocol());
+                assertEquals(gold.debug.windowstolinux.app.ai.provider.ModelProviderType.OPENAI, profile.profile().provider());
+                for (var purpose : List.of(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE,
+                    gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL))
+                    assertEquals(gold.debug.windowstolinux.appapi.ai.model.AiReasoningMode.HIGH,
+                        profile.profile().reasoningDefaults().get(purpose));
+                for (var capability : List.of(gold.debug.windowstolinux.app.ai.model.AiCapabilityType.TEXT,
+                    gold.debug.windowstolinux.app.ai.model.AiCapabilityType.TOOL_CALLING))
+                    assertTrue(profile.verified(capability), "Each independent purpose must retain both real product probes");
+            }
+        }
+        System.out.println("AI_LIVE_API_ONLY_COMPLETE profiles=2 capabilityTasks=4 providerPhysicalCalls=UNKNOWN noServerConfigured=true noSshRequested=true");
     }
 
     private com.fasterxml.jackson.databind.JsonNode originalStatusReviewFacts() throws Exception {
@@ -9596,7 +9645,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                     var roleInputs = inputs.get(componentRoles.get(prompt.componentId()));
                     var values = new LinkedHashMap<>(roleInputs.containsKey("port")
                         ? gold.debug.windowstolinux.mod.deployment.service.standard.shared.DeploymentStandardRuntimeDraft
-                            .apply(prompt, Map.of("port", roleInputs.get("port"))).defaults()
+                        .apply(prompt, Map.of("port", roleInputs.get("port"))).defaults()
                         : prompt.defaults());
                     values.putAll(roleInputs);
                     if (roleInputs.containsKey("accessUrl")) {
