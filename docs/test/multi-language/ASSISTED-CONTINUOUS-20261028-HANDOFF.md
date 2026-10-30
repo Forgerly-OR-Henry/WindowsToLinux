@@ -1,6 +1,30 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：材料发送已授权，R11启动层失败已收尾，改用新准备目录
+## 现行入口：R11失败并按用户请求暂停，启动2项／六项未启动
+
+本轮固定r11f／`27f9a876d0dd7710f0692fd829bbc7798198c4d7`，产品产物和原验收参数不改。父issue `2f0b52`外层0、native35868实际wait0；最终P=`e18e5959283ffb9ab55d64ab7271d6043d66a58f768061170af18ad6129968f8`，R=`8ed461c16f15c8b8935fdc4d05bd027a5dff172926ac393177075a381f795821`，S=`b1e097e814786da2f038c1a4ec767f365095005f4eb343af3cf22dc9811739b2`。实际114冻结输入／9外部／17输出完整guard通过，并额外绑定标准PS前台launcher及旧host01／stdin收尾；未复用旧失败epoch的运行记录或authority。
+
+产品inventory780／plan31040／apply26220／独立after7296均实际wait0、JUnit1/0/0/0，四份严格stage父审均通过；独立after审计`463948`／0核`initialReset.verified=true`及四阶段全部true。[独立after父审](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/round-11-preparation-host-02/11/parent-authority-11/parent-review-host-after-11.json)核计划内部canonical SHA=`91349de13f0ed302efd56089a21f1231b19b24725f4657f9d43872646a4f6da9`与apply一致；计划文件whole SHA=`2f0367be58115800f9fd68c172e2c2eac33e8494c866d06578cd5e3a19942753`是不同概念，不能互换。清场通过不代表任一业务已通过。
+
+**只读observer已失败，原UNKNOWN观察缺口不得抹除。** 清场plan期间第1次typed目录摘要不一致为git target/classes，第2次为deployment target/classes；第三次完整guard正常返回，但已超过同一次5秒总预算，晚到结果被拒，随后保留budget及terminal UNKNOWN。原readgap=2、UNKNOWN观察事件=5，native1／外层`3e9abf`实际1；这是3次尝试中的期限拒绝，不是耗尽25次。目录具体成员、写者和底层原因仍未知。observer70603／native26600／wrapper31324已终态，禁止poll、重启或覆盖原标签；这些是观察UNKNOWN，不是正式项目UNKNOWN。[原observer退出记录](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/round-11-preparation-host-02/11/monitor-exit-11.json)保留。driver运行时仍使用严格执行guard，并已通过独立after；其后成功guard不把旧观察改成0，当时未为监控缺口停止或补跑原任务。限定只读评估v2（SHA前缀5ea0bf93）为有效判断；首份因审计路径数组错误标INVALID，原件仍保留。它不修改本轮冻结源，也不抹去observer失败。
+
+用户要求“找合适时间暂停，当前任务完成之后再暂停”。父未signal当前FTP，先由clear_owned_pending_input11.py仅Attach本任务独占CLI console，将235个pending输入事件清为0；暂停阶段只向原句柄投递一次quit（`6ea58b`）。原FTP fixture结束后driver退出：原session45309最终`15725d`实际0，native5280 actualWaitCompleted=true／exit0；FTP native9816实际wait/exit1。原八项目加quit最初仍只由`5b2921`一次入队（queue SHA=`df0a75c754c1909a6118a43d510961a309b2bdc458547a673721adbea0d6cd79`），后续六项无launch，不把它们记失败或成功。[用户暂停最终判定](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/round-11-preparation-host-02/11/parent-authority-11/parent-user-pause-final-assessment-11.json)保留完整同次canonical inspect：原工具48058→`0064dd`／0，17输出完整冻结核验及原P/R/S不变，formalDenominator=8、originalAttemptsLaunched=2、fullFirstPassCount=0、goalAchieved=false。停止后不得续用旧句柄、重投原队列或恢复原UNKNOWN。
+
+首项TaskBoard原native37288（creationUTC02:38:08.344418Z）已出现原root`c411bea4-a81e-43eb-be8c-aedaaef4e4ab`明确FAILED／`DEPLOYMENT_COMMAND_REVIEW_DENIED`及原日志BUILD FAILURE，无完整业务或交付PASS；原driver工具`4a1210`已返回PROJECT_EXIT actualExitCode1；[原TaskBoard exit](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/round-11-preparation-host-02/11/task-board-first-01-exit.json)记录actualWaitCompleted=true、actualPid37288及同creationUTC02:38:08.344418Z。原reason为“该 root 脚本未隔离 Bash 的 BASH_ENV 启动钩子或继承的 PATH，无法排除执行未经信任代码。”两用途原模型日志HIGH已确认，但不代替独立审批、逐命令host grant或业务结果。该BASH_ENV／PATH现象与R10部分旧拒绝症状相似，不据此认定同一底层原因或回退。
+
+FTP原root`d7853685-9d9f-433e-a1bb-fa74278a19f6`有明确TaskSnapshot state=UNKNOWN，progress为关闭原准备资源；原inspector的originalRootResults=[]、retainedUncertaintyMarker=true。[原FTP exit](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/round-11-preparation-host-02/11/file-transfer-first-01-exit.json)记录native9816实际wait/exit1，JUnit失败，无完整business／delivery；不得改写根FAILED或SUCCEEDED，不恢复／重放。原日志有SSH waiting-for-exit、channelClosed、30000ms及authorPayloadMAY_HAVE_BEEN_SENT等诊断，但根因、实际发送与远端效果仍未确定，不能据此直接归为审批DENY、TaskBoard同因或已知代码回退；暂停收尾未主动reconcile或再次远端清场。
+
+[Astra限定源码判断](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/r11-launcher-environment-design-01/ASSESSMENT-11.md)确认full／tracked／default／status helper launcher继承PATH，安全探测此前已依赖PATH，是已证源码缺口，不是远端PATH恶意或工具被替换的事实证明。native App frame在本次路径仅用绝对env／bash及内建，当前无需SDK frame／AppAPI descriptor扩展；服务端initial SSH shell边界仍未知。最小后续方案为共享现有Agent `env -i`＋固定系统PATH＋`bash -p` launcher，限定5个生产文件的精确合同、启动PATH负例及digest／direct回归；尚未实施、不保证APPROVE，不能绕过独立审批或逐命令host grant。0701／27f已修硬门保留，不把旧保护改回原样，源码仍27f9、没有新增产品代码改动。
+
+暂停收尾已完成：宿主`623780`／0逐一核12个已记录原进程身份退出，当前r11f验证进程范围0；t11的条目及祖先全部nonreparse，精确删除并核absent，未signal其它任务进程。[进程与临时目录收尾](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/round-11-preparation-host-02/11/parent-authority-11/parent-user-pause-process-closeout-11.json)SHA=`df8f578f207ca40f8580d184f3b3849a580f51308c33e61b8c438bdb9af0b48a`。范围限已录身份及当前专用验证命名空间，不补造短命子进程历史身份，也不声称远端UNKNOWN效果已核销。
+
+原字节封存`604e21`／0保留195份公开证据、6个本轮状态目录中的122份opaque文件，未打开DB engine／解密／重放；正常凭据库和私有API配置排除。[暂停原件封存](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/round-11-preparation-host-02/11/parent-authority-11/parent-user-pause-raw-evidence-seal-11.json)SHA=`f904185279108624b46050818f65877bb1ea34b5d7881f98d23f2b22064056e7`；192份公开文本对两项配置API key仅在内存比对、命中0，不输出key值，不扩称全部敏感内容审计。
+
+本轮两原任务的SDK日志共38逻辑／38物理，已知token508574；可见生成恢复链0、结构反馈0。另8条capability探针物理调用／用量未知，原生格式marker覆盖不完备，不能称完整账单或零异常。原FTP UNKNOWN与observer的2gap／5UNKNOWN分别保留，不因后续冻结核验通过而改判。没有新增产品修复、全量测试、UI／浏览器／Computer Use；Sol准备与文档、Astra限定源码判断的范围以上文为准。
+
+六项未启动不计业务失败；R11本轮失败并按用户请求暂停，目标未达成。所有原失败／UNKNOWN、原17输出冻结材料和论文五项保留，远端未在暂停收尾再次清场。暂停期间不启动新修复／测试／部署，恢复须用户明确指示；旧driver／observer均禁止poll／重启／重投，不能恢复原UNKNOWN包装首过。CURRENT／notes与本地Git交接保持同一状态，默认不push。
+
+### 启动前的材料授权、有限诊断与host01关闭（历史）
 
 用户已对原问题明确答复“授权继续”，覆盖当前完整安装脚本、独立审批提示和必要测试证据经配置GPT接口发送给gpt-6-luna，以及后续原有辅助部署验收；API key仅认证。原自动拒绝保留，未被当成一次实际调用。当前候选仍为r11f／27f9a876，两修复不变，目标尚未达成。
 
@@ -12,7 +36,7 @@
 
 host01随后发生辅助启动层失败：父封装用.NET ProcessStartInfo无redirect继承TTY，driver35812虽进入RUNNER_READY，唯一inventory输入未到达native；无任何reset或正式项目launch。bounded本地回显对照实证该封装未收到输入并超时，标准PowerShell `&`前台native调用单次输入正常匹配。原控制器的唯一直接子进程为自有隐藏conhost12308，初次停止门因该child拒绝且未发signal；核清后父在产品效果前精确停止driver，native-1／外层fba040-1。monitor31244经显式stop请求正常返回native3／外层43d029-1，readgap0／UNKNOWN观察事件0；这不是业务零异常证明。父独立核两native、两wrapper及conhost共5原身份均退，专用t11原为空、精确删除并核absent，原P/R/日志不覆盖或重启。[启动收尾](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/round-11-preparation-host-01/11/parent-authority-11/host01-startup-closeout-11.json)。
 
-当前转入CreateNew `round-11-preparation-host-02/11`，只迁移控制入口及摘要绑定，产品源码27f9a876、产物和验收参数不改；最终新P/R、产品四阶段清场及独立after、正式八项仍待执行，正式分母0/8。其余辅助准备错误原件继续保留：archive解析1、两cmd启动1、控制迁移缩进1、父手录摘要前置拒绝1、metadata原XML路径含../的canonical拒绝1；不混八项，修正输入转换不削弱guard。论文五项保留，未推送。
+host01关闭时转入CreateNew `round-11-preparation-host-02/11`，只迁移控制入口及摘要绑定，产品源码27f9a876、产物和验收参数不改；该关闭检查点新P/R、四阶段清场和八项当时尚未执行，正式分母当时0/8。其后的host02实际结果以上节新记录为准。其余辅助准备错误原件继续保留：archive解析1、两cmd启动1、控制迁移缩进1、父手录摘要前置拒绝1、metadata原XML路径含../的canonical拒绝1；不混八项，修正输入转换不削弱guard。论文五项保留，未推送。
 
 ## 已解除的材料发送阻断（历史）
 
