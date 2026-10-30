@@ -1,8 +1,24 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
+## 现行入口：材料发送已授权，R11启动层失败已收尾，改用新准备目录
+
+用户已对原问题明确答复“授权继续”，覆盖当前完整安装脚本、独立审批提示和必要测试证据经配置GPT接口发送给gpt-6-luna，以及后续原有辅助部署验收；API key仅认证。原自动拒绝保留，未被当成一次实际调用。当前候选仍为r11f／27f9a876，两修复不变，目标尚未达成。
+
+唯一预注册材料诊断已实际完成，native30220／外层4859dd均0：4个capability任务均SUCCEEDED，其physical／usage未仪表；独立review逻辑1、生成1、物理1成功，实际请求gpt-6-luna／reasoning.high／auto／65536、690535B，完整stdin607517B。已知review input165449／output260（reasoning191包含在output内）；不称完整账单或零异常。模型DENY仅因该有限GOAL明确禁止安装、被审命令却有安装效果，结论对A/B或环境问题不具区分力；不改GOAL重试求APPROVE，不认定BASH_ENV已解决或修复失败。原任务f37f9299 FAILED／REVIEW_DENIED，host grant／session／BeforeExecute均0，非正式八项。
+
+原结果0ea11d07、父评估c08be16c保留；3原身份核退／am11清，81份文本明文key命中0，17份实际输出及3个opaque状态文件仅raw封存964793a5，不解密／重放失败库。随后在任何Maven前，另归档原诊断17输出／16JAR／3raw共3857 entry，ZIP31961499B／SHA6b3ec621，每项CRC／bytes／SHA相符，3raw与原hash全同。当前新产物快照f2214a83为17目录3838成员／16JAR／54cp；指定纯方法JUnit1/0/0/0、0.145s取得真正Surefire54cp，三Mod扫描3/0、8MiB1MiB2+6及12超时反射通过，非连接／业务重试。
+
+`round-11-preparation-host-01/11`已完成实际最终冻结：P=`3c64e398ff02b819a17f09a2fdfc6e34cf05c0ca5f95dae731b78ea74a0fece8`，R=`15d1fe309ae98d0561c2c53e5e91014f6d51aa795c90d7f9bc34bcdd403ef090`，S=`0aa67a4ea8e37dcd1cc46bf13e6807aff988e8e0e6a7278681c51034f0a7e08f`；147输入／9外部／17输出完整guard通过，issuer native17192实际wait0。其沙箱wrapper后置CIM查询拒绝使外层1，宿主随后独立核issuer及wrapper均退，不重发SOURCE/P/R。direct产品连接1455f61d与新pure Surefire CP分源绑定，不把helper55冒充JUnit54。父新核R10原395文件／7917323B全同及18原身份退出，前轮三准入review71d9ae25仅据R10原5022／7a43／8c89，非有限诊断。
+
+host01随后发生辅助启动层失败：父封装用.NET ProcessStartInfo无redirect继承TTY，driver35812虽进入RUNNER_READY，唯一inventory输入未到达native；无任何reset或正式项目launch。bounded本地回显对照实证该封装未收到输入并超时，标准PowerShell `&`前台native调用单次输入正常匹配。原控制器的唯一直接子进程为自有隐藏conhost12308，初次停止门因该child拒绝且未发signal；核清后父在产品效果前精确停止driver，native-1／外层fba040-1。monitor31244经显式stop请求正常返回native3／外层43d029-1，readgap0／UNKNOWN观察事件0；这不是业务零异常证明。父独立核两native、两wrapper及conhost共5原身份均退，专用t11原为空、精确删除并核absent，原P/R/日志不覆盖或重启。[启动收尾](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/round-11-preparation-host-01/11/parent-authority-11/host01-startup-closeout-11.json)。
+
+当前转入CreateNew `round-11-preparation-host-02/11`，只迁移控制入口及摘要绑定，产品源码27f9a876、产物和验收参数不改；最终新P/R、产品四阶段清场及独立after、正式八项仍待执行，正式分母0/8。其余辅助准备错误原件继续保留：archive解析1、两cmd启动1、控制迁移缩进1、父手录摘要前置拒绝1、metadata原XML路径含../的canonical拒绝1；不混八项，修正输入转换不削弱guard。论文五项保留，未推送。
+
+## 已解除的材料发送阻断（历史）
+
 目标状态：**blocked**，未完成。具体GPT材料发送授权连续三个目标回合未获答复，可独立完成的凭据、产品认证、产物检查及自有进程收尾已完成；R11未启动、服务器未新清场。目标工具已实际返回blocked，不是用户要求暂停或目标达成。不得把自动续跑或等待时间视为授权，也不重复已过检查制造进度。[阻断审计](H:/Program/WindowsToLinux/.ai-workspace/wt/r11f/.ai-workspace/evidence/assisted-r11-local-preparation-20261030/parent-material-send-blocked-audit-11.json)SHA11648995保留；收到明确材料发送授权后，先核当前冻结输入，再继续一次有界诊断和后续新轮。
 
-## 现行入口：新R11凭据及产品认证通过，模型材料发送授权仍待答
+## 前一检查点：新R11凭据及产品认证通过，模型材料发送授权当时待答
 
 2026-10-30，r11f HEAD仍为`27f9a876`，两修复与待执行的材料诊断输入未改。独立前置检查已完成：正常R10凭据经产品Security接口在内存char[]传递、正常重新加密保存到全新`agent-live-credential-20261030-r11-01`，SSH／master数组finally清零，不复制DB或trust，不打开失败／UNKNOWN库；正常source／target打开可能写本地ledger。桥原native22204实际wait0，外层4ac672／0，公开回执SHA2fa3ebe5。此步骤无模型／连接／部署。
 
