@@ -1,6 +1,16 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 现行入口：R11失败并按用户请求暂停，启动2项／六项未启动
+## 2026-10-31现行入口：用户再次暂停，R12修复草稿尚未验证完成
+
+用户先明确恢复，随后通过目标控制再次置paused。本次没有连接服务器、调用模型、打开Runtime／凭据库或启动新正式项目，也未再次清场；R11的FAILED、UNKNOWN、六项未启动及旧句柄禁止重放保持原样。恢复时只做原字节重核：195公开证据＋122opaque状态文件共23548033B与原seal全同，不engine／解密／恢复。
+
+新隔离树为`H:/Program/WindowsToLinux/.ai-workspace/wt/r12f`，分支`codex/assisted-helper-launcher-20261031`，HEAD仍27f9a876。5生产文件＋4直接测试文件的launcher修复草稿已保留，未stage／commit，不能称已验证修复。实际13个选定方法为12通过／1失败，原native前台2900 actual wait/exit1，原工具34171终态bee85a／1；4份原XML已另存。唯一失败`DeploymentManagedHelperTest#defaultInstallersPinCurrentSharedRuntimeBytes`：期望body SHA ed961148…、实际117c3ada…；基线render对照尚未启动，原因未确认，未修改硬编码期望。恢复先做该有界基线辨别及必要失败组复验，不能直接改期望摘要使其通过，也不重复已过12方法。完整9路径／SHA及暂停状态见[修复暂停回执](H:/Program/WindowsToLinux/.ai-workspace/wt/r12f/.ai-workspace/evidence/helper-launcher-fix-12-01/pause-closeout-12-01.json)，SHA47e7963d。
+
+FTP只读取证已缩小边界：早期helper probe为exit64／SSH_COMMAND_NONZERO，timeoutMillis30000是配置上限，不是已证超时；“关闭原准备资源”进度后仍有后续审批。toolchain.prepare命令确认成功，最后bind只见生成成功及submit_result，不能推出decision、host grant或远端执行成功。随后原root在future尚未完成时被fixture捕获为UNKNOWN；Mod关闭阻断及重开库锁错误是后续suppressed错误。候选边界为bind审查之后至命令返回／author session收尾／平台收口，唯一底层原因仍未知，未见所核aa804保护回退。见[FTP只读评估](H:/Program/WindowsToLinux/.ai-workspace/evidence/r11-ftp-unknown-analysis-20261031-01/ASSESSMENT.md)。只记录未来代理异常typed事实并原样重抛的[诊断建议](H:/Program/WindowsToLinux/.ai-workspace/evidence/r11-ftp-unknown-analysis-20261031-01/DIAGNOSTIC-SUGGESTION.md)尚未实施，不是底层故障修复；未读原DB或重放UNKNOWN。
+
+暂停收尾`42076d`／0独立核7个已记录原身份均退出、当前r12f验证进程0、专用临时目录absent；9个WIP文件长度／SHA与worker回执相符，保留原失败。见[父暂停核退](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-resume-20261031-01/parent-pause-closeout-01.json)，SHA9b17b6d1。两Sol均已结束，无Astra／Terra新调用、无Computer Use或全量测试。论文五项及所有旧证据保留；本次只提交正式交接文档，未提交尚未验证完成的代码草稿，默认不push。迁移或恢复时须保留完整r12f工作树及未跟踪的新测试文件，不能仅凭该分支HEAD还原草稿。目标未达成，等待用户明确恢复。
+
+## R11暂停检查点（历史）：失败，启动2项／六项未启动
 
 本轮固定r11f／`27f9a876d0dd7710f0692fd829bbc7798198c4d7`，产品产物和原验收参数不改。父issue `2f0b52`外层0、native35868实际wait0；最终P=`e18e5959283ffb9ab55d64ab7271d6043d66a58f768061170af18ad6129968f8`，R=`8ed461c16f15c8b8935fdc4d05bd027a5dff172926ac393177075a381f795821`，S=`b1e097e814786da2f038c1a4ec767f365095005f4eb343af3cf22dc9811739b2`。实际114冻结输入／9外部／17输出完整guard通过，并额外绑定标准PS前台launcher及旧host01／stdin收尾；未复用旧失败epoch的运行记录或authority。
 

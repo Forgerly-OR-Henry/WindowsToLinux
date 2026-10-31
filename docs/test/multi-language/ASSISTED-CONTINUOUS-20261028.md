@@ -1,5 +1,15 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-10-31恢复后再次暂停：仅本地R12修复草稿与定点，未启动新验收
+
+用户恢复后又通过目标控制置paused，已停止新增实现／验证。新r12f从27f9a876建立，5生产＋4直接测试WIP保留，未stage／commit。13选定方法实际12通过／1失败，native前台2900 wait/exit1、原工具34171→bee85a／1；唯一失败为`DeploymentManagedHelperTest#defaultInstallersPinCurrentSharedRuntimeBytes`的body摘要期望ed961148…与实际117c3ada…不同。基线probe尚未开始、根因未定，未为通过测试改硬码；后续只核基线并复验失败及必要受影响组，不能称本组或修复已全部通过。
+
+R11原195公开文件＋122opaque文件共23548033B在恢复时raw重核全同；旧FAILED／UNKNOWN／六项未启动不变。FTP只读顺序确认早期probe是exit64而不是已证超时，最后prepare命令成功、bind生成成功仍不能证明decision／grant／执行；原UNKNOWN发生于future未完成时。仅缩小到bind后至命令返回／author retirement／平台收口，底层未明，所核aa804保护未见回退。异常typed投影方案只保存未实施，未读DB／解密／重放。
+
+父`42076d`／0核7已录原身份退、当前专用验证进程0／tmp absent，9个WIP摘要与worker回执一致；4份原XML及失败日志保留。[修复暂停回执](H:/Program/WindowsToLinux/.ai-workspace/wt/r12f/.ai-workspace/evidence/helper-launcher-fix-12-01/pause-closeout-12-01.json)SHA47e7963d，[父核退](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-resume-20261031-01/parent-pause-closeout-01.json)SHA9b17b6d1。未新连服务器／Runtime／API／清场／正式项目，无CU／全量测试；R12本地定点不混入八项目分母。源码草稿未提交、正式交接单独本地提交，不push；论文与旧证据保留，目标未达成。
+
+以下为R11及此前的原检查点记录。
+
 状态：R11本轮失败，并按用户“当前任务完成之后再暂停”的请求停止原队列。host02四阶段清场及独立after通过；计划分母8、原启动2、完整首过0。TaskBoard原根FAILED／审批DENY、native37288实际wait1；FTP原根UNKNOWN且无原RESULT、native9816实际wait1／JUnit失败，无完整business／delivery。六项未启动，不判失败或成功。原driver45309工具15725d／0、native5280实际wait0；observer原2readgap／5UNKNOWN／native1仍保留。暂停收尾已完成：12原身份核退／专用tmp已清／原件raw seal保留／公开文本配置key比对0；远端未重清、不reconcile原UNKNOWN。R10八项原试均已结束，完整首过0/8、原根FAILED8/UNKNOWN0，八项均独立审批DENY，无完整业务／交付PASS。原件封存、自有进程及tmp已收尾；隔离两修复本地0701b3ed／27f9a876、14及11定点通过，本轮已真实尝试两项、完整验收未通过；R11已停止原队列并完成用户暂停收尾，目标未达成。以下保留此前各轮／暂停原结果。R09已中断：TaskBoard完整首过1项，FTP用户中断且无原终态，六项未启动；不混为七项业务失败，不跨轮拼接。原环境准备失败单列保留。R08最终完整首过6/8。八原尝试各一次、无额外项目：五网站及Binary原任务/既定业务/交付/清理口径均通过；Log与Directory原native1/JUnit失败、root保留UNKNOWN，无完整业务/交付，不移出分母。两阶段副本取证已取得不同拒绝理由：Log质疑固定1800秒/独立会话子进程收尾，Directory质疑APT安装未禁止移除。已确认相应源码保护缺口；未证明实际产生残留或卸载，不认定同因或ff83回退。APT隔离修复cff67b66/7定点已通过，生命周期首版da90已隔离提交，首版真实Linux能力不符已由新held-FD/ExitType诊断解释，v2已本地提交aa80428e并完成所列定点与实际产物核对，生产无包Linux矩阵前一阶段已执行（见后文），该准备检查点当时未做真实包/完整验收，当前R09原验收状态见上文。R08原driver47579及补充66809均实际exit0并host CIM核退，旧句柄禁止再poll/重启；R08后续仅做独立辅助取证/修复准备。R08全轮577logical/578physical、known5803641、结构反馈47，Survey内部SDK恢复1/未知usage1及观察缺口1单列，非零异常/非完整账单。SOURCE73/f102、P71b/R5b及原负载全程不改，FTP按授权8MiB；原失败和UNKNOWN保留、不重放，仅测试代码，无UI/浏览器/Computer Use。
 
 验收口径：每轮清除一次性测试机已盘点的部署及测试软件环境，在冻结代码和参数下执行既定八个项目。只有同一轮八项首次完整通过才达成；失败后修复、恢复及外层重试单独计数，下一轮重新清场。模型SDK内部自动请求重试及只读观察另记，不自动等同整项目重试；原任务终止失败、UNKNOWN、取消或人工补救不能计首过。额外保留无内部异常/重试指标。清场不等于重装操作系统。
