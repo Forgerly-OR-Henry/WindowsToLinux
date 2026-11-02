@@ -33,7 +33,7 @@ class DeploymentAgentInstallReviewIntentTest {
     void exactAgentInstallAddsDeclaredTargetsWithoutChangingSharedIntentOrCommandBytes() throws Exception {
         var fixture = new NativeAiFixture();
         byte[] body = DeploymentHelperInstallerScript.render().getBytes(StandardCharsets.UTF_8);
-        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", body, Duration.ofHours(2), 131072)) {
+        try (var request = new CommandRequest(DeploymentHelperInstallerScript.LAUNCHER, body, Duration.ofHours(2), 131072)) {
             var original = original(request);
             assertTrue(DeploymentAgentRemoteTools.ownsInstallReview(original, request, fixture.task, fixture.task, server, REVISION));
             var expanded = DeploymentAgentInstallReviewIntent.upgrade(original, request, server, REVISION);
@@ -71,7 +71,7 @@ class DeploymentAgentInstallReviewIntentTest {
             "expanded-intent", "body", "tracked-body", "launcher", "server", "revision", "exact-action", "summary")) {
             String body = fault.equals("body") ? installer + "printf changed\n" : fault.equals("tracked-body")
                 ? DeploymentHelperInstallerScript.renderTracked(UUID.randomUUID(), UUID.randomUUID(), "b".repeat(64), "c".repeat(64)) : installer;
-            String launcher = fault.equals("launcher") ? "exec /bin/bash -s" : "exec /bin/bash --noprofile --norc -s";
+            String launcher = fault.equals("launcher") ? "exec /bin/bash -s" : DeploymentHelperInstallerScript.LAUNCHER;
             try (var request = new CommandRequest(launcher, body.getBytes(StandardCharsets.UTF_8), Duration.ofHours(2), 131072)) {
                 var initial = original(request);
                 ActionIntent changed = switch (fault) {
@@ -104,6 +104,39 @@ class DeploymentAgentInstallReviewIntentTest {
                     default -> initial;
                 };
                 assertThrows(IllegalArgumentException.class, () -> DeploymentAgentInstallReviewIntent.upgrade(changed, request, server, REVISION), fault);
+            }
+        }
+    }
+
+    @Test
+    void fullAndFilesIntentsRejectOldOrWeakenedLauncherAndPriorCommandBinding() throws Exception {
+        for (boolean files : List.of(false, true)) {
+            String body = files ? DeploymentHelperInstallerScript.renderFiles() : DeploymentHelperInstallerScript.render();
+            String operation = files ? "deployment.helper.install.files.v1" : "deployment.helper.install.v1";
+            try (var canonical = new CommandRequest(DeploymentHelperInstallerScript.LAUNCHER,
+                body.getBytes(StandardCharsets.UTF_8), Duration.ofHours(2), 131072)) {
+                var exact = RemoteActions.command(server, REVISION, canonical)
+                    .withSemantics(new ActionSemantics(operation, originalTargets()));
+                assertDoesNotThrow(() -> files ? DeploymentAgentInstallReviewIntent.upgradeFiles(exact, canonical, server, REVISION)
+                    : DeploymentAgentInstallReviewIntent.upgrade(exact, canonical, server, REVISION));
+                for (String launcher : List.of("exec /bin/bash --noprofile --norc -s",
+                    DeploymentHelperInstallerScript.LAUNCHER.replace(" -i ", " "),
+                    DeploymentHelperInstallerScript.LAUNCHER.replace("PATH=/usr/sbin:/usr/bin:/sbin:/bin", "PATH=/untrusted:/usr/bin:/bin"),
+                    DeploymentHelperInstallerScript.LAUNCHER.replace(" -p ", " "))) {
+                    try (var changed = new CommandRequest(launcher, body.getBytes(StandardCharsets.UTF_8), Duration.ofHours(2), 131072)) {
+                        var changedIntent = RemoteActions.command(server, REVISION, changed)
+                            .withSemantics(new ActionSemantics(operation, originalTargets()));
+                        assertNotEquals(exact, changedIntent, "Launcher changes require a fresh exact command binding");
+                        assertThrows(IllegalArgumentException.class, () -> {
+                            if (files) DeploymentAgentInstallReviewIntent.upgradeFiles(changedIntent, changed, server, REVISION);
+                            else DeploymentAgentInstallReviewIntent.upgrade(changedIntent, changed, server, REVISION);
+                        });
+                        assertThrows(IllegalArgumentException.class, () -> {
+                            if (files) DeploymentAgentInstallReviewIntent.upgradeFiles(exact, changed, server, REVISION);
+                            else DeploymentAgentInstallReviewIntent.upgrade(exact, changed, server, REVISION);
+                        });
+                    }
+                }
             }
         }
     }

@@ -9,7 +9,7 @@ import gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.Deployme
 
 /** Fixed Agent bootstrap prerequisites inside the unchanged shared files-installation envelope. */
 public final class DeploymentAgentHelperInstallerScript {
-    public static final String LAUNCHER = "exec /usr/bin/env -i LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash --noprofile --norc -p -s";
+    public static final String LAUNCHER = DeploymentHelperInstallerScript.LAUNCHER;
 
     private static final String DELIMITER = "WTL_AGENT_HELPER_DEPENDENCIES";
 

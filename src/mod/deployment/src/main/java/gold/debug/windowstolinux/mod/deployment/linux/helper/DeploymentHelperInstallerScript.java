@@ -5,6 +5,9 @@ import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTem
 
 /** Shared helper and isolation installation; no project language selection. / 共用 helper 及隔离安装，不选择项目语言。 */
 public final class DeploymentHelperInstallerScript {
+    /** Starts fixed installers before inherited Bash hooks, functions, options or PATH can be used. */
+    public static final String LAUNCHER = "exec /usr/bin/env -i LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash --noprofile --norc -p -s";
+
     /** Same no-effect receipt boundary in tracked and plain bodies; never an execution stage. */
     static final String BODY_AFTER_RECEIPT = "# WTL_INSTALLER_BODY_AFTER_RECEIPT\n";
     /** Root-owned original installer receipt directory. / root 持有的原安装回执目录。 */

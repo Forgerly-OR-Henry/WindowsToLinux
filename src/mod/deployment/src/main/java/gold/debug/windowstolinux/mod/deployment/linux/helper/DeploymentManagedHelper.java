@@ -162,7 +162,7 @@ public final class DeploymentManagedHelper {
 
     /** Installs fixed files with a caller-owned complete prerequisite implementation, through exact independent review. */
     public OperationResult<Identity> installFilesWithPrerequisites(String prerequisitesScript) throws ApiException {
-        return installFilesWithPrerequisites("exec /bin/bash --noprofile --norc -s", prerequisitesScript);
+        return installFilesWithPrerequisites(DeploymentHelperInstallerScript.LAUNCHER, prerequisitesScript);
     }
 
     /** Installs caller-owned prerequisites with an exact caller-owned launcher and independent review. */
@@ -171,7 +171,7 @@ public final class DeploymentManagedHelper {
     }
 
     private OperationResult<Identity> install(String script, String operation) throws ApiException {
-        return install(script, operation, "exec /bin/bash --noprofile --norc -s");
+        return install(script, operation, DeploymentHelperInstallerScript.LAUNCHER);
     }
 
     private OperationResult<Identity> install(String script, String operation, String launcher) throws ApiException {
@@ -220,7 +220,7 @@ public final class DeploymentManagedHelper {
         Objects.requireNonNull(beforeExecute);
         UUID operationId = DeploymentHelperInstallerScript.trackedOperation(
             new String(script, StandardCharsets.UTF_8), task.id(), layout);
-        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", script, Duration.ofHours(2),
+        try (var request = new CommandRequest(DeploymentHelperInstallerScript.LAUNCHER, script, Duration.ofHours(2),
             131072)) {
             var grant = approve("deployment.helper.install.tracked.v1", request,
                 trackedInstallationTargets(server, layout, operationId));
@@ -241,7 +241,7 @@ public final class DeploymentManagedHelper {
      * @throws ApiException if review or transport fails / 审核或传输失败时 */
     public OperationResult<CommandResult> installationStatus(UUID operationId) throws ApiException {
         byte[] script = DeploymentHelperInstallerScript.renderStatus(operationId, layout).getBytes(StandardCharsets.UTF_8);
-        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", script, Duration.ofSeconds(30),
+        try (var request = new CommandRequest(DeploymentHelperInstallerScript.LAUNCHER, script, Duration.ofSeconds(30),
             2048)) {
             java.util.Arrays.fill(script, (byte) 0);
             var grant = approve("deployment.helper.install.status.v1", request,
