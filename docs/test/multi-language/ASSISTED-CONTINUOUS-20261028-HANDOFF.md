@@ -1,6 +1,25 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 2026-10-31现行入口：用户再次暂停，R12修复草稿尚未验证完成
+## 2026-11-02现行入口：已恢复，R12本地修复已提交，正式项目尚未启动
+
+目标为active，仍以同一冻结轮八个原项目的原任务、既定完整业务、交付及清理首次通过为准。R12当前源码为独立树`H:/Program/WindowsToLinux/.ai-workspace/wt/r12f`／`caa4f99a22c1756ed574e49331988ee4881cec4d`；本次未连接测试服务器、未调用真实模型、未再次清场，八项原启动0。R11原FAILED、UNKNOWN、六项未启动及所有旧原件保留，不恢复或重放。
+
+本地提交`d42c616b`统一共享helper的env-i／固定PATH／Bash-p launcher及精确审批匹配；显式caller-owned launcher保留，未放宽DENY／grant／UNKNOWN门。独立基线02以27f9源码、相同外部依赖及layout重新javac／render，六类正文和layout七项逐字节相同，不用旧target，证实原三个摘要固定值过时；另两旧结构断言按实际prior-admission结构校正并保留good／tamper阻断。原失败不删改。提交`caa4f99a`仅增强两个fixture的typed异常观测与纯测试，不读取异常正文或任意context，不改变原反射invoke／白名单／UNKNOWN；原FTP唯一底层原因仍未确认，不能称已修复。
+
+标准targeted05实际native wait／exit0，精确十方法为helper两方法＋诊断八方法，JUnit10／0／0／0；父读取原两XML确认，六采样原身份退出且专用tmp精确清。此前已过十二方法未因这次断言校正无故重跑。见[修复收尾](H:/Program/WindowsToLinux/.ai-workspace/wt/r12f/.ai-workspace/evidence/helper-launcher-fix-12-01/completion-closeout-12-01.json)及[诊断核验](H:/Program/WindowsToLinux/.ai-workspace/evidence/ftp-typed-diagnostics-12-01/FINAL-VALIDATION-01.json)。两代码提交均仅本地，未push；MAIN论文五项保留。
+
+观察器边界有新证据：父只从旧保留manifest内存重算，两个observed目录hash均精确等于缺`META-INF/wtlmod-development-input.sha256`一个成员，未读取旧target／state或重放guard。这是hash等价成员辨别，尚不证明历史写者或唯一物理原因；R11两readgap／五UNKNOWN不改判。源码和本机Maven实现确认initialize有意使旧descriptor／marker失效，且新Maven会话裸surefire goal不绑定磁盘上的旧reactor JAR；不删除该失败编译保护、不靠重复联网求绿。见[内存对照](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-resume-20261102-01/observer-manifest-comparison-01.json)。
+
+准备失败单独保留：baseline01及diagnostics pure01的CIM观测中断native未知，不补造退出；pure02／targeted04裸goal均依赖解析失败，所选测试未执行。必要三Mod skipTests package01实际通过；不能拿准备构建或前后未变化当正式业务通过。父从真实targeted05 XML／native及当前文件取得17目录3843成员、16JAR、三descriptor／marker及54非空CP；XML raw55的尾empty明确另记，不冒称raw54。当前[实际产物快照](H:/Program/WindowsToLinux/.ai-workspace/wt/r12f/.ai-workspace/evidence/r12-actual-artifacts-01/actual-build-artifacts-12.json) SHA8ed1930c，仅当前证据，尚非最终freeze或发行。父Split-Path参数集错误及rawCP误假设亦单列保留，不混正式分母。私密配置仅CreateNew拷到R12已忽略位置并核245B／SHA99db62cd，无明文输出、旧库复制或联网。
+
+冻结执行入口的本地资格已完成，仍未发行正式轮次。[v2资格记录](H:/Program/WindowsToLinux/.ai-workspace/wt/r12f/.ai-workspace/evidence/frozen-surefire-execution-12-01/execution-qualification-12-v2.json)确认最终pure03十方法、param01四个Luna参数化invocation均通过，absent01实际exit1／0XML防空绿；两fail flags共同保留，不能称已单独证明noSpecified足够。每份有效XML的54非空CP路径和顺序、basedir／user.dir／fork tmp语义均匹配原上下文。去重53个实际plugin／provider闭包JAR已记录路径、版本和SHA；原provider完整闭包未观测，不宣称全闭包相同。17输出／16JAR／六特殊文件均前后相同且匹配父清单；观察无missing／change，但最大采样间隔约1.2–1.6秒明确保留，不称零异常或排除间隔瞬态。固定Surefire3.5.2的read-only basedir WARNING及pure01临时目录错误、pure02上下文不同均保留，不推广到其它版本。
+
+已将SHA`c311c8f2`的合格POM接入R12禁执行control草稿：每次CreateNew执行目录并复制核SHA、独立报告目录、同版Surefire直接goal，不继承生产父POM／不安装共享仓库／不改initialize。父943034／0纯验证八项argv与证据验证器精确一致、四清场selector路径正确、三个entry均在child前拒绝（childCalls0），不是完整freeze或live验证。HEAD仍全零、无策略／父发行、Java trusted hashes未重绑，不得启动driver／monitor。父477b51／0独立核58个记录原身份均退、当前专用namespace0、十个入口临时路径及R12工作区临时目录均absent；未发送任何进程信号。见[本地阶段核退](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-resume-20261102-01/parent-local-stage-closeout-12.json)。此阶段Sol执行、Astra解决Maven入口具体问题，无Terra／Computer Use／浏览器或全套测试。
+
+下一步完成三Mod发现、产品类provider唯一性及必要反射核验，通过产品Security建立R12正常凭据并作产品连接和已授权pin核验，完成新冻结／父发行后才清场及独立复查，随后八原项目各一次。不得把本地定点、准备失败或UNKNOWN改写为正式首过；目标尚未达成，继续保持active。
+
+
+## 2026-10-31暂停检查点（历史）：用户再次暂停，R12修复草稿尚未验证完成
 
 用户先明确恢复，随后通过目标控制再次置paused。本次没有连接服务器、调用模型、打开Runtime／凭据库或启动新正式项目，也未再次清场；R11的FAILED、UNKNOWN、六项未启动及旧句柄禁止重放保持原样。恢复时只做原字节重核：195公开证据＋122opaque状态文件共23548033B与原seal全同，不engine／解密／恢复。
 
