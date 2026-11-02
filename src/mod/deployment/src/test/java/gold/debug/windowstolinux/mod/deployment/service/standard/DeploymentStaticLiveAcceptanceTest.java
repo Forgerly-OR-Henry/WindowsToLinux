@@ -6496,7 +6496,12 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             });
         var linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(), new Class<?>[]{LinuxService.class},
             (proxy, method, args) -> {
-                Object result = invoke(method, actual.linux(), args);
+                var connectingTask = args == null ? Optional.<TaskContext>empty()
+                    : Arrays.stream(args).filter(TaskContext.class::isInstance).map(TaskContext.class::cast).findFirst();
+                Object result = method.getName().equals("connect")
+                    ? observedRemoteCall(LiveRemotePhase.CONNECT, () -> connectingTask.map(TaskContext::id).orElse(null),
+                        () -> invoke(method, actual.linux(), args), System.out::println)
+                    : invoke(method, actual.linux(), args);
                 if (!(result instanceof RemoteSession session)) return result;
                 var remoteTask = Arrays.stream(args).filter(TaskContext.class::isInstance).map(TaskContext.class::cast).findFirst().orElseThrow();
                 return Proxy.newProxyInstance(RemoteSession.class.getClassLoader(), new Class<?>[]{RemoteSession.class},
@@ -6512,7 +6517,13 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                             System.out.println("AGENT_MANAGEMENT_SEND task=" + remoteTask.id() + " grant=" + supplied.id()
                                 + " actionSha256=" + grant.actionSha256());
                         }
-                        Object observed = invoke(operation, session, inputs);
+                        var phase = switch (operation.getName()) {
+                            case "execute" -> LiveRemotePhase.EXECUTE;
+                            case "close" -> LiveRemotePhase.CLOSE;
+                            default -> null;
+                        };
+                        Object observed = phase == null ? invoke(operation, session, inputs)
+                            : observedRemoteCall(phase, remoteTask::id, () -> invoke(operation, session, inputs), System.out::println);
                         if (operation.getName().equals("execute") && observed instanceof OperationResult<?> outcome
                             && outcome.value().orElse(null) instanceof CommandResult command) {
                             System.out.println("STATIC_LIVE_COMMAND result=" + outcome.outcome() + " exit=" + command.exitCode()
@@ -6658,6 +6669,80 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt.fromProblem(exception), Optional.empty()));
         assertEquals(120, approvalTokens.get());
         assertEquals(1, unknownGenerationUsage.get());
+    }
+
+    enum LiveRemotePhase { CONNECT, EXECUTE, CLOSE }
+
+    @FunctionalInterface
+    interface LiveRemoteCall {
+        Object call() throws Throwable;
+    }
+
+    static Object observedRemoteCall(LiveRemotePhase phase, java.util.function.Supplier<java.util.UUID> task,
+                                     LiveRemoteCall call, java.util.function.Consumer<String> sink) throws Throwable {
+        remoteCallDiagnostic(phase, task, "ENTER", null, sink);
+        Object result;
+        try {
+            result = call.call();
+        } catch (Throwable failure) {
+            remoteCallDiagnostic(phase, task, "THROW", failure, sink);
+            throw failure;
+        }
+        remoteCallDiagnostic(phase, task, "RETURN", null, sink);
+        return result;
+    }
+
+    private static void remoteCallDiagnostic(LiveRemotePhase phase, java.util.function.Supplier<java.util.UUID> task,
+                                              String state, Throwable failure, java.util.function.Consumer<String> sink) {
+        try {
+            var id = task.get();
+            String boundary = " phase=" + phase.name().toLowerCase(java.util.Locale.ROOT) + " task=" + (id == null ? "-" : id);
+            remoteDiagnosticLine(sink, "STATIC_LIVE_REMOTE_CALL" + boundary + " state=" + state);
+            var seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Throwable, Boolean>());
+            for (int index = 0; failure != null && index < 4 && seen.add(failure); index++, failure = failure.getCause()) {
+                String type = failure.getClass().getName();
+                if (!type.matches("(?:java|javax|jdk|org\\.apache\\.sshd|gold\\.debug\\.windowstolinux)\\.[A-Za-z0-9_.$]{1,180}")) type = "OTHER";
+                String prefix = "STATIC_LIVE_REMOTE_CAUSE" + boundary + " index=" + index;
+                remoteDiagnosticLine(sink, prefix + " type=" + type);
+                if (failure instanceof ApiException api) {
+                    var problem = api.problem();
+                    remoteDiagnosticLine(sink, prefix + " code=" + problem.code().name());
+                    if (problem.eventCode().matches("[A-Z][A-Z0-9_]{0,95}"))
+                        remoteDiagnosticLine(sink, prefix + " event=" + problem.eventCode());
+                    problem.diagnosticId().ifPresent(diagnostic -> remoteDiagnosticLine(sink, prefix + " diagnostic=" + diagnostic));
+                    for (var key : List.of("transportFailureType", "disconnectCode", "disconnectInitiatorLocal", "sessionCloseObserved",
+                        "transportKeyExchangeState", "transportReadCallbacks", "transportReadHandlerActive", "transportReadCompletedAgeMillis",
+                        "transportReadHandlerAgeMillis", "transportReadThreadState", "inputThreadState", "inputState", "commandPhase",
+                        "elapsedMillis", "timeoutMillis", "scriptBytes", "stdinBytes", "frameWritePhase", "authorPayloadState",
+                        "inputSenderCreated", "channelPeerAssigned", "commandOpenRequested", "channelOpenConfirmed", "channelClosed",
+                        "sessionOpen", "sessionAuthenticated", "outputObserved", "exitObserved", "remoteWindowOpenMaxSize",
+                        "remoteWindowOpenSize", "remoteWindowOpenPacketSize", "remoteWindowFailureMaxSize", "remoteWindowFailureSize", "remoteWindowFailurePacketSize"))
+                        remoteContextDiagnostic(problem, key, index, prefix, sink);
+                    for (int frame = 0; frame < 6; frame++) {
+                        remoteContextDiagnostic(problem, "inputStack[" + frame + "]", index, prefix, sink);
+                        remoteContextDiagnostic(problem, "transportReadStack[" + frame + "]", index, prefix, sink);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // Diagnostic observation must preserve the original call's return or throw.
+        }
+    }
+
+    private static void remoteContextDiagnostic(Problem problem, String key, int index, String prefix,
+                                                 java.util.function.Consumer<String> sink) {
+        String value = problem.context().get(key);
+        if (value == null || value.length() > 384 || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) return;
+        for (var fact : safeOriginalCallCauses("problem[" + index + "].context." + key + "=" + value))
+            remoteDiagnosticLine(sink, prefix + " " + fact);
+    }
+
+    private static void remoteDiagnosticLine(java.util.function.Consumer<String> sink, String line) {
+        try {
+            sink.accept(line);
+        } catch (Throwable ignored) {
+            // A failed evidence sink cannot replace the original capability result.
+        }
     }
 
     private static Object invoke(java.lang.reflect.Method method, Object actual, Object[] args) throws Throwable {
