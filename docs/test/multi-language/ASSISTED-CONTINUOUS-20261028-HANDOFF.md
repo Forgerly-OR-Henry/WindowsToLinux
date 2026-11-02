@@ -1,6 +1,18 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 2026-11-02现行入口：R12凭据／SSH／模型API预检通过，完整本地冻结核验通过，尚未发行或清场
+## 2026-11-02现行入口：R12已发行、产品清场及独立复查通过，八原队列执行中
+
+目标active、尚未达成。R12生产HEAD仍为`caa4f99a22c1756ed574e49331988ee4881cec4d`，未中途改生产代码或负载。父发行实际wait/exit0（81b85c），P=`73df13efc78f0c304333704da51243c9c8cea3e5c0d98e1b9e2d4a6762134400`、R=`d6cd3d802ade3bd8699ff53dc933093e5a05a9d77e81c0f3e308ee426b566984`、SOURCE=`8ab2b82206b4efeb91d8d5c72c0ebf8802bf207264cbe2ca812c5c5303574f49`；328实际冻结输入、65外部pin和17输出在发行前后真实完整guard通过。[父发行记录](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-r12-parent-run-20261102-01/parent-release-full-freeze-verification-12.json)不代表业务已通过。
+
+发行前另发现准备夹具缺陷：逐项目POM副本／报告目录被旧参数摘要计入，合法八向量产生8个不同摘要。仅将该摘要改为先精确匹配完整允许向量，再摘要同一八向量集合；没有一般化忽略参数。8合法向量接受、662变异拒绝，原四文件逐字备份、V4候选和旧proof保留，配套四文件SHA重新绑定；CORRECTED真实guard为321输入／60外部／17输出通过。[整改证明](H:/Program/WindowsToLinux/.ai-workspace/wt/r12f/.ai-workspace/evidence/round-12-preparation-01/12/parameter-contract-correction-12/correction-result-12.json)。这是新报告目录接线引入的辅助夹具问题，不是业务失败或旧生产修复回退，不计入八项分母；未重跑已过凭据／SSH／API探测或重编译产品。
+
+本轮产品inventory、plan、apply、独立after均原始actualWait/exit0、JUnit1/0/0/0，四阶段父审全部通过，`initialReset.verified=true`。计划内部canonical SHA为`b33cae53be249e1b93c5b0ae42314ea9fc04e7e8d69cd02322aebb9a8ce3d95f`，与apply一致；whole计划文件SHA`331214650f781c924500f15a5dabc9a8557a096b695172ff2c18d85f81a416b3`是不同概念。独立after与apply后盘点一致且满足清洁条件；见[独立after父审](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-r12-parent-run-20261102-01/parent-review-host-after-12.json)。未手工SSH部署。
+
+八原项目加quit仅一次投递（e3db47，queueSHA`df0a75c754c1909a6118a43d510961a309b2bdc458547a673721adbea0d6cd79`）；队列投递不代表八项已启动或完成。TaskBoard原native17920／creation2026-11-02T06:13:22.971060Z、原root`31d20b21-80e4-4bc0-9a24-f66dec0d8706`已FAILED／DEPLOYMENT_COMMAND_REVIEW_DENIED，native实际exit1；早期dd67任务不混作原部署root，FTP原任务已按队列继续。执行句柄和最新终态以CURRENT及[原句柄记录](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-r12-parent-run-20261102-01/original-live-handles-12.json)为准：driver工具62805／native12152，observer工具54545／native14260均独立CIM捕获；不得因poll超时重启／重投。原终态、完整业务、交付及清理尚待逐项核验，不能将队列或清场通过包装成八项首过。
+
+以下“未发行／未清场／启动0”等均为此前保留检查点，不覆盖本节的新实际状态。旧FAILED／UNKNOWN、API-only physical/SDK UNKNOWN、采样间隔和警告均保留，论文五项不动；收尾仍需核退本任务全部测试／采样进程并清理精确临时项。本阶段Sol执行，无新增Astra、Terra／Computer Use／浏览器或全套测试。
+
+## 2026-11-02此前准备检查点：R12凭据／SSH／模型API预检通过，完整本地冻结核验通过，尚未发行或清场
 
 目标保持active。R12源码仍为`r12f`／`caa4f99a22c1756ed574e49331988ee4881cec4d`，无新生产源码改动；正式八原项目启动0，未再次服务器清场。当前已实际完成正常凭据迁移、产品SSH认证、当前GPT调用链、三Mod及实际产物核验，并生成不可执行候选。不能将这些准备结果算入八项正式首过。
 
