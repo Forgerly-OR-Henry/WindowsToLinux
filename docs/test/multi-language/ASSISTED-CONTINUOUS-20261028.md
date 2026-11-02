@@ -1,6 +1,25 @@
 # ASSISTED 连续首过验证记录
 
-## 2026-11-02现行入口：已恢复，R12本地修复已提交，正式项目尚未启动
+## 2026-11-02现行入口：R12凭据／SSH／模型API预检通过，完整本地冻结核验通过，尚未发行或清场
+
+目标保持active。R12源码仍为`r12f`／`caa4f99a22c1756ed574e49331988ee4881cec4d`，无新生产源码改动；正式八原项目启动0，未再次服务器清场。当前已实际完成正常凭据迁移、产品SSH认证、当前GPT调用链、三Mod及实际产物核验，并生成不可执行候选。不能将这些准备结果算入八项正式首过。
+
+正常凭据仅从R11健康normal vault经产品Security读取char[]，重新加密保存到全新R12 `src/app/db/data/agent-live-credential-20261102-r12-01`，finally清零；未复制DPAPI／数据库／trust，未打开任何FAILED／UNKNOWN库。`credential-preparation-12-03/migrate-01`实际native wait／exit0。随后仅一次产品`servers.check`，Task`71e57337-bb75-420a-85bf-d93068bb9565`为SUCCEEDED，无超时，实际SSH指纹与已授权BiNl精确相同，Runtime正常关闭；OS／arch为空未观测，物理SSH尝试数未测，不冒称远端系统检查或部署通过。见[公开连接证明](H:/Program/WindowsToLinux/.ai-workspace/wt/r12f/.ai-workspace/evidence/assisted-r12-local-preparation-20261102/product-connection-proof-12.json)。
+
+当前实际`LiveModelSettings` parser／profile／reasoning投影确认`gpt-6-luna / OPENAI_RESPONSES / OPENAI / HIGH / HIGH`，Mod仍继承App。另用仓库原`verifiesSelectedModelThroughProductApiOnly`仅执行一次真实API-only检查：JUnit1方法通过，两个profile各TEXT／TOOL_CALLING共四个`platform.ai.probe.v1`任务均SUCCEEDED，包含原生tool及tool-result往返；无Mods／服务器配置／SSH／部署。六逻辑generation仅成功实现路径推导，物理HTTP及SDK恢复仍UNKNOWN；不称零异常或部署审批语义通过。probe自身App verification默认8192／请求30s，与正式65536／既定负载分开，正式参数未降低。[原结果](H:/Program/WindowsToLinux/.ai-workspace/wt/r12f/.ai-workspace/evidence/r12-model-api-smoke-01/api-only-result-12.json) SHA770ffd97；新API状态保留原位未重开。Maven readonly basedir及缺POM WARNING、采样最大间隔2241.4317ms原样保留。
+
+真实产品三Mod发现为3候选／0拒绝；16个产品／fixture类来源唯一，8MiB／1MiB／2+6仅字节码与12个纯timeout反射边界通过，不代表FTP真实传输通过。[产物证明](H:/Program/WindowsToLinux/.ai-workspace/wt/r12f/.ai-workspace/evidence/r12-product-artifact-audit-01/product-artifact-proof-12.json) SHA39ca657c。R11原195公开＋122opaque文件共23548033B再次按seal逐字节重核全同，无DBengine／解密／重放；12旧原身份当前均退、旧namespace0，原FAILED／UNKNOWN／六项未启动保持原状。健康正常库的正常ledger写入不属于该失败seal。
+
+准备失败独立保留，均未进入八项分母：凭据01／02公开门exit70，01缺自有拒绝code，02确认javac自动注解处理生成未pin的`META-INF/extensions.idx`；03仅对本地助手用`-proc:none`、保持严格输入门后通过。metadata V1批准计划漏`credentialPreparationDirectory`；V2原raw CP词法字符串误与canonical直接比较（13项含合法..）；V3把富JAR记录误传exact3 pin门。三次actual exit1、createdFiles为空，原源码／plan／日志均保留。Astra集中实际只读核对还发现qualified清理证明的directories层级适配错误，按真实结构修正；通用exact3、完整成员、53JAR及拒绝门未放宽。诊断自身基础设施／契约失败另存`contract-audit-12`，不当业务失败或底层FTP修复。
+
+V4仅一次主运行actual wait／exit0，CreateNew九metadata＋两候选；其余旧版不改写。source-snapshot candidate SHA`c0128f5f86af406138f8a3d8e1c7a036923091d999945fdfc70c95978ed61b58`，policy candidate SHA`92e25e0a99b2a51dcc8e40163d258afcca9b36e9584a670b3cadb8744b74aa3a`，仍executionfalse／最后两prerequisite false。父373e56／0独立调用真实`freeze_guard12.verify_local_freeze`，实际311冻结输入、60 external pins、17输出全部通过，耗时2547ms；不是要求最终P／R的执行准入，也未调用driver／monitor或服务器。[候选及核验](H:/Program/WindowsToLinux/.ai-workspace/wt/r12f/.ai-workspace/evidence/round-12-preparation-01/12/metadata-preparation-12/parent-complete-local-freeze-12.json)。`final-source-policy-12.json`、`round-policy-12.json`、`parent-final-release-12.json`均未创建，不得直接启动轮次。
+
+新完整SOURCE／DRAFT纯门也通过：13+3当前源、Java八pins／两HEAD、固定当前Git、原负载／POM／CP精确一致；三entry均在child前拒绝，Java当前源真实编译及两个私有合成负例通过，未进入Runtime。父059d26／0独立核127个已记录原身份均退、当前R12专用namespace0／临时路径清；短命未采子进程仅由同步wait链覆盖，不冒称逐PID采样。最终授权三文件仍absent，未发送进程信号。见[本阶段独立核退](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-resume-20261102-02/parent-preparation-closeout-12.json)。API测试另从XML的`jnidispatch.path`确认本次target/JNA DLL遗留，核九原身份退出、nonreparse／边界／JAR资源SHA后只删该DLL、配对.x和空目录；[补充收尾](H:/Program/WindowsToLinux/.ai-workspace/wt/r12f/.ai-workspace/evidence/r12-model-api-smoke-01/post-closeout-12.json) SHAe3f827e7，不改原770结果、不动状态或预存proxy。覆盖范围不夸大为递归全target无临时。
+
+下一目标回合从当前候选继续父最终SOURCE review／P-R发行，绑定独立API证明及其UNKNOWN计数范围；完整新冻结后，用产品inventory→plan→apply→独立after重新清场，随后同一冻结版本及既定负载八原项目各一次，失败仍保留并继续安全后项，不中途改R12源码。无需重复已过本地组、SSH或API-only检查。旧FTP唯一底层原因仍未知；新typed诊断不是根因修复。MAIN论文五项保留，默认只本地Git不push；本阶段使用Sol执行和Astra集中契约核对，无Terra／Computer Use／浏览器／全套测试。暂停与完成均未发生，长期目标尚未达成。
+
+
+## 2026-11-02本地修复检查点（历史）：已提交修复与独立执行入口
 
 目标为active，仍以同一冻结轮八个原项目的原任务、既定完整业务、交付及清理首次通过为准。R12当前源码为独立树`H:/Program/WindowsToLinux/.ai-workspace/wt/r12f`／`caa4f99a22c1756ed574e49331988ee4881cec4d`；本次未连接测试服务器、未调用真实模型、未再次清场，八项原启动0。R11原FAILED、UNKNOWN、六项未启动及所有旧原件保留，不恢复或重放。
 
