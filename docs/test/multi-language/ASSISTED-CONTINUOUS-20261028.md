@@ -1,6 +1,29 @@
 # ASSISTED 连续首过验证记录
 
-## 2026-11-02现行入口：R12已发行、产品清场及独立复查通过，八原队列执行中
+## 2026-11-04现行入口：R12中断收尾完成，0完整首过／5原启动／计划分母8
+
+目标active、未达成。恢复时原driver工具62805和observer54545均返回句柄不存在；宿主CIM核13个已记录原身份均消失，当前R12专用验证namespace为0，未发送信号。PID19472已被无关进程复用，未终止它。旧队列不再投递、旧driver／observer不重启，R12不能续作首过轮。
+
+| 原项目 | 原记录与结果 |
+| --- | --- |
+| TaskBoard | 原root31d20b21… FAILED／独立模型REVIEW_DENIED，actualWait／native1；完整业务、交付及清理无PASS |
+| FTP | 原root9daffd37… UNKNOWN／retained uncertainty，无原RootResult；actualWait／native1 |
+| Asset Lending | 原rootdd35a130… UNKNOWN／retained uncertainty，无原RootResult；actualWait／native1 |
+| CSV Inspector | 原root88ae9ae4… UNKNOWN／retained uncertainty，无原RootResult；actualWait／native1 |
+| Survey Scoring | 原rootde410835…最后记录RUNNING；没有原terminal、JUnit XML或native exit回执，按中断未完成保留，不能补判FAILED或UNKNOWN |
+| Log／Directory／Binary | 三项没有原launch，未启动，不能混作业务失败或成功 |
+
+最后observer checkpoint为2026-11-02T06:56:10.028318Z，累计readgap0／UNKNOWN观察事件0只覆盖此前已录样本；无observer退出回执，突兀中止及其后观察缺口保留，不能称全轮零异常。driver、observer及Survey的实际退出码／退出时刻未观测，中断原因未知。当前完整冻结guard仍核17输出通过，这不能补造中间连续观察或缺失终态。[中断审计](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-resume-20261104-01/interrupted-round-audit-12.json)、[最终收尾](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-resume-20261104-01/final-closeout-12.json)。
+
+本轮340公开文件＋9原状态目录332 opaque文件已raw seal且清理后复核全同；健康normal credential vault／私有API配置排除，未开DB／解密／恢复或重放。R11原195公开＋122opaque共317件亦重核0差异。原t12七个内部条目及精确JNA两文件／空目录已核归属、非reparse和SHA后清理，未删除状态库或冻结输入，未再次远端清场。[封存](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-resume-20261104-01/raw-evidence-seal-12.json)、[清理回执](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-resume-20261104-01/legacy-temp-cleanup-result-12.json)。初次封存因261字符Windows路径读取失败，扩展路径证实原文件仍存在后修正，无系统设置修改；首次进程审计的PowerShell日期自动转换精度问题及一次编码别名错误另记V2，不混入八项分母、不覆盖初稿。
+
+原因边界：TaskBoard只确认独立审查拒绝tracked installer、dispatch前失败；默认bootstrap APT与共享依赖合同覆盖不同，不能宣布实际软件源被篡改或唯一拒绝原因。FTP／Asset／CSV的UNKNOWN首因仍未知。FTP最后host-probe、Asset最后toolchain.prepare、CSV最后candidate.verify均只见生成成功而缺后续完整决定／授权／执行观测；不能认同因、预算超时或老修复回退。[TaskBoard诊断](H:/Program/WindowsToLinux/.ai-workspace/wt/r12f/.ai-workspace/evidence/round-12-preparation-01/12/task-board-denial-analysis-12/ASSESSMENT-12.md)、[FTP诊断](H:/Program/WindowsToLinux/.ai-workspace/wt/r12f/.ai-workspace/evidence/round-12-preparation-01/12/file-transfer-unknown-analysis-12/ASSESSMENT.md)。
+
+下一版本先在独立工作树整合当前MAIN镜像功能与caa4隔离链已验证保护，逐项避免0701 prior bytes、27f pregrant、env-i、aa804 lifecycle、cff67 no-remove及原8MiB负载丢失；这些差异来自分支尚未整合，不能归罪镜像提交回退。随后仅做必要的bootstrap禁止移除小保护和测试侧first-observed typed观测，未知内部阶段仍未知，不能把诊断增强称底层修复。定点／必要编译通过并本地提交后，才建立新冻结、产品清场及独立after，再开新八原项目。保持6luna HIGH/HIGH、1.5M／65536／90分钟及既定业务负载；无CU／浏览器／全量suite。新辅助临时产物按`.ai-workspace/tmp/<任务>/`及显式进程tmp规则；原证据与用户论文改动保留。
+
+以下为旧检查点，原“执行中／仍运行”不覆盖本节终态。
+
+## 2026-11-02此前执行检查点：R12已发行、产品清场及独立复查通过，八原队列执行中
 
 目标active、尚未达成。R12生产HEAD仍为`caa4f99a22c1756ed574e49331988ee4881cec4d`，未中途改生产代码或负载。父发行实际wait/exit0（81b85c），P=`73df13efc78f0c304333704da51243c9c8cea3e5c0d98e1b9e2d4a6762134400`、R=`d6cd3d802ade3bd8699ff53dc933093e5a05a9d77e81c0f3e308ee426b566984`、SOURCE=`8ab2b82206b4efeb91d8d5c72c0ebf8802bf207264cbe2ca812c5c5303574f49`；328实际冻结输入、65外部pin和17输出在发行前后真实完整guard通过。[父发行记录](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-r12-parent-run-20261102-01/parent-release-full-freeze-verification-12.json)不代表业务已通过。
 
