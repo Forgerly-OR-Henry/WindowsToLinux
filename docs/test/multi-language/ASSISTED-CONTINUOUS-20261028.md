@@ -1,5 +1,9 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-05第二次重装后normal06真实连接通过
+
+用户明确提供再次重装后的新文字凭据，父经匿名stdin单次执行原产品check：原task`adde6a2f-e705-4840-a0b9-49e5fcee277d` SUCCEEDED、connectionSucceeded=true、无timeout、Runtime.close返回。当前端点45.192.105.213:22/root；第一次现场信任批准／selected／authenticated指纹同为`SHA256:AIkcPrjQvNyPcodi0UkgShuPrj/j8PUD5Uz1mMeK2JE`。新normal06保存副本清零、关闭后独立读回exact/profile/close均通过，原Java30392及wrapper42612 wait/exit0、工具12989 terminal0，进程与专用tmp均清。原件候选`credential-preparation-13-06/`及父聚合`chat-input-r06-result.json`；公开fake只验证输入/保存读回及三个TOFU边界，不计真实连接。旧normal01至05不重开，0模型/显式远端命令，物理SSH次数UNMEASURED；秘密未另落辅助文件/参数/日志/摘要。SSH认证缺口由新外部事实解除，goal实际active，正在做06 DRAFT与真实proof接入；正式SOURCE/P/R、清场、八原项目启动仍0。此次成功不改判任何旧失败，也不确立此前拒绝根因，完整目标仍未达成。
+
 ## 2026-11-05明确文字凭据重核：真实连接仍未通过
 
 用户明确提供文字密码并要求尝试后，父经匿名stdin单次放行fresh normal05；当前Security保存clone、关闭重开精确读回、profile／close全部通过。原产品check task`798f64fa-c52f-4178-b314-9b091fe3579a`为FAILED／SSH_AUTHENTICATION_FAILED，E2q匹配、未超时、Runtime.close返回，Java原生实际wait／exit70。父供给wrapper原生70／stdout固定／stderr空，原工具91726已terminal；Java和wrapper均结束，专属java子tmp及全根清理核实，当前验证namespace0。原件为候选`credential-preparation-13-05/`及父聚合`chat-input-r05-result.json`；前置TEMP自动创建导致fresh门拒绝与已修正公开fixture单列保留，均非实际认证或业务失败。没有OCR、旧normal重开、新模型或显式远端命令；物理SSH次数未测。明确文字值同样被拒绝，尚不能唯一确认凭据、账号策略或特定互操作原因，仍需服务器端认证日志；不继续盲试。目标active未完成，04控制DRAFT保持connectionVerified=false，正式SOURCE／P／R、清场和八项目启动仍0；完整目标与旧轮分母／终态保持，秘密不进入文件／参数／日志／摘要／Git，产品加密库原件保留。

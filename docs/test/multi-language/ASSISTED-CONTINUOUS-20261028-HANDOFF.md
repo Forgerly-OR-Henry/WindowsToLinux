@@ -1,5 +1,9 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
+## 2026-11-05再次重装后连接已通过：normal06接入控制中
+
+用户再次重装并提供新文字凭据后，父经匿名stdin仅放行fresh normal06的一次原产品check，task`adde6a2f-e705-4840-a0b9-49e5fcee277d` SUCCEEDED／connectionSucceeded=true、未超时、Runtime.close返回。新现场first-use批准与认证后指纹相同：`SHA256:AIkcPrjQvNyPcodi0UkgShuPrj/j8PUD5Uz1mMeK2JE`，精确端点仍45.192.105.213:22/root；此次依据用户对替换服务器新指纹的既有授权选择新pin，未沿用E2q。保存clone清零及关闭重开读回exact/profile/close均通过；Java30392、wrapper42612原wait/exit0、原工具12989 terminal0，stdout固定/stderr空，进程退及Java子tmp/任务根清理原件保留在候选`credential-preparation-13-06/`与父聚合`chat-input-r06-result.json`。没有旧normal重开、模型或显式远端命令，物理SSH次数未测，秘密未另写入辅助文件/参数/日志/摘要。此次同时更换系统与口令，不能据成功反推旧失败唯一原因。真实认证阻点已解除，goal实际active；正在把真实连接证明、正常库06和新pin接入06 DRAFT，旧04及失败原件保留。完整同轮八项目目标尚未完成；最终SOURCE／P／R、产品清场与八项正式启动仍0，以CURRENT最新首节和原件为准。
+
 ## 2026-11-05文字凭据单次重核：normal05仍认证失败
 
 用户在此前认证阻塞后提供明确文字密码并授权尝试，目标恢复active。父仅在内存提取该次原文，通过匿名stdin交给新normal05产品Security保存；clone清零、关闭后独立读回exact、profile匹配及close均通过，未使用OCR或重开normal01至04。随后唯一原产品check task`798f64fa-c52f-4178-b314-9b091fe3579a`仍FAILED／ACCESS_DENIED／SSH_AUTHENTICATION_FAILED，E2q已授权pin精确匹配、未超时、Runtime.close返回；Java实际wait／exit70，自有进程均退，Java子tmp与整个任务tmp已清。原件候选`credential-preparation-13-05/`，父供给回执聚合`assisted-r13-local-preparation-20261105-01/chat-input-r05-result.json`。物理SSH尝试数未测，单次产品检查不等同单次物理连接；0模型／显式远端命令，未启动正式八项目或发行SOURCE／P／R。准备期PowerShell自动创建TEMP触发fresh目录门，属辅助启动失败，全部在实际认证前，修正分目录后公开fixture通过。未确认生产根因；不把本次失败断言为密码必错，仍需服务器认证拒绝日志。秘密不写入辅助文件、参数、输出、摘要、文档或Git；产品正常加密库与原证据保留。后续以CURRENT最新首节为准。
