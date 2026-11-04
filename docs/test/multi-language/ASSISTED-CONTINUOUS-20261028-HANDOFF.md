@@ -1,5 +1,9 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
+## 2026-11-05文字凭据单次重核：normal05仍认证失败
+
+用户在此前认证阻塞后提供明确文字密码并授权尝试，目标恢复active。父仅在内存提取该次原文，通过匿名stdin交给新normal05产品Security保存；clone清零、关闭后独立读回exact、profile匹配及close均通过，未使用OCR或重开normal01至04。随后唯一原产品check task`798f64fa-c52f-4178-b314-9b091fe3579a`仍FAILED／ACCESS_DENIED／SSH_AUTHENTICATION_FAILED，E2q已授权pin精确匹配、未超时、Runtime.close返回；Java实际wait／exit70，自有进程均退，Java子tmp与整个任务tmp已清。原件候选`credential-preparation-13-05/`，父供给回执聚合`assisted-r13-local-preparation-20261105-01/chat-input-r05-result.json`。物理SSH尝试数未测，单次产品检查不等同单次物理连接；0模型／显式远端命令，未启动正式八项目或发行SOURCE／P／R。准备期PowerShell自动创建TEMP触发fresh目录门，属辅助启动失败，全部在实际认证前，修正分目录后公开fixture通过。未确认生产根因；不把本次失败断言为密码必错，仍需服务器认证拒绝日志。秘密不写入辅助文件、参数、输出、摘要、文档或Git；产品正常加密库与原证据保留。后续以CURRENT最新首节为准。
+
 ## 2026-11-05恢复准备：目标active，模型预检通过，SSH继续核验
 
 用户在新对话核对目标复述后明确继续，并要求整个长期目标持续使用最新版`gpt-6-x-agent-router`。目标仍为同一冻结轮八个既定原项目的部署、既定完整业务、交付及清理全部首次通过；三连过方案不恢复。Luna Responses／OPENAI、LANGUAGE和APPROVAL均HIGH、Mod继承、1500000／65536／90分钟、FTP 8MiB／1MiB／2+6不变。仅测试代码，无CU／UI／浏览器或全量suite。下节暂停记录属于此前阶段，不覆盖本次明确恢复。

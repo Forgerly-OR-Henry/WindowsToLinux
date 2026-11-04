@@ -1,5 +1,9 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-05明确文字凭据重核：真实连接仍未通过
+
+用户明确提供文字密码并要求尝试后，父经匿名stdin单次放行fresh normal05；当前Security保存clone、关闭重开精确读回、profile／close全部通过。原产品check task`798f64fa-c52f-4178-b314-9b091fe3579a`为FAILED／SSH_AUTHENTICATION_FAILED，E2q匹配、未超时、Runtime.close返回，Java原生实际wait／exit70。父供给wrapper原生70／stdout固定／stderr空，原工具91726已terminal；Java和wrapper均结束，专属java子tmp及全根清理核实，当前验证namespace0。原件为候选`credential-preparation-13-05/`及父聚合`chat-input-r05-result.json`；前置TEMP自动创建导致fresh门拒绝与已修正公开fixture单列保留，均非实际认证或业务失败。没有OCR、旧normal重开、新模型或显式远端命令；物理SSH次数未测。明确文字值同样被拒绝，尚不能唯一确认凭据、账号策略或特定互操作原因，仍需服务器端认证日志；不继续盲试。目标active未完成，04控制DRAFT保持connectionVerified=false，正式SOURCE／P／R、清场和八项目启动仍0；完整目标与旧轮分母／终态保持，秘密不进入文件／参数／日志／摘要／Git，产品加密库原件保留。
+
 ## 2026-11-05恢复准备检查点：API-only通过，正式R13尚未启动
 
 用户核对复述后明确继续，整个长期目标持续使用`gpt-6-x-agent-router`。候选仍`r13f/1b646e8a`；同轮八原项目完整首过、Luna HIGH／HIGH、既定预算及FTP 8MiB负载不变。当前SOURCE／P／R、清场及八项正式启动均无，不混用下方历史暂停或旧轮成绩。
