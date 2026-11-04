@@ -14,6 +14,8 @@ SSH新指纹`SHA256:E2qC8AlXLiqPRLUXETaqkN9CyO36frZiHN4vZAEB46s`已由用户授�
 
 接续以MAIN`.ai-workspace/progress/CURRENT.md`最新首节及原回执为准；当前缺真实成功的新正常库连接与父最终输入审核／冻结发行。full30控制04 DRAFT已独立接当前API／POM实际证据，保持connectionVerified=false及metadata生成未批准；不能用正常库bootstrap或读回成功冒充SSH成功。R12仍为分母8／原启动5／完整首过0，三UNKNOWN、Survey缺终态及三项未启动不改判。MAIN论文五项原变动保留；本轮仅辅助验证／控制准备，未修改产品源码，不推送。
 
+随后自动续跑只补一项受控本地完整密码路径对照：当前产品Security保存→原servers.check→仅password认证的127.0.0.1随机端口服务端，固定公开假口令恰一次认证回调且收到值精确相同，原task`4fbd634c-5e24-42fe-9d8a-6851e23d681e` SUCCEEDED，native0；固定本地pin首次批准1次，channel／命令0，Runtime和服务均关闭，三个自有native PID退出，含假状态／本地key的精确tmp已清。原件在候选`r13-local-ssh-credential-path-20261105-01/local-credential-path-result.json`。没有读取用户秘密、旧normal状态或私密配置，也没有连接真实远端或调用模型。该对照验证了当前客户端完整链路在受控公开输入下通过，未确认生产缺陷；不能证明截图字符绝对正确、远端策略或特定互操作条件，也不能替代normal04成功proof。当前私密文本槽仍空，无新服务器日志，仍需用户端认证拒绝事实才能继续远端定位。
+
 ## 2026-11-04最终交接：停止续跑，候选已提交，服务器重装前资料回收
 
 用户要求本轮之后结束当前长对话并停止目标自动继续，随后由用户重装服务器。本阶段按暂停交接收尾，目标未达成；不启动R13，不创建新的用户聊天。下一对话可直接复制[交接提示词](H:/Program/WindowsToLinux/docs/test/multi-language/NEXT-CHAT-ASSISTED-20261104.md)。R12已中断关闭：0完整首过／5原启动／分母8，原失败、三项UNKNOWN、Survey缺失终态及三项未启动均保留，下方原轮审计不改判。

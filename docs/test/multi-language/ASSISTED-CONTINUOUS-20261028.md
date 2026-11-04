@@ -13,10 +13,13 @@
 | SSH normal01／02 | 用户授权新E2q指纹，两次原产品check握手匹配但FAILED／SSH_AUTHENTICATION_FAILED，未超时，close返回；原状态／回执保留，不计八项目失败 |
 | 无凭据认证方式诊断 | 一次none请求／响应，服务器公布password；固定pin匹配，无密码／公钥／交互认证、无channel／命令。诊断native0不表示登录成功，也不确定服务端拒绝原因 |
 | 新截图重核 | 新旧图密码OCR相同。normal03辅助回验错用保存API已清零的caller数组，false硬门阻止SSH；不能断言存储损坏。修正clone所有权后，normal04公开假密码定点及真实图片保存／close／重开读回均一致；唯一产品check原task89da70cc…仍FAILED／SSH_AUTHENTICATION_FAILED，未超时、E2q匹配、close返回、native70。自有进程退／tmp清 |
+| 本地password-only完整路径对照 | 当前Security保存→原servers.check→127.0.0.1随机端口，仅password factory；公开假口令恰1次认证回调且收到值精确相同，原task4fbd634c…SUCCEEDED／native0。首次本地pin批准1次、channel／命令0、两端close／三native核退／精确tmp清。无用户秘密、旧状态、真实远端或新模型调用；不能替代真实服务器连接proof |
 
 API预检首次自动审批及父携无敏感payload源码证据复核均被拒，未产生run03进程。用户随后对具体随机码／工具continuation和已配置loopback GPT目的地明确授权，才从同一入口执行成功run03；未绕过拒绝。API key只认证，截图／SSH密码／完整配置未进入该probe body。真实结果、原失败、身份及清理见候选`r13-model-api-smoke-01/`、`credential-preparation-13-01/02/03/04`、`r13-ssh-auth-methods-20261105-01/`及MAIN当前进度。不存在的后续回执不视为已执行。
 
 normal04可确认产品加密保存和读取没有改变该OCR值；尚不能由此判断图中文字识别绝对正确、真实口令有效或服务端拒绝的具体原因。已请求用户提供服务器控制台的认证拒绝日志，不再自动重复密码尝试。04本地合成夹具presenter遗漏、错误摘要及日志CreateNew拒绝均是准备失败，原件和七份前置回执路径／SHA映射保留，均未进入当次实际SSH。normal01／02／03／04不重开或改写，未以bootstrap／回验通过代替连接成功；当前04 DRAFT只接已成功的API／POM事实，正式发行仍被连接缺口阻断。
+
+本地完整路径对照只补足“当前客户端、公开假口令、password-only服务端”这一未覆盖场景，现有源码和结果未确认生产缺陷；不把本地双方同依赖的通过扩大为所有远端实现、账号策略或OCR正确性已证明。证据见候选`r13-local-ssh-credential-path-20261105-01/`。原主分支／候选产品代码和输出未修改，私密输入文件仍空，当前仍等待服务器端认证日志。
 
 目标active未达成；R12原0完整首过／5启动／分母8及原UNKNOWN、缺终态、未启动项保持。保留论文原五项和全部证据，默认本地Git不push；无Computer Use／UI／浏览器／全量suite。本节尚未包含正式新轮业务结果。
 
