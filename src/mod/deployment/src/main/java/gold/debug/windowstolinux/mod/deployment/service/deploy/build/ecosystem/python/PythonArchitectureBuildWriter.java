@@ -40,6 +40,18 @@ final class PythonArchitectureBuildWriter {
         }
         String executable = "\"${WTL_PYTHON:-python" + python.pythonVersion() + "}\"";
         String toolPreparation = dependencyTool(requiredTool, executable);
+        String legacyInstall = installCommand;
+        String mirroredInstall = installCommand.lines().map(line -> {
+            int run = line.indexOf("run ");
+            if (run >= 0 && (line.contains(" install ") || line.contains(" sync"))) {
+                String prefix = line.substring(0, run);
+                String commandLine = line.substring(run + 4);
+                return prefix + "wtl_dependency PYTHON_PACKAGE " + commandLine;
+            }
+            return line;
+        }).collect(java.util.stream.Collectors.joining("\n"));
+        installCommand = "if [ -n \"${WTL_MIRROR_POLICY:-}\" ]; then\n" + mirroredInstall
+            + "\nelse\n" + legacyInstall + "\nfi";
         String command = """
             require_build_tool %s
             %s%s -m venv --copies ./.venv
@@ -97,13 +109,18 @@ final class PythonArchitectureBuildWriter {
               fi
               manager_root="$mutable/home/python-dependency-tool"
               run "$manager_python" -m venv --copies "$manager_root"
-              run "$manager_root/bin/python" -m pip --isolated --disable-pip-version-check install --index-url=https://pypi.org/simple --only-binary=:all: --no-input --no-cache-dir %s
+              if [ -n "${WTL_MIRROR_POLICY:-}" ]; then
+                wtl_dependency PYTHON_PACKAGE "$manager_root/bin/python" -m pip --disable-pip-version-check install --only-binary=:all: --no-input --no-cache-dir %s
+              else
+                run "$manager_root/bin/python" -m pip --isolated --disable-pip-version-check install --index-url=https://pypi.org/simple --only-binary=:all: --no-input --no-cache-dir %s
+              fi
               run "$manager_root/bin/python" -c 'import importlib.metadata, sys; assert importlib.metadata.version(sys.argv[1]) == sys.argv[2]' %s %s
               export PATH="$manager_root/bin:$PATH"
             fi
             %s --version
             """
             .formatted(tool, python, minor, minor, SafeBuildScriptEnvelope.shellQuote(tool + "==" + version),
+                SafeBuildScriptEnvelope.shellQuote(tool + "==" + version),
                 SafeBuildScriptEnvelope.shellQuote(tool), SafeBuildScriptEnvelope.shellQuote(version), tool);
     }
 }

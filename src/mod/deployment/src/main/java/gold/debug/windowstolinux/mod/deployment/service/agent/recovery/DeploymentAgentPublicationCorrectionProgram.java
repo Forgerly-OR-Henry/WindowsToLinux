@@ -55,7 +55,7 @@ public final class DeploymentAgentPublicationCorrectionProgram {
         String template=resource("service/agent/recovery/publication-correction.py"),marker="# @WTL_CORRECTION_BASH@";
         if(template.indexOf(marker)<0||template.indexOf(marker)!=template.lastIndexOf(marker))throw invalid();
         source=template.replace(marker,"BASH_SOURCE = "+JSON.valueToTree(bash).toString());
-        if(source.getBytes(StandardCharsets.UTF_8).length>524288)throw invalid();
+        if(source.getBytes(StandardCharsets.UTF_8).length>1048576)throw invalid();
     }
     public String source(){return source;}
     /** Product-bound expected stdin identity, not an independent measurement of executed remote code. */

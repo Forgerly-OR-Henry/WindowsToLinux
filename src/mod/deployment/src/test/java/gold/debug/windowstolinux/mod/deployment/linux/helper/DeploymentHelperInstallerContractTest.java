@@ -14,12 +14,31 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class DeploymentHelperInstallerContractTest {
-    @TempDir Path temporary;
+    private Path temporary;
+
+    @BeforeEach
+    void createTaskFixtureDirectory() throws Exception {
+        Path root = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
+        while (root != null && !Files.isDirectory(root.resolve(".ai-workspace"))) root = root.getParent();
+        assertNotNull(root, "Project task workspace unavailable");
+        temporary = Files.createDirectories(root.resolve(
+            ".ai-workspace/tmp/deployment-mirrors-20261104/installer-contract/junit-" + UUID.randomUUID()));
+    }
+
+    @AfterEach
+    void removeTaskFixtureDirectory() throws Exception {
+        if (temporary == null) return;
+        assertFalse(Files.isSymbolicLink(temporary), "Fixture root must remain task-owned");
+        try (var files = Files.walk(temporary)) {
+            for (Path file : files.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(file);
+        }
+    }
 
     @Test
     void trackedDigestsNameTheirExactDifferentByteScopesAndRejectFalseReceiptBindings() throws Exception {
@@ -125,6 +144,8 @@ class DeploymentHelperInstallerContractTest {
         var operation = UUID.randomUUID();
         String original = DeploymentHelperInstallerScript.renderTracked(UUID.randomUUID(), operation, "a".repeat(64),
             sha(DeploymentHelperInstallerScript.render()), layout);
+        assertTrue(original.contains("else command apt-get \"$@\";"),
+            "The production legacy package entry must bypass shell functions");
         var evidence = new ObjectMapper().valueToTree(DeploymentInstallerEvidence.describe(original));
         String base = bashPath(temporary);
         StringBuilder mapped = new StringBuilder();
@@ -145,6 +166,9 @@ class DeploymentHelperInstallerContractTest {
                     .replace("/usr/bin/sync", "fixture_sync")
                     .replace("/usr/bin/flock", "fixture_flock")
                     .replace("/usr/bin/mv", "fixture_mv")
+                    .replace("command -v apt-get", "command -v fixture_packages")
+                    .replace("command apt-get \"$@\"", "fixture_packages \"$@\"")
+                    .replace("command dnf \"$@\"", "fixture_packages \"$@\"")
                     .replace("helper_probe=\"$('" + base + "/helper/managed-helper' probe)\"", "helper_probe=\"$(fixture_probe)\"")
                     .replace(DeploymentHelperInstallerScript.renderSecurityObservationFunctions(), "")
                     .replace(DeploymentHelperInstallerScript.renderSecurityInvariant(), "");
@@ -156,7 +180,7 @@ class DeploymentHelperInstallerContractTest {
         Files.writeString(temporary.resolve("helper/build-entry"), "original entry");
         String hooks = "fixture=" + DeploymentHelperInstallerScript.quote(base) + "\n" + """
             id() { printf '0\n'; }
-            apt-get() { [ "${fixture_lock_held:-}" = 1 ]; }
+            fixture_packages() { [ "${fixture_lock_held:-}" = 1 ]; }
             systemctl() { case "$1" in daemon-reload | enable) printf '%s\n' "$1" >> "$fixture/effects";; esac; }
             fixture_chown() { :; }
             fixture_chmod() { :; }
@@ -195,7 +219,13 @@ class DeploymentHelperInstallerContractTest {
         org.junit.jupiter.api.Assumptions.assumeTrue(Files.isExecutable(Path.of(bash)), "A real Bash binary is required");
         Path command = temporary.resolve("installer-fixture.sh");
         Files.writeString(command, script, StandardCharsets.UTF_8);
-        var process = new ProcessBuilder(bash, "--noprofile", "--norc", bashPath(command)).redirectErrorStream(true).start();
+        var builder = new ProcessBuilder(bash, "--noprofile", "--norc", bashPath(command))
+            .directory(temporary.toFile()).redirectErrorStream(true);
+        builder.environment().put("TEMP", temporary.toString());
+        builder.environment().put("TMP", temporary.toString());
+        builder.environment().put("TMPDIR", bashPath(temporary));
+        builder.environment().remove("WTL_MIRROR_POLICY");
+        var process = builder.start();
         try {
             assertTrue(process.waitFor(30, TimeUnit.SECONDS), "Installer fixture timed out");
             return new Result(process.exitValue(), new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8));

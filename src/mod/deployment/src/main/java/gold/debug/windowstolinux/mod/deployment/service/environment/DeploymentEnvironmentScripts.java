@@ -54,11 +54,14 @@ final class DeploymentEnvironmentScripts {
      * @return complete immutable request / 完整不可变请求 */
     static CommandRequest request(DeploymentEnvironmentState state, String stage,
                                   gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.Environment timing) {
+        return request(state, stage, timing, "");
+    }
+
+    static CommandRequest request(DeploymentEnvironmentState state, String stage,
+                                  gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.Environment timing, String mirrorPolicy) {
         if (!Set.of("probe", "verify", "packages", "prepare", "enforce", "commit").contains(stage))
             throw new IllegalArgumentException("Invalid fixed environment command");
-        String input = assignments(state, stage) + body(state.layout());
-        if (!Set.of("probe", "verify").contains(stage))
-            input += gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentRemoteLayoutAdmission.initialize(state.layout());
+        String input = input(state, stage, mirrorPolicy, timing.installSeconds());
         String script = "request_sha=" + quote(digest(input)) + "\n" + input + "\nenvironment\n";
         return new CommandRequest("/bin/bash -s", script.getBytes(StandardCharsets.UTF_8),
             Duration.ofSeconds(stage.equals("packages") ? timing.installSeconds() : timing.checkSeconds()), 1024 * 1024);
@@ -69,10 +72,23 @@ final class DeploymentEnvironmentScripts {
      * @param stage fixed stage / 固定阶段
      * @return request digest matched by original remote receipt / 与原远端回执匹配的请求摘要 */
     static String requestDigest(DeploymentEnvironmentState state, String stage) {
+        return requestDigest(state, stage, "");
+    }
+
+    static String requestDigest(DeploymentEnvironmentState state, String stage, String mirrorPolicy) {
+        return requestDigest(state, stage, mirrorPolicy, 7200);
+    }
+    static String requestDigest(DeploymentEnvironmentState state, String stage, String mirrorPolicy, long seconds) {
+        return digest(input(state, stage, mirrorPolicy, seconds));
+    }
+
+    private static String input(DeploymentEnvironmentState state, String stage, String mirrorPolicy, long seconds) {
         String input = assignments(state, stage) + body(state.layout());
         if (!Set.of("probe", "verify").contains(stage))
             input += gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentRemoteLayoutAdmission.initialize(state.layout());
-        return digest(input);
+        if (stage.equals("packages") && mirrorPolicy != null && !mirrorPolicy.isEmpty())
+            input = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.withMirrors(input, mirrorPolicy, seconds);
+        return input;
     }
 
     /** Renders literal original values for fixed resources. / 为固定资源渲染原字面值。

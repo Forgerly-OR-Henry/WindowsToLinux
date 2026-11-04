@@ -19,7 +19,48 @@ class Failure(Exception):
 
 class Uncertain(Exception): pass
 
+MIRROR_MODULE = None
+
+
+def native_task_mirrors():
+    global MIRROR_MODULE
+    if MIRROR_MODULE is None:
+        runtime = pathlib.Path(os.environ['WTL_MIRROR_RUNTIME'])
+        policy = pathlib.Path(os.environ['WTL_MIRROR_POLICY'])
+        if runtime.parent != policy.parent or runtime.name != 'runtime.py' or policy.name != 'policy.json':
+            raise Failure('MIRROR_INPUT_REJECTED')
+        directory = runtime.parent.lstat()
+        if runtime.parent.is_symlink() or directory.st_uid != 0 or directory.st_mode & 0o077:
+            raise Failure('MIRROR_INPUT_REJECTED')
+        for ancestor in runtime.parent.parents:
+            identity = ancestor.lstat()
+            if ancestor.is_symlink() or identity.st_uid != 0 or identity.st_mode & 0o022 and not identity.st_mode & 0o1000:
+                raise Failure('MIRROR_INPUT_REJECTED')
+        source = None
+        for path in (runtime, policy):
+            with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), 'rb') as stream:
+                identity = os.fstat(stream.fileno())
+                if identity.st_uid != 0 or identity.st_mode & 0o022 or identity.st_nlink != 1 or not stat.S_ISREG(identity.st_mode):
+                    raise Failure('MIRROR_INPUT_REJECTED')
+                value = stream.read(4194305)
+                if len(value) > 4194304:
+                    raise Failure('MIRROR_INPUT_REJECTED')
+                if path == runtime:
+                    source = value
+        if hashlib.sha256(source).hexdigest() != '__WTL_MIRROR_RUNTIME_SHA256__':
+            raise Failure('MIRROR_IMPLEMENTATION_CHANGED')
+        MIRROR_MODULE = {'__name__': 'wtl_native_task_mirrors'}
+        exec(compile(source, str(runtime), 'exec'), MIRROR_MODULE)
+    return MIRROR_MODULE, MIRROR_MODULE['MirrorPolicy'].from_environment()
+
+
 def run(args, *, data=None, env=None, checked=True, timeout=60):
+    if os.environ.get('WTL_MIRROR_POLICY') and pathlib.Path(args[0]).name in ('apt-get', 'dnf'):
+        module, policy = native_task_mirrors()
+        args = module['mirror_system_command'](policy, pathlib.Path(args[0]).name, args[1:])
+    elif os.environ.get('WTL_MIRROR_POLICY') and pathlib.Path(args[0]).name == 'apt-cache':
+        module, policy = native_task_mirrors()
+        args = module['mirror_system_command'](policy, 'apt-cache', args[1:])
     try:
         result = subprocess.run(args, input=data, text=True, capture_output=True, timeout=timeout,
                                 env=dict(os.environ, **(env or {})))
@@ -261,7 +302,9 @@ def install(request):
                 run(['apt-get','-y','remove',package],env={'DEBIAN_FRONTEND':'noninteractive'},timeout=1800)
             else:
                 # DNF --noautoremove preserves unrelated leaf packages; dependent removals are refused in preview.
-                preview = run(['dnf','-q','repoquery','--installed','--whatrequires',package],checked=False).stdout.strip()
+                queried = run(['dnf','-q','repoquery','--installed','--whatrequires',package],checked=False)
+                if queried.returncode != 0: raise Failure()
+                preview = queried.stdout.strip()
                 if preview: raise Failure("STATE_CHANGED")
                 run(['dnf','-y','--noautoremove','remove',package],timeout=1800)
         if manager == 'apt':

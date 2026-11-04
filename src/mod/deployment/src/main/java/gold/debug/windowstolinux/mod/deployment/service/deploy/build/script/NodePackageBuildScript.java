@@ -33,6 +33,14 @@ public final class NodePackageBuildScript {
                 + "run yarn install --immutable\nrun yarn run build";
             default -> throw new IllegalArgumentException("Node source requires one fixed package manager");
         };
+        String legacyInstallAndBuild = installAndBuild;
+        String mirroredInstallAndBuild = installAndBuild.lines().map(line -> {
+            if (line.startsWith("run ") && (line.contains(" ci ") || line.contains(" install ")))
+                return "wtl_dependency NODE_PACKAGE " + line.substring(4);
+            return line;
+        }).collect(java.util.stream.Collectors.joining("\n"));
+        installAndBuild = "if [ -n \"${WTL_MIRROR_POLICY:-}\" ]; then\n" + mirroredInstallAndBuild
+            + "\nelse\n" + legacyInstallAndBuild + "\nfi";
         String artifact = staticSite
             ? "test -d " + SafeBuildScriptEnvelope.shellQuote("./" + outputDirectory) + "\nprintf 'ARTIFACT=%s\\n' "
             + SafeBuildScriptEnvelope.shellQuote("./" + outputDirectory)

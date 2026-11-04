@@ -211,12 +211,59 @@ def dependency_tool(name):
     dependency_reject('OS_TOOL_MISSING')
 
 
+DEPENDENCY_MIRROR_MODULE = None
+
+
+def dependency_task_mirrors():
+    global DEPENDENCY_MIRROR_MODULE
+    if DEPENDENCY_MIRROR_MODULE is None:
+        runtime = pathlib.Path(os.environ['WTL_MIRROR_RUNTIME'])
+        policy = pathlib.Path(os.environ['WTL_MIRROR_POLICY'])
+        if runtime.parent != policy.parent or runtime.name != 'runtime.py' or policy.name != 'policy.json':
+            dependency_reject('MIRROR_INPUT_REJECTED')
+        directory = runtime.parent.lstat()
+        if runtime.parent.is_symlink() or directory.st_uid != 0 or directory.st_mode & 0o077:
+            dependency_reject('MIRROR_INPUT_REJECTED')
+        for ancestor in runtime.parent.parents:
+            identity = ancestor.lstat()
+            if ancestor.is_symlink() or identity.st_uid != 0 or identity.st_mode & 0o022 and not identity.st_mode & 0o1000:
+                dependency_reject('MIRROR_INPUT_REJECTED')
+        source = None
+        for path in (runtime, policy):
+            with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), 'rb') as stream:
+                identity = os.fstat(stream.fileno())
+                if identity.st_uid != 0 or identity.st_mode & 0o022 or identity.st_nlink != 1 or not stat.S_ISREG(identity.st_mode):
+                    dependency_reject('MIRROR_INPUT_REJECTED')
+                value = stream.read(4194305)
+                if len(value) > 4194304:
+                    dependency_reject('MIRROR_INPUT_REJECTED')
+                if path == runtime:
+                    source = value
+        if hashlib.sha256(source).hexdigest() != '__WTL_MIRROR_RUNTIME_SHA256__':
+            dependency_reject('MIRROR_IMPLEMENTATION_CHANGED')
+        DEPENDENCY_MIRROR_MODULE = {'__name__': 'wtl_dependency_task_mirrors'}
+        exec(compile(source, str(runtime), 'exec'), DEPENDENCY_MIRROR_MODULE)
+    return DEPENDENCY_MIRROR_MODULE, DEPENDENCY_MIRROR_MODULE['MirrorPolicy'].from_environment()
+
+
 def dependency_run(args):
+    mirrored = bool(os.environ.get('WTL_MIRROR_POLICY')) and pathlib.Path(args[0]).name in ('apt-get', 'dnf')
+    environment = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C',
+                   'DEBIAN_FRONTEND': 'noninteractive', 'NEEDRESTART_MODE': 'l'}
+    deadline = time.monotonic() + 1800
+    if mirrored:
+        module, policy = dependency_task_mirrors()
+        args = module['mirror_system_command'](policy, pathlib.Path(args[0]).name, args[1:])
+        deadline = min(deadline, time.monotonic() + policy.remaining())
+        for name in ('WTL_MIRROR_POLICY', 'WTL_MIRROR_RUNTIME', 'WTL_MIRROR_POLICY_SHA256',
+                     'WTL_MIRROR_CREDENTIALS_DIR', 'WTL_MIRROR_CREDENTIALS_SOURCE', 'WTL_MIRROR_BUDGET_SECONDS',
+                     'WTL_MIRROR_STARTED_AT', 'WTL_MIRROR_DEADLINE', 'TMPDIR', 'TEMP', 'TMP'):
+            if name in os.environ:
+                environment[name] = os.environ[name]
     process = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                               stderr=subprocess.DEVNULL, start_new_session=True,
-                               cwd='/', env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C',
-                                    'DEBIAN_FRONTEND': 'noninteractive', 'NEEDRESTART_MODE': 'l'})
-    result, deadline = bytearray(), time.monotonic() + 1800
+                               stderr=subprocess.STDOUT if mirrored else subprocess.DEVNULL, start_new_session=True,
+                               cwd='/', env=environment)
+    result = bytearray()
     try:
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
@@ -233,10 +280,24 @@ def dependency_run(args):
                             dependency_reject('DEPENDENCY_TRANSACTION_OUTPUT_LIMIT', True)
             if process.wait(timeout=max(0.01, deadline - time.monotonic())):
                 dependency_reject('DEPENDENCY_TRANSACTION_FAILED')
-        return bytes(result).decode('utf-8')
+        decoded = bytes(result).decode('utf-8')
+        if mirrored:
+            for line in decoded.splitlines():
+                if line.startswith(('MIRROR ', 'MIRROR_REJECT=')):
+                    print(line, flush=True)
+        return decoded
     finally:
         if process.poll() is None:
-            os.killpg(process.pid, signal.SIGKILL)
+            if mirrored:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    pass
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         process.wait()
         process.stdout.close()
 

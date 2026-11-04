@@ -194,6 +194,8 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
             : DeploymentAgentToolchainProgramStore.command(phase, programState.taskId(), operation, arguments, layout);
         byte[] input = recipe != null ? existingPreparation ? DeploymentAgentToolchainPrograms.trackedInput(recipe) : recipe.bytes()
             : phase.equals("install") ? DeploymentAgentToolchainProgramStore.installer(layout).getBytes(StandardCharsets.UTF_8) : new byte[0];
+        if (phase.equals("prepare")) script = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.preparationCommand(script,
+            java.util.UUID.fromString(programState.taskId()), Math.min(seconds, commands.remainingSeconds()));
         try (var request = new gold.debug.windowstolinux.appapi.linux.command.CommandRequest(script, input,
             Duration.ofSeconds(Math.min(seconds, commands.remainingSeconds())), 65536)) {
             String exact = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, "controller-action-state", request).exactAction();
@@ -289,6 +291,8 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
             if (bytes.length == 0 || bytes.length > 1048576)
                 throw new IllegalArgumentException("Agent toolchain source exceeds executable wire limit");
             String script = DeploymentAgentToolchainPrograms.command(arguments);
+            script = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.preparationCommand(script,
+                java.util.UUID.fromString(programState.taskId()), Math.min(seconds, commands.remainingSeconds()));
             var result = commands.send(meaning, targets, script, bytes, Duration.ofSeconds(seconds), 65536);
             String phase = meaning.substring("deployment.agent.toolchain.".length(), meaning.length() - 3);
             int identityIndex = switch (phase) {

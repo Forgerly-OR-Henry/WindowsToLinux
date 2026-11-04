@@ -63,7 +63,11 @@ public final class ComposerBuildWriter implements DeploymentBuildWriter {
             test -f ./composer.lock
             test -f ./%s
             %s
-            COMPOSER_ALLOW_SUPERUSER=0 run php "$composer_phar" install --no-dev --no-interaction --no-progress --prefer-dist --classmap-authoritative --no-plugins --no-scripts
+            if [ -n "${WTL_MIRROR_POLICY:-}" ]; then
+              COMPOSER_ALLOW_SUPERUSER=0 wtl_dependency COMPOSER_REPOSITORY php "$composer_phar" install --no-dev --no-interaction --no-progress --prefer-dist --classmap-authoritative --no-plugins --no-scripts
+            else
+              COMPOSER_ALLOW_SUPERUSER=0 run php "$composer_phar" install --no-dev --no-interaction --no-progress --prefer-dist --classmap-authoritative --no-plugins --no-scripts
+            fi
             test -f ./vendor/autoload.php
             test -z "$(find ./vendor -xdev -type l -print -quit)"
             printf 'ARTIFACT=%%s\n' ./vendor
@@ -75,7 +79,7 @@ public final class ComposerBuildWriter implements DeploymentBuildWriter {
     /** Uses one digest-pinned official PHAR inside the isolated candidate, without executing an installer or host Composer. / 在隔离候选内使用摘要固定的官方PHAR，不执行安装器或宿主Composer。
      * @return deterministic Composer preparation script / 确定性 Composer 准备脚本 */
     private static String prepareComposer() {
-        return """
+        String original = """
             require_build_tool curl
             require_build_tool sha256sum
             composer_phar="$mutable/home/.wtl-tools/composer-2.10.3.phar"
@@ -88,5 +92,16 @@ public final class ComposerBuildWriter implements DeploymentBuildWriter {
             chmod 400 -- "$composer_phar"
             printf 'BUILD_MANAGER=COMPOSER:2.10.3:candidate\\n'
             """;
+        var url = java.util.regex.Pattern.compile("https://[^'\\s]+[.]phar").matcher(original);
+        var digest = java.util.regex.Pattern.compile("[a-f0-9]{64}").matcher(original);
+        if (!url.find() || !digest.find()) throw new IllegalStateException("Pinned Composer bootstrap identity absent");
+        int start = original.indexOf("run curl ");
+        int end = original.indexOf('\n', original.indexOf(url.group(), start));
+        if (start < 0 || end < start) throw new IllegalStateException("Pinned Composer transfer absent");
+        String mirrored = original.substring(0, start) + "wtl_download COMPOSER_INSTALLER "
+            + "\"$(wtl_source_url COMPOSER_INSTALLER " + SafeBuildScriptEnvelope.shellQuote(java.net.URI.create(url.group()).getRawPath().substring(1))
+            + ")\" \"$composer_phar\" --algorithm sha256 --expected "
+            + digest.group() + " --limit 16777216" + original.substring(end);
+        return "if [ -n \"${WTL_MIRROR_POLICY:-}\" ]; then\n" + mirrored + "else\n" + original + "fi\n";
     }
 }

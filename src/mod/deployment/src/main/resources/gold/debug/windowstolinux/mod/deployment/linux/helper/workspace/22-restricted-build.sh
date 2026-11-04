@@ -26,6 +26,7 @@ prepare_build_identity() {
     fi
     chown "$uid:$gid" -- "$candidate/.build-script"
     chmod 400 -- "$candidate/.build-script"
+    prepare_build_mirror_material "$candidate" "$uid" "$gid"
 }
 stop_candidate_build() {
     local app="$1" candidate_id="$2" unit state
@@ -148,6 +149,7 @@ freeze_candidate_build() {
     fi
     chown root:root -- "$candidate/mutable"
     chmod 700 -- "$candidate/mutable"
+    cleanup_build_mirror_material "$candidate"
     if [ -f "$candidate/.build-script" ]; then
         chown root:root -- "$candidate/.build-script"
         chmod 400 -- "$candidate/.build-script"

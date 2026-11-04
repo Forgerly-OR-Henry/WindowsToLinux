@@ -31,7 +31,7 @@ public class DeploymentAgentToolchainProgramStoreTest {
         String installer = DeploymentAgentToolchainProgramStore.resource("agent-controller-install.py");
         String contract = DeploymentAgentToolchainProgramStore.contract();
         DeploymentAgentToolchainProgramStore.requireManifest(manifest, controller, loader, installer, contract);
-        assertEquals("9cd73cbb2a80d77638cf60da0246b391bf4f59935b7982c6662a02f6da3f9e9e", manifest.path("defaultControllerSha256").asText());
+        assertEquals("5679dee3ff3ed23cd1932b50bed4e2c8fc7475301dd41962d5d156eda78cf379", manifest.path("defaultControllerSha256").asText());
         for (int position = 0; position < 4; position++) {
             int changed = position;
             assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainProgramStore.requireManifest(manifest,

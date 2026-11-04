@@ -64,13 +64,20 @@ public final class ContainerBuildWriter implements DeploymentBuildWriter {
             test -S "$WTL_BUILD_SOCKET"
             %s version >/dev/null
             test -f ./Dockerfile
-            run %s build --pull=true --label io.windowstolinux.application=%s --label io.windowstolinux.candidate=%s --tag %s --file ./Dockerfile .
+            dockerfile=./Dockerfile
+            pull_arguments=(--pull=true)
+            if [ -n "${WTL_MIRROR_POLICY:-}" ]; then
+              dockerfile="$mutable/Dockerfile.mirrors"
+              wtl_oci ./Dockerfile "$dockerfile" %s
+              pull_arguments=(--pull=false --network=none)
+            fi
+            run %s build "${pull_arguments[@]}" --label io.windowstolinux.application=%s --label io.windowstolinux.candidate=%s --tag %s --file "$dockerfile" .
             image_id=$(%s image inspect --format '{{.Id}}' %s)
             %s save %s --output \"$mutable/candidate-image.tar\" %s
             %s
             printf 'ARTIFACT=%%s\n' "$image_id"
             """
-            .formatted(engine, engine, application, candidate, tag, engine, tag, engine,
+            .formatted(engine, engine, engine, application, candidate, tag, engine, tag, engine,
                 container.engine().name().equals("PODMAN") ? "--format=docker-archive" : "", tag,
                 container.engine().name().equals("PODMAN") ? normalizePodmanExport() : "");
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);

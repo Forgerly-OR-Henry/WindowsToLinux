@@ -175,6 +175,9 @@ public final class DeploymentManagedHelper {
     }
 
     private OperationResult<Identity> install(String script, String operation, String launcher) throws ApiException {
+        gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.requireCaptured(task.id());
+        script = DeploymentHelperInstallerScript.withMirrors(script,
+            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task));
         byte[] body = script.getBytes(StandardCharsets.UTF_8);
         try (var request = new CommandRequest(launcher, body, Duration.ofHours(2),
             131072)) {
@@ -216,11 +219,14 @@ public final class DeploymentManagedHelper {
      * @throws ApiException if review, transition or transport fails / 审核、阶段转换或传输失败时 */
     public OperationResult<CommandResult> installTracked(byte[] script, BeforeExecute beforeExecute)
         throws ApiException {
+        gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.requireCaptured(task.id());
         Objects.requireNonNull(script);
         Objects.requireNonNull(beforeExecute);
         UUID operationId = DeploymentHelperInstallerScript.trackedOperation(
             new String(script, StandardCharsets.UTF_8), task.id(), layout);
-        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", script, Duration.ofHours(2),
+        byte[] executable = DeploymentHelperInstallerScript.withMirrors(new String(script, StandardCharsets.UTF_8),
+            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task)).getBytes(StandardCharsets.UTF_8);
+        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", executable, Duration.ofHours(2),
             131072)) {
             var grant = approve("deployment.helper.install.tracked.v1", request,
                 trackedInstallationTargets(server, layout, operationId));
@@ -232,6 +238,8 @@ public final class DeploymentManagedHelper {
             beforeExecute.run();
             beforeSend.verify();
             return session.execute(request, grant.value().orElseThrow());
+        } finally {
+            java.util.Arrays.fill(executable, (byte) 0);
         }
     }
 

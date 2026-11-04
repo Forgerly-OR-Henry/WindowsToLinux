@@ -20,7 +20,7 @@ public final class DeploymentCommandEvidence {
     /** Fixed operations whose stdin is executable Bash rather than protected data. / stdin是可执行Bash而非受保护数据的固定动作。 */
     private static final Set<String> SCRIPT_INPUT = Set.of("deployment.helper.install.v1",
         "deployment.helper.install.tracked.v1", "deployment.helper.install.files.v1",
-        "deployment.helper.install.status.v1", "deployment.build.run.v1", "deployment.model.command.v1");
+        "deployment.helper.install.status.v1", "deployment.build.run.v1", "deployment.model.command.v1", "deployment.mirror.ip.v1", "deployment.mirror.compatibility.v1");
 
     /** Prevents construction. / 禁止构造。 */
     private DeploymentCommandEvidence() {
@@ -125,10 +125,13 @@ public final class DeploymentCommandEvidence {
                     gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem.java.MavenBuildWriter.bootstrapEvidence(executable)
                         .ifPresent(value -> facts.put("candidateMavenBootstrap", value));
                 facts.put("inputKind", "EXECUTABLE_SCRIPT");
-                facts.put("completeExecutableInput", operation.equals("deployment.helper.install.files.v1")
+                var mirrorInput = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.executable(executable);
+                Object described = operation.equals("deployment.helper.install.files.v1")
                     ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describeFiles(executable, layout)
                     : operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
-                    ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describe(executable, layout) : executable);
+                    ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describe(executable, layout) : executable;
+                facts.put("completeExecutableInput", described);
+                mirrorInput.ifPresent(value -> facts.put("mirrorInputTask", value.task().toString()));
                 if (operation.equals("deployment.model.command.v1")) {
                     if (!request.script().equals(gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.LAUNCHER))
                         throw new IllegalArgumentException("Model command launcher changed");
@@ -184,6 +187,25 @@ public final class DeploymentCommandEvidence {
                                      gold.debug.windowstolinux.appapi.task.run.TaskContext task)
         throws java.io.IOException, gold.debug.windowstolinux.appapi.task.result.ApiException {
         var result = new LinkedHashMap<String, Object>(facts(intent, request, layout));
+        var preparation = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.preparation(request.script());
+        if (preparation.isPresent() && !preparation.orElseThrow().task().equals(task.id()))
+            throw new IllegalArgumentException("Mirror preparation differs from original task");
+        if (preparation.isPresent() && preparation.orElseThrow().budgetSeconds() != request.timeout().toSeconds())
+            throw new IllegalArgumentException("Mirror preparation deadline differs from original request");
+        if (result.containsKey("mirrorInputTask") && !task.id().toString().equals(result.get("mirrorInputTask")))
+            throw new IllegalArgumentException("Mirror executable input differs from original task");
+        String mirrorPolicy = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task);
+        if (!mirrorPolicy.isEmpty()) {
+            var root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(mirrorPolicy);
+            if (intent.serverIds().size() != 1 || !intent.serverIds().getFirst().equals(root.path("server").asText()))
+                throw new IllegalArgumentException("Mirror policy server differs from reviewed command");
+            if (context.tasks().findCheckpoint(task, gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.CHECKPOINT).isEmpty())
+                throw new IllegalArgumentException("Original mirror snapshot missing");
+            result.put("mirrorPolicy", Map.of("task", task.id().toString(), "catalogVersion", root.path("catalogVersion").asText(),
+                "country", root.path("country").asText(), "meaning", "Frozen task sources. Complete executable bootstrap and original helper integrity guard remain subject to review; arbitrary project network scripts and Git are not rewritten."));
+            if (preparation.isPresent() || result.containsKey("mirrorInputTask"))
+                result.put("mirrorTransport", gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.reviewMaterial(mirrorPolicy));
+        }
         if (result.get("publicationSnapshot") instanceof Map<?, ?> snapshot) {
             if (!task.id().toString().equals(snapshot.get("task")))
                 throw new IllegalArgumentException("Snapshot task differs from original review context");

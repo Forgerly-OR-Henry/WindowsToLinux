@@ -14,11 +14,15 @@ import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 /** Fixed protocols shared by deployment modes, with no mode-specific interpretation. */
 public final class DeploymentFixedCommandProtocol implements DeploymentCommandProtocol {
     private static final Set<String> OPERATIONS = Set.of(
+        gold.debug.windowstolinux.mod.deployment.linux.mirror.locked.DeploymentMirrorCredentials.STAGE,
+        gold.debug.windowstolinux.mod.deployment.linux.mirror.locked.DeploymentMirrorCredentials.DISCARD,
         gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION,
         "deployment.helper.install.v1",
         "deployment.helper.install.tracked.v1",
         "deployment.helper.install.files.v1",
         "deployment.helper.install.status.v1",
+        "deployment.mirror.ip.v1",
+        "deployment.mirror.compatibility.v1",
         "deployment.helper.probe.v1",
         "deployment.candidate.host-probe.v1",
         "deployment.candidate.container-probe.v1",
@@ -82,6 +86,19 @@ public final class DeploymentFixedCommandProtocol implements DeploymentCommandPr
         if (!registered(intent)) throw new IllegalArgumentException("Unsupported common command operation");
         requireTaskTargets(intent, task);
         DeploymentCommandStaticGate.requireFixedAllowed(request.script());
+        if (Set.of(gold.debug.windowstolinux.mod.deployment.linux.mirror.locked.DeploymentMirrorCredentials.STAGE,
+            gold.debug.windowstolinux.mod.deployment.linux.mirror.locked.DeploymentMirrorCredentials.DISCARD)
+            .contains(intent.semantics().orElseThrow().operation())) {
+            var material = gold.debug.windowstolinux.mod.deployment.linux.mirror.locked.DeploymentMirrorCredentials.inspect(intent, request, layout, task,
+                gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task));
+            var evidence = new java.util.LinkedHashMap<String, Object>(DeploymentCommandEvidence.baseFacts(intent, request, layout, false));
+            evidence.put("commandScript", request.script());
+            evidence.put("inputKind", material.get("inputKind"));
+            evidence.put("mirrorMaterial", material);
+            evidence.put("timeoutSeconds", request.timeout().toSeconds());
+            evidence.put("outputLimitBytes", request.outputLimitBytes());
+            return java.util.Collections.unmodifiableMap(evidence);
+        }
         if (intent.semantics().orElseThrow().operation().startsWith(
             gold.debug.windowstolinux.mod.deployment.linux.cleanup.DeploymentCandidateCompensationProgram.OPERATION_PREFIX)) {
             var compensation = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.cleanup.DeploymentCandidateCompensation

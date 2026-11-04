@@ -33,7 +33,8 @@ public final class DeploymentToolchainSources {
         try (var input = DeploymentToolchainSources.class.getResourceAsStream(ROOT + name)) {
             if (input == null)
                 throw new IllegalStateException("Toolchain source resource unavailable: " + name);
-            return new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+            return gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderToolchainSources(
+                new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n"));
         } catch (IOException failure) {
             throw new IllegalStateException("Toolchain source resource unreadable: " + name, failure);
         }

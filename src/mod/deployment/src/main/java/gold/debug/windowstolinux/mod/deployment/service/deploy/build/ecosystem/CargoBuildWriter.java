@@ -65,7 +65,13 @@ public final class CargoBuildWriter implements DeploymentBuildWriter {
             test -f ./Cargo.toml
             test -f ./Cargo.lock
             test -f ./rust-toolchain.toml
-            run cargo build --locked --release
+            if [ -n "${WTL_MIRROR_POLICY:-}" ]; then
+              export CARGO_HOME="$mutable/home/mirror-cargo"
+              wtl_dependency RUST_CRATE cargo fetch --locked
+              run cargo build --offline --locked --release
+            else
+              run cargo build --locked --release
+            fi
             mkdir -p ./.w2l/bin
             test -x "./target/release/$artifact_name"
             cp -- "./target/release/$artifact_name" "./.w2l/bin/$artifact_name"

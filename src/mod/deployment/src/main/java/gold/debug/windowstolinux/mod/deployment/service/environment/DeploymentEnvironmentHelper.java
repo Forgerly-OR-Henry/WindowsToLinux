@@ -54,7 +54,7 @@ final class DeploymentEnvironmentHelper {
             if (observed.outcome() != TaskResult.FAILED)
                 throw new DeploymentEnvironmentPendingException("ENVIRONMENT_HELPER_PROBE_UNCONFIRMED");
             String script = installer(state);
-            var sent = state.next("HELPER_DISPATCHED", DeploymentEnvironmentScripts.digest(script), state.observation().orElseThrow());
+            var sent = state.next("HELPER_DISPATCHED", gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(script, task), state.observation().orElseThrow());
             var result = helper.installTracked(script.getBytes(StandardCharsets.UTF_8), () -> journal.advance(state, sent));
             if (result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()
                 || !result.value().orElseThrow().exitCode().equals(Optional.of(0)) || result.value().orElseThrow().truncated())
@@ -67,7 +67,7 @@ final class DeploymentEnvironmentHelper {
      * @throws ApiException if original connection, approval or CAS fails / 原连接、审核或 CAS 失败时
      * @throws DeploymentEnvironmentPendingException if exact original proof is unavailable / 精确原证明不可用时 */
     void reconcile(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPendingException {
-        if (!state.requestSha().equals(DeploymentEnvironmentScripts.digest(installer(state))))
+        if (!state.requestSha().equals(gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(installer(state), task)))
             throw new DeploymentEnvironmentPendingException("ENVIRONMENT_HELPER_ORIGINAL_REQUEST_CHANGED");
         try (var session = context.linux().connect(state.target(), task)) {
             var helper = helper(session, state);

@@ -77,7 +77,7 @@ public final class DeploymentAgentPublicationContractDiagnosticFollowupProgram {
         String template = resource("publication-contract-diagnostic-followup.py"), marker = "# @WTL_CONTRACT_DIAGNOSTIC_BASH@";
         if (template.indexOf(marker) < 0 || template.indexOf(marker) != template.lastIndexOf(marker)) throw invalid();
         source = template.replace(marker, "BASH_SOURCE = " + JSON.valueToTree(bash).toString());
-        if (source.getBytes(StandardCharsets.UTF_8).length > 524288) throw invalid();
+        if (source.getBytes(StandardCharsets.UTF_8).length > 1048576) throw invalid();
     }
     public String source() { return source; }
     /** Product-bound expected stdin SHA, never an independent remote measurement. */

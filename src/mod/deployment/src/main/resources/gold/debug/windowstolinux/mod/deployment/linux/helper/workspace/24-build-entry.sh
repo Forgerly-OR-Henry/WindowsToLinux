@@ -35,6 +35,8 @@ cleanup_engine() {
 trap cleanup_engine EXIT HUP INT TERM
 case "$engine" in
     docker)
+        # This daemon belongs to the candidate. Never inherit host registry mirrors/proxies.
+        printf '{"registry-mirrors": [], "insecure-registries": []}\n' >"$XDG_RUNTIME_DIR/daemon.json"
         parent_user_namespace="$(readlink /proc/self/ns/user)"
         /usr/bin/rootlesskit --state-dir="$XDG_RUNTIME_DIR/rootlesskit" --net=slirp4netns --disable-host-loopback \
             --copy-up=/etc --copy-up=/run /bin/bash -ceu '
@@ -52,11 +54,15 @@ case "$engine" in
         ln -s -- "$XDG_RUNTIME_DIR/xtables.lock" /run/xtables.lock
         exec /usr/bin/dockerd "$@"
       ' wtl-docker-child "$parent_user_namespace" --rootless --storage-driver=vfs --host="unix://$socket" \
+            --config-file="$XDG_RUNTIME_DIR/daemon.json" \
             --data-root="$mutable/engine" --exec-root="$XDG_RUNTIME_DIR/docker" --pidfile="$XDG_RUNTIME_DIR/docker.pid" \
             >"$mutable/engine.log" 2>&1 &
         daemon=$!
         ;;
     podman)
+        # Task-private registries policy disables inherited search registries and implicit mirrors.
+        printf 'unqualified-search-registries = []\nshort-name-mode = "enforcing"\n' >"$XDG_RUNTIME_DIR/registries.conf"
+        export CONTAINERS_REGISTRIES_CONF="$XDG_RUNTIME_DIR/registries.conf"
         /usr/bin/podman --root "$mutable/engine" --runroot "$XDG_RUNTIME_DIR/podman" --storage-driver=vfs system service --time=0 "unix://$socket" >"$mutable/engine.log" 2>&1 &
         daemon=$!
         ;;

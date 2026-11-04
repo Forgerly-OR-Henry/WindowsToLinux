@@ -54,6 +54,11 @@ public final class DeploymentAgentCommandProtocol implements DeploymentCommandPr
         String operation = intent.semantics().orElseThrow().operation();
         if (!OPERATIONS.contains(operation)) return common.inspect(intent, request, layout, task);
         DeploymentFixedCommandProtocol.requireTaskTargets(intent, task);
+        var mirrorPreparation = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.preparation(request.script());
+        if (mirrorPreparation.isPresent() && !mirrorPreparation.orElseThrow().task().equals(task.id()))
+            throw new IllegalArgumentException("Mirror preparation differs from original Agent task");
+        if (mirrorPreparation.isPresent() && mirrorPreparation.orElseThrow().budgetSeconds() != request.timeout().toSeconds())
+            throw new IllegalArgumentException("Mirror preparation deadline differs from original Agent request");
         if (operation.equals("deployment.agent.isolation.preflight.v1")) requireIsolationAllowed(request, layout);
         else DeploymentCommandStaticGate.requireFixedAllowed(request.script());
         var facts = facts(intent, request, layout);
@@ -105,6 +110,9 @@ public final class DeploymentAgentCommandProtocol implements DeploymentCommandPr
             "deployment.agent.publication-correction.v1", "deployment.agent.isolation.preflight.v1").contains(operation)
             && request.script().contains(layout.helperPath());
         var facts = new LinkedHashMap<String, Object>(DeploymentCommandEvidence.baseFacts(intent, request, layout, installedHelper));
+        var preparation = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.preparation(request.script());
+        if (preparation.isPresent()) facts.put("mirrorTransport",
+            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.reviewMaterial(preparation.orElseThrow().policy()));
         var tracked = DeploymentAgentToolchainInputEvidence.trackedFacts(operation, request, layout);
         if (tracked.isPresent()) {
             facts.put(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainTracked.FIELD, tracked.orElseThrow());
@@ -216,7 +224,21 @@ public final class DeploymentAgentCommandProtocol implements DeploymentCommandPr
                 String executable = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                     .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(input)).toString();
                 if (!patch && !executable.isBlank()) {
-                    if (agentRun) DeploymentCommandStaticGate.requireAllowed(executable);
+                    if (agentRun) {
+                        var build = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.buildInput(executable);
+                        DeploymentCommandStaticGate.requireAllowed(build.map(
+                            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.Preparation::original).orElse(executable));
+                        if (build.isPresent()) {
+                            if (build.orElseThrow().budgetSeconds() + 20 != request.timeout().toSeconds())
+                                throw new IllegalArgumentException("Agent mirror build deadline changed");
+                            var frame = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' 'agent-run' ")
+                                + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' '([^']+)' ").matcher(invocation);
+                            if (!frame.lookingAt() || !build.orElseThrow().task().toString().equals(frame.group(1)))
+                                throw new IllegalArgumentException("Agent mirror input belongs to a different task");
+                            DeploymentCommandStaticGate.requireFixedAllowed(executable);
+                            facts.put("mirrorTransport", gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.reviewMaterial(build.orElseThrow().policy()));
+                        }
+                    }
                     else DeploymentCommandStaticGate.requireFixedAllowed(executable);
                 }
                 if (agentRun)

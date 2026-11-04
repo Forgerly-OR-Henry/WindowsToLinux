@@ -237,7 +237,7 @@ public final class DeploymentAgentToolchainInputEvidence {
         }
         String canonical = phase.equals("install") ? DeploymentAgentToolchainPrograms.command(arguments)
             : DeploymentAgentToolchainProgramStore.command(phase, task, action, arguments, layout);
-        if (!canonical.equals(match.group(5)) || !DeploymentAgentToolchainProgramStore.targets(server, phase, action, action, layout).equals(targets(current.path("resourceTargets"))))
+        if (!canonical.equals(gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.originalCommand(match.group(5))) || !DeploymentAgentToolchainProgramStore.targets(server, phase, action, action, layout).equals(targets(current.path("resourceTargets"))))
             throw new IllegalArgumentException("Installed controller launcher/targets changed");
         if (!phase.equals("readiness")) {
             var installation = pending.path("installation");
@@ -257,7 +257,7 @@ public final class DeploymentAgentToolchainInputEvidence {
         try {
             if (!match.group(3).equals(Integer.toString(bytes.length)) || !match.group(4).equals(sha256(bytes)))
                 throw new IllegalArgumentException("Installed controller original stdin changed");
-            try (var request = new CommandRequest(canonical, bytes, timeout, outputLimit)) {
+            try (var request = new CommandRequest(match.group(5), bytes, timeout, outputLimit)) {
                 if (!RemoteActions.command(server, revision, request).exactAction().equals(exact))
                     throw new IllegalArgumentException("Noncanonical installed exact action");
             }
@@ -370,6 +370,8 @@ public final class DeploymentAgentToolchainInputEvidence {
             throw new IllegalArgumentException("Tracked command bounds changed");
         byte[] input = inline ? DeploymentAgentToolchainPrograms.trackedInput(recipe) : recipe.bytes();
         String script = inline ? DeploymentAgentToolchainPrograms.trackedCommand(recipe) : DeploymentAgentToolchainProgramStore.trackedCommand(verb, recipe);
+        if (gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.preparation(match.group(5)).isPresent())
+            script = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.preparationCommand(script, java.util.UUID.fromString(recipe.taskId()), timeout.toSeconds());
         var server = new ServerId(recipe.serverId());
         var expectedTargets = inline ? DeploymentAgentToolchainCommands.controllerTargets(server, recipe.operationId(), layout)
             : DeploymentAgentToolchainProgramStore.targets(server, verb.replace("-tracked", ""), recipe.operationId(), recipe.operationId(), layout);

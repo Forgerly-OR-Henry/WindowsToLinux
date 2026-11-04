@@ -184,8 +184,12 @@ def source_dependencies(layout):
         if globals().get('TRACKED_OPERATION') is not None:
             TRACKED_OPERATION.dependencies_started()
         environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_MODE='l')
+        command = ['/usr/bin/apt-get', '-o', 'DPkg::Lock::Timeout=' + str(remaining()), 'install', '-y', '--no-install-recommends']
+        if os.environ.get('WTL_MIRROR_POLICY'):
+            module, policy = task_mirrors()
+            command = module['mirror_system_command'](policy, 'apt-get', command[1:])
         run(
-            ['/usr/bin/apt-get', '-o', 'DPkg::Lock::Timeout=' + str(remaining()), 'install', '-y', '--no-install-recommends']
+            command
             + common_apt
             + apt,
             environment=environment,
@@ -194,6 +198,10 @@ def source_dependencies(layout):
         if globals().get('TRACKED_OPERATION') is not None:
             TRACKED_OPERATION.dependencies_started()
         # @compat:centos-repositories@
-        run(['/usr/bin/dnf', '-y'] + repositories + ['install'] + common_dnf + dnf)
+        command = ['/usr/bin/dnf', '-y'] + repositories + ['install'] + common_dnf + dnf
+        if os.environ.get('WTL_MIRROR_POLICY'):
+            module, policy = task_mirrors()
+            command = module['mirror_system_command'](policy, 'dnf', command[1:])
+        run(command)
     else:
         fail('platform', 'the platform has no supported dependency installer')

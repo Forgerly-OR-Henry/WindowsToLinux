@@ -23,7 +23,7 @@ class DeploymentAgentHelperInstallerScriptTest {
 
     @Test
     void defaultFilesInstallerRetainsItsOriginalBytes() throws Exception {
-        assertEquals("0ac82ab0aa2b4b54c2271097fda264bd5d5d10876fbfffd1d37a49b21f3a2fed",
+        assertEquals("3d2b97d4497e42c17e476e49eb0a9ea51addc9697141c1b7cc97afa652676676",
             HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                 .digest(DeploymentHelperInstallerScript.renderFiles().getBytes(StandardCharsets.UTF_8))));
     }

@@ -1103,7 +1103,7 @@ def agent_record(directory):
     else:
         if not isinstance(record.get('source'), str) or record.get('official_algorithm') not in ('sha256', 'sha512') or not isinstance(record.get('official_digest'), str) or not re.fullmatch('[a-f0-9]{' + ('64' if record['official_algorithm'] == 'sha256' else '128') + '}', record['official_digest']):
             agent_reject('OFFICIAL_DIGEST_RECORD')
-        official_url(record['source'])
+        official_url(record['source'], toolchain_point(record['ecosystem']), historical=True)
         expected_directory = ROOT / 'versions' / (record['ecosystem'].lower() + '-' + agent_installation_key(
             record['ecosystem'], record['version'], record['official_digest']))
         if record['directory'] != str(expected_directory):
@@ -1114,7 +1114,7 @@ def agent_record(directory):
     if not isinstance(dependencies, dict) or set(dependencies) - {'openssl'}:
         agent_reject('INSTALLATION_DEPENDENCIES')
     if dependencies and dependencies != {'openssl': {'version': '3.0.3',
-            'source': 'https://rubygems.org/downloads/openssl-3.0.3.gem',
+            'source': source_url('RUBYGEMS', 'downloads/openssl-3.0.3.gem'),
             'sha256': 'e24fcd69f6e0bac1e1c3cb8667d0ded5c1f6c59d010ecb5c857a771c9cb7565c'}}:
         agent_reject('INSTALLATION_DEPENDENCIES')
     if record['origin'] == 'MANAGED' and bool(dependencies) != (record['ecosystem'] == 'RUBY' and version_key(record['version'])[:2] == (3, 0)):
@@ -1176,7 +1176,10 @@ def agent_probe_records(manifest, records, java_home):
     agent_verify_selections(manifest)
 
 
-def agent_release_source(manifest, url, algorithm, expected, layout):
+def agent_release_source(manifest, url, algorithm, expected, layout, ecosystem=None):
+    global MIRROR_POINT
+    if ecosystem is not None:
+        MIRROR_POINT = toolchain_point(ecosystem)
     input_root = agent_operation(manifest['operation']) / 'mutable/input'
     archive = input_root / 'release.archive'
     sha256 = download(official_url(url), archive, algorithm, expected)
@@ -1347,12 +1350,12 @@ def agent_prepare_selected(manifest, ecosystem, version, url, algorithm, expecte
     else:
         if manifest['volumeMode'] != 'INSTALL' or record is not None or manifest['selections']['probes']:
             agent_reject('INSTALLATION_SELECTION_CHANGED', 'unknown')
-        sha256 = agent_release_source(manifest, url, algorithm, expected, layout)
+        sha256 = agent_release_source(manifest, url, algorithm, expected, layout, ecosystem)
         legacy = ecosystem == 'RUBY' and version_key(version)[:2] == (3, 0)
         dependencies = {}
         if legacy:
             gem_digest = 'e24fcd69f6e0bac1e1c3cb8667d0ded5c1f6c59d010ecb5c857a771c9cb7565c'
-            gem_url = 'https://rubygems.org/downloads/openssl-3.0.3.gem'
+            gem_url = source_url('RUBYGEMS', 'downloads/openssl-3.0.3.gem')
             download(gem_url, agent_operation(operation) / 'mutable/input/openssl-3.0.3.gem', 'sha256', gem_digest)
             dependencies['openssl'] = {'version': '3.0.3', 'source': gem_url, 'sha256': gem_digest}
         if globals().get('AGENT_TRACKED_CONTEXT') is not None:

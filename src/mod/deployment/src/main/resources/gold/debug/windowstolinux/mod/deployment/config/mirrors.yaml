@@ -1,0 +1,4148 @@
+{
+  "formatVersion": 1,
+  "catalogVersion": "2026-11-04.1",
+  "timeouts": {
+    "connectSeconds": 10,
+    "readSeconds": 60,
+    "noProgressSeconds": 30,
+    "lowSpeedBytesPerSecond": 65536,
+    "lowSpeedWindowSeconds": 60,
+    "attemptsPerEndpoint": 2
+  },
+  "regions": {
+    "CN": {
+      "label": "中国大陆",
+      "neighbors": [
+        "EAST_ASIA",
+        "SOUTHEAST_ASIA",
+        "CENTRAL_ASIA",
+        "RU",
+        "EUROPE",
+        "NORTH_AMERICA"
+      ]
+    },
+    "RU": {
+      "label": "俄罗斯",
+      "neighbors": [
+        "CENTRAL_ASIA",
+        "EUROPE",
+        "CN",
+        "EAST_ASIA"
+      ]
+    },
+    "IR": {
+      "label": "伊朗",
+      "neighbors": [
+        "WEST_ASIA",
+        "CENTRAL_ASIA",
+        "SOUTH_ASIA",
+        "EUROPE",
+        "CN"
+      ]
+    },
+    "EAST_ASIA": {
+      "label": "东亚其余",
+      "neighbors": [
+        "CN",
+        "SOUTHEAST_ASIA",
+        "NORTH_AMERICA",
+        "OCEANIA",
+        "RU"
+      ]
+    },
+    "SOUTHEAST_ASIA": {
+      "label": "东南亚",
+      "neighbors": [
+        "EAST_ASIA",
+        "CN",
+        "SOUTH_ASIA",
+        "OCEANIA"
+      ]
+    },
+    "SOUTH_ASIA": {
+      "label": "南亚",
+      "neighbors": [
+        "SOUTHEAST_ASIA",
+        "WEST_ASIA",
+        "IR",
+        "CN"
+      ]
+    },
+    "CENTRAL_ASIA": {
+      "label": "中亚",
+      "neighbors": [
+        "RU",
+        "CN",
+        "IR",
+        "WEST_ASIA"
+      ]
+    },
+    "WEST_ASIA": {
+      "label": "西亚及中东其余",
+      "neighbors": [
+        "IR",
+        "EUROPE",
+        "NORTH_AFRICA",
+        "SOUTH_ASIA"
+      ]
+    },
+    "EUROPE": {
+      "label": "欧洲",
+      "neighbors": [
+        "RU",
+        "WEST_ASIA",
+        "NORTH_AFRICA",
+        "NORTH_AMERICA"
+      ]
+    },
+    "NORTH_AMERICA": {
+      "label": "北美",
+      "neighbors": [
+        "CENTRAL_AMERICA",
+        "EUROPE",
+        "EAST_ASIA"
+      ]
+    },
+    "CENTRAL_AMERICA": {
+      "label": "中美及加勒比",
+      "neighbors": [
+        "NORTH_AMERICA",
+        "SOUTH_AMERICA",
+        "EUROPE"
+      ]
+    },
+    "SOUTH_AMERICA": {
+      "label": "南美",
+      "neighbors": [
+        "CENTRAL_AMERICA",
+        "NORTH_AMERICA",
+        "EUROPE"
+      ]
+    },
+    "NORTH_AFRICA": {
+      "label": "北非",
+      "neighbors": [
+        "EUROPE",
+        "WEST_ASIA",
+        "WEST_CENTRAL_AFRICA"
+      ]
+    },
+    "WEST_CENTRAL_AFRICA": {
+      "label": "西中非",
+      "neighbors": [
+        "NORTH_AFRICA",
+        "EUROPE",
+        "EAST_AFRICA",
+        "SOUTHERN_AFRICA"
+      ]
+    },
+    "EAST_AFRICA": {
+      "label": "东非",
+      "neighbors": [
+        "SOUTHERN_AFRICA",
+        "WEST_ASIA",
+        "WEST_CENTRAL_AFRICA",
+        "SOUTH_ASIA"
+      ]
+    },
+    "SOUTHERN_AFRICA": {
+      "label": "南非",
+      "neighbors": [
+        "EAST_AFRICA",
+        "WEST_CENTRAL_AFRICA",
+        "EUROPE"
+      ]
+    },
+    "OCEANIA": {
+      "label": "大洋洲",
+      "neighbors": [
+        "SOUTHEAST_ASIA",
+        "EAST_ASIA",
+        "NORTH_AMERICA"
+      ]
+    }
+  },
+  "countries": {
+    "CN": "CN",
+    "RU": "RU",
+    "IR": "IR",
+    "JP": "EAST_ASIA",
+    "KR": "EAST_ASIA",
+    "KP": "EAST_ASIA",
+    "MN": "EAST_ASIA",
+    "TW": "EAST_ASIA",
+    "HK": "EAST_ASIA",
+    "MO": "EAST_ASIA",
+    "BN": "SOUTHEAST_ASIA",
+    "KH": "SOUTHEAST_ASIA",
+    "ID": "SOUTHEAST_ASIA",
+    "LA": "SOUTHEAST_ASIA",
+    "MY": "SOUTHEAST_ASIA",
+    "MM": "SOUTHEAST_ASIA",
+    "PH": "SOUTHEAST_ASIA",
+    "SG": "SOUTHEAST_ASIA",
+    "TH": "SOUTHEAST_ASIA",
+    "TL": "SOUTHEAST_ASIA",
+    "VN": "SOUTHEAST_ASIA",
+    "AF": "SOUTH_ASIA",
+    "BD": "SOUTH_ASIA",
+    "BT": "SOUTH_ASIA",
+    "IN": "SOUTH_ASIA",
+    "MV": "SOUTH_ASIA",
+    "NP": "SOUTH_ASIA",
+    "PK": "SOUTH_ASIA",
+    "LK": "SOUTH_ASIA",
+    "KZ": "CENTRAL_ASIA",
+    "KG": "CENTRAL_ASIA",
+    "TJ": "CENTRAL_ASIA",
+    "TM": "CENTRAL_ASIA",
+    "UZ": "CENTRAL_ASIA",
+    "AM": "WEST_ASIA",
+    "AZ": "WEST_ASIA",
+    "BH": "WEST_ASIA",
+    "CY": "WEST_ASIA",
+    "GE": "WEST_ASIA",
+    "IQ": "WEST_ASIA",
+    "IL": "WEST_ASIA",
+    "JO": "WEST_ASIA",
+    "KW": "WEST_ASIA",
+    "LB": "WEST_ASIA",
+    "OM": "WEST_ASIA",
+    "PS": "WEST_ASIA",
+    "QA": "WEST_ASIA",
+    "SA": "WEST_ASIA",
+    "SY": "WEST_ASIA",
+    "TR": "WEST_ASIA",
+    "AE": "WEST_ASIA",
+    "YE": "WEST_ASIA",
+    "AL": "EUROPE",
+    "AD": "EUROPE",
+    "AT": "EUROPE",
+    "BY": "EUROPE",
+    "BE": "EUROPE",
+    "BA": "EUROPE",
+    "BG": "EUROPE",
+    "HR": "EUROPE",
+    "CZ": "EUROPE",
+    "DK": "EUROPE",
+    "EE": "EUROPE",
+    "FO": "EUROPE",
+    "FI": "EUROPE",
+    "FR": "EUROPE",
+    "DE": "EUROPE",
+    "GI": "EUROPE",
+    "GR": "EUROPE",
+    "GG": "EUROPE",
+    "VA": "EUROPE",
+    "HU": "EUROPE",
+    "IS": "EUROPE",
+    "IE": "EUROPE",
+    "IM": "EUROPE",
+    "IT": "EUROPE",
+    "JE": "EUROPE",
+    "LV": "EUROPE",
+    "LI": "EUROPE",
+    "LT": "EUROPE",
+    "LU": "EUROPE",
+    "MT": "EUROPE",
+    "MD": "EUROPE",
+    "MC": "EUROPE",
+    "ME": "EUROPE",
+    "NL": "EUROPE",
+    "MK": "EUROPE",
+    "NO": "EUROPE",
+    "PL": "EUROPE",
+    "PT": "EUROPE",
+    "RO": "EUROPE",
+    "SM": "EUROPE",
+    "RS": "EUROPE",
+    "SK": "EUROPE",
+    "SI": "EUROPE",
+    "ES": "EUROPE",
+    "SJ": "EUROPE",
+    "SE": "EUROPE",
+    "CH": "EUROPE",
+    "UA": "EUROPE",
+    "GB": "EUROPE",
+    "AX": "EUROPE",
+    "CA": "NORTH_AMERICA",
+    "US": "NORTH_AMERICA",
+    "GL": "NORTH_AMERICA",
+    "PM": "NORTH_AMERICA",
+    "BM": "NORTH_AMERICA",
+    "AI": "CENTRAL_AMERICA",
+    "AG": "CENTRAL_AMERICA",
+    "AW": "CENTRAL_AMERICA",
+    "BS": "CENTRAL_AMERICA",
+    "BB": "CENTRAL_AMERICA",
+    "BZ": "CENTRAL_AMERICA",
+    "BQ": "CENTRAL_AMERICA",
+    "VG": "CENTRAL_AMERICA",
+    "KY": "CENTRAL_AMERICA",
+    "CR": "CENTRAL_AMERICA",
+    "CU": "CENTRAL_AMERICA",
+    "CW": "CENTRAL_AMERICA",
+    "DM": "CENTRAL_AMERICA",
+    "DO": "CENTRAL_AMERICA",
+    "SV": "CENTRAL_AMERICA",
+    "GD": "CENTRAL_AMERICA",
+    "GP": "CENTRAL_AMERICA",
+    "GT": "CENTRAL_AMERICA",
+    "HT": "CENTRAL_AMERICA",
+    "HN": "CENTRAL_AMERICA",
+    "JM": "CENTRAL_AMERICA",
+    "MQ": "CENTRAL_AMERICA",
+    "MX": "CENTRAL_AMERICA",
+    "MS": "CENTRAL_AMERICA",
+    "NI": "CENTRAL_AMERICA",
+    "PA": "CENTRAL_AMERICA",
+    "PR": "CENTRAL_AMERICA",
+    "BL": "CENTRAL_AMERICA",
+    "KN": "CENTRAL_AMERICA",
+    "LC": "CENTRAL_AMERICA",
+    "MF": "CENTRAL_AMERICA",
+    "VC": "CENTRAL_AMERICA",
+    "SX": "CENTRAL_AMERICA",
+    "TT": "CENTRAL_AMERICA",
+    "TC": "CENTRAL_AMERICA",
+    "VI": "CENTRAL_AMERICA",
+    "AR": "SOUTH_AMERICA",
+    "BO": "SOUTH_AMERICA",
+    "BR": "SOUTH_AMERICA",
+    "CL": "SOUTH_AMERICA",
+    "CO": "SOUTH_AMERICA",
+    "EC": "SOUTH_AMERICA",
+    "FK": "SOUTH_AMERICA",
+    "GF": "SOUTH_AMERICA",
+    "GY": "SOUTH_AMERICA",
+    "PY": "SOUTH_AMERICA",
+    "PE": "SOUTH_AMERICA",
+    "GS": "SOUTH_AMERICA",
+    "SR": "SOUTH_AMERICA",
+    "UY": "SOUTH_AMERICA",
+    "VE": "SOUTH_AMERICA",
+    "DZ": "NORTH_AFRICA",
+    "EG": "NORTH_AFRICA",
+    "LY": "NORTH_AFRICA",
+    "MA": "NORTH_AFRICA",
+    "SD": "NORTH_AFRICA",
+    "TN": "NORTH_AFRICA",
+    "EH": "NORTH_AFRICA",
+    "BJ": "WEST_CENTRAL_AFRICA",
+    "BF": "WEST_CENTRAL_AFRICA",
+    "CV": "WEST_CENTRAL_AFRICA",
+    "CM": "WEST_CENTRAL_AFRICA",
+    "CF": "WEST_CENTRAL_AFRICA",
+    "TD": "WEST_CENTRAL_AFRICA",
+    "CG": "WEST_CENTRAL_AFRICA",
+    "CD": "WEST_CENTRAL_AFRICA",
+    "CI": "WEST_CENTRAL_AFRICA",
+    "GQ": "WEST_CENTRAL_AFRICA",
+    "GA": "WEST_CENTRAL_AFRICA",
+    "GM": "WEST_CENTRAL_AFRICA",
+    "GH": "WEST_CENTRAL_AFRICA",
+    "GN": "WEST_CENTRAL_AFRICA",
+    "GW": "WEST_CENTRAL_AFRICA",
+    "LR": "WEST_CENTRAL_AFRICA",
+    "ML": "WEST_CENTRAL_AFRICA",
+    "MR": "WEST_CENTRAL_AFRICA",
+    "NE": "WEST_CENTRAL_AFRICA",
+    "NG": "WEST_CENTRAL_AFRICA",
+    "ST": "WEST_CENTRAL_AFRICA",
+    "SN": "WEST_CENTRAL_AFRICA",
+    "SL": "WEST_CENTRAL_AFRICA",
+    "SH": "WEST_CENTRAL_AFRICA",
+    "TG": "WEST_CENTRAL_AFRICA",
+    "BI": "EAST_AFRICA",
+    "KM": "EAST_AFRICA",
+    "DJ": "EAST_AFRICA",
+    "ER": "EAST_AFRICA",
+    "ET": "EAST_AFRICA",
+    "KE": "EAST_AFRICA",
+    "MG": "EAST_AFRICA",
+    "MW": "EAST_AFRICA",
+    "MU": "EAST_AFRICA",
+    "YT": "EAST_AFRICA",
+    "MZ": "EAST_AFRICA",
+    "RE": "EAST_AFRICA",
+    "RW": "EAST_AFRICA",
+    "SC": "EAST_AFRICA",
+    "SO": "EAST_AFRICA",
+    "SS": "EAST_AFRICA",
+    "TZ": "EAST_AFRICA",
+    "UG": "EAST_AFRICA",
+    "ZM": "EAST_AFRICA",
+    "ZW": "EAST_AFRICA",
+    "BW": "SOUTHERN_AFRICA",
+    "SZ": "SOUTHERN_AFRICA",
+    "LS": "SOUTHERN_AFRICA",
+    "NA": "SOUTHERN_AFRICA",
+    "ZA": "SOUTHERN_AFRICA",
+    "AS": "OCEANIA",
+    "AU": "OCEANIA",
+    "CK": "OCEANIA",
+    "FJ": "OCEANIA",
+    "PF": "OCEANIA",
+    "GU": "OCEANIA",
+    "KI": "OCEANIA",
+    "MH": "OCEANIA",
+    "FM": "OCEANIA",
+    "NR": "OCEANIA",
+    "NC": "OCEANIA",
+    "NZ": "OCEANIA",
+    "NU": "OCEANIA",
+    "NF": "OCEANIA",
+    "MP": "OCEANIA",
+    "PW": "OCEANIA",
+    "PG": "OCEANIA",
+    "PN": "OCEANIA",
+    "WS": "OCEANIA",
+    "SB": "OCEANIA",
+    "TK": "OCEANIA",
+    "TO": "OCEANIA",
+    "TV": "OCEANIA",
+    "UM": "OCEANIA",
+    "VU": "OCEANIA",
+    "WF": "OCEANIA",
+    "AQ": "OCEANIA",
+    "BV": "OCEANIA",
+    "CC": "OCEANIA",
+    "CX": "OCEANIA",
+    "HM": "OCEANIA",
+    "IO": "OCEANIA",
+    "TF": "OCEANIA",
+    "AO": "WEST_CENTRAL_AFRICA",
+    "XK": "EUROPE"
+  },
+  "points": {
+    "APT_DEBIAN": {
+      "label": "Debian APT",
+      "protocol": "APT",
+      "sourceOrigins": [
+        "https://deb.debian.org/debian/",
+        "http://deb.debian.org/debian/",
+        "https://security.debian.org/debian-security/",
+        "http://security.debian.org/debian-security/",
+        "https://deb.debian.org/debian-security/",
+        "http://deb.debian.org/debian-security/",
+        "https://deb.debian.org/debian",
+        "http://deb.debian.org/debian",
+        "https://security.debian.org/debian-security",
+        "http://security.debian.org/debian-security",
+        "https://deb.debian.org/debian-security",
+        "http://deb.debian.org/debian-security"
+      ],
+      "coverageNote": "完整兼容独立提供方=7；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "APT_UBUNTU": {
+      "label": "Ubuntu APT",
+      "protocol": "APT",
+      "sourceOrigins": [
+        "https://archive.ubuntu.com/ubuntu/",
+        "http://archive.ubuntu.com/ubuntu/",
+        "https://security.ubuntu.com/ubuntu/",
+        "http://security.ubuntu.com/ubuntu/",
+        "https://ports.ubuntu.com/ubuntu-ports/",
+        "http://ports.ubuntu.com/ubuntu-ports/",
+        "https://archive.ubuntu.com/ubuntu",
+        "http://archive.ubuntu.com/ubuntu",
+        "https://security.ubuntu.com/ubuntu",
+        "http://security.ubuntu.com/ubuntu",
+        "https://ports.ubuntu.com/ubuntu-ports",
+        "http://ports.ubuntu.com/ubuntu-ports"
+      ],
+      "coverageNote": "完整兼容独立提供方=5；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "DNF_FEDORA": {
+      "label": "Fedora DNF",
+      "protocol": "DNF",
+      "sourceOrigins": [
+        "https://dl.fedoraproject.org/pub/fedora/linux/"
+      ],
+      "coverageNote": "完整兼容独立提供方=5；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。",
+      "repoTemplates": {
+        "fedora": "releases/$releasever/Everything/$basearch/os/",
+        "updates": "updates/$releasever/Everything/$basearch/"
+      }
+    },
+    "DNF_ROCKY": {
+      "label": "Rocky Linux DNF",
+      "protocol": "DNF",
+      "sourceOrigins": [
+        "https://dl.rockylinux.org/pub/rocky/"
+      ],
+      "coverageNote": "完整兼容独立提供方=4；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。",
+      "repoTemplates": {
+        "baseos": "$releasever/BaseOS/$basearch/os/",
+        "appstream": "$releasever/AppStream/$basearch/os/",
+        "extras": "$releasever/extras/$basearch/os/",
+        "crb": "$releasever/CRB/$basearch/os/",
+        "powertools": "$releasever/PowerTools/$basearch/os/"
+      }
+    },
+    "DNF_ALMA": {
+      "label": "AlmaLinux DNF",
+      "protocol": "DNF",
+      "sourceOrigins": [
+        "https://repo.almalinux.org/almalinux/"
+      ],
+      "coverageNote": "完整兼容独立提供方=3；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。",
+      "repoTemplates": {
+        "baseos": "$releasever/BaseOS/$basearch/os/",
+        "appstream": "$releasever/AppStream/$basearch/os/",
+        "extras": "$releasever/extras/$basearch/os/",
+        "crb": "$releasever/CRB/$basearch/os/",
+        "powertools": "$releasever/PowerTools/$basearch/os/"
+      }
+    },
+    "DNF_CENTOS_STREAM": {
+      "label": "CentOS Stream DNF",
+      "protocol": "DNF",
+      "sourceOrigins": [
+        "https://mirror.stream.centos.org/"
+      ],
+      "coverageNote": "完整兼容独立提供方=4；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。",
+      "repoTemplates": {
+        "baseos": "$releasever-stream/BaseOS/$basearch/os/",
+        "appstream": "$releasever-stream/AppStream/$basearch/os/",
+        "crb": "$releasever-stream/CRB/$basearch/os/",
+        "extras-common": "SIGs/$releasever-stream/extras/$basearch/extras-common/"
+      }
+    },
+    "JAVA_JDK": {
+      "label": "Java JDK / Adoptium 元数据与发行包",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://github.com/adoptium/",
+        "https://release-assets.githubusercontent.com/"
+      ],
+      "coverageNote": "完整兼容提供方3；TUNA配置排除EU27，排除国家自动候选2；精确版本文件缺失不替换摘要。"
+    },
+    "MAVEN_DISTRIBUTION": {
+      "label": "Maven 工具分发与校验",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://archive.apache.org/dist/maven/",
+        "https://dlcdn.apache.org/maven/",
+        "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/",
+        "https://repo1.maven.org/maven2/org/apache/maven/apache-maven/"
+      ],
+      "coverageNote": "完整兼容独立提供方=3；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "MAVEN_REPOSITORY": {
+      "label": "Maven Central 仓库",
+      "protocol": "MAVEN",
+      "sourceOrigins": [
+        "https://repo.maven.apache.org/maven2/",
+        "https://repo1.maven.org/maven2/"
+      ],
+      "coverageNote": "完整兼容独立提供方=3；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "GRADLE_DISTRIBUTION": {
+      "label": "Gradle 分发与校验",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://services.gradle.org/distributions/",
+        "https://downloads.gradle.org/distributions/",
+        "https://github.com/gradle/gradle-distributions/releases/download/"
+      ],
+      "coverageNote": "完整兼容独立提供方=2；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "GRADLE_PLUGIN": {
+      "label": "Gradle 插件仓库",
+      "protocol": "GRADLE",
+      "sourceOrigins": [
+        "https://plugins.gradle.org/m2/",
+        "https://plugins-artifacts.gradle.org/"
+      ],
+      "coverageNote": "完整兼容独立提供方=2；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "COMPOSER_INSTALLER": {
+      "label": "Composer 引导/发行/校验",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://getcomposer.org/",
+        "https://composer.github.io/installer.sig"
+      ],
+      "coverageNote": "完整兼容独立提供方=1；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。当前仅核实官方，未证明全球只有1项；缺口和核验依据见DeploymentMirrors.md。"
+    },
+    "COMPOSER_REPOSITORY": {
+      "label": "Composer Packagist 元数据",
+      "protocol": "COMPOSER",
+      "sourceOrigins": [
+        "https://repo.packagist.org/",
+        "https://packagist.org/",
+        "https://api.github.com/repos/",
+        "https://codeload.github.com/",
+        "https://github.com/",
+        "https://release-assets.githubusercontent.com/"
+      ],
+      "coverageNote": "完整兼容独立提供方=2；部分兼容审计项=1；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "PYTHON_DISTRIBUTION": {
+      "label": "Python 工具链",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://www.python.org/ftp/python/"
+      ],
+      "coverageNote": "完整兼容独立提供方=2；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "PYTHON_PIP_BOOTSTRAP": {
+      "label": "pip 引导",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://bootstrap.pypa.io/"
+      ],
+      "coverageNote": "完整兼容独立提供方=1；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。当前仅核实官方，未证明全球只有1项；缺口和核验依据见DeploymentMirrors.md。"
+    },
+    "PYTHON_PACKAGE": {
+      "label": "PyPI 索引及包",
+      "protocol": "PYPI",
+      "sourceOrigins": [
+        "https://pypi.org/simple/",
+        "https://files.pythonhosted.org/packages/"
+      ],
+      "coverageNote": "完整兼容独立提供方=3；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "NODE_DISTRIBUTION": {
+      "label": "Node.js 分发及校验",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://nodejs.org/dist/",
+        "https://nodejs.org/download/release/"
+      ],
+      "coverageNote": "完整兼容独立提供方=4；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "NODE_PACKAGE": {
+      "label": "npm 索引及包",
+      "protocol": "NPM",
+      "sourceOrigins": [
+        "https://registry.npmjs.org/",
+        "https://registry.yarnpkg.com/"
+      ],
+      "coverageNote": "完整兼容独立提供方=3；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "GO_DISTRIBUTION": {
+      "label": "Go 分发及校验元数据",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://go.dev/dl/",
+        "https://dl.google.com/go/"
+      ],
+      "coverageNote": "完整兼容独立提供方=2；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "GO_MODULE": {
+      "label": "Go 模块代理",
+      "protocol": "GO",
+      "sourceOrigins": [
+        "https://proxy.golang.org/"
+      ],
+      "coverageNote": "完整兼容独立提供方=3；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "GO_CHECKSUM": {
+      "label": "Go 校验数据库",
+      "protocol": "GO",
+      "sourceOrigins": [
+        "https://sum.golang.org/"
+      ],
+      "coverageNote": "完整兼容独立提供方=2；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "RUST_TOOLCHAIN": {
+      "label": "Rust 工具链及rustup引导",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://static.rust-lang.org/",
+        "https://sh.rustup.rs/"
+      ],
+      "coverageNote": "完整兼容独立提供方=3；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "RUST_CRATE": {
+      "label": "Rust crate 包下载",
+      "protocol": "CARGO",
+      "sourceOrigins": [
+        "https://crates.io/api/v1/crates/",
+        "https://static.crates.io/crates/"
+      ],
+      "coverageNote": "完整兼容独立提供方=3；API及静态crate包地址均显式配置；跨地区补齐，模板不匹配拒绝。"
+    },
+    "RUST_INDEX": {
+      "label": "Rust sparse 索引",
+      "protocol": "CARGO",
+      "sourceOrigins": [
+        "https://index.crates.io/"
+      ],
+      "coverageNote": "完整兼容独立提供方=3；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "DOTNET_SDK": {
+      "label": ".NET 安装引导/SDK元数据及包",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://dot.net/v1/",
+        "https://builds.dotnet.microsoft.com/dotnet/",
+        "https://ci.dot.net/public/",
+        "https://dotnetcli.azureedge.net/dotnet/"
+      ],
+      "coverageNote": "完整兼容独立提供方=1；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。当前仅核实官方，未证明全球只有1项；缺口和核验依据见DeploymentMirrors.md。"
+    },
+    "NUGET": {
+      "label": "NuGet 服务索引/注册/包",
+      "protocol": "NUGET",
+      "sourceOrigins": [
+        "https://api.nuget.org/v3/index.json",
+        "https://api.nuget.org/v3/",
+        "https://api.nuget.org/v3-flatcontainer/",
+        "https://globalcdn.nuget.org/packages/"
+      ],
+      "coverageNote": "完整兼容独立提供方=2；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "RUBY_DISTRIBUTION": {
+      "label": "Ruby 工具链",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://cache.ruby-lang.org/pub/ruby/"
+      ],
+      "coverageNote": "完整兼容独立提供方=6；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "RUBYGEMS": {
+      "label": "RubyGems 元数据及包",
+      "protocol": "GEM",
+      "sourceOrigins": [
+        "https://rubygems.org/",
+        "https://index.rubygems.org/"
+      ],
+      "coverageNote": "完整兼容独立提供方=4；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "PHP_DISTRIBUTION": {
+      "label": "PHP 工具链",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://www.php.net/distributions/"
+      ],
+      "coverageNote": "完整兼容独立提供方=2；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "OCI_REGISTRY": {
+      "label": "OCI Docker Hub 基础镜像与认证",
+      "protocol": "OCI",
+      "sourceOrigins": [
+        "https://registry-1.docker.io/",
+        "https://auth.docker.io/"
+      ],
+      "coverageNote": "完整兼容独立提供方=2；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "KOTLIN_DISTRIBUTION": {
+      "coverageNote": "完整兼容独立提供方=1；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。当前仅核实官方，未证明全球只有1项；缺口和核验依据见DeploymentMirrors.md。",
+      "sourceOrigins": [
+        "https://github.com/JetBrains/kotlin/releases/download/",
+        "https://release-assets.githubusercontent.com/"
+      ],
+      "protocol": "HTTP",
+      "label": "Kotlin 编译器元数据与发行"
+    },
+    "JAVA_METADATA": {
+      "label": "Java 版本信息与校验",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://api.adoptium.net/"
+      ],
+      "coverageNote": "完整兼容独立提供方=1；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。当前仅核实官方，未证明全球只有1项；缺口和核验依据见DeploymentMirrors.md。"
+    },
+    "KOTLIN_METADATA": {
+      "label": "Kotlin 版本信息与校验",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://api.github.com/repos/JetBrains/kotlin/",
+        "https://github.com/JetBrains/kotlin/releases/download/",
+        "https://release-assets.githubusercontent.com/"
+      ],
+      "coverageNote": "完整兼容独立提供方=1；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。当前仅核实官方，未证明全球只有1项；缺口和核验依据见DeploymentMirrors.md。"
+    },
+    "GO_METADATA": {
+      "label": "Go 版本信息与校验",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://go.dev/dl/"
+      ],
+      "coverageNote": "完整兼容独立提供方=1；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。当前仅核实官方，未证明全球只有1项；缺口和核验依据见DeploymentMirrors.md。"
+    },
+    "RUST_METADATA": {
+      "label": "Rust 版本信息与校验",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://api.github.com/repos/rust-lang/rust/",
+        "https://static.rust-lang.org/"
+      ],
+      "coverageNote": "完整兼容独立提供方=1；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。当前仅核实官方，未证明全球只有1项；缺口和核验依据见DeploymentMirrors.md。"
+    },
+    "PYTHON_METADATA": {
+      "label": "Python 版本信息与校验",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://www.python.org/ftp/python/",
+        "https://www.python.org/downloads/release/"
+      ],
+      "coverageNote": "完整兼容独立提供方=1；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。当前仅核实官方，未证明全球只有1项；缺口和核验依据见DeploymentMirrors.md。"
+    },
+    "PHP_METADATA": {
+      "label": "PHP 版本信息与校验",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://www.php.net/releases/"
+      ],
+      "coverageNote": "完整兼容独立提供方=1；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。当前仅核实官方，未证明全球只有1项；缺口和核验依据见DeploymentMirrors.md。"
+    },
+    "RUBY_METADATA": {
+      "label": "Ruby 版本信息与校验",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://www.ruby-lang.org/en/downloads/releases/",
+        "https://www.ruby-lang.org/en/news/"
+      ],
+      "coverageNote": "完整兼容独立提供方=1；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。当前仅核实官方，未证明全球只有1项；缺口和核验依据见DeploymentMirrors.md。"
+    },
+    "DOTNET_METADATA": {
+      "label": ".NET 版本信息与校验",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://builds.dotnet.microsoft.com/dotnet/release-metadata/"
+      ],
+      "coverageNote": "完整兼容独立提供方=1；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。当前仅核实官方，未证明全球只有1项；缺口和核验依据见DeploymentMirrors.md。"
+    },
+    "NODE_METADATA": {
+      "label": "Node.js 版本信息与校验",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://nodejs.org/dist/",
+        "https://nodejs.org/download/release/"
+      ],
+      "coverageNote": "完整兼容独立提供方=4；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "DNF_ORACLE": {
+      "label": "Oracle Linux DNF",
+      "protocol": "DNF",
+      "sourceOrigins": [
+        "https://yum.oracle.com/repo/OracleLinux/"
+      ],
+      "coverageNote": "官方公开仓库1项；OL9/OL10按独立repoId精确模板，未核实完整第二提供方，不以Oracle地域域名别名补数。付费/OCI/未列出的已启用repo拒绝。",
+      "repoTemplates": {
+        "ol9_baseos_latest": "OL9/baseos/latest/$basearch/",
+        "ol9_appstream": "OL9/appstream/$basearch/",
+        "ol9_addons": "OL9/addons/$basearch/",
+        "ol9_codeready_builder": "OL9/codeready/builder/$basearch/",
+        "ol9_UEKR8": "OL9/UEKR8/$basearch/",
+        "ol10_baseos_latest": "OL10/baseos/latest/$basearch/",
+        "ol10_appstream": "OL10/appstream/$basearch/",
+        "ol10_addons": "OL10/addons/$basearch/",
+        "ol10_codeready_builder": "OL10/codeready/builder/$basearch/",
+        "ol10_UEKR8": "OL10/UEKR8/$basearch/",
+        "ol9_UEKR7": "OL9/UEKR7/$basearch/"
+      }
+    }
+  },
+  "providers": [
+    {
+      "id": "official-apt_debian",
+      "label": "官方 Debian APT",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://deb.debian.org/debian/"
+      ],
+      "sources": {
+        "APT_DEBIAN": {
+          "baseUrl": "https://deb.debian.org/debian/",
+          "allowedHosts": [
+            "deb.debian.org",
+            "security.debian.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://deb.debian.org/debian/",
+              "prefix": "https://deb.debian.org/debian/"
+            },
+            {
+              "origin": "http://deb.debian.org/debian/",
+              "prefix": "https://deb.debian.org/debian/"
+            },
+            {
+              "origin": "https://security.debian.org/debian-security/",
+              "prefix": "https://security.debian.org/debian-security/"
+            },
+            {
+              "origin": "http://security.debian.org/debian-security/",
+              "prefix": "https://security.debian.org/debian-security/"
+            },
+            {
+              "origin": "https://deb.debian.org/debian-security/",
+              "prefix": "https://deb.debian.org/debian-security/"
+            },
+            {
+              "origin": "http://deb.debian.org/debian-security/",
+              "prefix": "https://deb.debian.org/debian-security/"
+            },
+            {
+              "origin": "https://deb.debian.org/debian",
+              "prefix": "https://deb.debian.org/debian"
+            },
+            {
+              "origin": "http://deb.debian.org/debian",
+              "prefix": "https://deb.debian.org/debian"
+            },
+            {
+              "origin": "https://security.debian.org/debian-security",
+              "prefix": "https://security.debian.org/debian-security"
+            },
+            {
+              "origin": "http://security.debian.org/debian-security",
+              "prefix": "https://security.debian.org/debian-security"
+            },
+            {
+              "origin": "https://deb.debian.org/debian-security",
+              "prefix": "https://deb.debian.org/debian-security"
+            },
+            {
+              "origin": "http://deb.debian.org/debian-security",
+              "prefix": "https://deb.debian.org/debian-security"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-apt_ubuntu",
+      "label": "官方 Ubuntu APT",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://archive.ubuntu.com/ubuntu/"
+      ],
+      "sources": {
+        "APT_UBUNTU": {
+          "baseUrl": "https://archive.ubuntu.com/ubuntu/",
+          "allowedHosts": [
+            "archive.ubuntu.com",
+            "ports.ubuntu.com",
+            "security.ubuntu.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://archive.ubuntu.com/ubuntu/",
+              "prefix": "https://archive.ubuntu.com/ubuntu/"
+            },
+            {
+              "origin": "http://archive.ubuntu.com/ubuntu/",
+              "prefix": "https://archive.ubuntu.com/ubuntu/"
+            },
+            {
+              "origin": "https://security.ubuntu.com/ubuntu/",
+              "prefix": "https://security.ubuntu.com/ubuntu/"
+            },
+            {
+              "origin": "http://security.ubuntu.com/ubuntu/",
+              "prefix": "https://security.ubuntu.com/ubuntu/"
+            },
+            {
+              "origin": "https://ports.ubuntu.com/ubuntu-ports/",
+              "prefix": "https://ports.ubuntu.com/ubuntu-ports/"
+            },
+            {
+              "origin": "http://ports.ubuntu.com/ubuntu-ports/",
+              "prefix": "https://ports.ubuntu.com/ubuntu-ports/"
+            },
+            {
+              "origin": "https://archive.ubuntu.com/ubuntu",
+              "prefix": "https://archive.ubuntu.com/ubuntu"
+            },
+            {
+              "origin": "http://archive.ubuntu.com/ubuntu",
+              "prefix": "https://archive.ubuntu.com/ubuntu"
+            },
+            {
+              "origin": "https://security.ubuntu.com/ubuntu",
+              "prefix": "https://security.ubuntu.com/ubuntu"
+            },
+            {
+              "origin": "http://security.ubuntu.com/ubuntu",
+              "prefix": "https://security.ubuntu.com/ubuntu"
+            },
+            {
+              "origin": "https://ports.ubuntu.com/ubuntu-ports",
+              "prefix": "https://ports.ubuntu.com/ubuntu-ports"
+            },
+            {
+              "origin": "http://ports.ubuntu.com/ubuntu-ports",
+              "prefix": "https://ports.ubuntu.com/ubuntu-ports"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-dnf_fedora",
+      "label": "官方 Fedora DNF",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://dl.fedoraproject.org/pub/fedora/linux/"
+      ],
+      "sources": {
+        "DNF_FEDORA": {
+          "baseUrl": "https://dl.fedoraproject.org/pub/fedora/linux/",
+          "allowedHosts": [
+            "dl.fedoraproject.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://dl.fedoraproject.org/pub/fedora/linux/",
+              "prefix": "https://dl.fedoraproject.org/pub/fedora/linux/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "fedora": "https://dl.fedoraproject.org/pub/fedora/linux/releases/$releasever/Everything/$basearch/os/",
+            "updates": "https://dl.fedoraproject.org/pub/fedora/linux/updates/$releasever/Everything/$basearch/"
+          }
+        }
+      }
+    },
+    {
+      "id": "official-dnf_rocky",
+      "label": "官方 Rocky Linux DNF",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://dl.rockylinux.org/pub/rocky/"
+      ],
+      "sources": {
+        "DNF_ROCKY": {
+          "baseUrl": "https://dl.rockylinux.org/pub/rocky/",
+          "allowedHosts": [
+            "dl.rockylinux.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://dl.rockylinux.org/pub/rocky/",
+              "prefix": "https://dl.rockylinux.org/pub/rocky/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "baseos": "https://dl.rockylinux.org/pub/rocky/$releasever/BaseOS/$basearch/os/",
+            "appstream": "https://dl.rockylinux.org/pub/rocky/$releasever/AppStream/$basearch/os/",
+            "extras": "https://dl.rockylinux.org/pub/rocky/$releasever/extras/$basearch/os/",
+            "crb": "https://dl.rockylinux.org/pub/rocky/$releasever/CRB/$basearch/os/",
+            "powertools": "https://dl.rockylinux.org/pub/rocky/$releasever/PowerTools/$basearch/os/"
+          }
+        }
+      }
+    },
+    {
+      "id": "official-dnf_alma",
+      "label": "官方 AlmaLinux DNF",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://repo.almalinux.org/almalinux/"
+      ],
+      "sources": {
+        "DNF_ALMA": {
+          "baseUrl": "https://repo.almalinux.org/almalinux/",
+          "allowedHosts": [
+            "repo.almalinux.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://repo.almalinux.org/almalinux/",
+              "prefix": "https://repo.almalinux.org/almalinux/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "baseos": "https://repo.almalinux.org/almalinux/$releasever/BaseOS/$basearch/os/",
+            "appstream": "https://repo.almalinux.org/almalinux/$releasever/AppStream/$basearch/os/",
+            "extras": "https://repo.almalinux.org/almalinux/$releasever/extras/$basearch/os/",
+            "crb": "https://repo.almalinux.org/almalinux/$releasever/CRB/$basearch/os/",
+            "powertools": "https://repo.almalinux.org/almalinux/$releasever/PowerTools/$basearch/os/"
+          }
+        }
+      }
+    },
+    {
+      "id": "official-dnf_centos_stream",
+      "label": "官方 CentOS Stream DNF",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://mirror.stream.centos.org/"
+      ],
+      "sources": {
+        "DNF_CENTOS_STREAM": {
+          "baseUrl": "https://mirror.stream.centos.org/",
+          "allowedHosts": [
+            "mirror.stream.centos.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://mirror.stream.centos.org/",
+              "prefix": "https://mirror.stream.centos.org/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "baseos": "https://mirror.stream.centos.org/$releasever-stream/BaseOS/$basearch/os/",
+            "appstream": "https://mirror.stream.centos.org/$releasever-stream/AppStream/$basearch/os/",
+            "crb": "https://mirror.stream.centos.org/$releasever-stream/CRB/$basearch/os/",
+            "extras-common": "https://mirror.stream.centos.org/SIGs/$releasever-stream/extras/$basearch/extras-common/"
+          }
+        }
+      }
+    },
+    {
+      "id": "official-java_jdk",
+      "label": "官方 Java JDK / Adoptium 元数据与发行包",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://api.adoptium.net/"
+      ],
+      "sources": {
+        "JAVA_JDK": {
+          "baseUrl": "https://github.com/adoptium/",
+          "allowedHosts": [
+            "github.com",
+            "objects.githubusercontent.com",
+            "release-assets.githubusercontent.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://github.com/adoptium/",
+              "prefix": "https://github.com/adoptium/"
+            },
+            {
+              "origin": "https://release-assets.githubusercontent.com/",
+              "prefix": "https://release-assets.githubusercontent.com/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-maven_distribution",
+      "label": "官方 Maven 工具分发与校验",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://archive.apache.org/dist/maven/"
+      ],
+      "sources": {
+        "MAVEN_DISTRIBUTION": {
+          "baseUrl": "https://archive.apache.org/dist/maven/",
+          "allowedHosts": [
+            "archive.apache.org",
+            "dlcdn.apache.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://archive.apache.org/dist/maven/",
+              "prefix": "https://archive.apache.org/dist/maven/"
+            },
+            {
+              "origin": "https://dlcdn.apache.org/maven/",
+              "prefix": "https://dlcdn.apache.org/maven/"
+            },
+            {
+              "origin": "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/",
+              "prefix": "https://archive.apache.org/dist/maven/",
+              "pattern": "^https://repo\\.maven\\.apache\\.org/maven2/org/apache/maven/apache\\-maven/(([0-9]+)\\.[^/]+)/apache-maven-\\1-bin\\.(zip|tar\\.gz)(\\.sha512|\\.sha256|\\.asc)?$",
+              "replacement": "https://archive.apache.org/dist/maven/maven-\\g<2>/\\g<1>/binaries/apache-maven-\\g<1>-bin.\\g<3>\\g<4>"
+            },
+            {
+              "origin": "https://repo1.maven.org/maven2/org/apache/maven/apache-maven/",
+              "prefix": "https://archive.apache.org/dist/maven/",
+              "pattern": "^https://repo1\\.maven\\.org/maven2/org/apache/maven/apache\\-maven/(([0-9]+)\\.[^/]+)/apache-maven-\\1-bin\\.(zip|tar\\.gz)(\\.sha512|\\.sha256|\\.asc)?$",
+              "replacement": "https://archive.apache.org/dist/maven/maven-\\g<2>/\\g<1>/binaries/apache-maven-\\g<1>-bin.\\g<3>\\g<4>"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "Apache分发根与Maven Central wrapper distribution URL均以版本/文件名模板精确映射，sha512/sha256/asc边车保留。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-maven_repository",
+      "label": "官方 Maven Central 仓库",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://repo.maven.apache.org/maven2/"
+      ],
+      "sources": {
+        "MAVEN_REPOSITORY": {
+          "baseUrl": "https://repo.maven.apache.org/maven2/",
+          "allowedHosts": [
+            "repo.maven.apache.org",
+            "repo1.maven.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://repo.maven.apache.org/maven2/",
+              "prefix": "https://repo.maven.apache.org/maven2/"
+            },
+            {
+              "origin": "https://repo1.maven.org/maven2/",
+              "prefix": "https://repo1.maven.org/maven2/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-gradle_distribution",
+      "label": "官方 Gradle 分发与校验",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://services.gradle.org/distributions/"
+      ],
+      "sources": {
+        "GRADLE_DISTRIBUTION": {
+          "baseUrl": "https://services.gradle.org/distributions/",
+          "allowedHosts": [
+            "downloads.gradle.org",
+            "github.com",
+            "services.gradle.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://services.gradle.org/distributions/",
+              "prefix": "https://services.gradle.org/distributions/"
+            },
+            {
+              "origin": "https://downloads.gradle.org/distributions/",
+              "prefix": "https://downloads.gradle.org/distributions/"
+            },
+            {
+              "origin": "https://github.com/gradle/gradle-distributions/releases/download/",
+              "prefix": "https://github.com/gradle/gradle-distributions/releases/download/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-gradle_plugin",
+      "label": "官方 Gradle 插件仓库",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://plugins.gradle.org/m2/"
+      ],
+      "sources": {
+        "GRADLE_PLUGIN": {
+          "baseUrl": "https://plugins.gradle.org/m2/",
+          "allowedHosts": [
+            "plugins-artifacts.gradle.org",
+            "plugins.gradle.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://plugins.gradle.org/m2/",
+              "prefix": "https://plugins.gradle.org/m2/"
+            },
+            {
+              "origin": "https://plugins-artifacts.gradle.org/",
+              "prefix": "https://plugins-artifacts.gradle.org/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-composer_installer",
+      "label": "官方 Composer 引导/发行/校验",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://getcomposer.org/"
+      ],
+      "sources": {
+        "COMPOSER_INSTALLER": {
+          "baseUrl": "https://getcomposer.org/",
+          "allowedHosts": [
+            "composer.github.io",
+            "getcomposer.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://getcomposer.org/",
+              "prefix": "https://getcomposer.org/"
+            },
+            {
+              "origin": "https://composer.github.io/installer.sig",
+              "prefix": "https://composer.github.io/installer.sig"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-composer_repository",
+      "label": "官方 Composer Packagist 元数据",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://repo.packagist.org/"
+      ],
+      "sources": {
+        "COMPOSER_REPOSITORY": {
+          "baseUrl": "https://repo.packagist.org/",
+          "allowedHosts": [
+            "api.github.com",
+            "codeload.github.com",
+            "github.com",
+            "packagist.org",
+            "release-assets.githubusercontent.com",
+            "repo.packagist.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://repo.packagist.org/",
+              "prefix": "https://repo.packagist.org/"
+            },
+            {
+              "origin": "https://packagist.org/",
+              "prefix": "https://packagist.org/"
+            },
+            {
+              "origin": "https://api.github.com/repos/",
+              "prefix": "https://api.github.com/repos/"
+            },
+            {
+              "origin": "https://codeload.github.com/",
+              "prefix": "https://codeload.github.com/"
+            },
+            {
+              "origin": "https://github.com/",
+              "prefix": "https://github.com/"
+            },
+            {
+              "origin": "https://release-assets.githubusercontent.com/",
+              "prefix": "https://release-assets.githubusercontent.com/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "Packagist metadata与已明确列出的GitHub archive/release路径；不覆盖任意GitLab、私有git或其他未知dist host。固定lock URL执行仍需协议代理，目录不表示原生绕过锁文件的许可。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-python_distribution",
+      "label": "官方 Python 工具链",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://www.python.org/ftp/python/"
+      ],
+      "sources": {
+        "PYTHON_DISTRIBUTION": {
+          "baseUrl": "https://www.python.org/ftp/python/",
+          "allowedHosts": [
+            "www.python.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://www.python.org/ftp/python/",
+              "prefix": "https://www.python.org/ftp/python/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-python_pip_bootstrap",
+      "label": "官方 pip 引导",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://bootstrap.pypa.io/"
+      ],
+      "sources": {
+        "PYTHON_PIP_BOOTSTRAP": {
+          "baseUrl": "https://bootstrap.pypa.io/",
+          "allowedHosts": [
+            "bootstrap.pypa.io"
+          ],
+          "routes": [
+            {
+              "origin": "https://bootstrap.pypa.io/",
+              "prefix": "https://bootstrap.pypa.io/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-python_package",
+      "label": "官方 PyPI 索引及包",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://pypi.org/simple/"
+      ],
+      "sources": {
+        "PYTHON_PACKAGE": {
+          "baseUrl": "https://pypi.org/simple/",
+          "allowedHosts": [
+            "files.pythonhosted.org",
+            "pypi.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://pypi.org/simple/",
+              "prefix": "https://pypi.org/simple/"
+            },
+            {
+              "origin": "https://files.pythonhosted.org/packages/",
+              "prefix": "https://files.pythonhosted.org/packages/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-node_distribution",
+      "label": "官方 Node.js 分发及校验",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://nodejs.org/dist/"
+      ],
+      "sources": {
+        "NODE_DISTRIBUTION": {
+          "baseUrl": "https://nodejs.org/dist/",
+          "allowedHosts": [
+            "nodejs.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://nodejs.org/dist/",
+              "prefix": "https://nodejs.org/dist/"
+            },
+            {
+              "origin": "https://nodejs.org/download/release/",
+              "prefix": "https://nodejs.org/download/release/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-node_package",
+      "label": "官方 npm 索引及包",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://registry.npmjs.org/"
+      ],
+      "sources": {
+        "NODE_PACKAGE": {
+          "baseUrl": "https://registry.npmjs.org/",
+          "allowedHosts": [
+            "registry.npmjs.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://registry.npmjs.org/",
+              "prefix": "https://registry.npmjs.org/"
+            },
+            {
+              "origin": "https://registry.yarnpkg.com/",
+              "prefix": "https://registry.npmjs.org/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-go_distribution",
+      "label": "官方 Go 分发及校验元数据",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://go.dev/dl/"
+      ],
+      "sources": {
+        "GO_DISTRIBUTION": {
+          "baseUrl": "https://go.dev/dl/",
+          "allowedHosts": [
+            "dl.google.com",
+            "go.dev"
+          ],
+          "routes": [
+            {
+              "origin": "https://go.dev/dl/",
+              "prefix": "https://go.dev/dl/"
+            },
+            {
+              "origin": "https://dl.google.com/go/",
+              "prefix": "https://dl.google.com/go/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-go_module",
+      "label": "官方 Go 模块代理",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://proxy.golang.org/"
+      ],
+      "sources": {
+        "GO_MODULE": {
+          "baseUrl": "https://proxy.golang.org/",
+          "allowedHosts": [
+            "proxy.golang.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://proxy.golang.org/",
+              "prefix": "https://proxy.golang.org/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-go_checksum",
+      "label": "官方 Go 校验数据库",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://sum.golang.org/"
+      ],
+      "sources": {
+        "GO_CHECKSUM": {
+          "baseUrl": "https://sum.golang.org/",
+          "allowedHosts": [
+            "sum.golang.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://sum.golang.org/",
+              "prefix": "https://sum.golang.org/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-rust_toolchain",
+      "label": "官方 Rust 工具链及rustup引导",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://static.rust-lang.org/"
+      ],
+      "sources": {
+        "RUST_TOOLCHAIN": {
+          "baseUrl": "https://static.rust-lang.org/",
+          "allowedHosts": [
+            "sh.rustup.rs",
+            "static.rust-lang.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://static.rust-lang.org/",
+              "prefix": "https://static.rust-lang.org/"
+            },
+            {
+              "origin": "https://sh.rustup.rs/",
+              "prefix": "https://sh.rustup.rs/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-rust_crate",
+      "label": "官方 Rust crate 包下载",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://crates.io/api/v1/crates/"
+      ],
+      "sources": {
+        "RUST_CRATE": {
+          "baseUrl": "https://crates.io/api/v1/crates/",
+          "allowedHosts": [
+            "crates.io",
+            "static.crates.io"
+          ],
+          "routes": [
+            {
+              "origin": "https://crates.io/api/v1/crates/",
+              "prefix": "https://crates.io/api/v1/crates/"
+            },
+            {
+              "origin": "https://static.crates.io/crates/",
+              "prefix": "https://static.crates.io/crates/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-rust_index",
+      "label": "官方 Rust sparse 索引",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://index.crates.io/"
+      ],
+      "sources": {
+        "RUST_INDEX": {
+          "baseUrl": "https://index.crates.io/",
+          "allowedHosts": [
+            "index.crates.io"
+          ],
+          "routes": [
+            {
+              "origin": "https://index.crates.io/",
+              "prefix": "https://index.crates.io/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-dotnet_sdk",
+      "label": "官方 .NET 安装引导/SDK元数据及包",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://dot.net/v1/"
+      ],
+      "sources": {
+        "DOTNET_SDK": {
+          "baseUrl": "https://dot.net/v1/",
+          "allowedHosts": [
+            "builds.dotnet.microsoft.com",
+            "ci.dot.net",
+            "dot.net",
+            "dotnetcli.azureedge.net",
+            "dotnetcli.blob.core.windows.net"
+          ],
+          "routes": [
+            {
+              "origin": "https://dot.net/v1/",
+              "prefix": "https://dot.net/v1/"
+            },
+            {
+              "origin": "https://builds.dotnet.microsoft.com/dotnet/",
+              "prefix": "https://builds.dotnet.microsoft.com/dotnet/"
+            },
+            {
+              "origin": "https://ci.dot.net/public/",
+              "prefix": "https://ci.dot.net/public/"
+            },
+            {
+              "origin": "https://dotnetcli.azureedge.net/dotnet/",
+              "prefix": "https://dotnetcli.azureedge.net/dotnet/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-nuget",
+      "label": "官方 NuGet 服务索引/注册/包",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://api.nuget.org/v3/"
+      ],
+      "sources": {
+        "NUGET": {
+          "baseUrl": "https://api.nuget.org/v3/",
+          "allowedHosts": [
+            "api.nuget.org",
+            "globalcdn.nuget.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://api.nuget.org/v3/index.json",
+              "prefix": "https://api.nuget.org/v3/index.json"
+            },
+            {
+              "origin": "https://api.nuget.org/v3/",
+              "prefix": "https://api.nuget.org/v3/"
+            },
+            {
+              "origin": "https://api.nuget.org/v3-flatcontainer/",
+              "prefix": "https://api.nuget.org/v3-flatcontainer/"
+            },
+            {
+              "origin": "https://globalcdn.nuget.org/packages/",
+              "prefix": "https://globalcdn.nuget.org/packages/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-ruby_distribution",
+      "label": "官方 Ruby 工具链",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://cache.ruby-lang.org/pub/ruby/"
+      ],
+      "sources": {
+        "RUBY_DISTRIBUTION": {
+          "baseUrl": "https://cache.ruby-lang.org/pub/ruby/",
+          "allowedHosts": [
+            "cache.ruby-lang.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://cache.ruby-lang.org/pub/ruby/",
+              "prefix": "https://cache.ruby-lang.org/pub/ruby/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-rubygems",
+      "label": "官方 RubyGems 元数据及包",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://rubygems.org/"
+      ],
+      "sources": {
+        "RUBYGEMS": {
+          "baseUrl": "https://rubygems.org/",
+          "allowedHosts": [
+            "index.rubygems.org",
+            "rubygems.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://rubygems.org/",
+              "prefix": "https://rubygems.org/"
+            },
+            {
+              "origin": "https://index.rubygems.org/",
+              "prefix": "https://index.rubygems.org/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-php_distribution",
+      "label": "官方 PHP 工具链",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://www.php.net/distributions/"
+      ],
+      "sources": {
+        "PHP_DISTRIBUTION": {
+          "baseUrl": "https://www.php.net/distributions/",
+          "allowedHosts": [
+            "downloads.php.net",
+            "museum.php.net",
+            "www.php.net"
+          ],
+          "routes": [
+            {
+              "origin": "https://www.php.net/distributions/",
+              "prefix": "https://www.php.net/distributions/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-oci_registry",
+      "label": "官方 OCI Docker Hub 基础镜像与认证",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://registry-1.docker.io/"
+      ],
+      "sources": {
+        "OCI_REGISTRY": {
+          "baseUrl": "https://registry-1.docker.io/",
+          "allowedHosts": [
+            "auth.docker.io",
+            "docker-images-prod.6aa30f8b08e16409b46e0173d6de2f56.r2.cloudflarestorage.com",
+            "production.cloudflare.docker.com",
+            "production.cloudfront.docker.com",
+            "registry-1.docker.io"
+          ],
+          "routes": [
+            {
+              "origin": "https://registry-1.docker.io/",
+              "prefix": "https://registry-1.docker.io/"
+            },
+            {
+              "origin": "https://auth.docker.io/",
+              "prefix": "https://auth.docker.io/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "aliyun",
+      "label": "阿里云综合镜像",
+      "country": "CN",
+      "region": "CN",
+      "official": false,
+      "evidence": [
+        "https://developer.aliyun.com/mirror/",
+        "https://maven.aliyun.com/mvn/guide"
+      ],
+      "sources": {
+        "APT_DEBIAN": {
+          "baseUrl": "https://mirrors.aliyun.com/debian/",
+          "allowedHosts": [
+            "mirrors.aliyun.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://deb.debian.org/debian/",
+              "prefix": "https://mirrors.aliyun.com/debian/"
+            },
+            {
+              "origin": "http://deb.debian.org/debian/",
+              "prefix": "https://mirrors.aliyun.com/debian/"
+            },
+            {
+              "origin": "https://security.debian.org/debian-security/",
+              "prefix": "https://mirrors.aliyun.com/debian-security/"
+            },
+            {
+              "origin": "http://security.debian.org/debian-security/",
+              "prefix": "https://mirrors.aliyun.com/debian-security/"
+            },
+            {
+              "origin": "https://deb.debian.org/debian-security/",
+              "prefix": "https://mirrors.aliyun.com/debian-security/"
+            },
+            {
+              "origin": "http://deb.debian.org/debian-security/",
+              "prefix": "https://mirrors.aliyun.com/debian-security/"
+            },
+            {
+              "origin": "https://deb.debian.org/debian",
+              "prefix": "https://mirrors.aliyun.com/debian"
+            },
+            {
+              "origin": "http://deb.debian.org/debian",
+              "prefix": "https://mirrors.aliyun.com/debian"
+            },
+            {
+              "origin": "https://security.debian.org/debian-security",
+              "prefix": "https://mirrors.aliyun.com/debian-security"
+            },
+            {
+              "origin": "http://security.debian.org/debian-security",
+              "prefix": "https://mirrors.aliyun.com/debian-security"
+            },
+            {
+              "origin": "https://deb.debian.org/debian-security",
+              "prefix": "https://mirrors.aliyun.com/debian-security"
+            },
+            {
+              "origin": "http://deb.debian.org/debian-security",
+              "prefix": "https://mirrors.aliyun.com/debian-security"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "APT_UBUNTU": {
+          "baseUrl": "https://mirrors.aliyun.com/ubuntu/",
+          "allowedHosts": [
+            "mirrors.aliyun.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://archive.ubuntu.com/ubuntu/",
+              "prefix": "https://mirrors.aliyun.com/ubuntu/"
+            },
+            {
+              "origin": "http://archive.ubuntu.com/ubuntu/",
+              "prefix": "https://mirrors.aliyun.com/ubuntu/"
+            },
+            {
+              "origin": "https://security.ubuntu.com/ubuntu/",
+              "prefix": "https://mirrors.aliyun.com/ubuntu/"
+            },
+            {
+              "origin": "http://security.ubuntu.com/ubuntu/",
+              "prefix": "https://mirrors.aliyun.com/ubuntu/"
+            },
+            {
+              "origin": "https://ports.ubuntu.com/ubuntu-ports/",
+              "prefix": "https://mirrors.aliyun.com/ubuntu-ports/"
+            },
+            {
+              "origin": "http://ports.ubuntu.com/ubuntu-ports/",
+              "prefix": "https://mirrors.aliyun.com/ubuntu-ports/"
+            },
+            {
+              "origin": "https://archive.ubuntu.com/ubuntu",
+              "prefix": "https://mirrors.aliyun.com/ubuntu"
+            },
+            {
+              "origin": "http://archive.ubuntu.com/ubuntu",
+              "prefix": "https://mirrors.aliyun.com/ubuntu"
+            },
+            {
+              "origin": "https://security.ubuntu.com/ubuntu",
+              "prefix": "https://mirrors.aliyun.com/ubuntu"
+            },
+            {
+              "origin": "http://security.ubuntu.com/ubuntu",
+              "prefix": "https://mirrors.aliyun.com/ubuntu"
+            },
+            {
+              "origin": "https://ports.ubuntu.com/ubuntu-ports",
+              "prefix": "https://mirrors.aliyun.com/ubuntu-ports"
+            },
+            {
+              "origin": "http://ports.ubuntu.com/ubuntu-ports",
+              "prefix": "https://mirrors.aliyun.com/ubuntu-ports"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "DNF_FEDORA": {
+          "baseUrl": "https://mirrors.aliyun.com/fedora/",
+          "allowedHosts": [
+            "mirrors.aliyun.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://dl.fedoraproject.org/pub/fedora/linux/",
+              "prefix": "https://mirrors.aliyun.com/fedora/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "fedora": "https://mirrors.aliyun.com/fedora/releases/$releasever/Everything/$basearch/os/",
+            "updates": "https://mirrors.aliyun.com/fedora/updates/$releasever/Everything/$basearch/"
+          }
+        },
+        "MAVEN_DISTRIBUTION": {
+          "baseUrl": "https://mirrors.aliyun.com/apache/maven/",
+          "allowedHosts": [
+            "mirrors.aliyun.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://archive.apache.org/dist/maven/",
+              "prefix": "https://mirrors.aliyun.com/apache/maven/"
+            },
+            {
+              "origin": "https://dlcdn.apache.org/maven/",
+              "prefix": "https://mirrors.aliyun.com/apache/maven/"
+            },
+            {
+              "origin": "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/",
+              "prefix": "https://mirrors.aliyun.com/apache/maven/",
+              "pattern": "^https://repo\\.maven\\.apache\\.org/maven2/org/apache/maven/apache\\-maven/(([0-9]+)\\.[^/]+)/apache-maven-\\1-bin\\.(zip|tar\\.gz)(\\.sha512|\\.sha256|\\.asc)?$",
+              "replacement": "https://mirrors.aliyun.com/apache/maven/maven-\\g<2>/\\g<1>/binaries/apache-maven-\\g<1>-bin.\\g<3>\\g<4>"
+            },
+            {
+              "origin": "https://repo1.maven.org/maven2/org/apache/maven/apache-maven/",
+              "prefix": "https://mirrors.aliyun.com/apache/maven/",
+              "pattern": "^https://repo1\\.maven\\.org/maven2/org/apache/maven/apache\\-maven/(([0-9]+)\\.[^/]+)/apache-maven-\\1-bin\\.(zip|tar\\.gz)(\\.sha512|\\.sha256|\\.asc)?$",
+              "replacement": "https://mirrors.aliyun.com/apache/maven/maven-\\g<2>/\\g<1>/binaries/apache-maven-\\g<1>-bin.\\g<3>\\g<4>"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "Apache分发根与Maven Central wrapper distribution URL均以版本/文件名模板精确映射，sha512/sha256/asc边车保留。",
+          "repoTemplates": {}
+        },
+        "MAVEN_REPOSITORY": {
+          "baseUrl": "https://maven.aliyun.com/repository/central/",
+          "allowedHosts": [
+            "maven.aliyun.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://repo.maven.apache.org/maven2/",
+              "prefix": "https://maven.aliyun.com/repository/central/"
+            },
+            {
+              "origin": "https://repo1.maven.org/maven2/",
+              "prefix": "https://maven.aliyun.com/repository/central/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "GRADLE_PLUGIN": {
+          "baseUrl": "https://maven.aliyun.com/repository/gradle-plugin/",
+          "allowedHosts": [
+            "maven.aliyun.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://plugins.gradle.org/m2/",
+              "prefix": "https://maven.aliyun.com/repository/gradle-plugin/"
+            },
+            {
+              "origin": "https://plugins-artifacts.gradle.org/",
+              "prefix": "https://maven.aliyun.com/repository/gradle-plugin/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "COMPOSER_REPOSITORY": {
+          "baseUrl": "https://mirrors.aliyun.com/composer/",
+          "allowedHosts": [
+            "mirrors.aliyun.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://repo.packagist.org/",
+              "prefix": "https://mirrors.aliyun.com/composer/"
+            },
+            {
+              "origin": "https://packagist.org/",
+              "prefix": "https://mirrors.aliyun.com/composer/"
+            }
+          ],
+          "complete": false,
+          "coverageNote": "metadata-only：实测p2/psr/log.json仍返回GitHub dist，不含兼容同源包路由。",
+          "repoTemplates": {}
+        },
+        "PYTHON_PACKAGE": {
+          "baseUrl": "https://mirrors.aliyun.com/pypi/simple/",
+          "allowedHosts": [
+            "mirrors.aliyun.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://pypi.org/simple/",
+              "prefix": "https://mirrors.aliyun.com/pypi/simple/"
+            },
+            {
+              "origin": "https://files.pythonhosted.org/packages/",
+              "prefix": "https://mirrors.aliyun.com/pypi/packages/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "RUBYGEMS": {
+          "baseUrl": "https://mirrors.aliyun.com/rubygems/",
+          "allowedHosts": [
+            "mirrors.aliyun.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://rubygems.org/",
+              "prefix": "https://mirrors.aliyun.com/rubygems/"
+            },
+            {
+              "origin": "https://index.rubygems.org/",
+              "prefix": "https://mirrors.aliyun.com/rubygems/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "huawei",
+      "label": "华为云综合镜像",
+      "country": "CN",
+      "region": "CN",
+      "official": false,
+      "evidence": [
+        "https://www.huaweicloud.com/product/mirrors.html",
+        "https://repo.huaweicloud.com/gradle/",
+        "https://repo.huaweicloud.com/python/",
+        "https://repo.huaweicloud.com/nodejs/",
+        "https://repo.huaweicloud.com/go/",
+        "https://www.huaweicloud.com/special/php-jingxiang.html",
+        "https://res-static.hc-cdn.cn/cloudbu-site/china/zh-cn/SEO/mirror/NuGet.pdf",
+        "https://mirrors.huaweicloud.com/repository/toolkit/ruby/ruby/4.0/"
+      ],
+      "sources": {
+        "APT_DEBIAN": {
+          "baseUrl": "https://repo.huaweicloud.com/debian/",
+          "allowedHosts": [
+            "repo.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://deb.debian.org/debian/",
+              "prefix": "https://repo.huaweicloud.com/debian/"
+            },
+            {
+              "origin": "http://deb.debian.org/debian/",
+              "prefix": "https://repo.huaweicloud.com/debian/"
+            },
+            {
+              "origin": "https://security.debian.org/debian-security/",
+              "prefix": "https://repo.huaweicloud.com/debian-security/"
+            },
+            {
+              "origin": "http://security.debian.org/debian-security/",
+              "prefix": "https://repo.huaweicloud.com/debian-security/"
+            },
+            {
+              "origin": "https://deb.debian.org/debian-security/",
+              "prefix": "https://repo.huaweicloud.com/debian-security/"
+            },
+            {
+              "origin": "http://deb.debian.org/debian-security/",
+              "prefix": "https://repo.huaweicloud.com/debian-security/"
+            },
+            {
+              "origin": "https://deb.debian.org/debian",
+              "prefix": "https://repo.huaweicloud.com/debian"
+            },
+            {
+              "origin": "http://deb.debian.org/debian",
+              "prefix": "https://repo.huaweicloud.com/debian"
+            },
+            {
+              "origin": "https://security.debian.org/debian-security",
+              "prefix": "https://repo.huaweicloud.com/debian-security"
+            },
+            {
+              "origin": "http://security.debian.org/debian-security",
+              "prefix": "https://repo.huaweicloud.com/debian-security"
+            },
+            {
+              "origin": "https://deb.debian.org/debian-security",
+              "prefix": "https://repo.huaweicloud.com/debian-security"
+            },
+            {
+              "origin": "http://deb.debian.org/debian-security",
+              "prefix": "https://repo.huaweicloud.com/debian-security"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "APT_UBUNTU": {
+          "baseUrl": "https://repo.huaweicloud.com/ubuntu/",
+          "allowedHosts": [
+            "repo.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://archive.ubuntu.com/ubuntu/",
+              "prefix": "https://repo.huaweicloud.com/ubuntu/"
+            },
+            {
+              "origin": "http://archive.ubuntu.com/ubuntu/",
+              "prefix": "https://repo.huaweicloud.com/ubuntu/"
+            },
+            {
+              "origin": "https://security.ubuntu.com/ubuntu/",
+              "prefix": "https://repo.huaweicloud.com/ubuntu/"
+            },
+            {
+              "origin": "http://security.ubuntu.com/ubuntu/",
+              "prefix": "https://repo.huaweicloud.com/ubuntu/"
+            },
+            {
+              "origin": "https://ports.ubuntu.com/ubuntu-ports/",
+              "prefix": "https://repo.huaweicloud.com/ubuntu-ports/"
+            },
+            {
+              "origin": "http://ports.ubuntu.com/ubuntu-ports/",
+              "prefix": "https://repo.huaweicloud.com/ubuntu-ports/"
+            },
+            {
+              "origin": "https://archive.ubuntu.com/ubuntu",
+              "prefix": "https://repo.huaweicloud.com/ubuntu"
+            },
+            {
+              "origin": "http://archive.ubuntu.com/ubuntu",
+              "prefix": "https://repo.huaweicloud.com/ubuntu"
+            },
+            {
+              "origin": "https://security.ubuntu.com/ubuntu",
+              "prefix": "https://repo.huaweicloud.com/ubuntu"
+            },
+            {
+              "origin": "http://security.ubuntu.com/ubuntu",
+              "prefix": "https://repo.huaweicloud.com/ubuntu"
+            },
+            {
+              "origin": "https://ports.ubuntu.com/ubuntu-ports",
+              "prefix": "https://repo.huaweicloud.com/ubuntu-ports"
+            },
+            {
+              "origin": "http://ports.ubuntu.com/ubuntu-ports",
+              "prefix": "https://repo.huaweicloud.com/ubuntu-ports"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "MAVEN_DISTRIBUTION": {
+          "baseUrl": "https://repo.huaweicloud.com/apache/maven/",
+          "allowedHosts": [
+            "repo.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://archive.apache.org/dist/maven/",
+              "prefix": "https://repo.huaweicloud.com/apache/maven/"
+            },
+            {
+              "origin": "https://dlcdn.apache.org/maven/",
+              "prefix": "https://repo.huaweicloud.com/apache/maven/"
+            },
+            {
+              "origin": "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/",
+              "prefix": "https://repo.huaweicloud.com/apache/maven/",
+              "pattern": "^https://repo\\.maven\\.apache\\.org/maven2/org/apache/maven/apache\\-maven/(([0-9]+)\\.[^/]+)/apache-maven-\\1-bin\\.(zip|tar\\.gz)(\\.sha512|\\.sha256|\\.asc)?$",
+              "replacement": "https://repo.huaweicloud.com/apache/maven/maven-\\g<2>/\\g<1>/binaries/apache-maven-\\g<1>-bin.\\g<3>\\g<4>"
+            },
+            {
+              "origin": "https://repo1.maven.org/maven2/org/apache/maven/apache-maven/",
+              "prefix": "https://repo.huaweicloud.com/apache/maven/",
+              "pattern": "^https://repo1\\.maven\\.org/maven2/org/apache/maven/apache\\-maven/(([0-9]+)\\.[^/]+)/apache-maven-\\1-bin\\.(zip|tar\\.gz)(\\.sha512|\\.sha256|\\.asc)?$",
+              "replacement": "https://repo.huaweicloud.com/apache/maven/maven-\\g<2>/\\g<1>/binaries/apache-maven-\\g<1>-bin.\\g<3>\\g<4>"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "Apache分发根与Maven Central wrapper distribution URL均以版本/文件名模板精确映射，sha512/sha256/asc边车保留。",
+          "repoTemplates": {}
+        },
+        "MAVEN_REPOSITORY": {
+          "baseUrl": "https://repo.huaweicloud.com/repository/maven/",
+          "allowedHosts": [
+            "repo.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://repo.maven.apache.org/maven2/",
+              "prefix": "https://repo.huaweicloud.com/repository/maven/"
+            },
+            {
+              "origin": "https://repo1.maven.org/maven2/",
+              "prefix": "https://repo.huaweicloud.com/repository/maven/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "GRADLE_DISTRIBUTION": {
+          "baseUrl": "https://repo.huaweicloud.com/gradle/",
+          "allowedHosts": [
+            "repo.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://services.gradle.org/distributions/",
+              "prefix": "https://repo.huaweicloud.com/gradle/"
+            },
+            {
+              "origin": "https://downloads.gradle.org/distributions/",
+              "prefix": "https://repo.huaweicloud.com/gradle/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "COMPOSER_REPOSITORY": {
+          "baseUrl": "https://repo.huaweicloud.com/repository/php/",
+          "allowedHosts": [
+            "repo.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://repo.packagist.org/",
+              "prefix": "https://repo.huaweicloud.com/repository/php/"
+            },
+            {
+              "origin": "https://packagist.org/",
+              "prefix": "https://repo.huaweicloud.com/repository/php/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "实测p2元数据和同镜像dist路径兼容；原有lock若固定GitHub dist URL，不能仅按前缀映射等价改写，需受控协议代理，否则拒绝。",
+          "repoTemplates": {}
+        },
+        "PYTHON_DISTRIBUTION": {
+          "baseUrl": "https://repo.huaweicloud.com/python/",
+          "allowedHosts": [
+            "repo.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://www.python.org/ftp/python/",
+              "prefix": "https://repo.huaweicloud.com/python/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "安装包下载路径兼容；版本解析及原始校验由独立_METADATA点负责。",
+          "repoTemplates": {}
+        },
+        "NODE_DISTRIBUTION": {
+          "baseUrl": "https://repo.huaweicloud.com/nodejs/",
+          "allowedHosts": [
+            "repo.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://nodejs.org/dist/",
+              "prefix": "https://repo.huaweicloud.com/nodejs/"
+            },
+            {
+              "origin": "https://nodejs.org/download/release/",
+              "prefix": "https://repo.huaweicloud.com/nodejs/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "NODE_PACKAGE": {
+          "baseUrl": "https://repo.huaweicloud.com/repository/npm/",
+          "allowedHosts": [
+            "repo.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://registry.npmjs.org/",
+              "prefix": "https://repo.huaweicloud.com/repository/npm/"
+            },
+            {
+              "origin": "https://registry.yarnpkg.com/",
+              "prefix": "https://repo.huaweicloud.com/repository/npm/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "GO_DISTRIBUTION": {
+          "baseUrl": "https://repo.huaweicloud.com/go/",
+          "allowedHosts": [
+            "repo.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://go.dev/dl/",
+              "prefix": "https://repo.huaweicloud.com/go/"
+            },
+            {
+              "origin": "https://dl.google.com/go/",
+              "prefix": "https://repo.huaweicloud.com/go/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "安装包下载路径兼容；版本解析及原始校验由独立_METADATA点负责。",
+          "repoTemplates": {}
+        },
+        "RUBYGEMS": {
+          "baseUrl": "https://repo.huaweicloud.com/repository/rubygems/",
+          "allowedHosts": [
+            "repo.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://rubygems.org/",
+              "prefix": "https://repo.huaweicloud.com/repository/rubygems/"
+            },
+            {
+              "origin": "https://index.rubygems.org/",
+              "prefix": "https://repo.huaweicloud.com/repository/rubygems/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "PYTHON_PACKAGE": {
+          "baseUrl": "https://repo.huaweicloud.com/repository/pypi/simple/",
+          "allowedHosts": [
+            "repo.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://pypi.org/simple/",
+              "prefix": "https://repo.huaweicloud.com/repository/pypi/simple/"
+            },
+            {
+              "origin": "https://files.pythonhosted.org/packages/",
+              "prefix": "https://repo.huaweicloud.com/repository/pypi/packages/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "NUGET": {
+          "baseUrl": "https://repo.huaweicloud.com/repository/nuget/v3/index.json",
+          "allowedHosts": [
+            "repo.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://api.nuget.org/v3/index.json",
+              "prefix": "https://repo.huaweicloud.com/repository/nuget/v3/index.json"
+            },
+            {
+              "origin": "https://api.nuget.org/v3-flatcontainer/",
+              "prefix": "https://repo.huaweicloud.com/artifactory/api/nuget/v3/nuget-remote/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "RUBY_DISTRIBUTION": {
+          "baseUrl": "https://mirrors.huaweicloud.com/repository/toolkit/ruby/ruby/",
+          "allowedHosts": [
+            "mirrors.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://cache.ruby-lang.org/pub/ruby/",
+              "prefix": "https://mirrors.huaweicloud.com/repository/toolkit/ruby/ruby/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "安装包下载路径兼容；版本解析及原始校验由独立_METADATA点负责。",
+          "repoTemplates": {}
+        },
+        "NODE_METADATA": {
+          "baseUrl": "https://repo.huaweicloud.com/nodejs/",
+          "allowedHosts": [
+            "repo.huaweicloud.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://nodejs.org/dist/",
+              "prefix": "https://repo.huaweicloud.com/nodejs/"
+            },
+            {
+              "origin": "https://nodejs.org/download/release/",
+              "prefix": "https://repo.huaweicloud.com/nodejs/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "同一Node镜像提供index.json和SHASUMS256.txt，元数据与安装包仍可分别选择。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "ustc",
+      "label": "中国科学技术大学综合镜像",
+      "country": "CN",
+      "region": "CN",
+      "official": false,
+      "evidence": [
+        "https://mirrors.ustc.edu.cn/",
+        "https://mirrors.ustc.edu.cn/status/",
+        "https://mirrors.ustc.edu.cn/help/crates.io-index.html",
+        "https://mirrors.ustc.edu.cn/help/rocky.html",
+        "https://mirrors.ustc.edu.cn/help/centos-stream.html",
+        "https://mirrors.ustc.edu.cn/help/node.html",
+        "https://mirrors.ustc.edu.cn/help/rust-static.html",
+        "https://mirrors.ustc.edu.cn/help/fedora.html"
+      ],
+      "sources": {
+        "APT_DEBIAN": {
+          "baseUrl": "https://mirrors.ustc.edu.cn/debian/",
+          "allowedHosts": [
+            "mirrors.ustc.edu.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://deb.debian.org/debian/",
+              "prefix": "https://mirrors.ustc.edu.cn/debian/"
+            },
+            {
+              "origin": "http://deb.debian.org/debian/",
+              "prefix": "https://mirrors.ustc.edu.cn/debian/"
+            },
+            {
+              "origin": "https://security.debian.org/debian-security/",
+              "prefix": "https://mirrors.ustc.edu.cn/debian-security/"
+            },
+            {
+              "origin": "http://security.debian.org/debian-security/",
+              "prefix": "https://mirrors.ustc.edu.cn/debian-security/"
+            },
+            {
+              "origin": "https://deb.debian.org/debian-security/",
+              "prefix": "https://mirrors.ustc.edu.cn/debian-security/"
+            },
+            {
+              "origin": "http://deb.debian.org/debian-security/",
+              "prefix": "https://mirrors.ustc.edu.cn/debian-security/"
+            },
+            {
+              "origin": "https://deb.debian.org/debian",
+              "prefix": "https://mirrors.ustc.edu.cn/debian"
+            },
+            {
+              "origin": "http://deb.debian.org/debian",
+              "prefix": "https://mirrors.ustc.edu.cn/debian"
+            },
+            {
+              "origin": "https://security.debian.org/debian-security",
+              "prefix": "https://mirrors.ustc.edu.cn/debian-security"
+            },
+            {
+              "origin": "http://security.debian.org/debian-security",
+              "prefix": "https://mirrors.ustc.edu.cn/debian-security"
+            },
+            {
+              "origin": "https://deb.debian.org/debian-security",
+              "prefix": "https://mirrors.ustc.edu.cn/debian-security"
+            },
+            {
+              "origin": "http://deb.debian.org/debian-security",
+              "prefix": "https://mirrors.ustc.edu.cn/debian-security"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "APT_UBUNTU": {
+          "baseUrl": "https://mirrors.ustc.edu.cn/ubuntu/",
+          "allowedHosts": [
+            "mirrors.ustc.edu.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://archive.ubuntu.com/ubuntu/",
+              "prefix": "https://mirrors.ustc.edu.cn/ubuntu/"
+            },
+            {
+              "origin": "http://archive.ubuntu.com/ubuntu/",
+              "prefix": "https://mirrors.ustc.edu.cn/ubuntu/"
+            },
+            {
+              "origin": "https://security.ubuntu.com/ubuntu/",
+              "prefix": "https://mirrors.ustc.edu.cn/ubuntu/"
+            },
+            {
+              "origin": "http://security.ubuntu.com/ubuntu/",
+              "prefix": "https://mirrors.ustc.edu.cn/ubuntu/"
+            },
+            {
+              "origin": "https://ports.ubuntu.com/ubuntu-ports/",
+              "prefix": "https://mirrors.ustc.edu.cn/ubuntu-ports/"
+            },
+            {
+              "origin": "http://ports.ubuntu.com/ubuntu-ports/",
+              "prefix": "https://mirrors.ustc.edu.cn/ubuntu-ports/"
+            },
+            {
+              "origin": "https://archive.ubuntu.com/ubuntu",
+              "prefix": "https://mirrors.ustc.edu.cn/ubuntu"
+            },
+            {
+              "origin": "http://archive.ubuntu.com/ubuntu",
+              "prefix": "https://mirrors.ustc.edu.cn/ubuntu"
+            },
+            {
+              "origin": "https://security.ubuntu.com/ubuntu",
+              "prefix": "https://mirrors.ustc.edu.cn/ubuntu"
+            },
+            {
+              "origin": "http://security.ubuntu.com/ubuntu",
+              "prefix": "https://mirrors.ustc.edu.cn/ubuntu"
+            },
+            {
+              "origin": "https://ports.ubuntu.com/ubuntu-ports",
+              "prefix": "https://mirrors.ustc.edu.cn/ubuntu-ports"
+            },
+            {
+              "origin": "http://ports.ubuntu.com/ubuntu-ports",
+              "prefix": "https://mirrors.ustc.edu.cn/ubuntu-ports"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "RUST_TOOLCHAIN": {
+          "baseUrl": "https://mirrors.ustc.edu.cn/rust-static/",
+          "allowedHosts": [
+            "mirrors.ustc.edu.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://static.rust-lang.org/",
+              "prefix": "https://mirrors.ustc.edu.cn/rust-static/"
+            },
+            {
+              "origin": "https://sh.rustup.rs/",
+              "prefix": "https://mirrors.ustc.edu.cn/misc/rustup-install.sh"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "安装包下载路径兼容；版本解析及原始校验由独立_METADATA点负责。",
+          "repoTemplates": {}
+        },
+        "RUST_INDEX": {
+          "baseUrl": "https://mirrors.ustc.edu.cn/crates.io-index/",
+          "allowedHosts": [
+            "mirrors.ustc.edu.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://index.crates.io/",
+              "prefix": "https://mirrors.ustc.edu.cn/crates.io-index/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "RUBYGEMS": {
+          "baseUrl": "https://mirrors.ustc.edu.cn/rubygems/",
+          "allowedHosts": [
+            "mirrors.ustc.edu.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://rubygems.org/",
+              "prefix": "https://mirrors.ustc.edu.cn/rubygems/"
+            },
+            {
+              "origin": "https://index.rubygems.org/",
+              "prefix": "https://mirrors.ustc.edu.cn/rubygems/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "DNF_ROCKY": {
+          "baseUrl": "https://mirrors.ustc.edu.cn/rocky/",
+          "allowedHosts": [
+            "mirrors.ustc.edu.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://dl.rockylinux.org/pub/rocky/",
+              "prefix": "https://mirrors.ustc.edu.cn/rocky/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "baseos": "https://mirrors.ustc.edu.cn/rocky/$releasever/BaseOS/$basearch/os/",
+            "appstream": "https://mirrors.ustc.edu.cn/rocky/$releasever/AppStream/$basearch/os/",
+            "extras": "https://mirrors.ustc.edu.cn/rocky/$releasever/extras/$basearch/os/",
+            "crb": "https://mirrors.ustc.edu.cn/rocky/$releasever/CRB/$basearch/os/",
+            "powertools": "https://mirrors.ustc.edu.cn/rocky/$releasever/PowerTools/$basearch/os/"
+          }
+        },
+        "DNF_FEDORA": {
+          "baseUrl": "https://mirrors.ustc.edu.cn/fedora/",
+          "allowedHosts": [
+            "mirrors.ustc.edu.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://dl.fedoraproject.org/pub/fedora/linux/",
+              "prefix": "https://mirrors.ustc.edu.cn/fedora/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "fedora": "https://mirrors.ustc.edu.cn/fedora/releases/$releasever/Everything/$basearch/os/",
+            "updates": "https://mirrors.ustc.edu.cn/fedora/updates/$releasever/Everything/$basearch/"
+          }
+        },
+        "DNF_CENTOS_STREAM": {
+          "baseUrl": "https://mirrors.ustc.edu.cn/centos-stream/",
+          "allowedHosts": [
+            "mirrors.ustc.edu.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://mirror.stream.centos.org/",
+              "prefix": "https://mirrors.ustc.edu.cn/centos-stream/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "baseos": "https://mirrors.ustc.edu.cn/centos-stream/$releasever-stream/BaseOS/$basearch/os/",
+            "appstream": "https://mirrors.ustc.edu.cn/centos-stream/$releasever-stream/AppStream/$basearch/os/",
+            "crb": "https://mirrors.ustc.edu.cn/centos-stream/$releasever-stream/CRB/$basearch/os/",
+            "extras-common": "https://mirrors.ustc.edu.cn/centos-stream/SIGs/$releasever-stream/extras/$basearch/extras-common/"
+          }
+        },
+        "NODE_DISTRIBUTION": {
+          "baseUrl": "https://mirrors.ustc.edu.cn/node/",
+          "allowedHosts": [
+            "mirrors.ustc.edu.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://nodejs.org/dist/",
+              "prefix": "https://mirrors.ustc.edu.cn/node/"
+            },
+            {
+              "origin": "https://nodejs.org/download/release/",
+              "prefix": "https://mirrors.ustc.edu.cn/node/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "NODE_METADATA": {
+          "baseUrl": "https://mirrors.ustc.edu.cn/node/",
+          "allowedHosts": [
+            "mirrors.ustc.edu.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://nodejs.org/dist/",
+              "prefix": "https://mirrors.ustc.edu.cn/node/"
+            },
+            {
+              "origin": "https://nodejs.org/download/release/",
+              "prefix": "https://mirrors.ustc.edu.cn/node/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "同一Node镜像提供index.json和SHASUMS256.txt，元数据与安装包仍可分别选择。",
+          "repoTemplates": {}
+        },
+        "RUST_CRATE": {
+          "baseUrl": "https://mirrors.ustc.edu.cn/crates.io/api/v1/crates/",
+          "allowedHosts": [
+            "mirrors.ustc.edu.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://crates.io/api/v1/crates/",
+              "prefix": "https://mirrors.ustc.edu.cn/crates.io/api/v1/crates/"
+            },
+            {
+              "origin": "https://static.crates.io/crates/",
+              "prefix": "https://mirrors.ustc.edu.cn/crates.io/api/v1/crates/",
+              "pattern": "^https://static\\.crates\\.io/crates/([^/]+)/\\1-([^/]+)\\.crate$",
+              "replacement": "https://mirrors.ustc.edu.cn/crates.io/api/v1/crates/\\g<1>/\\g<2>/download"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "index config核实dl API；API与static crate文件名通过显式锚定模板映射，保持crate及version身份。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "yandex",
+      "label": "Yandex 综合镜像",
+      "country": "RU",
+      "region": "RU",
+      "official": false,
+      "evidence": [
+        "https://mirror.yandex.ru/",
+        "https://www.debian.org/mirror/list"
+      ],
+      "sources": {
+        "APT_DEBIAN": {
+          "baseUrl": "https://mirror.yandex.ru/debian/",
+          "allowedHosts": [
+            "mirror.yandex.ru"
+          ],
+          "routes": [
+            {
+              "origin": "https://deb.debian.org/debian/",
+              "prefix": "https://mirror.yandex.ru/debian/"
+            },
+            {
+              "origin": "http://deb.debian.org/debian/",
+              "prefix": "https://mirror.yandex.ru/debian/"
+            },
+            {
+              "origin": "https://security.debian.org/debian-security/",
+              "prefix": "https://mirror.yandex.ru/debian-security/"
+            },
+            {
+              "origin": "http://security.debian.org/debian-security/",
+              "prefix": "https://mirror.yandex.ru/debian-security/"
+            },
+            {
+              "origin": "https://deb.debian.org/debian-security/",
+              "prefix": "https://mirror.yandex.ru/debian-security/"
+            },
+            {
+              "origin": "http://deb.debian.org/debian-security/",
+              "prefix": "https://mirror.yandex.ru/debian-security/"
+            },
+            {
+              "origin": "https://deb.debian.org/debian",
+              "prefix": "https://mirror.yandex.ru/debian"
+            },
+            {
+              "origin": "http://deb.debian.org/debian",
+              "prefix": "https://mirror.yandex.ru/debian"
+            },
+            {
+              "origin": "https://security.debian.org/debian-security",
+              "prefix": "https://mirror.yandex.ru/debian-security"
+            },
+            {
+              "origin": "http://security.debian.org/debian-security",
+              "prefix": "https://mirror.yandex.ru/debian-security"
+            },
+            {
+              "origin": "https://deb.debian.org/debian-security",
+              "prefix": "https://mirror.yandex.ru/debian-security"
+            },
+            {
+              "origin": "http://deb.debian.org/debian-security",
+              "prefix": "https://mirror.yandex.ru/debian-security"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "APT_UBUNTU": {
+          "baseUrl": "https://mirror.yandex.ru/ubuntu/",
+          "allowedHosts": [
+            "mirror.yandex.ru"
+          ],
+          "routes": [
+            {
+              "origin": "https://archive.ubuntu.com/ubuntu/",
+              "prefix": "https://mirror.yandex.ru/ubuntu/"
+            },
+            {
+              "origin": "http://archive.ubuntu.com/ubuntu/",
+              "prefix": "https://mirror.yandex.ru/ubuntu/"
+            },
+            {
+              "origin": "https://security.ubuntu.com/ubuntu/",
+              "prefix": "https://mirror.yandex.ru/ubuntu/"
+            },
+            {
+              "origin": "http://security.ubuntu.com/ubuntu/",
+              "prefix": "https://mirror.yandex.ru/ubuntu/"
+            },
+            {
+              "origin": "https://ports.ubuntu.com/ubuntu-ports/",
+              "prefix": "https://mirror.yandex.ru/ubuntu-ports/"
+            },
+            {
+              "origin": "http://ports.ubuntu.com/ubuntu-ports/",
+              "prefix": "https://mirror.yandex.ru/ubuntu-ports/"
+            },
+            {
+              "origin": "https://archive.ubuntu.com/ubuntu",
+              "prefix": "https://mirror.yandex.ru/ubuntu"
+            },
+            {
+              "origin": "http://archive.ubuntu.com/ubuntu",
+              "prefix": "https://mirror.yandex.ru/ubuntu"
+            },
+            {
+              "origin": "https://security.ubuntu.com/ubuntu",
+              "prefix": "https://mirror.yandex.ru/ubuntu"
+            },
+            {
+              "origin": "http://security.ubuntu.com/ubuntu",
+              "prefix": "https://mirror.yandex.ru/ubuntu"
+            },
+            {
+              "origin": "https://ports.ubuntu.com/ubuntu-ports",
+              "prefix": "https://mirror.yandex.ru/ubuntu-ports"
+            },
+            {
+              "origin": "http://ports.ubuntu.com/ubuntu-ports",
+              "prefix": "https://mirror.yandex.ru/ubuntu-ports"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "DNF_FEDORA": {
+          "baseUrl": "https://mirror.yandex.ru/fedora/",
+          "allowedHosts": [
+            "mirror.yandex.ru"
+          ],
+          "routes": [
+            {
+              "origin": "https://dl.fedoraproject.org/pub/fedora/linux/",
+              "prefix": "https://mirror.yandex.ru/fedora/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "fedora": "https://mirror.yandex.ru/fedora/releases/$releasever/Everything/$basearch/os/",
+            "updates": "https://mirror.yandex.ru/fedora/updates/$releasever/Everything/$basearch/"
+          }
+        },
+        "DNF_ALMA": {
+          "baseUrl": "https://mirror.yandex.ru/almalinux/",
+          "allowedHosts": [
+            "mirror.yandex.ru"
+          ],
+          "routes": [
+            {
+              "origin": "https://repo.almalinux.org/almalinux/",
+              "prefix": "https://mirror.yandex.ru/almalinux/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "baseos": "https://mirror.yandex.ru/almalinux/$releasever/BaseOS/$basearch/os/",
+            "appstream": "https://mirror.yandex.ru/almalinux/$releasever/AppStream/$basearch/os/",
+            "extras": "https://mirror.yandex.ru/almalinux/$releasever/extras/$basearch/os/",
+            "crb": "https://mirror.yandex.ru/almalinux/$releasever/CRB/$basearch/os/",
+            "powertools": "https://mirror.yandex.ru/almalinux/$releasever/PowerTools/$basearch/os/"
+          }
+        },
+        "DNF_CENTOS_STREAM": {
+          "baseUrl": "https://mirror.yandex.ru/centos-stream/",
+          "allowedHosts": [
+            "mirror.yandex.ru"
+          ],
+          "routes": [
+            {
+              "origin": "https://mirror.stream.centos.org/",
+              "prefix": "https://mirror.yandex.ru/centos-stream/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "baseos": "https://mirror.yandex.ru/centos-stream/$releasever-stream/BaseOS/$basearch/os/",
+            "appstream": "https://mirror.yandex.ru/centos-stream/$releasever-stream/AppStream/$basearch/os/",
+            "crb": "https://mirror.yandex.ru/centos-stream/$releasever-stream/CRB/$basearch/os/",
+            "extras-common": "https://mirror.yandex.ru/centos-stream/SIGs/$releasever-stream/extras/$basearch/extras-common/"
+          }
+        },
+        "DNF_ROCKY": {
+          "baseUrl": "https://mirror.yandex.ru/rockylinux/",
+          "allowedHosts": [
+            "mirror.yandex.ru"
+          ],
+          "routes": [
+            {
+              "origin": "https://dl.rockylinux.org/pub/rocky/",
+              "prefix": "https://mirror.yandex.ru/rockylinux/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "baseos": "https://mirror.yandex.ru/rockylinux/$releasever/BaseOS/$basearch/os/",
+            "appstream": "https://mirror.yandex.ru/rockylinux/$releasever/AppStream/$basearch/os/",
+            "extras": "https://mirror.yandex.ru/rockylinux/$releasever/extras/$basearch/os/",
+            "crb": "https://mirror.yandex.ru/rockylinux/$releasever/CRB/$basearch/os/",
+            "powertools": "https://mirror.yandex.ru/rockylinux/$releasever/PowerTools/$basearch/os/"
+          }
+        }
+      }
+    },
+    {
+      "id": "jaist",
+      "label": "JAIST",
+      "country": "JP",
+      "region": "EAST_ASIA",
+      "official": false,
+      "evidence": [
+        "https://www.debian.org/mirror/list",
+        "https://ftp.jaist.ac.jp/pub/Linux/"
+      ],
+      "sources": {
+        "DNF_FEDORA": {
+          "baseUrl": "https://ftp.jaist.ac.jp/pub/Linux/Fedora/",
+          "allowedHosts": [
+            "ftp.jaist.ac.jp"
+          ],
+          "routes": [
+            {
+              "origin": "https://dl.fedoraproject.org/pub/fedora/linux/",
+              "prefix": "https://ftp.jaist.ac.jp/pub/Linux/Fedora/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "fedora": "https://ftp.jaist.ac.jp/pub/Linux/Fedora/releases/$releasever/Everything/$basearch/os/",
+            "updates": "https://ftp.jaist.ac.jp/pub/Linux/Fedora/updates/$releasever/Everything/$basearch/"
+          }
+        },
+        "DNF_ROCKY": {
+          "baseUrl": "https://ftp.jaist.ac.jp/pub/Linux/rocky/",
+          "allowedHosts": [
+            "ftp.jaist.ac.jp"
+          ],
+          "routes": [
+            {
+              "origin": "https://dl.rockylinux.org/pub/rocky/",
+              "prefix": "https://ftp.jaist.ac.jp/pub/Linux/rocky/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "baseos": "https://ftp.jaist.ac.jp/pub/Linux/rocky/$releasever/BaseOS/$basearch/os/",
+            "appstream": "https://ftp.jaist.ac.jp/pub/Linux/rocky/$releasever/AppStream/$basearch/os/",
+            "extras": "https://ftp.jaist.ac.jp/pub/Linux/rocky/$releasever/extras/$basearch/os/",
+            "crb": "https://ftp.jaist.ac.jp/pub/Linux/rocky/$releasever/CRB/$basearch/os/",
+            "powertools": "https://ftp.jaist.ac.jp/pub/Linux/rocky/$releasever/PowerTools/$basearch/os/"
+          }
+        },
+        "DNF_ALMA": {
+          "baseUrl": "https://ftp.jaist.ac.jp/pub/Linux/almalinux/",
+          "allowedHosts": [
+            "ftp.jaist.ac.jp"
+          ],
+          "routes": [
+            {
+              "origin": "https://repo.almalinux.org/almalinux/",
+              "prefix": "https://ftp.jaist.ac.jp/pub/Linux/almalinux/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "baseos": "https://ftp.jaist.ac.jp/pub/Linux/almalinux/$releasever/BaseOS/$basearch/os/",
+            "appstream": "https://ftp.jaist.ac.jp/pub/Linux/almalinux/$releasever/AppStream/$basearch/os/",
+            "extras": "https://ftp.jaist.ac.jp/pub/Linux/almalinux/$releasever/extras/$basearch/os/",
+            "crb": "https://ftp.jaist.ac.jp/pub/Linux/almalinux/$releasever/CRB/$basearch/os/",
+            "powertools": "https://ftp.jaist.ac.jp/pub/Linux/almalinux/$releasever/PowerTools/$basearch/os/"
+          }
+        },
+        "DNF_CENTOS_STREAM": {
+          "baseUrl": "https://ftp.jaist.ac.jp/pub/Linux/CentOS-stream/",
+          "allowedHosts": [
+            "ftp.jaist.ac.jp"
+          ],
+          "routes": [
+            {
+              "origin": "https://mirror.stream.centos.org/",
+              "prefix": "https://ftp.jaist.ac.jp/pub/Linux/CentOS-stream/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {
+            "baseos": "https://ftp.jaist.ac.jp/pub/Linux/CentOS-stream/$releasever-stream/BaseOS/$basearch/os/",
+            "appstream": "https://ftp.jaist.ac.jp/pub/Linux/CentOS-stream/$releasever-stream/AppStream/$basearch/os/",
+            "crb": "https://ftp.jaist.ac.jp/pub/Linux/CentOS-stream/$releasever-stream/CRB/$basearch/os/",
+            "extras-common": "https://ftp.jaist.ac.jp/pub/Linux/CentOS-stream/SIGs/$releasever-stream/extras/$basearch/extras-common/"
+          }
+        }
+      }
+    },
+    {
+      "id": "aarnet",
+      "label": "AARNet",
+      "country": "AU",
+      "region": "OCEANIA",
+      "official": false,
+      "evidence": [
+        "https://www.debian.org/mirror/list",
+        "https://mirror.aarnet.edu.au/"
+      ],
+      "sources": {
+        "APT_DEBIAN": {
+          "baseUrl": "https://mirror.aarnet.edu.au/debian/",
+          "allowedHosts": [
+            "mirror.aarnet.edu.au"
+          ],
+          "routes": [
+            {
+              "origin": "https://deb.debian.org/debian/",
+              "prefix": "https://mirror.aarnet.edu.au/debian/"
+            },
+            {
+              "origin": "http://deb.debian.org/debian/",
+              "prefix": "https://mirror.aarnet.edu.au/debian/"
+            },
+            {
+              "origin": "https://security.debian.org/debian-security/",
+              "prefix": "https://mirror.aarnet.edu.au/debian-security/"
+            },
+            {
+              "origin": "http://security.debian.org/debian-security/",
+              "prefix": "https://mirror.aarnet.edu.au/debian-security/"
+            },
+            {
+              "origin": "https://deb.debian.org/debian-security/",
+              "prefix": "https://mirror.aarnet.edu.au/debian-security/"
+            },
+            {
+              "origin": "http://deb.debian.org/debian-security/",
+              "prefix": "https://mirror.aarnet.edu.au/debian-security/"
+            },
+            {
+              "origin": "https://deb.debian.org/debian",
+              "prefix": "https://mirror.aarnet.edu.au/debian"
+            },
+            {
+              "origin": "http://deb.debian.org/debian",
+              "prefix": "https://mirror.aarnet.edu.au/debian"
+            },
+            {
+              "origin": "https://security.debian.org/debian-security",
+              "prefix": "https://mirror.aarnet.edu.au/debian-security"
+            },
+            {
+              "origin": "http://security.debian.org/debian-security",
+              "prefix": "https://mirror.aarnet.edu.au/debian-security"
+            },
+            {
+              "origin": "https://deb.debian.org/debian-security",
+              "prefix": "https://mirror.aarnet.edu.au/debian-security"
+            },
+            {
+              "origin": "http://deb.debian.org/debian-security",
+              "prefix": "https://mirror.aarnet.edu.au/debian-security"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "dotsrc",
+      "label": "Dotsrc",
+      "country": "DK",
+      "region": "EUROPE",
+      "official": false,
+      "evidence": [
+        "https://www.debian.org/mirror/list",
+        "https://mirrors.dotsrc.org/"
+      ],
+      "sources": {
+        "APT_DEBIAN": {
+          "baseUrl": "https://mirrors.dotsrc.org/debian/",
+          "allowedHosts": [
+            "mirrors.dotsrc.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://deb.debian.org/debian/",
+              "prefix": "https://mirrors.dotsrc.org/debian/"
+            },
+            {
+              "origin": "http://deb.debian.org/debian/",
+              "prefix": "https://mirrors.dotsrc.org/debian/"
+            },
+            {
+              "origin": "https://security.debian.org/debian-security/",
+              "prefix": "https://mirrors.dotsrc.org/debian-security/"
+            },
+            {
+              "origin": "http://security.debian.org/debian-security/",
+              "prefix": "https://mirrors.dotsrc.org/debian-security/"
+            },
+            {
+              "origin": "https://deb.debian.org/debian-security/",
+              "prefix": "https://mirrors.dotsrc.org/debian-security/"
+            },
+            {
+              "origin": "http://deb.debian.org/debian-security/",
+              "prefix": "https://mirrors.dotsrc.org/debian-security/"
+            },
+            {
+              "origin": "https://deb.debian.org/debian",
+              "prefix": "https://mirrors.dotsrc.org/debian"
+            },
+            {
+              "origin": "http://deb.debian.org/debian",
+              "prefix": "https://mirrors.dotsrc.org/debian"
+            },
+            {
+              "origin": "https://security.debian.org/debian-security",
+              "prefix": "https://mirrors.dotsrc.org/debian-security"
+            },
+            {
+              "origin": "http://security.debian.org/debian-security",
+              "prefix": "https://mirrors.dotsrc.org/debian-security"
+            },
+            {
+              "origin": "https://deb.debian.org/debian-security",
+              "prefix": "https://mirrors.dotsrc.org/debian-security"
+            },
+            {
+              "origin": "http://deb.debian.org/debian-security",
+              "prefix": "https://mirrors.dotsrc.org/debian-security"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "goproxy-cn",
+      "label": "七牛 Go Proxy",
+      "country": "CN",
+      "region": "CN",
+      "official": false,
+      "evidence": [
+        "https://goproxy.cn/"
+      ],
+      "sources": {
+        "GO_MODULE": {
+          "baseUrl": "https://goproxy.cn/",
+          "allowedHosts": [
+            "goproxy.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://proxy.golang.org/",
+              "prefix": "https://goproxy.cn/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "GO_CHECKSUM": {
+          "baseUrl": "https://goproxy.cn/sumdb/sum.golang.org/",
+          "allowedHosts": [
+            "goproxy.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://sum.golang.org/",
+              "prefix": "https://goproxy.cn/sumdb/sum.golang.org/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "goproxy-io",
+      "label": "GoProxy.io",
+      "country": "US",
+      "region": "NORTH_AMERICA",
+      "official": false,
+      "evidence": [
+        "https://goproxy.io/"
+      ],
+      "sources": {
+        "GO_MODULE": {
+          "baseUrl": "https://goproxy.io/",
+          "allowedHosts": [
+            "goproxy.io"
+          ],
+          "routes": [
+            {
+              "origin": "https://proxy.golang.org/",
+              "prefix": "https://goproxy.io/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "npmmirror",
+      "label": "npmmirror",
+      "country": "CN",
+      "region": "CN",
+      "official": false,
+      "evidence": [
+        "https://github.com/cnpm/binary-mirror-config",
+        "https://npmmirror.com/"
+      ],
+      "sources": {
+        "NODE_PACKAGE": {
+          "baseUrl": "https://registry.npmmirror.com/",
+          "allowedHosts": [
+            "registry.npmmirror.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://registry.npmjs.org/",
+              "prefix": "https://registry.npmmirror.com/"
+            },
+            {
+              "origin": "https://registry.yarnpkg.com/",
+              "prefix": "https://registry.npmmirror.com/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "NODE_DISTRIBUTION": {
+          "baseUrl": "https://cdn.npmmirror.com/binaries/node/",
+          "allowedHosts": [
+            "cdn.npmmirror.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://nodejs.org/dist/",
+              "prefix": "https://cdn.npmmirror.com/binaries/node/"
+            },
+            {
+              "origin": "https://nodejs.org/download/release/",
+              "prefix": "https://cdn.npmmirror.com/binaries/node/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "NODE_METADATA": {
+          "baseUrl": "https://cdn.npmmirror.com/binaries/node/",
+          "allowedHosts": [
+            "cdn.npmmirror.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://nodejs.org/dist/",
+              "prefix": "https://cdn.npmmirror.com/binaries/node/"
+            },
+            {
+              "origin": "https://nodejs.org/download/release/",
+              "prefix": "https://cdn.npmmirror.com/binaries/node/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "同一Node镜像提供index.json和SHASUMS256.txt，元数据与安装包仍可分别选择。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "google-oci-cache",
+      "label": "Google Docker Hub 缓存",
+      "country": "US",
+      "region": "NORTH_AMERICA",
+      "official": false,
+      "evidence": [
+        "https://cloud.google.com/artifact-registry/docs/pull-cached-dockerhub-images"
+      ],
+      "sources": {
+        "OCI_REGISTRY": {
+          "baseUrl": "https://mirror.gcr.io/",
+          "allowedHosts": [
+            "mirror.gcr.io"
+          ],
+          "routes": [
+            {
+              "origin": "https://registry-1.docker.io/",
+              "prefix": "https://mirror.gcr.io/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "country": "",
+      "id": "official-kotlin_distribution",
+      "label": "官方 Kotlin 编译器",
+      "official": true,
+      "evidence": [
+        "https://kotlinlang.org/docs/command-line.html"
+      ],
+      "region": "NORTH_AMERICA",
+      "sources": {
+        "KOTLIN_DISTRIBUTION": {
+          "allowedHosts": [
+            "github.com",
+            "objects.githubusercontent.com",
+            "release-assets.githubusercontent.com"
+          ],
+          "baseUrl": "https://github.com/JetBrains/kotlin/releases/download/",
+          "routes": [
+            {
+              "origin": "https://github.com/JetBrains/kotlin/releases/download/",
+              "prefix": "https://github.com/JetBrains/kotlin/releases/download/"
+            },
+            {
+              "origin": "https://release-assets.githubusercontent.com/",
+              "prefix": "https://release-assets.githubusercontent.com/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "rsproxy",
+      "label": "字节跳动 RsProxy",
+      "country": "CN",
+      "region": "CN",
+      "official": false,
+      "evidence": [
+        "https://rsproxy.cn/",
+        "https://rsproxy.cn/index/config.json"
+      ],
+      "sources": {
+        "RUST_INDEX": {
+          "baseUrl": "https://rsproxy.cn/index/",
+          "allowedHosts": [
+            "rsproxy.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://index.crates.io/",
+              "prefix": "https://rsproxy.cn/index/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "repoTemplates": {}
+        },
+        "RUST_CRATE": {
+          "baseUrl": "https://rsproxy.cn/api/v1/crates/",
+          "allowedHosts": [
+            "lf3-static.rsproxy.cn",
+            "lf9-static.rsproxy.cn",
+            "rsproxy.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://crates.io/api/v1/crates/",
+              "prefix": "https://rsproxy.cn/api/v1/crates/"
+            },
+            {
+              "origin": "https://static.crates.io/crates/",
+              "prefix": "https://rsproxy.cn/api/v1/crates/",
+              "pattern": "^https://static\\.crates\\.io/crates/([^/]+)/\\1-([^/]+)\\.crate$",
+              "replacement": "https://rsproxy.cn/api/v1/crates/\\g<1>/\\g<2>/download"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "index config核实dl API；API与static crate文件名通过显式锚定模板映射，保持crate及version身份。",
+          "repoTemplates": {}
+        },
+        "RUST_TOOLCHAIN": {
+          "baseUrl": "https://rsproxy.cn/",
+          "allowedHosts": [
+            "lf3-static.rsproxy.cn",
+            "lf9-static.rsproxy.cn",
+            "rsproxy.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://static.rust-lang.org/",
+              "prefix": "https://rsproxy.cn/"
+            },
+            {
+              "origin": "https://sh.rustup.rs/",
+              "prefix": "https://rsproxy.cn/rustup-init.sh"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "安装包下载路径兼容；版本解析及原始校验由独立_METADATA点负责。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "ruby-china",
+      "label": "Ruby China",
+      "country": "CN",
+      "region": "CN",
+      "official": false,
+      "evidence": [
+        "https://www.ruby-lang.org/en/downloads/mirrors/"
+      ],
+      "sources": {
+        "RUBY_DISTRIBUTION": {
+          "baseUrl": "https://cache.ruby-china.com/pub/ruby/",
+          "allowedHosts": [
+            "cache.ruby-china.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://cache.ruby-lang.org/pub/ruby/",
+              "prefix": "https://cache.ruby-china.com/pub/ruby/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "安装包下载路径兼容；版本解析及原始校验由独立_METADATA点负责。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "ringserver",
+      "label": "RingServer",
+      "country": "JP",
+      "region": "EAST_ASIA",
+      "official": false,
+      "evidence": [
+        "https://www.ruby-lang.org/en/downloads/mirrors/"
+      ],
+      "sources": {
+        "RUBY_DISTRIBUTION": {
+          "baseUrl": "https://www.ring.gr.jp/pub/lang/ruby/",
+          "allowedHosts": [
+            "www.ring.gr.jp"
+          ],
+          "routes": [
+            {
+              "origin": "https://cache.ruby-lang.org/pub/ruby/",
+              "prefix": "https://www.ring.gr.jp/pub/lang/ruby/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "安装包下载路径兼容；版本解析及原始校验由独立_METADATA点负责。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "cyberbits",
+      "label": "Cyberbits",
+      "country": "FR",
+      "region": "EUROPE",
+      "official": false,
+      "evidence": [
+        "https://www.ruby-lang.org/en/downloads/mirrors/"
+      ],
+      "sources": {
+        "RUBY_DISTRIBUTION": {
+          "baseUrl": "https://mirror.cyberbits.eu/ruby/",
+          "allowedHosts": [
+            "mirror.cyberbits.eu"
+          ],
+          "routes": [
+            {
+              "origin": "https://cache.ruby-lang.org/pub/ruby/",
+              "prefix": "https://mirror.cyberbits.eu/ruby/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "安装包下载路径兼容；版本解析及原始校验由独立_METADATA点负责。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "korea-freebsd",
+      "label": "Korea FreeBSD Users Group",
+      "country": "KR",
+      "region": "EAST_ASIA",
+      "official": false,
+      "evidence": [
+        "https://www.ruby-lang.org/en/downloads/mirrors/"
+      ],
+      "sources": {
+        "RUBY_DISTRIBUTION": {
+          "baseUrl": "https://ftp.kr.freebsd.org/pub/ruby/",
+          "allowedHosts": [
+            "ftp.kr.freebsd.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://cache.ruby-lang.org/pub/ruby/",
+              "prefix": "https://ftp.kr.freebsd.org/pub/ruby/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "安装包下载路径兼容；版本解析及原始校验由独立_METADATA点负责。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "sohu",
+      "label": "搜狐开源镜像",
+      "country": "CN",
+      "region": "CN",
+      "official": false,
+      "evidence": [
+        "https://mirrors.sohu.com/php/"
+      ],
+      "sources": {
+        "PHP_DISTRIBUTION": {
+          "baseUrl": "https://mirrors.sohu.com/php/",
+          "allowedHosts": [
+            "mirrors.sohu.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://www.php.net/distributions/",
+              "prefix": "https://mirrors.sohu.com/php/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "安装包下载路径兼容；版本解析及原始校验由独立_METADATA点负责。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-java_metadata",
+      "label": "官方 Java 版本信息与校验",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://api.adoptium.net/"
+      ],
+      "sources": {
+        "JAVA_METADATA": {
+          "baseUrl": "https://api.adoptium.net/",
+          "allowedHosts": [
+            "api.adoptium.net"
+          ],
+          "routes": [
+            {
+              "origin": "https://api.adoptium.net/",
+              "prefix": "https://api.adoptium.net/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "官方完整版本信息与校验；不把下载字节本地计算值当作官方校验。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-kotlin_metadata",
+      "label": "官方 Kotlin 版本信息与校验",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://api.github.com/repos/JetBrains/kotlin/"
+      ],
+      "sources": {
+        "KOTLIN_METADATA": {
+          "baseUrl": "https://api.github.com/repos/JetBrains/kotlin/",
+          "allowedHosts": [
+            "api.github.com",
+            "github.com",
+            "release-assets.githubusercontent.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://api.github.com/repos/JetBrains/kotlin/",
+              "prefix": "https://api.github.com/repos/JetBrains/kotlin/"
+            },
+            {
+              "origin": "https://github.com/JetBrains/kotlin/releases/download/",
+              "prefix": "https://github.com/JetBrains/kotlin/releases/download/"
+            },
+            {
+              "origin": "https://release-assets.githubusercontent.com/",
+              "prefix": "https://release-assets.githubusercontent.com/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "官方完整版本信息与校验；不把下载字节本地计算值当作官方校验。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-go_metadata",
+      "label": "官方 Go 版本信息与校验",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://go.dev/dl/"
+      ],
+      "sources": {
+        "GO_METADATA": {
+          "baseUrl": "https://go.dev/dl/",
+          "allowedHosts": [
+            "go.dev"
+          ],
+          "routes": [
+            {
+              "origin": "https://go.dev/dl/",
+              "prefix": "https://go.dev/dl/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "官方完整版本信息与校验；不把下载字节本地计算值当作官方校验。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-rust_metadata",
+      "label": "官方 Rust 版本信息与校验",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://api.github.com/repos/rust-lang/rust/"
+      ],
+      "sources": {
+        "RUST_METADATA": {
+          "baseUrl": "https://api.github.com/repos/rust-lang/rust/",
+          "allowedHosts": [
+            "api.github.com",
+            "static.rust-lang.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://api.github.com/repos/rust-lang/rust/",
+              "prefix": "https://api.github.com/repos/rust-lang/rust/"
+            },
+            {
+              "origin": "https://static.rust-lang.org/",
+              "prefix": "https://static.rust-lang.org/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "官方完整版本信息与校验；不把下载字节本地计算值当作官方校验。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-python_metadata",
+      "label": "官方 Python 版本信息与校验",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://www.python.org/ftp/python/"
+      ],
+      "sources": {
+        "PYTHON_METADATA": {
+          "baseUrl": "https://www.python.org/ftp/python/",
+          "allowedHosts": [
+            "www.python.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://www.python.org/ftp/python/",
+              "prefix": "https://www.python.org/ftp/python/"
+            },
+            {
+              "origin": "https://www.python.org/downloads/release/",
+              "prefix": "https://www.python.org/downloads/release/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "官方完整版本信息与校验；不把下载字节本地计算值当作官方校验。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-php_metadata",
+      "label": "官方 PHP 版本信息与校验",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://www.php.net/releases/"
+      ],
+      "sources": {
+        "PHP_METADATA": {
+          "baseUrl": "https://www.php.net/releases/",
+          "allowedHosts": [
+            "www.php.net"
+          ],
+          "routes": [
+            {
+              "origin": "https://www.php.net/releases/",
+              "prefix": "https://www.php.net/releases/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "官方完整版本信息与校验；不把下载字节本地计算值当作官方校验。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-ruby_metadata",
+      "label": "官方 Ruby 版本信息与校验",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://www.ruby-lang.org/en/downloads/releases/"
+      ],
+      "sources": {
+        "RUBY_METADATA": {
+          "baseUrl": "https://www.ruby-lang.org/en/downloads/releases/",
+          "allowedHosts": [
+            "www.ruby-lang.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://www.ruby-lang.org/en/downloads/releases/",
+              "prefix": "https://www.ruby-lang.org/en/downloads/releases/"
+            },
+            {
+              "origin": "https://www.ruby-lang.org/en/news/",
+              "prefix": "https://www.ruby-lang.org/en/news/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "官方完整版本信息与校验；不把下载字节本地计算值当作官方校验。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-dotnet_metadata",
+      "label": "官方 .NET 版本信息与校验",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://builds.dotnet.microsoft.com/dotnet/release-metadata/"
+      ],
+      "sources": {
+        "DOTNET_METADATA": {
+          "baseUrl": "https://builds.dotnet.microsoft.com/dotnet/release-metadata/",
+          "allowedHosts": [
+            "builds.dotnet.microsoft.com",
+            "dotnetcli.blob.core.windows.net"
+          ],
+          "routes": [
+            {
+              "origin": "https://builds.dotnet.microsoft.com/dotnet/release-metadata/",
+              "prefix": "https://builds.dotnet.microsoft.com/dotnet/release-metadata/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "官方完整版本信息与校验；不把下载字节本地计算值当作官方校验。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-node_metadata",
+      "label": "官方 Node.js 版本信息与校验",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://nodejs.org/dist/"
+      ],
+      "sources": {
+        "NODE_METADATA": {
+          "baseUrl": "https://nodejs.org/dist/",
+          "allowedHosts": [
+            "nodejs.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://nodejs.org/dist/",
+              "prefix": "https://nodejs.org/dist/"
+            },
+            {
+              "origin": "https://nodejs.org/download/release/",
+              "prefix": "https://nodejs.org/download/release/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "官方完整版本信息与校验；不把下载字节本地计算值当作官方校验。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-dnf_oracle",
+      "label": "官方 Oracle Linux 公共Yum",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://yum.oracle.com/oracle-linux-9.html",
+        "https://yum.oracle.com/oracle-linux-10.html",
+        "https://yum.oracle.com/getting-started.html",
+        "https://docs.oracle.com/en/operating-systems/oracle-linux/software-management/sfw-mgmt-AvailableYumRepositories.html"
+      ],
+      "sources": {
+        "DNF_ORACLE": {
+          "baseUrl": "https://yum.oracle.com/repo/OracleLinux/",
+          "allowedHosts": [
+            "yum.oracle.com"
+          ],
+          "routes": [
+            {
+              "origin": "https://yum.oracle.com/repo/OracleLinux/",
+              "prefix": "https://yum.oracle.com/repo/OracleLinux/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "OL9/10公开BaseOS/AppStream/Addons/CodeReady及对应UEK仓库；其他启用repoId不适用此已核实范围。",
+          "repoTemplates": {
+            "ol9_baseos_latest": "https://yum.oracle.com/repo/OracleLinux/OL9/baseos/latest/$basearch/",
+            "ol9_appstream": "https://yum.oracle.com/repo/OracleLinux/OL9/appstream/$basearch/",
+            "ol9_addons": "https://yum.oracle.com/repo/OracleLinux/OL9/addons/$basearch/",
+            "ol9_codeready_builder": "https://yum.oracle.com/repo/OracleLinux/OL9/codeready/builder/$basearch/",
+            "ol9_UEKR8": "https://yum.oracle.com/repo/OracleLinux/OL9/UEKR8/$basearch/",
+            "ol10_baseos_latest": "https://yum.oracle.com/repo/OracleLinux/OL10/baseos/latest/$basearch/",
+            "ol10_appstream": "https://yum.oracle.com/repo/OracleLinux/OL10/appstream/$basearch/",
+            "ol10_addons": "https://yum.oracle.com/repo/OracleLinux/OL10/addons/$basearch/",
+            "ol10_codeready_builder": "https://yum.oracle.com/repo/OracleLinux/OL10/codeready/builder/$basearch/",
+            "ol10_UEKR8": "https://yum.oracle.com/repo/OracleLinux/OL10/UEKR8/$basearch/",
+            "ol9_UEKR7": "https://yum.oracle.com/repo/OracleLinux/OL9/UEKR7/$basearch/"
+          }
+        }
+      }
+    },
+    {
+      "id": "tuna",
+      "label": "清华大学 TUNA",
+      "country": "CN",
+      "region": "CN",
+      "official": false,
+      "evidence": [
+        "https://mirrors.tuna.tsinghua.edu.cn/Adoptium/",
+        "https://mirrors.tuna.tsinghua.edu.cn/Adoptium/21/jdk/x64/linux/"
+      ],
+      "excludedCountries": [
+        "AT",
+        "BE",
+        "BG",
+        "HR",
+        "CY",
+        "CZ",
+        "DK",
+        "EE",
+        "FI",
+        "FR",
+        "DE",
+        "GR",
+        "HU",
+        "IE",
+        "IT",
+        "LV",
+        "LT",
+        "LU",
+        "MT",
+        "NL",
+        "PL",
+        "PT",
+        "RO",
+        "SK",
+        "SI",
+        "ES",
+        "SE"
+      ],
+      "sources": {
+        "JAVA_JDK": {
+          "baseUrl": "https://mirrors.tuna.tsinghua.edu.cn/Adoptium/",
+          "allowedHosts": [
+            "mirrors.tuna.tsinghua.edu.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://github.com/adoptium/",
+              "prefix": "https://mirrors.tuna.tsinghua.edu.cn/Adoptium/",
+              "pattern": "^https://github\\.com/adoptium/temurin([0-9]+)-binaries/releases/download/[^/]+/(OpenJDK\\1U-jdk_([^_/]+)_linux_hotspot_[^/]+\\.tar\\.gz)$",
+              "replacement": "https://mirrors.tuna.tsinghua.edu.cn/Adoptium/\\g<1>/jdk/\\g<3>/linux/\\g<2>"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "Temurin Linux JDK以major/arch/原文件名精确映射，摘要仍由独立JAVA_METADATA固定；缺少确切版本返回失败并按已选链继续，不代表保留完整历史版本。",
+          "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "cstcloud",
+      "label": "中国科技云北京镜像",
+      "country": "CN",
+      "region": "CN",
+      "official": false,
+      "evidence": [
+        "https://mirrors.cstcloud.cn/",
+        "https://mirrors.cstcloud.cn/Adoptium/21/jdk/x64/linux/"
+      ],
+      "excludedCountries": [],
+      "sources": {
+        "JAVA_JDK": {
+          "baseUrl": "https://mirrors.cstcloud.cn/Adoptium/",
+          "allowedHosts": [
+            "mirrors.cstcloud.cn"
+          ],
+          "routes": [
+            {
+              "origin": "https://github.com/adoptium/",
+              "prefix": "https://mirrors.cstcloud.cn/Adoptium/",
+              "pattern": "^https://github\\.com/adoptium/temurin([0-9]+)-binaries/releases/download/[^/]+/(OpenJDK\\1U-jdk_([^_/]+)_linux_hotspot_[^/]+\\.tar\\.gz)$",
+              "replacement": "https://mirrors.cstcloud.cn/Adoptium/\\g<1>/jdk/\\g<3>/linux/\\g<2>"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "Temurin Linux JDK以major/arch/原文件名精确映射，摘要仍由独立JAVA_METADATA固定；缺少确切版本返回失败并按已选链继续，不代表保留完整历史版本。",
+          "repoTemplates": {}
+        }
+      }
+    }
+  ],
+  "geoIp": {
+    "resource": "/gold/debug/windowstolinux/mod/deployment/config/geoip/dbip-country-lite-2026-11.csv.gz",
+    "version": "2026-11",
+    "attribution": "IP Geolocation by DB-IP (https://db-ip.com)",
+    "license": "CC BY 4.0",
+    "source": "https://db-ip.com/db/download/ip-to-country-lite"
+  },
+  "ipProbeUrls": [
+    "https://api64.ipify.org/",
+    "https://api.ipify.org/"
+  ]
+}

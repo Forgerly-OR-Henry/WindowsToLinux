@@ -40,7 +40,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "b29887d896bb61cf6b61e43b59441f78c63008b8ddd32fff1c3b6285eed9d3ab";
+    public static final String EXPECTED_SHA256 = "535861d0ef1c0621d3eca7565895e3fe35267f422f834f174a604423d336f359";
 
     /**
      * ROOT.
@@ -71,6 +71,7 @@ public final class DeploymentManagedHelperBundle {
         "input/15-deployment-input.sh",
         "input/16-application-input.sh",
         "input/17-managed-content.sh",
+        "input/19-mirror-material.sh",
         "release/18-container-storage.sh",
         "workspace/20-candidate-workspace.sh",
         "workspace/21-workspace-volume.sh",
@@ -180,6 +181,8 @@ public final class DeploymentManagedHelperBundle {
     }
 
     public static String verifiedBody(String script, DeploymentRemoteLayout layout) {
+        script = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.preparation(script)
+            .map(gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.Preparation::original).orElse(script);
         String guard = executionGuard(layout);
         if (script == null || !script.startsWith(guard))
             throw new IllegalArgumentException("Installed helper integrity guard missing or changed");
@@ -291,6 +294,7 @@ public final class DeploymentManagedHelperBundle {
     public static Map<String, Object> buildIsolationImplementationFacts(DeploymentRemoteLayout layout) {
         String complete = renderScript(layout), entry = renderBuildEntry(layout);
         var groups = List.of(List.of("00-protocol-foundation.sh"),
+            List.of("input/19-mirror-material.sh"),
             List.of("workspace/20-candidate-workspace.sh", "workspace/21-workspace-volume.sh", "workspace/22-restricted-build.sh", "workspace/23-container-builder.sh"),
             List.of("workspace/26-build-output.sh"), List.of("ecosystem/35-ecosystem-dispatch.sh"),
             List.of("runtime/systemd/61-service-identity.sh"), List.of("70-command-dispatch.sh"));
@@ -367,7 +371,8 @@ public final class DeploymentManagedHelperBundle {
                         "managed-deployment privilege helper fragment is unavailable: " + fragment);
                 }
                 String content = new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
-                content = DeploymentRemoteLayoutTemplate.render(expandResourceInserts(content), layout);
+                content = gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderToolchainSources(
+                    DeploymentRemoteLayoutTemplate.render(expandResourceInserts(content), layout));
                 if (fragment.startsWith("toolchain/")) {
                     if (fragment.endsWith("10-release-metadata.py"))
                         output.write(

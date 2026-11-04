@@ -70,7 +70,12 @@ public final class DotNetSdkBuildWriter implements DeploymentBuildWriter {
             else dotnet --version | grep -Eq %s; fi
             test -f ./global.json
             test -f ./packages.lock.json
-            run "${dotnet_command[@]}" restore --locked-mode
+            if [ -n "${WTL_MIRROR_POLICY:-}" ]; then
+              export DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=true
+              wtl_dependency NUGET "${dotnet_command[@]}" restore --locked-mode
+            else
+              run "${dotnet_command[@]}" restore --locked-mode
+            fi
             mkdir -p ./.w2l/dotnet
             run "${dotnet_command[@]}" publish --no-restore --configuration Release "-p:PublishDir=$PWD/.w2l/dotnet/"
             test -f "./.w2l/dotnet/$artifact_name.dll"

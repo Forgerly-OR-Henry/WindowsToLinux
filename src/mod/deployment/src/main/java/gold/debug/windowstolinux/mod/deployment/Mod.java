@@ -76,6 +76,12 @@ public final class Mod implements ModEntrypoint {
         if (this.context != null || !registrations.isEmpty())
             throw new IllegalStateException("Deployment context is already bound or retained");
         DeploymentConfigLoader.current();
+        gold.debug.windowstolinux.mod.deployment.config.mirror.MirrorCatalog.load();
+        gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.privacyPrompt(() ->
+            gold.debug.windowstolinux.mod.deployment.ui.mirror.DeploymentMirrorPrivacy.confirm(null,
+                java.util.ResourceBundle.getBundle(
+                    gold.debug.windowstolinux.mod.deployment.ui.mirror.DeploymentMirrorSettingsPage.MESSAGES,
+                    context.ui().environment().locale())));
         DeploymentSchemaIdentity.requireIdentity(context.db().identity());
         context.logs().register(new LogCategory("deployment", "Deployment", Optional.of("deployment_log")));
         var assembly = new DeploymentStandardAssembly();
@@ -127,6 +133,9 @@ public final class Mod implements ModEntrypoint {
                 .add(context.tasks().registerRecovery(DeploymentApplicationsService.ACTION_TASK, applicationTasks));
             registrations.add(context.services().register(DeploymentApi.class, deploymentApi));
             if (context.launchMode() == ModLaunchMode.NORMAL) {
+                registrations.add(context.ui().register(new PageSpec("mirror-settings", "deployment.mirrors.title",
+                    "Mirror sources / 镜像源", true), () ->
+                    new gold.debug.windowstolinux.mod.deployment.ui.mirror.DeploymentMirrorSettingsPage(context)));
                 for (var kind : java.util.List.of(
                     gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind.GO_SERVICE,
                     gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind.NODE_SERVICE))
@@ -220,6 +229,7 @@ public final class Mod implements ModEntrypoint {
         gitSourceFlow = null;
         publicationFlow = null;
         this.context = null;
+        gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.clear();
     }
 
     /** Closes owned registrations in reverse order and retains every unconfirmed close for retry. / 逆序关闭所属登记并保留每项未确认关闭供重试。

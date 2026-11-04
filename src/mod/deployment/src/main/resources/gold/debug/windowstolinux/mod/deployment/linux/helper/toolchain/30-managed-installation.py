@@ -130,7 +130,7 @@ def ruby_legacy_tls(destination, work):
     # Ruby 3.0's bundled OpenSSL 2.2 cannot use OpenSSL 3. Install this compatible default-gem replacement privately.
     version, digest = '3.0.3', 'e24fcd69f6e0bac1e1c3cb8667d0ded5c1f6c59d010ecb5c857a771c9cb7565c'
     gem = work / ('openssl-' + version + '.gem')
-    url = 'https://rubygems.org/downloads/' + gem.name
+    url = source_url('RUBYGEMS', 'downloads/' + gem.name)
     download(url, gem, 'sha256', digest)
     environment = dict(os.environ, PATH=str(destination / 'bin') + ':/usr/bin:/bin')
     run(
@@ -163,6 +163,8 @@ def seal_installation(destination, marker_pending=False):
 
 
 def install(ecosystem, identity, url, algorithm, expected, layout):
+    global MIRROR_POINT
+    MIRROR_POINT = toolchain_point(ecosystem)
     tracked = globals().get('TRACKED_OPERATION')
     if algorithm not in ('sha256', 'sha512') or not re.fullmatch(
         '[a-f0-9]{' + str(64 if algorithm == 'sha256' else 128) + '}', expected

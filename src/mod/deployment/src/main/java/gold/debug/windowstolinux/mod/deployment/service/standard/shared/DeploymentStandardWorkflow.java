@@ -148,11 +148,12 @@ public final class DeploymentStandardWorkflow {
                 "Git source requires an explicit project name", Map.of(), Optional.empty()));
         if (git.isPresent() && draft.sourceOptions().localLocation().isPresent())
             throw new IllegalArgumentException("Publication captured two source routes");
-        return references.submitPrepared(server, task -> {
+        return gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.track(references.submitPrepared(server, task -> {
             try {
                 gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), task,
                     new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
                         gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths()));
+                new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).prepare(task, server);
                 new DeploymentPreferenceStore(context.db()).save(task,
                     new DeploymentPreferenceStore.Selection(
                         assisted ? "ASSISTED" : "STATIC", approvalMode, rememberAuthorization));
@@ -181,7 +182,7 @@ public final class DeploymentStandardWorkflow {
                         : code == ProblemCode.CANCELLED ? TaskResult.CANCELLED : TaskResult.FAILED,
                     Optional.empty(), Optional.of(unavailable.problem()));
             }
-        });
+        }));
     }
 
     /** Retains local evidence before original selection, then hands off only a complete reviewed publication. / 原选材前保留本机依据，且只交接完整审阅发布。
@@ -350,6 +351,7 @@ public final class DeploymentStandardWorkflow {
         validateReview(prompt, supplied.get(id));
         var stages = new DeploymentDatabaseStages(context);
         stages.validateRuntime(databaseLocal, supplied.get(id));
+        captureMirrors(server, task, material, selection, List.of(prompt), supplied);
         var plan = stages.begin(server, material.snapshot().sha256(), List.of(databaseLocal), task);
         if (plan.isPresent()) {
             var helper = ensureHelper(server, task);
@@ -451,6 +453,7 @@ public final class DeploymentStandardWorkflow {
         var stages = new DeploymentDatabaseStages(context);
         for (var prompt : prompts)
             stages.validateRuntime(databaseLocal.get(prompt.componentId()), supplied.get(prompt.componentId()));
+        captureMirrors(server, task, material, selection, prompts, supplied);
         var requests = new ArrayList<PartAnalysisRequest>();
         for (int i = 0; i < discovered.size(); i++)
             requests.add(componentRequest(discovered.get(i), selection.choices().get(discovered.get(i).id()),
@@ -851,6 +854,18 @@ public final class DeploymentStandardWorkflow {
         DeploymentConfigInput.secrets(values.getOrDefault("secrets", ""));
         var mode = DeploymentDatabaseReviewModeType.valueOf(values.getOrDefault("databaseMode", "UNREVIEWED"));
         DeploymentStandardInputParser.databaseBindings(mode, values.getOrDefault("databaseDetails", ""));
+    }
+
+    private void captureMirrors(ServerId server, TaskContext task, DeploymentSourceMaterial material,
+                                Selection selection, List<Prompt> prompts, Map<String, Answers> answers) throws Exception {
+        var required = java.util.EnumSet.noneOf(gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.class);
+        required.addAll(gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorRequirements.forKinds(
+            selection.choices().values().stream().map(Choice::type).toList()));
+        required.retainAll(gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorRequirements.forSource(material.snapshot().directory()));
+        for (var prompt : prompts) required.addAll(
+            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorRequirements.additionalForRuntime(
+                runtime.runtime(prompt.projectType(), completed(prompt, answers.get(prompt.componentId())))));
+        new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).capture(task, server, required);
     }
 
     /** Derives a graph request from the exact reviewed runtime values. / 从精确审阅运行值派生整图请求。

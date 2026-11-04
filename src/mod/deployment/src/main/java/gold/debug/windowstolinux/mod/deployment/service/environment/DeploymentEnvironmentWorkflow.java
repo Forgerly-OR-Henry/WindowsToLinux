@@ -70,10 +70,10 @@ public final class DeploymentEnvironmentWorkflow {
     public TaskHandle<Void> submit(ServerInfo original) throws ApiException {
         Objects.requireNonNull(original);
         var handle = context.tasks().<Void>submit(new TaskRequest(TASK_TYPE, gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "environment.taskTitle"),
-            List.of(original.ref().id()), true), task -> start(original, task));
+            List.of(original.ref().id()), true), task -> new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).run(task, active -> start(original, active)));
         consentAccepted.putIfAbsent(handle.id(), false);
         handle.completion().whenComplete((result, failure) -> consentAccepted.remove(handle.id()));
-        return handle;
+        return gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.track(handle);
     }
 
     /** Observes only this activation's unanswered initial scope review, without storage or operation authority. / 仅观察本启用尚未回答的初始范围审阅，不授予存储或操作权限。
@@ -98,8 +98,14 @@ public final class DeploymentEnvironmentWorkflow {
      * @return original verified or retained uncertain result / 原已核或保留未知结果
      * @throws Exception if original evidence or cleanup fails / 原依据或清理失败时 */
     public OperationResult<Void> reconcile(TaskSnapshot previous, TaskContext task) throws Exception {
+        return new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).run(task,
+            active -> reconcileMirrors(previous, active));
+    }
+
+    private OperationResult<Void> reconcileMirrors(TaskSnapshot previous, TaskContext task) throws Exception {
         if (!previous.id().equals(task.id()) || !TASK_TYPE.equals(previous.type()))
             throw new IllegalArgumentException("Environment recovery task differs");
+        new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).restore(task);
         var journal = DeploymentEnvironmentJournal.find(context.tasks(), task);
         if (journal.isEmpty()) return failed("ENVIRONMENT_ORIGINAL_EVIDENCE_MISSING");
         return new DeploymentEnvironmentRunner(context, review, task, journal.orElseThrow()).run(true);
@@ -114,6 +120,7 @@ public final class DeploymentEnvironmentWorkflow {
         var layout = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
             gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths());
         gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), task, layout);
+        new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).prepare(task, original.ref());
         var target = new RemoteTarget(original.ref(), task.id(), original.host(), original.port(), original.username(),
             original.trustedFingerprint());
         String exact = "server=" + original.ref().id() + "\nhost=" + original.host() + "\nport=" + original.port()
@@ -127,6 +134,9 @@ public final class DeploymentEnvironmentWorkflow {
         if (approval.outcome() != TaskResult.SUCCEEDED)
             return new OperationResult<>(approval.outcome(), Optional.empty(), approval.problem());
         consentAccepted.put(task.id(), true);
+        new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).capture(task, original.ref(),
+            java.util.Arrays.stream(gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.values())
+                .filter(point -> point.name().startsWith("APT_") || point.name().startsWith("DNF_")).collect(java.util.stream.Collectors.toSet()));
         gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.environment(context.tasks(), task, timing);
         var journal = DeploymentEnvironmentJournal.begin(context.tasks(), task, target);
         return new DeploymentEnvironmentRunner(context, review, task, journal).run(false);

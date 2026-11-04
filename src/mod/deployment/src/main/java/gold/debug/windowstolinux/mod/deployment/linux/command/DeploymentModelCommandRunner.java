@@ -80,6 +80,7 @@ public final class DeploymentModelCommandRunner {
 
     private static String execute(ModContext context, RemoteSession session, ServerId server, TaskContext task,
                                   String revision, String script, int seconds, String reason, BoundIdentity bound) throws Exception {
+        gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.requireProjectScript(task);
         DeploymentCommandStaticGate.requireFixedAllowed(script);
         if (script.length() > 24000 || seconds < 1 || seconds > 7200 || reason.isBlank() || reason.length() > 2000)
             throw new IllegalArgumentException("Invalid model command limits or rationale");

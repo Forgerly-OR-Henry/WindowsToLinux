@@ -106,7 +106,11 @@ public final class DeploymentNativeDatabaseWire {
         if (!Set.of("inspect", "install", "start", "resume", "target", "prepare", "initialize", "status")
             .contains(action))
             throw new IllegalArgumentException("Unsupported native database action");
-        try (var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand("'" + layout.helperPath() + "' native-db " + action, layout), frame,
+        String executable = DeploymentManagedHelperBundle.verifiedCommand("'" + layout.helperPath() + "' native-db " + action, layout);
+        if (Set.of("inspect", "install", "prepare", "initialize", "resume", "start").contains(action))
+            executable = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.preparationCommand(executable, task,
+                "install".equals(action) ? 1800 : 600);
+        try (var request = new CommandRequest(executable, frame,
             "status".equals(action)
                 ? Duration.ofSeconds(30)
                 : "install".equals(action) ? Duration.ofMinutes(30) : Duration.ofMinutes(10),

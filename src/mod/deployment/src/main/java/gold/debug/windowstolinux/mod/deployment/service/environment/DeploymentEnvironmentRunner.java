@@ -233,7 +233,10 @@ final class DeploymentEnvironmentRunner {
     private void dispatch(DeploymentEnvironmentState state, String stage, String dispatched)
         throws ApiException, DeploymentEnvironmentPendingException {
         checkCancellation();
-        try (var session = context.linux().connect(state.target(), task); var request = DeploymentEnvironmentScripts.request(state, stage, timing)) {
+        if (!java.util.Set.of("probe", "verify").contains(stage))
+            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.requireCaptured(task.id());
+        try (var session = context.linux().connect(state.target(), task); var request = DeploymentEnvironmentScripts.request(state, stage, timing,
+            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task))) {
             var approval = review.approve(state.target(), revision(state), request, task);
             if (approval.outcome() != TaskResult.SUCCEEDED) {
                 if (state.stage().equals("OBSERVED")) {
@@ -242,7 +245,8 @@ final class DeploymentEnvironmentRunner {
                 }
                 throw new DeploymentEnvironmentPendingException("ENVIRONMENT_REVIEW_CANCELLED_AFTER_CHANGE");
             }
-            var sent = state.next(dispatched, DeploymentEnvironmentScripts.requestDigest(state, stage), state.observation().orElseThrow());
+            var sent = state.next(dispatched, DeploymentEnvironmentScripts.requestDigest(state, stage,
+                gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task), timing.installSeconds()), state.observation().orElseThrow());
             journal.advance(state, sent);
             gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
                 gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "environment.command." + stage));

@@ -64,6 +64,7 @@ public final class DeploymentStandardTaskRecovery implements TaskRecovery {
         if (!DeploymentRefFlow.TASK_TYPE.equals(previous.type()) || !previous.id().equals(task.id())
             || !context.identity().id().equals(previous.ownerId()) || !context.identity().version().equals(previous.ownerVersion()))
             return unknown();
+        new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).restore(task);
         final DeploymentPublishPolicyContext guarded;
         try {
             guarded = DeploymentPublishPolicyContext.recover(context, task, recoverySupport);
@@ -73,13 +74,16 @@ public final class DeploymentStandardTaskRecovery implements TaskRecovery {
         var recovery = new DeploymentStandardTaskRecovery(guarded,
             new DeploymentRefFlow(guarded, recoverySupport.publication(guarded)), recoverySupport);
         try {
-            var graphDiagnostic = DeploymentStandardPreparationDiagnosticRecovery.reconcileGraphIfSelected(guarded, task);
-            if (graphDiagnostic.isPresent()) return graphDiagnostic.orElseThrow();
-            var diagnostic = DeploymentStandardPreparationDiagnosticRecovery.reconcileIfEligible(guarded, task);
-            if (diagnostic.isPresent()) return diagnostic.orElseThrow();
-            return recovery.reconcileOriginal(previous, task);
+            return new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(guarded).run(task, active -> {
+                var graphDiagnostic = DeploymentStandardPreparationDiagnosticRecovery.reconcileGraphIfSelected(guarded, active);
+                if (graphDiagnostic.isPresent()) return graphDiagnostic.orElseThrow();
+                var diagnostic = DeploymentStandardPreparationDiagnosticRecovery.reconcileIfEligible(guarded, active);
+                if (diagnostic.isPresent()) return diagnostic.orElseThrow();
+                return recovery.reconcileOriginal(previous, active);
+            });
         } finally {
             guarded.finish(TaskResult.UNKNOWN);
+            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.forget(task);
         }
     }
 

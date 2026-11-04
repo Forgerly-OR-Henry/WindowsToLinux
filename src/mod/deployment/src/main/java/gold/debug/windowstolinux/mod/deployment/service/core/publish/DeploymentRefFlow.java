@@ -130,7 +130,7 @@ public final class DeploymentRefFlow implements TaskRecovery {
         Objects.requireNonNull(preparation);
         return context.tasks().submit(new TaskRequest(TASK_TYPE,
             DeploymentDiagnostics.text(context, "publication.taskTitle"), List.of(server.id()), true),
-            task -> {
+            task -> new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).run(task, active -> {
                 try (var boundary = taskBoundary.isPresent() ? taskBoundary.orElseThrow().begin(task) : null) {
                     OperationResult<PreparedPublish> prepared;
                     try {
@@ -176,7 +176,7 @@ public final class DeploymentRefFlow implements TaskRecovery {
                             ready.cleanup().close();
                     }
                 }
-            });
+            }));
     }
 
     /** Writes original preparation failure facts before later reconciliation replaces the platform summary. */

@@ -53,6 +53,9 @@ public final class DeploymentAgentInstallReviewIntent {
         byte[] body = request.stdin();
         try {
             String script = filesOnly ? DeploymentHelperInstallerScript.renderFiles(layout) : DeploymentHelperInstallerScript.render(layout);
+            var mirror = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.executable(
+                new String(body, StandardCharsets.UTF_8));
+            if (mirror.isPresent()) script = DeploymentHelperInstallerScript.withMirrors(script, mirror.orElseThrow().policy());
             if (!Arrays.equals(body, script.getBytes(StandardCharsets.UTF_8)))
                 throw new IllegalArgumentException("Agent installer bytes differ from the current complete installer");
         } finally {

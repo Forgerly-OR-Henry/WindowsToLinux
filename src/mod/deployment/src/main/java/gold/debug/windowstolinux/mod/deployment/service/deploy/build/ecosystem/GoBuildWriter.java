@@ -66,7 +66,12 @@ public final class GoBuildWriter implements DeploymentBuildWriter {
             test -f ./go.sum
             test -f ./main.go
             mkdir -p ./.w2l/bin
-            CGO_ENABLED=0 run go build -mod=readonly -trimpath -o "./.w2l/bin/$artifact_name" .
+            if [ -n "${WTL_MIRROR_POLICY:-}" ]; then
+              wtl_dependency GO_MODULE go mod download
+              CGO_ENABLED=0 GOPROXY=off run go build -mod=readonly -trimpath -o "./.w2l/bin/$artifact_name" .
+            else
+              CGO_ENABLED=0 run go build -mod=readonly -trimpath -o "./.w2l/bin/$artifact_name" .
+            fi
             test -x "./.w2l/bin/$artifact_name"
             test ! -L "./.w2l/bin/$artifact_name"
             printf 'ARTIFACT=%%s\n' "./.w2l/bin/$artifact_name"

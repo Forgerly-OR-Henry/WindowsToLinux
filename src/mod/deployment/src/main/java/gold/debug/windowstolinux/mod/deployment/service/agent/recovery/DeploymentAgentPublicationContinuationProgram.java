@@ -49,10 +49,9 @@ public final class DeploymentAgentPublicationContinuationProgram {
         // Compare only: never slice, execute or include the old immediate entry.
         if(!DeploymentManagedHelperBundle.renderPublicationRecovery(layout).equals(base+"\n"+oldGuard))throw invalid();
         String bash=base+"\n"+DeploymentRemoteLayoutTemplate.render(resource("service/agent/recovery/publication-continuation-guard.sh"),layout);
-        if(bash.contains("'''"))throw invalid();
         String template=resource("service/agent/recovery/publication-continuation.py"),marker="# @WTL_CONTINUATION_BASH@";
         if(template.indexOf(marker)<0||template.indexOf(marker)!=template.lastIndexOf(marker))throw invalid();
-        source=template.replace(marker,"BASH_SOURCE = r'''"+bash+"'''");if(source.getBytes(StandardCharsets.UTF_8).length>524288)throw invalid();
+        source=template.replace(marker,"BASH_SOURCE = "+JSON.valueToTree(bash).toString());if(source.getBytes(StandardCharsets.UTF_8).length>1048576)throw invalid();
     }
     public String source(){return source;}
     /** Product-bound expected stdin identity, not an independent measurement of executed remote code. */
@@ -94,16 +93,17 @@ public final class DeploymentAgentPublicationContinuationProgram {
         "workspace/apparmor-namespace.sh", "# @compat:systemd-isolation@\n",
         "runtime/systemd/systemd-manager-isolation.sh", "# @compat:selinux-entry@\n",
         "runtime/systemd/selinux-command-entry.sh", "# @compat:centos-repositories@\n",
-        "toolchain/centos-source-repositories.py", "# @compat:toolchain-archives@\n", "toolchain/archive-boundaries.py");
+        "toolchain/centos-source-repositories.py", "# @compat:toolchain-archives@\n", "toolchain/archive-boundaries.py",
+        "# @compat:toolchain-tracked@\n", "toolchain/tracked-operations.py");
 
     private static String assembleBase(DeploymentRemoteLayout layout){
         var output=new StringBuilder();var catalog=DeploymentToolchainCatalog.defaults();
         for(String fragment:FRAGMENTS){
             String content=resource("linux/helper/"+fragment);
             for(var insert:RESOURCE_INSERTS.entrySet())if(content.contains(insert.getKey()))content=content.replaceAll("(?m)^[ \t]*"+java.util.regex.Pattern.quote(insert.getKey()),java.util.regex.Matcher.quoteReplacement(resource("linux/helper/"+insert.getValue())));
-            content=DeploymentRemoteLayoutTemplate.render(content,layout);
+            content=gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderToolchainSources(DeploymentRemoteLayoutTemplate.render(content,layout));
             if(fragment.startsWith("toolchain/")){
-                if(fragment.endsWith("10-release-metadata.py"))output.append("prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" <<'WTL_OFFICIAL_TOOLCHAINS'\n").append(catalogLiteral(catalog));
+                if(fragment.endsWith("10-release-metadata.py"))output.append("prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'\n").append(catalogLiteral(catalog));
                 output.append(content).append('\n');if(fragment.endsWith("40-binding-protocol.py"))output.append("WTL_OFFICIAL_TOOLCHAINS\n}\n");continue;
             }
             if(fragment.endsWith("00-protocol-foundation.sh"))content+="build_entry_sha256="+DeploymentManagedHelperBundle.buildEntrySha256(layout)+"\n";

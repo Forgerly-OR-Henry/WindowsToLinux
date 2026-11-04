@@ -67,12 +67,20 @@ public final class BundlerBuildWriter implements DeploymentBuildWriter {
             [[ "$bundler_version" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] || { printf 'BUILD_REJECT=bundler-exact-version-required\\n'; exit 64; }
             [ "${bundler_version%%%%.*}" -ge 2 ] || { printf 'BUILD_TOOL_INCOMPATIBLE=bundler-config-set\\n'; exit 64; }
             export GEM_HOME="$PWD/.w2l/bundler" GEM_PATH="$PWD/.w2l/bundler:"
-            run gem install bundler --version "$bundler_version" --install-dir "$GEM_HOME" --bindir "$GEM_HOME/bin" --env-shebang --no-document --ignore-dependencies --source https://rubygems.org
+            if [ -n "${WTL_MIRROR_POLICY:-}" ]; then
+              wtl_dependency RUBYGEMS gem install bundler --version "$bundler_version" --install-dir "$GEM_HOME" --bindir "$GEM_HOME/bin" --env-shebang --no-document --ignore-dependencies
+            else
+              run gem install bundler --version "$bundler_version" --install-dir "$GEM_HOME" --bindir "$GEM_HOME/bin" --env-shebang --no-document --ignore-dependencies --source https://rubygems.org
+            fi
             export PATH="$GEM_HOME/bin:$PATH" BUNDLE_VERSION="$bundler_version"
             bundle --version | grep -Fx "Bundler version $bundler_version"
             bundle config set --local deployment true
             bundle config set --local path vendor/bundle
-            run bundle install --jobs 1 --retry 0
+            if [ -n "${WTL_MIRROR_POLICY:-}" ]; then
+              wtl_dependency RUBYGEMS bundle install --jobs 1 --retry 0
+            else
+              run bundle install --jobs 1 --retry 0
+            fi
             %s
             test -d ./vendor/bundle
             test -z "$(find ./vendor/bundle -xdev -type l -print -quit)"

@@ -110,6 +110,7 @@ public final class DeploymentAgentToolchainProgramStore {
     }
 
     static List<String> arguments(String script, DeploymentRemoteLayout layout) {
+        script = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.originalCommand(script);
         String prefix = "/usr/bin/python3 -I -S -c " + quote(loader(layout)) + " ";
         if (!script.startsWith(prefix)) throw new IllegalArgumentException("Installed controller loader changed");
         var matcher = Pattern.compile("'([^']*)'(?: |$)").matcher(script.substring(prefix.length()));

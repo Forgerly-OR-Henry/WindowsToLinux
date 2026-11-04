@@ -1,0 +1,11 @@
+DB-IP Country Lite - November 2026
+Data copyright DB-IP.com.
+IP Geolocation by DB-IP: https://db-ip.com
+Source: https://db-ip.com/db/download/ip-to-country-lite
+Downloaded on 2026-11-04 from https://download.db-ip.com/free/dbip-country-lite-2026-11.csv.gz
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+License deed: https://creativecommons.org/licenses/by/4.0/
+Legal code: https://creativecommons.org/licenses/by/4.0/legalcode
+The CSV.gz is redistributed unmodified. Attribution must be retained when redistributing.
+DB-IP Lite has reduced coverage and accuracy; country results are estimates, not a location guarantee.
+This application queries this local database only; it does not upload the known server IP to DB-IP.

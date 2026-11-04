@@ -114,6 +114,7 @@ public final class DeploymentAgentToolchainPrograms {
     }
 
     static List<String> arguments(String command) {
+        command = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.originalCommand(command);
         if (command == null || !command.startsWith(COMMAND_PREFIX))
             throw new IllegalArgumentException("Agent program launcher changed");
         String tail = command.substring(COMMAND_PREFIX.length());

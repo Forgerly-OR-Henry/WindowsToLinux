@@ -39,6 +39,7 @@
     "HELPER_RUNTIME": [
       "python3",
       "curl",
+      "openssl",
       "tar",
       "gzip",
       "coreutils",
@@ -104,6 +105,7 @@
     "HELPER_RUNTIME": [
       "python3",
       "curl",
+      "openssl",
       "tar",
       "gzip",
       "coreutils",

@@ -9,13 +9,13 @@ public final class DeploymentHelperInstallerScript {
     public static final String RECEIPT_DIRECTORY = "/var/lib/windowstolinux/helper-install-operations";
 
     /** Fixed apt prerequisites used by the installer. / 安装器使用的固定 apt 依赖。 */
-    public static final String APT_PACKAGES = "python3 curl tar gzip coreutils util-linux findutils gawk e2fsprogs acl sudo iproute2 sqlite3";
+    public static final String APT_PACKAGES = "python3 curl openssl tar gzip coreutils util-linux findutils gawk e2fsprogs acl sudo iproute2 sqlite3";
 
     /** Fixed dnf prerequisites used by the installer. / 安装器使用的固定 dnf 依赖。 */
-    public static final String DNF_PACKAGES = "python3 curl tar gzip coreutils util-linux findutils gawk e2fsprogs acl sudo iproute sqlite";
+    public static final String DNF_PACKAGES = "python3 curl openssl tar gzip coreutils util-linux findutils gawk e2fsprogs acl sudo iproute sqlite";
 
     /** Fixed runtime prerequisites for files-only installation and its readiness observation. / 仅文件安装及其就绪观测的固定运行依赖。 */
-    public static final java.util.List<String> RUNTIME_COMMANDS = java.util.List.of("bash", "env", "python3", "curl",
+    public static final java.util.List<String> RUNTIME_COMMANDS = java.util.List.of("bash", "env", "python3", "curl", "openssl",
         "tar", "gzip", "stat", "readlink", "realpath", "sha256sum", "find", "awk", "grep", "sed", "install",
         "mktemp", "chmod", "chown", "rm", "mv", "cp", "cat", "head", "tail", "base64", "id", "sync", "timeout",
         "df", "du", "flock", "setpriv", "fallocate", "losetup", "mkfs.ext4", "mount", "umount", "findmnt",
@@ -23,6 +23,28 @@ public final class DeploymentHelperInstallerScript {
 
     /** Prevents construction. / 禁止实例化。 */
     private DeploymentHelperInstallerScript() {
+    }
+
+    /** Adapts only this product's fixed installers, before their complete request is reviewed. */
+    public static String withMirrors(String script, String policy) {
+        return withMirrors(script, policy, 7200);
+    }
+    public static String withMirrors(String script, String policy, long seconds) {
+        if (policy == null || policy.isEmpty()) return script;
+        if (seconds < 1 || seconds > 7200) throw new IllegalArgumentException("Invalid installer mirror budget");
+        try {
+            String task = new com.fasterxml.jackson.databind.ObjectMapper().readTree(policy).path("task").asText();
+            return gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.withMaterials(
+                gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.wrapPreparation(
+                    "export WTL_MIRROR_BUDGET_SECONDS=" + seconds + " WTL_MIRROR_STARTED_AT=\"$(/usr/bin/date +%s)\"\n" + script, policy), java.util.UUID.fromString(task));
+        } catch (java.io.IOException invalid) { throw new IllegalArgumentException("Invalid mirror task policy", invalid); }
+    }
+
+    private static String packageCommands() {
+        return """
+            deployment_apt() { if [ -n "${WTL_MIRROR_POLICY:-}" ]; then wtl_apt "$@"; else command apt-get "$@"; fi; }
+            deployment_dnf() { if [ -n "${WTL_MIRROR_POLICY:-}" ]; then wtl_dnf "$@"; else command dnf "$@"; fi; }
+            """;
     }
 
     /** Renders the bounded managed platform installation. / 渲染有界受管平台安装。
@@ -43,13 +65,13 @@ public final class DeploymentHelperInstallerScript {
     }
 
     public static String renderFiles(DeploymentRemoteLayout layout) {
-        return renderFiles("""
+        return renderFiles(packageCommands() + """
               if command -v apt-get >/dev/null; then
                 export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
-                apt-get -o DPkg::Lock::Timeout=300 update
-                apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends %s
+                deployment_apt -o DPkg::Lock::Timeout=300 update
+                deployment_apt -o DPkg::Lock::Timeout=300 install -y --no-install-recommends %s
               elif command -v dnf >/dev/null; then
-                dnf install -y %s
+                deployment_dnf install -y %s
               else printf 'PREPARE_REJECT=platform-package-manager\\n'; exit 64; fi
             """.formatted(APT_PACKAGES, DNF_PACKAGES), layout);
     }
@@ -143,7 +165,7 @@ public final class DeploymentHelperInstallerScript {
             if [ "$files_missing" -eq 0 ] && [ "$runtime_missing" -eq 0 ]; then
               printf 'PREPARE_REJECT=files-install-not-required\\n'; exit 64
             fi
-            """ + renderSecurityObservationFunctions() + renderInstallationLock(layout) + """
+            """ + renderSecurityObservationFunctions() + renderInstallationLock(layout) + packageCommands() + """
             prepare_stage=platform-packages
             if [ "$runtime_missing" -ne 0 ]; then
             """ + prerequisitesScript + fixedLayout("""
@@ -345,14 +367,14 @@ public final class DeploymentHelperInstallerScript {
             [ "$(id -u)" -eq 0 ] || exit 64
             command -v systemctl >/dev/null
             """ + DeploymentRemoteLayoutAdmission.initialize(layout) + begin + renderInstallationLock(layout)
-            + """
+            + packageCommands() + """
             prepare_stage=platform-packages
             if command -v apt-get >/dev/null; then
               export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
-              apt-get -o DPkg::Lock::Timeout=300 update
-              apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends %s
+              deployment_apt -o DPkg::Lock::Timeout=300 update
+              deployment_apt -o DPkg::Lock::Timeout=300 install -y --no-install-recommends %s
             elif command -v dnf >/dev/null; then
-              dnf install -y %s
+              deployment_dnf install -y %s
             else printf 'PREPARE_REJECT=platform-package-manager\\n'; exit 64; fi
             prepare_stage=helper-installation
             """

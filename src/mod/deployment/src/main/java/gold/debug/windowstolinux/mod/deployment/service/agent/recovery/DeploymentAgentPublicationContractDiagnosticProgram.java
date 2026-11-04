@@ -67,11 +67,10 @@ public final class DeploymentAgentPublicationContractDiagnosticProgram {
         if (cut < 0 || !original.endsWith(suffix) || original.indexOf(suffix) != cut) throw invalid();
         // Exact, unique known suffix only. No old immediate entry is executed or included.
         String bash = original.substring(0, cut) + "\n" + DeploymentRemoteLayoutTemplate.render(resource("publication-contract-diagnostic-guard.sh"), layout);
-        if (bash.contains("'''")) throw invalid();
         String template = resource("publication-contract-diagnostic.py"), marker = "# @WTL_CONTRACT_DIAGNOSTIC_BASH@";
         if (template.indexOf(marker) < 0 || template.indexOf(marker) != template.lastIndexOf(marker)) throw invalid();
-        source = template.replace(marker, "BASH_SOURCE = r'''" + bash + "'''");
-        if (source.getBytes(StandardCharsets.UTF_8).length > 524288) throw invalid();
+        source = template.replace(marker, "BASH_SOURCE = " + JSON.valueToTree(bash).toString());
+        if (source.getBytes(StandardCharsets.UTF_8).length > 1048576) throw invalid();
     }
     public String source() { return source; }
     /** Product-bound expected stdin SHA, never an independent remote measurement. */

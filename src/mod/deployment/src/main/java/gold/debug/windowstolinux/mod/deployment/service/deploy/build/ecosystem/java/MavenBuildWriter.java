@@ -59,11 +59,18 @@ public final class MavenBuildWriter implements DeploymentBuildWriter {
                 test -f ./mvnw
                 test -f ./.mvn/wrapper/maven-wrapper.properties
                 chmod 700 -- ./mvnw
-                run ./mvnw -v
-                maven_package ./mvnw -B "${maven_toolchain_arguments[@]}" -DskipTests package
+                if [ -n "${WTL_MIRROR_POLICY:-}" ]; then
+                  maven_command="$(wtl_wrapper MAVEN_DISTRIBUTION ./.mvn/wrapper/maven-wrapper.properties "$mutable/home/mirror-maven-wrapper")"
+                  run "$maven_command" -v
+                  wtl_dependency MAVEN_REPOSITORY "$maven_command" -B "${maven_toolchain_arguments[@]}" -DskipTests package
+                else
+                  run ./mvnw -v
+                  maven_package ./mvnw -B "${maven_toolchain_arguments[@]}" -DskipTests package
+                fi
                 """;
             case MAVEN -> """
-                """ + prepareMaven() + """
+                """ + "if [ -n \"${WTL_MIRROR_POLICY:-}\" ]; then\n" + prepareMirroredMaven()
+                    + "else\n" + prepareMaven() + "fi\n" + """
                 run mvn -v
                 maven_package mvn -B "${maven_toolchain_arguments[@]}" -DskipTests package
                 """;
@@ -90,6 +97,7 @@ public final class MavenBuildWriter implements DeploymentBuildWriter {
     static String downloadRetry() {
         return """
             maven_package() {
+              if [ -n "${WTL_MIRROR_POLICY:-}" ]; then wtl_dependency MAVEN_REPOSITORY "$@"; return $?; fi
               local attempt status log="$mutable/maven-download-attempt.log"
               local -a pipeline_status
               for attempt in 1 2; do
@@ -177,5 +185,23 @@ public final class MavenBuildWriter implements DeploymentBuildWriter {
               printf 'BUILD_MANAGER=MAVEN:3.9.16:candidate\\n'
             fi
             """;
+    }
+
+    private static String prepareMirroredMaven() {
+        String original = prepareMaven();
+        var url = java.util.regex.Pattern.compile("https://[^'\\s]+[.]tar[.]gz").matcher(original);
+        var digest = java.util.regex.Pattern.compile("[a-f0-9]{128}").matcher(original);
+        if (!url.find() || !digest.find()) throw new IllegalStateException("Pinned Maven bootstrap identity absent");
+        int start = original.indexOf("  run curl ");
+        int end = original.indexOf('\n', original.indexOf(url.group(), start));
+        if (start < 0 || end < start) throw new IllegalStateException("Pinned Maven bootstrap transfer absent");
+        String filename = url.group().substring(url.group().lastIndexOf('/') + 1);
+        var version = java.util.regex.Pattern.compile("apache-maven-([0-9]+(?:[.][0-9]+)+)-bin[.]tar[.]gz").matcher(filename);
+        if (!version.matches()) throw new IllegalStateException("Pinned Maven release version absent");
+        String relative = "maven-" + version.group(1).substring(0, version.group(1).indexOf('.')) + "/"
+            + version.group(1) + "/binaries/" + filename;
+        return original.substring(0, start) + "  wtl_download MAVEN_DISTRIBUTION "
+            + "\"$(wtl_source_url MAVEN_DISTRIBUTION " + SafeBuildScriptEnvelope.shellQuote(relative) + ")\" \"$maven_archive\" --algorithm sha512 --expected "
+            + digest.group() + " --limit 33554432" + original.substring(end);
     }
 }

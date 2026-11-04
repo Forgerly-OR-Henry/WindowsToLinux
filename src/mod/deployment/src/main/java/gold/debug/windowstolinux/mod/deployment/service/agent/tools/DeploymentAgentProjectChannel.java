@@ -171,10 +171,14 @@ public final class DeploymentAgentProjectChannel {
         if (script.isBlank() || script.length() > 24000 || script.indexOf('\0') >= 0 || timeout.toSeconds() < 1
             || timeout.toSeconds() > 7200)
             throw new IllegalArgumentException("Invalid agent command budget");
+        gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.requireProjectScript(task);
         var goal = gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget.current();
         if (goal.isPresent() && timeout.toSeconds() > goal.orElseThrow().build().remainingSeconds())
             throw new IllegalArgumentException("Original goal build allowance cannot fund this exact candidate command");
-        byte[] input = script.getBytes(StandardCharsets.UTF_8);
+        byte[] input = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.withMaterials(
+            gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.wrapBuild(script,
+            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task), timeout.toSeconds()), task.id()).getBytes(StandardCharsets.UTF_8);
+        if (input.length > 1048576) throw new IllegalArgumentException("Mirror-bound Agent build script exceeds helper limit");
         String command = render("agent-run", candidate.workspace(), revision, Long.toString(timeout.toSeconds()),
             "1048576", engines.get(candidate.workspace().candidateId()), sha256(input), tools);
         var result = send(command, input, timeout.plusSeconds(20), 1048576, true,

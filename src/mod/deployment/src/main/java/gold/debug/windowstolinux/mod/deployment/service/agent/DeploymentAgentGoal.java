@@ -68,6 +68,16 @@ public final class DeploymentAgentGoal {
 
     private volatile boolean cancelled;
 
+    private String mirrorPolicy;
+
+    synchronized void mirrorPolicy(String policy) {
+        if (mirrorPolicy != null && !mirrorPolicy.equals(policy))
+            throw new IllegalStateException("Original goal mirror policy changed");
+        mirrorPolicy = Objects.requireNonNull(policy);
+    }
+
+    synchronized String mirrorPolicy() { return mirrorPolicy == null ? "" : mirrorPolicy; }
+
     private String blocked = "";
 
     private gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.Confirmed approvalPolicy;

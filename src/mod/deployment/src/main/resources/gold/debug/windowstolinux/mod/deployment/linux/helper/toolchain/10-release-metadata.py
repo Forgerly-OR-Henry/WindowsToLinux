@@ -27,27 +27,8 @@ import zipfile
 ROOT = pathlib.Path('@wtl:helper-directory@/toolchains')
 MAX_METADATA = 32 * 1024 * 1024
 MAX_ARCHIVE = 2 * 1024 * 1024 * 1024
-HOSTS = {
-    'api.adoptium.net',
-    'github.com',
-    'api.github.com',
-    'objects.githubusercontent.com',
-    'release-assets.githubusercontent.com',
-    'nodejs.org',
-    'go.dev',
-    'dl.google.com',
-    'static.rust-lang.org',
-    'www.python.org',
-    'www.php.net',
-    'downloads.php.net',
-    'museum.php.net',
-    'www.ruby-lang.org',
-    'cache.ruby-lang.org',
-    'rubygems.org',
-    'builds.dotnet.microsoft.com',
-    'dotnetcli.blob.core.windows.net',
-    'ci.dot.net',
-}
+MIRROR_DEFAULT_SOURCE_ORIGINS = __WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__
+MIRROR_DEFAULT_ALLOWED_HOSTS = set(__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__)
 
 
 class PreparationFailure(Exception):
@@ -60,9 +41,20 @@ def fail(category, detail):
     raise PreparationFailure(category, detail)
 
 
-def official_url(url):
+def official_url(url, point=None, historical=False):
     p = urllib.parse.urlsplit(url)
-    if p.scheme != 'https' or p.hostname not in HOSTS or p.username or p.password or p.port not in (None, 443):
+    hosts = MIRROR_DEFAULT_ALLOWED_HOSTS
+    frozen = bool(os.environ.get('WTL_MIRROR_POLICY'))
+    if os.environ.get('WTL_MIRROR_POLICY'):
+        _, policy = task_mirrors()
+        hosts = set(MIRROR_DEFAULT_ALLOWED_HOSTS)
+        for candidate in (point, MIRROR_POINT, MIRROR_METADATA_POINT, 'RUBYGEMS'):
+            if candidate:
+                for endpoint in policy.points.get(candidate, []):
+                    hosts.update(endpoint.get('allowedHosts', []))
+                    hosts.update(urllib.parse.urlsplit(origin).hostname for origin in endpoint.get('sourceOrigins', []))
+    if (p.scheme != 'https' or not p.hostname or (p.hostname not in hosts and not (historical and frozen))
+            or p.username or p.password or frozen and p.fragment or not frozen and p.port not in (None, 443)):
         fail('metadata', 'release URL is outside official HTTPS sources')
     return url
 
@@ -72,7 +64,73 @@ class OfficialRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, official_url(newurl))
 
 
-def fetch(url, limit=MAX_METADATA):
+MIRROR_POINT = None
+MIRROR_METADATA_POINT = None
+MIRROR_MODULE = None
+
+
+def task_mirrors():
+    global MIRROR_MODULE
+    if not os.environ.get('WTL_MIRROR_POLICY'):
+        return None, None
+    if MIRROR_MODULE is None:
+        runtime = pathlib.Path(os.environ['WTL_MIRROR_RUNTIME'])
+        policy_path = pathlib.Path(os.environ['WTL_MIRROR_POLICY'])
+        if runtime.parent != policy_path.parent or runtime.name != 'runtime.py' or policy_path.name != 'policy.json':
+            fail('ownership', 'mirror runtime and policy must share the task-owned private directory')
+        parent = runtime.parent.lstat()
+        if runtime.parent.is_symlink() or parent.st_uid != 0 or parent.st_mode & 0o077:
+            fail('ownership', 'privileged mirror runtime directory is not root-private')
+        for ancestor in runtime.parent.parents:
+            identity = ancestor.lstat()
+            if ancestor.is_symlink() or identity.st_uid != 0 or identity.st_mode & 0o022 and not identity.st_mode & 0o1000:
+                fail('ownership', 'privileged mirror input has a replaceable ancestor')
+        payload = None
+        for path in (runtime, policy_path):
+            with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), 'rb') as stream:
+                identity = os.fstat(stream.fileno())
+                if identity.st_uid != 0 or identity.st_mode & 0o022 or identity.st_nlink != 1 or not __import__('stat').S_ISREG(identity.st_mode):
+                    fail('ownership', 'privileged mirror input is not an immutable root-owned file')
+                data = stream.read(4194305)
+                if len(data) > 4194304:
+                    fail('ownership', 'privileged mirror input is too large')
+                if path == runtime:
+                    payload = data
+        if hashlib.sha256(payload).hexdigest() != '__WTL_MIRROR_RUNTIME_SHA256__':
+            fail('integrity', 'privileged mirror runtime differs from the shipped implementation')
+        MIRROR_MODULE = {'__name__': 'wtl_task_mirrors'}
+        exec(compile(payload, str(runtime), 'exec'), MIRROR_MODULE)
+    policy = MIRROR_MODULE['MirrorPolicy'].from_environment(globals().get('DEADLINE'))
+    return MIRROR_MODULE, policy
+
+
+def source_origin(point, index=0):
+    _, policy = task_mirrors()
+    origins = (policy.endpoints(point)[0].get('sourceOrigins', []) if policy is not None
+               else MIRROR_DEFAULT_SOURCE_ORIGINS.get(point, []))
+    if index >= len(origins):
+        fail('metadata', 'configured source origin is absent for ' + point)
+    return origins[index]
+
+
+def source_url(point, relative, index=0):
+    return source_origin(point, index).rstrip('/') + '/' + relative.lstrip('/')
+
+
+def toolchain_point(ecosystem):
+    return {'JAVA': 'JAVA_JDK', 'NODE': 'NODE_DISTRIBUTION', 'GO': 'GO_DISTRIBUTION',
+            'DOTNET': 'DOTNET_SDK', 'KOTLIN': 'KOTLIN_DISTRIBUTION', 'RUST': 'RUST_TOOLCHAIN',
+            'PYTHON': 'PYTHON_DISTRIBUTION', 'PHP': 'PHP_DISTRIBUTION', 'RUBY': 'RUBY_DISTRIBUTION'}.get(ecosystem)
+
+
+def fetch(url, limit=MAX_METADATA, point=None, validator=None):
+    module, policy = task_mirrors()
+    if policy is not None:
+        try:
+            return module['mirror_bytes'](policy, point or MIRROR_METADATA_POINT, official_url(url), limit,
+                                           validator=validator)[0]
+        except module['MirrorFailure'] as error:
+            fail('network', str(error))
     request = urllib.request.Request(
         official_url(url), headers={'User-Agent': 'WindowsToLinux-toolchains/1', 'Accept-Encoding': 'identity'}
     )
@@ -88,14 +146,26 @@ def fetch(url, limit=MAX_METADATA):
         fail('network', type(error).__name__ + ': official source request failed')
 
 
-def json_at(url):
+def json_at(url, validator=None):
     try:
-        return json.loads(fetch(url))
+        def validate_json(path, headers):
+            document = json.loads(path.read_bytes())
+            if validator is not None:
+                validator(document)
+        return json.loads(fetch(url, validator=validate_json))
     except (ValueError, UnicodeError):
         fail('metadata', 'invalid official JSON')
 
 
 def download(url, target, algorithm, expected):
+    module, policy = task_mirrors()
+    if policy is not None:
+        try:
+            point = 'RUBYGEMS' if any(url.startswith(origin) for origin in MIRROR_DEFAULT_SOURCE_ORIGINS.get('RUBYGEMS', [])) else MIRROR_POINT
+            return module['mirror_transfer'](policy, point, official_url(url), target,
+                                             algorithm, expected, MAX_ARCHIVE)['sha256']
+        except module['MirrorFailure'] as error:
+            fail('network', str(error))
     official = hashlib.new(algorithm)
     sha256 = hashlib.sha256()
     total = 0
@@ -160,7 +230,13 @@ def choose(versions, branch, exact):
 
 
 def checksum_text(url, name=None):
-    text = fetch(url).decode('utf-8')
+    def validate_checksum(path, headers):
+        for line in path.read_text(encoding='utf-8').splitlines():
+            parts = line.split()
+            if parts and re.fullmatch('[a-fA-F0-9]{64}', parts[0]) and (name is None or parts[-1].lstrip('*') == name):
+                return
+        raise ValueError('selected source SHA-256 is absent')
+    text = fetch(url, validator=validate_checksum).decode('utf-8')
     for line in text.splitlines():
         parts = line.split()
         if parts and re.fullmatch('[a-fA-F0-9]{64}', parts[0]) and (name is None or parts[-1].lstrip('*') == name):
@@ -187,9 +263,14 @@ def java_release_identity(data):
 
 def release(ecosystem, branch, exact):
     """Returns exact identity, official artifact URL, algorithm, expected digest, layout."""
+    global MIRROR_POINT, MIRROR_METADATA_POINT
+    MIRROR_POINT = toolchain_point(ecosystem)
+    MIRROR_METADATA_POINT = {'JAVA': 'JAVA_METADATA', 'NODE': 'NODE_METADATA', 'GO': 'GO_METADATA',
+                             'DOTNET': 'DOTNET_METADATA', 'KOTLIN': 'KOTLIN_METADATA', 'RUST': 'RUST_METADATA',
+                             'PYTHON': 'PYTHON_METADATA', 'PHP': 'PHP_METADATA', 'RUBY': 'RUBY_METADATA'}.get(ecosystem)
     if ecosystem == 'JAVA':
         assets = json_at(
-            'https://api.adoptium.net/v3/assets/feature_releases/'
+            source_url(MIRROR_METADATA_POINT, 'v3/assets/feature_releases/')
             + branch
             + '/ga?architecture=x64&heap_size=normal&image_type=jdk&jvm_impl=hotspot&os=linux&page_size=100&vendor=eclipse'
         )
@@ -200,19 +281,29 @@ def release(ecosystem, branch, exact):
         )
         return v, package['link'], 'sha256', package['checksum'], 'archive'
     if ecosystem == 'NODE':
-        v = choose([a['version'] for a in json_at('https://nodejs.org/dist/index.json')], branch, exact)
+        def validate_node_index(document):
+            if not isinstance(document, list):
+                raise ValueError('Node release index is not an array')
+            prefix = tuple(int(n) for n in branch.split('.'))
+            versions = [item.get('version') for item in document if isinstance(item, dict) and isinstance(item.get('version'), str)]
+            if len(versions) != len(document):
+                raise ValueError('Node release index has invalid version entries')
+            if not any(version_key(v) and version_key(v)[:len(prefix)] == prefix
+                       and (not exact or version_key(v) == version_key(exact)) for v in versions):
+                raise ValueError('Node source has no selected stable release')
+        v = choose([a['version'] for a in json_at(source_url(MIRROR_METADATA_POINT, 'index.json'), validate_node_index)], branch, exact)
         name = 'node-' + v + '-linux-x64.tar.gz'
-        base = 'https://nodejs.org/dist/' + v + '/'
+        base = source_url(MIRROR_POINT, v + '/')
         return v.lstrip('v'), base + name, 'sha256', checksum_text(base + 'SHASUMS256.txt', name), 'archive'
     if ecosystem == 'GO':
-        assets = {a['version']: a for a in json_at('https://go.dev/dl/?mode=json&include=all') if a['stable']}
+        assets = {a['version']: a for a in json_at(source_url(MIRROR_METADATA_POINT, '?mode=json&include=all')) if a['stable']}
         v = choose(assets, branch, exact)
         f = next(
             f for f in assets[v]['files'] if f['os'] == 'linux' and f['arch'] == 'amd64' and f['kind'] == 'archive'
         )
-        return v[2:], 'https://go.dev/dl/' + f['filename'], 'sha256', f['sha256'], 'archive'
+        return v[2:], source_url(MIRROR_POINT, f['filename']), 'sha256', f['sha256'], 'archive'
     if ecosystem == 'DOTNET':
-        data = json_at('https://builds.dotnet.microsoft.com/dotnet/release-metadata/' + branch + '.0/releases.json')
+        data = json_at(source_url(MIRROR_METADATA_POINT, branch + '.0/releases.json'))
         sdks = {s['version']: s for r in data['releases'] for s in r.get('sdks', [r['sdk']])}
         v = choose(sdks, branch, exact)
         f = next(f for f in sdks[v]['files'] if f['rid'] == 'linux-x64' and f['name'].endswith('.tar.gz'))
@@ -221,11 +312,11 @@ def release(ecosystem, branch, exact):
         # Query exact tags when pinned; bounded pagination covers historical branches without a version whitelist.
         assets = []
         if exact:
-            assets = [json_at('https://api.github.com/repos/JetBrains/kotlin/releases/tags/v' + exact)]
+            assets = [json_at(source_url(MIRROR_METADATA_POINT, 'releases/tags/v' + exact))]
         else:
-            refs = json_at('https://api.github.com/repos/JetBrains/kotlin/git/matching-refs/tags/v' + branch + '.')
+            refs = json_at(source_url(MIRROR_METADATA_POINT, 'git/matching-refs/tags/v' + branch + '.'))
             tag = choose([r['ref'][len('refs/tags/v') :] for r in refs], branch, '')
-            assets = [json_at('https://api.github.com/repos/JetBrains/kotlin/releases/tags/v' + tag)]
+            assets = [json_at(source_url(MIRROR_METADATA_POINT, 'releases/tags/v' + tag))]
         versions = {a['tag_name'].lstrip('v'): a for a in assets if not a['prerelease'] and not a['draft']}
         v = choose(versions, branch, exact)
         name = 'kotlin-compiler-' + v + '.zip'
@@ -251,19 +342,19 @@ def release(ecosystem, branch, exact):
             tags = [exact]
         else:
             for page in range(1, 21):
-                batch = json_at('https://api.github.com/repos/rust-lang/rust/releases?per_page=100&page=' + str(page))
+                batch = json_at(source_url(MIRROR_METADATA_POINT, 'releases?per_page=100&page=' + str(page)))
                 tags.extend(a['tag_name'] for a in batch if not a['prerelease'] and not a['draft'])
                 if any(t.startswith(branch + '.') for t in tags) or len(batch) < 100:
                     break
         v = choose(tags, branch, exact)
-        url = 'https://static.rust-lang.org/dist/rust-' + v + '-x86_64-unknown-linux-gnu.tar.gz'
+        url = source_url(MIRROR_POINT, 'dist/rust-' + v + '-x86_64-unknown-linux-gnu.tar.gz')
         return v, url, 'sha256', checksum_text(url + '.sha256'), 'rust'
     if ecosystem == 'PYTHON':
-        listing = fetch('https://www.python.org/ftp/python/').decode('utf-8')
+        listing = fetch(source_origin(MIRROR_METADATA_POINT)).decode('utf-8')
         v = choose(re.findall(r'href="(\d+\.\d+\.\d+)/"', listing), branch, exact)
         name = 'Python-' + v + '.tgz'
-        page = fetch('https://www.python.org/downloads/release/python-' + v.replace('.', '') + '/').decode('utf-8')
-        url = 'https://www.python.org/ftp/python/' + v + '/' + name
+        page = fetch(source_url(MIRROR_METADATA_POINT, 'python-' + v.replace('.', '') + '/', 1)).decode('utf-8')
+        url = source_url(MIRROR_POINT, v + '/' + name)
         try:
             digest = html_hash(page, name)
         except PreparationFailure:
@@ -275,12 +366,12 @@ def release(ecosystem, branch, exact):
             digest = base64.b64decode(message['digest'], validate=True).hex()
         return v, url, 'sha256', digest, 'python'
     if ecosystem == 'PHP':
-        data = json_at('https://www.php.net/releases/index.php?json&version=' + branch.split('.')[0] + '&max=1000')
+        data = json_at(source_url(MIRROR_METADATA_POINT, 'index.php?json&version=' + branch.split('.')[0] + '&max=1000'))
         v = choose(data, branch, exact)
         f = next(f for f in data[v]['source'] if f['filename'].endswith('.tar.gz'))
-        return v, 'https://www.php.net/distributions/' + f['filename'], 'sha256', f['sha256'], 'php'
+        return v, source_url(MIRROR_POINT, f['filename']), 'sha256', f['sha256'], 'php'
     if ecosystem == 'RUBY':
-        page = fetch('https://www.ruby-lang.org/en/downloads/releases/').decode('utf-8')
+        page = fetch(source_origin(MIRROR_METADATA_POINT)).decode('utf-8')
         versions = re.findall(r'ruby-(\d+\.\d+\.\d+)\.tar\.gz', page)
         v = choose(versions, branch, exact)
         name = 'ruby-' + v + '.tar.gz'
@@ -288,10 +379,10 @@ def release(ecosystem, branch, exact):
         news = re.search(r'href="(/en/news/[^"]+)"', row)
         if news is None:
             fail('metadata', 'Ruby release announcement is absent')
-        announcement = fetch('https://www.ruby-lang.org' + news.group(1)).decode('utf-8')
+        announcement = fetch(urllib.parse.urljoin(source_origin(MIRROR_METADATA_POINT), news.group(1))).decode('utf-8')
         entries = [item for item in re.findall(r'<li\b[^>]*>.*?</li>', announcement, re.S | re.I) if name in item]
         sums = re.findall(r'SHA256:\s*([a-fA-F0-9]{64})', ''.join(entries))
         if len(sums) != 1:
             fail('metadata', 'Ruby announcement has no unambiguous SHA-256')
-        return v, 'https://cache.ruby-lang.org/pub/ruby/' + branch + '/' + name, 'sha256', sums[0].lower(), 'ruby'
+        return v, source_url(MIRROR_POINT, branch + '/' + name), 'sha256', sums[0].lower(), 'ruby'
     fail('request', 'unsupported installation adapter')

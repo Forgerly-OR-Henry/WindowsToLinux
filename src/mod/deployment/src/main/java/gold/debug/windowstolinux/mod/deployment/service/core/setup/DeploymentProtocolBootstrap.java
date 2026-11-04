@@ -119,7 +119,7 @@ public final class DeploymentProtocolBootstrap {
             .getBytes(StandardCharsets.UTF_8);
         try {
             var journal = DeploymentProtocolBootstrapActionLog.begin(tasks, task, server, operationId, serverDigest,
-                bodyDigest, digest(script), layout);
+                bodyDigest, gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(new String(script, StandardCharsets.UTF_8), task), layout);
             return send(journal, script);
         } finally {
             Arrays.fill(script, (byte) 0);
@@ -140,7 +140,7 @@ public final class DeploymentProtocolBootstrap {
             .renderTracked(task.id(), facts.operationId(), facts.serverDigest(), facts.bodyDigest(), layout)
             .getBytes(StandardCharsets.UTF_8);
         try {
-            if (!bodyDigest.equals(facts.bodyDigest()) || !digest(script).equals(facts.requestDigest())
+            if (!bodyDigest.equals(facts.bodyDigest()) || !gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(new String(script, StandardCharsets.UTF_8), task).equals(facts.requestDigest())
                 || !digest(server.id().getBytes(StandardCharsets.UTF_8)).equals(facts.serverDigest()))
                 return unknown("DEPLOYMENT_HELPER_BOOTSTRAP_REQUEST_CONFLICT");
         } finally {
@@ -177,7 +177,7 @@ public final class DeploymentProtocolBootstrap {
             if (!facts.phase().equals("INTENT") || !server.id().equals(facts.serverId())
                 || !digest(server.id().getBytes(StandardCharsets.UTF_8)).equals(facts.serverDigest())
                 || !digest(DeploymentHelperInstallerScript.render(layout).getBytes(StandardCharsets.UTF_8)).equals(facts.bodyDigest())
-                || !digest(script).equals(facts.requestDigest()))
+                || !gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(new String(script, StandardCharsets.UTF_8), task).equals(facts.requestDigest()))
                 return unknown("DEPLOYMENT_HELPER_REPAIR_REQUEST_CONFLICT");
             return send(journal, script);
         } finally {

@@ -100,10 +100,13 @@ class DeploymentBuildWriterTest {
 
         assertTrue(render(new StaticSiteBuildWriter(), DeploymentBuildToolType.STATIC_SITE_BUILD,
             new DeploymentRuntimeDefinition.StaticSite("public", HTTP)).contains("test -d './public'"));
-        assertTrue(render(new ContainerBuildWriter(), DeploymentBuildToolType.CONTAINER_BUILD,
+        String containerBuild = render(new ContainerBuildWriter(), DeploymentBuildToolType.CONTAINER_BUILD,
             new DeploymentRuntimeDefinition.Container(DeploymentRuntimeDefinition.ContainerEngineType.PODMAN,
-                Map.of(8080, 8080), List.of(), TCP))
-            .contains("build --pull=true"));
+                Map.of(8080, 8080), List.of(), TCP));
+        assertTrue(containerBuild.contains("pull_arguments=(--pull=true)"));
+        assertTrue(containerBuild.contains("wtl_oci ./Dockerfile \"$dockerfile\""));
+        assertTrue(containerBuild.contains("pull_arguments=(--pull=false --network=none)"));
+        assertTrue(containerBuild.contains("build \"${pull_arguments[@]}\""));
         assertTrue(service(new GoBuildWriter(), DeploymentBuildToolType.GO_MODULE, "1.24", "w2l-app", "main.go",
             OptionalInt.empty()).contains("go build -mod=readonly"));
         assertTrue(service(new CargoBuildWriter(), DeploymentBuildToolType.CARGO_LOCKED, "1.89.0", "demo",
@@ -111,6 +114,7 @@ class DeploymentBuildWriterTest {
         String dotnet = service(new DotNetSdkBuildWriter(), DeploymentBuildToolType.DOTNET_LOCKED, "8.0.408", "Demo",
             "Demo.dll", OptionalInt.empty());
         assertTrue(dotnet.contains("\"${dotnet_command[@]}\" restore --locked-mode"));
+        assertTrue(dotnet.contains("export DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=true"));
         assertTrue(dotnet.contains("publish --no-restore --configuration Release \"-p:PublishDir=$PWD/.w2l/dotnet/\""));
 
         String kotlinGradle = service(new KotlinGradleBuildWriter(), DeploymentBuildToolType.GRADLE_KOTLIN_WRAPPER,

@@ -17,6 +17,8 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具，�
 
 详细使用流程见[产品说明书](docs/reference/PRODUCT-MANUAL.md)，作者契约见 [Mod 开发规范](docs/reference/Mod.md)，运行目录及安全合同见[运行约定](docs/reference/Runtime.md)。
 
+部署 Mod 的独立设置页提供按下载用途保存的[镜像源设置](docs/reference/DeploymentMirrors.md)：固定优先级、服务器地区自动匹配和任务冻结策略。公共目录、单源例外及本地验证边界见该说明；设置修改仅影响新任务。
+
 ## 当前项目结构
 
 ```text

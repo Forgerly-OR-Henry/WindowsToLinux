@@ -193,14 +193,14 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
         var handle = context.tasks().submit(new TaskRequest(TASK_TYPE, "Autonomous deployment", List.of(server.id()), true), task -> {
             try (var worker = goal.rootWorker(task).open()) {
                 goals.put(task.id(), goal);
-                var result = runLocal(server, request, location, task);
+                var result = new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).run(task, original -> runLocal(server, request, location, original));
                 worker.finished(result);
                 return result;
             }
         });
         goals.put(handle.id(), goal);
         goal.attach(handle);
-        return handle;
+        return gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.track(handle);
     }
 
     private OperationResult<DeploymentAgentDeliveryPort.Published> runLocal(ServerId server, DeploymentAgentInputs.Request request,
@@ -208,6 +208,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                                                                             TaskContext task) throws Exception {
         gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), task,
             new DeploymentRemoteLayout(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths()));
+        new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).prepare(task, server);
         var saved = saveSelection(request, task);
         if (saved.isPresent())
             return finishKnown(saved.orElseThrow(), task);
@@ -232,6 +233,9 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
         DeploymentSourceArchive archive = null;
         OperationResult<DeploymentAgentDeliveryPort.Published> result = null;
         try {
+            new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).capture(task, server,
+                java.util.EnumSet.allOf(gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.class));
+            goals.get(task.id()).mirrorPolicy(gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task));
             archive = new DeploymentSourceArchiver(context.file()).prepare(material,
                 request.archiveBytes(), task);
             result = execute(server, request, material, archive, Optional.empty(), configuration, task);
@@ -255,12 +259,13 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
         var goal = goals.get(intent.root());
         if (goal == null)
             throw new IllegalStateException("Original online goal is absent; no capsule recovery or resubmission is allowed");
-        return context.tasks().submit(new TaskRequest(TASK_TYPE, "Autonomous deployment successor", List.of(intent.server()), true), task -> {
+        return gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.track(context.tasks().submit(new TaskRequest(TASK_TYPE, "Autonomous deployment successor", List.of(intent.server()), true), task -> {
             try (var worker = goal.claimWorker(task, next).open()) {
                 var server = new ServerId(intent.server());
                 var request = intent.request();
                 var layout = DeploymentRemoteLayout.decode(intent.layout());
                 gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), task, layout);
+                new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).inherit(task, server, goal.mirrorPolicy());
                 if (!intent.configuration().equals(admittedConfiguration(server, request, task))
                     || !intent.targetProfile().equals(DeploymentAgentInputs.targetProfile(context.servers().get(server, task)))
                     || !intent.physicalTarget().equals(DeploymentAgentInputs.physicalTarget(context.servers().get(server, task))))
@@ -282,6 +287,8 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                     }
                 }
                 result = finishKnown(result, task);
+                final var settled = result;
+                result = new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).run(task, ignored -> settled);
                 worker.finished(result);
                 return result;
             } catch (Exception uncertain) {
@@ -293,7 +300,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                 }
                 return failed(task, journal.find(task).isPresent(), uncertain);
             }
-        });
+        }));
     }
 
     /** Starts a reviewed pinned Git source under the same original agent task. / 在同一自主原任务下启动经审核固定 Git 来源。
@@ -311,20 +318,21 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
         var handle = context.tasks().submit(new TaskRequest(TASK_TYPE, "Autonomous Git deployment", List.of(server.id()), true), task -> {
             try (var worker = goal.rootWorker(task).open()) {
                 goals.put(task.id(), goal);
-                var result = runGit(server, request, git, executable, projectName, task);
+                var result = new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).run(task, original -> runGit(server, request, git, executable, projectName, original));
                 worker.finished(result);
                 return result;
             }
         });
         goals.put(handle.id(), goal);
         goal.attach(handle);
-        return handle;
+        return gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.track(handle);
     }
 
     private OperationResult<DeploymentAgentDeliveryPort.Published> runGit(ServerId server, DeploymentAgentInputs.Request request,
                                                                           DeploymentGitRequest git, Path executable, String projectName, TaskContext task) throws Exception {
         gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), task,
             new DeploymentRemoteLayout(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths()));
+        new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).prepare(task, server);
         var saved = saveSelection(request, task);
         if (saved.isPresent())
             return finishKnown(saved.orElseThrow(), task);
@@ -350,6 +358,9 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                 result = new OperationResult<>(review.outcome(), Optional.empty(), review.problem());
                 return result;
             }
+            new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).capture(task, server,
+                java.util.EnumSet.allOf(gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.class));
+            goals.get(task.id()).mirrorPolicy(gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task));
             DeploymentProjectRecord project = pinned.save();
             publicationStarted = true;
             result = execute(server, request, selected.source(), selected.archive(), Optional.of(project),
@@ -543,6 +554,12 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @throws Exception if original evidence cannot be read / 无法读取原依据时 */
     @Override
     public OperationResult<Void> reconcile(TaskSnapshot previous, TaskContext originalTask) throws Exception {
+        return new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).run(originalTask,
+            active -> reconcileMirrors(previous, active));
+    }
+
+    private OperationResult<Void> reconcileMirrors(TaskSnapshot previous, TaskContext originalTask) throws Exception {
+        new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(context).restore(originalTask);
         if (!TASK_TYPE.equals(previous.type()) || !previous.id().equals(originalTask.id()))
             return unknown();
         gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.original(context, originalTask, "MANUAL_REVIEW");

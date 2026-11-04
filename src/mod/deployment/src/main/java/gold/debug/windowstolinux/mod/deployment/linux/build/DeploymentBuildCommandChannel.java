@@ -396,6 +396,7 @@ public final class DeploymentBuildCommandChannel {
                                                 long seconds, String engine, String buildScript, String toolchainBinding,
                                                 List<List<String>> compatibilityGroups)
         throws ApiException {
+        gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.requireCaptured(task.id());
         Objects.requireNonNull(workspace);
         if (!workspace.layout().equals(layout))
             throw new IllegalArgumentException("Build workspace differs from the captured layout");
@@ -403,7 +404,10 @@ public final class DeploymentBuildCommandChannel {
         requireEngine(engine);
         if (seconds < 1 || seconds > 7200 || seconds + 15 > budget.remainingSeconds())
             throw new IllegalArgumentException("Invalid remaining build deadline");
-        byte[] input = Objects.requireNonNull(buildScript).getBytes(StandardCharsets.UTF_8);
+        byte[] input = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.withMaterials(
+            gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.wrapBuild(Objects.requireNonNull(buildScript),
+            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task), seconds), task.id())
+            .getBytes(StandardCharsets.UTF_8);
         try {
             if (input.length > 1048576)
                 throw new IllegalArgumentException("Fixed build script exceeds helper limit");
@@ -499,8 +503,14 @@ public final class DeploymentBuildCommandChannel {
             return timeout();
         if (!layout.helperPath().equals(DeploymentManagedHelperBundle.PATH) && script.contains(DeploymentManagedHelperBundle.PATH))
             throw new IllegalArgumentException("Helper invocation differs from the captured layout");
-        CommandRequest request = new CommandRequest(script.contains(layout.helperPath())
-            ? DeploymentManagedHelperBundle.verifiedCommand(script, layout) : script, input,
+        String executable = script.contains(layout.helperPath())
+            ? DeploymentManagedHelperBundle.verifiedCommand(script, layout) : script;
+        if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION)
+            || script.contains(layout.helperPath()) && operation.contains("toolchain") && !operation.contains("observe") && !operation.contains("cleanup")
+            && !operation.contains("diagnostic"))
+            executable = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.preparationCommand(executable, task,
+                Math.min(timeout.toSeconds(), available));
+        CommandRequest request = new CommandRequest(executable, input,
             Duration.ofSeconds(Math.min(timeout.toSeconds(), available)), output);
         var intent = RemoteActions.command(server, planRevision, request)
             .withSemantics(new ActionSemantics(operation, targets));

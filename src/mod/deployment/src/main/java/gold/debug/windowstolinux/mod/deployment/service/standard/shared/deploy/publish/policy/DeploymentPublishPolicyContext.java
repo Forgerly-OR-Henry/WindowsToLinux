@@ -174,6 +174,7 @@ public final class DeploymentPublishPolicyContext implements ModContext {
             }, () -> {
                 try {
                     ready.cleanup().close();
+                    if (outcome.get() != TaskResult.UNKNOWN) cleanupMirrors();
                     finish(outcome.get());
                 } finally {
                     finish(TaskResult.UNKNOWN);
@@ -182,8 +183,17 @@ public final class DeploymentPublishPolicyContext implements ModContext {
             transferred = true;
             return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(guarded), Optional.empty());
         } finally {
-            if (!transferred) finish(outcome.get());
+            if (!transferred) {
+                if (outcome.get() != TaskResult.UNKNOWN) cleanupMirrors();
+                finish(outcome.get());
+            }
         }
+    }
+
+    private void cleanupMirrors() throws Exception {
+        var cleaned = new gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks(this).cleanup(task);
+        if (cleaned.outcome() != TaskResult.SUCCEEDED) throw new ApiException(cleaned.problem().orElseGet(() ->
+            new Problem(ProblemCode.UNKNOWN, "MIRROR_CREDENTIAL_CLEANUP_UNCONFIRMED", "Task mirror credential cleanup was not confirmed", Map.of(), Optional.empty())));
     }
 
     /** Closes fresh authority and releases original policy only for settled known effects. / 关闭新权限，且仅为已结清已知效果释放原策略。
@@ -284,7 +294,8 @@ public final class DeploymentPublishPolicyContext implements ModContext {
                 var operation = UUID.randomUUID();
                 String serverDigest = digest(server.id());
                 String bodyDigest = digest(DeploymentHelperInstallerScript.render(layout));
-                String requestDigest = digest(DeploymentHelperInstallerScript.renderTracked(task.id(), operation, serverDigest, bodyDigest, layout));
+                String requestDigest = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(
+                    DeploymentHelperInstallerScript.renderTracked(task.id(), operation, serverDigest, bodyDigest, layout), task);
                 var repair = policy.beginRepair(new DeploymentProtocolBootstrapActionLog.Facts(server.id(), operation, serverDigest,
                     bodyDigest, requestDigest, DeploymentManagedHelperBundle.helperSha256(layout), "INTENT", layout));
                 result = bootstrap.install(repair);

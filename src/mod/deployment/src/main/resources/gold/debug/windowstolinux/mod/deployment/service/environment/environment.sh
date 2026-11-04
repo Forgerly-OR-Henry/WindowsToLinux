@@ -162,10 +162,10 @@ packages_install() {
   package_names
   if [ "$manager" = apt ]; then
     export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
-    /usr/bin/apt-get -o DPkg::Lock::Timeout=300 update
-    /usr/bin/apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends $packages
-  elif [ "${ID:-}" = centos ]; then /usr/bin/dnf --enablerepo=crb -y install $packages
-  else /usr/bin/dnf -y install $packages; fi
+    if [ -n "${WTL_MIRROR_POLICY:-}" ]; then wtl_apt -o DPkg::Lock::Timeout=300 update; else /usr/bin/apt-get -o DPkg::Lock::Timeout=300 update; fi
+    if [ -n "${WTL_MIRROR_POLICY:-}" ]; then wtl_apt -o DPkg::Lock::Timeout=300 install -y --no-install-recommends $packages; else /usr/bin/apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends $packages; fi
+  elif [ "${ID:-}" = centos ]; then if [ -n "${WTL_MIRROR_POLICY:-}" ]; then wtl_dnf --enablerepo=crb -y install $packages; else /usr/bin/dnf --enablerepo=crb -y install $packages; fi
+  else if [ -n "${WTL_MIRROR_POLICY:-}" ]; then wtl_dnf -y install $packages; else /usr/bin/dnf -y install $packages; fi; fi
   capabilities
   [ "$(security_state)" = "$expected_security" ] || fail security-changed
   case "$expected_firewall" in *:active) [ "$(firewall_state)" = "$expected_firewall" ] || fail firewall-changed ;; esac

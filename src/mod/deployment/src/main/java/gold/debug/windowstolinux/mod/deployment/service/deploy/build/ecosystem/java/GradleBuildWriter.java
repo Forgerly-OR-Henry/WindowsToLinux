@@ -60,7 +60,12 @@ public final class GradleBuildWriter implements DeploymentBuildWriter {
             test -f ./gradle/wrapper/gradle-wrapper.properties
             test -f ./gradle/wrapper/gradle-wrapper.jar
             chmod 700 -- ./gradlew
-            run ./gradlew --no-daemon -x test bootJar "${java_gradle_arguments[@]}"
+            if [ -n "${WTL_MIRROR_POLICY:-}" ]; then
+              gradle_command="$(wtl_wrapper GRADLE_DISTRIBUTION ./gradle/wrapper/gradle-wrapper.properties "$mutable/home/mirror-gradle-wrapper")"
+              wtl_dependency GRADLE_PLUGIN "$gradle_command" --no-daemon -x test bootJar "${java_gradle_arguments[@]}"
+            else
+              run ./gradlew --no-daemon -x test bootJar "${java_gradle_arguments[@]}"
+            fi
             """ + SpringBootArtifactBuildScript.verify("./build/libs");
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }

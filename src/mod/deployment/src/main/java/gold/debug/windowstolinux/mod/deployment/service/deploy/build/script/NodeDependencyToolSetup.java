@@ -47,7 +47,11 @@ final class NodeDependencyToolSetup {
               mkdir -p "$manager_root/bin"
               package="$manager_spec"
               if [ "$manager" = yarn ]; then package="@yarnpkg/cli-dist@$manager_version"; fi
-              run npm install --prefix "$manager_root" --registry=https://registry.npmjs.org --ignore-scripts --engine-strict --no-audit --no-fund --bin-links=false --save-exact "$package"
+              if [ -n "${WTL_MIRROR_POLICY:-}" ]; then
+                wtl_dependency NODE_PACKAGE npm install --prefix "$manager_root" --ignore-scripts --engine-strict --no-audit --no-fund --bin-links=false --save-exact "$package"
+              else
+                run npm install --prefix "$manager_root" --registry=https://registry.npmjs.org --ignore-scripts --engine-strict --no-audit --no-fund --bin-links=false --save-exact "$package"
+              fi
               case "$manager" in
                 npm) entry=node_modules/npm/bin/npm-cli.js ;;
                 pnpm) entry=node_modules/pnpm/bin/pnpm.cjs ;;

@@ -80,6 +80,10 @@ public final class KotlinGradleBuildWriter implements DeploymentBuildWriter {
             test -f ./gradle/wrapper/gradle-wrapper.jar
             test -f ./gradle/wrapper/gradle-wrapper.properties
             test -f ./gradlew
+            if [ -n "${WTL_MIRROR_POLICY:-}" ]; then
+              gradle_command="$(wtl_wrapper GRADLE_DISTRIBUTION ./gradle/wrapper/gradle-wrapper.properties "$mutable/home/mirror-kotlin-gradle-wrapper")"
+              wtl_dependency GRADLE_PLUGIN "$gradle_command" --project-dir "$source" --no-daemon installDist "${java_gradle_arguments[@]}" "${kotlin_gradle_arguments[@]}"
+            else
             wrapper_root="$mutable/home/wtl-gradle-wrapper"
             mkdir -p "$wrapper_root/gradle/wrapper"
             sed 's/\\r$//' ./gradlew > "$wrapper_root/gradlew"
@@ -129,6 +133,7 @@ public final class KotlinGradleBuildWriter implements DeploymentBuildWriter {
             esac
             retry_run 3 "$wrapper_root/gradlew" --project-dir "$source" --no-daemon --version
             run "$wrapper_root/gradlew" --project-dir "$source" --no-daemon installDist "${java_gradle_arguments[@]}" "${kotlin_gradle_arguments[@]}"
+            fi
             mapfile -t distributions < <(find ./build/install -mindepth 1 -maxdepth 1 -type d -print)
             [ "${#distributions[@]}" -eq 1 ]
             test -d "${distributions[0]}/lib"

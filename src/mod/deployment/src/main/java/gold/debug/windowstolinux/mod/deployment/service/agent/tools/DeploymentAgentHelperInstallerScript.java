@@ -47,11 +47,14 @@ public final class DeploymentAgentHelperInstallerScript {
     public static String parseOperation(String script, DeploymentRemoteLayout layout) {
         if (script == null || script.length() > 2 * 1024 * 1024)
             throw new IllegalArgumentException("Agent helper installer frame changed");
+        var mirror = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.executable(script);
         var matcher = FRAME.matcher(script);
         if (!matcher.find())
             throw new IllegalArgumentException("Agent helper installer operation missing");
         String operation = matcher.group(1);
-        if (matcher.find() || !render(operation, layout).equals(script))
+        String expected = render(operation, layout);
+        if (mirror.isPresent()) expected = DeploymentHelperInstallerScript.withMirrors(expected, mirror.orElseThrow().policy());
+        if (matcher.find() || !expected.equals(script))
             throw new IllegalArgumentException("Noncanonical Agent helper installer");
         return operation;
     }

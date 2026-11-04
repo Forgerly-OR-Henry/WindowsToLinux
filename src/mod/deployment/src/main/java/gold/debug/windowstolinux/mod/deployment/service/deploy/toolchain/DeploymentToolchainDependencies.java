@@ -41,8 +41,9 @@ public final class DeploymentToolchainDependencies {
     public static String dependencies(DeploymentRemoteLayout layout) {
         Objects.requireNonNull(layout);
         try {
-            return "import json\nDEPENDENCY_PACKAGES = json.loads(" + JSON.writeValueAsString(PACKAGES_TEXT)
-                + ")\n" + resource("agent-toolchain-dependencies.py");
+            return gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderToolchainSources(
+                "import json\nDEPENDENCY_PACKAGES = json.loads(" + JSON.writeValueAsString(PACKAGES_TEXT)
+                + ")\n" + resource("agent-toolchain-dependencies.py"));
         } catch (IOException failure) {
             throw new IllegalStateException("Dependency source cannot be rendered", failure);
         }
@@ -67,6 +68,7 @@ public final class DeploymentToolchainDependencies {
     }
 
     static List<String> arguments(String command) {
+        command = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.originalCommand(command);
         if (command == null || !command.startsWith(COMMAND_PREFIX))
             throw new IllegalArgumentException("Agent program launcher changed");
         String tail = command.substring(COMMAND_PREFIX.length());
