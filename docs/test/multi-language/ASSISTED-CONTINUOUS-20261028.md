@@ -1,5 +1,15 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-05 R14隔离修复及健康连接准备通过；完整新轮未启动
+
+R14代码位于隔离候选`r14f`，本地提交`90ae6fd7d4640d438ee7673f7ba21ae512dc8d4a`，仅五个预期文件，未推送。ASSISTED夹具通过产品save预设官方镜像源（automatic/privacyConsent均false），避免地区IP探测；Coordinator仅对runtime.missing判定的真实必填空项启动预检，保留可编辑纠正字段及最终审阅，提示明确dot仅LIST，路径安全门不变。没有改判Asset旧FAILED或把两项修复说成其最后READ唯一根因。
+
+[当前定点资格](../../../.ai-workspace/evidence/assisted-r14-build-targeted-20261105-01/targeted-qualification-result-14.json)为一次8／0／0／0：镜像2、必填预检1＋4参数、冻结来源变化仍fatal1；离线必要编译打包成功且跳过其余测试，不是全suite通过。新独立POM和实际booter有序54CP／8provider、JUnit路径与四tmp已核，测试前后30目录／4285成员／16JAR及53public闭包一致；raw55尾空的loader影响仍UNKNOWN。[有限字节对比](../../../.ai-workspace/evidence/assisted-r14-build-targeted-20261105-01/app-api-byte-delta-14.json)确认979个App源对象及1128个App生产class相同、38CP／53public JAR SHA相同；16个JAR容器SHA不同，其中13个payload相同，三Mod路径marker及已修改deployment class／prompt差异单列，不能声称全部JAR同字节。
+
+[健康凭据产品原件](../../../.ai-workspace/evidence/assisted-r14-healthy-credential-preparation-20261105-01/product-result-14.json)及[父实际收尾](../../../.ai-workspace/evidence/assisted-r14-healthy-credential-preparation-20261105-01/parent-actual-migration-closeout-14.json)确认：仅从允许的健康normal06通过API取得内存副本，在R14新normal14-01加密保存、关闭重开独立读回exact，source未start／profile-secret写API0／失败库0、helper自有数组清零；目标唯一check task`02d67255-3dc3-434f-8b90-9f8d9b50c55c` SUCCEEDED、AIkc选择及认证指纹同、无超时、四次Runtime关闭均返回。Java41536／wrapper42652原wait及工具实际exit0，身份已退／专属tmp已清。source仅数据库文件opaque字节改变，符合正常open/close已知元数据写入，不逐表推断全部未变；profile和secret在source关闭前精确比对。stderr92字节为空Java环境提示保留，物理SSH次数UNMEASURED，没有模型／显式部署命令。
+
+模型私密配置仅本地CreateNew、245B opaque身份与R13冻结输入一致，专有ACL为host1001＋SYSTEM，未打印内容或发送网络请求。R14 standalone API预检尚未执行，当前模型投影是历史公开事实＋同输入／同代码的确定性派生，不是假当前API成功；每ASSISTED原次本身仍会在部署submit前完成两用途各TEXT／TOOL四个真实产品能力门。最终控制接线、当前反射证明、源pin、metadata和SOURCE／P／R仍在准备，锁保持false；R14清场与八业务均未开始，长期目标仍未完成。
+
 ## 2026-11-05 R13已闭合：八原次完整首过0/8
 
 [八项原始矩阵](../../../.ai-workspace/evidence/assisted-r13-round-closeout-20261105-01/original-eight-matrix-13-v2.json)和[最终汇总](../../../.ai-workspace/evidence/assisted-r13-round-closeout-20261105-01/round-aggregate-13-v2.json)确认固定顺序各一次、同一HEAD/P/R/参数，八个原root均FAILED、八次native均1，JUnit合计8／8／0／0；没有业务、交付及最终产品清理完整通过。TaskBoard、FTP、CSV、Survey、Log、Directory、Binary为镜像自动地区匹配未获独立隐私同意；Asset为DEPLOYMENT_STATIC_SOURCE_REJECTED，公开日志不足以确认最后READ的路径或唯一底层安全异常，不能归为同一原因。四阶段初始清场通过不变，不拼接旧轮、不改判本轮失败。
