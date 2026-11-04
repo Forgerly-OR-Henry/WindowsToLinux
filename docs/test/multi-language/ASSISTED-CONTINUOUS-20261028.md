@@ -1,5 +1,15 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-05 R13已闭合：八原次完整首过0/8
+
+[八项原始矩阵](../../../.ai-workspace/evidence/assisted-r13-round-closeout-20261105-01/original-eight-matrix-13-v2.json)和[最终汇总](../../../.ai-workspace/evidence/assisted-r13-round-closeout-20261105-01/round-aggregate-13-v2.json)确认固定顺序各一次、同一HEAD/P/R/参数，八个原root均FAILED、八次native均1，JUnit合计8／8／0／0；没有业务、交付及最终产品清理完整通过。TaskBoard、FTP、CSV、Survey、Log、Directory、Binary为镜像自动地区匹配未获独立隐私同意；Asset为DEPLOYMENT_STATIC_SOURCE_REJECTED，公开日志不足以确认最后READ的路径或唯一底层安全异常，不能归为同一原因。四阶段初始清场通过不变，不拼接旧轮、不改判本轮失败。
+
+已记录SDK ledger为75个logical／75个physical id-number，生成均SUCCEEDED，已知LANGUAGE 255948／APPROVAL 48093，合计304041 tokens；2条工具拒绝反馈均在FTP。已记录unknown-usage和恢复链为0，未观测请求仍UNMEASURED、format覆盖不足，不称零异常或完整账单。观察器63次采样、最大间隔34.969379秒，readgap／UNKNOWN事件记录均0，不是连续观察；monitor自然wait0只表示八项终态已观察到。之后才供给quit，driver／监督器／原工具93452均实际退出0，不能升格为业务PASS。
+
+[父最终收尾索引](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/parent-closed-failed-round-index-08.json)绑定198件公开原件封存、12个原运行状态目录的260个opaque文件字节摘要、16个已知操作进程身份全部退出及当前操作namespace0；仅清理两处专用tmp中的24个JNA临时文件和空目录，原源码、输出、日志、JUnit及状态保留。收尾期间未以Runtime/数据库重开失败状态，健康normal06种子排除在失败状态封存之外。Asset缺显式Runtime close marker仍为未知，不由CIM退出反填该marker。收尾脚本首版把8份review误计为command且猜通用close marker，false派生原件保留；v2按实际13条LF命令、原SHA及真实关闭边界修正，没有改原件。
+
+长期目标仍未达成。已另建隔离候选r14f并实际应用官方固定镜像源及必填preflight两补丁，当前仅diff检查通过，编译、8个相关定点case及新冻结尚待完成。官方源通过产品save配置、automatic/privacyConsent均false；必填预检复用runtime.missing，只筛真实缺项并明确dot仅用于LIST，保留路径安全和审批链。两项不等于已证Asset唯一根因；不在已闭合R13修改或重跑，后续结果按新轮单独取证。
+
 ## 2026-11-05清场四阶段通过：TaskBoard原次在镜像隐私门失败
 
 父持有真实监督器原session`93452`；[原生启动身份](../../../.ai-workspace/evidence/assisted-r13-execution-supervisor-20261105-01/real-supervisor-native-start.json)及逐条交互证据保留。08同轮[首次inventory](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/host-inventory-13-parent-review-08.json)→[plan](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/host-plan-13-parent-review-08.json)→[apply](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/host-reset-13-parent-review-08.json)→[独立after](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/host-after-13-parent-review-08.json)均真实完成，每段原native wait／exit0、JUnit 1／0／0／0、Runtime关闭。原计划的8个管理根均不存在，units／accounts／purge集合为空，145个核心包与首次inventory一致；apply仅执行apt下载缓存清理，stop／remove／purge计数均0。父额外核canonical plan的SHA与plan、apply两份回执的planSha256一致，after完全等于apply的postInventory，initialReset全部检查true且早于原项目启动；详细计划身份与原回执以四份父review绑定为准。
