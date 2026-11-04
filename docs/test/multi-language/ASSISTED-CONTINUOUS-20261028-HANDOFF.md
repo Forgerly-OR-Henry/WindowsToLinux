@@ -1,5 +1,13 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
+## 2026-11-05 R13 08正式文件已发行：交互启动尚未开始
+
+[R12保留复核](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/r12-retention-prerequisite-audit/retention-prerequisite-result.json)确认原340份public与332份opaque文件的存在、大小、SHA及原范围成员集合仍精确匹配，13个旧进程身份均已消失，当次CIM快照的R12验证namespace为0；opaque仅作字节摘要比对，未由数据库或Runtime打开，原完整首过0／启动5／分母8及失败、UNKNOWN、中断缺终态保持。[纯机制原件](../../../.ai-workspace/wt/r13f/.ai-workspace/evidence/round-13-preparation-01/13/execution-mechanism-qualification-13-07/mechanism-qualification-result-13-07.json)为24／0／0／0（1个普通＋23个参数用例），仅资格化当前独立POM的该精确selector及上下文，不代替清场或八项业务验收。
+
+07首次正式guard用时4.1046918秒通过后，发现driver固定读取的BASE根`junit-classpath-13.txt`缺失；当时driver／monitor／reset／原项目启动均0，已先撤销release，再将9份正式文件按原字节[撤销归档](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/issued-authority01-revocation.json)。补齐根CP，并同步policy、SOURCE、source identity、runtime四处绑定后，父完成[08授权与SOURCE审核](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/parent-authorization-and-source-review-08.json)，重新[发行9件正式文件](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/final-promotion-08.json)，release最后发布；当前P`39bd9…`／R`838191…`，详细身份以原件为准，07旧发行保持撤销。
+
+08一次宿主Python商店alias返回9009，未执行guard，原[native失败](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/fullguard-08-native.json)保留；改用固定绝对Python路径后，[实际完整guard](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/fullguard-08-result.json)在4.7781663秒内通过17个旧范围输出／30个完整输出目录／4282成员。以上是单次完整核验，不宣称零异常或连续采样。截至本段证据截点，实际driver、monitor、reset与八原项目仍均0；父正在准备逐条交互启动，不能把文件发行或guard通过写成清场／业务已经开始，更不代表完整目标达成。
+
 ## 2026-11-05再次重装后连接已通过：normal06接入控制中
 
 用户再次重装并提供新文字凭据后，父经匿名stdin仅放行fresh normal06的一次原产品check，task`adde6a2f-e705-4840-a0b9-49e5fcee277d` SUCCEEDED／connectionSucceeded=true、未超时、Runtime.close返回。新现场first-use批准与认证后指纹相同：`SHA256:AIkcPrjQvNyPcodi0UkgShuPrj/j8PUD5Uz1mMeK2JE`，精确端点仍45.192.105.213:22/root；此次依据用户对替换服务器新指纹的既有授权选择新pin，未沿用E2q。保存clone清零及关闭重开读回exact/profile/close均通过；Java30392、wrapper42612原wait/exit0、原工具12989 terminal0，stdout固定/stderr空，进程退及Java子tmp/任务根清理原件保留在候选`credential-preparation-13-06/`与父聚合`chat-input-r06-result.json`。没有旧normal重开、模型或显式远端命令，物理SSH次数未测，秘密未另写入辅助文件/参数/日志/摘要。此次同时更换系统与口令，不能据成功反推旧失败唯一原因。真实认证阻点已解除，goal实际active；正在把真实连接证明、正常库06和新pin接入06 DRAFT，旧04及失败原件保留。完整同轮八项目目标尚未完成；最终SOURCE／P／R、产品清场与八项正式启动仍0，以CURRENT最新首节和原件为准。

@@ -1,5 +1,13 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-05 R13 08正式文件已发行：交互启动尚未开始
+
+[R12保留复核](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/r12-retention-prerequisite-audit/retention-prerequisite-result.json)确认原340份public与332份opaque文件的存在、大小、SHA及原范围成员集合仍精确匹配，13个旧进程身份均已消失，当次CIM快照的R12验证namespace为0；opaque仅作字节摘要比对，未由数据库或Runtime打开，原完整首过0／启动5／分母8及失败、UNKNOWN、中断缺终态保持。[纯机制原件](../../../.ai-workspace/wt/r13f/.ai-workspace/evidence/round-13-preparation-01/13/execution-mechanism-qualification-13-07/mechanism-qualification-result-13-07.json)为24／0／0／0（1个普通＋23个参数用例），仅资格化当前独立POM的该精确selector及上下文，不代替清场或八项业务验收。
+
+07首次正式guard用时4.1046918秒通过后，发现driver固定读取的BASE根`junit-classpath-13.txt`缺失；当时driver／monitor／reset／原项目启动均0，已先撤销release，再将9份正式文件按原字节[撤销归档](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/issued-authority01-revocation.json)。补齐根CP，并同步policy、SOURCE、source identity、runtime四处绑定后，父完成[08授权与SOURCE审核](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/parent-authorization-and-source-review-08.json)，重新[发行9件正式文件](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/final-promotion-08.json)，release最后发布；当前P`39bd9…`／R`838191…`，详细身份以原件为准，07旧发行保持撤销。
+
+08一次宿主Python商店alias返回9009，未执行guard，原[native失败](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/fullguard-08-native.json)保留；改用固定绝对Python路径后，[实际完整guard](../../../.ai-workspace/evidence/assisted-r13-final-metadata-20261105-07/fullguard-08-result.json)在4.7781663秒内通过17个旧范围输出／30个完整输出目录／4282成员。以上是单次完整核验，不宣称零异常或连续采样。截至本段证据截点，实际driver、monitor、reset与八原项目仍均0；父正在准备逐条交互启动，不能把文件发行或guard通过写成清场／业务已经开始，更不代表完整目标达成。
+
 ## 2026-11-05第二次重装后normal06真实连接通过
 
 用户明确提供再次重装后的新文字凭据，父经匿名stdin单次执行原产品check：原task`adde6a2f-e705-4840-a0b9-49e5fcee277d` SUCCEEDED、connectionSucceeded=true、无timeout、Runtime.close返回。当前端点45.192.105.213:22/root；第一次现场信任批准／selected／authenticated指纹同为`SHA256:AIkcPrjQvNyPcodi0UkgShuPrj/j8PUD5Uz1mMeK2JE`。新normal06保存副本清零、关闭后独立读回exact/profile/close均通过，原Java30392及wrapper42612 wait/exit0、工具12989 terminal0，进程与专用tmp均清。原件候选`credential-preparation-13-06/`及父聚合`chat-input-r06-result.json`；公开fake只验证输入/保存读回及三个TOFU边界，不计真实连接。旧normal01至05不重开，0模型/显式远端命令，物理SSH次数UNMEASURED；秘密未另落辅助文件/参数/日志/摘要。SSH认证缺口由新外部事实解除，goal实际active，正在做06 DRAFT与真实proof接入；正式SOURCE/P/R、清场、八原项目启动仍0。此次成功不改判任何旧失败，也不确立此前拒绝根因，完整目标仍未达成。
