@@ -12,6 +12,8 @@ import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -26,6 +28,8 @@ class DeploymentAgentToolchainInputEvidenceTest {
     private static final String REVISION = "c".repeat(64);
 
     private static final String OPERATION = "a".repeat(32);
+
+    private static final String TASK = "11111111-2222-3333-4444-555555555555";
 
     @Test
     void existingOnlyPreparationRefusesMissingAndDriftingRecordsBeforeColdInstallation() throws Exception {
@@ -333,7 +337,9 @@ class DeploymentAgentToolchainInputEvidenceTest {
     @Test
     void dependencyProfileCannotChooseArbitraryPackagesOrBorrowControllerTargets() {
         var arbitrary = current("dependencies");
-        rebind(arbitrary, DeploymentAgentToolchainPrograms.command(List.of("RUST", OPERATION)), Duration.ofSeconds(60));
+        var arbitraryProfile = new ArrayList<>(arguments("dependencies"));
+        arbitraryProfile.set(0, "RUST");
+        rebind(arbitrary, DeploymentAgentToolchainPrograms.command(arbitraryProfile), Duration.ofSeconds(60));
         assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainInputEvidence.select(arbitrary));
         var scope = current("dependencies");
         scope.set("resourceTargets", JSON.valueToTree(DeploymentAgentToolchainCommands.controllerTargets(SERVER, OPERATION)));
@@ -388,7 +394,7 @@ class DeploymentAgentToolchainInputEvidenceTest {
             .put("completeExecutableInput", dependencies ? DeploymentAgentToolchainPrograms.dependencies()
                 : phase.equals("resolve") ? DeploymentAgentToolchainPrograms.resolver() : DeploymentAgentToolchainPrograms.controller());
         current.set("serverTargets", JSON.valueToTree(List.of(SERVER.id())));
-        Set<ActionTarget> targets = dependencies ? DeploymentAgentToolchainCommands.dependencyTargets(SERVER, profile)
+        Set<ActionTarget> targets = dependencies ? DeploymentToolchainDependencies.dependencyTargets(SERVER, profile, OPERATION, DeploymentRemoteLayout.original())
             : phase.equals("resolve") ? DeploymentAgentToolchainCommands.resolverTargets(SERVER, gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType.RUST, "1.95", "1.95.0")
             : DeploymentAgentToolchainCommands.controllerTargets(SERVER, OPERATION);
         current.set("resourceTargets", JSON.valueToTree(targets));
@@ -402,8 +408,8 @@ class DeploymentAgentToolchainInputEvidenceTest {
                 DeploymentAgentToolchainReleaseTest.encoded("RUST", "1.95", "1.95.0", OPERATION));
             case "resolve" -> List.of("resolve", "RUST", "1.95", "1.95.0", "60", OPERATION);
             case "bind" -> List.of("bind", DeploymentAgentToolchainCommandsTest.binding(), "60", OPERATION);
-            case "dependencies" -> List.of("PYTHON", OPERATION);
-            case "native" -> List.of("NATIVE_BUILD", OPERATION);
+            case "dependencies" -> DeploymentToolchainDependencies.frame("PYTHON", OPERATION, 60, SERVER, TASK);
+            case "native" -> DeploymentToolchainDependencies.frame("NATIVE_BUILD", OPERATION, 60, SERVER, TASK);
             default -> throw new IllegalArgumentException("Unknown test phase");
         };
     }

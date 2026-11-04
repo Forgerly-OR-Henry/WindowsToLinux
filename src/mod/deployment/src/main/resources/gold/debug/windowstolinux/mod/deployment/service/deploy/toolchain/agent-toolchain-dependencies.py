@@ -58,7 +58,7 @@ def dependency_owner_diagnostic(reason, path, owner, owners):
 
 
 def dependency_diagnostic_line(error, args):
-    if error.unknown or len(args) != 2 or not isinstance(args[1], str) or not re.fullmatch('[a-f0-9]{32}', args[1]):
+    if error.unknown or len(args) not in (2, 5) or not isinstance(args[1], str) or not re.fullmatch('[a-f0-9]{32}', args[1]):
         return None
     value = error.diagnostic
     if error.detail == 'UNSUPPORTED_DPKG_CONFIGURATION':
@@ -247,17 +247,16 @@ def dependency_task_mirrors():
 
 
 def dependency_run(args):
+    if not DEPENDENCY_WORKER_ADMITTED:
+        dependency_reject('DEPENDENCY_WORKER_NOT_IN_SERVICE')
+    dependency_remaining()
     mirrored = bool(os.environ.get('WTL_MIRROR_POLICY')) and pathlib.Path(args[0]).name in ('apt-get', 'dnf')
     environment = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C',
                    'DEBIAN_FRONTEND': 'noninteractive', 'NEEDRESTART_MODE': 'l'}
-    deadline = time.monotonic() + 1800
     if mirrored:
         module, policy = dependency_task_mirrors()
         args = module['mirror_system_command'](policy, pathlib.Path(args[0]).name, args[1:])
-        deadline = min(deadline, time.monotonic() + policy.remaining())
-        for name in ('WTL_MIRROR_POLICY', 'WTL_MIRROR_RUNTIME', 'WTL_MIRROR_POLICY_SHA256',
-                     'WTL_MIRROR_CREDENTIALS_DIR', 'WTL_MIRROR_CREDENTIALS_SOURCE', 'WTL_MIRROR_BUDGET_SECONDS',
-                     'WTL_MIRROR_STARTED_AT', 'WTL_MIRROR_DEADLINE', 'TMPDIR', 'TEMP', 'TMP'):
+        for name in DEPENDENCY_MIRROR_ENVIRONMENT:
             if name in os.environ:
                 environment[name] = os.environ[name]
     process = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
@@ -268,9 +267,7 @@ def dependency_run(args):
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
             while selector.get_map():
-                if time.monotonic() >= deadline:
-                    dependency_reject('DEPENDENCY_TRANSACTION_TIMEOUT', True)
-                for key, _ in selector.select(0.2):
+                for key, _ in selector.select(min(0.2, dependency_remaining())):
                     block = os.read(key.fileobj.fileno(), 8192)
                     if not block:
                         selector.unregister(key.fileobj)
@@ -278,7 +275,7 @@ def dependency_run(args):
                         result.extend(block)
                         if len(result) > 1024 * 1024:
                             dependency_reject('DEPENDENCY_TRANSACTION_OUTPUT_LIMIT', True)
-            if process.wait(timeout=max(0.01, deadline - time.monotonic())):
+            if process.wait(timeout=dependency_remaining()):
                 dependency_reject('DEPENDENCY_TRANSACTION_FAILED')
         decoded = bytes(result).decode('utf-8')
         if mirrored:
@@ -298,8 +295,10 @@ def dependency_run(args):
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-        process.wait()
-        process.stdout.close()
+        try:
+            process.wait(timeout=1)
+        finally:
+            process.stdout.close()
 
 
 def dependency_packages(manager, ecosystem):
@@ -629,8 +628,11 @@ def dependency_versions(output, packages):
     return versions
 
 
-def dependency_main(args):
+def dependency_transaction(args):
     global OS_PROFILE
+    if not DEPENDENCY_WORKER_ADMITTED:
+        dependency_reject('DEPENDENCY_WORKER_NOT_IN_SERVICE')
+    dependency_remaining()
     if os.geteuid() != 0 or len(args) != 2 or args[0] not in ('JAVA', 'NODE', 'PYTHON', 'DOTNET', 'KOTLIN', 'GO', 'RUST', 'PHP', 'RUBY', 'NATIVE_BUILD', 'HELPER_RUNTIME') or not re.fullmatch('[a-f0-9]{32}', args[1]):
         dependency_reject('DEPENDENCY_ARGUMENT_FRAME')
     ecosystem, operation = args
@@ -645,7 +647,7 @@ def dependency_main(args):
                      '-o', 'Acquire::AllowWeakRepositories=false', '-o', 'Acquire::AllowDowngradeToInsecureRepositories=false',
                      '-o', 'Acquire::Check-Valid-Until=true', '-o', 'DPkg::Lock::Timeout=120']
             dependency_run([dependency_tool('apt-get'), *flags, 'update'])
-            dependency_run([dependency_tool('apt-get'), *flags, 'install', '-y', '--no-install-recommends', *packages])
+            dependency_run([dependency_tool('apt-get'), *flags, 'install', '-y', '--no-remove', '--no-install-recommends', *packages])
             output = dependency_run([dependency_tool('dpkg-query'), '-W', '-f=' + '$' + '{Package}\\t' + '$' + '{Version}\\n', *packages])
         else:
             if ecosystem == 'HELPER_RUNTIME':
@@ -660,6 +662,13 @@ def dependency_main(args):
         versions = dependency_versions(output, packages)
     print('TOOLCHAIN_DEPENDENCIES=' + json.dumps({'operation': operation, 'ecosystem': ecosystem,
           'manager': manager, 'packages': versions}, sort_keys=True, separators=(',', ':')))
+
+
+def dependency_main(args):
+    if len(args) == 2 and args[0] == '--dependency-worker':
+        dependency_worker(args[1])
+    else:
+        dependency_supervise(args)
 
 
 def dependency_cli(args):

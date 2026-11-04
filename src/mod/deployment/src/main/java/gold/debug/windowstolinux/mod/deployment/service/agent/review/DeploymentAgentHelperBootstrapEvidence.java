@@ -31,8 +31,8 @@ public final class DeploymentAgentHelperBootstrapEvidence {
     }
 
     public static Map<String, Object> describe(String executable, DeploymentRemoteLayout layout) {
-        String operation = DeploymentAgentHelperInstallerScript.parseOperation(executable, layout);
-        return DeploymentInstallerEvidence.describe(executable, DeploymentAgentHelperInstallerScript.render(operation, layout), layout);
+        var frame = DeploymentAgentHelperInstallerScript.parseFrame(executable, layout);
+        return DeploymentInstallerEvidence.describe(executable, DeploymentAgentHelperInstallerScript.render(frame.get(1), layout, new ServerId(frame.get(3)), frame.get(4)), layout);
     }
 
     public static void requireCurrent(Map<String, ?> current, String executable) {
@@ -53,7 +53,10 @@ public final class DeploymentAgentHelperBootstrapEvidence {
                 || !actual.add(new ActionTarget(node.path("serverId").textValue(), node.path("kind").textValue(), node.path("id").textValue())))
                 throw new IllegalArgumentException("Agent bootstrap target changed");
         }
-        if (!actual.equals(targets(server, layout))) throw new IllegalArgumentException("Agent bootstrap effects incomplete");
+        String operation = DeploymentAgentHelperInstallerScript.parseOperation(executable, layout);
+        if (!DeploymentAgentHelperInstallerScript.parseFrame(executable, layout).get(3).equals(server.id()))
+            throw new IllegalArgumentException("Agent bootstrap server differs from original request");
+        if (!actual.equals(targets(server, layout, operation))) throw new IllegalArgumentException("Agent bootstrap effects incomplete");
         describe(executable, layout);
         byte[] bytes = executable.getBytes(StandardCharsets.UTF_8);
         try (var request = new CommandRequest(DeploymentAgentHelperInstallerScript.LAUNCHER, bytes, Duration.ofHours(2), 131072)) {
@@ -80,7 +83,8 @@ public final class DeploymentAgentHelperBootstrapEvidence {
                 .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
                 .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
                 .decode(java.nio.ByteBuffer.wrap(bytes)).toString();
-            if (!DeploymentAgentHelperInstallerScript.parseOperation(source, layout).equals(originalOperation))
+            var frame = DeploymentAgentHelperInstallerScript.parseFrame(source, layout);
+            if (!frame.get(1).equals(originalOperation) || !frame.get(3).equals(server.id()))
                 throw new IllegalArgumentException("Agent bootstrap operation differs from its original attempt");
             describe(source, layout);
         } catch (java.nio.charset.CharacterCodingException invalid) {
@@ -88,14 +92,14 @@ public final class DeploymentAgentHelperBootstrapEvidence {
         } finally {
             Arrays.fill(bytes, (byte) 0);
         }
-        return original.withSemantics(new ActionSemantics(OPERATION, targets(server, layout)));
+        return original.withSemantics(new ActionSemantics(OPERATION, targets(server, layout, originalOperation)));
     }
 
-    public static Set<ActionTarget> targets(ServerId server) {
-        return targets(server, DeploymentRemoteLayout.original());
+    public static Set<ActionTarget> targets(ServerId server, String operation) {
+        return targets(server, DeploymentRemoteLayout.original(), operation);
     }
 
-    public static Set<ActionTarget> targets(ServerId server, DeploymentRemoteLayout layout) {
+    public static Set<ActionTarget> targets(ServerId server, DeploymentRemoteLayout layout, String operation) {
         var targets = new LinkedHashSet<ActionTarget>();
         targets.add(new ActionTarget(server.id(), "deployment-helper", layout.helperPath()));
         targets.add(new ActionTarget(server.id(), "directory", layout.paths().helperDirectory()));
@@ -105,6 +109,7 @@ public final class DeploymentAgentHelperBootstrapEvidence {
         targets.add(new ActionTarget(server.id(), "file", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentRemoteLayoutAdmission.UNIT_PATH));
         targets.add(new ActionTarget(server.id(), "systemd-service", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentRemoteLayoutAdmission.UNIT_NAME));
         targets.add(new ActionTarget(server.id(), "service-manager", "systemd"));
+        targets.addAll(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.lifecycleTargets(server, operation, layout));
         for (String manager : java.util.List.of("APT", "DNF")) {
             targets.add(new ActionTarget(server.id(), "system-package-index", manager + ":configured-authenticated-sources"));
             targets.add(new ActionTarget(server.id(), "system-package-transaction", manager + ":authenticated-dependency-closure:HELPER_RUNTIME"));
@@ -121,6 +126,7 @@ public final class DeploymentAgentHelperBootstrapEvidence {
 
     public static Map<String, Object> navigation(String executable, DeploymentRemoteLayout layout) {
         String operation = DeploymentAgentHelperInstallerScript.parseOperation(executable, layout);
+        var frame = DeploymentAgentHelperInstallerScript.parseFrame(executable, layout);
         var evidence = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(describe(executable, layout));
         String prefix = evidence.at("/segments/0/text").textValue();
         String tail = evidence.at("/segments/4/text").textValue();
@@ -143,7 +149,7 @@ public final class DeploymentAgentHelperBootstrapEvidence {
             "dependencyLocations", gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainInputEvidence
                 .dependencySourceLocations(prefix, pointer),
             "invocations", java.util.List.of(location(pointer, prefix,
-                    "  /usr/bin/python3 -I -S - 'HELPER_RUNTIME' '" + operation + "' <<'WTL_AGENT_HELPER_DEPENDENCIES'"),
+                    "  /usr/bin/python3 -I -S - " + frame.stream().map(value -> "'" + value + "'").collect(java.util.stream.Collectors.joining(" ")) + " <<'WTL_AGENT_HELPER_DEPENDENCIES'"),
                 location("/completeExecutableInput/segments/4/text", tail,
                     "helper_probe=\"$('" + layout.helperPath() + "' probe)\"")),
             "meaning", "Navigation into current canonical guarded file installation only. The complete prefix includes the original embedded dependency program and fixed HELPER_RUNTIME package table; no installed helper or vendor worker runs that Python transaction. Existing helper/build-entry conflicts are checked before transactions and installation. The installer later calls the complete source's probe entrypoint. Native OS tools and package database are the bootstrap trust baseline, not historical signature proof or protection from malicious root OS changes. DNF HELPER_RUNTIME does not enable CRB. These locations replace no executable evidence, independent verdict, current target or authorization check.");

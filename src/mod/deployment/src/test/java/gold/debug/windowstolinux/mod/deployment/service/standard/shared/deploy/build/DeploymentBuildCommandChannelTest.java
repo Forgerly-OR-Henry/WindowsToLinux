@@ -42,6 +42,40 @@ import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.Deploym
 class DeploymentBuildCommandChannelTest {
 
     @Test
+    void dependencyFrameCannotBorrowALargerTimeoutOrDifferentOriginalIdentity() throws Exception {
+        var server = new ServerId("Server-Exact");
+        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+        String operation = "a".repeat(32), task = "11111111-1111-1111-1111-111111111111";
+        var targets = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(server, "NATIVE_BUILD", operation, layout);
+        for (String fault : List.of("OUTER_NARROWED", "SERVER", "TASK", "NONCANONICAL", "ZERO", "OVERFLOW")) {
+            var calls = new AtomicInteger();
+            var channel = channel(true, calls);
+            String seconds = fault.equals("OUTER_NARROWED") ? "130" : fault.equals("NONCANONICAL") ? "060"
+                : fault.equals("ZERO") ? "0" : fault.equals("OVERFLOW") ? "99999999999999999" : "60";
+            var args = List.of("NATIVE_BUILD", operation, seconds, fault.equals("SERVER") ? "other" : server.id(),
+                fault.equals("TASK") ? "22222222-2222-2222-2222-222222222222" : task);
+            String command = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.command(args);
+            assertThrows(IllegalArgumentException.class, () -> channel.send(
+                gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION, targets, command,
+                new byte[0], java.time.Duration.ofSeconds(fault.equals("OUTER_NARROWED") ? 130 : 60), 65536), fault);
+            assertEquals(0, calls.get());
+        }
+    }
+
+    @Test
+    void matchingDependencyFrameKeepsOneOriginalGrantAndExecute() throws Exception {
+        var calls = new AtomicInteger();var channel = channel(true, calls);
+        var server = new ServerId("Server-Exact");var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+        String operation = "a".repeat(32);
+        var frame = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.frame("NATIVE_BUILD", operation, 60, server,
+            "11111111-1111-1111-1111-111111111111");
+        var result = channel.send(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION,
+            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(server, "NATIVE_BUILD", operation, layout),
+            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.command(frame), new byte[0], java.time.Duration.ofSeconds(60), 65536);
+        assertEquals(TaskResult.SUCCEEDED, result.outcome());assertEquals(1, calls.get());
+    }
+
+    @Test
     void liveDispatchBoundaryIsNeverObservedForDenialAndPrecedesOriginalExecute() throws Exception {
         var observed = new AtomicInteger();
         var executions = new AtomicInteger();
@@ -193,6 +227,7 @@ class DeploymentBuildCommandChannelTest {
                 CommandRequest command = (CommandRequest) args[0];
                 assertTrue(command.script().contains("prepare-toolchains")
                     || command.script().contains("build-preflight")
+                    || command.script().startsWith("/usr/bin/python3 -I -S -c ")
                     || gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedBody(command.script()).startsWith("exec /usr/bin/python3 -I -c "));
                 return response.apply(command);
             });

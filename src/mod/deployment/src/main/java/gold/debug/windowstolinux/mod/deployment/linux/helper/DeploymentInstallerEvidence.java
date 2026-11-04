@@ -128,10 +128,12 @@ public final class DeploymentInstallerEvidence {
             if (start < 0 || executable.indexOf(tracked, start + tracked.length()) >= 0)
                 throw new IllegalArgumentException("Tracked installer receipt wrapper differs from the complete current implementation");
             int begin = tracked.indexOf("prepare_stage=installer-receipt\n");
-            int beginEnd = tracked.indexOf("prepare_stage=installer-lock\n", begin);
+            int beginEnd = tracked.indexOf(DeploymentHelperInstallerScript.BODY_AFTER_RECEIPT, begin);
             int end = tracked.indexOf("prepare_stage=installer-receipt-terminal\n", beginEnd);
             int endEnd = tracked.indexOf("printf 'HELPER_INSTALL=1\\nPROTOCOL=", end);
             if (begin < 0 || beginEnd < 0 || end < 0 || endEnd < 0
+                || tracked.indexOf(DeploymentHelperInstallerScript.BODY_AFTER_RECEIPT,
+                    beginEnd + DeploymentHelperInstallerScript.BODY_AFTER_RECEIPT.length()) >= 0
                 || !body.equals(tracked.substring(0, begin) + tracked.substring(beginEnd, end) + tracked.substring(endEnd)))
                 throw new IllegalArgumentException("Installer body byte ranges are not its exact fixed body");
             scopes.put("bodyDigest", bodyDigest(body, List.of(byteRange(executable, start, start + begin),

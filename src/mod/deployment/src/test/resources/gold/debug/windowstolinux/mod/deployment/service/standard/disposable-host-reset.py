@@ -182,6 +182,104 @@ def root_inventory(mounts):
     return values
 
 
+def dependency_unit_binding(unit, terminal=False):
+    match = re.fullmatch('windowstolinux-dependency-([a-f0-9]{32})\\.service', unit)
+    if match is None:
+        raise ResetError('DEPENDENCY_UNIT_IDENTITY')
+    base = pathlib.Path('/var/lib/windowstolinux/dependency-operations') / match[1]
+    def read(name, limit):
+        path = base / name
+        safe_ancestors(path)
+        info = metadata(path)
+        if info['type'] != 'file' or info['uid'] != 0 or info['gid'] != 0 or info['mode'] & 0o022 or info['size'] > limit:
+            raise ResetError('DEPENDENCY_OWNERSHIP_FILE')
+        data = path.read_bytes()
+        if len(data) != info['size'] or metadata(path) != info:
+            raise ResetError('DEPENDENCY_OWNERSHIP_CHANGED')
+        return data
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ResetError('DEPENDENCY_OWNERSHIP_DUPLICATE')
+            result[key] = value
+        return result
+    raw, ownership_raw, worker = read('manifest.json', 16384), read('cleanup-ownership.json', 4096), read('worker.py', 1048576)
+    manifest, ownership = json.loads(raw, object_pairs_hook=unique), json.loads(ownership_raw, object_pairs_hook=unique)
+    source = digest(worker)
+    original_manifest_keys = {'formatVersion', 'profile', 'operation', 'server', 'task', 'totalSeconds', 'runtimeSeconds',
+                     'deadlineMonotonicNs', 'workerDeadlineMonotonicNs', 'unit', 'description',
+                     'workerSourceSha256', 'exitType', 'originalUnitAbsent'}
+    mirror_manifest_keys = original_manifest_keys | {'mirrorEnvironment'}
+    manifest_keys = set(manifest) if isinstance(manifest, dict) else set()
+    ownership_keys = {'formatVersion', 'operation', 'profile', 'unit', 'description', 'workerSourceSha256',
+                      'server', 'task', 'totalSeconds', 'runtimeSeconds', 'stopSeconds', 'reserveSeconds',
+                      'exitType', 'invocationId'}
+    if (not isinstance(manifest, dict) or manifest_keys not in (original_manifest_keys, mirror_manifest_keys)
+        or not isinstance(ownership, dict) or set(ownership) != ownership_keys
+        or type(manifest['formatVersion']) is not int or manifest['formatVersion'] != 2
+        or type(ownership['formatVersion']) is not int or ownership['formatVersion'] != 2
+        or any(type(manifest[k]) is not int or manifest[k] < 1
+               for k in ('totalSeconds', 'runtimeSeconds', 'deadlineMonotonicNs', 'workerDeadlineMonotonicNs'))
+        or any(type(ownership[k]) is not int for k in ('totalSeconds', 'runtimeSeconds', 'stopSeconds', 'reserveSeconds'))
+        or not 45 <= manifest['totalSeconds'] <= 7200 or manifest['runtimeSeconds'] + 30 > manifest['totalSeconds']
+        or manifest['deadlineMonotonicNs'] - manifest['workerDeadlineMonotonicNs'] != 30000000000
+        or manifest['originalUnitAbsent'] is not True or manifest['exitType'] != 'cgroup'
+        or manifest['profile'] not in ('JAVA', 'NODE', 'PYTHON', 'DOTNET', 'KOTLIN', 'GO', 'RUST', 'PHP', 'RUBY', 'NATIVE_BUILD', 'HELPER_RUNTIME')
+        or any(ownership[k] != manifest[k] for k in manifest_keys & ownership_keys)
+        or ownership['stopSeconds'] != 5 or ownership['reserveSeconds'] != 25
+        or manifest.get('operation') != match[1] or manifest.get('unit') != unit
+        or manifest.get('workerSourceSha256') != source or not isinstance(ownership['invocationId'], str)
+        or not re.fullmatch('[a-f0-9]{32}', ownership['invocationId']) or ownership['invocationId'] == '0' * 32
+        or not isinstance(manifest.get('task'), str)
+        or not re.fullmatch('[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', manifest['task'])
+        or not isinstance(manifest.get('server'), str) or not re.fullmatch('[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', manifest['server'])
+        or manifest.get('description') != 'WTL_DEPENDENCY_2:' + match[1] + ':' + source):
+        raise ResetError('DEPENDENCY_UNIT_IDENTITY')
+    mirror = manifest['mirrorEnvironment'] if manifest_keys == mirror_manifest_keys else {}
+    mirror_keys = {'WTL_MIRROR_POLICY', 'WTL_MIRROR_RUNTIME', 'WTL_MIRROR_POLICY_SHA256',
+        'WTL_MIRROR_CREDENTIALS_DIR', 'WTL_MIRROR_CREDENTIALS_SOURCE', 'WTL_MIRROR_BUDGET_SECONDS',
+        'WTL_MIRROR_STARTED_AT', 'WTL_MIRROR_DEADLINE', 'TMPDIR', 'TEMP', 'TMP'}
+    if (not isinstance(mirror, dict) or not set(mirror) <= mirror_keys
+        or any(not isinstance(v, str) or not v or len(v) > 4096 or any(c in v for c in ('\x00', '\n', '\r')) for v in mirror.values())
+        or mirror and (not {'WTL_MIRROR_POLICY', 'WTL_MIRROR_RUNTIME', 'WTL_MIRROR_POLICY_SHA256', 'WTL_MIRROR_DEADLINE'} <= set(mirror)
+            or not re.fullmatch('[a-f0-9]{64}', mirror['WTL_MIRROR_POLICY_SHA256'])
+            or mirror['WTL_MIRROR_DEADLINE'] != str(manifest['workerDeadlineMonotonicNs'] / 1000000000))):
+        raise ResetError('DEPENDENCY_MIRROR_ENVIRONMENT')
+    names = ('LoadState', 'ActiveState', 'SubState', 'MainPID', 'ExecMainStatus', 'Result', 'InvocationID',
+             'ControlGroup', 'Description', 'Transient', 'Type', 'User', 'Group', 'KillMode', 'SendSIGKILL',
+             'RuntimeMaxUSec', 'TimeoutStopUSec', 'RemainAfterExit', 'Delegate', 'ExitType', 'ActiveEnterTimestampMonotonic')
+    _, output = command(['/usr/bin/systemctl', 'show', '--no-pager',
+        '--property=' + ','.join(names), unit])
+    facts = {}
+    for line in output.splitlines():
+        key, sep, value = line.partition('=')
+        if not sep or key in facts or key not in names:
+            raise ResetError('DEPENDENCY_UNIT_OBSERVATION')
+        facts[key] = value
+    def seconds(value):
+        units, total, previous = {'h': 3600, 'min': 60, 's': 1}, 0, 3601
+        for part in value.split(' '):
+            match = re.fullmatch('(0|[1-9][0-9]*)(h|min|s)', part)
+            if match is None or units[match[2]] >= previous:
+                raise ResetError('DEPENDENCY_UNIT_IDENTITY')
+            previous = units[match[2]]
+            total += int(match[1]) * previous
+        return total
+    fixed = {'LoadState': 'loaded', 'Transient': 'yes', 'Description': manifest['description'],
+             'InvocationID': ownership['invocationId'], 'Type': 'exec', 'User': 'root', 'Group': 'root',
+             'KillMode': 'control-group', 'SendSIGKILL': 'yes', 'RemainAfterExit': 'yes',
+             'Delegate': 'no', 'ExitType': 'cgroup'}
+    if (set(facts) != set(names) or any(facts[k] != v for k, v in fixed.items())
+        or facts['ControlGroup'] not in ('', '/system.slice/' + unit)
+        or seconds(facts['RuntimeMaxUSec']) != manifest['runtimeSeconds'] or seconds(facts['TimeoutStopUSec']) != 5
+        or terminal and (facts['MainPID'] != '0' or facts['ActiveState'] not in ('inactive', 'failed'))):
+        raise ResetError('DEPENDENCY_UNIT_IDENTITY')
+    return {'operation': match[1], 'task': manifest['task'], 'server': manifest['server'],
+        'manifestSha256': digest(raw), 'cleanupOwnershipSha256': digest(ownership_raw), 'workerSourceSha256': source,
+        'invocationId': ownership['invocationId']}
+
+
 def unit_inventory(mounts):
     loaded, installed, files, states = set(), set(), {}, {}
     for option, names in (('list-units', loaded), ('list-unit-files', installed)):
@@ -228,6 +326,10 @@ def unit_inventory(mounts):
     names = sorted(loaded | installed)
     if len(names) > 2048 or len(files) > 8192:
         raise ResetError('UNIT_INVENTORY_LIMIT')
+    for name in names:
+        if name.startswith('windowstolinux-dependency-'):
+            # Prefix only selects candidates. A foreign/colliding unit is never claimed or killed.
+            states.setdefault(name, {})['dependencyOwnership'] = dependency_unit_binding(name)
     return names, sorted(installed), [files[key] for key in sorted(files)], dict(sorted(states.items()))
 
 
@@ -456,6 +558,8 @@ def apply(selected):
                'removedAccounts': 0, 'purgedPackages': 0, 'aptDownloadCacheCleaned': False}
     PHASE = 'stop-units'
     for unit in current['units']:
+        if unit.startswith('windowstolinux-dependency-') and dependency_unit_binding(unit) != current['unitStates'][unit]['dependencyOwnership']:
+            raise ResetError('DEPENDENCY_UNIT_DRIFT')
         command(['/usr/bin/systemctl', 'stop', '--', unit], timeout=180)
         summary['stoppedUnits'] += 1
     PHASE = 'reset-exact-failed-units'
@@ -463,6 +567,9 @@ def apply(selected):
     for line in output.splitlines():
         fields = line.split()
         if len(fields) >= 4 and fields[0] in current['units'] and fields[2] == 'failed':
+            if (fields[0].startswith('windowstolinux-dependency-')
+                and dependency_unit_binding(fields[0], terminal=True) != current['unitStates'][fields[0]]['dependencyOwnership']):
+                raise ResetError('DEPENDENCY_UNIT_DRIFT')
             command(['/usr/bin/systemctl', 'reset-failed', '--', fields[0]])
     PHASE = 'disable-units'
     for unit in current['installedUnits']:

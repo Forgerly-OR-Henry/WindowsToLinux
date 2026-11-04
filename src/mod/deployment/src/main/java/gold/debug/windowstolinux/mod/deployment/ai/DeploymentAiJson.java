@@ -8,6 +8,7 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.appapi.ai.model.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.task.log.*;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
@@ -19,6 +20,11 @@ public final class DeploymentAiJson {
     private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
         .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
         .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
+
+    private static final String MISSING_NATIVE_SUBMISSION = "SUBMISSION_REJECTED: native submit_result is missing. "
+        + "Review the same complete current request and submit exactly one native submit_result with the required schema. "
+        + "Text alone is not a decision or execution permission; no action was authorized or executed by that response. "
+        + "This is the final submission opportunity for this request.";
 
     private final ModContext context;
 
@@ -144,6 +150,7 @@ public final class DeploymentAiJson {
         var messages = new ArrayList<AiMessage>();
         messages.add(new AiMessage(AiRole.SYSTEM, policy, List.of()));
         messages.add(new AiMessage(AiRole.USER, current, List.of()));
+        boolean missingNativeSubmission = false;
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
                 if (conversation != null) messages = new ArrayList<>(conversation.messages(current, revision, task));
@@ -152,8 +159,15 @@ public final class DeploymentAiJson {
             } catch (Exception rejected) {
                 throw new IOException("Approval conversation history rejected", rejected);
             }
+            // Rebuilt conversation history must receive this request-local correction without retaining it for another command.
+            if (missingNativeSubmission) messages.add(messages.size() - 1, new AiMessage(AiRole.USER, MISSING_NATIVE_SUBMISSION, List.of()));
             var response = call(purpose, messages, List.of(definition), revision, task, bound > 48000,
                 Optional.empty());
+            if (purpose == AiPurpose.APPROVAL && attempt == 0 && response.finishReason().equals("stop") && response.toolCalls().isEmpty()) {
+                recordMissingSubmissionCorrection(task);
+                missingNativeSubmission = true;
+                continue;
+            }
             if (!response.finishReason().equals("tool_calls") || response.toolCalls().isEmpty())
                 throw new IOException("A complete native result submission is required");
             if (response.toolCalls().size() != 1) {
@@ -193,6 +207,17 @@ public final class DeploymentAiJson {
             messages.add(AiMessage.result(receipt));
         }
         throw new IOException("Submission budget exhausted");
+    }
+
+    private void recordMissingSubmissionCorrection(TaskContext task) {
+        try {
+            var target = context.logs().register(new LogCategory("deployment", "Deployment", Optional.of("deployment_log")));
+            context.logs().write(target, new LogEvent(LogLevel.WARN, "DEPLOYMENT_AI_SUBMISSION_CORRECTION", "DEPLOYMENT_AI_SUBMISSION_CORRECTION",
+                Optional.of("{\"purpose\":\"APPROVAL\",\"reason\":\"MISSING_NATIVE_CALL\",\"rejectedSubmission\":\"1\",\"nextSubmission\":\"2\",\"maximumSubmissions\":\"2\"}"),
+                Optional.of(task.id()), Optional.of(UUID.randomUUID()), Optional.empty()));
+        } catch (ApiException unavailable) {
+            // Logging failure cannot convert a format correction into authorization or change the original model result.
+        }
     }
 
     public AiResponse call(AiPurpose purpose, List<AiMessage> messages, List<AiToolDefinition> tools,

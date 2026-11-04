@@ -30,6 +30,7 @@ public final class DeploymentAgentApprovalConversation implements DeploymentAppr
 
     private static final List<String> RULES = List.of(DeploymentReviewDecision.INSTRUCTION,
         DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review.md"),
+        DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review-stage.md"),
         DeploymentSkillResources.text(DeploymentAgentReview.class, "action-review.md"),
         DeploymentSkillResources.text(DeploymentAiJson.class, "finite-command-review.md"),
         DeploymentSkillResources.text(DeploymentAgentToolchainPrograms.class, "inline-program-review.md"),

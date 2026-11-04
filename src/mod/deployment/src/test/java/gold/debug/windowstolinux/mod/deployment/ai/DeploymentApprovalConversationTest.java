@@ -185,7 +185,7 @@ class DeploymentApprovalConversationTest {
             "fixture-fingerprint", "a".repeat(64), "fixture-route");
         var ai = new DeploymentAiJson(boundary.context(), conversation);
         String operation = "1234567890abcdef1234567890abcdef";
-        String script = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.render(operation);
+        String script = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.render(operation, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), server, fixture.task.id().toString());
         reply(fixture, "deny-guarded-bootstrap", "DENY");
         try (var command = new CommandRequest(gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.LAUNCHER, script.getBytes(StandardCharsets.UTF_8),
             Duration.ofHours(2), 131072)) {
@@ -384,16 +384,18 @@ class DeploymentApprovalConversationTest {
     }
 
     @Test
-    void namedSubmissionRejectsTextWrongToolAndMultipleCallsWithOriginalBounds() throws Exception {
+    void automaticSubmissionRejectsTextWrongToolAndMultipleCallsWithinTwoSubmissions() throws Exception {
         for (String fault : List.of("text", "other-tool", "multiple-tools")) {
             var fixture = new NativeAiFixture();
             var ai = new DeploymentAiJson(fixture.context, conversation(fixture));
             if (fault.equals("text")) {
-                fixture.replies.add(new gold.debug.windowstolinux.appapi.task.result.OperationResult<>(
+                var text = new gold.debug.windowstolinux.appapi.task.result.OperationResult<>(
                     gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED,
                     Optional.of(new AiResponse("{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"text only\"}",
                         "fixture-model", "stop", new AiUsage(Optional.of(10L), Optional.of(2L), Optional.empty(), Optional.empty(), Optional.empty()))),
-                    Optional.empty()));
+                    Optional.empty());
+                fixture.replies.add(text);
+                fixture.replies.add(text);
             } else if (fault.equals("other-tool")) {
                 fixture.nativeReply(new AiToolCall("wrong-tool", "probe", "{}"));
                 fixture.nativeReply(new AiToolCall("wrong-tool-again", "probe", "{}"));
@@ -402,7 +404,7 @@ class DeploymentApprovalConversationTest {
             }
             assertThrows(java.io.IOException.class, () -> ai.askCommand("Review current command", facts("reviewed-command", "printf current\n"),
                 "fixture-route", fixture.task, DeploymentReviewDecision::malformed));
-            assertEquals(fault.equals("other-tool") ? 2 : 1, fixture.requests.size(), "Existing bounded format correction is preserved");
+            assertEquals(fault.equals("multiple-tools") ? 1 : 2, fixture.requests.size(), "Only the existing two-submission budget is available");
             for (var request : fixture.requests) {
                 assertTrue(request.requiredToolName().isEmpty());
                 assertTrue(request.tools().stream().anyMatch(tool -> tool.name().equals("submit_result")));

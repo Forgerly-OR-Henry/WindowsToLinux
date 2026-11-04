@@ -5873,6 +5873,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
     private final AtomicInteger reviewedQuestions = new AtomicInteger();
 
     private final java.util.concurrent.atomic.AtomicLong observedTokens = new java.util.concurrent.atomic.AtomicLong();
+    private final LiveBoundaryObserver liveBoundaries = new LiveBoundaryObserver(System.out::println);
 
     private final java.util.concurrent.atomic.AtomicLong deploymentTokens = new java.util.concurrent.atomic.AtomicLong();
 
@@ -6427,6 +6428,11 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                     System.out.println("AI_LIVE_OUTCOME purpose=" + request.orElseThrow().purpose() + " result=" + outcome.outcome()
                         + " problem=" + outcome.problem());
                     if (outcome.value().orElse(null) instanceof gold.debug.windowstolinux.appapi.ai.model.AiResponse response) {
+                        if (request.orElseThrow().purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL)
+                            for (var call : response.toolCalls())
+                                if (call.name().equals("submit_result"))
+                                    liveBoundaries.rawReview(() -> Arrays.stream(args).filter(TaskContext.class::isInstance)
+                                        .map(TaskContext.class::cast).map(TaskContext::id).findFirst().orElse(null), call.arguments());
                         if (agentMode && !mainOnlyDiagnostic && request.orElseThrow().purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL) {
                             var message = request.orElseThrow().messages().stream().filter(value -> value.role() == gold.debug.windowstolinux.appapi.ai.model.AiRole.USER)
                                 .reduce((earlier, latest) -> latest).orElseThrow();
@@ -6496,7 +6502,12 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             });
         var linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(), new Class<?>[]{LinuxService.class},
             (proxy, method, args) -> {
-                Object result = invoke(method, actual.linux(), args);
+                var connectingTask = args == null ? Optional.<TaskContext>empty()
+                    : Arrays.stream(args).filter(TaskContext.class::isInstance).map(TaskContext.class::cast).findFirst();
+                Object result = method.getName().equals("connect")
+                    ? observedRemoteCall(LiveRemotePhase.CONNECT, () -> connectingTask.map(TaskContext::id).orElse(null),
+                        () -> invoke(method, actual.linux(), args), System.out::println)
+                    : invoke(method, actual.linux(), args);
                 if (!(result instanceof RemoteSession session)) return result;
                 var remoteTask = Arrays.stream(args).filter(TaskContext.class::isInstance).map(TaskContext.class::cast).findFirst().orElseThrow();
                 return Proxy.newProxyInstance(RemoteSession.class.getClassLoader(), new Class<?>[]{RemoteSession.class},
@@ -6512,7 +6523,13 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                             System.out.println("AGENT_MANAGEMENT_SEND task=" + remoteTask.id() + " grant=" + supplied.id()
                                 + " actionSha256=" + grant.actionSha256());
                         }
-                        Object observed = invoke(operation, session, inputs);
+                        var phase = switch (operation.getName()) {
+                            case "execute" -> LiveRemotePhase.EXECUTE;
+                            case "close" -> LiveRemotePhase.CLOSE;
+                            default -> null;
+                        };
+                        Object observed = phase == null ? invoke(operation, session, inputs)
+                            : observedRemoteCall(phase, remoteTask::id, () -> invoke(operation, session, inputs), System.out::println);
                         if (operation.getName().equals("execute") && observed instanceof OperationResult<?> outcome
                             && outcome.value().orElse(null) instanceof CommandResult command) {
                             System.out.println("STATIC_LIVE_COMMAND result=" + outcome.outcome() + " exit=" + command.exitCode()
@@ -6550,7 +6567,12 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                 boolean reviewed = aiEnabled && !agentApproval.isEmpty() && method.getName().equals("approveReviewedAction");
                 var task = reviewed ? (TaskContext) args[args.length - 1] : null;
                 int before = reviewed ? humanQuestions.computeIfAbsent(task.id(), ignored -> new AtomicInteger()).get() : 0;
-                Object result = invoke(method, actual.interaction(), args);
+                Object result = method.getName().equals("approveReviewedAction")
+                    ? liveBoundaries.call(LiveBoundaryPhase.HOST_GRANT,
+                        () -> Arrays.stream(args).filter(TaskContext.class::isInstance).map(TaskContext.class::cast)
+                            .map(TaskContext::id).findFirst().orElse(null),
+                        () -> invoke(method, actual.interaction(), args))
+                    : invoke(method, actual.interaction(), args);
                 if (managementSha != null && result instanceof OperationResult<?> granted && granted.outcome() == TaskResult.SUCCEEDED) {
                     var grant = (gold.debug.windowstolinux.appapi.task.action.ApprovalGrant) granted.value().orElseThrow();
                     assertTrue(managementIssuedGrants.add(grant.id()), "Management grant identifiers must be fresh");
@@ -6575,13 +6597,27 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                 }
                 return result;
             });
+        var logs = observedLogService(actual::logs, liveBoundaries);
+        var tasks = observedTaskService(actual::tasks, liveBoundaries);
         return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
             (proxy, method, args) -> switch (method.getName()) {
                 case "ai" -> ai;
                 case "linux" -> linux;
                 case "interaction" -> interaction;
+                case "logs" -> logs;
+                case "tasks" -> tasks;
                 default -> invoke(method, actual, args);
             });
+    }
+
+    static Optional<String> liveSubmissionCorrectionProjection(gold.debug.windowstolinux.appapi.task.log.LogEvent event) {
+        if (!event.eventCode().equals("DEPLOYMENT_AI_SUBMISSION_CORRECTION") || event.taskId().isEmpty()
+            || event.operationId().isEmpty() || event.outcome().isPresent()
+            || !event.details().orElse("").equals("{\"purpose\":\"APPROVAL\",\"reason\":\"MISSING_NATIVE_CALL\",\"rejectedSubmission\":\"1\",\"nextSubmission\":\"2\",\"maximumSubmissions\":\"2\"}"))
+            return Optional.empty();
+        return Optional.of("AI_LIVE_SUBMISSION_CORRECTION task=" + event.taskId().orElseThrow()
+            + " correction=" + event.operationId().orElseThrow()
+            + " purpose=APPROVAL reason=MISSING_NATIVE_CALL rejectedSubmission=1 nextSubmission=2 maximumSubmissions=2");
     }
 
     /** Records physical known usage once, falling back only for legacy uninstrumented responses. / 仅记录一次物理已知用量，仅旧未测量响应回退。 */
@@ -6630,6 +6666,317 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt.fromProblem(exception), Optional.empty()));
         assertEquals(120, approvalTokens.get());
         assertEquals(1, unknownGenerationUsage.get());
+    }
+
+    enum LiveBoundaryPhase { HOST_GRANT, LOG_REGISTER, LOG_WRITE, AUTHOR }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper LIVE_REVIEW_SHAPE_JSON =
+        new com.fasterxml.jackson.databind.ObjectMapper(com.fasterxml.jackson.core.JsonFactory.builder()
+            .enable(com.fasterxml.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+            .streamReadConstraints(com.fasterxml.jackson.core.StreamReadConstraints.builder()
+                .maxNestingDepth(16).maxStringLength(8192).maxNumberLength(32).build()).build())
+            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+
+    static String rawReviewSubmissionShape(String arguments) {
+        if (arguments == null) return "shape=UNAVAILABLE";
+        String sizes = "argumentsCharacters=" + arguments.length();
+        if (arguments.length() > 16384) return sizes + " shape=TOO_LARGE";
+        try {
+            var value = LIVE_REVIEW_SHAPE_JSON.readTree(arguments);
+            if (value == null || !value.isObject()) return sizes + " shape=NON_OBJECT";
+            var decision = value.path("decision");
+            var confirmation = value.path("requiresUserConfirmation");
+            String literal = decision.isTextual() && Set.of("APPROVE", "DENY").contains(decision.textValue())
+                ? decision.textValue() : "OTHER";
+            return sizes + " shape=OBJECT decisionType=" + decision.getNodeType()
+                + " rawDecision=" + literal + " reasonType=" + value.path("reason").getNodeType()
+                + " confirmationType=" + confirmation.getNodeType()
+                + " rawRequiresUserConfirmation=" + (confirmation.isBoolean() ? confirmation.booleanValue() : "UNAVAILABLE");
+        } catch (Throwable unavailable) {
+            return sizes + " shape=INVALID";
+        }
+    }
+
+    static boolean liveBoundaryEvent(gold.debug.windowstolinux.appapi.task.log.LogEvent event) {
+        return event != null && Set.of("DEPLOYMENT_COMMAND_REVIEW_DENIED", "DEPLOYMENT_OPERATION_FAILURE",
+            "DEPLOYMENT_EFFECT_OUTCOME").contains(event.eventCode());
+    }
+
+    static final class LiveBoundaryObserver {
+        private final java.util.function.Consumer<String> sink;
+        private final java.util.concurrent.atomic.AtomicLong sequence = new java.util.concurrent.atomic.AtomicLong();
+        private final java.util.concurrent.atomic.AtomicLong gaps = new java.util.concurrent.atomic.AtomicLong();
+        private final Map<java.util.UUID, BoundaryState> states = new LinkedHashMap<>();
+
+        private static final class BoundaryState {
+            boolean authorEnterObserved;
+            boolean authorExitObserved;
+            String firstObserved;
+        }
+
+        LiveBoundaryObserver(java.util.function.Consumer<String> sink) {
+            this.sink = Objects.requireNonNull(sink);
+        }
+
+        private java.util.UUID id(java.util.function.Supplier<java.util.UUID> task) {
+            try { return task.get(); }
+            catch (Throwable unavailable) { gaps.incrementAndGet(); return null; }
+        }
+
+        private synchronized BoundaryState state(java.util.UUID task) {
+            if (task == null) return null;
+            var value = states.get(task);
+            if (value == null && states.size() < 256) {
+                value = new BoundaryState();
+                states.put(task, value);
+            }
+            if (value == null) gaps.incrementAndGet();
+            return value;
+        }
+
+        private synchronized void emit(java.util.UUID task, String stage, String status, String facts, boolean abnormal) {
+            try {
+                long seq = sequence.incrementAndGet();
+                if (seq > 8192) {
+                    if (seq == 8193) remoteDiagnosticLine(sink, "STATIC_LIVE_BOUNDARY_COVERAGE_GAP reason=MARKER_LIMIT");
+                    return;
+                }
+                var value = state(task);
+                boolean first = abnormal && value != null && value.firstObserved == null;
+                if (first) value.firstObserved = stage + "_" + status + "@" + seq;
+                sink.accept("STATIC_LIVE_BOUNDARY seq=" + seq + " task=" + (task == null ? "-" : task)
+                    + " stage=" + stage + " state=" + status + " firstObserved=" + first
+                    + " observerGaps=" + gaps.get() + (facts.isEmpty() ? "" : " " + facts));
+            } catch (Throwable unavailable) {
+                gaps.incrementAndGet();
+            }
+        }
+
+        Object call(LiveBoundaryPhase phase, java.util.function.Supplier<java.util.UUID> task, LiveRemoteCall original) throws Throwable {
+            var id = id(task);
+            emit(id, phase.name(), "ENTER", "", false);
+            Object result;
+            try { result = original.call(); }
+            catch (Throwable failure) {
+                emit(id, phase.name(), "THROW", boundaryFailureFacts(failure), true);
+                throw failure;
+            }
+            emit(id, phase.name(), "RETURN", boundaryResultFacts(result), boundaryNonSuccess(result));
+            return result;
+        }
+
+        void rawReview(java.util.function.Supplier<java.util.UUID> task, String arguments) {
+            emit(id(task), "RAW_REVIEW_SUBMISSION_SHAPE", "OBSERVED",
+                rawReviewSubmissionShape(arguments) + " acceptedReviewOrGrantNotProven=true", false);
+        }
+
+        void logAttempt(gold.debug.windowstolinux.appapi.task.log.LogEvent event) {
+            if (!liveBoundaryEvent(event)) return;
+            boolean unknown = event.details().orElse("").equals("{\"observedOutcome\":\"UNKNOWN\"}");
+            emit(event.taskId().orElse(null), "LOG_EVENT", "ATTEMPT",
+                "event=" + event.eventCode() + " declaredOutcome=" + event.outcome().map(Enum::name).orElse("NONE")
+                    + " detailsObservedUnknown=" + unknown,
+                !event.eventCode().equals("DEPLOYMENT_EFFECT_OUTCOME")
+                    || unknown || event.outcome().filter(value -> value != TaskResult.SUCCEEDED).isPresent());
+        }
+
+        private synchronized void author(java.util.UUID task, boolean exited, Object result, Throwable failure) {
+            try {
+                var value = state(task);
+                if (value != null) {
+                    value.authorEnterObserved = true;
+                    if (exited) value.authorExitObserved = true;
+                }
+                emit(task, "AUTHOR", !exited ? "ENTER" : failure == null ? "RETURN" : "THROW",
+                    !exited ? "" : failure == null ? boundaryResultFacts(result) : boundaryFailureFacts(failure),
+                    exited && (failure != null || boundaryNonSuccess(result)));
+            } catch (Throwable unavailable) { gaps.incrementAndGet(); }
+        }
+
+        synchronized void unknownSnapshot(TaskSnapshot snapshot, boolean futureDone) {
+            try {
+                var value = states.get(snapshot.id());
+                emit(snapshot.id(), "ORIGINAL_SNAPSHOT", "UNKNOWN",
+                    "futureDoneObserved=" + futureDone
+                        + " authorDelegateEnterObserved=" + (value != null && value.authorEnterObserved)
+                        + " authorDelegateExitObserved=" + (value != null && value.authorExitObserved)
+                        + " platformReturned=UNOBSERVED firstBoundary="
+                        + (value == null || value.firstObserved == null ? "NONE_OBSERVED" : value.firstObserved), false);
+            } catch (Throwable unavailable) { gaps.incrementAndGet(); }
+        }
+    }
+
+    private static boolean boundaryNonSuccess(Object value) {
+        return value == null || value instanceof OperationResult<?> result && result.outcome() != TaskResult.SUCCEEDED
+            || value instanceof gold.debug.windowstolinux.appapi.task.log.LogWriteResult saved
+                && (saved.problem().isPresent() || saved.truncated()
+                    || saved.storage() != gold.debug.windowstolinux.appapi.task.log.LogStorage.DATABASE);
+    }
+
+    private static String boundaryResultFacts(Object value) {
+        try {
+            if (value instanceof OperationResult<?> result)
+                return "outcome=" + result.outcome() + " grantPresent="
+                    + result.value().filter(gold.debug.windowstolinux.appapi.task.action.ApprovalGrant.class::isInstance).isPresent()
+                    + result.problem().map(DeploymentStaticLiveAcceptanceTest::boundaryProblemFacts).orElse("");
+            if (value instanceof gold.debug.windowstolinux.appapi.task.log.LogWriteResult saved)
+                return "storage=" + saved.storage() + " truncated=" + saved.truncated() + " hasProblem=" + saved.problem().isPresent()
+                    + saved.problem().map(DeploymentStaticLiveAcceptanceTest::boundaryProblemFacts).orElse("");
+            return "resultForm=" + (value == null ? "NULL" : "OTHER");
+        } catch (Throwable unavailable) { return "resultProjection=UNAVAILABLE"; }
+    }
+
+    private static String boundaryProblemFacts(Problem problem) {
+        return " code=" + problem.code() + " event="
+            + (problem.eventCode().matches("[A-Z][A-Z0-9_]{0,95}") ? problem.eventCode() : "OTHER")
+            + " diagnostic=" + problem.diagnosticId().map(Object::toString).orElse("-");
+    }
+
+    private static String boundaryFailureFacts(Throwable failure) {
+        var facts = new StringBuilder();
+        try {
+            var seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Throwable, Boolean>());
+            for (int index = 0; failure != null && index < 4 && seen.add(failure); index++, failure = failure.getCause()) {
+                String type = failure.getClass().getName();
+                if (!type.matches("(?:java|javax|jdk|org\\.apache\\.sshd|gold\\.debug\\.windowstolinux)\\.[A-Za-z0-9_.$]{1,180}")) type = "OTHER";
+                facts.append("cause[").append(index).append("].type=").append(type).append(' ');
+                if (failure instanceof ApiException api) facts.append(boundaryProblemFacts(api.problem())).append(' ');
+            }
+        } catch (Throwable unavailable) { facts.append("causeProjection=UNAVAILABLE"); }
+        return facts.toString().strip();
+    }
+
+    static <T> gold.debug.windowstolinux.appapi.task.run.TaskWork<T> observedAuthorWork(
+        gold.debug.windowstolinux.appapi.task.run.TaskWork<T> original, LiveBoundaryObserver observer) {
+        return task -> {
+            var id = observer.id(() -> task == null ? null : task.id());
+            observer.author(id, false, null, null);
+            OperationResult<T> result;
+            try { result = original.run(task); }
+            catch (Exception | Error failure) {
+                observer.author(id, true, null, failure);
+                throw failure;
+            }
+            observer.author(id, true, result, null);
+            return result;
+        };
+    }
+
+    static gold.debug.windowstolinux.appapi.task.TaskService observedTaskService(
+        java.util.function.Supplier<gold.debug.windowstolinux.appapi.task.TaskService> actual, LiveBoundaryObserver observer) {
+        return (gold.debug.windowstolinux.appapi.task.TaskService) Proxy.newProxyInstance(
+            gold.debug.windowstolinux.appapi.task.TaskService.class.getClassLoader(),
+            new Class<?>[]{gold.debug.windowstolinux.appapi.task.TaskService.class}, (proxy, method, args) -> {
+                var supplied = args;
+                if (method.getName().equals("submit") && args != null && args.length == 2
+                    && args[1] instanceof gold.debug.windowstolinux.appapi.task.run.TaskWork<?> work) {
+                    supplied = args.clone();
+                    supplied[1] = observedAuthorWork(work, observer);
+                }
+                return invoke(method, actual.get(), supplied);
+            });
+    }
+
+    static gold.debug.windowstolinux.appapi.task.log.LogService observedLogService(
+        java.util.function.Supplier<gold.debug.windowstolinux.appapi.task.log.LogService> actual, LiveBoundaryObserver observer) {
+        return (gold.debug.windowstolinux.appapi.task.log.LogService) Proxy.newProxyInstance(
+            gold.debug.windowstolinux.appapi.task.log.LogService.class.getClassLoader(),
+            new Class<?>[]{gold.debug.windowstolinux.appapi.task.log.LogService.class}, (proxy, method, args) -> {
+                var event = args != null && args.length == 2
+                    && args[1] instanceof gold.debug.windowstolinux.appapi.task.log.LogEvent value ? value : null;
+                boolean observedEvent = method.getName().equals("write") && liveBoundaryEvent(event);
+                if (observedEvent) observer.logAttempt(event);
+                Object result = observedEvent || method.getName().equals("register")
+                    ? observer.call(observedEvent ? LiveBoundaryPhase.LOG_WRITE : LiveBoundaryPhase.LOG_REGISTER,
+                        () -> event == null ? null : event.taskId().orElse(null), () -> invoke(method, actual.get(), args))
+                    : invoke(method, actual.get(), args);
+                if (method.getName().equals("write") && args[1] instanceof gold.debug.windowstolinux.appapi.task.log.LogEvent correctionEvent)
+                    liveSubmissionCorrectionProjection(correctionEvent).ifPresent(projected -> {
+                        if (result instanceof gold.debug.windowstolinux.appapi.task.log.LogWriteResult saved
+                            && saved.storage() == gold.debug.windowstolinux.appapi.task.log.LogStorage.DATABASE
+                            && !saved.truncated() && saved.problem().isEmpty()) System.out.println(projected);
+                        else System.out.println("AI_LIVE_SUBMISSION_CORRECTION_COVERAGE_GAP"
+                            + projected.substring("AI_LIVE_SUBMISSION_CORRECTION".length())
+                            + " storage=" + (result instanceof gold.debug.windowstolinux.appapi.task.log.LogWriteResult saved ? saved.storage() : "UNKNOWN")
+                            + " truncated=" + (result instanceof gold.debug.windowstolinux.appapi.task.log.LogWriteResult saved ? saved.truncated() : "UNKNOWN")
+                            + " hasProblem=" + (result instanceof gold.debug.windowstolinux.appapi.task.log.LogWriteResult saved ? saved.problem().isPresent() : "UNKNOWN"));
+                    });
+                return result;
+            });
+    }
+
+    enum LiveRemotePhase { CONNECT, EXECUTE, CLOSE }
+
+    @FunctionalInterface
+    interface LiveRemoteCall {
+        Object call() throws Throwable;
+    }
+
+    static Object observedRemoteCall(LiveRemotePhase phase, java.util.function.Supplier<java.util.UUID> task,
+                                     LiveRemoteCall call, java.util.function.Consumer<String> sink) throws Throwable {
+        remoteCallDiagnostic(phase, task, "ENTER", null, sink);
+        Object result;
+        try {
+            result = call.call();
+        } catch (Throwable failure) {
+            remoteCallDiagnostic(phase, task, "THROW", failure, sink);
+            throw failure;
+        }
+        remoteCallDiagnostic(phase, task, "RETURN", null, sink);
+        return result;
+    }
+
+    private static void remoteCallDiagnostic(LiveRemotePhase phase, java.util.function.Supplier<java.util.UUID> task,
+                                              String state, Throwable failure, java.util.function.Consumer<String> sink) {
+        try {
+            var id = task.get();
+            String boundary = " phase=" + phase.name().toLowerCase(java.util.Locale.ROOT) + " task=" + (id == null ? "-" : id);
+            remoteDiagnosticLine(sink, "STATIC_LIVE_REMOTE_CALL" + boundary + " state=" + state);
+            var seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Throwable, Boolean>());
+            for (int index = 0; failure != null && index < 4 && seen.add(failure); index++, failure = failure.getCause()) {
+                String type = failure.getClass().getName();
+                if (!type.matches("(?:java|javax|jdk|org\\.apache\\.sshd|gold\\.debug\\.windowstolinux)\\.[A-Za-z0-9_.$]{1,180}")) type = "OTHER";
+                String prefix = "STATIC_LIVE_REMOTE_CAUSE" + boundary + " index=" + index;
+                remoteDiagnosticLine(sink, prefix + " type=" + type);
+                if (failure instanceof ApiException api) {
+                    var problem = api.problem();
+                    remoteDiagnosticLine(sink, prefix + " code=" + problem.code().name());
+                    if (problem.eventCode().matches("[A-Z][A-Z0-9_]{0,95}"))
+                        remoteDiagnosticLine(sink, prefix + " event=" + problem.eventCode());
+                    problem.diagnosticId().ifPresent(diagnostic -> remoteDiagnosticLine(sink, prefix + " diagnostic=" + diagnostic));
+                    for (var key : List.of("transportFailureType", "disconnectCode", "disconnectInitiatorLocal", "sessionCloseObserved",
+                        "transportKeyExchangeState", "transportReadCallbacks", "transportReadHandlerActive", "transportReadCompletedAgeMillis",
+                        "transportReadHandlerAgeMillis", "transportReadThreadState", "inputThreadState", "inputState", "commandPhase",
+                        "elapsedMillis", "timeoutMillis", "scriptBytes", "stdinBytes", "frameWritePhase", "authorPayloadState",
+                        "inputSenderCreated", "channelPeerAssigned", "commandOpenRequested", "channelOpenConfirmed", "channelClosed",
+                        "sessionOpen", "sessionAuthenticated", "outputObserved", "exitObserved", "remoteWindowOpenMaxSize",
+                        "remoteWindowOpenSize", "remoteWindowOpenPacketSize", "remoteWindowFailureMaxSize", "remoteWindowFailureSize", "remoteWindowFailurePacketSize"))
+                        remoteContextDiagnostic(problem, key, index, prefix, sink);
+                    for (int frame = 0; frame < 6; frame++) {
+                        remoteContextDiagnostic(problem, "inputStack[" + frame + "]", index, prefix, sink);
+                        remoteContextDiagnostic(problem, "transportReadStack[" + frame + "]", index, prefix, sink);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // Diagnostic observation must preserve the original call's return or throw.
+        }
+    }
+
+    private static void remoteContextDiagnostic(Problem problem, String key, int index, String prefix,
+                                                 java.util.function.Consumer<String> sink) {
+        String value = problem.context().get(key);
+        if (value == null || value.length() > 384 || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) return;
+        for (var fact : safeOriginalCallCauses("problem[" + index + "].context." + key + "=" + value))
+            remoteDiagnosticLine(sink, prefix + " " + fact);
+    }
+
+    private static void remoteDiagnosticLine(java.util.function.Consumer<String> sink, String line) {
+        try {
+            sink.accept(line);
+        } catch (Throwable ignored) {
+            // A failed evidence sink cannot replace the original capability result.
+        }
     }
 
     private static Object invoke(java.lang.reflect.Method method, Object actual, Object[] args) throws Throwable {
@@ -6866,7 +7213,10 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                 System.out.println("STATIC_LIVE_PROGRESS " + task.id() + " " + progress);
                 previousProgress = progress;
             }
-            assertNotEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN, task.snapshot().state(),
+            var checkedSnapshot = task.snapshot();
+            if (checkedSnapshot.state() == gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN)
+                liveBoundaries.unknownSnapshot(checkedSnapshot, future.isDone());
+            assertNotEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN, checkedSnapshot.state(),
                 () -> "Original task requires reconciliation: " + task.snapshot());
             assertTrue(System.nanoTime() < until, () -> "Task deadline reached: " + task.snapshot());
             try {
@@ -9818,18 +10168,21 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
 
         long folder = post(web + "/api/folders", Map.of("name", "Agent-v2-" + java.util.UUID.randomUUID())).path("id").asLong();
         assertTrue(folder > 0);
-        byte[] bytes = new byte[64 * 1024 * 1024];
+        int chunkBytes = 1024 * 1024;
+        byte[] bytes = new byte[8 * chunkBytes];
+        int chunkCount = bytes.length / chunkBytes;
+        int partialChunkCount = chunkCount / 4;
         new java.util.Random(20261006).nextBytes(bytes);
         String firstSha = byteSha256(bytes);
         String upload = fileTransferUpload(web, folder, "full-v2.bin", bytes, firstSha);
-        for (int index = 0; index < 16; index++) fileTransferChunk(upload, index, bytes);
+        for (int index = 0; index < partialChunkCount; index++) fileTransferChunk(upload, index, bytes);
         var before = get(upload);
         assertEquals("receiving", before.path("state").asText());
-        assertEquals(16, before.path("chunks").size());
-        var duplicate = JSON.readTree(http(upload + "/chunks/0", "PUT", Arrays.copyOfRange(bytes, 0, 1024 * 1024), "application/octet-stream"));
+        assertEquals(partialChunkCount, before.path("chunks").size());
+        var duplicate = JSON.readTree(http(upload + "/chunks/0", "PUT", Arrays.copyOfRange(bytes, 0, chunkBytes), "application/octet-stream"));
         assertTrue(duplicate.path("duplicate").asBoolean());
-        assertEquals(byteSha256(Arrays.copyOfRange(bytes, 0, 1024 * 1024)), duplicate.path("sha256").asText());
-        byte[] conflict = Arrays.copyOfRange(bytes, 0, 1024 * 1024);
+        assertEquals(byteSha256(Arrays.copyOfRange(bytes, 0, chunkBytes)), duplicate.path("sha256").asText());
+        byte[] conflict = Arrays.copyOfRange(bytes, 0, chunkBytes);
         conflict[0] ^= 1;
         http(upload + "/chunks/0", "PUT", conflict, "application/octet-stream", 409);
         http(upload + "/complete", "POST", new byte[0], "application/json", 409);
@@ -9838,7 +10191,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         var resumed = get(upload);
         assertEquals("receiving", resumed.path("state").asText());
         assertEquals(before.path("chunks"), resumed.path("chunks"));
-        for (int index = 16; index < 64; index++) fileTransferChunk(upload, index, bytes);
+        for (int index = partialChunkCount; index < chunkCount; index++) fileTransferChunk(upload, index, bytes);
 
         var pool = java.util.concurrent.Executors.newFixedThreadPool(10);
         var completions = new ArrayList<java.util.concurrent.Future<com.fasterxml.jackson.databind.JsonNode>>();
@@ -9866,7 +10219,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         bytes[0] ^= 0x55;
         String secondSha = byteSha256(bytes);
         String secondUpload = fileTransferUpload(web, folder, "full-v2.bin", bytes, secondSha);
-        for (int index = 0; index < 64; index++) fileTransferChunk(secondUpload, index, bytes);
+        for (int index = 0; index < chunkCount; index++) fileTransferChunk(secondUpload, index, bytes);
         var second = post(secondUpload + "/complete", Map.of());
         assertEquals(first.path("fileId"), second.path("fileId"));
         assertNotEquals(first.path("id"), second.path("id"));
@@ -9877,12 +10230,12 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         String cancelled = fileTransferUpload(web, folder, "cancel-v2.bin", bytes, secondSha);
         fileTransferChunk(cancelled, 0, bytes);
         assertEquals("cancelled", post(cancelled + "/cancel", Map.of()).path("state").asText());
-        http(cancelled + "/chunks/1", "PUT", Arrays.copyOfRange(bytes, 1024 * 1024, 2 * 1024 * 1024), "application/octet-stream", 409);
+        http(cancelled + "/chunks/1", "PUT", Arrays.copyOfRange(bytes, chunkBytes, 2 * chunkBytes), "application/octet-stream", 409);
         http(cancelled + "/complete", "POST", new byte[0], "application/json", 409);
         restart(applications, app);
         assertEquals("cancelled", get(cancelled).path("state").asText());
 
-        byte[] rejectedBytes = Arrays.copyOf(bytes, 1024 * 1024);
+        byte[] rejectedBytes = Arrays.copyOf(bytes, chunkBytes);
         String rejected = fileTransferUpload(web, folder, "wrong-sha-v2.bin", rejectedBytes, "0".repeat(64));
         fileTransferChunk(rejected, 0, rejectedBytes);
         http(rejected + "/complete", "POST", new byte[0], "application/json", 422);

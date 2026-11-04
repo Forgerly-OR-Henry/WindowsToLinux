@@ -13,6 +13,7 @@ import java.util.function.Supplier;
 
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
@@ -59,6 +60,18 @@ public final class DeploymentAgentCommandProtocol implements DeploymentCommandPr
             throw new IllegalArgumentException("Mirror preparation differs from original Agent task");
         if (mirrorPreparation.isPresent() && mirrorPreparation.orElseThrow().budgetSeconds() != request.timeout().toSeconds())
             throw new IllegalArgumentException("Mirror preparation deadline differs from original Agent request");
+        if (operation.equals("deployment.agent.toolchain.dependencies.v1"))
+            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.requireOriginal(request,
+                new ServerId(intent.serverIds().getFirst()), task.id().toString());
+        if (operation.equals(DeploymentAgentHelperBootstrapEvidence.OPERATION)) {
+            byte[] input = request.stdin();
+            try {
+                var frame = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.parseFrame(
+                    new String(input, java.nio.charset.StandardCharsets.UTF_8), layout);
+                if (!frame.get(3).equals(intent.serverIds().getFirst()) || !frame.get(4).equals(task.id().toString()))
+                    throw new IllegalArgumentException("Helper dependency original server/task changed");
+            } finally { java.util.Arrays.fill(input, (byte) 0); }
+        }
         if (operation.equals("deployment.agent.isolation.preflight.v1")) requireIsolationAllowed(request, layout);
         else DeploymentCommandStaticGate.requireFixedAllowed(request.script());
         var facts = facts(intent, request, layout);
