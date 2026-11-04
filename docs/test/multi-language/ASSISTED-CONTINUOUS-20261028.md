@@ -1,5 +1,25 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-05恢复准备检查点：API-only通过，正式R13尚未启动
+
+用户核对复述后明确继续，整个长期目标持续使用`gpt-6-x-agent-router`。候选仍`r13f/1b646e8a`；同轮八原项目完整首过、Luna HIGH／HIGH、既定预算及FTP 8MiB负载不变。当前SOURCE／P／R、清场及八项正式启动均无，不混用下方历史暂停或旧轮成绩。
+
+| 本次范围 | 已观测结果与限制 |
+| --- | --- |
+| 当前产物／产品发现 | 30目录4282成员、16JAR、54非空CP对旧清单无漂移；实际三Mod发现3／0、16类provider唯一、FTP 8MiB／1MiB／2+6字节码及12超时反射通过。原raw55尾空loader影响未测 |
+| full30控制接线 | 实际driver／observer／guard共用30目录完整成员与目录集合检查，原17subset精确门保留；28反例与7项同次摘要复用检查通过。局部未发行fixture计时5860→3500ms，不替代最终正式冻结核验，5秒门未放宽 |
+| API-only前置失败 | 原run Surefire`Invalid prefix or suffix`，0JUnit／0能力任务；run02 JUnit1error在配置读取AccessDenied，0能力任务。前者由Windows临时prefix契约修正，后者由任务复制时沙箱SID与实际hostSID不匹配修正；原件／旧副本保留，MAIN私密配置不改 |
+| 当前API-only run03 | 原Maven／native0，JUnit精确1／0／0／0；两独立OPENAI／Responses／Luna HIGH配置、四能力任务成功，close返回，前后全产物相同，自有进程退／tmp清。只证明当前API和该独立Surefire上下文，physical HTTP／内部恢复／完整usage未测，不是正式业务或零异常 |
+| SSH normal01／02 | 用户授权新E2q指纹，两次原产品check握手匹配但FAILED／SSH_AUTHENTICATION_FAILED，未超时，close返回；原状态／回执保留，不计八项目失败 |
+| 无凭据认证方式诊断 | 一次none请求／响应，服务器公布password；固定pin匹配，无密码／公钥／交互认证、无channel／命令。诊断native0不表示登录成功，也不确定服务端拒绝原因 |
+| 新截图重核 | 新旧图密码OCR相同。normal03辅助回验错用保存API已清零的caller数组，false硬门阻止SSH；不能断言存储损坏。修正clone所有权后，normal04公开假密码定点及真实图片保存／close／重开读回均一致；唯一产品check原task89da70cc…仍FAILED／SSH_AUTHENTICATION_FAILED，未超时、E2q匹配、close返回、native70。自有进程退／tmp清 |
+
+API预检首次自动审批及父携无敏感payload源码证据复核均被拒，未产生run03进程。用户随后对具体随机码／工具continuation和已配置loopback GPT目的地明确授权，才从同一入口执行成功run03；未绕过拒绝。API key只认证，截图／SSH密码／完整配置未进入该probe body。真实结果、原失败、身份及清理见候选`r13-model-api-smoke-01/`、`credential-preparation-13-01/02/03/04`、`r13-ssh-auth-methods-20261105-01/`及MAIN当前进度。不存在的后续回执不视为已执行。
+
+normal04可确认产品加密保存和读取没有改变该OCR值；尚不能由此判断图中文字识别绝对正确、真实口令有效或服务端拒绝的具体原因。已请求用户提供服务器控制台的认证拒绝日志，不再自动重复密码尝试。04本地合成夹具presenter遗漏、错误摘要及日志CreateNew拒绝均是准备失败，原件和七份前置回执路径／SHA映射保留，均未进入当次实际SSH。normal01／02／03／04不重开或改写，未以bootstrap／回验通过代替连接成功；当前04 DRAFT只接已成功的API／POM事实，正式发行仍被连接缺口阻断。
+
+目标active未达成；R12原0完整首过／5启动／分母8及原UNKNOWN、缺终态、未启动项保持。保留论文原五项和全部证据，默认本地Git不push；无Computer Use／UI／浏览器／全量suite。本节尚未包含正式新轮业务结果。
+
 ## 2026-11-04最终交接：用户停止当前目标续跑，下一轮未启动
 
 用户要求本轮结束后停止目标自动继续、结束本对话，并在重装服务器前拉回所需材料。本阶段按暂停交接收尾，八项统一首过目标未达成。R12仍为0完整首过／5原启动／分母8，不恢复旧句柄或队列。当前可复制的下一对话入口为[交接提示词](H:/Program/WindowsToLinux/docs/test/multi-language/NEXT-CHAT-ASSISTED-20261104.md)，实现、验证和回收细节见[现行交接首节](H:/Program/WindowsToLinux/docs/test/multi-language/ASSISTED-CONTINUOUS-20261028-HANDOFF.md)。下方active／执行中均为历史检查点。

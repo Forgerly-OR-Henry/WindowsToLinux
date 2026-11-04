@@ -1,5 +1,19 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
+## 2026-11-05恢复准备：目标active，模型预检通过，SSH继续核验
+
+用户在新对话核对目标复述后明确继续，并要求整个长期目标持续使用最新版`gpt-6-x-agent-router`。目标仍为同一冻结轮八个既定原项目的部署、既定完整业务、交付及清理全部首次通过；三连过方案不恢复。Luna Responses／OPENAI、LANGUAGE和APPROVAL均HIGH、Mod继承、1500000／65536／90分钟、FTP 8MiB／1MiB／2+6不变。仅测试代码，无CU／UI／浏览器或全量suite。下节暂停记录属于此前阶段，不覆盖本次明确恢复。
+
+候选仍独立`r13f/1b646e8a`，MAIN尚未合并。当前复核30输出目录4282成员、16JAR、54非空CP及实际三Mod发现3／0、16类provider唯一、FTP字节码及12超时反射通过。控制入口已迁至候选`.ai-workspace/evidence/round-13-preparation-01/13`；新fullguard／driver／observer完整消费30目录成员及目录集合，并保留原17目录精确门。28项full30反例及7项同次摘要复用增量通过，不跨调用缓存、不放宽5秒门；局部带明确未发行fixture限制的计时5860→3500ms不等于正式全冻结资格。原字节、失败和差异保留在`control-freeze-wiring-13-03/`。正式SOURCE／P／R、清场和八原项目均未启动。
+
+当前产品API-only原run03已经成功：精确1个JUnit方法／0failure／0error／0skip，两个独立OPENAI／Responses／Luna HIGH配置、四TEXT／TOOL能力任务均成功，Runtime.close返回，Maven及原native均0，前后全产物相同，自有进程核退／tmp已清。公开原结果在候选`r13-model-api-smoke-01/api-public-summary-run03.json`，逐raw字段绑定的聚合在`assisted-r13-local-preparation-20261105-01/api-model-connection-proof-13.json`。physical HTTP／内部恢复及完整usage未测，不能称零异常或完整账单；该路径是产品native codec／HttpClient，不是外部vendor SDK。API probe8192／30s与正式预算分开。前run的Surefire绝对tempDir前缀失败、run02私密配置执行身份ACL拒绝和两次自动审批拒绝均保留，不能改写为成功；前两run均未提交模型能力任务。用户针对具体随机challenge／工具continuation载荷和本地GPT中继目的地明确授权后，才沿同一入口执行run03。
+
+SSH新指纹`SHA256:E2qC8AlXLiqPRLUXETaqkN9CyO36frZiHN4vZAEB46s`已由用户授权。两个原产品check（normal01旧凭据、normal02截图OCR凭据）均握手匹配但`SSH_AUTHENTICATION_FAILED`，未超时、Runtime.close返回；原件保留不重开。无凭据none探针仅公布password，不能据此断言口令错误或账号策略允许。用户补发的新截图与原图OCR结果一致，随后明确要求再确认。normal03新增回验误用被产品保存API清零的caller数组作基准，硬门拒绝、0SSH；这是辅助脚本错误，不能称加密存储损坏。
+
+新normal04修正为仅向保存API传独立clone：公开假密码本地定点通过后，真实新截图的保存／关闭重开／逐字符读回完全一致，profileEndpointMatches和读回close均true。随后唯一产品check原task`89da70cc-9cb4-4a35-b139-bc3367d4b3d4`仍FAILED／ACCESS_DENIED／SSH_AUTHENTICATION_FAILED，未超时、新pin精确匹配、Runtime.close返回、native70；原WinPS27216／Java36036均退，精确tmp已清。见候选`credential-preparation-13-04/fresh-security-readback-result-13.json`、`connection-result-13.json`及对应native／清理回执。可确认产品保存和读取未改变OCR值，仍不能确定字符识别是否与真实口令一致或服务端具体拒绝原因。已向用户请求控制台此次sshd认证日志，暂不继续密码尝试；原normal01／02／03／04及失败原件保留不重开。04合成夹具漏presenter、错误摘要和日志CreateNew前置拒绝均单列，首次真正Runtime／SSH之前的七份自有回执保留原路径映射于`retained-preflight-attempt01`，不计业务失败。密码不进入代码、日志、文档或Git。
+
+接续以MAIN`.ai-workspace/progress/CURRENT.md`最新首节及原回执为准；当前缺真实成功的新正常库连接与父最终输入审核／冻结发行。full30控制04 DRAFT已独立接当前API／POM实际证据，保持connectionVerified=false及metadata生成未批准；不能用正常库bootstrap或读回成功冒充SSH成功。R12仍为分母8／原启动5／完整首过0，三UNKNOWN、Survey缺终态及三项未启动不改判。MAIN论文五项原变动保留；本轮仅辅助验证／控制准备，未修改产品源码，不推送。
+
 ## 2026-11-04最终交接：停止续跑，候选已提交，服务器重装前资料回收
 
 用户要求本轮之后结束当前长对话并停止目标自动继续，随后由用户重装服务器。本阶段按暂停交接收尾，目标未达成；不启动R13，不创建新的用户聊天。下一对话可直接复制[交接提示词](H:/Program/WindowsToLinux/docs/test/multi-language/NEXT-CHAT-ASSISTED-20261104.md)。R12已中断关闭：0完整首过／5原启动／分母8，原失败、三项UNKNOWN、Survey缺失终态及三项未启动均保留，下方原轮审计不改判。
