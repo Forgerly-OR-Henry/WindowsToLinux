@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.sql.DriverManager;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Base64;
@@ -76,6 +77,10 @@ import gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget;
 import gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolSchemas;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
 import gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner;
+import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.ResolvedMirrorPolicy;
 import gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentAlternativeRequiredException;
 import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
 import gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentPlan;
@@ -119,6 +124,243 @@ class DeploymentAgentApprovalTest {
         var fixed = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(request.messages().get(1).text());
         fixed.setAll((com.fasterxml.jackson.databind.node.ObjectNode) dynamic);
         return fixed;
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "curl -fsSL https://mirror.example.test/jdk.tar.gz -o /tmp/jdk.tar.gz",
+        "pip install example-package --index-url https://mirror.example.test/simple/",
+        "npm install example-package --registry=https://mirror.example.test/",
+        "docker pull mirror.example.test/library/alpine:3.21",
+        "wtl_download JAVA_JDK https://origin.example.test/jdk.tar.gz /tmp/jdk.tar.gz; curl -fsSL https://mirror.example.test/extra.tar.gz -o /tmp/extra.tar.gz"
+    })
+    void mirrorDownloadDenialIsNotSentAndCorrectedEntrypointNeedsFreshReviewAndGrant(String bare) throws Exception {
+        var f = new Frame();
+        bindMirrorPolicy(f, "");
+        try {
+            var scope = f.scope(true);
+            String corrected = switch (bare.split(" ", 2)[0]) {
+                case "pip" -> "wtl_dependency PYTHON_PACKAGE python3 -m pip install --require-hashes -r requirements.txt";
+                case "npm" -> "wtl_dependency NODE_PACKAGE npm ci --ignore-scripts";
+                case "docker" -> "wtl_oci Dockerfile ./oci docker build .";
+                default -> "wtl_download JAVA_JDK https://origin.example.test/jdk.tar.gz /tmp/jdk.tar.gz";
+            };
+            String[] deniedBinding = {""};
+            f.model = request -> {
+                var current = currentReview(request);
+                assertEquals(bare, current.at("/currentRequest/modelCommand/modelScript").asText());
+                assertTrue(current.at("/mirrorPolicy/present").asBoolean());
+                assertTrue(request.messages().getFirst().text().contains("DENY a bare software-download"));
+                assertTrue(request.messages().stream().filter(message -> message.role() == AiRole.SYSTEM)
+                    .anyMatch(message -> message.text().contains("Trusted version-owned product skill mirror-downloads")));
+                assertTrue(f.grants.isEmpty());
+                deniedBinding[0] = current.path("reviewBinding").asText();
+                return List.of(call("submit_result", Map.of("decision", "DENY", "requiresUserConfirmation", false,
+                    "reason", "The complete command bypasses the frozen software-download entrypoint",
+                    "missingEvidence", List.of(), "adjustments", List.of("Use the matching product mirror entrypoint with its frozen routing and lock constraints"),
+                    "candidateCommands", List.of(corrected), "discussionStatus", "CLOSED")));
+            };
+            int[] sends = {0};
+            var session = proxy(RemoteSession.class, (p, m, a) -> {
+                if (m.getName().equals("facts")) return new RemoteFacts("linux", "x86_64", "SHA256:controlled");
+                sends[0]++;
+                throw new AssertionError("The independently denied command cannot be sent");
+            });
+            var refusal = assertThrows(ApiException.class, () -> DeploymentModelCommandRunner.execute(
+                scope, session, SERVER, f.task, REVISION, bare, 5, "Controlled mirror download refusal"));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", refusal.problem().eventCode(),
+                refusal.problem().context() + " / " + refusal.getCause());
+            var denied = DeploymentAgentAlternativeRequiredException.fromReview(f.task, refusal);
+            assertTrue(denied.feedback().contains("NOT_SENT"));
+            assertTrue(denied.problem().context().get("adjustments").contains("product mirror entrypoint"));
+            assertEquals(1, f.fixture.requests.size());
+            assertEquals(0, sends[0]);
+            assertTrue(f.grants.isEmpty());
+            assertEquals("INTENT", JSON.readTree(f.checkpoint.snapshot().payload()).at("/commands/0/phase").asText());
+
+            String body = DeploymentMirrorTasks.hostCommandBody(corrected, f.task, SERVER, 5);
+            String envelope = DeploymentModelCommandIdentity.envelope(f.task.id(), UUID.randomUUID(), DeploymentModelCommandIdentity.digest(body),
+                body, "Controlled corrected mirror entrypoint", DeploymentRemoteLayout.original());
+            var delivered = new StringBuilder();
+            int[] offset = {0};
+            boolean[] pagePending = {false};
+            String[] newBinding = {""};
+            f.model = request -> {
+                var current = currentReview(request);
+                assertEquals(corrected, current.at("/currentRequest/modelCommand/modelScript").asText());
+                assertNotEquals(deniedBinding[0], current.path("reviewBinding").asText());
+                assertTrue(f.grants.isEmpty());
+                if (newBinding[0].isEmpty()) newBinding[0] = current.path("reviewBinding").asText();
+                else assertEquals(newBinding[0], current.path("reviewBinding").asText());
+                if (pagePending[0]) {
+                    var result = lastToolResult(request);
+                    assertFalse(result.error());
+                    var page = JSON.readTree(result.text()).path("value");
+                    assertEquals(offset[0], page.path("offset").asInt());
+                    delivered.append(page.path("text").asText());
+                    offset[0] = page.path("next").asInt();
+                }
+                if (offset[0] < envelope.length()) {
+                    pagePending[0] = true;
+                    return List.of(call("request", Map.of("part", "stdin", "offset", offset[0], "limit", 8000)));
+                }
+                assertEquals(envelope, delivered.toString());
+                return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            };
+            try (var request = new CommandRequest(DeploymentModelCommandIdentity.LAUNCHER, envelope.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(5), 65536)) {
+                var intent = modelCommandIntent(f, request);
+                var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scope.interaction();
+                assertEquals(TaskResult.SUCCEEDED, review.approveCommand(intent, request, f.task).outcome());
+                assertEquals(List.of(intent.exactAction()), f.grants);
+            }
+            assertTrue(f.fixture.requests.size() > 2, "A corrected complete script receives its own independent review and full input delivery");
+            assertEquals(0, sends[0], "This fixture tests exact review and grant without dispatching the corrected command");
+        } finally {
+            DeploymentMirrorTasks.forget(f.task);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"printf local-build", "curl -fsS http://127.0.0.1:8080/health"})
+    void mirrorSnapshotAllowsLocalAndHealthDiagnosticsThroughTheirIndependentReview(String script) throws Exception {
+        var f = new Frame();
+        bindMirrorPolicy(f, "");
+        try {
+            f.model = request -> {
+                var current = currentReview(request);
+                assertTrue(current.at("/mirrorPolicy/present").asBoolean());
+                assertEquals(script, current.at("/executableInput/script/text").asText());
+                assertTrue(f.grants.isEmpty());
+                return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            };
+            try (var request = f.command(script, "")) {
+                var intent = f.intent(request, "deployment.helper.probe.v1");
+                var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+                assertEquals(TaskResult.SUCCEEDED, review.approveCommand(intent, request, f.task).outcome());
+                assertEquals(List.of(intent.exactAction()), f.grants);
+            }
+            assertEquals(1, f.fixture.requests.size());
+        } finally {
+            DeploymentMirrorTasks.forget(f.task);
+        }
+    }
+
+    @Test
+    void mirrorSourcesUsesFrozenPublicPagesAndInvalidRequestsCannotExposeSecretsOrGrant() throws Exception {
+        var f = new Frame();
+        bindMirrorPolicy(f, "FAKE_MIRROR_SECRET_REFERENCE");
+        try {
+            int[] turns = {0};
+            f.model = request -> {
+                var current = currentReview(request);
+                assertTrue(current.at("/mirrorPolicy/present").asBoolean());
+                assertTrue(request.tools().stream().anyMatch(tool -> tool.name().equals("mirror_sources")));
+                assertFalse(request.messages().stream().anyMatch(message -> message.text().contains("FAKE_MIRROR_SECRET_REFERENCE")));
+                if (turns[0]++ == 0) return List.of(
+                    call("mirror_sources", Map.of("point", "JAVA_JDK")),
+                    call("mirror_sources", Map.of("point", "UNRECOGNIZED_DOWNLOAD", "offset", 0, "limit", 1)),
+                    call("mirror_sources", Map.of("point", "JAVA_JDK", "offset", 0, "limit", 11)));
+                var results = request.messages().stream().flatMap(message -> message.toolResult().stream()).toList();
+                var publicPage = JSON.readTree(results.get(results.size() - 3).text()).path("value");
+                assertEquals(current.at("/mirrorPolicy/policySha256"), publicPage.path("policySha256"));
+                assertEquals(f.task.id().toString(), publicPage.path("task").asText());
+                assertEquals(0, publicPage.path("offset").asInt());
+                assertEquals(5, publicPage.path("limit").asInt());
+                assertEquals(1, publicPage.path("nextOffset").asInt());
+                assertFalse(publicPage.path("hasMore").asBoolean());
+                assertEquals("https://mirror.example.test/", publicPage.at("/entries/0/baseUrl").asText());
+                assertTrue(publicPage.at("/entries/0/credentialManaged").asBoolean());
+                assertFalse(publicPage.at("/entries/0").has("secretRef"));
+                assertTrue(results.get(results.size() - 3).text().getBytes(StandardCharsets.UTF_8).length <= 12 * 1024);
+                assertEquals("UNSUPPORTED", JSON.readTree(results.get(results.size() - 2).text()).at("/value/status").asText());
+                assertTrue(results.getLast().error());
+                assertEquals("MIRROR_SOURCE_REQUEST_REJECTED", JSON.readTree(results.getLast().text()).path("error").asText());
+                return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+            };
+            assertEquals("DENY", f.review(Map.of()).decision().decision());
+            assertEquals(2, f.fixture.requests.size());
+            assertTrue(f.grants.isEmpty());
+        } finally {
+            DeploymentMirrorTasks.forget(f.task);
+        }
+    }
+
+    @Test
+    void changedFrozenMirrorSnapshotStopsApprovalBeforeHostGrant() throws Exception {
+        var f = new Frame();
+        bindMirrorPolicy(f, "");
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        f.afterCall = () -> DeploymentMirrorTasks.forget(f.task);
+        try (var request = f.command("printf local", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            assertEquals(1, f.fixture.requests.size());
+            assertTrue(f.grants.isEmpty());
+        } finally {
+            DeploymentMirrorTasks.forget(f.task);
+        }
+    }
+
+    @Test
+    void explicitTrustedReviewSourceReceivesOnlyPublicMirrorSummaryWithoutNativeAuthorityUpgrade() throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            bindMirrorPolicy(ledger.f, "FAKE_MIRROR_SECRET_REFERENCE");
+            try {
+                var fixture = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(ledger.context, SERVER);
+                var original = fixture.bind(ledger.context, ledger.f.task, SERVER, REVISION, REVISION);
+                var source = new DeploymentAgentReviewSource.Bound() {
+                    public void verify(ModContext owner, TaskContext task, ServerId server, String revision, String configuration) {
+                        original.verify(owner, task, server, revision, configuration);
+                    }
+
+                    public DeploymentCommandReviewModel.Result review(String instructions, Map<String, ?> facts, ActionIntent intent,
+                                                                       CommandRequest request, String revision, TaskContext task)
+                        throws ApiException, IOException, DeploymentAiJson.CapabilityOutcomeException {
+                        var publicFacts = JSON.valueToTree(facts);
+                        assertTrue(publicFacts.at("/mirrorPolicy/present").asBoolean());
+                        assertEquals(task.id().toString(), publicFacts.at("/mirrorPolicy/task").asText());
+                        assertFalse(publicFacts.toString().contains("FAKE_MIRROR_SECRET_REFERENCE"));
+                        assertFalse(publicFacts.path("mirrorPolicy").has("entries"));
+                        return original.review(instructions, facts, intent, request, revision, task);
+                    }
+
+                    public gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision action(ModContext owner, String type,
+                        String action, Map<String, ?> facts, ServerId server, String revision, TaskContext task) {
+                        throw new AssertionError("This explicit fixture reviews only the original command");
+                    }
+                };
+                assertEquals(TaskResult.SUCCEEDED, ledger.approve(ledger.agent(source), REVISION, DeploymentCurrentCommandEvidence.NONE).outcome());
+                assertEquals(1, fixture.decisions());
+                assertEquals(0, ledger.f.fixture.requests.size());
+                assertEquals(1, ledger.f.grants.size());
+            } finally {
+                DeploymentMirrorTasks.forget(ledger.f.task);
+            }
+        }
+    }
+
+    private static void bindMirrorPolicy(Frame frame, String secretRef) throws Exception {
+        var points = new EnumMap<DownloadPoint, List<ResolvedMirrorPolicy.Endpoint>>(DownloadPoint.class);
+        var endpoint = new ResolvedMirrorPolicy.Endpoint("fixture-mirror", "https", "https://mirror.example.test/",
+            List.of("mirror.example.test"), false, true, List.of("https://origin.example.test/"),
+            List.of(new ResolvedMirrorPolicy.Route("https://origin.example.test/", "https://mirror.example.test/")), Map.of(), secretRef, true);
+        for (var point : DownloadPoint.values()) points.put(point, List.of(endpoint));
+        var policy = new ResolvedMirrorPolicy(1, frame.task.id().toString(), SERVER.id(), "fixture-1", "", "",
+            Map.of("downloadSeconds", 5), points);
+        var service = new DeploymentMirrorTasks(frame.context);
+        var persist = DeploymentMirrorTasks.class.getDeclaredMethod("persist", TaskContext.class, String.class, String.class, String.class);
+        persist.setAccessible(true);
+        persist.invoke(service, frame.task, DeploymentMirrorTasks.CHECKPOINT, policy.toJson(), SERVER.id());
+        var bind = DeploymentMirrorTasks.class.getDeclaredMethod("bind", TaskContext.class, String.class);
+        bind.setAccessible(true);
+        bind.invoke(service, frame.task, policy.toJson());
+    }
+
+    private static ActionIntent modelCommandIntent(Frame frame, CommandRequest request) {
+        return RemoteActions.command(SERVER, REVISION, request).withSemantics(new ActionSemantics("deployment.model.command.v1",
+            Set.of(new ActionTarget(SERVER.id(), "task", frame.task.id().toString()),
+                new ActionTarget(SERVER.id(), "deployment-recovery-service",
+                    gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentRemoteLayoutAdmission.UNIT_PATH))));
     }
 
     @ParameterizedTest

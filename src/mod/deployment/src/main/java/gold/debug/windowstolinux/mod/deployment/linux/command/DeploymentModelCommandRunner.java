@@ -84,14 +84,15 @@ public final class DeploymentModelCommandRunner {
         DeploymentCommandStaticGate.requireFixedAllowed(script);
         if (script.length() > 24000 || seconds < 1 || seconds > 7200 || reason.isBlank() || reason.length() > 2000)
             throw new IllegalArgumentException("Invalid model command limits or rationale");
+        String executionBody = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.hostCommandBody(script, task, server, seconds);
         var operation = bound == null ? UUID.randomUUID() : bound.operation();
-        String body = DeploymentModelCommandIdentity.digest(script);
+        String body = DeploymentModelCommandIdentity.digest(executionBody);
         String boundExecutable = null;
         if (bound != null) {
             var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
             if (!layout.digest().equals(bound.layoutSha256()))
                 throw new SecurityException("Original model command layout changed");
-            boundExecutable = DeploymentModelCommandIdentity.envelope(task.id(), operation, body, script, reason, layout);
+            boundExecutable = DeploymentModelCommandIdentity.envelope(task.id(), operation, body, executionBody, reason, layout);
             if (!DeploymentModelCommandIdentity.digest(boundExecutable).equals(bound.envelopeSha256()))
                 throw new SecurityException("Original model command envelope changed");
         }
@@ -121,7 +122,7 @@ public final class DeploymentModelCommandRunner {
         if (totalSeconds > 7200) throw new IllegalArgumentException("Model command total time budget exhausted");
         var entry = commands.addObject().put("operation", operation.toString()).put("body", body).put("seconds", seconds).put("phase", "INTENT");
         checkpoint.advance(checkpoint.snapshot(), JSON.writeValueAsString(facts));
-        byte[] envelope = (boundExecutable == null ? DeploymentModelCommandIdentity.envelope(task.id(), operation, body, script, reason,
+        byte[] envelope = (boundExecutable == null ? DeploymentModelCommandIdentity.envelope(task.id(), operation, body, executionBody, reason,
             gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task)) : boundExecutable).getBytes(StandardCharsets.UTF_8);
         try (var request = new CommandRequest(DeploymentModelCommandIdentity.LAUNCHER, envelope,
             Duration.ofSeconds(seconds), 65536)) {

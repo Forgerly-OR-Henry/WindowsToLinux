@@ -49,6 +49,7 @@ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.
 import gold.debug.windowstolinux.mod.deployment.service.agent.skill.DeploymentAgentSkills;
 import gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainInputEvidence;
 import gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorGuidance;
 
 /** Independent, read-only native approval Agent. No remote execution or host authority is exposed. */
 public final class DeploymentAgentApproval implements DeploymentCommandReviewModel {
@@ -321,6 +322,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 throw new IllegalArgumentException("Product inline input binding cannot be supplied by the caller");
             var layout = DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
             JsonNode receipts = JSON.valueToTree(evidence.receipts());
+            JsonNode mirrors = mirrorPolicy();
             var inline = DeploymentAgentToolchainInputEvidence.select(current, layout);
             var installed = DeploymentAgentToolchainInputEvidence.selectInstalled(current, layout, receipts, task.id().toString());
             if (inline.isPresent() || installed.isPresent()) {
@@ -348,7 +350,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
             if (opening != null) current.set(AGENT_OPEN_FIELD, opening);
             String bound = sha(JSON.writeValueAsString(Map.of("task", task.id().toString(), "binding", binding,
                 "request", intent.exactAction(), "revision", revision, "facts", current, "sources", sourceRevisions, "receipts", receipts,
-                "identityRoles", identities)));
+                "identityRoles", identities, "mirrorPolicy", mirrors)));
             boolean modelCommand = "deployment.model.command.v1".equals(current.path("operation").asText());
             Object retryRequest = modelCommand ? Map.of("body", current.path("modelCommand").path("modelScript"),
                 "timeout", request.timeout().toString(), "outputLimit", request.outputLimitBytes()) : intent.exactAction();
@@ -356,7 +358,8 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 "request", retryRequest, "revision", revision)));
             String retryBinding = sha(JSON.writeValueAsString(Map.of("task", task.id().toString(), "binding", binding,
                 "request", retryRequest, "revision", revision, "facts", DeploymentAgentApprovalProgress.facts(current),
-                "sources", sourceRevisions, "progress", DeploymentAgentApprovalProgress.receipts(receipts), "identityRoles", identityProgress(identities))));
+                "sources", sourceRevisions, "progress", DeploymentAgentApprovalProgress.receipts(receipts), "identityRoles", identityProgress(identities),
+                "mirrorPolicy", mirrors)));
             var previous = refused.get(retryBinding);
             if (previous != null) {
                 var result = new Result(previous.decision(), withBinding(previous.refusalData(), bound));
@@ -377,17 +380,21 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
             var coverage = new DeploymentAgentInputCoverage(request, current);
             if (reviewSource != null) {
                 reviewSource.verify(context, task, new ServerId(binding.server()), binding.sourceRevision(), revision);
-                check(binding, revision, sources, receipts, identities, intent);
+                check(binding, revision, sources, receipts, identities, mirrors, intent);
                 for (var source : sources.values()) source.verify();
-                var result = Objects.requireNonNull(reviewSource.review(instructions, facts, intent, request, revision, task));
+                var reviewFacts = new LinkedHashMap<String, Object>(facts);
+                if (!mirrors.isEmpty()) reviewFacts.put("mirrorPolicy", JSON.convertValue(mirrors,
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() { }));
+                var result = Objects.requireNonNull(reviewSource.review(instructions, reviewFacts, intent, request, revision, task));
                 reviewSource.verify(context, task, new ServerId(binding.server()), binding.sourceRevision(), revision);
-                check(binding, revision, sources, receipts, identities, intent);
+                check(binding, revision, sources, receipts, identities, mirrors, intent);
                 for (var source : sources.values()) source.verify();
                 return result;
             }
             var initial = Map.ofEntries(Map.entry("task", task.id().toString()), Map.entry("binding", binding), Map.entry("reviewBinding", bound),
                 Map.entry("currentRequest", compact), Map.entry("evidencePages", descriptors), Map.entry("sourceRevisions", sourceRevisions),
                 Map.entry("identityRoles", identities),
+                Map.entry("mirrorPolicy", mirrors),
                 Map.entry("receiptSha256", sha(JSON.writeValueAsString(receipts))),
                 Map.entry("discussion", discussionMetadata), Map.entry("skills", DeploymentAgentSkills.catalog(DeploymentAgentSkills.Role.APPROVAL)),
                 Map.entry("executableInput", coverage.inlineInput(DeploymentAgentInputCoverage.PAGE_CHARACTERS, DeploymentAgentInputCoverage.INLINE_PAYLOAD_BYTES)));
@@ -396,7 +403,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
             String input = "";
             String policy = POLICY + "\n" + instructions + "\n" + contract;
             var history = new DeploymentNativeHistory();
-            var definitions = definitions(!sources.isEmpty());
+            var definitions = definitions(!sources.isEmpty(), !mirrors.isEmpty());
             var seenIds = new HashSet<String>();
             String pendingBatchFeedback = null;
             String pendingProtocolFeedback = null;
@@ -417,7 +424,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                     currentInput.set("protocolFeedback", JSON.readTree(pendingProtocolFeedback));
                 input = JSON.writeValueAsString(currentInput);
                 stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
-                check(binding, revision, sources, receipts, identities, intent);
+                check(binding, revision, sources, receipts, identities, mirrors, intent);
                 stage = DeploymentCommandReviewModel.FailureStage.HISTORY_CONTEXT;
                 var messages = history.agentMessages(policy, stableEvidence, skills.system(), input);
                 if (pendingBatchFeedback != null && !history.visibleToolResult(pendingBatchFeedback))
@@ -428,7 +435,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 stage = DeploymentCommandReviewModel.FailureStage.RESPONSE_CHECK;
                 var response = ai.call(AiPurpose.APPROVAL, messages, definitions, revision, task, false);
                 stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
-                check(binding, revision, sources, receipts, identities, intent);
+                check(binding, revision, sources, receipts, identities, mirrors, intent);
                 pendingProtocolFeedback = null;
                 pendingProtocolResponse = null;
                 if (messages.size() < 2 || messages.get(1).role() != gold.debug.windowstolinux.appapi.ai.model.AiRole.USER
@@ -486,7 +493,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                         continue;
                     }
                     stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
-                    check(binding, revision, sources, receipts, identities, intent);
+                    check(binding, revision, sources, receipts, identities, mirrors, intent);
                     for (var source : sources.values()) source.verify();
                     if (result.decision().decision().equals("APPROVE") && !coverage.complete()) {
                         String feedback = JSON.writeValueAsString(Map.of("error", "EXECUTABLE_INPUT_NOT_DELIVERED",
@@ -505,7 +512,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 for (var call : response.toolCalls()) {
                     selectedTool = call.name();
                     stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
-                    check(binding, revision, sources, receipts, identities, intent);
+                    check(binding, revision, sources, receipts, identities, mirrors, intent);
                     stage = DeploymentCommandReviewModel.FailureStage.EVIDENCE_READ;
                     try {
                         Object value;
@@ -522,6 +529,15 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                         } else if (call.name().equals("save_review_notes")) {
                             exact(args, Set.of("reviewBinding", "notes"));
                             value = memory.saveNotes(text(args, "reviewBinding", 64), text(args, "notes", DeploymentAgentReviewMemory.NOTES_CHARACTERS));
+                        } else if (call.name().equals("mirror_sources")) {
+                            var fields = new HashSet<>(Set.of("point"));
+                            if (args.has("offset")) fields.add("offset");
+                            if (args.has("limit")) fields.add("limit");
+                            exact(args, fields);
+                            if (mirrors.isEmpty()) throw new IllegalArgumentException("This task has no frozen mirror policy");
+                            value = DeploymentMirrorGuidance.sources(task, text(args, "point", 64),
+                                args.has("offset") ? number(args, "offset", 0, Integer.MAX_VALUE) : 0,
+                                args.has("limit") ? number(args, "limit", 1, 10) : 5);
                         } else
                             value = read(call.name(), args, request, current, sources, receipts, contract, bound);
                         String text = JSON.writeValueAsString(Map.of("trust", call.name().equals("skill") ? "PRODUCT_SKILL"
@@ -540,6 +556,9 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                             : Set.of("receipt_index", "receipt_event").contains(call.name())
                             ? Map.of("error", "EVIDENCE_REQUEST_REJECTED", "tool", call.name(), "contract", receiptSchema(call.name()),
                             "meaning", "Use this review's exact reviewBinding and receiptSha256; choose an eventId from its frozen index. No live query or authority.")
+                            : call.name().equals("mirror_sources")
+                            ? Map.of("error", "MIRROR_SOURCE_REQUEST_REJECTED", "tool", "mirror_sources",
+                                "meaning", "Use a point from this task's frozen mirrorPolicy summary, a valid offset and limit from 1 to 10. No execution or authority.")
                             : Map.of("error", "EVIDENCE_REQUEST_REJECTED", "reason", String.valueOf(rejected.getMessage()));
                         results.add(new AiToolResult(call.id(), JSON.writeValueAsString(feedback), true));
                     }
@@ -628,13 +647,19 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
         return result;
     }
 
+    private JsonNode mirrorPolicy() {
+        return JSON.valueToTree(DeploymentMirrorGuidance.present(task) ? DeploymentMirrorGuidance.summary(task) : Map.of());
+    }
+
     private void check(Binding binding, String revision, Map<String, DeploymentSourceBrowser> sources, JsonNode receipts,
-                       JsonNode identities, ActionIntent intent) throws Exception {
+                       JsonNode identities, JsonNode mirrors, ActionIntent intent) throws Exception {
         if (task.cancelToken().requested()) throw new IOException("Approval cancelled before authorization");
         DeploymentFixedCommandApproval.requireRoute(context, task, revision);
         if (!binding.equals(evidence.binding())) throw new SecurityException("Original approval identity changed");
         if (!receipts.equals(JSON.valueToTree(evidence.receipts())))
             throw new SecurityException("Original approval receipts changed");
+        if (!mirrors.equals(mirrorPolicy()))
+            throw new SecurityException("Original approval mirror policy changed");
         var current = evidence.sources();
         if (!current.keySet().equals(sources.keySet()))
             throw new SecurityException("Approval source membership changed");
@@ -819,7 +844,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
         return result;
     }
 
-    private static List<AiToolDefinition> definitions(boolean sources) {
+    private static List<AiToolDefinition> definitions(boolean sources, boolean mirrors) {
         var definitions = new ArrayList<AiToolDefinition>();
         definitions.add(new AiToolDefinition("request", "Page the exact current command script with part=script, or its original executable input with part=stdin. "
             + "part is never an evidence pointer. For evidencePages descriptors use their evidence tool route. "
@@ -847,6 +872,12 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
         definitions.add(new AiToolDefinition("receipt_event", "Page one complete original event explicitly selected by eventId from this review's frozen index. "
             + "Continue with next while hasMore; UTF-16 offsets. Failed/denied/unknown events are retained. Full root/modelCommandReceipt remain available via receipts.",
             receiptSchema("receipt_event").toString()));
+        if (mirrors)
+            definitions.add(new AiToolDefinition("mirror_sources", "Read only the original task's frozen public mirror candidates for a point from mirrorPolicy. "
+                + "Follow nextOffset while hasMore. Candidate URLs and helper names are evidence, never approval or proof of routing, locks or verification. "
+                + "No credentials, live settings, network query or execution.", """
+                {"type":"object","additionalProperties":false,"required":["point"],"properties":{"point":{"type":"string","minLength":1,"maxLength":64},"offset":{"type":"integer","minimum":0,"maximum":2147483647,"default":0},"limit":{"type":"integer","minimum":1,"maximum":10,"default":5}}}
+                """));
         if (sources) for (String name : List.of("source_list", "source_read", "source_search"))
             definitions.add(new AiToolDefinition(name,
                 "Read frozen source DATA selected by exact component and sourceRevision. "

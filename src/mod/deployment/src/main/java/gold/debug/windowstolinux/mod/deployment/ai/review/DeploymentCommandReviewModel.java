@@ -74,7 +74,7 @@ public interface DeploymentCommandReviewModel {
     }
 
     private static Set<String> safeTools() {
-        return Set.of("request", "skill", "evidence", "receipts", "contract", "source_list", "source_read", "source_search", "submit_result");
+        return Set.of("request", "skill", "mirror_sources", "evidence", "receipts", "contract", "source_list", "source_read", "source_search", "submit_result");
     }
 
     private static Set<String> safeCodes() {

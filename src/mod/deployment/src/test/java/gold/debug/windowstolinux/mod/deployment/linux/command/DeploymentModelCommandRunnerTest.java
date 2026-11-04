@@ -54,6 +54,8 @@ class DeploymentModelCommandRunnerTest {
 
     private String receipt;
 
+    private String reviewedExecutable, sentExecutable;
+
     private boolean deny, loseReply, receiptReady = true;
 
     private boolean truncatedReply, truncatedReceipt, unknownExit, queryException;
@@ -109,6 +111,49 @@ class DeploymentModelCommandRunnerTest {
         assertEquals(1, queries.get());
         DeploymentModelCommandRunner.releaseKnown(context, task);
         assertTrue(checkpoint.snapshot().released());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @SuppressWarnings("unchecked")
+    void mirrorHostApprovalDispatchAndRecoveryShareTheFrozenExecutionBody(boolean lostReply) throws Exception {
+        var points = new EnumMap<gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint,
+            List<gold.debug.windowstolinux.mod.deployment.service.mirror.ResolvedMirrorPolicy.Endpoint>>(
+                gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.class);
+        for (var point : gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.values()) points.put(point,List.of());
+        points.put(gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.NODE_DISTRIBUTION,
+            List.of(new gold.debug.windowstolinux.mod.deployment.service.mirror.ResolvedMirrorPolicy.Endpoint(
+                "fixed","HTTP_ARCHIVE","https://mirror.example.test/",List.of("mirror.example.test"),false,true,
+                List.of("https://origin.example.test/"),List.of(new gold.debug.windowstolinux.mod.deployment.service.mirror.ResolvedMirrorPolicy.Route(
+                    "https://origin.example.test/","https://mirror.example.test/")),Map.of(),"",true)));
+        String policy = new gold.debug.windowstolinux.mod.deployment.service.mirror.ResolvedMirrorPolicy(1,taskId.toString(),server.id(),
+            "fixture-v1","CN","cn",Map.of("connectSeconds",10),points).toJson();
+        var mirrors = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.class;
+        var active = mirrors.getDeclaredField("ACTIVE"); active.setAccessible(true);
+        ((Map<UUID,String>)active.get(null)).put(taskId,policy);
+        var layouts = mirrors.getDeclaredField("LAYOUTS"); layouts.setAccessible(true);
+        ((Map<UUID,gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout>)layouts.get(null)).put(taskId,commandLayout);
+        try {
+            String expected = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.hostCommandBody(
+                "exit 7",task,server,10);
+            var context = context(); loseReply = lostReply;
+            if (lostReply) assertThrows(Exception.class, () -> DeploymentModelCommandRunner.execute(
+                context,session(),server,task,REVISION,"exit 7",10,"Local fixed-source operation"));
+            else DeploymentModelCommandRunner.execute(context,session(),server,task,REVISION,"exit 7",10,"Local fixed-source operation");
+            assertEquals(reviewedExecutable,sentExecutable,"The exact approved executable must be sent unchanged");
+            var executableFacts = DeploymentModelCommandIdentity.executableFacts(sentExecutable);
+            assertEquals("exit 7",executableFacts.get("modelScript"));
+            assertEquals(expected,executableFacts.get("executionBody"));
+            assertEquals(DeploymentModelCommandIdentity.digest(expected),facts().path("commands").get(0).path("body").asText());
+            if (lostReply) {
+                loseReply = false;
+                assertTrue(DeploymentModelCommandRunner.reconcile(context,task));
+            }
+            assertEquals(1,sends.get(),"Receipt recovery must never replay the frozen body");
+            assertEquals(1,queries.get());
+            assertEquals("ENDED",facts().path("commands").get(0).path("phase").asText());
+            DeploymentModelCommandRunner.releaseKnown(context,task);
+        } finally { gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.forget(task); }
     }
 
     @Test
@@ -509,6 +554,7 @@ class DeploymentModelCommandRunnerTest {
                 var item = facts().path("commands").get(facts().path("commands").size() - 1);
                 assertEquals("INTENT", item.path("phase").asText());
                 String executable = new String(request.stdin(), StandardCharsets.UTF_8);
+                reviewedExecutable = executable;
                 assertEquals("exit 7", DeploymentModelCommandIdentity.executableFacts(executable, commandLayout).get("modelScript"));
                 assertTrue(executable.contains("exit 7"));
                 assertTrue(executable.contains("set -C"));
@@ -566,6 +612,7 @@ class DeploymentModelCommandRunnerTest {
                 var item = facts().path("commands").get(facts().path("commands").size() - 1);
                 assertEquals("DISPATCHED", item.path("phase").asText(), "Dispatch is persisted before the actual send");
                 if (request.stdin().length > 0) {
+                    sentExecutable = new String(request.stdin(),StandardCharsets.UTF_8);
                     sends.incrementAndGet();
                     commandSequence.add("EXECUTE");
                     receipt = DeploymentModelCommandIdentity.header(taskId, UUID.fromString(item.path("operation").asText()), item.path("body").asText(), commandLayout)

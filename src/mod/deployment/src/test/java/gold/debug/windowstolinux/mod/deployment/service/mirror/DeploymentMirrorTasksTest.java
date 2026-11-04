@@ -80,8 +80,8 @@ class DeploymentMirrorTasksTest extends DeploymentRuntimeFixture {
                     assertThrows(IllegalArgumentException.class, () -> DeploymentMirrorTasks.preparation(
                         wrapped.replace("root-preparation-required", "changed-preparation")));
                     assertTrue(context.tasks().findCheckpoint(task, DeploymentMirrorTasks.CHECKPOINT + ".part.0").isPresent());
-                    assertEquals("MIRROR_UNCONSTRAINED_SCRIPT", assertThrows(ApiException.class,
-                        () -> DeploymentMirrorTasks.requireProjectScript(task)).problem().eventCode());
+                    assertDoesNotThrow(() -> DeploymentMirrorTasks.requireProjectScript(task),
+                        "A fixed source does not reject unrelated local commands before independent review");
                     byte[] frame = gold.debug.windowstolinux.mod.deployment.linux.database.DeploymentNativeDatabaseWire.frame(Map.of("engine", "POSTGRESQL"));
                     var inspectionCalls = new AtomicInteger();
                     var session = (gold.debug.windowstolinux.appapi.linux.session.RemoteSession)Proxy.newProxyInstance(getClass().getClassLoader(),

@@ -33,7 +33,24 @@ public final class DeploymentMirrorTasks {
     public DeploymentMirrorTasks(ModContext context) { this.context = Objects.requireNonNull(context); }
 
     public static void privacyPrompt(BooleanSupplier prompt) { privacy = Objects.requireNonNull(prompt); }
-    public static String policy(TaskContext task) { return ACTIVE.getOrDefault(task.id(), ""); }
+    public static String policy(TaskContext task) { return policy(task.id()); }
+    public static String policy(UUID task) { return ACTIVE.getOrDefault(task, ""); }
+
+    /** Runs inside the host envelope's scrubbed child shell, not outside env -i. */
+    public static String hostCommandBody(String script, TaskContext task, ServerId server, long seconds) {
+        requireCaptured(task.id());
+        Objects.requireNonNull(script);
+        if (script.isBlank() || script.indexOf('\0') >= 0 || script.length() > 24000 || seconds < 1 || seconds > 7200)
+            throw new IllegalArgumentException("Invalid authored host command or deadline");
+        String json = policy(task);
+        if (json.isEmpty()) return script;
+        ResolvedMirrorPolicy.fromJson(json, task.id().toString(), server.id());
+        String body = withMaterials(gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime
+            .wrapBuild(script, json, seconds), task.id());
+        if (body.getBytes(StandardCharsets.UTF_8).length > 1048576)
+            throw new IllegalArgumentException("Mirror-bound host body exceeds execution limit");
+        return body;
+    }
     /** Preserves the original stdin and injects policy in the same root identity as the fixed helper. */
     public static String preparationCommand(String command, TaskContext task) {
         return preparationCommand(command, task.id());
@@ -97,10 +114,17 @@ public final class DeploymentMirrorTasks {
 
     /** Exposes decoded shipped code alongside its exact encoded executable representation, never secret material. */
     public static Map<String, Object> reviewMaterial(String policy) throws java.io.IOException {
+        var publicPolicy = new ObjectMapper().readTree(policy);
+        publicPolicy.path("points").forEach(endpoints -> endpoints.forEach(endpoint -> {
+            if (endpoint instanceof com.fasterxml.jackson.databind.node.ObjectNode object) {
+                boolean managed = !object.path("secretRef").asText().isEmpty();
+                object.remove("secretRef"); object.put("credentialManaged", managed);
+            }
+        }));
         return Map.of("format", "deployment-mirror-transport-review.v1",
             "runtimeSha256", gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.runtimeSha256(),
             "runtimeSource", gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.runtimeSource(),
-            "frozenPolicy", new ObjectMapper().readTree(policy),
+            "frozenPolicy", publicPolicy,
             "meaning", "Decoded shipped runtime and frozen public routing data for review of the exact canonical bootstrap. Secret values are supplied separately as opaque input. Source identities and this evidence grant no command permission.");
     }
 
@@ -122,17 +146,9 @@ public final class DeploymentMirrorTasks {
         if (!canonical.equals(script)) throw new IllegalArgumentException("Mirror build input changed");
         return Optional.of(new Preparation(binding.task(), original, binding.policy(), seconds));
     }
-    /** Arbitrary host/project shell cannot prove an exclusive source boundary. Typed download tools remain available. */
+    /** Free scripts keep task admission; source compliance requires independent review of the complete actual body. */
     public static void requireProjectScript(TaskContext task) throws ApiException {
         requireCaptured(task.id());
-        String json = policy(task);
-        if (json.isEmpty()) return;
-        try {
-            var points = new ObjectMapper().readTree(json).path("points");
-            for (var entries : points) if (entries.size() == 1 && entries.get(0).path("explicit").asBoolean())
-                throw new ApiException(new Problem(ProblemCode.INVALID_INPUT, "MIRROR_UNCONSTRAINED_SCRIPT",
-                    "Arbitrary host/project commands cannot enforce a fixed single mirror. Use the product's controlled download/build tools.", Map.of(), Optional.empty()));
-        } catch (java.io.IOException invalid) { throw new IllegalArgumentException("Frozen mirror policy invalid", invalid); }
     }
     public static String materialPrefix(UUID task) {
         String policy = ACTIVE.getOrDefault(task, "");

@@ -44,6 +44,11 @@ import org.junit.jupiter.api.Test;
 
 class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
     @Test
+    void frozenMirrorSkillAndSourcesAreAvailableInTheFirstActualModelTurnWithoutRemoteEffects() throws Exception {
+        runScenario(false, false, "approval-context", "deployment-diagnosis", true);
+    }
+
+    @Test
     void actualSessionRejectsForeignSkillThenActivatesSelectedGuidanceWithoutRemoteEffectsOrSourceEvidence() throws Exception {
         runScenario(false, false, "approval-discussion", "publication-verification");
     }
@@ -72,6 +77,10 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
     }
 
     private void runScenario(boolean assessmentCase, boolean discussionCase, String foreignSkill, String selectedSkill) throws Exception {
+        runScenario(assessmentCase, discussionCase, foreignSkill, selectedSkill, false);
+    }
+
+    private void runScenario(boolean assessmentCase, boolean discussionCase, String foreignSkill, String selectedSkill, boolean mirrorCase) throws Exception {
         String revision = "a".repeat(64);
         boolean publicationCase = selectedSkill.equals("publication-verification");
         var directory = Files.createDirectories(root.resolve("source"));
@@ -100,6 +109,15 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
                         var turns = new AtomicInteger();
                         var refused = new AtomicInteger();
                         var json = new ObjectMapper();
+                        if (mirrorCase) {
+                            var active = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.class.getDeclaredField("ACTIVE");
+                            active.setAccessible(true);
+                            @SuppressWarnings("unchecked") var policies = (Map<java.util.UUID, String>) active.get(null);
+                            policies.put(task.id(), json.writeValueAsString(Map.of("formatVersion", 1, "task", task.id().toString(),
+                                "catalogVersion", "local-fixture", "region", "fixture-region", "country", "ZZ", "points", Map.of("NODE_PACKAGE",
+                                    List.of(Map.of("providerId", "frozen-source", "protocol", "npm", "baseUrl", "https://mirror.example/",
+                                        "allowedHosts", List.of("mirror.example"), "sourceOrigins", List.of("https://registry.npmjs.org/")))))));
+                        }
                         var initialSystem = new AtomicReference<String>();
                         String skillDocument;
                         try (var input = DeploymentAgentSkills.class.getResourceAsStream(selectedSkill + "/SKILL.md")) {
@@ -117,8 +135,21 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
                                 initialSystem.set(request.messages().getFirst().text());
                                 assertTrue(initialSystem.get().startsWith(DeploymentSkillResources.text(DeploymentAgentProtocol.class, "autonomous-deployment.md")));
                             }
-                            assertEquals(2, current.path("skills").size());
+                            assertEquals(3, current.path("skills").size());
                             assertFalse(request.messages().getFirst().text().contains("FORGED_PRODUCT_INSTRUCTION"));
+                            assertEquals(mirrorCase, current.path("state").path("mirrorPolicy").path("present").asBoolean());
+                            assertEquals(mirrorCase, request.tools().stream().anyMatch(tool -> tool.name().equals("mirror_sources")));
+                            if (mirrorCase) {
+                                assertEquals(List.of("mirror-downloads"), json.convertValue(current.path("state").path("activeSkills"), List.class));
+                                assertTrue(request.messages().getFirst().text().contains("Trusted version-owned product skill mirror-downloads"));
+                                assertFalse(request.messages().getFirst().text().contains("mirror.example"));
+                                assertTrue(current.path("state").path("judgement").path("pending").isEmpty());
+                                if (turn == 1) assertTrue(request.messages().stream().flatMap(message -> message.toolResult().stream())
+                                    .anyMatch(result -> !result.error() && result.text().contains("frozen-source") && result.text().contains("policySha256")));
+                                var calls = turn == 0 ? List.of(new AiToolCall("mirror-source-first", "mirror_sources", "{\"point\":\"NODE_PACKAGE\"}")) : List.<AiToolCall>of();
+                                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", calls.isEmpty() ? "stop" : "tool_calls",
+                                    new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), calls, Optional.empty())), Optional.empty());
+                            }
                             if (publicationCase && turn < 2) {
                                 var call = new AiToolCall("source-" + turn, turn == 0 ? "read" : "identify", turn == 0
                                     ? "{\"path\":\"main.sh\",\"offset\":0,\"limit\":20}" : """
@@ -223,9 +254,10 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
                             new DeploymentSourceBrowser(source.snapshot().directory(), source.snapshot().sha256()), port, journal,
                             "AUTOMATIC", false, revision, () -> revision);
                         assertTrue(assertThrows(IllegalStateException.class, session::run).getMessage().contains("Natural language cannot finish"));
-                        assertEquals(discussionCase || publicationCase ? 5 : assessmentCase ? 4 : 3, turns.get());
+                        assertEquals(mirrorCase ? 2 : discussionCase || publicationCase ? 5 : assessmentCase ? 4 : 3, turns.get());
                         assertEquals(discussionCase ? 3 : 0, refused.get());
-                        assertEquals(assessmentCase || discussionCase ? 0 : 1, journal.events(task).stream().filter(event -> event.type().equals("AGENT_QUERY") && event.action().equals("PRODUCT_SKILL")).count());
+                        assertEquals(assessmentCase || discussionCase || mirrorCase ? 0 : 1, journal.events(task).stream().filter(event -> event.type().equals("AGENT_QUERY") && event.action().equals("PRODUCT_SKILL")).count());
+                        assertEquals(mirrorCase ? 1 : 0, journal.events(task).stream().filter(event -> event.type().equals("AGENT_QUERY") && event.action().equals("MIRROR_SOURCES")).count());
                         assertTrue(journal.events(task).stream().noneMatch(event -> event.type().equals("AGENT_OBSERVATION") && event.action().equals("PRODUCT_SKILL")));
                     }
                     actual.file().closeTaskResources(task);
@@ -234,6 +266,7 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
                     failure.set(failed);
                     throw failed;
                 } finally {
+                    if (mirrorCase) gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.forget(task);
                     finished.complete(null);
                 }
             });

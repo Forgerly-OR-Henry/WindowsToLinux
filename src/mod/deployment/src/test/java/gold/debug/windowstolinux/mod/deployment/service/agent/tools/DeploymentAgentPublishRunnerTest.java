@@ -199,10 +199,39 @@ class DeploymentAgentPublishRunnerTest {
     private static final String HELPER = "/gold/debug/windowstolinux/mod/deployment/linux/helper/";
 
     @Test
+    void publicationMirrorSkillAndPublicSourceToolAreActiveFromFirstTurn() throws Exception {
+        try (var frame = new Frame()) {
+            var active = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.class.getDeclaredField("ACTIVE");
+            active.setAccessible(true);
+            @SuppressWarnings("unchecked") var policies = (Map<UUID, String>) active.get(null);
+            policies.put(frame.task.id(), JSON.writeValueAsString(Map.of("formatVersion", 1, "task", frame.task.id().toString(),
+                "catalogVersion", "publication-fixture", "region", "fixture-region", "country", "ZZ", "points", Map.of("NODE_PACKAGE",
+                    List.of(Map.of("providerId", "publication-frozen-source", "protocol", "npm", "baseUrl", "https://mirror.example/",
+                        "allowedHosts", List.of("mirror.example"), "sourceOrigins", List.of("https://registry.npmjs.org/")))))));
+            try {
+                frame.script = (request, turn) -> {
+                    assertTrue(request.messages().getFirst().text().contains("Trusted version-owned product skill mirror-downloads"));
+                    assertFalse(request.messages().getFirst().text().contains("mirror.example"));
+                    assertTrue(state(request).path("mirrorPolicy").path("present").asBoolean());
+                    assertEquals(List.of("mirror-downloads"), JSON.convertValue(state(request).path("activeSkills"), List.class));
+                    assertTrue(request.tools().stream().anyMatch(tool -> tool.name().equals("mirror_sources")));
+                    if (turn == 0) return calls(turn, "mirror_sources", Map.of("point", "NODE_PACKAGE"));
+                    assertTrue(lastResult(request).text().contains("publication-frozen-source"));
+                    assertTrue(lastResult(request).text().contains("nextOffset"));
+                    return calls(turn, "unable", Map.of("reason", "Controlled frozen mirror first-turn boundary verified"));
+                };
+                assertEquals(TaskResult.UNKNOWN, frame.run(78).outcome());
+                assertEquals(0, frame.approvals);
+                assertEquals(0, frame.executed);
+            } finally { gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.forget(frame.task); }
+        }
+    }
+
+    @Test
     void publicationModelLoadsVerificationSkillIntoNextContextWithoutGrantOrHealthClaim() throws Exception {
         try (var frame = new Frame()) {
             frame.script = (request, turn) -> {
-                assertEquals(2, state(request).path("skills").size());
+                assertEquals(3, state(request).path("skills").size());
                 if (turn == 0) {
                     assertFalse(request.messages().getFirst().text().contains("Trusted version-owned product skill"));
                     return calls(turn, "skill", Map.of("id", "publication-verification"));

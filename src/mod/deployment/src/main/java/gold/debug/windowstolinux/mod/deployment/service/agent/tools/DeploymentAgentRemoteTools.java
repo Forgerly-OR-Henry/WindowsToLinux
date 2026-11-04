@@ -333,9 +333,10 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
         if (script == null) throw new SecurityException("Original host command body is absent");
         var operation = UUID.randomUUID();
         String rationale = "Host prerequisite only; no application publication: " + reason;
-        String body = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.digest(script);
+        String executionBody = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.hostCommandBody(script, task, server, seconds);
+        String body = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.digest(executionBody);
         String executable = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.envelope(
-            task.id(), operation, body, script, rationale, layout);
+            task.id(), operation, body, executionBody, rationale, layout);
         String executableSha = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.digest(executable);
         try {
             gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandStaticGate.requireFixedAllowed(executable);

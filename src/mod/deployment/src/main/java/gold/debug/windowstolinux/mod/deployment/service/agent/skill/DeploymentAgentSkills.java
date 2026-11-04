@@ -28,6 +28,8 @@ public final class DeploymentAgentSkills {
     public DeploymentAgentSkills(TaskContext task, Role role) {
         this.task = java.util.Objects.requireNonNull(task);
         this.role = java.util.Objects.requireNonNull(role);
+        if (gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorGuidance.present(task))
+            active.add("mirror-downloads");
     }
 
     public static List<Map<String, String>> catalog(Role role) {
@@ -38,6 +40,8 @@ public final class DeploymentAgentSkills {
     public Map<String, Object> read(String id, TaskContext caller) {
         if (caller != task || task.cancelToken().requested())
             throw new IllegalArgumentException("Skill requires the original active task");
+        if ("mirror-downloads".equals(id) && !gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorGuidance.present(task))
+            throw new IllegalArgumentException("Mirror guidance requires the original frozen task policy");
         var skill = require(id, role);
         active.add(id);
         return Map.of("trust", "PRODUCT_SKILL", "task", task.id().toString(), "role", role.name(), "id", id,
@@ -77,6 +81,7 @@ public final class DeploymentAgentSkills {
         register(skills, "approval-context", Set.of(Role.APPROVAL));
         register(skills, "deployment-diagnosis", Set.of(Role.DEPLOYMENT));
         register(skills, "publication-verification", Set.of(Role.DEPLOYMENT, Role.APPROVAL));
+        register(skills, "mirror-downloads", Set.of(Role.DEPLOYMENT, Role.APPROVAL));
         return java.util.Collections.unmodifiableMap(skills);
     }
 

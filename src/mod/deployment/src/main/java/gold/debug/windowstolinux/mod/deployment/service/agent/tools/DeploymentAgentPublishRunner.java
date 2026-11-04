@@ -261,6 +261,20 @@ public final class DeploymentAgentPublishRunner {
                         return DeploymentModelToolLoop.Feedback.ended(new OperationResult<>(TaskResult.SUCCEEDED,
                             Optional.of(proposal), Optional.empty()));
                     })));
+                if (gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorGuidance.present(task)) {
+                    var mirrorSchema = gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolSchemas.object("point", "offset:integer", "limit:integer");
+                    ((com.fasterxml.jackson.databind.node.ArrayNode) mirrorSchema.get("required")).removeAll().add("point");
+                    ((com.fasterxml.jackson.databind.node.ObjectNode) mirrorSchema.at("/properties/point")).put("maxLength", 64);
+                    ((com.fasterxml.jackson.databind.node.ObjectNode) mirrorSchema.at("/properties/offset")).put("maximum", Integer.MAX_VALUE).put("default", 0);
+                    ((com.fasterxml.jackson.databind.node.ObjectNode) mirrorSchema.at("/properties/limit")).put("maximum", 10).put("default", 5);
+                    offered.put("mirror_sources", new DeploymentModelToolLoop.Tool<>(
+                        "Read ordered public frozen mirror DATA for DownloadPoint point. Optional offset=0 and limit=5 (1..10). Follow nextOffset while hasMore. Runtime owns routing; no credentials or execution authority.",
+                        mirrorSchema.toString(), args -> DeploymentModelToolLoop.Feedback.observed(DeploymentAiJson.facts(
+                            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorGuidance.sources(task,
+                                DeploymentJsonFields.text(args, "point", 64),
+                                args.has("offset") ? DeploymentJsonFields.number(args, "offset", 0, Integer.MAX_VALUE) : 0,
+                                args.has("limit") ? DeploymentJsonFields.number(args, "limit", 1, 10) : 5), 12288))));
+                }
                 gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoal.currentWorker().ifPresent(worker ->
                     offered.put("continue_deployment", new DeploymentModelToolLoop.Tool<>(DeploymentSkillResources.description(
                         DeploymentAgentPublishRunner.class, "agent-publish-runner-tools.properties", "continue_deployment"),
@@ -284,6 +298,7 @@ public final class DeploymentAgentPublishRunner {
                 Map.entry("contractFiles", CONTRACTS.stream().sorted().toList()), Map.entry("task", task.id().toString()),
                 Map.entry("server", server.id()), Map.entry("applicationHealth", proposal.graph().healthCheck().toString()),
                 Map.entry("skills", DeploymentAgentSkills.catalog(DeploymentAgentSkills.Role.DEPLOYMENT)), Map.entry("activeSkills", skills.active()),
+                Map.entry("mirrorPolicy", gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorGuidance.summary(task)),
                 Map.entry("healthComponent", proposal.graph().healthComponentId()), Map.entry("stage", verifiedCurrent.get()
                     ? "VERIFIED" : stagedCurrent.get() ? "STAGED" : standardSent.get() ? "PUBLICATION_ATTEMPTED" : "SEALED"),
                 Map.entry("staged", stagedCurrent.get()), Map.entry("standardSent", standardSent.get()),

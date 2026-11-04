@@ -11,6 +11,28 @@ class DeploymentAgentProtocolTest {
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
+    void mirrorSourcesUsesFrozenPresenceAndOptionalBoundedLocalReadPages() throws Exception {
+        assertFalse(DeploymentAgentProtocol.available("mirror_sources", java.util.Map.of()));
+        assertFalse(DeploymentAgentProtocol.available("mirror_sources", java.util.Map.of("mirrorPolicy", java.util.Map.of("present", false))));
+        assertTrue(DeploymentAgentProtocol.available("mirror_sources", java.util.Map.of("mirrorPolicy", java.util.Map.of("present", true))));
+        assertEquals(gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolScheduler.Execution.LOCAL_READ,
+            DeploymentAgentProtocol.execution("mirror_sources"));
+        assertFalse(DeploymentAgentProtocol.critical("mirror_sources"));
+        var parsed = assertInstanceOf(DeploymentAgentProposal.Capability.class,
+            DeploymentAgentProtocol.parse("mirror_sources", json.readTree("{\"point\":\"NODE_PACKAGE\"}")));
+        assertEquals("mirror_sources", parsed.name());
+        assertEquals(0, parsed.arguments().path("offset").asInt());
+        assertEquals(5, parsed.arguments().path("limit").asInt());
+        for (int limit : java.util.List.of(0, 11))
+            assertThrows(IllegalArgumentException.class, () -> DeploymentAgentProtocol.parse("mirror_sources",
+                json.createObjectNode().put("point", "NODE_PACKAGE").put("limit", limit)));
+        assertThrows(IllegalArgumentException.class, () -> DeploymentAgentProtocol.parse("mirror_sources",
+            json.createObjectNode().put("point", "NODE_PACKAGE").put("offset", -1)));
+        assertThrows(IllegalArgumentException.class, () -> DeploymentAgentProtocol.parse("mirror_sources",
+            json.createObjectNode().put("point", "NODE_PACKAGE").put("sourceUrl", "untrusted")));
+    }
+
+    @Test
     void reviewResponseSchemaMatchesLocalExclusiveAdmissionAndBothMessageLimits() throws Exception {
         var definition = DeploymentAgentProtocol.catalog().stream().filter(tool -> tool.name().equals("review_response")).findFirst().orElseThrow();
         var schema = json.readTree(definition.inputSchema());

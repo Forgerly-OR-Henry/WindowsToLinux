@@ -71,8 +71,27 @@ public final class DeploymentModelCommandIdentity {
             String script = executable.substring(start, end);
             if (!body.equals(digest(script)) || !executable.equals(envelope(task, operation, body, script, rationale, layout)))
                 throw new IllegalArgumentException("Model command executable binding changed");
-            return Map.of("task", task.toString(), "operation", operation.toString(), "bodySha256", body,
-                "rationale", rationale, "modelScript", script, "productReceiptDirectory", layout.modelCommandOperationsRoot());
+            var facts = new LinkedHashMap<String, Object>();
+            facts.put("task", task.toString()); facts.put("operation", operation.toString()); facts.put("bodySha256", body);
+            facts.put("rationale", rationale); facts.put("modelScript", script);
+            facts.put("productReceiptDirectory", layout.modelCommandOperationsRoot());
+            boolean mirrorRequired = !gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task).isEmpty();
+            var marker = java.util.regex.Pattern.compile("\\A# WTL_MIRROR_TASK=([0-9a-f-]{36})\\n").matcher(script);
+            if (marker.find()) {
+                try { mirrorRequired |= !gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(UUID.fromString(marker.group(1))).isEmpty(); }
+                catch (IllegalArgumentException invalidLegacyComment) { /* An unbound legacy comment has no bootstrap authority. */ }
+            }
+            if (mirrorRequired) {
+                var mirror = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.buildInput(script)
+                    .orElseThrow(() -> new IllegalArgumentException("Frozen mirror host command bootstrap is absent"));
+                if (!mirror.task().equals(task) || mirror.original().isBlank() || mirror.original().length() > 24000
+                    || mirror.original().indexOf('\0') >= 0 || script.getBytes(StandardCharsets.UTF_8).length > 1048576)
+                    throw new IllegalArgumentException("Mirror host body differs from its authored command");
+                facts.put("modelScript", mirror.original()); facts.put("modelScriptSha256", digest(mirror.original()));
+                facts.put("executionBody", script); facts.put("mirrorTask", task.toString());
+                facts.put("mirrorPolicySha256", digest(mirror.policy())); facts.put("mirrorBudgetSeconds", mirror.budgetSeconds());
+            }
+            return Collections.unmodifiableMap(facts);
         } finally {
             Arrays.fill(bytes, (byte) 0);
         }

@@ -172,6 +172,9 @@ public final class DeploymentAgentProjectChannel {
             || timeout.toSeconds() > 7200)
             throw new IllegalArgumentException("Invalid agent command budget");
         gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.requireProjectScript(task);
+        String mirrorPolicy = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task);
+        if (!mirrorPolicy.isEmpty()) gold.debug.windowstolinux.mod.deployment.service.mirror.ResolvedMirrorPolicy
+            .fromJson(mirrorPolicy, task.id().toString(), server.id());
         var goal = gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget.current();
         if (goal.isPresent() && timeout.toSeconds() > goal.orElseThrow().build().remainingSeconds())
             throw new IllegalArgumentException("Original goal build allowance cannot fund this exact candidate command");

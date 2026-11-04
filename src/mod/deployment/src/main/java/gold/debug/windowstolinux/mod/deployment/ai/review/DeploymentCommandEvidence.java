@@ -140,6 +140,11 @@ public final class DeploymentCommandEvidence {
                         intent.serverIds().getFirst(), "task", modelCommand.get("task").toString())))
                         throw new IllegalArgumentException("Model command task target changed");
                     facts.put("modelCommand", modelCommand);
+                    if (modelCommand.containsKey("mirrorTask")) {
+                        if (!request.timeout().equals(java.time.Duration.ofSeconds(((Number)modelCommand.get("mirrorBudgetSeconds")).longValue())))
+                            throw new IllegalArgumentException("Host mirror deadline differs from its reviewed request");
+                        facts.put("mirrorInputTask", modelCommand.get("mirrorTask"));
+                    }
                 }
             } else {
                 facts.put("inputKind", trackedToolchain ? "TRACKED_TOOLCHAIN_REQUEST" : input.length == 0 ? "EMPTY" : "OPAQUE_BOUND_DATA");

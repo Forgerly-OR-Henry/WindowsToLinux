@@ -205,6 +205,8 @@ public final class DeploymentAgentSession {
                                   gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentReviewSource.Bound reviewSource) {
         this.context = Objects.requireNonNull(context);
         this.task = Objects.requireNonNull(task);
+        this.skills = new gold.debug.windowstolinux.mod.deployment.service.agent.skill.DeploymentAgentSkills(
+            task, gold.debug.windowstolinux.mod.deployment.service.agent.skill.DeploymentAgentSkills.Role.DEPLOYMENT);
         this.server = Objects.requireNonNull(server);
         this.source = Objects.requireNonNull(source);
         this.tools = Objects.requireNonNull(tools);
@@ -426,6 +428,14 @@ public final class DeploymentAgentSession {
     private gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolScheduler.Prepared prepareRead(DeploymentAgentProposal proposal) throws Exception {
         final java.util.concurrent.Callable<ReadPage> work;
         switch (proposal) {
+            case DeploymentAgentProposal.Capability value when value.name().equals("mirror_sources") -> {
+                var args = value.arguments();
+                String point = args.path("point").asText();
+                int offset = args.path("offset").asInt(), limit = args.path("limit").asInt();
+                work = () -> new ReadPage("", source.revision(), "MIRROR_SOURCES", point, offset, limit,
+                    DeploymentAiJson.facts(gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorGuidance
+                        .sources(task, point, offset, limit), 12288));
+            }
             case DeploymentAgentProposal.CurrentSource value -> {
                 component(value.component());
                 var browser = tools.source(value.component());
@@ -475,7 +485,7 @@ public final class DeploymentAgentSession {
             public gold.debug.windowstolinux.appapi.ai.model.AiToolResult commit(gold.debug.windowstolinux.appapi.ai.model.AiToolCall call, Object value) throws Exception {
                 var page = (ReadPage) value;
                 observationComponent = page.component();
-                if (Set.of("OBSERVATION", "EVIDENCE_INDEX", "PLAN_STATE").contains(page.kind())) {
+                if (Set.of("OBSERVATION", "EVIDENCE_INDEX", "PLAN_STATE", "MIRROR_SOURCES").contains(page.kind())) {
                     query(page);
                     return new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(call.id(), lastObservation, false);
                 }
@@ -1139,6 +1149,7 @@ public final class DeploymentAgentSession {
             : artifacts.size() == plan.components().size() ? "SEALED" : candidates.isEmpty() ? "PLANNED" : "PREPARED";
         return Map.ofEntries(Map.entry("task", task.id().toString()), Map.entry("requirements", requirements), Map.entry("sourceRevision", source.revision()),
             Map.entry("activeSkills", skills == null ? List.of() : skills.active()),
+            Map.entry("mirrorPolicy", gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorGuidance.summary(task)),
             Map.entry("reviewResponseAvailable", tools.reviewResponseAvailable()),
             Map.entry("reconnectAvailable", plan == null && tools.reconnectAvailable()),
             Map.entry("budget", DeploymentAgentBudgetFacts.observe(Math.max(0, remaining - 1), toolAttempts)),
