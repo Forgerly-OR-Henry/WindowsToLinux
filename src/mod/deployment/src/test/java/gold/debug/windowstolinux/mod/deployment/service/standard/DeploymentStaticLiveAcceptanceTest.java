@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +43,10 @@ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.DeploymentStandardEntryFixture;
+import gold.debug.windowstolinux.mod.deployment.config.mirror.MirrorCatalog;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.MirrorSettings;
 import gold.debug.windowstolinux.mod.deployment.api.ApplicationAutostartState;
 import gold.debug.windowstolinux.mod.deployment.api.ApplicationRunState;
 import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationId;
@@ -9273,6 +9278,19 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         }
     }
 
+    static Optional<TaskHandle<MirrorSettings>> prepareAssistedMirrors(ModContext context, boolean assisted) throws ApiException {
+        if (!assisted) return Optional.empty();
+        var catalog = MirrorCatalog.load();
+        var points = new EnumMap<DownloadPoint, List<MirrorSettings.Row>>(DownloadPoint.class);
+        for (var point : DownloadPoint.values()) {
+            var providers = catalog.providersFor(point).stream().filter(provider -> provider.official()).toList();
+            if (providers.size() != 1)
+                throw new IllegalStateException("Expected one complete official provider for " + point);
+            points.put(point, List.of(new MirrorSettings.Row(providers.getFirst().id(), "", false, false, "")));
+        }
+        return Optional.of(new DeploymentMirrorTasks(context).save(new MirrorSettings(1, points, Map.of())));
+    }
+
     private void deploysWebsite(String project, Mode selectedMode) throws Exception {
         boolean deploymentOnly = Boolean.getBoolean("managed.live.mainOnlyDeploymentOnly");
         assertTrue(!deploymentOnly || mainOnlyDiagnostic, "Deployment-only acceptance is limited to the explicit main-only diagnostic");
@@ -9325,6 +9343,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             completed(runtime.servers().check(saveServer(runtime)), 2);
             if (aiEnabled) configureLiveModel(runtime);
             var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
+            var mirrorPreparation = prepareAssistedMirrors(context, selectedMode == Mode.ASSISTED);
+            if (mirrorPreparation.isPresent()) completed(mirrorPreparation.orElseThrow(), 2);
             if (mainOnlyDiagnostic)
                 diagnosticReview = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(context, new ServerId(SERVER));
             var applications = selectedMode == Mode.AGENT && !mainOnlyDiagnostic

@@ -169,13 +169,21 @@ public final class DeploymentAssistedReviewCoordinator {
      * @throws Exception on uncertain source or model evidence / 来源或模型依据不明时 */
     public Prompt prompt(ServerId server, Prompt prompt, DeploymentAssistedAdvisor advice,
                          DeploymentSourceMaterial material, TaskContext task) throws Exception {
-        if (advice == null || prompt.fields().stream()
-            .noneMatch(field -> field.value().isBlank() && DeploymentAssistedAdvisor.allows(field.id())))
+        if (advice == null)
+            return prompt;
+        var requiredFieldIds = new DeploymentStandardRuntimeResolver()
+            .missing(prompt.componentId(), prompt.projectType(), prompt.defaults()).stream()
+            .map(DeploymentReviewField::id).collect(java.util.stream.Collectors.toSet());
+        var missing = prompt.fields().stream()
+            .filter(field -> requiredFieldIds.contains(field.id()) && field.value().isBlank()
+                && DeploymentAssistedAdvisor.allows(field.id()))
+            .toList();
+        if (missing.isEmpty())
             return prompt;
         var browser = new DeploymentSourceBrowser(material.snapshot().directory(), material.snapshot().sha256());
         gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedAnalysis.Advice suggested;
         try {
-            suggested = advice.preflight(browser, prompt.fields(), Map.of("component", prompt.componentId(),
+            suggested = advice.preflight(browser, missing, Map.of("component", prompt.componentId(),
                 "projectType", prompt.projectType().name(), "sourceRevision", browser.revision()), task);
         } catch (DeploymentAiJson.CapabilityOutcomeException unavailable) {
             if (unavailable.outcome() == TaskResult.UNKNOWN)
