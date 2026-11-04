@@ -1,6 +1,14 @@
 # ASSISTED 连续首过验证记录
 
-## 2026-11-04现行入口：R12中断收尾完成，0完整首过／5原启动／计划分母8
+## 2026-11-04最终交接：用户停止当前目标续跑，下一轮未启动
+
+用户要求本轮结束后停止目标自动继续、结束本对话，并在重装服务器前拉回所需材料。本阶段按暂停交接收尾，八项统一首过目标未达成。R12仍为0完整首过／5原启动／分母8，不恢复旧句柄或队列。当前可复制的下一对话入口为[交接提示词](H:/Program/WindowsToLinux/docs/test/multi-language/NEXT-CHAT-ASSISTED-20261104.md)，实现、验证和回收细节见[现行交接首节](H:/Program/WindowsToLinux/docs/test/multi-language/ASSISTED-CONTINUOUS-20261028-HANDOFF.md)。下方active／执行中均为历史检查点。
+
+已完成下一轮独立候选`r13f`／`1b646e8a4d25a7a86009b833244a24a4592cf920`的保护链与镜像整合、默认bootstrap `--no-remove`及透明typed观测，本地提交未推送，MAIN未合并。Java33唯一方法／48cases最终通过，实际51次48pass＋3fail；Python60唯一方法最终通过，实际104次102pass＋2fail。原失败、夹具原因、编译classifier准备失败及早期Python原stdout缺口保留；只做相关定点及必要编译，不当全量通过。三Mod skipTests package actual0；16JAR／30输出目录等实际产物已单独核验，不代表真实部署。UNKNOWN首因未明，默认APT小保护不保证审查通过；R13未正式冻结、清场或启动八项。详见候选中的[整合记录](H:/Program/WindowsToLinux/.ai-workspace/wt/r13f/docs/test/multi-language/ASSISTED-R13-INTEGRATION-20261104.md)及[产物证明](H:/Program/WindowsToLinux/.ai-workspace/wt/r13f/.ai-workspace/evidence/r13-artifacts-20261104/artifact-audit-summary.json)。
+
+重装前首份维护导出49条／199788字节已通过同pin产品连接、真实授权、无截断及DPAPI／ZIP校验，raw SHA`6cd97260520937a406cb90cf2121123068a8d62114d2f6136810d49a4a2ea5fe`。只在私有状态保存DPAPI密文，公开[首份回执](H:/Program/WindowsToLinux/.ai-workspace/evidence/server-evidence-export-20261104/maintenance-export-receipt.json)记19项遗漏；大SDK、缓存、镜像及秘密不作完整备份，1份历史裁剪、3root不存在。终审后独立补收8份已知小型绑定／归属文件，8文件＋1manifest／raw ZIP4803字节，actual0、遗漏0、DPAPI／CRC通过，见[补充回执](H:/Program/WindowsToLinux/.ai-workspace/evidence/server-evidence-export-supplement-20261104/maintenance-export-receipt.json)。合计56内容文件＋2manifest，首份和19遗漏不覆盖，每次原export仅执行一次、无AI请求；维护与辅助问题不计八正式项目分母，不补造原UNKNOWN终态。服务器由用户重装，下一对话须用最新私密信息核身份及新指纹、建立新凭据和冻结，产品清场及独立after通过后才新轮。原始证据和用户论文保留，无推送、无CU或浏览器验收。
+
+## 2026-11-04此前检查点：R12中断收尾完成，0完整首过／5原启动／计划分母8
 
 目标active、未达成。恢复时原driver工具62805和observer54545均返回句柄不存在；宿主CIM核13个已记录原身份均消失，当前R12专用验证namespace为0，未发送信号。PID19472已被无关进程复用，未终止它。旧队列不再投递、旧driver／observer不重启，R12不能续作首过轮。
 

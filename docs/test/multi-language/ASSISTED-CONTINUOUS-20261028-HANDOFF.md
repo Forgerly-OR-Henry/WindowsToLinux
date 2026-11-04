@@ -1,6 +1,24 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 2026-11-04现行入口：R12中断收尾完成，0完整首过／5原启动／计划分母8
+## 2026-11-04最终交接：停止续跑，候选已提交，服务器重装前资料回收
+
+用户要求本轮之后结束当前长对话并停止目标自动继续，随后由用户重装服务器。本阶段按暂停交接收尾，目标未达成；不启动R13，不创建新的用户聊天。下一对话可直接复制[交接提示词](H:/Program/WindowsToLinux/docs/test/multi-language/NEXT-CHAT-ASSISTED-20261104.md)。R12已中断关闭：0完整首过／5原启动／分母8，原失败、三项UNKNOWN、Survey缺失终态及三项未启动均保留，下方原轮审计不改判。
+
+下一轮候选已在独立树`H:/Program/WindowsToLinux/.ai-workspace/wt/r13f`本地提交`1b646e8a4d25a7a86009b833244a24a4592cf920`，分支`codex/assisted-integrated-observation-20261104`，父提交MAIN `42181ccd83fce23fc2071679cf97681e04750bc5`及隔离链`caa4f99a22c1756ed574e49331988ee4881cec4d`。MAIN尚未合并该候选。已整合镜像、0701 prior-byte准入、27f pregrant、env-i、cff67 no-remove和aa804生命周期；默认bootstrap补禁止移除，测试侧补有界typed观测。分支先前缺失不能写成镜像提交回退，UNKNOWN首因仍未知，观测增强不是底层修复。详见[候选整合记录](H:/Program/WindowsToLinux/.ai-workspace/wt/r13f/docs/test/multi-language/ASSISTED-R13-INTEGRATION-20261104.md)。
+
+本地验证实际范围：Java33唯一方法／48唯一cases最终各有通过证据，51次执行48通过＋3失败；Python60唯一方法最终通过，104次执行102通过＋2失败。失败、重跑、初次classifier缺失及早期Python stdout未落盘均保留，未跑全量suite。随后三Mod必要skipTests package actual exit0；17reactor、16JAR（15产品＋1test-support）、30输出目录成员及JAR CRC／资源／descriptor核验通过。显式54非空CP来源当前r13f，raw尾空项实际classloader效果未测，marker不替代完整字节清单。[实际产物审计](H:/Program/WindowsToLinux/.ai-workspace/wt/r13f/.ai-workspace/evidence/r13-artifacts-20261104/artifact-audit-summary.json)与[父独立定点审计](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-resume-20261104-01/r13-independent-local-receipt-audit.json)均不代表新模型、远端部署或完整业务通过。R13正式验收的新SOURCE/P/R、冻结、正常凭据、产品清场及八项原任务均未开始。
+
+重装前独立维护回收使用产品正常凭据安全API及真实host授权，只读、不调用模型、不重放旧任务。首份导出actual exit0、同已授权BiNl指纹、truncated=false，49个ZIP条目／199788字节，raw SHA`6cd97260520937a406cb90cf2121123068a8d62114d2f6136810d49a4a2ea5fe`；DPAPI内存往返及ZIP CRC通过。只保存密文于主树`src/app/db/data/maintenance-evidence-export-20261104-01/server-evidence.zip.dpapi`，200006字节、SHA`6f1d5e862956dace2975fc499009dd5dcba2f8b1205b0e5353e3d41669bd0ef1`。包版本、APT/dpkg配置及历史、toolchain诊断／request、helper安装receipt、当前unit状态等已回收。[首份公开回执](H:/Program/WindowsToLinux/.ai-workspace/evidence/server-evidence-export-20261104/maintenance-export-receipt.json)保留19项遗漏，包括1份dpkg历史裁剪、3root不存在及秘密路径／SDK／缓存／大二进制排除；不是全机备份。
+
+终审发现其中8份小型binding／归属元数据被通用文件名筛选排除，随后独立补收恰8个已知路径，不重跑首份或正式任务，不覆盖原19项遗漏。仅当前lstat→open／fstat→读后lstat身份一致，不倒称掌握首次历史inode。[补充回执](H:/Program/WindowsToLinux/.ai-workspace/evidence/server-evidence-export-supplement-20261104/maintenance-export-receipt.json)：actual0／同pin／无截断／遗漏0，1125字节内容，8文件＋1manifest，raw ZIP4803字节、SHA`2caffc09b17b0285823f5f9b6dba413b1b04b0563d6148ab3e61f175123a39ba`；state02同名密文5030字节、SHA`658600ca797579290beeb04760640a3280e1bf1757b34b55aee76a892f0c6074`，DPAPI及CRC通过。合计**56份资料内容文件＋2份manifest**，不是58份独立内容文件。两个独立维护Runtime均正常close，每份各1连接检查／1真实命令授权／1远端export execute，新模型请求0，八正式分母不变。
+
+DPAPI归档只保证当前Windows身份可解密，换机不可假定直接拷贝可用。新服务器身份和密码按用户重装后的最新私密信息重新核对；新指纹未授权前须核实，不沿用旧密码或自动信任变化。重新恢复时读本节与提示词，核实际候选／产物／配置，按新冻结执行产品inventory→plan→apply→独立after后，再开始八原项目；旧队列禁止续跑。论文全部既有改动保留，代码和正式交接仅本地提交、不推送。Sol负责执行，Astra曾处理bootstrap边界及UNKNOWN观测设计两个具体难点，无Terra／CU／浏览器验收。
+
+[维护综合回执](H:/Program/WindowsToLinux/.ai-workspace/evidence/server-evidence-export-20261104/combined-closeout.json)保留两次编译成功但首份中间源码未单存、compile02补遗漏统计后才运行，以及普通sandbox私有元数据读取拒绝等辅助边界。父[独立最终核验](H:/Program/WindowsToLinux/.ai-workspace/evidence/assisted-resume-20261104-01/parent-final-handoff-audit.json)再次只读核13原身份均退、当前R12/R13及维护Java/Python/CMD匹配0、两份密文长度与SHA匹配；未解密、开旧DB、访问远端或发信号，不补造旧退出码。
+
+两个维护专用tmp已核无reparse并清除；提升身份首次删除sandbox所有的hsperfdata被拒绝，改由原创建身份清理成功，原拒绝单列保留，无归档权限放宽。见[维护回收完整说明](H:/Program/WindowsToLinux/.ai-workspace/evidence/server-evidence-export-20261104/CLOSEOUT.md)及[清理回执](H:/Program/WindowsToLinux/.ai-workspace/evidence/server-evidence-export-20261104/final-close-and-cleanup.json)。本阶段只提交两份正式文档及新提示词；父最终Git、临时项和暂停交接记录保存在`assisted-resume-20261104-01/`，辅助资料不提交。
+
+## 2026-11-04此前检查点：R12中断收尾完成，0完整首过／5原启动／计划分母8
 
 目标active、未达成。恢复时原driver工具62805和observer54545均返回句柄不存在；宿主CIM核13个已记录原身份均消失，当前R12专用验证namespace为0，未发送信号。PID19472已被无关进程复用，未终止它。旧队列不再投递、旧driver／observer不重启，R12不能续作首过轮。
 
