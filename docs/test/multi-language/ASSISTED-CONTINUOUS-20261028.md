@@ -1,6 +1,14 @@
 # ASSISTED 连续首过验证记录
 
-## 2026-11-06 R16冻结资格失败；服务器及八项原任务未启动
+## 2026-11-06 R16-P02完整校验完成但10秒资格仍失败
+
+R16-P02在相同代码HEAD `92f35176…` 下独立重新冻结，保留P01原件。辅助guard修正LOC16目录，并采用逐祖先原生属性查询和4线程/8项有界待收割队列；完整路径、SHA、目录检查和失败收尾规则保持。新metadata及两次不同审批状态的preview原次均退出0，父独立审查后按support6→SOURCE→P→R最后[发布新九件](../../../.ai-workspace/evidence/assisted-r16-p02-parent-control-review-20261106-01/parent-formal-promotion-16.json)，没有覆盖旧冻结。
+
+[本冻结唯一实际完整guard结果](../../../.ai-workspace/evidence/assisted-r16-p02-execution-supervisor-20261106-01/fullguard-16-p02-ten-second-01-result.json)的`fullGuardCompleted=true`，实际完成17个legacy输出、30个完整输出及4310成员校验；raw耗时 **10.386864800006151秒**，超过10秒，原Python退出70，因此资格仍为 **FAILED**。此前9.6093552秒的候选组件诊断不是资格，不能代替或改判本次结果；未重跑暖缓存，预算、25次上限、完整检查和UNKNOWN规则均未调整。
+
+[本次收尾](../../../.ai-workspace/evidence/assisted-r16-p02-published-fullguard-qualification-20261106-01/HANDOFF.md)确认已录Python/launcher/closeout身份退出、signals=0、两个专属tmp已清；内部Git只证明原同步等待返回，未声称取得其PID身份或全宿主连续覆盖。monitor、driver、四阶段服务器准备、八项业务和STATIC均未启动；两次准备失败不计作业务失败或R16业务收口。下一步只研究保留完整负载的剩余性能开销，后续修复仍须独立新冻结和单次新资格；按用户要求继续先完成R16原轮，再进入STATIC验证。
+
+## 2026-11-06 R16-P01冻结资格失败；服务器及八项原任务未启动
 
 R16已按support6→SOURCE→P→R最后的顺序发布九件本地冻结文件；[发布回执](../../../.ai-workspace/evidence/assisted-r16-final-parent-review-20261106-01/parent-formal-promotion-16.json)记录SOURCE `5dad8670…`、P `98104d9a…`、R `e66cd473…`，代码仍为`92f35176…`。此前实际metadata原次退出0；预览首次因缺少八个旧R15公开退出/启动JSON的精确白名单而退出1、无输出，最小修复后preview-02/03分别退出0，全部旧失败保留。
 
