@@ -6272,15 +6272,28 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         };
     }
 
+    static Path credentialSourceRoot(Path workspace, Path businessRoot, String sourceWorkspace, String savedState) throws Exception {
+        Path selectedWorkspace = sourceWorkspace.isBlank() ? workspace.toAbsolutePath().normalize()
+            : Path.of(sourceWorkspace).toAbsolutePath().normalize();
+        Path dataRoot = selectedWorkspace.resolve("src/app/db/data");
+        Path savedRoot = Path.of(savedState).toAbsolutePath().normalize();
+        Path runRoot = businessRoot.toAbsolutePath().normalize();
+        assertTrue(savedRoot.startsWith(dataRoot) && savedRoot.getFileName().toString().startsWith("agent-live-credential-"));
+        assertNotEquals(runRoot, savedRoot);
+        backupCanonical(dataRoot);
+        backupCanonical(savedRoot);
+        backupCanonical(runRoot);
+        assertTrue(Files.isDirectory(savedRoot));
+        return savedRoot;
+    }
+
     private ServerProfile saveServer(PlatformRuntime runtime) throws Exception {
         var profile = new ServerProfile(SERVER, System.getProperty("managed.ssh.host"),
             Integer.getInteger("managed.ssh.port", 22), System.getProperty("managed.ssh.user", "root"), "static-live-secret");
         String savedState = System.getProperty("managed.live.credentialState", "");
         if (!savedState.isBlank()) {
-            Path dataRoot = workspace().resolve("src/app/db/data").toRealPath();
-            Path savedRoot = Path.of(savedState).toRealPath();
-            assertTrue(savedRoot.startsWith(dataRoot) && savedRoot.getFileName().toString().startsWith("agent-live-"));
-            assertNotEquals(root.toAbsolutePath().normalize(), savedRoot);
+            Path savedRoot = credentialSourceRoot(workspace(), root,
+                System.getProperty("managed.live.credentialSourceWorkspace", ""), savedState);
             try (var original = PlatformRuntime.open(savedRoot.resolve("data"), currentUserProtection())) {
                 char[] password = liveMasterPassword();
                 try {
