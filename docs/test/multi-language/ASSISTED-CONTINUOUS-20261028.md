@@ -1,5 +1,13 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-05 R16诊断及正常来源夹具已提交；当前产物资格待收口
+
+[活跃诊断修复](../../../.ai-workspace/evidence/assisted-r16-active-diagnostics-integration-20261105-01/HANDOFF.md)已本地提交`6c2069c5f0ba67f6b84837a1f39f01a727f42009`，限定9方法全部通过。失败后重开数据库补读的路径已删除，专用脱敏拒绝理由及稳定异常类型/问题码从原活跃日志观察；诊断失败隔离、Graph UNKNOWN及业务关闭流程保持。原R15的实际拒绝语义及caught类型仍未知，不由新日志功能反填旧结果。
+
+[正常来源工作区夹具](../../../.ai-workspace/evidence/assisted-r16-credential-source-workspace-20261105-01/HANDOFF.md)另本地提交`92f351761215ba6b110a3e4a1a2c22d18f671528`。新增显式来源工作区，默认当前工作区；确切normal state参数保持，名称收窄为`agent-live-credential-*`，复用既有规范路径/重解析检查与Security清零流程。3个普通路径方法原次通过；junction创建两次因沙箱Access denied失败，获自动审批后仅该失败方法通过，原失败保留，没有一次4/4 clean声称。两段均已核退出并清理专属tmp，未推送。
+
+本轮实际使用仍须在新guard、driver和P同时精确固定ROOT15及唯一健康normal；夹具参数本身不授予外部库权限。未创建或迁移新normal，当前产品连接证明仍待执行，新业务状态仍须新ROOT16路径。一次必要离线skipTests打包已补齐files输出并刷新JAR，当前完整产物资格尚待收口；新metadata/SOURCE/P/R、四阶段服务器准备和八项目尚未启动。R15的FAILED、UNKNOWN、六项未启动及0/8保持。
+
 ## 2026-11-05 R16包边界本地修复完成；诊断导出候选另段准备
 
 [R16包边界整合](../../../.ai-workspace/evidence/assisted-r16-package-boundary-integration-20261105-01/HANDOFF.md)已在独立分支本地提交`90c41ef426b38b3d97b7b43bc22f37e24c7fe32d`，范围为3个生产文件和5个直接测试/资源，未推送。实际构建、渲染、测试编译和定点原等待均退出0，六个suite的十个指定方法共27项全部通过；没有执行全套或重复旧39项。完整Responses编码plain/files/tracked分别为921235/916937/924280字节；原1 MiB门、完整源码恢复、aggregate及encoded超限拒绝、独立DENY及fresh exact grant保持。真实渲染更新plain/tracked固定SHA，helper payload原SHA保持。
