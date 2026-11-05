@@ -1,5 +1,11 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
+## 2026-11-05 用户批准10秒新冻结；重新执行四阶段准备
+
+用户已明确批准只读观测预算5→10秒。仅应用预算常量及对应说明，25次上限、完整回调、late拒绝、UNKNOWN保留和审批规则不变。旧发行及准备中止原件全部保留，新元数据及派生绑定经过精确差异审核；[新九件发行回执](../../../.ai-workspace/evidence/assisted-r14-final-metadata-20261105-01/observer-budget-10-parent-14-01/parent-formal-promotion-14-03.json)记录CreateNew且Release最后写入。产品源码仍为`90ae6fd7`，模型参数、原业务负载、其它runtime及外部依赖未变。
+
+[单次完整冻结检查](../../../.ai-workspace/evidence/assisted-r14-final-metadata-20261105-01/observer-budget-10-runtime-14-01/fullguard-14-ten-second-01-result.json)实际native0，17旧子集／30输出／4285成员通过，耗时4.667秒；这是raw guard计时，不冒充完整observer framing或连续覆盖。新real-05已观测到初始完整sample VERIFIED，独立启动driver；当前inventory及plan原进程均成功并通过父审，已供给审核后的apply，independent-after及八个原始项目尚未启动。此为启动检查点，实时状态以[CURRENT](../../../.ai-workspace/progress/CURRENT.md)及real-05原始事件为准；旧real03三阶段成功不拼接。
+
 ## 2026-11-05 观测准备中止已收尾；10秒候选待批准，八原项目仍未启动
 
 重装后的SSH已在产品内认证成功。R14真实inventory、plan及apply分别native/JUnit成功，但monitor完整回调超出既定5秒后拒绝，independent-after未运行；准备未完成，八原项目各启动0次，不把三阶段成功拼入下一次准备。原始成功、UNKNOWN及driver退出异常均保留在[real03收尾](../../../.ai-workspace/evidence/assisted-r14-final-metadata-20261105-01/interrupted-prebusiness-cycle-03/closeout-and-retention-14.json)。
