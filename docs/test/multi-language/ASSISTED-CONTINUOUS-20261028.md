@@ -1,5 +1,13 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-05 两个前置段完成：有限准入契约与R15正常凭据连接
+
+[有限准入候选](../../../.ai-workspace/evidence/assisted-r15-api-admission-contract-20261105-01/HANDOFF-15.md)已将App限定字节证明、R14实际历史API链、本次39项及当前产物上下文分别接线。唯一纯数据检查1正例及28内存反例通过，完整消费42个公开原件；候选尚未替换BASE15，正式生成锁仍关闭，不代表新的provider/API成功。
+
+用户在自动审批首次拦截后明确批准了具体迁移及连接输入；[正常凭据段](../../../.ai-workspace/evidence/assisted-r15-healthy-credential-preparation-20261105-01/HANDOFF-execution-15.md)随后完成健康R14库到新R15正常库的产品API加密保存、独立读回和自有数组清零。唯一产品连接任务74258336-7f35-48c6-b212-ead4210732e2为SUCCEEDED，授权指纹完全匹配，无超时；原Java、wrapper及外层实际退出0，三原身份核退，tmp清。物理SSH尝试数仍UNKNOWN，源数据库元数据字节变化已记录，不能称源DB未变；失败库未打开。
+
+以上两个职责段均已结束。剩余当前产物与产品类验证、private opaque及主机证明、R14关闭契约消费者和最终SOURCE/P/R分别处理；R15仍未冻结或开始真实八项目原次，长期目标未达成。
+
 ## 2026-11-05 CUSTOM实现段完成：39个定点全部通过，源码已本地提交
 
 本段完成CUSTOM完整worker的严格去重表示及组合导航，并修正FILES测试夹具的旧launcher。完整worker只保存一次，两种有序引用恢复原程序的两处执行用途；原stdin、摘要范围、目标、独立DENY、新主机授权及三道预算门均保留。App继续负责四用途的模型与厂商适配，部署Mod没有新增厂商分支。
