@@ -1,5 +1,13 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
+## 2026-11-06 R16冻结资格失败；服务器及八项原任务未启动
+
+R16已按support6→SOURCE→P→R最后的顺序发布九件本地冻结文件；[发布回执](../../../.ai-workspace/evidence/assisted-r16-final-parent-review-20261106-01/parent-formal-promotion-16.json)记录SOURCE `5dad8670…`、P `98104d9a…`、R `e66cd473…`，代码仍为`92f35176…`。此前实际metadata原次退出0；预览首次因缺少八个旧R15公开退出/启动JSON的精确白名单而退出1、无输出，最小修复后preview-02/03分别退出0，全部旧失败保留。
+
+[唯一实际完整guard资格](../../../.ai-workspace/evidence/assisted-r16-published-fullguard-qualification-20261106-01/qualification-summary.json)为FAILED：原Python退出70，`fullGuardCompleted=false`，raw耗时22.49743849999504秒，10秒资格不成立；错误为`Protected preparation evidence changed`，没有取得完整guard通过证明。[六份公开证据的独立诊断](../../../.ai-workspace/evidence/assisted-r16-fullguard-failure-diagnosis-20261106-01/protected-public-scope-diagnosis-16.json)确认其长度和SHA均匹配，拒绝原因是guard仍约束旧`local-preparation-projections-15`，而本轮正确目录为`-16`。一次[独立组件诊断](../../../.ai-workspace/evidence/assisted-r16-guard-budget-failure-design-20261106-01/component-result.json)耗时22.1995233秒，其中路径规范及重解析检查合计17.727179秒，为主要瓶颈；这不是重跑完整guard或新资格通过。正在研究保留全部检查的路径实现优化。旧冻结及失败结果原样保留，后续修复须独立重新冻结，保持10秒、完整检查、25次上限和UNKNOWN规则。
+
+原资格进程及launcher均已核退，专属tmp子目录已清；monitor、driver、四阶段服务器准备和八项原业务均未启动，不能将准备失败记成八项业务失败或首过。继续处理本轮准备，不中途切STATIC；按用户要求，静态部署回归留在R16原轮收口之后。
+
 ## 2026-11-05 R16当前产物和既有健康源检查已完成；继续冻结前置
 
 [活跃诊断修复](../../../.ai-workspace/evidence/assisted-r16-active-diagnostics-integration-20261105-01/HANDOFF.md)已本地提交`6c2069c5f0ba67f6b84837a1f39f01a727f42009`，限定9方法全部通过。失败后重开数据库补读的路径已删除，专用脱敏拒绝理由及稳定异常类型/问题码从原活跃日志观察；诊断失败隔离、Graph UNKNOWN及业务关闭流程保持。原R15的实际拒绝语义及caught类型仍未知，不由新日志功能反填旧结果。
