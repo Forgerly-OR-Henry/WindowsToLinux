@@ -19,6 +19,76 @@ public final class DeploymentInstallerEvidence {
     private DeploymentInstallerEvidence() {
     }
 
+    /** Describes package effects only after exact native installer, request and task/server matching. */
+    public static Map<String, Object> helperPackageImpact(
+            gold.debug.windowstolinux.appapi.task.action.ActionIntent intent,
+            gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, UUID task,
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws java.io.IOException {
+        if (intent.serverIds().size() != 1 || !request.script().equals(DeploymentHelperInstallerScript.LAUNCHER))
+            throw new IllegalArgumentException("Native helper package evidence requires its exact launcher and server");
+        var server = new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst());
+        var semantics = intent.semantics().orElseThrow();
+        var actual = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, intent.revision(), request)
+            .withSemantics(semantics);
+        if (!actual.equals(intent)) throw new IllegalArgumentException("Native helper request binding changed");
+        byte[] input = request.stdin();
+        try {
+            String executable = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                .decode(java.nio.ByteBuffer.wrap(input)).toString();
+            var mirror = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.buildInput(executable);
+            String original = mirror.map(value -> value.original()).orElse(executable);
+            String expected;
+            Set<gold.debug.windowstolinux.appapi.task.action.ActionTarget> targets;
+            switch (semantics.operation()) {
+                case "deployment.helper.install.v1" -> {
+                    expected = DeploymentHelperInstallerScript.render(layout);
+                    targets = DeploymentManagedHelper.installationTargets(server, layout);
+                }
+                case "deployment.helper.install.files.v1" -> {
+                    expected = DeploymentHelperInstallerScript.renderFiles(layout);
+                    targets = DeploymentManagedHelper.installationTargets(server, layout);
+                }
+                case "deployment.helper.install.tracked.v1" -> {
+                    UUID operation = DeploymentHelperInstallerScript.trackedOperation(original, task, layout);
+                    expected = DeploymentHelperInstallerScript.renderTracked(task, operation, sha(server.id()),
+                        sha(DeploymentHelperInstallerScript.render(layout)), layout);
+                    targets = DeploymentManagedHelper.trackedInstallationTargets(server, layout, operation);
+                }
+                default -> throw new IllegalArgumentException("Not a native helper package installer");
+            }
+            if (mirror.isPresent()) {
+                var bound = mirror.orElseThrow();
+                if (!bound.task().equals(task) || !JSON.readTree(bound.policy()).path("server").asText().equals(server.id())
+                    || bound.budgetSeconds() != request.timeout().toSeconds())
+                    throw new IllegalArgumentException("Native helper mirror task, server or deadline changed");
+                expected = DeploymentHelperInstallerScript.withMirrors(expected, bound.policy(), bound.budgetSeconds());
+            }
+            if (!semantics.targets().equals(targets) || !Arrays.equals(input, expected.getBytes(StandardCharsets.UTF_8)))
+                throw new IllegalArgumentException("Native helper installer source or targets changed");
+            var facts = new LinkedHashMap<String, Object>();
+            facts.put("comparison", "EXACT_CURRENT_NATIVE_INSTALLER_LAUNCHER_STDIN_TASK_SERVER_AND_TARGETS");
+            facts.put("task", task.toString());
+            facts.put("server", server.id());
+            facts.put("businessRevision", intent.revision());
+            facts.put("workflowRequestPointer", "/currentCommandEvidence/workflowAuthorization/frozenWorkflowRequest");
+            facts.put("executableEvidencePointer", "/completeExecutableInput");
+            facts.put("stdinSha256", sha(executable));
+            facts.put("aptRootPackages", List.of(DeploymentHelperInstallerScript.APT_PACKAGES.split(" ")));
+            facts.put("aptEffects", "Missing root packages may be installed. --no-upgrade retains already installed command-line packages; necessary dependencies may still be installed or upgraded. --no-remove aborts required removals; --no-install-recommends remains set.");
+            facts.put("dnfRootPackages", List.of(DeploymentHelperInstallerScript.DNF_PACKAGES.split(" ")));
+            facts.put("dnfEffects", "The alternative DNF branch remains install -y; APT's no-upgrade/no-remove guarantees do not apply to DNF.");
+            facts.put("aptDownloads", mirror.isPresent()
+                ? "Runtime freezes URI/name/size/SHA256 from one selected metadata set, authenticates package sources and installs with --no-download. This is not a complete pre-approved transaction or a blanket version pin."
+                : "Native configured APT sources; mirror object freezing is not asserted for this unwrapped request.");
+            facts.put("limits", "Package maintainer scripts and service effects remain possible; NEEDRESTART_MODE=l is not a blanket service-change ban. Existing readiness checks still must pass; no retry without these protections is introduced. No live state, transaction outcome or permission is asserted. Compare complete source and effects against the referenced actual frozen workflow request.");
+            return Collections.unmodifiableMap(facts);
+        } finally {
+            Arrays.fill(input, (byte) 0);
+        }
+    }
+
     public static Map<String, Object> describe(String executable) {
         return describe(executable, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original());
     }

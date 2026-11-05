@@ -189,7 +189,7 @@ class RuntimeTests(unittest.TestCase):
             transfer(policy, 'NODE_PACKAGE', 'https://origin.invalid/cycle', self.path, validator=recursive)
         self.assertEqual(2, COUNTS['/good/cycle'])
 
-    def apt_fixture(self, manager='apt-get', error='', scheme='https', ipv6=False, authentication=False):
+    def apt_fixture(self, manager='apt-get', error='', scheme='https', ipv6=False, authentication=False, arguments=None):
         endpoints = [self.endpoint('apt-missing'), self.endpoint('apt-good')]
         for endpoint in endpoints:
             selected = scheme + '://' + ('[::1]' if ipv6 else 'apt-fixture.invalid') + '/' + endpoint['providerId'] + '/'
@@ -202,7 +202,8 @@ class RuntimeTests(unittest.TestCase):
         log = directory / 'native-apt.jsonl'
         policy_path = directory / 'policy.json'
         policy_path.write_text(json.dumps(policy.document))
-        arguments = ['-y', 'install', 'demo=1-1'] if manager == 'apt-get' else ['policy', 'demo']
+        if arguments is None:
+            arguments = ['-y', 'install', 'demo=1-1'] if manager == 'apt-get' else ['policy', 'demo']
         command = RUNTIME['mirror_system_command'](policy, manager, arguments)
         entry = '\nwtl_' + ('apt' if manager == 'apt-get' else 'apt_candidate') + ' "$@"\n'
         self.assertTrue(command[2].endswith(entry))
@@ -251,6 +252,27 @@ wtl_apt_configure_download() {
         self.assertEqual(1, len([item for item in records if item['phase'] == 'install']))
         self.assertEqual(1, COUNTS['/apt-good/demo.deb'])
         self.assertEqual(2, COUNTS['/apt-missing/demo.deb'])
+
+    @unittest.skipUnless(len(sys.argv) > 3, 'Requires exact production-generated helper APT arguments')
+    def test_native_helper_package_flags_reach_plan_and_final_no_download(self):
+        batches = json.loads(pathlib.Path(sys.argv[3]).read_text(encoding='utf-8'))
+        self.assertEqual(3, len(batches))
+        for arguments in batches:
+            with self.subTest(arguments=arguments):
+                (pathlib.Path(self.temp.name) / 'native-apt.jsonl').unlink(missing_ok=True)
+                process, records = self.apt_fixture(arguments=arguments)
+                self.assertEqual(0, process.returncode, process.stderr.decode(errors='replace'))
+                plans = [record for record in records if record['phase'] == 'plan']
+                installs = [record for record in records if record['phase'] == 'install']
+                self.assertEqual(2, len(plans))
+                self.assertEqual(1, len(installs))
+                for record in plans + installs:
+                    self.assertEqual(arguments, record['arguments'][-len(arguments):])
+                    for flag in ('--no-upgrade', '--no-remove', '--no-install-recommends'):
+                        self.assertIn(flag, record['arguments'])
+                self.assertIn('--print-uris', plans[-1]['arguments'])
+                self.assertIn('--download-only', plans[-1]['arguments'])
+                self.assertIn('--no-download', installs[0]['arguments'])
 
     def test_apt_permission_error_cannot_be_misclassified_as_missing_candidate(self):
         process, records = self.apt_fixture(error='permission')
@@ -548,4 +570,5 @@ wtl_apt_configure_download() {
 
 
 if __name__ == '__main__':
-    unittest.main(argv=[sys.argv[0]], verbosity=2)
+    selected = ['RuntimeTests.test_native_helper_package_flags_reach_plan_and_final_no_download'] if len(sys.argv) > 3 else []
+    unittest.main(argv=[sys.argv[0]] + selected, verbosity=2)

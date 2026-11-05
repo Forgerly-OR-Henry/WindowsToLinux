@@ -82,6 +82,51 @@ final class DeploymentMirrorRuntimeTest {
         }
     }
 
+    @Test
+    void nativeHelperAptPolicyReachesPlanAndFinalNoDownloadArguments() throws Exception {
+        Path directory = Files.createTempDirectory("native-helper-apt-");
+        try {
+            var installer = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.class;
+            var scripts = List.of(
+                gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.render(),
+                gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.renderFiles(),
+                gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.renderTracked(
+                    UUID.randomUUID(), UUID.randomUUID(), "a".repeat(64), "b".repeat(64)));
+            var batches = new ArrayList<List<String>>();
+            for (String script : scripts) {
+                var invocation = java.util.regex.Pattern.compile("(?m)^\\s*deployment_apt (.* install .*)$").matcher(script);
+                assertTrue(invocation.find(), installer.getSimpleName());
+                var arguments = List.of(invocation.group(1).trim().split(" +"));
+                assertFalse(invocation.find(), "Only one native APT install per installer");
+                assertTrue(arguments.containsAll(List.of("--no-upgrade", "--no-remove", "--no-install-recommends")));
+                assertEquals(List.of(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.APT_PACKAGES.split(" ")),
+                    arguments.subList(arguments.indexOf("--no-install-recommends") + 1, arguments.size()));
+                batches.add(arguments);
+            }
+            Path runtime = directory.resolve("runtime.py");
+            Files.writeString(runtime, DeploymentMirrorRuntime.runtimeSource(), StandardCharsets.UTF_8);
+            Path test = directory.resolve("runtime_test.py");
+            for (String resource : List.of("runtime_test.py", "apt_native_fixture.py")) {
+                try (var stream = getClass().getResourceAsStream(resource)) {
+                    if (stream == null) throw new IOException("Native APT test resource absent");
+                    Files.copy(stream, directory.resolve(resource));
+                }
+            }
+            Path argumentsFile = directory.resolve("native-helper-apt-arguments.json");
+            Files.writeString(argumentsFile, new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(batches));
+            var command = new ArrayList<String>();
+            if (System.getProperty("os.name").startsWith("Windows")) command.addAll(List.of("py", "-3"));
+            else command.add("python3");
+            command.addAll(List.of(test.toString(), runtime.toString(), "unused-metadata", argumentsFile.toString()));
+            String output = execute(directory, command, Duration.ofSeconds(60));
+            System.out.println(output);
+            assertTrue(output.contains("OK"), output);
+            assertFalse(output.contains("FAILED"), output);
+        } finally {
+            cleanup(directory);
+        }
+    }
+
     private static String execute(Path directory, List<String> command, Duration timeout) throws Exception {
         Path log = directory.resolve("process-" + UUID.randomUUID() + ".log");
         var builder = new ProcessBuilder(command).directory(directory.toFile()).redirectErrorStream(true)

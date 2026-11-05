@@ -74,7 +74,7 @@ public final class DeploymentHelperInstallerScript {
               if command -v apt-get >/dev/null; then
                 export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
                 deployment_apt -o DPkg::Lock::Timeout=300 update
-                deployment_apt -o DPkg::Lock::Timeout=300 install -y --no-remove --no-install-recommends %s
+                deployment_apt -o DPkg::Lock::Timeout=300 install -y --no-upgrade --no-remove --no-install-recommends %s
               elif command -v dnf >/dev/null; then
                 deployment_dnf install -y %s
               else printf 'PREPARE_REJECT=platform-package-manager\\n'; exit 64; fi
@@ -380,7 +380,7 @@ public final class DeploymentHelperInstallerScript {
             if command -v apt-get >/dev/null; then
               export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
               deployment_apt -o DPkg::Lock::Timeout=300 update
-              deployment_apt -o DPkg::Lock::Timeout=300 install -y --no-remove --no-install-recommends %s
+              deployment_apt -o DPkg::Lock::Timeout=300 install -y --no-upgrade --no-remove --no-install-recommends %s
             elif command -v dnf >/dev/null; then
               deployment_dnf install -y %s
             else printf 'PREPARE_REJECT=platform-package-manager\\n'; exit 64; fi

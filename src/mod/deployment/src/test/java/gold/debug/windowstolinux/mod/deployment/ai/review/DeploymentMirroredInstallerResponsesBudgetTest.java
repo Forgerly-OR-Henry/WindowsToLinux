@@ -27,8 +27,20 @@ class DeploymentMirroredInstallerResponsesBudgetTest {
     }
 
     private void verifyFullResponses(String kind) throws Exception {
-        try(var fixture=new MirroredInstallerTestFixture();var command=fixture.request(fixture.installer(kind,true))) {
-            var facts=fixture.facts(kind,command);
+        verifyFullResponses(kind, false);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings={"PLAIN","FILES","TRACKED"})
+    void assistedNativePackageFactsAndActualWorkflowFitCompleteResponsesWithoutWeakeningGates(String kind) throws Exception {
+        verifyFullResponses(kind, true);
+    }
+
+    private void verifyFullResponses(String kind, boolean assistedFacts) throws Exception {
+        try(var fixture=new MirroredInstallerTestFixture();var command=fixture.request(fixture.installer(kind,true));
+            var assisted=assistedFacts?new DeploymentNativeHelperPackageImpactTest.Assisted(fixture):null) {
+            var facts=new LinkedHashMap<String,Object>(fixture.facts(kind,command));
+            if(assisted!=null) facts.put("currentCommandEvidence",assisted.scope.facts(fixture.intent(kind,command),command,fixture.task));
             String inner=DeploymentAiJson.facts(facts,ONE_MIB);
             System.out.println("MIRRORED_RESPONSES_INNER kind="+kind+" factsCharacters="+inner.length()+" ceiling="+ONE_MIB);
             var conversation=fixture.conversation();
