@@ -1,5 +1,19 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
+## 2026-11-06 R16-P05单次raw资格通过；实际启动在monitor-first前失败
+
+当前以本节为准，以下P01/P02/P03及旧轮记录保留为各自历史检查点。R16代码HEAD仍为`92f35176…`；P05[正式发布](../../../.ai-workspace/evidence/assisted-r16-p05-parent-control-review-20261106-01/parent-formal-promotion-16.json)绑定SOURCE `623d5add…`、P `7b013fdc…`、R `b4d916e5…`。旧preview-02因辅助公开证据输入门退出1、无输出，随后独立新review15-02和preview-03通过；原失败保留，不称P05全程零异常。10秒、25次及0.2秒规则保持，15秒提案未批准；P04仅为未批准提案预留，未创建或执行。
+
+[唯一raw资格结果](../../../.ai-workspace/evidence/assisted-r16-p05-execution-supervisor-20261106-01/fullguard-16-p05-ten-second-01-result.json)为 **PASS**：`fullGuardCompleted=true`，17个legacy输出、30个完整输出及4310成员全部完成，耗时 **9.073669000004884秒 < 10秒**，原helper及outer session69650均退出0。结果901B、SHA `35c30b23…`；[资格收尾](../../../.ai-workspace/evidence/assisted-r16-p05-published-raw-qualification-20261106-01/HANDOFF.md)记录原身份退出和自有tmp清理。这仅证明single raw guard资格，不包含observer framing、连续coverage或业务，不与旧P03诊断拼接，也不推算百分比性能提升。
+
+随后按binding `775697e4…`唯一实际启动installed launcher，未重启。[原stderr](../../../.ai-workspace/evidence/assisted-r16-p05-execution-supervisor-20261106-01/supervisor-real-01.stderr.log)为524B、SHA `36e042ec…`：supervisor在`main:410`执行`from release_bindings16 import verify_public_closure`时抛出`ModuleNotFoundError`，状态为 **FAILED_BEFORE_MONITOR_FIRST**。实际使用Python `-I -B -u`；隔离模式缺少同目录导入引导是当前机制判断，独立候选及isolated smoke另段验证，不写为已修复。旧installed/source/binding/review均未修改。
+
+[启动失败交接](../../../.ai-workspace/evidence/assisted-r16-p05-execution-owner-20261106-01/HANDOFF.md)保留原launcher34420、wrapper22072、supervisor37164的actual native handle wait/exit1。controller9612的exec返回对象未序列化，后续undefined session的bookkeeping失败，其 **actual native exit仍为UNKNOWN**；不得由进程消失或下层exit1推断。[精确身份快照](../../../.ai-workspace/evidence/assisted-r16-p05-execution-owner-20261106-01/failure-native-presence-and-temp-snapshot-real-01.json)按四个原PID及7位UTC创建时间核实均不存在。CIM精确父级观察的客户端拒绝保留为`HANDLE_OBSERVATION_ERROR`，不是自动审批拒绝，也未扩大为全主机扫描；该快照仅见父预建空tmp目录；父随后另段[非递归清理三个预建空目录](../../../.ai-workspace/evidence/assisted-r16-p05-parent-control-review-20261106-01/parent-failed-launch-empty-temp-cleanup.json)，逐路径核实不存在，原失败artifact保持。
+
+real-01目录、monitor、driver及commands均未创建，没有INITIAL checkpoint或READY，commandsPublished=0。inventory、plan、apply、独立after、八项原业务及STATIC全部 **UNLAUNCHED**，R16业务启动数0、STATIC启动数0；本次是准备/启动前置失败，不是R16业务轮结束，不能据此转STATIC。P01/P02/P03原资格FAILED，以及R15的FAILED1／UNKNOWN1／UNLAUNCHED6、完整首过0/8均保持。
+
+下一步仅在独立新候选验证后，重新准备、冻结及取得新资格，再按monitor-first及完整四阶段推进R16原轮。用户要求仍为实际完成R16后独立验证STATIC八项；若STATIC影响代码，先修复并完成直接相关验证，再回到AI辅助测试。后续新冻结尚未建立，本次记录校准不代表总目标完成。
+
 ## 2026-11-06 R16-P03完整校验完成，10秒资格失败；业务仍未启动
 
 R16-P03保持代码HEAD `92f35176…`、八项目顺序、FTP 8 MiB及HIGH/HIGH参数，仅将辅助完整文件摘要读取改为无缓冲64 KiB，并把固定Python的`hashlib.py`直接纳入502项外部校验集合。实际metadata及两个不同批准状态的preview原次均退出0；父独立核对八项条件后[发布新九件](../../../.ai-workspace/evidence/assisted-r16-p03-parent-control-review-20261106-01/parent-formal-promotion-16.json)，保留P01/P02原件。preview首辅助路径检查失败和父发布前辅助数组检查失败均发生在相应实际调用之前，原错误保留，不表述为全流程无异常。
