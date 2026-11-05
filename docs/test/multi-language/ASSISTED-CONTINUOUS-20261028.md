@@ -1,5 +1,13 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-05 R15九件冻结已发布；严格校验通过，服务器准备待启动
+
+父已独立审核实际PREVIEW九件、固定模型/预算/FTP负载及八项先决条件。[正式发布回执](../../../.ai-workspace/evidence/assisted-r15-final-parent-review-20261105-01/parent-formal-promotion-15-01.json)记录support6→SOURCE→P→R的CreateNew暂存与无覆盖原子发布，R在其余8件实际字节核对后最后落盘；SOURCE为`ad0a513c…`，P为`b0ce67f3…`，R为`134b0eb7…`，代码仍为已本地提交的`afd555fd…`。此前preview-02被自动审批在CreateProcess前拒绝，0进程/0输出；父补齐[两聊天的直接用户请求及active goal证据](../../../.ai-workspace/evidence/assisted-r15-final-parent-review-20261105-01/authorization-source-evidence-preview02-15.json)后，同一自动审批允许准确调用，未绕过或重启旧进程。原拒绝、辅助失败和UNKNOWN均保留。
+
+[唯一实际strict fullguard](../../../.ai-workspace/evidence/assisted-r15-execution-supervisor-20261105-01/fullguard-15-ten-second-01-result.json)自然退出0，17个legacy子集、30个完整输出、4304成员均通过，单次raw耗时5.83493秒，小于10秒；observer原10秒/25次/0.2秒规则不变。这不包含observer framing，不证明连续或有负载覆盖，也不是全套测试或真实模型通过。[原句柄及临时目录收尾](../../../.ai-workspace/evidence/assisted-r15-published-fullguard-qualification-20261105-01/parent-fullguard-closeout-15.json)确认3原身份已退、实际调用namespace0、signals0、专属tmp清。
+
+新real-01监督器职责已另开，只授权monitor先取得完整checkpoint后再启动driver，尚未投递任何命令；完整四阶段服务器准备与八个原项目均仍待执行，不复用旧轮成功，长期目标未达成。
+
 ## 2026-11-05 控制源已安装；真实元数据准备通过，发行未完成
 
 [最终控制v2机制](../../../.ai-workspace/evidence/assisted-r15-final-control-integration-20261105-01/pure-data-check-result-v2-15.json)以129个公开叶完成3个producer、2个consumer正例及34个内存反例；未重跑既有测试组。随后PREVIEW消费者源审发现旧路径门遗漏22个精确公开源码/class叶，仅修正assembler的路径集合，其余31个函数及模块AST保持相同。[首次定点检查](../../../.ai-workspace/evidence/assisted-r15-public-leaf-execution-20261105-01/execution-result.json)在UTF-8-SIG懒加载时被审计拒绝，消费者用例尚未开始，失败保留；新版本在审计前显式加载编码模块，不扩大读取白名单。[v2定点](../../../.ai-workspace/evidence/assisted-r15-final-public-leaf-admission-20261105-01/public-leaf-check-result-v2-15.json)随后通过215个独立原件/214个context路径、22个新增叶、37项不打开文件的路径拒绝及2项字节身份篡改拒绝，audit四项0。这些是不同范围的检查，不合计为一次全量通过。
