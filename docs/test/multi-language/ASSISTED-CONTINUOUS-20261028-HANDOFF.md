@@ -1,10 +1,18 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
+## 2026-11-05 R16包边界本地修复完成；诊断导出候选另段准备
+
+[R16包边界整合](../../../.ai-workspace/evidence/assisted-r16-package-boundary-integration-20261105-01/HANDOFF.md)已在独立分支本地提交`90c41ef426b38b3d97b7b43bc22f37e24c7fe32d`，范围为3个生产文件和5个直接测试/资源，未推送。实际构建、渲染、测试编译和定点原等待均退出0，六个suite的十个指定方法共27项全部通过；没有执行全套或重复旧39项。完整Responses编码plain/files/tracked分别为921235/916937/924280字节；原1 MiB门、完整源码恢复、aggregate及encoded超限拒绝、独立DENY及fresh exact grant保持。真实渲染更新plain/tracked固定SHA，helper payload原SHA保持。
+
+[收尾](../../../.ai-workspace/evidence/assisted-r16-package-boundary-integration-20261105-01/CLOSEOUT.json)核退21个已记录原身份、任务namespace与signals为0、专属tmp清；初始构建CIM观察缺口及后续补核保留，没有重跑成功构建。这是本地限定验证，不覆盖真实APT、厂商模型API、Linux或业务首过。FTP安全日志导出修复仍在独立source-only段；R16正式冻结、当前连接证明、完整服务器准备和新八项尚未开始。R15 FAILED/UNKNOWN/六项未启动及0/8不变。
+
 ## 2026-11-05 R15已收口：Task Board失败、FTP未知，完整首过0/8
 
 R15本轮四阶段服务器准备均通过；随后仅启动固定顺序的前两个原项目。Task Board原次为FAILED / `DEPLOYMENT_COMMAND_REVIEW_DENIED`；FTP根任务保留UNKNOWN / `DEPLOYMENT_GRAPH_REMOTE_UNCONFIRMED`，其原native退出1及JUnit失败不能把业务UNKNOWN改判为普通FAILED。其余六项未启动，完整首过为 **0/8**。父在原队列供给quit正常收口，没有重放、恢复、对账或跨轮拼接。[父公开关闭索引](../../../.ai-workspace/evidence/assisted-r15-round-close-20261105-01/round-closed-public-index-15.json)保留本轮矩阵和原件身份；[不透明state保留索引](../../../.ai-workspace/evidence/assisted-r15-round-close-20261105-01/opaque-state-retention-index-15.json)补齐七个根目录、125个文件原位SHA，没有复制、修改或解密state。
 
-[执行收尾](../../../.ai-workspace/evidence/assisted-r15-execution-supervisor-20261105-01/execution-owner-final-handoff-real-01.json)确认wrapper、supervisor和driver原等待退出0；monitor由supervisor收尾终止、原等待退出1。十个原进程身份已核退，两精确临时根已清。65次checkpoint没有记录完整性gap或observer UNKNOWN，但这只是采样观察，不代表FTP业务已知或连续覆盖。失败及UNKNOWN数据库未打开、解密或恢复，R15冻结输入保持原身份。
+[执行收尾](../../../.ai-workspace/evidence/assisted-r15-execution-supervisor-20261105-01/execution-owner-final-handoff-real-01.json)确认wrapper、supervisor和driver原等待退出0；monitor由supervisor收尾终止、原等待退出1。十个原进程身份已核退，两精确临时根已清。65次checkpoint没有记录完整性gap或observer UNKNOWN，但这只是采样观察，不代表FTP业务已知或连续覆盖。收尾期间没有再打开、解密或恢复失败及UNKNOWN数据库，R15冻结输入保持原身份。
+
+[FTP只读诊断](../../../.ai-workspace/evidence/assisted-r15-ftp-unknown-diagnostic-20261105-01/REPORT.md)随后确认：FTP自己的helper安装获批且exit0，后续toolchain.prepare原生DENY，经整图异常路径返回UNKNOWN；其实际异常身份和拒绝理由仍未公开，不能认定已可安全FAILED。原fixture在UNKNOWN之后曾尝试`captureDenials→open()`，被仍占用的数据库锁拒绝，这是后续诊断导出缺陷。拟在独立段移除重开，改从原活跃日志捕获既有脱敏理由及稳定错误元数据；不改变原UNKNOWN，也不把helper包候选当作FTP同因修复。
 
 [包边界候选](../../../.ai-workspace/evidence/assisted-r16-package-boundary-candidate-20261105-01/HANDOFF.md)仅完成源码准备和静态检查：APT增加`--no-upgrade`，保留禁止删除及readiness；依据完整实际脚本、任务、服务器和真实工作流提供准确影响摘要，不承诺依赖闭包或服务零变化，也不代替独立批准。下一职责在新R16隔离树整合、实际渲染更新固定摘要、运行直接相关定点并本地提交；当前尚未验证为正式修复。FTP UNKNOWN原因另段只读诊断。修复后仍须重新冻结、完整四阶段准备和全新固定八项，长期目标未达成。
 
