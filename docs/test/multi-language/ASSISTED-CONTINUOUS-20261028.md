@@ -1,5 +1,13 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-05 产物与公开契约段完成；最终控制源仍在审查
+
+[当前产物资格](../../../.ai-workspace/evidence/assisted-r15-current-artifact-qualification-20261105-01/artifact-qualification-handoff-15.json)已实际完成：3个Mod、16个唯一且未初始化的provider来源、12个纯超时反射场景通过；30个输出目录4304成员、16个JAR全CRC且无重复成员、53个公开依赖及54项类路径前后相同。12个native阶段及外层自然退出0，15个原进程身份核退，专属tmp已清。这不是Runtime、数据库、模型或真实业务资格。[R14关闭与健康凭据契约](../../../.ai-workspace/evidence/assisted-r15-retained-healthy-contract-20261105-01/pure-data-check-result-15.json)另以50个公开原件完成2个真实正例和39个内存反例；API的28个反例及产物的12个场景未重复执行。
+
+私密AI配置已在本机按245字节opaque身份复制到新R15目标，写入前限制为HOST1001与SYSTEM；未解析或输出其内容。当前configure、LiveModelSettings及driver参数的静态边界已核，不代表当前saved profile或API已执行。旧主机快照因PowerShell日期转换丢失原始创建时间格式而不合格，原件保留；[新v2实际采样](../../../.ai-workspace/evidence/assisted-r15-final-host-recheck-20261105-01/final-host-private-operational-recheck-15.v2.json)保留16条原PID与创建时间文本并确认原身份已退、三个运行及三个准备namespace为空，34160明确为PID复用，未操作该当前进程。快照只证明采样时点。
+
+[最终控制候选](../../../.ai-workspace/evidence/assisted-r15-final-control-integration-20261105-01/README.md)尚未安装或执行机制检查；独立源码审查发现两处aux仍为待绑定HEAD及一处当前轮次标识残留，先保留原候选并修订，不带缺陷冻结。实际BASE仍未发行，四阶段服务器准备和R15八项目原次均未开始，长期目标未达成。
+
 ## 2026-11-05 两个前置段完成：有限准入契约与R15正常凭据连接
 
 [有限准入候选](../../../.ai-workspace/evidence/assisted-r15-api-admission-contract-20261105-01/HANDOFF-15.md)已将App限定字节证明、R14实际历史API链、本次39项及当前产物上下文分别接线。唯一纯数据检查1正例及28内存反例通过，完整消费42个公开原件；候选尚未替换BASE15，正式生成锁仍关闭，不代表新的provider/API成功。
