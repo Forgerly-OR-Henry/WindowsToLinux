@@ -1,5 +1,13 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-06 R16-P03完整校验完成，10秒资格失败；业务仍未启动
+
+R16-P03保持代码HEAD `92f35176…`、八项目顺序、FTP 8 MiB及HIGH/HIGH参数，仅将辅助完整文件摘要读取改为无缓冲64 KiB，并把固定Python的`hashlib.py`直接纳入502项外部校验集合。实际metadata及两个不同批准状态的preview原次均退出0；父独立核对八项条件后[发布新九件](../../../.ai-workspace/evidence/assisted-r16-p03-parent-control-review-20261106-01/parent-formal-promotion-16.json)，保留P01/P02原件。preview首辅助路径检查失败和父发布前辅助数组检查失败均发生在相应实际调用之前，原错误保留，不表述为全流程无异常。
+
+[本冻结唯一raw资格结果](../../../.ai-workspace/evidence/assisted-r16-p03-execution-supervisor-20261106-01/fullguard-16-p03-ten-second-01-result.json)完整完成17个legacy输出、30个完整输出及4310成员检查，但耗时 **10.969425799994497秒**，原Python退出70，因此资格为 **FAILED**。此前9.461824秒的未授信组件诊断不代替此次资格；未重试、预热、改判或应用尚未批准的15秒提案，现行10秒、25次上限及UNKNOWN规则保持。
+
+[资格职责收尾](../../../.ai-workspace/evidence/assisted-r16-p03-published-fullguard-qualification-20261106-01/HANDOFF.md)确认Python、launcher和收尾shell精确身份退出、signals=0、两个专属tmp已清。此次只测单次原始guard，没有执行observer framing或证明连续coverage。三次准备失败均不算R16八项目业务闭合；monitor、driver、完整四阶段服务器准备、八项业务及STATIC仍未启动，继续处理完整校验开销，R16原轮结束后再进入STATIC。
+
 ## 2026-11-06 R16-P02完整校验完成但10秒资格仍失败
 
 R16-P02在相同代码HEAD `92f35176…` 下独立重新冻结，保留P01原件。辅助guard修正LOC16目录，并采用逐祖先原生属性查询和4线程/8项有界待收割队列；完整路径、SHA、目录检查和失败收尾规则保持。新metadata及两次不同审批状态的preview原次均退出0，父独立审查后按support6→SOURCE→P→R最后[发布新九件](../../../.ai-workspace/evidence/assisted-r16-p02-parent-control-review-20261106-01/parent-formal-promotion-16.json)，没有覆盖旧冻结。
