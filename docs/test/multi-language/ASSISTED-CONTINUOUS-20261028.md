@@ -1,5 +1,13 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-05 R15编译通过；31个定点中27通过、4个请求预算错误
+
+R15必要编译的17个reactor通过，未执行全量测试。随后唯一一次31个定点用例得到27通过、0断言失败、4错误、0跳过；[原始结果与收尾](../../../.ai-workspace/evidence/assisted-r15-build-targeted-20261105-01/README-build02-test01.md)保留全部结果。四个错误均为完整审批请求预算：三种安装器在真实Responses编码门拒绝，CUSTOM在加入会话导航后先超过facts门。原失败未记录最终编码字节数，不补造。容量、完整源码重构、覆盖及四个旧消费者方法已通过；25个已记录进程身份核退，专属tmp已清。
+
+后续修复只针对失败及直接受影响范围：去掉导航重复正文，并在同一次标准API请求中完整承载待审源码，保留原facts、aggregate及实际编码的1 MiB检查、独立DENY与fresh host grant。当前方案尚未验证、代码未提交，没有R15冻结或真实八项目原次，长期目标仍未达成。
+
+用户明确职责边界：部署Mod只通过主App标准API发起LANGUAGE、APPROVAL、VISION、VOICE四用途请求，不为模型或厂商特化；主App按用途配置选取模型，并由厂商适配层处理差异。Mod继续继承用途设置及opaque续接，不复制厂商参数规则；本次预算修复是共性证据传输修改。
+
 ## 2026-11-05 R14八原次0/8已封存；R15隔离修复验证中
 
 R14八个固定原始项目各执行一次，原native均退出1、原root均FAILED，JUnit合计8／8失败／0错误／0跳过，完整业务、交付和清理均未通过。七项返回`SHARED_REVIEW/evidence/IllegalArgumentException`；CSV由独立模型拒绝容量命令，公开原因是继承PATH中的stat缺少可信依据。前序命令的APPROVE／host grant不代表最终拒绝命令通过；没有重试、拼轮或把监督器退出0当成功。
