@@ -1,5 +1,13 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-05 CUSTOM统计段已完成；另开无损表示实现段
+
+[纯本地统计](../../../.ai-workspace/evidence/assisted-r15-custom-evidence-statistics-20261105-01/HANDOFF-execution-15.md)测得RAW为1034129字符，完整facts为1053654字符，超过原1048576字符门5078。相同worker的JSON字符串为81029字符、原文为78961字符，各出现一次且均有执行用途。原门正常拒绝，消息构建、retain和模型请求均0；这是新synthetic任务的字段统计，不是原1409相同UUID／字节的重建，也未证明wire预算通过。四个原生身份均wait0并核退，内外tmp已清。
+
+独立只读设计已结束，进入新的实现工作段：仅CUSTOM将完整worker作为一个必读source，以严格JSON字符串和原文引用重构两处使用；保留原stdin、目标、摘要范围、完整覆盖及USER角色，补齐跨段导航和镜像格式识别。V1／V2不放宽，App及其预算门不改。实现和定点尚未完成，R15仍未冻结或开始真实八项目原次。
+
+[App静态字节段](../../../.ai-workspace/evidence/assisted-r15-app-api-byte-delta-20261105-01/README.md)另外确认了限定源码、类、资源及公共依赖与R14冻结的对应关系；13个App／test-support JAR容器不同，entry内容及CRC相同。此结果不代表当前模型配置、API或四capability已验证。
+
 ## 2026-11-05 R15源码承载：新30个定点28通过、2错误
 
 源码承载候选必要编译的16个reactor通过，未运行全量测试；随后[唯一30个定点](../../../.ai-workspace/evidence/assisted-r15-carrier-build-targeted-20261105-02/README-result-15.md)实际28通过、0断言失败、2错误、0跳过。新增22个承载反例全部通过。纯本地真实Responses编码实测PLAIN为918572字节、FILES为914274字节、TRACKED为921617字节，均在1048576字节内；CUSTOM先在完整facts字符门拒绝，尚未获得编码大小。既有31个定点的27通过／4错误原件不变，两个选择集不能相加称为同一次通过。
