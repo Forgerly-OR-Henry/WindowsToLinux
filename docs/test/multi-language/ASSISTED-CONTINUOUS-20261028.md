@@ -1,12 +1,16 @@
 # ASSISTED 连续首过验证记录
 
-## 2026-11-05 R16诊断及正常来源夹具已提交；当前产物资格待收口
+## 2026-11-05 R16当前产物和既有健康源检查已完成；继续冻结前置
 
 [活跃诊断修复](../../../.ai-workspace/evidence/assisted-r16-active-diagnostics-integration-20261105-01/HANDOFF.md)已本地提交`6c2069c5f0ba67f6b84837a1f39f01a727f42009`，限定9方法全部通过。失败后重开数据库补读的路径已删除，专用脱敏拒绝理由及稳定异常类型/问题码从原活跃日志观察；诊断失败隔离、Graph UNKNOWN及业务关闭流程保持。原R15的实际拒绝语义及caught类型仍未知，不由新日志功能反填旧结果。
 
 [正常来源工作区夹具](../../../.ai-workspace/evidence/assisted-r16-credential-source-workspace-20261105-01/HANDOFF.md)另本地提交`92f351761215ba6b110a3e4a1a2c22d18f671528`。新增显式来源工作区，默认当前工作区；确切normal state参数保持，名称收窄为`agent-live-credential-*`，复用既有规范路径/重解析检查与Security清零流程。3个普通路径方法原次通过；junction创建两次因沙箱Access denied失败，获自动审批后仅该失败方法通过，原失败保留，没有一次4/4 clean声称。两段均已核退出并清理专属tmp，未推送。
 
-本轮实际使用仍须在新guard、driver和P同时精确固定ROOT15及唯一健康normal；夹具参数本身不授予外部库权限。未创建或迁移新normal，当前产品连接证明仍待执行，新业务状态仍须新ROOT16路径。一次必要离线skipTests打包已补齐files输出并刷新JAR，当前完整产物资格尚待收口；新metadata/SOURCE/P/R、四阶段服务器准备和八项目尚未启动。R15的FAILED、UNKNOWN、六项未启动及0/8保持。
+本轮实际使用仍须在新guard、driver和P同时精确固定ROOT15及唯一健康normal；夹具参数本身不授予外部库权限。[既有健康源当前检查](../../../.ai-workspace/evidence/assisted-r16-healthy-source-check-preparation-20261105-01/HANDOFF-execution-16.md)已完成一次产品servers.check，原任务`2252a1a8-abab-4925-9532-fb6146b83cdc`为SUCCEEDED，认证指纹与已授权AIkc pin一致。沿用产品既有信任、无新提示；原等待退出0，Runtime已关闭。没有创建、复制或迁移新normal；正常库允许连接观测写入，本次三个文件仅.mv.db改变，不声称数据库字节未变、历史凭据相等或物理SSH次数已测量。新业务状态仍须新ROOT16路径。
+
+[当前产物资格](../../../.ai-workspace/evidence/assisted-r16-current-artifact-qualification-20261105-01/HANDOFF.md)已收口：一次必要离线skipTests打包退出0，随后核实3717个源、30个完整输出目录4310成员、16个JAR、53项闭包/54项有序classpath、16个未初始化provider和12项纯反射。当前deployment.jar为`a709b804d6c490bdedf6623de64911e3f7314af1a03ba444193526ca3dd53518`。原反射guard失败保留，仅增加纯JDK Pattern.compile检查并独立补齐剩余步骤；不是原driver所有阶段一次全过。已录原身份退出、任务tmp清；该职责完整CIM namespace观察仍为未知，不补记0。新metadata/SOURCE/P/R、四阶段服务器准备和八项目尚未启动；API/private及当前host绑定继续准备。R15的FAILED、UNKNOWN、六项未启动及0/8保持。
+
+用户已明确执行顺序：R16持续推进至本轮收口，中途不切换。随后单独进行一轮产品STATIC部署验证，检查这些代码改动对静态路径的影响；若发现问题，先修复并完成直接相关验证，再返回AI辅助测试；没有问题也继续AI辅助测试。静态轮次独立准备、独立记录，不与R16拼接；这不是要求全项目单元测试。
 
 ## 2026-11-05 R16包边界本地修复完成；诊断导出候选另段准备
 
