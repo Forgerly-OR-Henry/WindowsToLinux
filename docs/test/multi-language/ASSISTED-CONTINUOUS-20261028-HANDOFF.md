@@ -1,5 +1,13 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
+## 2026-11-05 R15已收口：Task Board失败、FTP未知，完整首过0/8
+
+R15本轮四阶段服务器准备均通过；随后仅启动固定顺序的前两个原项目。Task Board原次为FAILED / `DEPLOYMENT_COMMAND_REVIEW_DENIED`；FTP根任务保留UNKNOWN / `DEPLOYMENT_GRAPH_REMOTE_UNCONFIRMED`，其原native退出1及JUnit失败不能把业务UNKNOWN改判为普通FAILED。其余六项未启动，完整首过为 **0/8**。父在原队列供给quit正常收口，没有重放、恢复、对账或跨轮拼接。[父公开关闭索引](../../../.ai-workspace/evidence/assisted-r15-round-close-20261105-01/round-closed-public-index-15.json)保留本轮矩阵和原件身份；[不透明state保留索引](../../../.ai-workspace/evidence/assisted-r15-round-close-20261105-01/opaque-state-retention-index-15.json)补齐七个根目录、125个文件原位SHA，没有复制、修改或解密state。
+
+[执行收尾](../../../.ai-workspace/evidence/assisted-r15-execution-supervisor-20261105-01/execution-owner-final-handoff-real-01.json)确认wrapper、supervisor和driver原等待退出0；monitor由supervisor收尾终止、原等待退出1。十个原进程身份已核退，两精确临时根已清。65次checkpoint没有记录完整性gap或observer UNKNOWN，但这只是采样观察，不代表FTP业务已知或连续覆盖。失败及UNKNOWN数据库未打开、解密或恢复，R15冻结输入保持原身份。
+
+[包边界候选](../../../.ai-workspace/evidence/assisted-r16-package-boundary-candidate-20261105-01/HANDOFF.md)仅完成源码准备和静态检查：APT增加`--no-upgrade`，保留禁止删除及readiness；依据完整实际脚本、任务、服务器和真实工作流提供准确影响摘要，不承诺依赖闭包或服务零变化，也不代替独立批准。下一职责在新R16隔离树整合、实际渲染更新固定摘要、运行直接相关定点并本地提交；当前尚未验证为正式修复。FTP UNKNOWN原因另段只读诊断。修复后仍须重新冻结、完整四阶段准备和全新固定八项，长期目标未达成。
+
 ## 2026-11-05 R15九件冻结已发布；严格校验通过，服务器准备待启动
 
 父已独立审核实际PREVIEW九件、固定模型/预算/FTP负载及八项先决条件。[正式发布回执](../../../.ai-workspace/evidence/assisted-r15-final-parent-review-20261105-01/parent-formal-promotion-15-01.json)记录support6→SOURCE→P→R的CreateNew暂存与无覆盖原子发布，R在其余8件实际字节核对后最后落盘；SOURCE为`ad0a513c…`，P为`b0ce67f3…`，R为`134b0eb7…`，代码仍为已本地提交的`afd555fd…`。此前preview-02被自动审批在CreateProcess前拒绝，0进程/0输出；父补齐[两聊天的直接用户请求及active goal证据](../../../.ai-workspace/evidence/assisted-r15-final-parent-review-20261105-01/authorization-source-evidence-preview02-15.json)后，同一自动审批允许准确调用，未绕过或重启旧进程。原拒绝、辅助失败和UNKNOWN均保留。
