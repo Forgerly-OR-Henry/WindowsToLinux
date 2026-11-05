@@ -1,5 +1,13 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-05 观测准备中止已收尾；10秒候选待批准，八原项目仍未启动
+
+重装后的SSH已在产品内认证成功。R14真实inventory、plan及apply分别native/JUnit成功，但monitor完整回调超出既定5秒后拒绝，independent-after未运行；准备未完成，八原项目各启动0次，不把三阶段成功拼入下一次准备。原始成功、UNKNOWN及driver退出异常均保留在[real03收尾](../../../.ai-workspace/evidence/assisted-r14-final-metadata-20261105-01/interrupted-prebusiness-cycle-03/closeout-and-retention-14.json)。
+
+随后仅提高本任务monitor优先级的real04也于初始checkpoint前超5秒；实际AboveNormal已核实，driver及产品未启动。[真实收尾](../../../.ai-workspace/evidence/assisted-r14-final-metadata-20261105-01/failed-scheduling-trial-04/actual-closeout-and-revocation-14.json)确认原tool退出1、三原身份已退、自有tmp已清、R再次撤销。失败辅助源码保留，外部supervisor已恢复正常优先级及完整freshness门；冻结observer仍5秒，没有活controller。
+
+[未应用提案](../../../.ai-workspace/evidence/assisted-r14-final-metadata-20261105-01/observer-budget-10-proposal-14-01/README.md)只把只读完整性观测预算5→10秒并改对应说明，4个合成机制用例通过；全部检查、25次上限、late拒绝、UNKNOWN及无执行授权规则不变。这不是实际负载资格，父已请求用户明确批准观测参数变更，答复前不应用。获准后须重新冻结发行，并从四阶段服务器准备开始；既有失败不改判，长期目标仍未达成。此后使用了Astra处理具体性能难题，无Terra/CU或全量suite。
+
 ## 2026-11-05 R14隔离修复及健康连接准备通过；完整新轮未启动
 
 R14代码位于隔离候选`r14f`，本地提交`90ae6fd7d4640d438ee7673f7ba21ae512dc8d4a`，仅五个预期文件，未推送。ASSISTED夹具通过产品save预设官方镜像源（automatic/privacyConsent均false），避免地区IP探测；Coordinator仅对runtime.missing判定的真实必填空项启动预检，保留可编辑纠正字段及最终审阅，提示明确dot仅LIST，路径安全门不变。没有改判Asset旧FAILED或把两项修复说成其最后READ唯一根因。
