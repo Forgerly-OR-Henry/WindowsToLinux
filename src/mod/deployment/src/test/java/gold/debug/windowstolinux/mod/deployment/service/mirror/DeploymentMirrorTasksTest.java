@@ -247,7 +247,10 @@ class DeploymentMirrorTasksTest extends DeploymentRuntimeFixture {
                                 gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper.installationTargets(TARGET, layout)));
                         var evidence = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentFixedCommandProtocol(context).inspect(intent, request, layout, task);
                         var transport = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(evidence.get("mirrorTransport"));
-                        assertEquals(gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.runtimeSource(), transport.path("runtimeSource").asText());
+                        assertFalse(transport.has("runtimeSource"));
+                        assertEquals("/completeExecutableInput/sources/mirrorRuntime", transport.path("runtimeSourcePointer").asText());
+                        assertEquals(gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.runtimeSource(),
+                            new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(evidence).at(transport.path("runtimeSourcePointer").asText()).textValue());
                         assertEquals(task.id().toString(), transport.path("frozenPolicy").path("task").asText());
                         var value = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(evidence.get("completeExecutableInput"));
                         assertEquals(installer, gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.reconstruct(value));

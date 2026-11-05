@@ -114,6 +114,10 @@ public final class DeploymentMirrorTasks {
 
     /** Exposes decoded shipped code alongside its exact encoded executable representation, never secret material. */
     public static Map<String, Object> reviewMaterial(String policy) throws java.io.IOException {
+        return reviewMaterial(policy, null);
+    }
+
+    public static Map<String, Object> reviewMaterial(String policy, Object executableEvidence) throws java.io.IOException {
         var publicPolicy = new ObjectMapper().readTree(policy);
         publicPolicy.path("points").forEach(endpoints -> endpoints.forEach(endpoint -> {
             if (endpoint instanceof com.fasterxml.jackson.databind.node.ObjectNode object) {
@@ -121,11 +125,18 @@ public final class DeploymentMirrorTasks {
                 object.remove("secretRef"); object.put("credentialManaged", managed);
             }
         }));
-        return Map.of("format", "deployment-mirror-transport-review.v1",
-            "runtimeSha256", gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.runtimeSha256(),
-            "runtimeSource", gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.runtimeSource(),
-            "frozenPolicy", publicPolicy,
-            "meaning", "Decoded shipped runtime and frozen public routing data for review of the exact canonical bootstrap. Secret values are supplied separately as opaque input. Source identities and this evidence grant no command permission.");
+        var material = new LinkedHashMap<String, Object>();
+        material.put("format", "deployment-mirror-transport-review.v1");
+        material.put("runtimeSha256", gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.runtimeSha256());
+        var evidence = new ObjectMapper().valueToTree(executableEvidence);
+        if (gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.isMirrored(evidence)) {
+            gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.verify(evidence,
+                gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.reconstruct(evidence));
+            material.put("runtimeSourcePointer", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.MIRROR_SOURCE_POINTER);
+        } else material.put("runtimeSource", gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.runtimeSource());
+        material.put("frozenPolicy", publicPolicy);
+        material.put("meaning", "Complete decoded shipped runtime is supplied inline or at runtimeSourcePointer in this same request, alongside frozen public routing data. Inspect that complete source, not only its SHA. Secret values remain opaque. These bytes grant no permission.");
+        return Collections.unmodifiableMap(material);
     }
 
     /** Recognizes only the complete canonical task-bound wrapper, retaining the original free-script limits. */

@@ -10,6 +10,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 /** Lossless ordered installer evidence. No executable bytes are omitted or executed here. */
 public final class DeploymentInstallerEvidence {
     private static final ObjectMapper JSON = new ObjectMapper();
+    public static final String MIRROR_FORMAT = "ORDERED_SHELL_LITERAL_MIRROR_V2";
+    public static final String CUSTOM_FORMAT = "ORDERED_CUSTOM_DEPENDENCY_WORKER_V1";
+    public static final String CUSTOM_MIRROR_FORMAT = "ORDERED_CUSTOM_DEPENDENCY_WORKER_MIRROR_V1";
+    public static final String MIRROR_SOURCE_POINTER = "/completeExecutableInput/sources/mirrorRuntime";
+    private static final String WORKER_ASSIGNMENT = "DEPENDENCY_WORKER_SOURCE = ";
 
     private DeploymentInstallerEvidence() {
     }
@@ -37,6 +42,18 @@ public final class DeploymentInstallerEvidence {
 
     public static Map<String, Object> describe(String executable, String requiredInstallation,
                                                gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        return describe(executable, requiredInstallation, null, layout);
+    }
+
+    /** The caller must first validate its complete canonical CUSTOM installer and dependency program. */
+    public static Map<String, Object> describeCustom(String executable, String requiredInstallation, String dependencyProgram,
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        Objects.requireNonNull(dependencyProgram);
+        return describe(executable, requiredInstallation, dependencyProgram, layout);
+    }
+
+    private static Map<String, Object> describe(String executable, String requiredInstallation, String dependencyProgram,
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
         String helper = DeploymentManagedHelperBundle.renderScript(layout);
         String entry = DeploymentManagedHelperBundle.renderBuildEntry(layout);
         String quotedHelper = DeploymentHelperInstallerScript.quote(helper);
@@ -47,17 +64,64 @@ public final class DeploymentInstallerEvidence {
             || executable.indexOf(quotedEntry, second + quotedEntry.length()) >= 0
             || !executable.contains(requiredInstallation))
             throw new IllegalArgumentException("Installer must contain the complete unchanged helper installation");
-        var segments = List.of(literal(executable.substring(0, first)), quote("managedHelper"),
-            literal(executable.substring(first + quotedHelper.length(), second)), quote("buildEntry"),
-            literal(executable.substring(second + quotedEntry.length())));
+        String runtime = gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.runtimeSource();
+        String quotedRuntime = DeploymentHelperInstallerScript.quote(runtime);
+        String runtimeLine = "printf '%s' " + quotedRuntime + " >\"$WTL_MIRROR_RUNTIME\"\n";
+        int runtimeLineStart = executable.indexOf(runtimeLine);
+        boolean mirrored = runtimeLineStart >= 0;
+        int runtimeStart = runtimeLineStart + "printf '%s' ".length();
+        if (mirrored && (runtimeStart >= first || executable.indexOf(runtimeLine, runtimeLineStart + 1) >= 0
+            || executable.indexOf(quotedRuntime) != runtimeStart || executable.indexOf(quotedRuntime, runtimeStart + quotedRuntime.length()) >= 0))
+            throw new IllegalArgumentException("Installer mirror runtime insertion is not unique and ordered");
+        var sources = new LinkedHashMap<String, String>();
+        var segments = new ArrayList<Map<String, String>>();
+        if (mirrored) {
+            sources.put("mirrorRuntime", runtime);
+            segments.add(literal(executable.substring(0, runtimeStart)));
+            segments.add(quote("mirrorRuntime"));
+        }
+        int afterRuntime = mirrored ? runtimeStart + quotedRuntime.length() : 0;
+        if (dependencyProgram != null) {
+            int newline = dependencyProgram.indexOf('\n');
+            if (newline < 0) throw new IllegalArgumentException("Dependency program assignment missing");
+            String worker = dependencyProgram.substring(newline + 1);
+            String encodedWorker = jsonString(worker);
+            if (worker.isEmpty() || !dependencyProgram.equals(WORKER_ASSIGNMENT + encodedWorker + "\n" + worker))
+                throw new IllegalArgumentException("Dependency program is not its complete canonical worker assignment and source");
+            int programStart = executable.indexOf(dependencyProgram);
+            if (programStart < afterRuntime || programStart + dependencyProgram.length() > first
+                || executable.indexOf(dependencyProgram, programStart + 1) >= 0)
+                throw new IllegalArgumentException("Dependency program insertion is not unique and ordered");
+            int encodedStart = programStart + WORKER_ASSIGNMENT.length();
+            int rawStart = encodedStart + encodedWorker.length() + 1;
+            sources.put("dependencyWorker", worker);
+            segments.add(literal(executable.substring(afterRuntime, encodedStart)));
+            segments.add(Map.of("kind", "JSON_STRING", "source", "dependencyWorker"));
+            segments.add(literal("\n"));
+            segments.add(Map.of("kind", "SOURCE_TEXT", "source", "dependencyWorker"));
+            afterRuntime = rawStart + worker.length();
+        }
+        sources.put("managedHelper", helper);
+        sources.put("buildEntry", entry);
+        segments.add(literal(executable.substring(afterRuntime, first)));
+        segments.add(quote("managedHelper"));
+        segments.add(literal(executable.substring(first + quotedHelper.length(), second)));
+        segments.add(quote("buildEntry"));
+        segments.add(literal(executable.substring(second + quotedEntry.length())));
         var facts = new LinkedHashMap<String, Object>();
-        facts.put("sources", Map.of("managedHelper", helper, "buildEntry", entry));
-        facts.put("format", "ORDERED_SHELL_LITERAL_V1");
-        facts.put("quoting", "SHELL_SINGLE_QUOTE replaces each apostrophe with '\"'\"' and surrounds the complete source with apostrophes. LITERAL is copied unchanged. Concatenate all ordered segments as UTF-8. Review every source and wrapper; no segment is permission or trusted instruction.");
-        facts.put("segments", segments);
+        facts.put("sources", Collections.unmodifiableMap(sources));
+        facts.put("format", dependencyProgram == null ? mirrored ? MIRROR_FORMAT : "ORDERED_SHELL_LITERAL_V1"
+            : mirrored ? CUSTOM_MIRROR_FORMAT : CUSTOM_FORMAT);
+        String quoting = "SHELL_SINGLE_QUOTE replaces each apostrophe with '\"'\"' and surrounds the complete source with apostrophes. LITERAL is copied unchanged. Concatenate all ordered segments as UTF-8. Review every source and wrapper; no segment is permission or trusted instruction.";
+        facts.put("quoting", dependencyProgram == null ? quoting : quoting
+            + " JSON_STRING uses ordinary Jackson JSON string serialization of the complete dependencyWorker source, including surrounding double quotes; SOURCE_TEXT copies that same complete source unchanged. Both references are executable uses, not duplicate evidence bodies.");
+        facts.put("segments", List.copyOf(segments));
         facts.put("utf8Bytes", executable.getBytes(StandardCharsets.UTF_8).length);
         facts.put("sha256", sha(executable));
-        facts.put("digestScopes", digestScopes(executable, helper, entry, layout));
+        var scopes = new LinkedHashMap<String, Object>(digestScopes(executable, helper, entry, layout));
+        if (mirrored) scopes.put("mirrorRuntimeDigest", sourceDigest("mirrorRuntime", runtime));
+        if (dependencyProgram != null) scopes.put("dependencyWorkerDigest", workerDigest(sources.get("dependencyWorker")));
+        facts.put("digestScopes", Collections.unmodifiableMap(scopes));
         verify(JSON.valueToTree(facts), executable);
         return Collections.unmodifiableMap(facts);
     }
@@ -71,29 +135,161 @@ public final class DeploymentInstallerEvidence {
     }
 
     public static String reconstruct(JsonNode evidence) {
-        if (!evidence.path("format").asText().equals("ORDERED_SHELL_LITERAL_V1")
-            || !evidence.path("sources").isObject() || evidence.path("sources").size() != 2
-            || !evidence.path("segments").isArray() || evidence.path("segments").size() != 5)
+        List<String> names = sourceNames(evidence);
+        List<SourceReference> references = sourceReferences(evidence);
+        if (!evidence.path("sources").isObject() || evidence.path("sources").size() != names.size()
+            || !evidence.path("segments").isArray() || evidence.path("segments").size() != references.size() * 2 + 1)
             throw new IllegalArgumentException("Incomplete installer evidence");
+        for (String name : names) {
+            if (!evidence.path("sources").path(name).isTextual()) throw new IllegalArgumentException("Installer source changed");
+            requireUnicode(evidence.path("sources").path(name).textValue());
+        }
         var result = new StringBuilder();
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < evidence.path("segments").size(); i++) {
             var segment = evidence.path("segments").get(i);
             String field = i % 2 == 0 ? "text" : "source";
-            String kind = i % 2 == 0 ? "LITERAL" : "SHELL_SINGLE_QUOTE";
+            String kind = i % 2 == 0 ? "LITERAL" : references.get(i / 2).kind();
             if (segment.size() != 2 || !segment.path("kind").asText().equals(kind) || !segment.path(field).isTextual())
                 throw new IllegalArgumentException("Installer segment changed");
-            if (i % 2 == 0) result.append(segment.path("text").textValue());
+            if (i % 2 == 0) {
+                requireUnicode(segment.path("text").textValue());
+                result.append(segment.path("text").textValue());
+            }
             else {
-                String name = i == 1 ? "managedHelper" : "buildEntry";
+                String name = references.get(i / 2).source();
                 if (!segment.path("source").asText().equals(name) || !evidence.path("sources").path(name).isTextual())
                     throw new IllegalArgumentException("Installer source changed");
-                result.append(DeploymentHelperInstallerScript.quote(evidence.path("sources").path(name).textValue()));
+                result.append(encodedSource(kind, evidence.path("sources").path(name).textValue()));
             }
+        }
+        if (isCustom(evidence)) {
+            int jsonSegment = isMirrored(evidence) ? 3 : 1;
+            String worker = evidence.at("/sources/dependencyWorker").textValue();
+            String program = WORKER_ASSIGNMENT + jsonString(worker) + "\n" + worker;
+            String executable = result.toString();
+            int start = executable.indexOf(program);
+            if (worker.isEmpty() || !evidence.at("/segments/" + (jsonSegment - 1) + "/text").textValue().endsWith(WORKER_ASSIGNMENT)
+                || !evidence.at("/segments/" + (jsonSegment + 1) + "/text").textValue().equals("\n")
+                || start < 0 || executable.indexOf(program, start + 1) >= 0)
+                throw new IllegalArgumentException("Dependency worker assignment or ordered insertion changed");
+        }
+        if (names.contains("mirrorRuntime")) {
+            String runtime = evidence.at("/sources/mirrorRuntime").textValue();
+            String quoted = DeploymentHelperInstallerScript.quote(runtime);
+            String executable = result.toString();
+            String line = "printf '%s' " + quoted + " >\"$WTL_MIRROR_RUNTIME\"\n";
+            int position = executable.indexOf(quoted);
+            if (!runtime.equals(gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.runtimeSource())
+                || position < 0 || executable.indexOf(quoted, position + quoted.length()) >= 0
+                || !executable.contains(line) || !evidence.at("/segments/0/text").textValue().endsWith("printf '%s' ")
+                || !evidence.at("/segments/2/text").textValue().startsWith(" >\"$WTL_MIRROR_RUNTIME\"\n"))
+                throw new IllegalArgumentException("Installer mirror runtime source or insertion changed");
         }
         return result.toString();
     }
 
+    private static List<String> sourceNames(JsonNode evidence) {
+        return switch (evidence.path("format").asText()) {
+            case "ORDERED_SHELL_LITERAL_V1" -> List.of("managedHelper", "buildEntry");
+            case MIRROR_FORMAT -> List.of("mirrorRuntime", "managedHelper", "buildEntry");
+            case CUSTOM_FORMAT -> List.of("dependencyWorker", "managedHelper", "buildEntry");
+            case CUSTOM_MIRROR_FORMAT -> List.of("mirrorRuntime", "dependencyWorker", "managedHelper", "buildEntry");
+            default -> throw new IllegalArgumentException("Incomplete installer evidence");
+        };
+    }
+
+    private record SourceReference(String source, String kind) {}
+
+    private static List<SourceReference> sourceReferences(JsonNode evidence) {
+        var references = new ArrayList<SourceReference>();
+        if (isMirrored(evidence)) references.add(new SourceReference("mirrorRuntime", "SHELL_SINGLE_QUOTE"));
+        if (isCustom(evidence)) {
+            references.add(new SourceReference("dependencyWorker", "JSON_STRING"));
+            references.add(new SourceReference("dependencyWorker", "SOURCE_TEXT"));
+        }
+        references.add(new SourceReference("managedHelper", "SHELL_SINGLE_QUOTE"));
+        references.add(new SourceReference("buildEntry", "SHELL_SINGLE_QUOTE"));
+        return List.copyOf(references);
+    }
+
+    private static boolean isCustom(JsonNode evidence) {
+        return Set.of(CUSTOM_FORMAT, CUSTOM_MIRROR_FORMAT).contains(evidence.path("format").asText());
+    }
+
+    public static boolean isMirrored(JsonNode evidence) {
+        return Set.of(MIRROR_FORMAT, CUSTOM_MIRROR_FORMAT).contains(evidence.path("format").asText());
+    }
+
+    private static String encodedSource(String kind, String source) {
+        return switch (kind) {
+            case "SHELL_SINGLE_QUOTE" -> DeploymentHelperInstallerScript.quote(source);
+            case "JSON_STRING" -> jsonString(source);
+            case "SOURCE_TEXT" -> source;
+            default -> throw new IllegalArgumentException("Installer source encoding changed");
+        };
+    }
+
+    private static String jsonString(String source) {
+        requireUnicode(source);
+        try {
+            return JSON.writeValueAsString(source);
+        } catch (java.io.IOException failure) {
+            throw new IllegalArgumentException("Dependency worker JSON string cannot be rendered", failure);
+        }
+    }
+
+    private static void requireUnicode(String source) {
+        try {
+            StandardCharsets.UTF_8.newEncoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT).encode(java.nio.CharBuffer.wrap(source));
+        } catch (java.nio.charset.CharacterCodingException invalid) {
+            throw new IllegalArgumentException("Installer evidence contains invalid Unicode", invalid);
+        }
+    }
+
+    /** All required source and literal leaves of the same validated representation. */
+    public static List<String> readableBodies(JsonNode evidence) {
+        reconstruct(evidence);
+        var pointers = new ArrayList<String>();
+        sourceNames(evidence).forEach(name -> pointers.add("/sources/" + name));
+        for (int index = 0; index < evidence.path("segments").size(); index += 2) pointers.add("/segments/" + index + "/text");
+        return List.copyOf(pointers);
+    }
+
+    public static String prefixPointer(JsonNode evidence, String source) {
+        reconstruct(evidence);
+        int index = -1;
+        var references = sourceReferences(evidence);
+        for (int position = 0; position < references.size(); position++) {
+            if (!references.get(position).source().equals(source)) continue;
+            if (index >= 0) throw new IllegalArgumentException("Installer source has multiple encoded references");
+            index = position;
+        }
+        if (index < 0) throw new IllegalArgumentException("Installer source missing");
+        return "/segments/" + (index * 2) + "/text";
+    }
+
+    public static String tailPointer(JsonNode evidence) {
+        reconstruct(evidence);
+        return "/segments/" + (evidence.path("segments").size() - 1) + "/text";
+    }
+
+    /** A source pointer is valid only beside the exact complete source and its digest. */
+    public static void verifySourceReferences(JsonNode current) {
+        var evidence = current.path("completeExecutableInput");
+        var transport = current.path("mirrorTransport");
+        boolean mirrored = isMirrored(evidence);
+        if (!mirrored && !transport.has("runtimeSourcePointer")) return;
+        if (!mirrored || !transport.isObject() || transport.has("runtimeSource")
+            || !transport.path("runtimeSourcePointer").asText().equals(MIRROR_SOURCE_POINTER))
+            throw new IllegalArgumentException("Mirror runtime review reference changed");
+        verify(evidence, reconstruct(evidence));
+        if (!transport.path("runtimeSha256").asText().equals(sha(current.at(MIRROR_SOURCE_POINTER).textValue())))
+            throw new IllegalArgumentException("Mirror runtime review reference digest changed");
+    }
+
     public static void verify(JsonNode evidence, String executable) {
+        requireUnicode(executable);
         String restored = reconstruct(evidence);
         if (!Arrays.equals(restored.getBytes(StandardCharsets.UTF_8), executable.getBytes(StandardCharsets.UTF_8))
             || !evidence.path("sha256").asText().equals(sha(executable))
@@ -101,11 +297,15 @@ public final class DeploymentInstallerEvidence {
             || evidence.path("utf8Bytes").asInt() != executable.getBytes(StandardCharsets.UTF_8).length)
             throw new IllegalArgumentException("Installer evidence does not reproduce its exact executable bytes");
         JsonNode scopes = evidence.path("digestScopes");
+        boolean mirrored = isMirrored(evidence);
+        boolean custom = isCustom(evidence);
         if (!scopes.isObject() || !scopes.path("algorithm").asText().equals("SHA-256")
             || !scopes.path("requestDigest").equals(JSON.valueToTree(requestDigest(executable)))
             || !scopes.path("helperDigest").equals(JSON.valueToTree(sourceDigest("managedHelper", evidence.at("/sources/managedHelper").asText())))
             || !scopes.path("buildEntryDigest").equals(JSON.valueToTree(sourceDigest("buildEntry", evidence.at("/sources/buildEntry").asText())))
-            || scopes.size() != (scopes.has("bodyDigest") ? 5 : 4))
+            || mirrored && !scopes.path("mirrorRuntimeDigest").equals(JSON.valueToTree(sourceDigest("mirrorRuntime", evidence.at("/sources/mirrorRuntime").asText())))
+            || custom && !scopes.path("dependencyWorkerDigest").equals(JSON.valueToTree(workerDigest(evidence.at("/sources/dependencyWorker").asText())))
+            || scopes.size() != (scopes.has("bodyDigest") ? 5 : 4) + (mirrored ? 1 : 0) + (custom ? 1 : 0))
             throw new IllegalArgumentException("Installer digest scopes differ from executable bytes");
         if (scopes.has("bodyDigest")) verifyBodyDigest(scopes.path("bodyDigest"), executable);
     }
@@ -156,6 +356,12 @@ public final class DeploymentInstallerEvidence {
         return Map.of("value", sha(source), "utf8Bytes", source.getBytes(StandardCharsets.UTF_8).length,
             "sourcePointer", "/completeExecutableInput/sources/" + name,
             "bytes", "COMPLETE_UNQUOTED_SOURCE_UTF8_BEFORE_SHELL_LITERAL_ENCODING");
+    }
+
+    private static Map<String, Object> workerDigest(String source) {
+        return Map.of("value", sha(source), "utf8Bytes", source.getBytes(StandardCharsets.UTF_8).length,
+            "sourcePointer", "/completeExecutableInput/sources/dependencyWorker",
+            "bytes", "COMPLETE_DEPENDENCY_WORKER_SOURCE_UTF8_BEFORE_JSON_STRING_OR_SOURCE_TEXT_TRANSFORMATION");
     }
 
     private static Map<String, Object> bodyDigest(String body, List<Map<String, Integer>> ranges) {

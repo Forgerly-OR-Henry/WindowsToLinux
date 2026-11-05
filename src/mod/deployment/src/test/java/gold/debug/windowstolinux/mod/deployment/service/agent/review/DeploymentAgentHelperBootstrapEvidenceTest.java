@@ -112,8 +112,8 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
         assertEquals(5, navigation.path("wrapperLocations").size());
         assertTrue(navigation.path("dependencyLocations").size() >= 20);
         var locations = new ArrayList<com.fasterxml.jackson.databind.JsonNode>();
-        locations.add(navigation.path("prefixSource"));
-        locations.add(navigation.path("dependencyProgram"));
+        locations.add(navigation.path("dependencySource"));
+        locations.add(navigation.path("dependencyPreamble"));
         navigation.path("wrapperLocations").forEach(locations::add);
         navigation.path("invocations").forEach(locations::add);
         for (var location : locations) {
@@ -126,10 +126,24 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
             assertEquals(location.path("startLine").asInt(), 1 + source.substring(0, first).chars().filter(value -> value == '\n').count());
             assertFalse(location.has("excerpt"), "Navigation cannot repeat a complete executable prefix");
         }
-        String prefix = evidence.at("/segments/0/text").asText();
+        assertFalse(navigation.has("prefixSource"));
+        assertEquals(5,navigation.path("prefixParts").size());
+        var current=json.createObjectNode();
+        current.set("completeExecutableInput",evidence);
+        byte[] stdin=script.getBytes(StandardCharsets.UTF_8);
+        var prefix=new StringBuilder();
+        for(var part:navigation.path("prefixParts"))
+            prefix.append(gold.debug.windowstolinux.mod.deployment.ai.review.MirroredInstallerTestFixture.navigationPart(current,part,stdin));
+        assertTrue(script.startsWith(prefix.toString()));
+        var program=new StringBuilder();
+        for(var part:navigation.at("/dependencyProgram/parts"))
+            program.append(gold.debug.windowstolinux.mod.deployment.ai.review.MirroredInstallerTestFixture.navigationPart(current,part,stdin));
+        assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms.dependencies(),program.toString());
+        assertEquals(4,navigation.at("/dependencyProgram/parts").size());
+        String worker = evidence.at("/sources/dependencyWorker").asText();
         for (var location : navigation.path("dependencyLocations")) {
-            assertEquals("/completeExecutableInput/segments/0/text", location.path("sourcePointer").asText());
-            String line = prefix.lines().skip(location.path("startLine").asLong() - 1).findFirst().orElseThrow();
+            assertEquals("/completeExecutableInput/sources/dependencyWorker", location.path("sourcePointer").asText());
+            String line = worker.lines().skip(location.path("startLine").asLong() - 1).findFirst().orElseThrow();
             assertTrue(line.startsWith("def " + location.path("function").asText() + "("));
         }
         assertTrue(navigation.toString().getBytes(StandardCharsets.UTF_8).length < 16000);

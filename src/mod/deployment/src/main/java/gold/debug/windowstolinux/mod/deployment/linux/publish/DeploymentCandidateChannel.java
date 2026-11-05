@@ -163,10 +163,10 @@ public final class DeploymentCandidateChannel {
         return layout.equals(DeploymentRemoteLayout.original()) ? "/var/lib" : layout.paths().stateRoot();
     }
 
-    /** Renders the existing fixed read-only observation without sending it. */
+    /** Renders the capacity-only read with a fixed tool path and isolated environment. */
     public static String capacityScript(DeploymentRemoteLayout layout) {
         String script = "set -euo pipefail\ntest -d '/var/lib' && test ! -L '/var/lib'\n"
-            + "stat -f -c '%a %S' -- '/var/lib'\n";
+            + "/usr/bin/stat -f -c '%a %S' -- '/var/lib'\n";
         if (!layout.equals(DeploymentRemoteLayout.original())) {
             String target = layout.paths().stateRoot();
             String components = Arrays.stream(target.substring(1).split("/"))
@@ -175,22 +175,23 @@ public final class DeploymentCandidateChannel {
                 set -euo pipefail
                 wtl_capacity_directory=/
                 test -d "$wtl_capacity_directory" && test ! -L "$wtl_capacity_directory"
-                test "$(stat -c '%%u:%%g' -- "$wtl_capacity_directory")" = 0:0
+                test "$(/usr/bin/stat -c '%%u:%%g' -- "$wtl_capacity_directory")" = 0:0
                 for wtl_capacity_component in %s; do
                     wtl_capacity_next="${wtl_capacity_directory%%/}/$wtl_capacity_component"
                     test ! -L "$wtl_capacity_next"
                     if test -e "$wtl_capacity_next"; then
                         test -d "$wtl_capacity_next"
-                        test "$(stat -c '%%u:%%g' -- "$wtl_capacity_next")" = 0:0
+                        test "$(/usr/bin/stat -c '%%u:%%g' -- "$wtl_capacity_next")" = 0:0
                         wtl_capacity_directory="$wtl_capacity_next"
                     else
                         break
                     fi
                 done
-                stat -f -c '%%a %%S' -- "$wtl_capacity_directory"
+                /usr/bin/stat -f -c '%%a %%S' -- "$wtl_capacity_directory"
                 """.formatted(components);
         }
-        return script;
+        return "exec /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C HOME=/dev/null "
+            + "/bin/bash --noprofile --norc -p -c " + quoted(script) + "\n";
     }
 
     public OperationResult<CapacityObservation> capacityObservation() throws ApiException {

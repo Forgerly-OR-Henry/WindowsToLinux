@@ -32,9 +32,6 @@ final class DeploymentAgentInputCoverage {
 
     private static final String INPUT = "/completeExecutableInput";
 
-    private static final List<String> STRUCTURED_BODIES = List.of(INPUT + "/sources/managedHelper",
-        INPUT + "/sources/buildEntry", INPUT + "/segments/0/text", INPUT + "/segments/2/text", INPUT + "/segments/4/text");
-
     private record Range(int start, int endExclusive) {
     }
 
@@ -172,14 +169,17 @@ final class DeploymentAgentInputCoverage {
                         if (!facts.path("operation").asText().equals(DeploymentAgentPublicationRecoveryProgram.INSTALL))
                             throw new IllegalArgumentException("Publication installation evidence belongs to a different operation");
                         DeploymentAgentPublicationRecoveryProgram.verifyInstallationEvidence(represented, original);
-                    } else DeploymentInstallerEvidence.verify(represented, original);
+                    } else {
+                        DeploymentInstallerEvidence.verify(represented, original);
+                        DeploymentInstallerEvidence.verifySourceReferences(facts);
+                    }
                 } catch (IllegalArgumentException invalid) {
                     throw new IOException("Structured executable evidence does not reproduce the original request", invalid);
                 }
                 structured = represented.path("format").asText().equals(DeploymentAgentPublicationRecoveryProgram.INSTALL_EVIDENCE_FORMAT)
                     ? List.of(INPUT + "/sources/bash", INPUT + "/sources/loader", INPUT + "/derived/controller/segments/0/text",
                         INPUT + "/derived/controller/segments/2/text", INPUT + "/segments/0/text", INPUT + "/segments/2/text", INPUT + "/segments/4/text")
-                    : STRUCTURED_BODIES;
+                    : DeploymentInstallerEvidence.readableBodies(represented).stream().map(pointer -> INPUT + pointer).toList();
                 for (String leaf : structured) {
                     String pointer = leaf;
                     while (pointer.startsWith(INPUT)) {

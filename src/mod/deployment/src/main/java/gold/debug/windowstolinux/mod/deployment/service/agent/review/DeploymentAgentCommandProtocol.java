@@ -84,6 +84,11 @@ public final class DeploymentAgentCommandProtocol implements DeploymentCommandPr
         }
         var json = new com.fasterxml.jackson.databind.ObjectMapper();
         com.fasterxml.jackson.databind.JsonNode current = json.valueToTree(facts);
+        gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.verifySourceReferences(current);
+        if (current.has("mirrorInputTask") && (!task.id().toString().equals(current.path("mirrorInputTask").asText())
+            || !task.id().toString().equals(current.at("/mirrorTransport/frozenPolicy/task").asText())
+            || !intent.serverIds().getFirst().equals(current.at("/mirrorTransport/frozenPolicy/server").asText())))
+            throw new IllegalArgumentException("Mirror executable differs from original Agent server/task");
         if (operation.equals("deployment.agent.isolation.preflight.v1")) {
             if (!intent.revision().equals(current.path("agentIsolation").path("acceptedScope").path("configurationSha256").asText()))
                 throw new IllegalArgumentException("Isolation configuration revision changed");
@@ -260,6 +265,14 @@ public final class DeploymentAgentCommandProtocol implements DeploymentCommandPr
                 facts.put("completeExecutableInput", operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.INSTALL)
                     ? new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram(layout).installationEvidence()
                     : operation.equals("deployment.helper.install.files.custom.v1") ? DeploymentAgentHelperBootstrapEvidence.describe(executable, layout) : executable);
+                if (operation.equals(DeploymentAgentHelperBootstrapEvidence.OPERATION)) {
+                    var mirror = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.executable(executable);
+                    if (mirror.isPresent()) {
+                        facts.put("mirrorInputTask", mirror.orElseThrow().task().toString());
+                        facts.put("mirrorTransport", gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks
+                            .reviewMaterial(mirror.orElseThrow().policy(), facts.get("completeExecutableInput")));
+                    }
+                }
             } else facts.put("inputKind", input.length == 0 ? "EMPTY" : "OPAQUE_BOUND_DATA");
         } finally { Arrays.fill(input, (byte) 0); }
         return java.util.Collections.unmodifiableMap(facts);
