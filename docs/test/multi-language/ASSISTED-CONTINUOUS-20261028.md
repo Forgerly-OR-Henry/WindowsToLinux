@@ -1,5 +1,13 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-05 控制源已安装；真实元数据准备通过，发行未完成
+
+[最终控制v2机制](../../../.ai-workspace/evidence/assisted-r15-final-control-integration-20261105-01/pure-data-check-result-v2-15.json)以129个公开叶完成3个producer、2个consumer正例及34个内存反例；未重跑既有测试组。随后PREVIEW消费者源审发现旧路径门遗漏22个精确公开源码/class叶，仅修正assembler的路径集合，其余31个函数及模块AST保持相同。[首次定点检查](../../../.ai-workspace/evidence/assisted-r15-public-leaf-execution-20261105-01/execution-result.json)在UTF-8-SIG懒加载时被审计拒绝，消费者用例尚未开始，失败保留；新版本在审计前显式加载编码模块，不扩大读取白名单。[v2定点](../../../.ai-workspace/evidence/assisted-r15-final-public-leaf-admission-20261105-01/public-leaf-check-result-v2-15.json)随后通过215个独立原件/214个context路径、22个新增叶、37项不打开文件的路径拒绝及2项字节身份篡改拒绝，audit四项0。这些是不同范围的检查，不合计为一次全量通过。
+
+[可逆安装](../../../.ai-workspace/evidence/assisted-r15-final-install-20261105-01/installed-control-15.json)先备份18份旧控制源，实际改写6份并CreateNew安装8份公开DRAFT，再[单独备份及安装](../../../.ai-workspace/evidence/assisted-r15-final-install-20261105-01/installed-public-leaf-amendment-15.json)assembler的22叶修正，其余25个目标字节相同；driver、runtime16和private边界保持。父只批准metadata-only后，[唯一真实准备](../../../.ai-workspace/evidence/assisted-r15-metadata-prepare-execution-20261105-01/metadata-prepare-public-summary-15.json)自然退出0，CreateNew生成四份DRAFT及validated-context，实际重核30个输出/4304成员、17个legacy子集及既定公共闭包，context validationSucceeded=true、missingInputs为空。父另核五件实际身份、219条sourceLevelProofs和无元数据自身/下游冻结。
+
+两次有限检查及实际准备均已按各自原句柄收尾，原进程身份核退、专属tmp已清；连续child观察未执行，不声称测得child=0。当前saved profile、API/capability和业务均未由这些结果证明。PREVIEW生成已另开职责等待准确父审启动，正式SOURCE/P/R仍未发布，完整四阶段服务器准备和R15八项目原次均未开始，长期目标未达成。
+
 ## 2026-11-05 产物与公开契约段完成；最终控制源仍在审查
 
 [当前产物资格](../../../.ai-workspace/evidence/assisted-r15-current-artifact-qualification-20261105-01/artifact-qualification-handoff-15.json)已实际完成：3个Mod、16个唯一且未初始化的provider来源、12个纯超时反射场景通过；30个输出目录4304成员、16个JAR全CRC且无重复成员、53个公开依赖及54项类路径前后相同。12个native阶段及外层自然退出0，15个原进程身份核退，专属tmp已清。这不是Runtime、数据库、模型或真实业务资格。[R14关闭与健康凭据契约](../../../.ai-workspace/evidence/assisted-r15-retained-healthy-contract-20261105-01/pure-data-check-result-15.json)另以50个公开原件完成2个真实正例和39个内存反例；API的28个反例及产物的12个场景未重复执行。
