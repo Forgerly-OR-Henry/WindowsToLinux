@@ -1,5 +1,15 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
+## 2026-11-05 R14八原次0/8已封存；R15隔离修复验证中
+
+R14八个固定原始项目各执行一次，原native均退出1、原root均FAILED，JUnit合计8／8失败／0错误／0跳过，完整业务、交付和清理均未通过。七项返回`SHARED_REVIEW/evidence/IllegalArgumentException`；CSV由独立模型拒绝容量命令，公开原因是继承PATH中的stat缺少可信依据。前序命令的APPROVE／host grant不代表最终拒绝命令通过；没有重试、拼轮或把监督器退出0当成功。
+
+[关闭索引](../../../.ai-workspace/evidence/assisted-r14-closed-round-20261105-01/closed-round-index-14.json)记录原session20106已终态，monitor自然wait0后才quit driver。16原身份及任务namespace已核退；586份公开原件封存，12个本轮状态目录共260文件仅做opaque字节哈希，未通过产品API或DB引擎打开、解密或重放；正常healthy seed14及私密API配置排除。3个运行tmp根的24文件和收尾helper临时目录已清，信号0。长路径、命令文件封存白名单及PS布尔分组的辅助失败均保留，不混入八原次分母。新10秒监视期间UNKNOWN／readgap均0，先前准备失败和UNKNOWN仍保留。
+
+SDK可见账本为56逻辑生成／56已记录物理键，均返回SUCCEEDED，已知377841 tokens（LANGUAGE208522／APPROVAL169319）；可见恢复链和反馈标记均0。这不包含能力验证的未知transport／usage，也不证明格式异常为零或完整账单，八个根失败结论不变。
+
+[纯本地诊断](../../../.ai-workspace/evidence/assisted-r14-shared-review-evidence-diagnostic-20261105-01/diagnostic-closeout-14.json)在最小官方APT_UBUNTU合成策略下，经真实证据链复现facts为1066017字符，超过1048576字符门17441；未联网、未开Runtime／DB或执行命令，不能唯一反推各原历史异常。R15隔离候选保留完整源码及字节重构，去除镜像runtime重复表示并同步覆盖／导航；容量命令单独固定工具及最小环境。候选仍在编译与精确定点验证，尚无R15新冻结或真实八项目验收，目标未达成。
+
 ## 2026-11-05 用户批准10秒新冻结；重新执行四阶段准备
 
 用户已明确批准只读观测预算5→10秒。仅应用预算常量及对应说明，25次上限、完整回调、late拒绝、UNKNOWN保留和审批规则不变。旧发行及准备中止原件全部保留，新元数据及派生绑定经过精确差异审核；[新九件发行回执](../../../.ai-workspace/evidence/assisted-r14-final-metadata-20261105-01/observer-budget-10-parent-14-01/parent-formal-promotion-14-03.json)记录CreateNew且Release最后写入。产品源码仍为`90ae6fd7`，模型参数、原业务负载、其它runtime及外部依赖未变。
