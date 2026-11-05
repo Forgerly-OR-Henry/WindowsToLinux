@@ -6703,8 +6703,40 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
     }
 
     static boolean liveBoundaryEvent(gold.debug.windowstolinux.appapi.task.log.LogEvent event) {
-        return event != null && Set.of("DEPLOYMENT_COMMAND_REVIEW_DENIED", "DEPLOYMENT_OPERATION_FAILURE",
-            "DEPLOYMENT_EFFECT_OUTCOME").contains(event.eventCode());
+        return event != null && Set.of("DEPLOYMENT_COMMAND_REVIEW_DENIED", "DEPLOYMENT_ASSISTED_REVIEW_DENIED",
+            "DEPLOYMENT_OPERATION_FAILURE", "DEPLOYMENT_EFFECT_OUTCOME").contains(event.eventCode());
+    }
+
+    private static final String LIVE_DIAGNOSTIC_TYPE =
+        "(?:java|javax|jdk|org\\.apache\\.sshd|gold\\.debug\\.windowstolinux)\\.[A-Za-z0-9_.$]{1,180}";
+
+    private static final java.util.regex.Pattern LIVE_OPERATION_DIAGNOSTIC = java.util.regex.Pattern.compile(
+        "exceptionType=(" + LIVE_DIAGNOSTIC_TYPE + ")(?: causeType=(" + LIVE_DIAGNOSTIC_TYPE + "))?"
+            + "(?: problemCode=([A-Z_]{1,40})(?: problemEvent=((?:SFTP|SSH|DEPLOYMENT|TASK|FILE)_[A-Z0-9_]{1,96}))?)?");
+
+    static String liveDiagnosticProjection(gold.debug.windowstolinux.appapi.task.log.LogEvent event)
+        throws com.fasterxml.jackson.core.JsonProcessingException {
+        if (Set.of("DEPLOYMENT_COMMAND_REVIEW_DENIED", "DEPLOYMENT_ASSISTED_REVIEW_DENIED").contains(event.eventCode())) {
+            var reason = gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.publicDenialReason(event);
+            if (reason.isEmpty()) return "reasonUnavailable=true";
+            return "reasonUnavailable=false reviewReasonJson=" + JSON.writeValueAsString(reason.orElseThrow())
+                .replace("\u2028", "\\u2028").replace("\u2029", "\\u2029");
+        }
+        if (!event.eventCode().equals("DEPLOYMENT_OPERATION_FAILURE")) return "";
+        if (event.level() != gold.debug.windowstolinux.appapi.task.log.LogLevel.ERROR || event.details().isPresent()
+            || event.outcome().isPresent() || event.taskId().isEmpty() || !event.operationId().equals(event.taskId())
+            || event.message().length() > 1024)
+            return "diagnosticMetadata=UNAVAILABLE";
+        var metadata = LIVE_OPERATION_DIAGNOSTIC.matcher(event.message());
+        if (!metadata.matches()) return "diagnosticMetadata=UNAVAILABLE";
+        if (metadata.group(3) != null) {
+            try { ProblemCode.valueOf(metadata.group(3)); }
+            catch (IllegalArgumentException unavailable) { return "diagnosticMetadata=UNAVAILABLE"; }
+        }
+        return "diagnosticMetadata=AVAILABLE exceptionType=" + metadata.group(1)
+            + (metadata.group(2) == null ? "" : " causeType=" + metadata.group(2))
+            + (metadata.group(3) == null ? "" : " problemCode=" + metadata.group(3))
+            + (metadata.group(4) == null ? "" : " problemEvent=" + metadata.group(4));
     }
 
     static final class LiveBoundaryObserver {
@@ -6776,13 +6808,19 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         }
 
         void logAttempt(gold.debug.windowstolinux.appapi.task.log.LogEvent event) {
-            if (!liveBoundaryEvent(event)) return;
-            boolean unknown = event.details().orElse("").equals("{\"observedOutcome\":\"UNKNOWN\"}");
-            emit(event.taskId().orElse(null), "LOG_EVENT", "ATTEMPT",
-                "event=" + event.eventCode() + " declaredOutcome=" + event.outcome().map(Enum::name).orElse("NONE")
-                    + " detailsObservedUnknown=" + unknown,
-                !event.eventCode().equals("DEPLOYMENT_EFFECT_OUTCOME")
-                    || unknown || event.outcome().filter(value -> value != TaskResult.SUCCEEDED).isPresent());
+            try {
+                if (!liveBoundaryEvent(event)) return;
+                boolean unknown = event.details().orElse("").equals("{\"observedOutcome\":\"UNKNOWN\"}");
+                String diagnostic = liveDiagnosticProjection(event);
+                emit(event.taskId().orElse(null), "LOG_EVENT", "ATTEMPT",
+                    "event=" + event.eventCode() + " declaredOutcome=" + event.outcome().map(Enum::name).orElse("NONE")
+                        + " detailsObservedUnknown=" + unknown + (diagnostic.isEmpty() ? "" : " " + diagnostic),
+                    !event.eventCode().equals("DEPLOYMENT_EFFECT_OUTCOME")
+                        || unknown || event.outcome().filter(value -> value != TaskResult.SUCCEEDED).isPresent());
+            } catch (Throwable unavailable) {
+                gaps.incrementAndGet();
+                emit(null, "LOG_EVENT", "COVERAGE_GAP", "diagnosticProjection=UNAVAILABLE", true);
+            }
         }
 
         private synchronized void author(java.util.UUID task, boolean exited, Object result, Throwable failure) {

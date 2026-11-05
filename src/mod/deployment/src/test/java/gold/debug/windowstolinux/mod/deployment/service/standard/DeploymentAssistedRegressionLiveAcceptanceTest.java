@@ -17,7 +17,6 @@ class DeploymentAssistedRegressionLiveAcceptanceTest extends DeploymentStaticReg
             deploysWebsitesThroughAssistedEntry(project);
             deliver(project, false, delivery, "ASSISTED");
         } catch (Exception | AssertionError failure) {
-            captureDenials(failure);
             throw failure;
         }
     }
@@ -30,7 +29,6 @@ class DeploymentAssistedRegressionLiveAcceptanceTest extends DeploymentStaticReg
             deploysCliThroughAssistedEntry(project);
             deliver(project, true, delivery, "ASSISTED");
         } catch (Exception | AssertionError failure) {
-            captureDenials(failure);
             throw failure;
         }
     }
@@ -58,18 +56,4 @@ class DeploymentAssistedRegressionLiveAcceptanceTest extends DeploymentStaticReg
         deliver(project, false, delivery, "ASSISTED");
     }
 
-    private void captureDenials(Throwable original) {
-        try (var runtime = open()) {
-            for (var category : runtime.logs().inventory(false).categories()) {
-                if (!category.target().owner().equals(OWNER)) continue;
-                for (var record : runtime.logs().inspect(category.target().key()).records())
-                    if (record.event().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
-                        || record.event().eventCode().equals("DEPLOYMENT_ASSISTED_REVIEW_DENIED")
-                        || record.event().eventCode().equals("DEPLOYMENT_OPERATION_FAILURE"))
-                        System.out.println("ASSISTED_REVIEW_DIAGNOSTIC " + record.event().eventCode() + " " + record.event().message());
-            }
-        } catch (Exception unavailable) {
-            original.addSuppressed(unavailable);
-        }
-    }
 }
