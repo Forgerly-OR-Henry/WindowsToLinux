@@ -1,8 +1,8 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 2026-11-07 独立 STATIC：S20 一项完整 PASS，FileTransfer 原次 FAILED
+## 2026-11-07 独立 STATIC：S21 修复已提交，待完整新准备
 
-见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。S20 `39e67c94…` 全新四阶段完整通过后，TaskBoard 原次已满足业务、modelCalls=0、同应用 CLEAN、JUnit/native/tool0 和精确 actor/TMP 闭合，静态业务1/8。原 cold probe exit64、缺省诊断字段和首列表快照 UNKNOWN 均保留，没有任务 UNKNOWN。FileTransfer 在明确用户 STATIC 范围确认及正常审批复核后首次执行，因 Go 模块来源白名单拒绝而 FAILED，原 native/tool1、JUnit1/1/0/0，未发布、64KiB业务未到达；其余六项及 AI 未启动。四原 actor 已精确观察消失，内部 JVM 身份仍 UNKNOWN，异常 TMP 收尾另记 CURRENT。不能重放本轮或补查改判。旧 S17 UNKNOWN、S18 FAILED/CLEAN0、R16 首过0/8及 false 门保持，底层旧超时原因未确定。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
+见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。S20 完整 TaskBoard PASS／FileTransfer FAILED／后六项未启动保持，异常自有 TMP 已限定清理，normal store 与证据保留。S21 `29965d658e65eb6863bf651ee5db1fc24abe0631` 的 Go 官方源有界跳转修复已本地提交，定点 JUnit 分轮9、3、1均通过，最终合成 Python8/8及必要包通过；这不证明 S20 实际拒绝目标或真实部署成功。新冻结输入与原控制正在派生，尚无新服务器原次；之后须全新 inventory→plan→精确计划父审→apply→独立 after，再从 TaskBoard 按固定八项逐项放行。用户本目标后续 STATIC 明确授权持续适用，不重放或拼接旧轮。AI R17 未启动，R16 首过0/8、旧 UNKNOWN／false 门及旧 SSH 超时原因保持。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
 
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 

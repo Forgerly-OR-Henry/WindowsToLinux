@@ -1,6 +1,6 @@
 # R16 后独立 STATIC 验证记录
 
-本记录截至 S20 TaskBoard 完整原次通过、FileTransfer 原次失败时，静态业务为 **1/8**，另六项未启动。S17 至 S20 是独立 STATIC 版本号，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+本记录截至 S21 本地修复验证完成、新冻结输入准备中；S20 保留 TaskBoard 完整原次通过、FileTransfer 原次失败，静态业务为 **1/8**，另六项未启动。S17 至 S21 是独立 STATIC 版本号，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 已消费原次
 
@@ -11,6 +11,7 @@
 | S17 `8250f202…` | 新 inventory、plan 通过；apply 未完成；after 未启动 | 八项全部未启动 | apply 等待超时，清理实际结果为 UNKNOWN；四阶段未通过 |
 | S18 `275e0650…` | 全新四阶段均通过，完整 after 与 apply.postInventory 相同 | TaskBoard 失败；其余七项未启动 | 业务 QA 通过，最终清理复查失败、CLEAN 缺失；不算完整静态通过 |
 | S20 `39e67c94…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 完整原次 PASS；FileTransfer 原次 FAILED，其余六项未启动 | GO_MODULE 来源白名单拒绝，64KiB业务未到达；STATIC 1/8，AI R17 未启动 |
+| S21 `29965d65…` | 尚未启动；新冻结输入准备中 | 八项均未启动 | 本地有界跳转修复与定点检查通过，不是服务器验收 |
 
 前两次 STATIC 的原件分别保留于 [ROOT16 执行证据](../../../.ai-workspace/evidence/post-r16-static-execution-owner-20261106-01/)和 [S16 执行证据](../../../.ai-workspace/evidence/post-r16-static-repair-execution-owner-20261106-01/)。S17 的原件见 [执行证据](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-owner-20261106-01/)及 [父封存审查](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-inputs-20261106-01/s17-preparation-incomplete.PARENT-REVIEW.json)，后者 SHA256 为 `fdd38e32bf67d1a4984cca4941814f883286004f015220621d291680a26ac356`。这些版本各自独立，不拼接准备阶段、通过项或计划。
 
@@ -64,7 +65,17 @@ FileTransfer 首次审批在派发前拒绝，0 launch、无 native/session/JUni
 
 FileTransfer 原 session `82393` 由 `4742a2` 实际 exit1 结束，新 JUnit **1/1/0/0**、193.685 秒。部署任务 `3d5a879c-c686-4f20-9b7e-27e190d3e8ad` 为 `IO_FAILURE/DEPLOYMENT_BUILD_FAILED`：ordinary／GO_MODULE／go1.24.13 构建中，`official-go_module` 报告 `destination/redirect outside selected source allowlist`，`modernc.org/sqlite@v1.36.3` 和 `modernc.org/libc@v1.61.13` 的 zip 下载返回502。实际被拒绝的重定向目标尚未观察到，不能先认定具体域名。PUBLISHED、BUSINESS、PASS、CLEAN 均未出现，原64KiB上传下载及重启业务未到达；finally 的空应用列表不证明远端无安装、构建、缓存或候选产物。见[本项父审](../../../.ai-workspace/evidence/post-r16-static-channel-execution-inputs-20261106-01/static-file-transfer-failed.PARENT-REVIEW.json)。
 
-原 native 与外层 wait 均实际 exit1，无 bookkeeping 失败；后续精确观察确认四个已记录出生身份消失，内部 JVM 身份仍 UNKNOWN。异常 TMP 保留待限定清理，normal store 和证据保留，未执行 normal closeout。原公开日志的四个 typed 任务为3成功、1失败、0 UNKNOWN；owner 初始汇总字段误写为空 outcome/count4，逐条记录正确，父审独立计数并保留原错误记录。后六项和 AI 未启动，当前只定位来源规则，修复后须全新冻结及完整四阶段，不重放或拼接 S20。
+原 native 与外层 wait 均实际 exit1，无 bookkeeping 失败；后续精确观察确认四个已记录出生身份消失，内部 JVM 身份仍 UNKNOWN。异常自有 TMP 经 owner、绝对边界、祖先、整树 nonreparse 和锁预检后限定清理，原工具 `c13c40` 实际 exit0；仅删除两个自有叶目录及各自空任务根，清理进程自身出生身份也由 `a18660` 实际 exit0 确认消失。normal store 和证据保留，未执行 normal closeout 或远端复查，见[本地异常收尾父审](../../../.ai-workspace/evidence/post-r16-static-channel-execution-inputs-20261106-01/static-file-transfer-abnormal-tmp-closed.PARENT-REVIEW.json)。原公开日志的四个 typed 任务为3成功、1失败、0 UNKNOWN；owner 初始汇总字段误写为空 outcome/count4，逐条记录正确，父审独立计数并保留原错误记录。后六项和 AI 未启动，来源规则修复后须全新冻结及完整四阶段，不重放或拼接 S20。
+
+## S21 有界分发跳转修复与本地验证
+
+S21 本地提交 `29965d658e65eb6863bf651ee5db1fc24abe0631` 仅改六个 deployment 生产／配置文件及四个直接相关测试文件。目录源与冻结 Endpoint 增加默认空的 `redirectRules`，随选择、JSON 往返和公开 guidance 传递；旧快照缺省为空，自定义源携带非空规则在构造、反序列化和运行时均拒绝。仅 `official-go_module/GO_MODULE` 配置 `proxy.golang.org` 到 HTTPS／默认443的 `storage.googleapis.com/proxy-golang-org-prod/` 跳转，普通初始主机白名单仍只有 `proxy.golang.org`。
+
+运行时逐跳校验精确主机和路径段边界，拒绝其他 bucket、相似前缀、点段与编码逃逸、额外目标的二跳、userinfo、fragment及非443端口。签名 query 原样传输但不记录，原凭据头移除后仍由既有 scoped adapter 控制。该候选依据 Go 维护者历史一手资料所述分发设计；bucket 属于上游实现细节，不能保证永久稳定，也不能据此确认 S20 实际被拒绝的目标。原 Go 校验链、direct／sumdb、回退、重试、超时、版本和业务断言均未改。
+
+定点验证分轮保留：首轮 JUnit **9/0/0/0**；补充自定义冻结端点边界后，仅相关三方法 **3/0/0/0**；最后收紧 Python ASCII 主机格式匹配后，仅 runtime 方法 **1/0/0/0**，其独立 Python 合成场景 **8/8**。最后一轮同时 package，原工具 `67d030` 实际 exit0、29.471秒，生成最终 deployment JAR；此前39.571秒的中间包不冒充最终包。没有全量测试或真实公共下载，合成结果不证明 Linux、TLS、原生 Go 构建或部署成功。见[完整分轮证据与精确 selectors](../../../.ai-workspace/evidence/static-go-module-redirect-fix-20261107-01/README.md)。
+
+为新工作树原 STATIC classpath 补齐 Files 模块，父另执行离线 `-o -pl src/mod/files -am -DskipTests package`，原工具 `ae0ef9` 实际 exit0、BUILD SUCCESS 5.878秒，测试全部跳过，未复制旧 target。相关自有 wrapper／已记录测试 JVM 已窄查消失，两个编译任务 TMP 各经 owner、绝对边界、祖先及整树 nonreparse 检查清除；未采集的内部进程身份仍为 UNKNOWN，不冒充正式 live 四 actor 证明。见[Files 必要编译与收尾](../../../.ai-workspace/evidence/static-s21-integration-20261107-01/README.md)。两处源码及正式记录提交均仅在本地；新冻结输入正在核对，尚无 S21 服务器准备或业务原次。
 
 ## 后续验收条件
 
