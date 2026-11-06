@@ -1,8 +1,8 @@
 # ASSISTED 连续首过验证记录
 
-## 2026-11-07 R16 后 STATIC：S22 第三项失败封存，S23 离线修复中
+## 2026-11-07 R16 后 STATIC：S22 已封存，S23 修复通过并进入新冻结准备
 
-[独立 STATIC 记录](STATIC-POST-R16-20261106.md)保留此前失败和UNKNOWN。S22 `b7d00a7c…` 完整新准备后，TaskBoard与HTTP64KiB FileTransfer两个原次完整PASS并闭合；第三AssetLending原次native/tool1、JUnit1/1/0/0，明确FAILED，.NET restore的NuGet签名请求返回502。本轮封存PASS2／FAILED1／后五项未启动，不能拼入后续新轮；失败四已记录身份已窄查消失，两TMP保留待独立候选审查，normal和原证据保留。新S23工作树离线补NuGet签名窄路径并做定点回归中，尚无新四阶段或业务结果，原签名验证与选源限制保持。AI R17未启动，用户要求静态正常后才回AI，后续STATIC授权持续适用；R16首过0/8及旧UNKNOWN／false门、S20/S21失败均保持。实时进度见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+[独立 STATIC 记录](STATIC-POST-R16-20261106.md)保留此前失败和UNKNOWN。S22 `b7d00a7c…` 完整新准备后，TaskBoard与HTTP64KiB FileTransfer两个原次完整PASS并闭合；第三AssetLending原次native/tool1、JUnit1/1/0/0，明确FAILED，.NET restore的NuGet签名请求返回502。本轮封存PASS2／FAILED1／后五项未启动，不能拼入后续新轮；四已记录身份已窄查消失，限定janitor实际exit0闭合两自有TMP，自身也精确核退，normal和原证据保留。S23本地提交 `f028e006…` 补NuGet签名窄路径及对应固定身份，28个定点检查与必要包通过；早期失败保留，原签名验证与选源限制保持，未推送。新公开输入及五control已父审，仅放行新只读inventory，完整四阶段和八项业务尚待完成。AI R17未启动，用户要求静态正常后才回AI，后续STATIC授权持续适用；R16首过0/8及旧UNKNOWN／false门、S20/S21失败均保持。实时进度见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 

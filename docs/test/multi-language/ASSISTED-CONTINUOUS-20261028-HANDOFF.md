@@ -1,8 +1,8 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 2026-11-07 独立 STATIC：S22 第三项失败封存，S23 离线修复中
+## 2026-11-07 独立 STATIC：S22 已封存，S23 修复通过并进入新冻结准备
 
-见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。S22完整新四准备后，TaskBoard和原HTTP64KiB FileTransfer各完整原次PASS／model0／同应用CLEAN／四身份TMP闭合；第三AssetLending原次FAILED，native/tool1、新JUnit1/1/0/0，NuGet仓库签名请求502，未到业务QA或CLEAN。本轮PASS2／FAILED1／UNLAUNCHED5封存，不拼入新轮。失败四已记录身份首次窄观察均消失，TMP保留待父审限定janitor，normal／原证据／warnings保留，内部JVM及远端副作用仍UNKNOWN。S23新工作树离线修NuGet签名路径缺口，保原签名验证／选源／断言；新冻结、完整四阶段及八项从首项尚待执行。AI R17未启动，用户后续STATIC授权持续适用，R16首过0/8及S20/S21旧FAILED／UNKNOWN／false门均不改判。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
+见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。S22完整新四准备后，TaskBoard和原HTTP64KiB FileTransfer各完整原次PASS／model0／同应用CLEAN／四身份TMP闭合；第三AssetLending原次FAILED，native/tool1、新JUnit1/1/0/0，NuGet仓库签名请求502，未到业务QA或CLEAN。本轮PASS2／FAILED1／UNLAUNCHED5封存，不拼入新轮。父审限定janitor仅清两自有TMP及空任务根，原工具7e300b／自身核退0797e5均实际exit0；normal／原证据／warnings保留，内部JVM及远端副作用仍UNKNOWN。S23本地提交f028e006仅补NuGet签名窄路径及对应固定身份，28个定点检查和必要包通过，未推送，原失败轮保留；合成路由检查不冒充真实SDK签名验证。新公开输入及五control已父审，仅放行新只读inventory，完整四阶段及八项从首项尚待完成。AI R17未启动，用户后续STATIC授权持续适用，R16首过0/8及S20/S21旧FAILED／UNKNOWN／false门均不改判。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
 
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 
