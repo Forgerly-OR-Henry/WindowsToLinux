@@ -1,8 +1,8 @@
 # ASSISTED 连续首过验证记录
 
-## 2026-11-06 R16 后 STATIC 阶段记录
+## 2026-11-07 R16 后 STATIC：S20 一项通过、一项失败
 
-[独立 STATIC 记录](STATIC-POST-R16-20261106.md)保留此前失败和 UNKNOWN。S18 TaskBoard 业务部分通过但最终清理复查失败、CLEAN 缺失，整项 FAILED、另七项未启动。helper 分类和安装准入修复、有限 SSH 观测已在 S20 完成本地定点检查及必要编译；S20 全新四阶段准备现已通过并闭合，完整 after 与本轮 apply.postInventory 一致。首个 TaskBoard 原次运行中，尚无完整业务判定，其余七项未启动。通道打开超时底层原因仍未确定，AI R17 未启动；R16 已封存0/8及旧 UNKNOWN、未启动和 false 门保持。实时进度见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+[独立 STATIC 记录](STATIC-POST-R16-20261106.md)保留此前失败和 UNKNOWN。S20 全新四阶段通过后，TaskBoard 完整原次 PASS：同应用 CLEAN、modelCalls=0、新 JUnit1/0/0/0、原 native/tool0 及精确 actor/TMP 闭合均齐，静态业务1/8。FileTransfer 原次因 Go 模块来源白名单拒绝而 FAILED，新 JUnit1/1/0/0、原 native/tool1，发布及64KiB业务未到达，其余六项未启动。用户已明确确认本目标后续 STATIC 范围，原派发前拒绝与后续正常审批复核历史均保留。当前定位来源规则，不能重放或拼接本轮；旧通道超时底层原因未确定，AI R17 未启动。R16 已封存0/8及旧 UNKNOWN、未启动和 false 门保持。实时进度见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 

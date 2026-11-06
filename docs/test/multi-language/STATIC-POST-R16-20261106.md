@@ -1,6 +1,6 @@
 # R16 后独立 STATIC 验证记录
 
-本记录截至 S20 全新四阶段准备通过、首个 TaskBoard 原次启动时。S17 至 S20 是独立 STATIC 版本号，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+本记录截至 S20 TaskBoard 完整原次通过、FileTransfer 原次失败时，静态业务为 **1/8**，另六项未启动。S17 至 S20 是独立 STATIC 版本号，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 已消费原次
 
@@ -10,7 +10,7 @@
 | S16 `24c0ffba…` | 全新四阶段均通过 | TaskBoard 失败；其余七项未启动 | `DEPLOYMENT_BUILD_FAILED`，Maven 分发固定源连接超时；不重放该原次 |
 | S17 `8250f202…` | 新 inventory、plan 通过；apply 未完成；after 未启动 | 八项全部未启动 | apply 等待超时，清理实际结果为 UNKNOWN；四阶段未通过 |
 | S18 `275e0650…` | 全新四阶段均通过，完整 after 与 apply.postInventory 相同 | TaskBoard 失败；其余七项未启动 | 业务 QA 通过，最终清理复查失败、CLEAN 缺失；不算完整静态通过 |
-| S20 `39e67c94…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | 首个 TaskBoard 原次已启动；其余七项未启动 | 尚无业务完整判定；AI R17 未启动 |
+| S20 `39e67c94…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 完整原次 PASS；FileTransfer 原次 FAILED，其余六项未启动 | GO_MODULE 来源白名单拒绝，64KiB业务未到达；STATIC 1/8，AI R17 未启动 |
 
 前两次 STATIC 的原件分别保留于 [ROOT16 执行证据](../../../.ai-workspace/evidence/post-r16-static-execution-owner-20261106-01/)和 [S16 执行证据](../../../.ai-workspace/evidence/post-r16-static-repair-execution-owner-20261106-01/)。S17 的原件见 [执行证据](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-owner-20261106-01/)及 [父封存审查](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-inputs-20261106-01/s17-preparation-incomplete.PARENT-REVIEW.json)，后者 SHA256 为 `fdd38e32bf67d1a4984cca4941814f883286004f015220621d291680a26ac356`。这些版本各自独立，不拼接准备阶段、通过项或计划。
 
@@ -48,7 +48,7 @@ S20 提交 `7d030e334a91b09e038e0d281abac5da3a3953bf`、`d6167a88a08e9a9d7bdf5b8
 
 最终 S20 HEAD `39e67c9441b9bf54ed424e16505d2a7cc0e4d3a7` 无冲突合入 S19 修复，相对 S18 共 14 个相关源码／测试文件，工作树干净、仅本地提交。父代理只补必要离线 `-o -pl src/mod/deployment,src/mod/files -am -DskipTests package`，原工具 `0f03ae` 实际 exit0，31.163 秒、BUILD SUCCESS，所有测试跳过。专用构建 TMP 已安全清除，source／targets 保留；内部 JVM 身份仍 UNKNOWN。见 [整合与编译证据](../../../.ai-workspace/evidence/static-s20-integration-20261106-01/README.md)。该编译本身不证明真实服务器或底层超时已解决，后续真实执行另记如下。
 
-## S20 全新准备完成，首个业务进行中
+## S20 全新准备完成，首个业务已完整通过
 
 本轮 inventory、plan、exact apply 和独立 after 的四个原 native／tool 均 exit0，各新 JUnit **1/0/0/0**。新计划完整回执 SHA256 为 `046affb1b7eaf534a3b3638b9ea0adfabbc7089c1c9c812b2ebe80fbd0ddb717`，内层 canonical plan 为 `6e4dd2d61b82629d5ce59eed8689334596b29288fc932859cbf02b3719d1729a`，已独立复算并完整审查。实际清理五个产品目录、三个服务、两个产品账号及 31 个构建开发包；服务文件实际删除计数保留为3，原流程先 disable 再逐文件移除，不将该计数强改成计划文件数4。完整 148 个必留包记录不变，655 个剩余包记录恰为原 686 减计划 31，无额外升级或移除。
 
@@ -56,10 +56,18 @@ apply 完成回执 SHA256 为 `90d3fceb0535a84ac2ad68ba12c63ac849b0a1ffd00d0ce73
 
 apply 曾在派发前被自动审批拒绝，没有程序、native、session 或 JUnit。父随后在原对话的实际 userMessage 中核到一次性服务器的必要 CRUD／环境清理明确授权；补充该原始来源后，同一精确请求的正常审批复核获准，才首次启动 native。原拒绝及复核历史保留，不记作部署重试，也不改写先前记录。见 [直接用户授权来源](../../../.ai-workspace/evidence/post-r16-static-channel-execution-inputs-20261106-01/apply-direct-user-authority.PARENT-REVIEW.json)。
 
-四阶段 owner 已结束职责，另由独立 owner 执行首个 TaskBoard。原工具 `68f696`／session `17929` 已正常审批启动，当前尚无完整业务结论；不能提前计 PASS 或 CLEAN。其余七项和 AI 未启动，实时结果以 CURRENT 为准。
+四阶段 owner 结束后，另由独立 owner 完成 TaskBoard 原次。应用 `wtl-static-task-board-ekeha0sqg/static-live` 的 HTTP、停止／启动／重启和持久化 QA、modelCalls=0 及同应用 CLEAN STOPPED／DISABLED 全部满足；新 JUnit **1/0/0/0**、1447.048 秒，原 session `17929` 由 `7ed185` 实际 exit0 结束。`ce0864` 实际 exit0 完成四原出生身份和自有 TMP 闭合，normal store 与证据保留。见 [首项父审](../../../.ai-workspace/evidence/post-r16-static-channel-execution-inputs-20261106-01/static-task-board-first-01.PARENT-RESULT-REVIEW.json)。
+
+该原次有一次冷启动 helper.probe FAILED／exit64，随后原流程 tracked 安装成功，记录保留，不能写成所有子命令都成功。原 trace 的四个失败类型／原因缺省 UNKNOWN，以及首个缓存应用列表中的 state／autostart UNKNOWN 也保留；15 个任务结果和 14 个 AUTHOR RETURN 均为 SUCCEEDED，没有任务 UNKNOWN。字段层次不混用，旧 S18 的通道超时原因仍未知。
+
+FileTransfer 首次审批在派发前拒绝，0 launch、无 native/session/JUnit，不记作业务失败。用户随后明确确认[本目标后续 STATIC 操作范围](../../../.ai-workspace/evidence/post-r16-static-channel-execution-inputs-20261106-01/static-goal-operation-scope.USER-APPROVED.json)，包括健康 R15 凭据经产品 API 保存至新冻结工作树内的新加密 normal store，以及既定八项目的必要安装、发布、上传下载、重启和已审计划清理；原断言、旧失败库、无明文脚本读取、本机系统不改和 STATIC 无 AI 约束保留。同一精确请求经正常审批复核获准，才首次执行 native，原拒绝历史保留。
+
+FileTransfer 原 session `82393` 由 `4742a2` 实际 exit1 结束，新 JUnit **1/1/0/0**、193.685 秒。部署任务 `3d5a879c-c686-4f20-9b7e-27e190d3e8ad` 为 `IO_FAILURE/DEPLOYMENT_BUILD_FAILED`：ordinary／GO_MODULE／go1.24.13 构建中，`official-go_module` 报告 `destination/redirect outside selected source allowlist`，`modernc.org/sqlite@v1.36.3` 和 `modernc.org/libc@v1.61.13` 的 zip 下载返回502。实际被拒绝的重定向目标尚未观察到，不能先认定具体域名。PUBLISHED、BUSINESS、PASS、CLEAN 均未出现，原64KiB上传下载及重启业务未到达；finally 的空应用列表不证明远端无安装、构建、缓存或候选产物。见[本项父审](../../../.ai-workspace/evidence/post-r16-static-channel-execution-inputs-20261106-01/static-file-transfer-failed.PARENT-REVIEW.json)。
+
+原 native 与外层 wait 均实际 exit1，无 bookkeeping 失败；后续精确观察确认四个已记录出生身份消失，内部 JVM 身份仍 UNKNOWN。异常 TMP 保留待限定清理，normal store 和证据保留，未执行 normal closeout。原公开日志的四个 typed 任务为3成功、1失败、0 UNKNOWN；owner 初始汇总字段误写为空 outcome/count4，逐条记录正确，父审独立计数并保留原错误记录。后六项和 AI 未启动，当前只定位来源规则，修复后须全新冻结及完整四阶段，不重放或拼接 S20。
 
 ## 后续验收条件
 
-每个新版本或失败后的新轮均须另行冻结，完整执行 inventory → plan → 父审精确计划 → apply → 独立 after；独立 after 须与 apply 的完整 postInventory 对照，不得拼用旧计划、准备 PASS 或业务部分结果。S20 已完成这项准备，业务仍按 TaskBoard、FileTransfer、AssetLending、CsvInspector、SurveyScoring、LogAnalyzer、DirectoryDiff、BinaryInspector 固定顺序逐项放行，每项均需原业务断言、modelCalls=0、同应用 CLEAN、JUnit 与真实 native/tool 闭合，失败或不确定不放后项。
+每个新版本或失败后的新轮均须另行冻结，完整执行 inventory → plan → 父审精确计划 → apply → 独立 after；独立 after 须与 apply 的完整 postInventory 对照，不得拼用旧计划、准备 PASS 或业务部分结果。S20 准备记录保留，业务失败后已停轮。后续新冻结仍按 TaskBoard、FileTransfer、AssetLending、CsvInspector、SurveyScoring、LogAnalyzer、DirectoryDiff、BinaryInspector 固定顺序逐项放行，每项均需原业务断言、modelCalls=0、同应用 CLEAN、JUnit 与真实 native/tool 闭合，失败或不确定不放后项。
 
-STATIC FTP 使用原 64 KiB 负载，CLI 使用原静态 health probe；不以 ASSISTED 专用检查器替代。STATIC 不运行 AI guard 或私密 key hash，不修改已批准的 AI 15 秒／MAX25／0.2 秒观测规则。八项静态正常后才回到 AI 辅助测试；MOD 仍通过主 APP 四用途标准 API 通信，厂商适配由主 APP 负责。
+STATIC FileTransfer 使用原 HTTP 文件应用的 64 KiB 负载，CLI 使用原静态 health probe；不以 ASSISTED 专用检查器替代。STATIC 不运行 AI guard 或私密 key hash，不修改已批准的 AI 15 秒／MAX25／0.2 秒观测规则。八项静态正常后才回到 AI 辅助测试；MOD 仍通过主 APP 四用途标准 API 通信，厂商适配由主 APP 负责。

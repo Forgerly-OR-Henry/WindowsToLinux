@@ -1,8 +1,8 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 2026-11-06 独立 STATIC：S20 四阶段已通过，首个 TaskBoard 原次运行中
+## 2026-11-07 独立 STATIC：S20 一项完整 PASS，FileTransfer 原次 FAILED
 
-见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。S17 UNKNOWN 和 S18 TaskBoard FAILED／CLEAN0／另七项未启动均保留。S20 `39e67c94…` 的 helper 修复与有限 SSH 观测已分别定点验证、整合编译；全新四阶段各原 native/tool0、JUnit1/0/0/0，完整 after 与本轮 apply.postInventory 全字节一致，16 个已记录 actor／自有 TMP 闭合，normal store 保留。首个 TaskBoard 由新职责 owner 单独启动，尚无完整业务结论，不提前计 PASS；另七项及 AI 未启动。超时底层原因未确定，R16 首过0/8及旧 UNKNOWN／false 门保持。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
+见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。S20 `39e67c94…` 全新四阶段完整通过后，TaskBoard 原次已满足业务、modelCalls=0、同应用 CLEAN、JUnit/native/tool0 和精确 actor/TMP 闭合，静态业务1/8。原 cold probe exit64、缺省诊断字段和首列表快照 UNKNOWN 均保留，没有任务 UNKNOWN。FileTransfer 在明确用户 STATIC 范围确认及正常审批复核后首次执行，因 Go 模块来源白名单拒绝而 FAILED，原 native/tool1、JUnit1/1/0/0，未发布、64KiB业务未到达；其余六项及 AI 未启动。四原 actor 已精确观察消失，内部 JVM 身份仍 UNKNOWN，异常 TMP 收尾另记 CURRENT。不能重放本轮或补查改判。旧 S17 UNKNOWN、S18 FAILED/CLEAN0、R16 首过0/8及 false 门保持，底层旧超时原因未确定。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
 
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 
