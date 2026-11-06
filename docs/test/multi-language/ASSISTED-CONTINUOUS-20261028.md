@@ -1,5 +1,9 @@
 # ASSISTED 连续首过验证记录
 
+## 2026-11-06 R16 后 STATIC 阶段记录
+
+[独立 STATIC 记录](STATIC-POST-R16-20261106.md)保留 ROOT16/S16 两次首个业务失败，以及 S17 新准备阶段的 apply 超时：原工具 exit1、JUnit1/0/1/0、无清理完成回执，远端效果 UNKNOWN，after 和八项业务均未启动。本地 actor/TMP 收尾不改变业务结论。S18 仅阶段观测改动与必要编译已完成，尚未执行新服务器准备；后续仍先完成独立静态验证再返回 AI。此段不修改 R16 已封存0/8及旧 UNKNOWN、未启动或 false 资格状态；实时进度见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 
 [原执行交接](../../../.ai-workspace/evidence/assisted-r16-p08-execution-owner-20261106-01/HANDOFF.md)记录固定八项各仅一次原native，无整项目重试、恢复或额外项目；八个原native均actual Wait=true、exit1，JUnit各1/1/0/0。原[monitor final summary](../../../.ai-workspace/wt/r16f/.ai-workspace/evidence/round-16-preparation-08/13/monitor-final-summary-13.json)为attemptCount=8、firstAttemptJUnitPassCount=0、eligible 0/8。**本轮八项原次执行已经结束并封存，首过0/8；这不表示八个业务root闭合，也未证明业务、交付或远端资源归零。** 前七项部署root均UNKNOWN、endedAt为空，Mod.close因仍拥有资源被阻止；BinaryInspector在configureLiveModel的`@platform/platform.ai.probe.v1`任务`adfe4b2d-5aeb-41af-93a7-70c89fc653ce`为UNKNOWN，没有创建deployment root，shutdown另报`Unfinished platform tasks require reconciliation before shutdown`，不能写成八个deployment UNKNOWN。失败及UNKNOWN store未打开或reconcile，旧轮不得重放，后续fresh cleanup亦不改判。

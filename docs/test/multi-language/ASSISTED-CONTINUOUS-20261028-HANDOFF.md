@@ -1,5 +1,9 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
+## 2026-11-06 独立 STATIC：S17 准备未完成已封存，S18 仅观测改动已编译
+
+见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。此前两次 STATIC 各首个 TaskBoard 失败、其余七项未启动；S17 新 inventory/plan 通过，apply 原 32 分钟等待超时、JUnit 1/0/1/0、真实 native/tool exit1，无清理完成回执，after 与八项业务全未启动。已确认本地原身份退出并清理 own TMP，远端清理效果仍 UNKNOWN，实际 TaskState 未直接观察。S18 `275e0650…` 仅补安全 callback 阶段观测，必要离线打包通过、测试全部跳过，尚无新轮执行或根因修复结论。后续须新完整四阶段；R16 首过0/8、既有 UNKNOWN 与 false 门均保持。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
+
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 
 [原执行交接](../../../.ai-workspace/evidence/assisted-r16-p08-execution-owner-20261106-01/HANDOFF.md)记录固定八项各仅一次原native，无整项目重试、恢复或额外项目；八个原native均actual Wait=true、exit1，JUnit各1/1/0/0。原[monitor final summary](../../../.ai-workspace/wt/r16f/.ai-workspace/evidence/round-16-preparation-08/13/monitor-final-summary-13.json)为attemptCount=8、firstAttemptJUnitPassCount=0、eligible 0/8。**本轮八项原次执行已经结束并封存，首过0/8；这不表示八个业务root闭合，也未证明业务、交付或远端资源归零。** 前七项部署root均UNKNOWN、endedAt为空，Mod.close因仍拥有资源被阻止；BinaryInspector在configureLiveModel的`@platform/platform.ai.probe.v1`任务`adfe4b2d-5aeb-41af-93a7-70c89fc653ce`为UNKNOWN，没有创建deployment root，shutdown另报`Unfinished platform tasks require reconciliation before shutdown`，不能写成八个deployment UNKNOWN。失败及UNKNOWN store未打开或reconcile，旧轮不得重放，后续fresh cleanup亦不改判。
