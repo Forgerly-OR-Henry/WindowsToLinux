@@ -1,6 +1,6 @@
 # R16 后独立 STATIC 验证记录
 
-本记录截至 S22 TaskBoard、FileTransfer 完整原次通过，AssetLending 独立原次启动时；本轮 STATIC 为 **2/8**，后五项未启动。S21 四阶段通过，业务为0项完整通过、首项失败且部署结果 UNKNOWN、其余七项未启动。S20 保留 TaskBoard 完整原次通过、FileTransfer 原次失败及另六项未启动，其 **1/8** 不计入后轮。S17 至 S22 是独立 STATIC 版本号，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+本记录截至 S22 前两项完整通过、第三项 AssetLending 原次失败封存，S23 新工作树开始离线修复时。S22 为 **PASS2／FAILED1／后五项未启动**，修复后须新冻结与完整准备，不能将这两项通过拼入新轮。S21 保留首项失败且部署 UNKNOWN／后七项未启动，S20 保留 PASS1／FAILED1／后六项未启动。S17 之后的 S 编号为独立 STATIC 版本，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 已消费原次
 
@@ -12,7 +12,8 @@
 | S18 `275e0650…` | 全新四阶段均通过，完整 after 与 apply.postInventory 相同 | TaskBoard 失败；其余七项未启动 | 业务 QA 通过，最终清理复查失败、CLEAN 缺失；不算完整静态通过 |
 | S20 `39e67c94…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 完整原次 PASS；FileTransfer 原次 FAILED，其余六项未启动 | GO_MODULE 来源白名单拒绝，64KiB业务未到达；STATIC 1/8，AI R17 未启动 |
 | S21 `29965d65…` | 全新四阶段通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 原次 FAILED，部署 root 为 UNKNOWN；其余七项未启动 | 完整业务0/8，异常自有 TMP 已闭合；AI R17 未启动 |
-| S22 `b7d00a7c…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard、FileTransfer 完整原次 PASS；AssetLending 原次执行中，后五项未启动 | STATIC 2/8；AI R17 未启动 |
+| S22 `b7d00a7c…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard、FileTransfer 完整原次 PASS；AssetLending FAILED，后五项未启动 | NuGet 仓库签名请求502；本轮封存2/8，AI R17 未启动 |
+| S23 候选，base `b7d00a7c…` | 尚未执行新四阶段 | 八项全部未启动 | 新工作树离线修复 NuGet 签名窄路径，尚无新验收结果 |
 
 前两次 STATIC 的原件分别保留于 [ROOT16 执行证据](../../../.ai-workspace/evidence/post-r16-static-execution-owner-20261106-01/)和 [S16 执行证据](../../../.ai-workspace/evidence/post-r16-static-repair-execution-owner-20261106-01/)。S17 的原件见 [执行证据](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-owner-20261106-01/)及 [父封存审查](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-inputs-20261106-01/s17-preparation-incomplete.PARENT-REVIEW.json)，后者 SHA256 为 `fdd38e32bf67d1a4984cca4941814f883286004f015220621d291680a26ac356`。这些版本各自独立，不拼接准备阶段、通过项或计划。
 
@@ -108,7 +109,15 @@ S21 的 runtime 变化会更新生成 helper 中两处嵌入摘要，而 helper 
 
 FileTransfer另由独立职责完成唯一原次，原session91070由 `bbab84` 实际exit0结束，新JUnit **1/0/0/0**、547.462秒。Go后端原构建退出0、官方模块源阶段complete；随后原HTTP65536随机字节上传、逐字节下载相等、重启后再次下载相等均通过，BUSINESS、PASS modelCalls=0及同应用 `wtl-static-file-transfer-jvuychaj8/static-live` CLEAN stopped/disabled齐全。`7f5112` 实际exit0完成四精确身份及TMP闭合，normal与原证据保留。内部JVM身份、原列表state／autostart元数据UNKNOWN及警告保留，不混成typed-root失败，也不声称观测异常全零。见[本项完整父审](../../../.ai-workspace/evidence/post-r16-static-helper-pin-execution-inputs-20261107-01/static-file-transfer-first-01.PARENT-RESULT-REVIEW.json)，SHA256 `1781555603ff98ce5d4c09d4f0a3b36d5216dd09f03358dab64b18c3b4c9c492`。本轮通过不改判S20失败或反推当时未观察到的重定向目标。
 
-本轮STATIC已完整通过2/8。AssetLending交独立新职责，沿用本轮冻结及四阶段，原session22785已启动，只运行原分类／资产／借单审批／出借归还／重启持久化断言，尚无完整结论；后五项及AI未放行，不重新reset、拼接旧轮或改用ASSISTED检查器。
+AssetLending由独立新职责执行唯一原次，原session22785由 `7dca50` 实际exit1结束，新JUnit **1/1/0/0**、187.543秒。部署root `e675052a-b1fd-4095-a326-c7742f13f2d7` 明确为FAILED，code `IO_FAILURE`／event `DEPLOYMENT_BUILD_FAILED`；.NET SDK10.0.300的DOTNET_LOCKED restore报告NU1301，仓库签名请求 `https://api.nuget.org/v3-index/repository-signatures/5.0.0/index.json` 返回502 `selected repository transport failed`，原镜像日志先complete、后locked-route-unavailable。未到PUBLISHED、BUSINESS、PASS/modelCalls0或同应用CLEAN；空应用列表不证明远端无副作用。见[本项失败父审](../../../.ai-workspace/evidence/post-r16-static-helper-pin-execution-inputs-20261107-01/s22-asset-lending-failed.PARENT-REVIEW.json)，SHA256 `f75b68a843bff7b5269fe19ef55d86d5700b9ef986335d146e118b63364b0a77`。
+
+首次精确观察原工具 `51a766` 实际exit0，四个已记录原出生身份均PID_ABSENT，内部JVM身份及远端副作用仍UNKNOWN。两自有TMP保留，正在准备另行审查的限定清理候选，未执行normal closeout或删除；normal及原证据保留。本轮封存PASS2／FAILED1／UNLAUNCHED5，后五项及AI停止放行，不重试或拼接原次。
+
+## S23 NuGet 签名路径候选修复
+
+对照S22 HEAD，NuGet的 `sourceOrigins` 和 `official-nuget.routes` 缺少 `/v3-index/repository-signatures/`，已有 `/v3/` 前缀不能匹配该路径。locked transport在映射失败后可以直接生成现场同文502，属于足以解释本次失败的确定目录缺口；没有读取私有冻结策略JSON或探测上游健康，不将源码结论冒充现场策略原字节核验。NuGet的签名资源从service-index中的独立HTTPS入口发现，不能假设位于索引目录内，见[官方仓库签名协议](https://learn.microsoft.com/en-us/nuget/api/repository-signatures-resource)。
+
+新工作树 `s23f` 从 `b7d00a7c…` 创建，目录差异仅补签名专用origin与官方identity route，保留allowedHosts、原NuGet配置、签名验证、单源选择和拒绝规则；不扩到整个 `/v3-index/` 或主机根。父独立字节比较确认helper仅增加签名前缀56字节，570631→570687字节，runtime摘要不变，新helper SHA256为 `c5641fd6b5ac721ae534a1e2877ed9a03d6f7602ee7e6e2a746e4ff700603d58`。正依据该实际生成体同步各处独立固定消费者并做定点合同验证，相关检查与必要打包尚未完成。候选未执行新四阶段或业务；完成后仍须全新冻结、完整四阶段，再从TaskBoard开始固定八项。
 
 ## 后续验收条件
 

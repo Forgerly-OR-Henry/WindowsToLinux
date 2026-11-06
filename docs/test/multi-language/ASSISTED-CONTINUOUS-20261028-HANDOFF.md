@@ -1,8 +1,8 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 2026-11-07 独立 STATIC：S22 前两项完整 PASS，第三项独立执行中
+## 2026-11-07 独立 STATIC：S22 第三项失败封存，S23 离线修复中
 
-见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。S20完整PASS1／FAILED1／后六项未启动，S21首TaskBoard失败／部署UNKNOWN／future未完成／完整0/8／后七项未启动保持，异常TMP已闭合，normal与证据保留。S22 `b7d00a7cd22eb00bcf2c8988b412eedcb301c4d4` 全新四阶段通过后，TaskBoard与FileTransfer分别完成唯一原次并完整PASS；各新JUnit1/0/0/0、原native/tool0、原完整业务及重启持久化、modelCalls=0、各自同应用CLEAN及四精确身份／TMP闭合齐全。FileTransfer是原HTTP65536字节逐字节与重启后复验，未换ASSISTED检查器。原警告、冷探针失败和元数据UNKNOWN保留，内部JVM仍UNKNOWN，不宣称异常全零。当前STATIC2/8，独立AssetLending原次执行中；后五项及AI未放行，不重放或拼接旧轮。用户后续STATIC授权持续适用；AI R17未启动，R16首过0/8及旧UNKNOWN／false门保持，旧SSH超时原因和S20实际拒绝目标仍未知。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
+见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。S22完整新四准备后，TaskBoard和原HTTP64KiB FileTransfer各完整原次PASS／model0／同应用CLEAN／四身份TMP闭合；第三AssetLending原次FAILED，native/tool1、新JUnit1/1/0/0，NuGet仓库签名请求502，未到业务QA或CLEAN。本轮PASS2／FAILED1／UNLAUNCHED5封存，不拼入新轮。失败四已记录身份首次窄观察均消失，TMP保留待父审限定janitor，normal／原证据／warnings保留，内部JVM及远端副作用仍UNKNOWN。S23新工作树离线修NuGet签名路径缺口，保原签名验证／选源／断言；新冻结、完整四阶段及八项从首项尚待执行。AI R17未启动，用户后续STATIC授权持续适用，R16首过0/8及S20/S21旧FAILED／UNKNOWN／false门均不改判。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
 
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 
