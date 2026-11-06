@@ -9329,6 +9329,10 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         }
     }
 
+    /** Saves fixed live sources through the product before capture. / 在capture前通过产品保存固定来源。
+     * Optional managed.live.mavenDistributionBaseUrl replaces only MAVEN_DISTRIBUTION with one explicit custom source;
+     * unset or blank keeps official catalog sources. Product URL validation applies; no fallback or region consent is added.
+     */
     static Optional<TaskHandle<MirrorSettings>> prepareLiveMirrors(ModContext context, Mode mode) throws ApiException {
         if (mode != Mode.STATIC && mode != Mode.ASSISTED) return Optional.empty();
         var catalog = MirrorCatalog.load();
@@ -9339,6 +9343,10 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                 throw new IllegalStateException("Expected one complete official provider for " + point);
             points.put(point, List.of(new MirrorSettings.Row(providers.getFirst().id(), "", false, false, "")));
         }
+        String mavenDistributionBaseUrl = System.getProperty("managed.live.mavenDistributionBaseUrl", "");
+        if (!mavenDistributionBaseUrl.isBlank())
+            points.put(DownloadPoint.MAVEN_DISTRIBUTION,
+                List.of(new MirrorSettings.Row("", mavenDistributionBaseUrl, false, false, "")));
         return Optional.of(new DeploymentMirrorTasks(context).save(new MirrorSettings(1, points, Map.of())));
     }
 
