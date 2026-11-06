@@ -1,8 +1,8 @@
 # ASSISTED 连续首过验证记录
 
-## 2026-11-07 R16 后 STATIC：S22 四阶段通过，首项独立执行中
+## 2026-11-07 R16 后 STATIC：S22 首项完整 PASS，第二项独立执行中
 
-[独立 STATIC 记录](STATIC-POST-R16-20261106.md)保留此前失败和 UNKNOWN。S20 完整PASS1／FAILED1／后六项未启动，S21 首TaskBoard失败且部署root为UNKNOWN／完整0/8／后七项未启动均保持。S22 `b7d00a7c…` 的helper独立固定摘要同步及定点验证后，全新四阶段均已通过：四个新JUnit各1/0/0/0、原native/tool0，完整独立after与本轮apply.postInventory全部59382字节一致，16个已记录身份及自有TMP闭合，normal与证据保留。准备职责结束，首TaskBoard交独立职责执行唯一原次，尚无完整业务结论；后七项及AI未放行，不拼接旧轮。用户后续STATIC明确授权持续适用。AI R17未启动，R16首过0/8及旧UNKNOWN／false门保持；旧SSH超时原因和S20实际拒绝目标仍未知。实时进度见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+[独立 STATIC 记录](STATIC-POST-R16-20261106.md)保留此前失败和UNKNOWN。S20完整PASS1／FAILED1／后六项未启动，S21首TaskBoard失败且部署UNKNOWN／完整0/8／后七项未启动均保持。S22 `b7d00a7c…` 全新四阶段通过后，独立首TaskBoard原次完整PASS：原native/tool0、新JUnit1/0/0/0、真实HTTP／跨语言／重启／持久化BUSINESS、modelCalls=0、同应用CLEAN齐全；四精确身份和TMP正常闭合，normal及原警告保留。本轮STATIC为1/8，FileTransfer已交独立新职责执行原64KiB HTTP用例，尚无完整结论；后六项及AI未放行，不拼接旧轮。用户后续STATIC明确授权持续适用。AI R17未启动，R16首过0/8及旧UNKNOWN／false门保持，旧SSH超时原因和S20实际拒绝目标仍未知。实时进度见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 

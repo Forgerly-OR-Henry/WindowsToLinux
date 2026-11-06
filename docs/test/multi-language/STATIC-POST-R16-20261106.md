@@ -1,6 +1,6 @@
 # R16 后独立 STATIC 验证记录
 
-本记录截至 S22 全新四阶段准备通过、首 TaskBoard 原次执行中时；本轮尚无完整业务结论。S21 四阶段通过，业务为0项完整通过、首项失败且部署结果 UNKNOWN、其余七项未启动。S20 保留 TaskBoard 完整原次通过、FileTransfer 原次失败及另六项未启动，其 **1/8** 不计入后轮。S17 至 S22 是独立 STATIC 版本号，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+本记录截至 S22 首 TaskBoard 完整原次通过、FileTransfer 独立原次启动时；本轮 STATIC 为 **1/8**，后六项未启动。S21 四阶段通过，业务为0项完整通过、首项失败且部署结果 UNKNOWN、其余七项未启动。S20 保留 TaskBoard 完整原次通过、FileTransfer 原次失败及另六项未启动，其 **1/8** 不计入后轮。S17 至 S22 是独立 STATIC 版本号，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 已消费原次
 
@@ -12,7 +12,7 @@
 | S18 `275e0650…` | 全新四阶段均通过，完整 after 与 apply.postInventory 相同 | TaskBoard 失败；其余七项未启动 | 业务 QA 通过，最终清理复查失败、CLEAN 缺失；不算完整静态通过 |
 | S20 `39e67c94…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 完整原次 PASS；FileTransfer 原次 FAILED，其余六项未启动 | GO_MODULE 来源白名单拒绝，64KiB业务未到达；STATIC 1/8，AI R17 未启动 |
 | S21 `29965d65…` | 全新四阶段通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 原次 FAILED，部署 root 为 UNKNOWN；其余七项未启动 | 完整业务0/8，异常自有 TMP 已闭合；AI R17 未启动 |
-| S22 `b7d00a7c…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | 首 TaskBoard 原次执行中；其余七项未启动 | helper 独立固定摘要同步，完整业务仍0/8；AI R17 未启动 |
+| S22 `b7d00a7c…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 完整原次 PASS；FileTransfer 原次执行中，后六项未启动 | STATIC 1/8；AI R17 未启动 |
 
 前两次 STATIC 的原件分别保留于 [ROOT16 执行证据](../../../.ai-workspace/evidence/post-r16-static-execution-owner-20261106-01/)和 [S16 执行证据](../../../.ai-workspace/evidence/post-r16-static-repair-execution-owner-20261106-01/)。S17 的原件见 [执行证据](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-owner-20261106-01/)及 [父封存审查](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-inputs-20261106-01/s17-preparation-incomplete.PARENT-REVIEW.json)，后者 SHA256 为 `fdd38e32bf67d1a4984cca4941814f883286004f015220621d291680a26ac356`。这些版本各自独立，不拼接准备阶段、通过项或计划。
 
@@ -96,13 +96,17 @@ S21 的 runtime 变化会更新生成 helper 中两处嵌入摘要，而 helper 
 
 本地提交 `b7d00a7cd22eb00bcf2c8988b412eedcb301c4d4` 只改五个生产文件、四个直接测试文件中的12处固定摘要字面量，将 helper 身份同步为 `734ad85f336c41aeaab6034b5bd15a03642434e4ff4458b3b6ba06faed530bac`；各消费者仍独立校验固定身份，审批、协议、拒绝断言、UNKNOWN 和预算均保持。首次同步后的24例中8例通过、16例因遗漏的独立合同摘要报错；补齐后仅重跑失败审批组及三个直接合同方法，共 **20/0/0/0**，原工具 `9ee01d` 实际 exit0，未重复审批组以外已通过的7例。必要离线 deployment／Files 打包使用 `-DskipTests`，原工具 `c6b14e` 实际 exit0。全部失败轮保留，见[修复与分轮验证交接](../../../.ai-workspace/evidence/static-helper-runtime-pin-fix-20261107-01/HANDOFF.md)。这属于定点验证，不是全量测试或真实服务器验收；S22 须新冻结并完成全新四阶段后，才从 TaskBoard 开始固定八项。
 
-## S22 全新四阶段通过，首项独立执行中
+## S22 全新四阶段通过，首项完整 PASS
 
 本轮新 inventory、plan、精确 apply 和独立 after 各仅执行一个原次，原 native／Python／controller／tool 均真实退出0，新 JUnit 各 **1/0/0/0**，原最终 VERIFIED 齐全。新计划完整回执 SHA256 为 `574c7b5d0fe23b5b8a70ec104ae2ba2f315b0cc3bcf8cb7d5b789f8e444cab9b`；父独立递归排序并保留数组顺序和数值原词元，canonical plan 为 `7af47508b95e036af11160f01bed2d83a6f2d464a66c772cb9c2f76b74780de0`、11748字节。12个共同字段与本次新盘点原值全部一致，完整655条包清单摘要匹配，清包列表为空。
 
 新 apply 回执 SHA256 为 `55f2af5cd93a5454349e23286e59182e971e76947eb139c6a8a357f17e773526`，绑定上述精确新计划；原 summary 的五项产品清理计数均为0，APT缓存清理为true。随后另起独立 after，完整 inventory 与本轮 apply.postInventory **全部59382个UTF-8字节相同**，SHA256 为 `82e0d077f2a00d57e542e7bce91bd50ab87665b358533e5e04de4f67f90e2afc`，无排除字段或数字转换。148个必留核心包和全部655条包记录保持，八固定目录均不存在，产品账号、组、subid、服务、服务文件、目标包为空，APT缓存为0。相同旧摘要不代替本轮独立执行，各阶段均有自己的新任务、JUnit、原工具终态及收尾证据。
 
-16个已记录原进程身份均精确观察消失，四组自有TMP闭合，normal与证据保留，内部JVM身份仍UNKNOWN。见[本轮完整四阶段父审](../../../.ai-workspace/evidence/post-r16-static-helper-pin-execution-inputs-20261107-01/four-phase-preparation.PARENT-REVIEW.json)，SHA256 `697f10164309e2ea984b90013e3a5c550bc8c149dc0676df6173a36dabc6611e`。准备职责已结束，首TaskBoard交独立职责，仅执行一次原STATIC selector；原session13960已启动，尚无完整业务结论，后七项及AI未放行。输入静态校验、父审字节比较和审查文件名读取中的本地错误均保留；修正未改变冻结输入或重试服务器原次。
+16个已记录原进程身份均精确观察消失，四组自有TMP闭合，normal与证据保留，内部JVM身份仍UNKNOWN。见[本轮完整四阶段父审](../../../.ai-workspace/evidence/post-r16-static-helper-pin-execution-inputs-20261107-01/four-phase-preparation.PARENT-REVIEW.json)，SHA256 `697f10164309e2ea984b90013e3a5c550bc8c149dc0676df6173a36dabc6611e`。输入静态校验、父审字节比较和审查文件名读取中的本地错误均保留；修正未改变冻结输入或重试服务器原次。
+
+准备职责结束后，独立职责完成首TaskBoard唯一原次，原session13960由 `2faf37` 实际 exit0 结束，原native／Python／controller等待均为0，新JUnit **1/0/0/0**、1212.347秒。同应用 `wtl-static-task-board-j9qth82k0/static-live` 的PUBLISHED、真实HTTP／跨语言流程／重启／持久化BUSINESS、PASS modelCalls=0、CLEAN stopped/disabled原标记齐全。`c0e8e4` 实际exit0完成四个精确出生身份和自有TMP闭合，normal与证据保留；内部JVM身份仍UNKNOWN，原冷helper探针失败、dpkg警告和optional-empty记录均保留，不声称观测异常全零。见[本项完整父审](../../../.ai-workspace/evidence/post-r16-static-helper-pin-execution-inputs-20261107-01/static-task-board-first-01.PARENT-RESULT-REVIEW.json)，SHA256 `4b75fe268a9cce2ff7a1ee226e8b1f8aabfaa07008eeb77f2b6ec590375efd0d`。
+
+本轮STATIC已完整通过1/8。FileTransfer另交独立新职责，沿用本轮冻结与四阶段，原session91070已启动，仅运行一次原HTTP65536字节上传下载及重启校验用例，尚无完整结论；后六项及AI未放行，不复用S20失败原次或改用ASSISTED检查器。
 
 ## 后续验收条件
 
