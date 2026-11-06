@@ -1,6 +1,6 @@
 # R16 后独立 STATIC 验证记录
 
-本记录截至 S20 本地整合编译完成、尚未开始新服务器准备时。S17 至 S20 是独立 STATIC 版本号，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+本记录截至 S20 全新四阶段准备通过、首个 TaskBoard 原次启动时。S17 至 S20 是独立 STATIC 版本号，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 已消费原次
 
@@ -10,6 +10,7 @@
 | S16 `24c0ffba…` | 全新四阶段均通过 | TaskBoard 失败；其余七项未启动 | `DEPLOYMENT_BUILD_FAILED`，Maven 分发固定源连接超时；不重放该原次 |
 | S17 `8250f202…` | 新 inventory、plan 通过；apply 未完成；after 未启动 | 八项全部未启动 | apply 等待超时，清理实际结果为 UNKNOWN；四阶段未通过 |
 | S18 `275e0650…` | 全新四阶段均通过，完整 after 与 apply.postInventory 相同 | TaskBoard 失败；其余七项未启动 | 业务 QA 通过，最终清理复查失败、CLEAN 缺失；不算完整静态通过 |
+| S20 `39e67c94…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | 首个 TaskBoard 原次已启动；其余七项未启动 | 尚无业务完整判定；AI R17 未启动 |
 
 前两次 STATIC 的原件分别保留于 [ROOT16 执行证据](../../../.ai-workspace/evidence/post-r16-static-execution-owner-20261106-01/)和 [S16 执行证据](../../../.ai-workspace/evidence/post-r16-static-repair-execution-owner-20261106-01/)。S17 的原件见 [执行证据](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-owner-20261106-01/)及 [父封存审查](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-inputs-20261106-01/s17-preparation-incomplete.PARENT-REVIEW.json)，后者 SHA256 为 `fdd38e32bf67d1a4984cca4941814f883286004f015220621d291680a26ac356`。这些版本各自独立，不拼接准备阶段、通过项或计划。
 
@@ -45,10 +46,20 @@ S19 提交 `4193db873dbd8c74ffab73ead71c4aa9357b2da1` 只改四个生产类和�
 
 S20 提交 `7d030e334a91b09e038e0d281abac5da3a3953bf`、`d6167a88a08e9a9d7bdf5b8ff73165d61425922d` 增加每连接、单通道的有限元数据：具体 open 包的写 future、91／92 回复、OpenFuture 和最多四个所属线程的状态，时间统一为原命令单调时钟。记录不包含载荷、认证内容或原始异常正文；观察失败保留原传输行为，采样跨截止时不增加等待。WRITTEN 不证明对端收到，PENDING／FAILED 也不证明零字节发出。两个 STATIC 日志出口使用有限枚举／数字过滤。九个唯一 App 场景和一个投影方法分别定点通过；仅因相关修改重跑对应方法，错误的 synthetic fixture 与早期启动失败原件均保留，未重跑既有超时组或全量测试。详见 [分轮验证记录](../../../.ai-workspace/evidence/ssh-channel-open-metadata-20261106-01/verification-record.json)。早期 Surefire 覆盖部分 TMP 属性的偏差、未捕获 Java 子进程出生身份等限制也在该记录中保留。
 
-最终 S20 HEAD `39e67c9441b9bf54ed424e16505d2a7cc0e4d3a7` 无冲突合入 S19 修复，相对 S18 共 14 个相关源码／测试文件，工作树干净、仅本地提交。父代理只补必要离线 `-o -pl src/mod/deployment,src/mod/files -am -DskipTests package`，原工具 `0f03ae` 实际 exit0，31.163 秒、BUILD SUCCESS，所有测试跳过。专用构建 TMP 已安全清除，source／targets 保留；内部 JVM 身份仍 UNKNOWN。见 [整合与编译证据](../../../.ai-workspace/evidence/static-s20-integration-20261106-01/README.md)。目前只有新静态输入准备，没有 S20 真实服务器执行或底层超时已解决的结论。
+最终 S20 HEAD `39e67c9441b9bf54ed424e16505d2a7cc0e4d3a7` 无冲突合入 S19 修复，相对 S18 共 14 个相关源码／测试文件，工作树干净、仅本地提交。父代理只补必要离线 `-o -pl src/mod/deployment,src/mod/files -am -DskipTests package`，原工具 `0f03ae` 实际 exit0，31.163 秒、BUILD SUCCESS，所有测试跳过。专用构建 TMP 已安全清除，source／targets 保留；内部 JVM 身份仍 UNKNOWN。见 [整合与编译证据](../../../.ai-workspace/evidence/static-s20-integration-20261106-01/README.md)。该编译本身不证明真实服务器或底层超时已解决，后续真实执行另记如下。
+
+## S20 全新准备完成，首个业务进行中
+
+本轮 inventory、plan、exact apply 和独立 after 的四个原 native／tool 均 exit0，各新 JUnit **1/0/0/0**。新计划完整回执 SHA256 为 `046affb1b7eaf534a3b3638b9ea0adfabbc7089c1c9c812b2ebe80fbd0ddb717`，内层 canonical plan 为 `6e4dd2d61b82629d5ce59eed8689334596b29288fc932859cbf02b3719d1729a`，已独立复算并完整审查。实际清理五个产品目录、三个服务、两个产品账号及 31 个构建开发包；服务文件实际删除计数保留为3，原流程先 disable 再逐文件移除，不将该计数强改成计划文件数4。完整 148 个必留包记录不变，655 个剩余包记录恰为原 686 减计划 31，无额外升级或移除。
+
+apply 完成回执 SHA256 为 `90d3fceb0535a84ac2ad68ba12c63ac849b0a1ffd00d0ce73f2b8aec4ba49261`。独立新 after 的完整 inventory 与本轮 apply.postInventory 的 **59382 个 UTF-8 字节完全相同**，SHA256 为 `82e0d077f2a00d57e542e7bce91bd50ab87665b358533e5e04de4f67f90e2afc`，无排除字段或数字转换。相同旧摘要不表示复用旧原次；本轮各有独立的新任务、JUnit、native 和实际工具终态。16 个已记录 actor 均按精确出生身份确认消失，各自 TMP 已清、normal store 和证据保留，内部 JVM 身份仍 UNKNOWN。见 [本轮四阶段父审](../../../.ai-workspace/evidence/post-r16-static-channel-execution-inputs-20261106-01/four-phase-preparation.PARENT-REVIEW.json)。
+
+apply 曾在派发前被自动审批拒绝，没有程序、native、session 或 JUnit。父随后在原对话的实际 userMessage 中核到一次性服务器的必要 CRUD／环境清理明确授权；补充该原始来源后，同一精确请求的正常审批复核获准，才首次启动 native。原拒绝及复核历史保留，不记作部署重试，也不改写先前记录。见 [直接用户授权来源](../../../.ai-workspace/evidence/post-r16-static-channel-execution-inputs-20261106-01/apply-direct-user-authority.PARENT-REVIEW.json)。
+
+四阶段 owner 已结束职责，另由独立 owner 执行首个 TaskBoard。原工具 `68f696`／session `17929` 已正常审批启动，当前尚无完整业务结论；不能提前计 PASS 或 CLEAN。其余七项和 AI 未启动，实时结果以 CURRENT 为准。
 
 ## 后续验收条件
 
-修复后新轮须另行固定真实版本与输入，完整执行新的 inventory → plan → 父审精确计划 → apply → 独立 after；独立 after 须与 apply 的完整 postInventory 对照。不得拼用旧计划、准备 PASS 或业务部分结果。通过后才按 TaskBoard、FileTransfer、AssetLending、CsvInspector、SurveyScoring、LogAnalyzer、DirectoryDiff、BinaryInspector 固定顺序逐项放行 STATIC，每项均需原业务断言、modelCalls=0、同应用 CLEAN、JUnit 与真实 native/tool 闭合，失败或不确定不放后项。
+每个新版本或失败后的新轮均须另行冻结，完整执行 inventory → plan → 父审精确计划 → apply → 独立 after；独立 after 须与 apply 的完整 postInventory 对照，不得拼用旧计划、准备 PASS 或业务部分结果。S20 已完成这项准备，业务仍按 TaskBoard、FileTransfer、AssetLending、CsvInspector、SurveyScoring、LogAnalyzer、DirectoryDiff、BinaryInspector 固定顺序逐项放行，每项均需原业务断言、modelCalls=0、同应用 CLEAN、JUnit 与真实 native/tool 闭合，失败或不确定不放后项。
 
 STATIC FTP 使用原 64 KiB 负载，CLI 使用原静态 health probe；不以 ASSISTED 专用检查器替代。STATIC 不运行 AI guard 或私密 key hash，不修改已批准的 AI 15 秒／MAX25／0.2 秒观测规则。八项静态正常后才回到 AI 辅助测试；MOD 仍通过主 APP 四用途标准 API 通信，厂商适配由主 APP 负责。
