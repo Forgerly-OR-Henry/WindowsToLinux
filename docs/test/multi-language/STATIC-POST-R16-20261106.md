@@ -139,9 +139,9 @@ FileTransfer原session89390由 `b0471a` 实际exit0结束，新JUnit **1/0/0/0**
 
 AssetLending原session30085由 `c579bd` 实际exit1结束，新JUnit **1/1/0/0**、203.893秒；native／Python／controller原等待均完成并返回1，bookkeeping无异常。部署root `d5cfceb7-9eaa-4865-896b-85a56c94cee2` 明确FAILED，IO_FAILURE／DEPLOYMENT_BUILD_FAILED；DOTNET_LOCKED10.0.300真实restore下载官方 `Microsoft.Data.Sqlite.10.0.8.nupkg` 时出现attempt1 `digest-mismatch`，随后attempt0 `locked-route-unavailable` 和502。未到PUBLISHED／BUSINESS／PASS model0／同应用CLEAN；远端副作用与原native等待之外future完成状态均UNKNOWN_NOT_RECHECKED，不重开失败库或补查服务器。见[本次失败父审](../../../.ai-workspace/evidence/post-r16-static-nuget-signature-execution-inputs-20261107-01/s23-asset-lending-failed.PARENT-REVIEW.json)，SHA256 `d75ad50f31f420c614e1530af00298b07d4b8add5eb8260e493f3bd6eb8e7f4f`。本轮封存PASS2／FAILED1／UNLAUNCHED5，不重试或拼接。
 
-原工具 `515e36` 实际exit0，仅按四个已记录PID／原出生身份各一次观察，均PID_ABSENT；内部JVM身份仍UNKNOWN。两自有TMP按原失败策略保留，正在另行准备父审限定janitor，仅文字候选尚未执行或删除；normal与原证据保留，没有normal closeout。
+原工具 `515e36` 实际exit0，仅按四个已记录PID／原出生身份各一次观察，均PID_ABSENT；内部JVM身份仍UNKNOWN。另行父审的限定janitor原工具 `bdccb7` 实际exit0，四fresh精确原身份均消失；owner、绝对边界、祖先／整树nonreparse、硬链接和独占DELETE锁检查通过，仅清两自有TMP叶目录及空任务根。清理进程696的原出生身份在调用前记录，由同一原工具实际exit0证明退出，未新增self PID观察；normal与原证据保留，没有normal closeout或服务器复查。见[本地异常收尾父审](../../../.ai-workspace/evidence/post-r16-static-nuget-signature-execution-inputs-20261107-01/static-asset-lending-abnormal-tmp-closed.PARENT-REVIEW.json)，SHA256 `282fca26de32f1a53afa02b43fcd6850c317aec70caaf0634b5c440d381edc2b`。
 
-源码只读调查确认另一独立缺陷：锁文件Base64 `contentHash` 被正确解码后，当作整个HTTP响应nupkg的SHA-512比较；但官方NuGet对已签名包排除签名归档记录并修正ZIP目录后计算内容哈希，不能用原整文件哈希或重新ZIP代替，见[官方实现](https://github.com/NuGet/NuGet.Client/blob/dev/src/NuGet.Core/NuGet.Packaging/PackageArchiveReader.cs#L453)。公开fixture含Sqlite10.0.8锁，实际运行副本、包字节及签名状态未读取，因此不能把源码缺陷冒充本次现场完整因果核验。S24工作树 `s24f` 已从f028e006创建，正在判断严格内容哈希validator的最小方案，尚无代码修复、新编译或验收；保留原包字节、原生NuGet锁／签名检查与选源限制，不能通过关闭摘要验证修复。获验证后仍须新冻结、完整四阶段并从首项执行固定八项。
+源码只读调查确认另一独立缺陷：锁文件Base64 `contentHash` 被正确解码后，当作整个HTTP响应nupkg的SHA-512比较；但官方NuGet对已签名包排除签名归档记录并修正ZIP目录后计算内容哈希，不能用原整文件哈希或重新ZIP代替，见[官方实现](https://github.com/NuGet/NuGet.Client/blob/dev/src/NuGet.Core/NuGet.Packaging/PackageArchiveReader.cs#L453)。公开fixture含Sqlite10.0.8锁，实际运行副本、包字节及签名状态未读取，因此不能把源码缺陷冒充本次现场完整因果核验。S24工作树 `s24f` 已从f028e006创建，正在实现严格内容哈希validator及NuGet局部锁摘要登记，尚未完成最终验证、必要打包或新服务器验收；保留原包字节、原生NuGet锁／签名检查与选源限制，不能通过关闭摘要验证修复。获验证后仍须新冻结、完整四阶段并从首项执行固定八项。
 
 ## 后续验收条件
 
