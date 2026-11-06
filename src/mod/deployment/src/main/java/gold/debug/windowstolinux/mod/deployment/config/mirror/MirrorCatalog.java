@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.MirrorSettings;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.ResolvedMirrorPolicy;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.ResolvedMirrorPolicy.*;
 
 /** Mod-owned catalog; providers, geography and upstream routing are exclusively resource data. */
@@ -26,11 +27,17 @@ public record MirrorCatalog(int formatVersion, String catalogVersion, Map<String
         }
     }
     public record Source(String baseUrl, List<String> allowedHosts, List<Route> routes,
-                         boolean complete, String coverageNote, Map<String, String> repoTemplates) {
+                         boolean complete, String coverageNote, Map<String, String> repoTemplates,
+                         List<RedirectRule> redirectRules) {
+        public Source(String baseUrl, List<String> allowedHosts, List<Route> routes,
+                      boolean complete, String coverageNote, Map<String, String> repoTemplates) {
+            this(baseUrl, allowedHosts, routes, complete, coverageNote, repoTemplates, List.of());
+        }
         public Source {
             allowedHosts = allowedHosts.stream().map(MirrorSettings::normalizedHost).distinct().toList();
             routes = List.copyOf(routes);
             repoTemplates = repoTemplates == null ? Map.of() : Map.copyOf(repoTemplates);
+            redirectRules = ResolvedMirrorPolicy.redirectRules(redirectRules, allowedHosts);
         }
     }
     public record Provider(String id, String label, String country, String region, boolean official,

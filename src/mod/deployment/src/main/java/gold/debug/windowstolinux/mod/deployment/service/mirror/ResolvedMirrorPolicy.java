@@ -36,9 +36,40 @@ public record ResolvedMirrorPolicy(int formatVersion, String task, String server
             return value.replaceAll("\\\\g<[0-9]+>", "capture");
         }
     }
+    /** Cross-host distribution is permitted only on an explicit redirect edge, never an initial URL. */
+    public record RedirectRule(String fromHost, String toHost, String pathPrefix) {
+        public RedirectRule {
+            fromHost = redirectHost(fromHost);
+            toHost = redirectHost(toHost);
+            if (pathPrefix == null || pathPrefix.length() > 1024 || pathPrefix.equals("/")
+                || !pathPrefix.startsWith("/") || !pathPrefix.endsWith("/")
+                || !pathPrefix.matches("[A-Za-z0-9._~!$&'()*+,;=:@/-]+") || pathPrefix.contains("//")
+                || Arrays.stream(pathPrefix.split("/")).anyMatch(part -> part.equals(".") || part.equals("..")))
+                throw new IllegalArgumentException("Invalid redirect path prefix");
+        }
+        private static String redirectHost(String value) {
+            if (value == null || value.length() > 253
+                || !value.matches("(?i)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*"))
+                throw new IllegalArgumentException("Invalid redirect host");
+            return value.toLowerCase(Locale.ROOT);
+        }
+    }
+    public static List<RedirectRule> redirectRules(List<RedirectRule> rules, List<String> allowedHosts) {
+        var result = rules == null ? List.<RedirectRule>of() : List.copyOf(rules);
+        if (result.size() > 16 || result.stream().anyMatch(rule -> !allowedHosts.contains(rule.fromHost())))
+            throw new IllegalArgumentException("Redirect rules escape selected source boundary");
+        return result;
+    }
     public record Endpoint(String providerId, String protocol, String baseUrl, List<String> allowedHosts,
                            boolean official, boolean custom, List<String> sourceOrigins, List<Route> routes,
-                           Map<String, String> repoTemplates, String secretRef, boolean explicit) {
+                           Map<String, String> repoTemplates, String secretRef, boolean explicit,
+                           List<RedirectRule> redirectRules) {
+        public Endpoint(String providerId, String protocol, String baseUrl, List<String> allowedHosts,
+                        boolean official, boolean custom, List<String> sourceOrigins, List<Route> routes,
+                        Map<String, String> repoTemplates, String secretRef, boolean explicit) {
+            this(providerId, protocol, baseUrl, allowedHosts, official, custom, sourceOrigins, routes,
+                repoTemplates, secretRef, explicit, List.of());
+        }
         public Endpoint(String providerId, String protocol, String baseUrl, List<String> allowedHosts,
                         boolean official, boolean custom, List<String> sourceOrigins, List<Route> routes,
                         Map<String, String> repoTemplates) {
@@ -54,11 +85,15 @@ public record ResolvedMirrorPolicy(int formatVersion, String task, String server
             routes = List.copyOf(routes);
             repoTemplates = repoTemplates == null ? Map.of() : Map.copyOf(repoTemplates);
             secretRef = secretRef == null ? "" : secretRef;
+            redirectRules = ResolvedMirrorPolicy.redirectRules(redirectRules, allowedHosts);
+            if (custom && !redirectRules.isEmpty())
+                throw new IllegalArgumentException("Custom mirror cannot carry distribution redirect rules");
             if (!secretRef.isEmpty() && !secretRef.matches("[A-Za-z0-9_.:-]{1,256}"))
                 throw new IllegalArgumentException("Invalid mirror secret reference");
         }
         public Endpoint selection(String reference) {
-            return new Endpoint(providerId, protocol, baseUrl, allowedHosts, official, custom, sourceOrigins, routes, repoTemplates, reference, true);
+            return new Endpoint(providerId, protocol, baseUrl, allowedHosts, official, custom, sourceOrigins, routes,
+                repoTemplates, reference, true, redirectRules);
         }
     }
     public ResolvedMirrorPolicy withTask(String id) {

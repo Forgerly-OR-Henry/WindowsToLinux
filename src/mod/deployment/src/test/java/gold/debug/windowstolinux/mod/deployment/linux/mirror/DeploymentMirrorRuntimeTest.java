@@ -16,8 +16,44 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
+import gold.debug.windowstolinux.mod.deployment.config.mirror.MirrorCatalog;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.MirrorSelector;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.MirrorSettings;
 
 final class DeploymentMirrorRuntimeTest {
+    @Test
+    void goModuleRedirectRulesPreserveStrictInitialAndPerHopBoundaries() throws Exception {
+        Path directory = Files.createTempDirectory("go-module-redirect-");
+        try {
+            Path runtime = directory.resolve("runtime.py");
+            Files.writeString(runtime, DeploymentMirrorRuntime.runtimeSource(), StandardCharsets.UTF_8);
+            Path test = directory.resolve("go_redirect_test.py");
+            try (var stream = getClass().getResourceAsStream("go_redirect_test.py")) {
+                if (stream == null) throw new IOException("Go redirect fixture absent");
+                Files.copy(stream, test);
+            }
+            var settings = new MirrorSettings(1, java.util.Map.of(DownloadPoint.GO_MODULE, List.of(
+                new MirrorSettings.Row("official-go_module", "", false, false, ""))), java.util.Map.of());
+            var policy = MirrorSelector.resolve(MirrorCatalog.load(), settings, "synthetic-server", "US");
+            Path frozen = directory.resolve("policy.json");
+            Files.writeString(frozen, policy.toJson());
+            var command = new ArrayList<String>();
+            if (System.getProperty("os.name").startsWith("Windows")) command.addAll(List.of("py", "-3"));
+            else command.add("python3");
+            command.addAll(List.of(test.toString(), runtime.toString(), frozen.toString()));
+            System.out.println("GO_REDIRECT_JVM pid=" + ProcessHandle.current().pid() + " birth="
+                + ProcessHandle.current().info().startInstant().map(Object::toString).orElse("UNKNOWN")
+                + " cwd=" + Path.of("").toAbsolutePath() + " java.io.tmpdir=" + System.getProperty("java.io.tmpdir")
+                + " jna.tmpdir=" + System.getProperty("jna.tmpdir")
+                + " jdk.net.unixdomain.tmpdir=" + System.getProperty("jdk.net.unixdomain.tmpdir"));
+            String output = execute(directory, command, Duration.ofSeconds(30));
+            System.out.println(output);
+            assertTrue(output.contains("OK"), output);
+            assertFalse(output.contains("FAILED"), output);
+        } finally { cleanup(directory); }
+    }
+
     @Test
     void olderTasksRetainTheirOriginalScript() {
         assertEquals("set -e\necho original\n", DeploymentMirrorRuntime.wrapBuild("set -e\necho original\n", ""));

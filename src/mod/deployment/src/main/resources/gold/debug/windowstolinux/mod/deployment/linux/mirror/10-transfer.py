@@ -170,6 +170,61 @@ class MirrorPolicy:
         return url
 
     @staticmethod
+    def validate_redirect(endpoint, original, url):
+        try:
+            return MirrorPolicy.validate_url(endpoint, url)
+        except MirrorFailure:
+            pass
+        # Extra hosts are redirect-only edges. They never become initial download hosts,
+        # and cannot use another distribution redirect to escape the selected source.
+        try:
+            source, target = urllib.parse.urlsplit(original), urllib.parse.urlsplit(url)
+            rules = endpoint.get('redirectRules', [])
+            if (endpoint.get('custom') or not isinstance(rules, list) or len(rules) > 16
+                    or any(ord(char) <= 32 or ord(char) == 127 for char in original + url)
+                    or '#' in original + url or not source.hostname or not target.hostname
+                    or source.scheme != 'https' or target.scheme != 'https'
+                    or source.port not in (None, 443) or target.port not in (None, 443)
+                    or source.netloc.lower() not in (source.hostname, source.hostname + ':443')
+                    or target.netloc.lower() not in (target.hostname, target.hostname + ':443')
+                    or source.username is not None or source.password is not None or source.fragment
+                    or target.username is not None or target.password is not None or target.fragment):
+                raise ValueError('invalid redirect edge')
+            allowed = {MirrorPolicy.normalized_host(host) for host in endpoint.get('allowedHosts', [])}
+            matched = False
+            for rule in rules:
+                if not isinstance(rule, dict):
+                    raise ValueError('invalid redirect rule')
+                start, end, prefix = (rule.get(key) for key in ('fromHost', 'toHost', 'pathPrefix'))
+                host_pattern = r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*'
+                if (any(not isinstance(host, str) or len(host) > 253
+                        or not re.fullmatch(host_pattern, host, re.I | re.ASCII) for host in (start, end))
+                        or start.lower() not in allowed
+                        or not isinstance(prefix, str) or len(prefix) > 1024 or prefix == '/'
+                        or not prefix.endswith('/') or not re.fullmatch(r"[A-Za-z0-9._~!$&'()*+,;=:@/-]+", prefix)
+                        or MirrorPolicy.redirect_path(prefix) != prefix):
+                    raise ValueError('invalid redirect rule boundary')
+                if (source.hostname == start.lower() and target.hostname == end.lower()
+                        and target.path.startswith(prefix)
+                        and MirrorPolicy.redirect_path(target.path).startswith(prefix)):
+                    matched = True
+            if matched:
+                return url  # Preserve signed query bytes without logging them.
+        except (ValueError, UnicodeError):
+            pass
+        raise MirrorFailure('destination/redirect outside selected source allowlist')
+
+    @staticmethod
+    def redirect_path(path):
+        decoded = urllib.parse.unquote(path, errors='strict')
+        if (not path.startswith('/') or '//' in decoded or '\\' in decoded or '%' in decoded
+                or any(ord(char) <= 32 or ord(char) == 127 for char in decoded)
+                or decoded.count('/') != path.count('/')
+                or any(part in ('.', '..') for part in decoded.split('/'))):
+            raise ValueError('redirect path is not canonical')
+        return decoded
+
+    @staticmethod
     def normalized_host(value):
         if not isinstance(value, str):
             return ''
@@ -207,7 +262,7 @@ class MirrorRedirect(urllib.request.HTTPRedirectHandler):
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         # A custom endpoint cannot redirect into the public fallback behind the policy's back.
-        MirrorPolicy.validate_url(self.endpoint, newurl)
+        MirrorPolicy.validate_redirect(self.endpoint, req.full_url, newurl)
         redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
         if redirected is not None:
             for name in list(getattr(req, 'wtl_bound_headers', [])) + ['Authorization', 'Cookie']:

@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "catalogVersion": "2026-11-04.1",
+  "catalogVersion": "2026-11-07.1",
   "timeouts": {
     "connectSeconds": 10,
     "readSeconds": 60,
@@ -1561,13 +1561,23 @@
       "region": "NORTH_AMERICA",
       "official": true,
       "evidence": [
-        "https://proxy.golang.org/"
+        "https://proxy.golang.org/",
+        "https://go.dev/ref/mod#goproxy-protocol",
+        "https://github.com/golang/go/issues/33928",
+        "https://github.com/golang/go/issues/49144"
       ],
       "sources": {
         "GO_MODULE": {
           "baseUrl": "https://proxy.golang.org/",
           "allowedHosts": [
             "proxy.golang.org"
+          ],
+          "redirectRules": [
+            {
+              "fromHost": "proxy.golang.org",
+              "toHost": "storage.googleapis.com",
+              "pathPrefix": "/proxy-golang-org-prod/"
+            }
           ],
           "routes": [
             {
@@ -1576,7 +1586,7 @@
             }
           ],
           "complete": true,
-          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "coverageNote": "仅允许代理向已知 Go zip 分发 bucket 的受限跳转；bucket 是上游实现细节，其他目标、对象缺失或未映射URL仍按失败处理。",
           "repoTemplates": {}
         }
       }

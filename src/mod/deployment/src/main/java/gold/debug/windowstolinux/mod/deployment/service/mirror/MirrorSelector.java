@@ -108,6 +108,7 @@ public final class MirrorSelector {
     private static Endpoint endpoint(MirrorCatalog catalog, DownloadPoint point, Provider p) {
         var source = p.sources().get(point);
         return new Endpoint(p.id(), catalog.point(point).protocol(), source.baseUrl(), source.allowedHosts(),
-            p.official(), false, catalog.point(point).sourceOrigins(), source.routes(), source.repoTemplates());
+            p.official(), false, catalog.point(point).sourceOrigins(), source.routes(), source.repoTemplates(),
+            "", false, source.redirectRules());
     }
 }
