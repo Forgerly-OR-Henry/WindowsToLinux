@@ -11,6 +11,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
@@ -22,6 +23,8 @@ import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import org.junit.jupiter.api.Test;
@@ -89,24 +92,78 @@ class DeploymentDisposableHostResetLiveTest {
             final String script = command;
             var handle = context.tasks().submit(new TaskRequest("disposable-host-reset",
                 "Explicit disposable host " + mode, List.of("static-live"), false), task -> {
-                    var server = new ServerId("static-live");
-                    try (var session = context.linux().connect(server, task);
-                         var request = new CommandRequest(script, source, Duration.ofMinutes(mode.equals("apply") ? 30 : 3), 524288)) {
-                        assertEquals(fingerprint, session.facts().fingerprint());
-                        var intent = RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics(
-                            "deployment.test.disposable-host-reset.v1", Set.of(
-                                new ActionTarget(server.id(), "disposable-host", host),
-                                new ActionTarget(server.id(), "task", task.id().toString()))));
-                        var grant = context.interaction().approve(intent, task);
-                        assertEquals(TaskResult.SUCCEEDED, grant.outcome());
-                        var result = session.execute(request, grant.value().orElseThrow());
-                        if (result.value().isPresent()) {
-                            CommandResult value = result.value().orElseThrow();
-                            Files.writeString(receipt, value.stdout(), StandardOpenOption.CREATE_NEW);
-                            System.out.println("DISPOSABLE_RESET_COMMAND mode=" + mode + " outcome=" + result.outcome()
-                                + " exit=" + value.exitCode() + " truncated=" + value.truncated());
+                    String phase = "CONNECT";
+                    String failurePhase = null;
+                    System.out.println("DISPOSABLE_RESET_CALLBACK ENTER mode=" + mode + " task=" + task.id());
+                    try {
+                        var server = new ServerId("static-live");
+                        System.out.println("DISPOSABLE_RESET_CONNECT ENTER mode=" + mode + " task=" + task.id());
+                        try (var session = context.linux().connect(server, task)) {
+                            System.out.println("DISPOSABLE_RESET_CONNECT RETURN mode=" + mode + " task=" + task.id());
+                            try {
+                                phase = "REQUEST";
+                                try (var request = new CommandRequest(script, source, Duration.ofMinutes(mode.equals("apply") ? 30 : 3), 524288)) {
+                                    try {
+                                        assertEquals(fingerprint, session.facts().fingerprint());
+                                        phase = "REVIEW";
+                                        System.out.println("DISPOSABLE_RESET_REVIEW ENTER mode=" + mode + " task=" + task.id());
+                                        var intent = RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics(
+                                            "deployment.test.disposable-host-reset.v1", Set.of(
+                                                new ActionTarget(server.id(), "disposable-host", host),
+                                                new ActionTarget(server.id(), "task", task.id().toString()))));
+                                        var grant = context.interaction().approve(intent, task);
+                                        System.out.println("DISPOSABLE_RESET_REVIEW RETURN mode=" + mode + " task=" + task.id()
+                                            + " outcome=" + grant.outcome() + " grantPresent=" + grant.value().isPresent());
+                                        assertEquals(TaskResult.SUCCEEDED, grant.outcome());
+                                        phase = "EXECUTE";
+                                        System.out.println("DISPOSABLE_RESET_EXECUTE ENTER mode=" + mode + " task=" + task.id());
+                                        var result = session.execute(request, grant.value().orElseThrow());
+                                        System.out.println("DISPOSABLE_RESET_EXECUTE RETURN mode=" + mode + " task=" + task.id()
+                                            + " outcome=" + result.outcome() + " valuePresent=" + result.value().isPresent()
+                                            + result.value().map(value -> " exitPresent=" + value.exitCode().isPresent()
+                                                + value.exitCode().map(exit -> " exit=" + exit).orElse("")
+                                                + " truncated=" + value.truncated()).orElse(""));
+                                        if (result.value().isPresent()) {
+                                            phase = "RECEIPT";
+                                            CommandResult value = result.value().orElseThrow();
+                                            Files.writeString(receipt, value.stdout(), StandardOpenOption.CREATE_NEW);
+                                            System.out.println("DISPOSABLE_RESET_COMMAND mode=" + mode + " outcome=" + result.outcome()
+                                                + " exit=" + value.exitCode() + " truncated=" + value.truncated());
+                                        }
+                                        return result;
+                                    } catch (Exception | Error failure) {
+                                        failurePhase = phase;
+                                        throw failure;
+                                    } finally {
+                                        phase = "REQUEST_CLOSE";
+                                    }
+                                }
+                            } catch (Exception | Error failure) {
+                                if (failurePhase == null) failurePhase = phase;
+                                throw failure;
+                            } finally {
+                                phase = "SESSION_CLOSE";
+                            }
                         }
-                        return result;
+                    } catch (ApiException failure) {
+                        var problem = failure.problem();
+                        String code = Set.of(ProblemCode.INVALID_INPUT, ProblemCode.UNAVAILABLE, ProblemCode.ACCESS_DENIED,
+                            ProblemCode.BUSY, ProblemCode.IO_FAILURE, ProblemCode.TIMEOUT, ProblemCode.CANCELLED,
+                            ProblemCode.UNKNOWN, ProblemCode.CONTRACT_VIOLATION).contains(problem.code()) ? problem.code().name() : "OTHER";
+                        String event = Set.of("SSH_PLATFORM_CONNECT", "SSH_HOST_KEY_REJECTED", "SSH_TRUST_CANCELLED",
+                            "SSH_ADAPTER_UNCERTAIN", "SSH_OPERATION_UNCERTAIN", "SSH_SESSION_BUSY", "SSH_SESSION_CLOSING",
+                            "SSH_REVIEW_STALE", "SSH_ORIGINAL_TASK_CHANGED", "SSH_ORIGINAL_TARGET_CHANGED", "SSH_ORIGINAL_TRUST_CHANGED",
+                            "APPROVAL_ACTION", "APPROVAL_IDENTITY", "APPROVAL_INTENT", "APPROVAL_UNAVAILABLE")
+                            .contains(problem.eventCode()) ? problem.eventCode() : "OTHER";
+                        System.out.println("DISPOSABLE_RESET_API_FAILURE mode=" + mode + " task=" + task.id()
+                            + " phase=" + (failurePhase == null ? phase : failurePhase) + " code=" + code + " event=" + event);
+                        throw failure;
+                    } catch (Exception | Error failure) {
+                        System.out.println("DISPOSABLE_RESET_CALLBACK_FAILURE mode=" + mode + " task=" + task.id()
+                            + " phase=" + (failurePhase == null ? phase : failurePhase) + " type=" + failure.getClass().getSimpleName());
+                        throw failure;
+                    } finally {
+                        System.out.println("DISPOSABLE_RESET_CALLBACK EXIT mode=" + mode + " task=" + task.id() + " phase=" + phase);
                     }
                 });
             var commandResult = await(handle, mode.equals("apply") ? 32 : 4);
@@ -142,7 +199,15 @@ class DeploymentDisposableHostResetLiveTest {
 
     private static <T> T await(TaskHandle<T> handle, int minutes) throws Exception {
         System.out.println("DISPOSABLE_RESET_TASK " + handle.id());
-        var result = handle.completion().toCompletableFuture().get(minutes, TimeUnit.MINUTES);
+        gold.debug.windowstolinux.appapi.task.result.OperationResult<T> result;
+        try {
+            result = handle.completion().toCompletableFuture().get(minutes, TimeUnit.MINUTES);
+        } catch (TimeoutException timeout) {
+            var snapshot = handle.snapshot();
+            System.out.println("DISPOSABLE_RESET_TASK_WAIT_TIMEOUT task=" + handle.id() + " state=" + snapshot.state()
+                + " outcome=" + snapshot.outcome().map(Enum::name).orElse("NONE"));
+            throw timeout;
+        }
         assertEquals(TaskResult.SUCCEEDED, result.outcome(), result::toString);
         return result.value().orElseThrow();
     }
