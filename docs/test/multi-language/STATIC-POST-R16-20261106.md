@@ -1,6 +1,6 @@
 # R16 后独立 STATIC 验证记录
 
-本记录截至 S22 失败及本地异常收尾封存、S23 离线修复通过并放行新只读盘点时。S22 为 **PASS2／FAILED1／后五项未启动**，不能将这两项通过拼入新轮。S23 修复已本地提交，28个定点检查及必要打包通过，八项新业务尚未启动。S21 保留首项失败且部署 UNKNOWN／后七项未启动，S20 保留 PASS1／FAILED1／后六项未启动。S17 之后的 S 编号为独立 STATIC 版本，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+本记录截至 S22 失败及本地异常收尾封存、S23 全新四阶段准备通过并放行首个 TaskBoard 时。S22 为 **PASS2／FAILED1／后五项未启动**，不能将这两项通过拼入新轮。S23 修复已本地提交，28个定点检查及必要打包通过，新业务尚无验收结果。S21 保留首项失败且部署 UNKNOWN／后七项未启动，S20 保留 PASS1／FAILED1／后六项未启动。S17 之后的 S 编号为独立 STATIC 版本，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 已消费原次
 
@@ -13,7 +13,7 @@
 | S20 `39e67c94…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 完整原次 PASS；FileTransfer 原次 FAILED，其余六项未启动 | GO_MODULE 来源白名单拒绝，64KiB业务未到达；STATIC 1/8，AI R17 未启动 |
 | S21 `29965d65…` | 全新四阶段通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 原次 FAILED，部署 root 为 UNKNOWN；其余七项未启动 | 完整业务0/8，异常自有 TMP 已闭合；AI R17 未启动 |
 | S22 `b7d00a7c…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard、FileTransfer 完整原次 PASS；AssetLending FAILED，后五项未启动 | NuGet 仓库签名请求502；本轮封存2/8，AI R17 未启动 |
-| S23 `f028e006…` | 仅放行新只读 inventory，完整四阶段尚待完成 | 八项全部未启动 | NuGet 签名窄路径修复的28个定点检查及必要包通过；尚无新业务验收结果 |
+| S23 `f028e006…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | 仅放行首个 TaskBoard；其余七项未启动 | 本地定点与必要包通过；尚无新业务验收结果 |
 
 前两次 STATIC 的原件分别保留于 [ROOT16 执行证据](../../../.ai-workspace/evidence/post-r16-static-execution-owner-20261106-01/)和 [S16 执行证据](../../../.ai-workspace/evidence/post-r16-static-repair-execution-owner-20261106-01/)。S17 的原件见 [执行证据](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-owner-20261106-01/)及 [父封存审查](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-inputs-20261106-01/s17-preparation-incomplete.PARENT-REVIEW.json)，后者 SHA256 为 `fdd38e32bf67d1a4984cca4941814f883286004f015220621d291680a26ac356`。这些版本各自独立，不拼接准备阶段、通过项或计划。
 
@@ -121,7 +121,15 @@ AssetLending由独立新职责执行唯一原次，原session22785由 `7dca50` �
 
 新回归通过真实catalog／selector／policy往返及loopback合成服务，验证签名索引与证书字节、精确路由和拒绝边界、自定义源失败不回落官方源。最终九份JUnit合计 **28/0/0/0**，原工具 `9b1145` 实际exit0；早期三个失败轮及错误断言修正均分别保留，不拼成首轮全绿。原CONNECT reset随fixture路径缩短后消失，但缺少原OpenSSL现场，未确证长路径因果。离线deployment／Files必要打包使用 `-DskipTests`，原工具 `586505` 实际exit0；16个已记录actor精确核退，自有TMP已清，未知内部进程身份仍UNKNOWN。见[修复及分轮验证](../../../.ai-workspace/evidence/static-nuget-signature-route-fix-20261107-01/README.md)。这是定点与合成验证，不是实际NuGet SDK签名验证、全量测试或服务器验收。
 
-新候选的7项launcher、19处POM路径和五control机械差异经父独立逆字节核对复现S22原件，五control AST无错误；54classpath、9metadata、6JSON路径、13原pins、STATIC两pin、17类族49classes及两JAR51精确条目完成有限公开核验，非完整compiled／私有冻结。见[配置父审](../../../.ai-workspace/evidence/post-r16-static-nuget-signature-execution-inputs-20261107-01/configuration-and-public-inputs.PARENT-REVIEW.json)。只放行一次新只读inventory；仍须新plan、精确apply与独立after完整比对后，才从TaskBoard开始固定八项，不能复用S22准备或两项PASS。
+新候选的7项launcher、19处POM路径和五control机械差异经父独立逆字节核对复现S22原件，五control AST无错误；54classpath、9metadata、6JSON路径、13原pins、STATIC两pin、17类族49classes及两JAR51精确条目完成有限公开核验，非完整compiled／私有冻结。见[配置父审](../../../.ai-workspace/evidence/post-r16-static-nuget-signature-execution-inputs-20261107-01/configuration-and-public-inputs.PARENT-REVIEW.json)。后续各阶段分别放行，没有复用S22准备或两项PASS。
+
+## S23 全新四阶段通过，首个业务已放行
+
+新inventory、plan、精确apply和独立after的原工具分别为 `8744ae`、`037faa`、`3d2c58`、`c3abc3`，各实际exit0、新JUnit **1/0/0/0**、原VERIFIED齐全。计划父审独立递归ordinal canonical为18195字节，SHA256 `54cd0c78525ee62bcb061fc3d430a704c8d1738a160ee69665ca84f678736511`；12个共同字段与本轮inventory全部raw相同，686包完整摘要匹配，31个purge精确为已识别的非必需构建依赖，与148个必留包无交集。按用户持续授权，仅原产品API处理健康R15凭据与新加密正常库，不脚本观察私有实体。
+
+新apply回执SHA256为 `201b640b4b3c7ecdf398b4aff0d5a87f4817b39c450eaddd8c5970ed39b48d2b`，原summary保留purge31、accounts4、roots5、unitFiles5、stopped5、APT清理true。剩余655包逐raw恰为本轮盘点减31包，core完整不变；八root均absent，产品账户、组、subIds、units、unitFiles、states及targets为空，APT0。独立新after回执SHA256为 `043786ae7c28baaf3e7d15829b3e8d354fea2f717921d2e5f40b831e619506be`，与本轮apply.postInventory **全部59382个UTF-8字节、14字段raw相同**，没有排除或数值转换；相同旧摘要不表示复用旧原次。见[完整独立比较](../../../.ai-workspace/evidence/post-r16-static-nuget-signature-execution-inputs-20261107-01/host-after-static-01.PARENT-COMPLETE-COMPARISON.json)。
+
+四组原closeout分别 `b623ab`、`1523fa`、`26d46e`、`f0ef80`，均实际exit0，16个已记录原出生身份消失，自有TMP闭合，normal和原证据保留；未采集的内部JVM身份仍UNKNOWN。见[本轮四阶段父审](../../../.ai-workspace/evidence/post-r16-static-nuget-signature-execution-inputs-20261107-01/four-phase-preparation.PARENT-REVIEW.json)，SHA256 `29639831e9aa10a7f5633a52461fcf4ffabf5f3e1ef63713b37c7d1827c32b59`。准备职责已结束，另由独立职责接手TaskBoard唯一原次；目前只放行该首项，尚无完整业务PASS，后七项与AI未启动。
 
 ## 后续验收条件
 
