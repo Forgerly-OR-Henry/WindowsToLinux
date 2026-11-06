@@ -1,8 +1,8 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 2026-11-07 独立 STATIC：S22 首项完整 PASS，第二项独立执行中
+## 2026-11-07 独立 STATIC：S22 前两项完整 PASS，第三项独立执行中
 
-见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。S20完整PASS1／FAILED1／后六项未启动，S21首TaskBoard失败／部署UNKNOWN／future未完成／完整0/8／后七项未启动保持，异常TMP已闭合，normal与证据保留。S22 `b7d00a7cd22eb00bcf2c8988b412eedcb301c4d4` 全新四阶段均通过后，独立首TaskBoard唯一原次完整PASS，真实HTTP／跨语言／重启／持久化QA、modelCalls=0及同应用CLEAN齐全，原native/tool0、新JUnit1/0/0/0、四精确身份及TMP闭合。原警告和冷探针失败保留，内部JVM仍UNKNOWN，不宣称异常全零。当前STATIC1/8，FileTransfer由独立新职责原64KiB HTTP用例执行中；后六项及AI未放行，不重放或拼接旧轮。用户后续STATIC授权持续适用；AI R17未启动，R16首过0/8及旧UNKNOWN／false门保持，旧SSH超时原因和S20实际拒绝目标仍未知。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
+见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。S20完整PASS1／FAILED1／后六项未启动，S21首TaskBoard失败／部署UNKNOWN／future未完成／完整0/8／后七项未启动保持，异常TMP已闭合，normal与证据保留。S22 `b7d00a7cd22eb00bcf2c8988b412eedcb301c4d4` 全新四阶段通过后，TaskBoard与FileTransfer分别完成唯一原次并完整PASS；各新JUnit1/0/0/0、原native/tool0、原完整业务及重启持久化、modelCalls=0、各自同应用CLEAN及四精确身份／TMP闭合齐全。FileTransfer是原HTTP65536字节逐字节与重启后复验，未换ASSISTED检查器。原警告、冷探针失败和元数据UNKNOWN保留，内部JVM仍UNKNOWN，不宣称异常全零。当前STATIC2/8，独立AssetLending原次执行中；后五项及AI未放行，不重放或拼接旧轮。用户后续STATIC授权持续适用；AI R17未启动，R16首过0/8及旧UNKNOWN／false门保持，旧SSH超时原因和S20实际拒绝目标仍未知。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
 
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 
