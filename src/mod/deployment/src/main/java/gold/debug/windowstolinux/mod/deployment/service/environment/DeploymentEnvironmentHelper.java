@@ -51,8 +51,9 @@ final class DeploymentEnvironmentHelper {
                 journal.advance(state, state.next("HELPER_INSTALLED", state.requestSha(), state.observation().orElseThrow()));
                 return;
             }
-            if (observed.outcome() != TaskResult.FAILED)
-                throw new DeploymentEnvironmentPendingException("ENVIRONMENT_HELPER_PROBE_UNCONFIRMED");
+            if (!DeploymentManagedHelper.installationRequired(observed))
+                throw observed.problem().map(DeploymentEnvironmentPendingException::new)
+                    .orElseGet(() -> new DeploymentEnvironmentPendingException("ENVIRONMENT_HELPER_PROBE_UNCONFIRMED"));
             String script = installer(state);
             var sent = state.next("HELPER_DISPATCHED", gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(script, task), state.observation().orElseThrow());
             var result = helper.installTracked(script.getBytes(StandardCharsets.UTF_8), () -> journal.advance(state, sent));

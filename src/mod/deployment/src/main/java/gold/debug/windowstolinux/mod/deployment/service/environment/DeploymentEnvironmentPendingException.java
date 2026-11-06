@@ -21,6 +21,11 @@ final class DeploymentEnvironmentPendingException extends Exception {
             Map.of(), Optional.empty());
     }
 
+    /** Retains a probe problem while the enclosing environment operation still needs reconciliation. */
+    DeploymentEnvironmentPendingException(Problem problem) {
+        this.problem = java.util.Objects.requireNonNull(problem);
+    }
+
     /** Returns the original public uncertainty without remote output or credentials. / 返回不含远端输出或凭据的原公开未知原因。
      * @return original structured uncertainty / 原结构化未知原因 */
     public Problem problem() {

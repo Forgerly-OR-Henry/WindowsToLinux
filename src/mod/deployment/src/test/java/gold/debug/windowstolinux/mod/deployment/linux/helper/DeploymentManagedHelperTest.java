@@ -512,6 +512,96 @@ class DeploymentManagedHelperTest {
     }
 
     @Test
+    void probeRetainsTransportFailureAndUncertaintyWithoutInventingIdentityEvidence() throws Exception {
+        var diagnostic = UUID.fromString("ffeeddcc-bbaa-9988-7766-554433221100");
+        var failure = new Problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT", "Not sent",
+            Map.of("commandPhase", "CHANNEL_OPENING", "authorPayloadState", "NOT_SENT",
+                "channelOpenConfirmed", "false", "frameWritePhase", "NOT_STARTED", "exitObserved", "false"),
+            Optional.of(diagnostic));
+        for (var outcome : List.of(TaskResult.FAILED, TaskResult.UNKNOWN, TaskResult.CANCELLED)) {
+            for (var exit : List.of(Optional.<Integer>empty(), Optional.of(64))) {
+                var original = new OperationResult<>(outcome,
+                    Optional.of(new CommandResult(exit, "", "", false)), Optional.of(failure));
+                for (boolean platform : List.of(false, true)) {
+                    var replies = new ArrayDeque<OperationResult<CommandResult>>();
+                    replies.add(original);
+                    var requests = new ArrayList<CommandRequest>();
+                    var helper = new DeploymentManagedHelper(session(replies, requests), reviews(new ArrayList<>()),
+                        new ServerId("synthetic-probe"), task(), "revision");
+                    var observed = platform ? helper.probePlatform() : helper.probe();
+                    assertEquals(outcome, observed.outcome());
+                    assertTrue(observed.value().isEmpty());
+                    assertSame(failure, observed.problem().orElseThrow());
+                    assertEquals(diagnostic, observed.problem().orElseThrow().diagnosticId().orElseThrow());
+                    assertFalse(DeploymentManagedHelper.installationRequired(observed));
+                    assertEquals(1, requests.size());
+                    assertEquals(java.time.Duration.ofSeconds(30), requests.getFirst().timeout());
+                }
+            }
+        }
+    }
+
+    @Test
+    void incompleteSuccessfulTransportNeverClaimsHelperIdentityOrInstallationEligibility() throws Exception {
+        var cases = List.of(
+            Optional.<CommandResult>empty(),
+            Optional.of(new CommandResult(Optional.empty(), probeOutput(), "", false)),
+            Optional.of(new CommandResult(Optional.of(0), probeOutput(), "", true)),
+            Optional.of(new CommandResult(Optional.of(64), "", "", false)),
+            Optional.of(new CommandResult(Optional.of(3), "", "", false)));
+        var reasons = List.of("MISSING_RESULT", "MISSING_EXIT", "TRUNCATED_OUTPUT", "NONZERO_EXIT", "NONZERO_EXIT");
+        for (boolean platform : List.of(false, true)) {
+            for (int index = 0; index < cases.size(); index++) {
+                var replies = new ArrayDeque<OperationResult<CommandResult>>();
+                replies.add(new OperationResult<>(TaskResult.SUCCEEDED, cases.get(index), Optional.empty()));
+                var helper = new DeploymentManagedHelper(session(replies, new ArrayList<>()), reviews(new ArrayList<>()),
+                    new ServerId("synthetic-probe"), task(), "revision");
+                var observed = platform ? helper.probePlatform() : helper.probe();
+                assertEquals(TaskResult.UNKNOWN, observed.outcome());
+                assertTrue(observed.value().isEmpty());
+                assertEquals("DEPLOYMENT_HELPER_PROBE_UNCONFIRMED", observed.problem().orElseThrow().eventCode());
+                assertEquals(Map.of("reason", reasons.get(index)), observed.problem().orElseThrow().context());
+                assertFalse(DeploymentManagedHelper.installationRequired(observed));
+            }
+        }
+    }
+
+    @Test
+    void onlyCompletedIdentityOrPlatformEvidenceAdmitsInstallation() throws Exception {
+        var nonzero = new Problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_NONZERO", "Observed exit",
+            Map.of("exitObserved", "true"), Optional.empty());
+        for (boolean platform : List.of(false, true)) {
+            for (int exit : List.of(64, 3, 7)) {
+                for (boolean truncated : List.of(false, true)) {
+                    var replies = new ArrayDeque<OperationResult<CommandResult>>();
+                    replies.add(new OperationResult<>(TaskResult.FAILED,
+                        Optional.of(new CommandResult(Optional.of(exit), "", "", truncated)), Optional.of(nonzero)));
+                    var helper = new DeploymentManagedHelper(session(replies, new ArrayList<>()), reviews(new ArrayList<>()),
+                        new ServerId("synthetic-probe"), task(), "revision");
+                    var observed = platform ? helper.probePlatform() : helper.probe();
+                    boolean initializable = !truncated && (exit == 64 || platform && exit == 3);
+                    assertEquals(initializable, DeploymentManagedHelper.installationRequired(observed));
+                    assertEquals(TaskResult.FAILED, observed.outcome());
+                    if (!initializable) assertSame(nonzero, observed.problem().orElseThrow());
+                    else assertEquals(exit == 64 ? "DEPLOYMENT_HELPER_IDENTITY"
+                        : "DEPLOYMENT_HELPER_PLATFORM_PREREQUISITES", observed.problem().orElseThrow().eventCode());
+                }
+            }
+        }
+        for (boolean truncated : List.of(false, true)) {
+            var replies = new ArrayDeque<OperationResult<CommandResult>>();
+            replies.add(new OperationResult<>(TaskResult.SUCCEEDED,
+                Optional.of(new CommandResult(Optional.of(0), "FORGED=1\n" + probeOutput(), "", truncated)), Optional.empty()));
+            var helper = new DeploymentManagedHelper(session(replies, new ArrayList<>()), reviews(new ArrayList<>()),
+                new ServerId("synthetic-probe"), task(), "revision");
+            var observed = helper.probe();
+            assertEquals(truncated ? TaskResult.UNKNOWN : TaskResult.FAILED, observed.outcome());
+            assertEquals(!truncated, DeploymentManagedHelper.installationRequired(observed));
+            assertTrue(observed.value().isEmpty());
+        }
+    }
+
+    @Test
     void malformedProbeAndUnconfirmedInstallNeverCauseReplayOrSuccess() throws Exception {
         var replies = new ArrayDeque<OperationResult<CommandResult>>();
         replies.add(ok("FORGED=1\n" + probeOutput(), ""));

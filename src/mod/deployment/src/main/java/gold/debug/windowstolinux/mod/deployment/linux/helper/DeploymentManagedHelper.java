@@ -295,9 +295,44 @@ public final class DeploymentManagedHelper {
                     Optional.of(new Identity(DeploymentManagedHelperBundle.PROTOCOL_VERSION,
                         DeploymentManagedHelperBundle.helperSha256(layout), layout)),
                     Optional.empty());
-            return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
-                Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HELPER_IDENTITY")));
+            if (completedProbe(response)) {
+                int exit = response.value().orElseThrow().exitCode().orElseThrow();
+                if (exit == 64 || exit == 0)
+                    return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
+                        Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HELPER_IDENTITY")));
+                if (requirePlatform && exit == 3)
+                    return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
+                        Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HELPER_PLATFORM_PREREQUISITES")));
+            }
+            if (response.outcome() == TaskResult.FAILED)
+                return withoutValue(response);
+            String reason = response.value().isEmpty() ? "MISSING_RESULT"
+                : response.value().orElseThrow().exitCode().isEmpty() ? "MISSING_EXIT"
+                : response.value().orElseThrow().truncated() ? "TRUNCATED_OUTPUT" : "NONZERO_EXIT";
+            return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
+                Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_HELPER_PROBE_UNCONFIRMED",
+                    "Managed helper probe completion was not confirmed", Map.of("reason", reason), Optional.empty())));
         }
+    }
+
+    /** Admits installation only after a completed probe identifies an initializable helper or prerequisite mismatch. */
+    public static boolean installationRequired(OperationResult<Identity> observed) {
+        return observed.outcome() == TaskResult.FAILED && observed.problem()
+            .filter(value -> value.code() == ProblemCode.INCOMPATIBLE
+                && (value.eventCode().equals("DEPLOYMENT_HELPER_IDENTITY")
+                    || value.eventCode().equals("DEPLOYMENT_HELPER_PLATFORM_PREREQUISITES"))).isPresent();
+    }
+
+    private static boolean completedProbe(OperationResult<CommandResult> response) {
+        if (response.value().isEmpty())
+            return false;
+        var value = response.value().orElseThrow();
+        return value.exitCode().isPresent() && !value.truncated()
+            && (response.outcome() == TaskResult.SUCCEEDED && value.exitCode().orElseThrow() == 0
+                || response.outcome() == TaskResult.FAILED && response.problem()
+                    .filter(problem -> problem.code() == ProblemCode.IO_FAILURE
+                        && problem.eventCode().equals("SSH_COMMAND_NONZERO")).isPresent()
+                    && value.exitCode().orElseThrow() != 0);
     }
 
     /** Uses the exact original default or required mode callback before any dispatch. / 任何发送前使用精确原默认或所需模式回调。
