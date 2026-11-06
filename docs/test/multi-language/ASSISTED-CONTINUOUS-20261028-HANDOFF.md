@@ -1,8 +1,8 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 2026-11-06 独立 STATIC：S18 四阶段通过，首个 TaskBoard 清理复查失败
+## 2026-11-06 独立 STATIC：S18 失败已封存，S20 修复候选已编译
 
-见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。S17 apply 等待超时及远端 UNKNOWN 保留。S18 `275e0650…` 全新四阶段均通过；首个 TaskBoard 业务 QA 和 modelCalls=0 标记通过，但 finally 独立 inspect 失败、CLEAN 缺失，原 native/tool exit1、JUnit 1/1/0/0，整项 FAILED，另七项未启动。本地原身份和自有 TMP 已闭合，不能据此改判远端资源或业务状态。正在修正 helper 将传输失败误报身份不符及安装准入问题；通道打开超时根因仍未确定。修复后须新冻结和完整四阶段；AI R17 未启动，R16 首过0/8、旧 UNKNOWN 与 false 门保持。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
+见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。S17 apply 超时／远端 UNKNOWN 保留。S18 全新四阶段通过，但 TaskBoard 最终独立清理复查失败、CLEAN 缺失，原 native/tool exit1、JUnit1/1/0/0，整项 FAILED、另七项未启动。S20 `39e67c94…` 合入 helper 证据分类和安装准入修复、有限 SSH 观测；分别定点验证及整合后必要离线编译通过，各轮失败和进程证据限制保留。新静态输入准备中，尚无新服务器执行，超时底层原因仍未确定。后续须新冻结和完整四阶段；AI R17 未启动，R16 首过0/8、旧 UNKNOWN 与 false 门保持。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
 
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 

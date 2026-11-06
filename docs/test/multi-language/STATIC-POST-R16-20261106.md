@@ -1,6 +1,6 @@
 # R16 后独立 STATIC 验证记录
 
-本记录截至 S18 首个 TaskBoard 原次失败并完成本地异常收尾时。S17、S18 是独立 STATIC 版本号，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+本记录截至 S20 本地整合编译完成、尚未开始新服务器准备时。S17 至 S20 是独立 STATIC 版本号，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 已消费原次
 
@@ -35,9 +35,17 @@ S18 本地编译阶段只运行离线 `-pl src/mod/deployment,src/mod/files -am 
 
 只放行了 TaskBoard 一个业务原次。应用 `wtl-static-task-board-b8fqrrkho/static-live` 发布成功，HTTP、停止／启动／重启和持久化 QA 通过，出现 `STATIC_LIVE_PASS task-board modelCalls=0`。但该标记在 finally 之前；最后原 STOP 虽观察到 STOPPED／DISABLED，随后独立 inspect 失败，**没有 CLEAN**。原 session `14175` 由工具 `2133e9` 实际 exit1 结束，JUnit **1/1/0/0**、1425.283 秒。因此整项为 **FAILED**，其余七项 **UNLAUNCHED**，不能用业务部分通过代替完整验收。
 
-最后 helper.probe 的原始命令结果为 `FAILED / IO_FAILURE / SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT`，无退出码；日志记录 CHANNEL_OPENING 用时 30001／30000 毫秒、通道未确认打开、输入发送线程未创建、作者载荷未发送。上层却改报 `INCOMPATIBLE / DEPLOYMENT_HELPER_IDENTITY` 并丢失原诊断。源码已确认这一分类缺陷，以及两个安装消费者把任意 FAILED 当作安装条件的问题；**现有证据不能认定 helper 内容损坏，也不能确定通道打开超时的底层原因**。最初冷准备的真实 exit64、原流程内的 tracked 安装及后续成功 probe 单独保留，不与这次无退出码的传输失败混淆。修复与后续精确 SSH 观测正在独立新版本中进行，不调整超时、重试或验收门槛。
+最后 helper.probe 的原始命令结果为 `FAILED / IO_FAILURE / SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT`，无退出码；日志记录 CHANNEL_OPENING 用时 30001／30000 毫秒、通道未确认打开、输入发送线程未创建、作者载荷未发送。上层却改报 `INCOMPATIBLE / DEPLOYMENT_HELPER_IDENTITY` 并丢失原诊断。源码已确认这一分类缺陷，以及两个安装消费者把任意 FAILED 当作安装条件的问题；**现有证据不能认定 helper 内容损坏，也不能确定通道打开超时的底层原因**。最初冷准备的真实 exit64、原流程内的 tracked 安装及后续成功 probe 单独保留，不与这次无退出码的传输失败混淆。分类修复与精确 SSH 观测已完成如下本地验证，没有调整超时、重试或验收门槛。
 
 原四个已记录本地 actor 按精确 PID 与出生身份确认消失；只清理本任务异常 TMP，清理工具 `45194a` 和 helper 退出观察 `b177b3` 均实际 exit0。原 evidence、compiled 和 normal store 保留，未调用成功 closeout、补查旧应用或重开失败库。Maven 内部 JVM 身份仍 UNKNOWN；本地收尾不证明远端资源归零。原结果及本地收尾的分时记录见 [S18 业务父封存](../../../.ai-workspace/evidence/post-r16-static-phase-execution-inputs-20261106-01/s18-taskboard-failed.PARENT-REVIEW.json)与 [执行证据](../../../.ai-workspace/evidence/post-r16-static-phase-execution-owner-20261106-01/)。
+
+## S19／S20 修复及本地验证
+
+S19 提交 `4193db873dbd8c74ffab73ead71c4aa9357b2da1` 只改四个生产类和三个直接测试。probe 保留原传输失败及 context／diagnosticId；只有完整可信的非零命令证据才分类 exit64 或 platform exit3；成功响应若缺少完整身份验证依据，则返回 UNKNOWN。两个安装入口共用严格准入。包安装后的环境流程仍为 UNKNOWN，原 Problem 与完整检查点保留，不改 Runner、Journal 或持久化格式。新机制七方法首轮通过；原 Bootstrap 三方法先因缺少 Files 编译描述、再因隔离库 H2 只读在前置阶段失败；补齐必要编译后，仅同三方法在原本机权限下通过 **3/0/0/0**。各轮原失败保留，不拼成首轮全绿，H2 原因未单独确证。见 [S19 交付](../../../.ai-workspace/evidence/static-helper-probe-evidence-fix-20261106-01/README.md)及 [进程证据限制补充](../../../.ai-workspace/evidence/static-helper-probe-evidence-fix-20261106-01/CLOSURE-LIMITS.md)。
+
+S20 提交 `7d030e334a91b09e038e0d281abac5da3a3953bf`、`d6167a88a08e9a9d7bdf5b8ff73165d61425922d` 增加每连接、单通道的有限元数据：具体 open 包的写 future、91／92 回复、OpenFuture 和最多四个所属线程的状态，时间统一为原命令单调时钟。记录不包含载荷、认证内容或原始异常正文；观察失败保留原传输行为，采样跨截止时不增加等待。WRITTEN 不证明对端收到，PENDING／FAILED 也不证明零字节发出。两个 STATIC 日志出口使用有限枚举／数字过滤。九个唯一 App 场景和一个投影方法分别定点通过；仅因相关修改重跑对应方法，错误的 synthetic fixture 与早期启动失败原件均保留，未重跑既有超时组或全量测试。详见 [分轮验证记录](../../../.ai-workspace/evidence/ssh-channel-open-metadata-20261106-01/verification-record.json)。早期 Surefire 覆盖部分 TMP 属性的偏差、未捕获 Java 子进程出生身份等限制也在该记录中保留。
+
+最终 S20 HEAD `39e67c9441b9bf54ed424e16505d2a7cc0e4d3a7` 无冲突合入 S19 修复，相对 S18 共 14 个相关源码／测试文件，工作树干净、仅本地提交。父代理只补必要离线 `-o -pl src/mod/deployment,src/mod/files -am -DskipTests package`，原工具 `0f03ae` 实际 exit0，31.163 秒、BUILD SUCCESS，所有测试跳过。专用构建 TMP 已安全清除，source／targets 保留；内部 JVM 身份仍 UNKNOWN。见 [整合与编译证据](../../../.ai-workspace/evidence/static-s20-integration-20261106-01/README.md)。目前只有新静态输入准备，没有 S20 真实服务器执行或底层超时已解决的结论。
 
 ## 后续验收条件
 
