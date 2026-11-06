@@ -1,6 +1,6 @@
 # R16 后独立 STATIC 验证记录
 
-本记录截至 S18 本地编译完成、尚未启动新服务器准备时。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+本记录截至 S18 首个 TaskBoard 原次失败并完成本地异常收尾时。S17、S18 是独立 STATIC 版本号，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 已消费原次
 
@@ -9,6 +9,7 @@
 | ROOT16 `92f35176…` | 新 inventory、plan、apply、独立 after 均通过 | TaskBoard 失败；其余七项未启动 | `MIRROR_PRIVACY_CONSENT_REQUIRED`；不算静态通过 |
 | S16 `24c0ffba…` | 全新四阶段均通过 | TaskBoard 失败；其余七项未启动 | `DEPLOYMENT_BUILD_FAILED`，Maven 分发固定源连接超时；不重放该原次 |
 | S17 `8250f202…` | 新 inventory、plan 通过；apply 未完成；after 未启动 | 八项全部未启动 | apply 等待超时，清理实际结果为 UNKNOWN；四阶段未通过 |
+| S18 `275e0650…` | 全新四阶段均通过，完整 after 与 apply.postInventory 相同 | TaskBoard 失败；其余七项未启动 | 业务 QA 通过，最终清理复查失败、CLEAN 缺失；不算完整静态通过 |
 
 前两次 STATIC 的原件分别保留于 [ROOT16 执行证据](../../../.ai-workspace/evidence/post-r16-static-execution-owner-20261106-01/)和 [S16 执行证据](../../../.ai-workspace/evidence/post-r16-static-repair-execution-owner-20261106-01/)。S17 的原件见 [执行证据](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-owner-20261106-01/)及 [父封存审查](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-inputs-20261106-01/s17-preparation-incomplete.PARENT-REVIEW.json)，后者 SHA256 为 `fdd38e32bf67d1a4984cca4941814f883286004f015220621d291680a26ac356`。这些版本各自独立，不拼接准备阶段、通过项或计划。
 
@@ -26,10 +27,20 @@ apply 原工具 session `58023` 由 `02cb65` 实际 exit1、无 session 结束�
 - S17 本地提交 `8250f2027d4bff16b6407b713bd873dc2bcb89c6` 增加可选 `managed.live.mavenDistributionBaseUrl`。本轮明确固定为 `https://dlcdn.apache.org/maven/`，只替换 `MAVEN_DISTRIBUTION`；产品语义为 `custom=true / official=false`，其余来源和默认 catalog、版本、SHA、超时、重试及 fallback 均未改。必要离线打包通过；两个明确筛选的参数化 preparation/capture 方法共 **4/0/0/0**。真实 SDK 独立网络诊断曾观察到该 CDN 的 TLS 验证和 HEAD 200，但不证明 GET、下载摘要或 STATIC 成功，也不证明旧连接超时的唯一原因。
 - S18 本地提交 `275e065048552ce7cf2c559079ffe0efa3f3ee65` 只改一个 reset 验收测试文件，增加 callback、CONNECT、REVIEW、EXECUTE 阶段标记。EXECUTE 返回标记在回执写入前；仅输出安全状态，ApiException 的 code/event 用显式白名单或 OTHER，并原样重抛。原超时后只读取同一句柄的缓存 state/outcome 枚举。关闭 phase 只表示进入该阶段，不证明成功关闭。此改动用于下一原次定位，**尚未证明修复未知根因**。
 
-S18 实际运行的验证只有离线 `-pl src/mod/deployment,src/mod/files -am -DskipTests package`，33.510 秒、原工具 `9092c5` 实际 exit0；所有测试跳过。原工具对象未另存，补件明确保留为忠实观测投影，不冒充 raw 返回。没有重跑已通过组、全量测试、真实 reset、SDK、凭据迁移、模型或 guard。指定 13 项公开 source/class/resource/config pins 已核对，构建 TMP 已清理；这不是全 compiled 或私密输入冻结资格。见 [S18 实现交接](../../../.ai-workspace/evidence/static-reset-phase-observation-fix-20261106-01/HANDOFF.md)。上述提交仅本地，未推送。
+S18 本地编译阶段只运行离线 `-pl src/mod/deployment,src/mod/files -am -DskipTests package`，33.510 秒、原工具 `9092c5` 实际 exit0；该阶段所有测试跳过。原工具对象未另存，补件明确保留为忠实观测投影，不冒充 raw 返回。指定 13 项公开 source/class/resource/config pins 已核对，构建 TMP 已清理；这不是全 compiled 或私密输入冻结资格。见 [S18 实现交接](../../../.ai-workspace/evidence/static-reset-phase-observation-fix-20261106-01/HANDOFF.md)。上述提交仅本地，未推送；后续真实执行另记如下，没有运行全量测试、模型或 AI guard。
+
+## S18 四阶段及首个业务原次
+
+本轮重新冻结输入，完整执行新的 inventory、plan、精确计划父审、apply、独立 after；四项均为原 native/tool exit0、JUnit **1/0/0/0**。新 apply 完成回执 SHA256 为 `a243417d01b223bc3251e285d46541faaed6bce545b26f2c03c2f15d88a6bf4c`，独立 after 回执为 `043786ae7c28baaf3e7d15829b3e8d354fea2f717921d2e5f40b831e619506be`。父审逐字段比较完整 after.inventory 与 apply.postInventory，canonical SHA256 均为 `82e0d077f2a00d57e542e7bce91bd50ab87665b358533e5e04de4f67f90e2afc`，没有排除字段。148 个必留系统包记录不变，655 个剩余包恰为原盘点减去计划的 31 个包，无额外升级或移除。见 [本轮四阶段父审](../../../.ai-workspace/evidence/post-r16-static-phase-execution-inputs-20261106-01/four-phase-preparation.PARENT-REVIEW.json)。这不改判 S17 的远端 UNKNOWN，也不证明其超时根因已修复。
+
+只放行了 TaskBoard 一个业务原次。应用 `wtl-static-task-board-b8fqrrkho/static-live` 发布成功，HTTP、停止／启动／重启和持久化 QA 通过，出现 `STATIC_LIVE_PASS task-board modelCalls=0`。但该标记在 finally 之前；最后原 STOP 虽观察到 STOPPED／DISABLED，随后独立 inspect 失败，**没有 CLEAN**。原 session `14175` 由工具 `2133e9` 实际 exit1 结束，JUnit **1/1/0/0**、1425.283 秒。因此整项为 **FAILED**，其余七项 **UNLAUNCHED**，不能用业务部分通过代替完整验收。
+
+最后 helper.probe 的原始命令结果为 `FAILED / IO_FAILURE / SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT`，无退出码；日志记录 CHANNEL_OPENING 用时 30001／30000 毫秒、通道未确认打开、输入发送线程未创建、作者载荷未发送。上层却改报 `INCOMPATIBLE / DEPLOYMENT_HELPER_IDENTITY` 并丢失原诊断。源码已确认这一分类缺陷，以及两个安装消费者把任意 FAILED 当作安装条件的问题；**现有证据不能认定 helper 内容损坏，也不能确定通道打开超时的底层原因**。最初冷准备的真实 exit64、原流程内的 tracked 安装及后续成功 probe 单独保留，不与这次无退出码的传输失败混淆。修复与后续精确 SSH 观测正在独立新版本中进行，不调整超时、重试或验收门槛。
+
+原四个已记录本地 actor 按精确 PID 与出生身份确认消失；只清理本任务异常 TMP，清理工具 `45194a` 和 helper 退出观察 `b177b3` 均实际 exit0。原 evidence、compiled 和 normal store 保留，未调用成功 closeout、补查旧应用或重开失败库。Maven 内部 JVM 身份仍 UNKNOWN；本地收尾不证明远端资源归零。原结果及本地收尾的分时记录见 [S18 业务父封存](../../../.ai-workspace/evidence/post-r16-static-phase-execution-inputs-20261106-01/s18-taskboard-failed.PARENT-REVIEW.json)与 [执行证据](../../../.ai-workspace/evidence/post-r16-static-phase-execution-owner-20261106-01/)。
 
 ## 后续验收条件
 
-S18 新轮仍须另行固定真实版本与输入，完整执行新的 inventory → plan → 父审精确计划 → apply → 独立 after；独立 after 须与 apply 的完整 postInventory 对照。不得消费 S17 计划或沿用其前两项 PASS。通过后才按 TaskBoard、FileTransfer、AssetLending、CsvInspector、SurveyScoring、LogAnalyzer、DirectoryDiff、BinaryInspector 固定顺序逐项放行 STATIC，每项均需原业务断言、modelCalls=0、同应用 CLEAN、JUnit 与真实 native/tool 闭合，失败或不确定不放后项。
+修复后新轮须另行固定真实版本与输入，完整执行新的 inventory → plan → 父审精确计划 → apply → 独立 after；独立 after 须与 apply 的完整 postInventory 对照。不得拼用旧计划、准备 PASS 或业务部分结果。通过后才按 TaskBoard、FileTransfer、AssetLending、CsvInspector、SurveyScoring、LogAnalyzer、DirectoryDiff、BinaryInspector 固定顺序逐项放行 STATIC，每项均需原业务断言、modelCalls=0、同应用 CLEAN、JUnit 与真实 native/tool 闭合，失败或不确定不放后项。
 
 STATIC FTP 使用原 64 KiB 负载，CLI 使用原静态 health probe；不以 ASSISTED 专用检查器替代。STATIC 不运行 AI guard 或私密 key hash，不修改已批准的 AI 15 秒／MAX25／0.2 秒观测规则。八项静态正常后才回到 AI 辅助测试；MOD 仍通过主 APP 四用途标准 API 通信，厂商适配由主 APP 负责。

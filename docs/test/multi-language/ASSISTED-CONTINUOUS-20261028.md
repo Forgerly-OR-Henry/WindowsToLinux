@@ -2,7 +2,7 @@
 
 ## 2026-11-06 R16 后 STATIC 阶段记录
 
-[独立 STATIC 记录](STATIC-POST-R16-20261106.md)保留 ROOT16/S16 两次首个业务失败，以及 S17 新准备阶段的 apply 超时：原工具 exit1、JUnit1/0/1/0、无清理完成回执，远端效果 UNKNOWN，after 和八项业务均未启动。本地 actor/TMP 收尾不改变业务结论。S18 仅阶段观测改动与必要编译已完成，尚未执行新服务器准备；后续仍先完成独立静态验证再返回 AI。此段不修改 R16 已封存0/8及旧 UNKNOWN、未启动或 false 资格状态；实时进度见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+[独立 STATIC 记录](STATIC-POST-R16-20261106.md)保留此前业务失败和 S17 apply 超时／远端 UNKNOWN。S18 新四阶段通过，首个 TaskBoard 业务 QA 通过，但最终独立清理复查失败、CLEAN 缺失，原工具 exit1、JUnit1/1/0/0，整项 FAILED，另七项未启动；原本地 actor/TMP 已闭合。helper 传输失败的错误分类与安装准入正在修复，SSH 通道打开超时原因尚未确定。AI R17 尚未启动，仍先静态正常再返回 AI；R16 已封存0/8及旧 UNKNOWN、未启动和 false 门保持。实时进度见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 
