@@ -9,7 +9,7 @@ public final class DeploymentHelperReviewContract {
     public static final String REVISION = "managed-helper-review.v2";
 
     /** Independently pinned helper source identity. / 独立固定的 helper 源码身份。 */
-    private static final String HELPER_SHA = "535861d0ef1c0621d3eca7565895e3fe35267f422f834f174a604423d336f359";
+    private static final String HELPER_SHA = "734ad85f336c41aeaab6034b5bd15a03642434e4ff4458b3b6ba06faed530bac";
 
     /** Independently pinned non-root build entry identity. / 独立固定的非 root 构建入口身份。 */
     private static final String BUILD_SHA = "4fdd1d5d6661c31382647512e4efd96d6e5eb5ef1296512e2a3df25f49706e42";
