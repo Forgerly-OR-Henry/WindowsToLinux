@@ -1,8 +1,8 @@
 # ASSISTED 连续首过验证记录
 
-## 2026-11-07 R16 后 STATIC：S23 首 TaskBoard 完整通过，FileTransfer 已放行
+## 2026-11-07 R16 后 STATIC：S23 前两项完整通过，AssetLending 已放行
 
-[独立 STATIC 记录](STATIC-POST-R16-20261106.md)保留此前失败和UNKNOWN。S22封存PASS2／FAILED1／后五项未启动，第三AssetLending的NuGet签名请求502，未到业务QA或CLEAN；限定janitor只闭合自有TMP，normal／证据及远端UNKNOWN保留，不拼入新轮。S23本地提交 `f028e006…` 补签名窄路径及对应固定身份，28个定点检查和必要包通过，早期失败保留，未推送；新四阶段均原native/tool0、新JUnit1/0/0/0并闭合，独立after与本轮apply.postInventory全59382字节／14字段相同。首TaskBoard独立职责原次完整PASS，a9d294实际0、JUnit1/0/0/0、同应用BUSINESS/model0/finallyCLEAN齐全，d7bf9f实际0闭合四身份和TMP；本轮1/8，警告／listUNKNOWN和内部JVM UNKNOWN保留。仅单独放行FileTransfer原HTTP64KiB原次，后六项和AI未启动。用户要求静态正常后才回AI，后续STATIC授权持续适用；R16首过0/8及旧UNKNOWN／false门、S20/S21失败均保持。实时进度见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+[独立 STATIC 记录](STATIC-POST-R16-20261106.md)保留此前失败和UNKNOWN。S22封存PASS2／FAILED1／后五项未启动，第三AssetLending的NuGet签名请求502，未到业务QA或CLEAN；限定janitor只闭合自有TMP，normal／证据及远端UNKNOWN保留，不拼入新轮。S23本地提交 `f028e006…` 补签名窄路径及对应固定身份，28个定点检查和必要包通过，早期失败保留，未推送；新四阶段均原native/tool0、新JUnit1/0/0/0并闭合，独立after与本轮apply.postInventory全59382字节／14字段相同。首TaskBoard独立职责原次完整PASS，a9d294实际0、JUnit1/0/0/0、同应用BUSINESS/model0/finallyCLEAN齐全，d7bf9f实际0闭合四身份和TMP；首项通过时为1/8，警告／listUNKNOWN和内部JVM UNKNOWN保留。FileTransfer原次b0471a实际0、新JUnit1/0/0/0、同应用BUSINESS/model0/finallyCLEAN齐全，9a3932实际0闭合四身份和TMP，本轮完整2/8；独立职责仅接手新AssetLending原次，后五项和AI未启动。用户要求静态正常后才回AI，后续STATIC授权持续适用；R16首过0/8及旧UNKNOWN／false门、S20/S21失败均保持。实时进度见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 
