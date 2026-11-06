@@ -6,11 +6,13 @@
 
 实际monitor先完成两次VERIFIED检查；首checkpoint在00:26:00.376028Z，supervisor随后才启动driver并于00:26:09.878243Z观测READY。唯一`000001 reset inventory`已accepted，但原JVM退出1：H2 `90097-250`拒绝`UPDATE app_state`。只读源码定位在ROOT16本轮状态库第二次打开，尚未执行ROOT15凭据源读取或SSH检查；H2存在文件可写预检失败后自动只读打开的路径，具体环境原因尚未确认，失败库保持原样。
 
+后续[全新合成库对照](../../../.ai-workspace/evidence/assisted-r16-h2-synthetic-context-compare-20261106-01/HANDOFF.md)观察到默认工具上下文下可写预检false但实际WRITE可打开、H2只读更新失败；另一工具启动上下文下预检true、重开可写并更新读回成功。两次JDK/H2/Java源哈希相同，原句柄及自有tmp均已收尾；启动上下文和新目录同时变化，根因未隔离。下一新冻结拟从对照成功的工具上下文启动原框架，无生产代码或ACL修改；真实四阶段及业务仍待验证。
+
 monitor另一次完整结果于00:27:21.718449Z超过原10秒deadline，保留**UNKNOWN_INCOMPLETE**，原生自然退出1，final summary缺失。此前raw PASS和VERIFIED样本不能覆盖这一UNKNOWN。按reset失败规则，仅追加`000002 quit`且accepted；没有plan、apply、独立after、业务或STATIC命令。本real-01已经关闭，不重放或恢复。
 
 [执行交接](../../../.ai-workspace/evidence/assisted-r16-p06-execution-owner-20261106-01/HANDOFF.md)及[原句柄收尾](../../../.ai-workspace/evidence/assisted-r16-p06-execution-owner-20261106-01/native-and-temp-closeout-real-01.json)记录controller、launcher、wrapper、supervisor、driver原Wait退出0，monitor和inventory原Wait退出1；七个精确进程身份均已消失，23项公开pins未变，三个自有临时目录已清理。没有终止无关进程，也没有重新运行guard填补覆盖。
 
-**R16八业务仍全部UNLAUNCHED，业务0、STATIC0，验收目标未完成。** 后续先排查并修复准备问题，再以新冻结和完整四阶段准备完成R16实际业务，之后独立STATIC八项目验证，再返回AI辅助测试。10秒/MAX25/0.2秒继续有效，15秒提案尚未获准；旧FAILED、UNKNOWN、未启动结果不改判。
+**R16八业务仍全部UNLAUNCHED，业务0、STATIC0，验收目标未完成。** 后续先排查准备问题，再以新冻结和完整四阶段准备完成R16实际业务，之后独立STATIC八项目验证，再返回AI辅助测试。P06的原10秒/MAX25/0.2秒结论保持；后续用户已[明确批准下一新冻结使用15秒](../../../.ai-workspace/evidence/assisted-r16-p07-budget15-approval-20261106-01/user-budget-approval-16-p07.json)，完整检查、25次上限、0.2秒间隔、迟到拒绝和审批边界保留，待新冻结发布后生效。旧FAILED、UNKNOWN、未启动结果不改判；该授权不代表资格或业务通过。
 
 ## 2026-11-06 R16-P05单次raw资格通过；实际启动在monitor-first前失败
 
