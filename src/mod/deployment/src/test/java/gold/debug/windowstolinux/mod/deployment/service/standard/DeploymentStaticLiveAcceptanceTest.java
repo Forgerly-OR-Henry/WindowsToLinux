@@ -5850,7 +5850,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
 
     private final AtomicInteger approvalCalls = new AtomicInteger();
 
-    private enum Mode {STATIC, ASSISTED, AGENT}
+    enum Mode {STATIC, ASSISTED, AGENT}
 
     private boolean aiEnabled;
 
@@ -9329,8 +9329,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         }
     }
 
-    static Optional<TaskHandle<MirrorSettings>> prepareAssistedMirrors(ModContext context, boolean assisted) throws ApiException {
-        if (!assisted) return Optional.empty();
+    static Optional<TaskHandle<MirrorSettings>> prepareLiveMirrors(ModContext context, Mode mode) throws ApiException {
+        if (mode != Mode.STATIC && mode != Mode.ASSISTED) return Optional.empty();
         var catalog = MirrorCatalog.load();
         var points = new EnumMap<DownloadPoint, List<MirrorSettings.Row>>(DownloadPoint.class);
         for (var point : DownloadPoint.values()) {
@@ -9394,7 +9394,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             completed(runtime.servers().check(saveServer(runtime)), 2);
             if (aiEnabled) configureLiveModel(runtime);
             var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
-            var mirrorPreparation = prepareAssistedMirrors(context, selectedMode == Mode.ASSISTED);
+            var mirrorPreparation = prepareLiveMirrors(context, selectedMode);
             if (mirrorPreparation.isPresent()) completed(mirrorPreparation.orElseThrow(), 2);
             if (mainOnlyDiagnostic)
                 diagnosticReview = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(context, new ServerId(SERVER));

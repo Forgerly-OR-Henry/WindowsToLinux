@@ -11,6 +11,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerService;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
@@ -27,22 +29,24 @@ import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.ResolvedMirrorPolicy;
 
 class DeploymentAssistedMirrorPreparationTest extends DeploymentRuntimeFixture {
-    private static final ServerId TARGET = new ServerId("assisted-official-mirror-fixture");
+    private static final ServerId TARGET = new ServerId("live-official-mirror-fixture");
 
     @Test
-    void skipsPreparationForNonAssistedModes() throws Exception {
-        assertTrue(DeploymentStaticLiveAcceptanceTest.prepareAssistedMirrors(null, false).isEmpty());
+    void skipsPreparationForAgentMode() throws Exception {
+        assertTrue(DeploymentStaticLiveAcceptanceTest.prepareLiveMirrors(null, DeploymentStaticLiveAcceptanceTest.Mode.AGENT).isEmpty());
     }
 
-    @Test
-    void savesOfficialSourcesThroughProductBeforeCaptureWithoutConsentOrNetwork() throws Exception {
+    @ParameterizedTest
+    @EnumSource(value = DeploymentStaticLiveAcceptanceTest.Mode.class, names = {"STATIC", "ASSISTED"})
+    void savesOfficialSourcesThroughProductBeforeCaptureWithoutConsentOrNetwork(
+            DeploymentStaticLiveAcceptanceTest.Mode mode) throws Exception {
         enable();
         var network = new AtomicInteger();
         var privacy = new AtomicInteger();
         try (var runtime = open()) {
             start(runtime, true);
             var context = noNetwork(runtime.modContexts().get(OWNER).context(), network);
-            var preparation = DeploymentStaticLiveAcceptanceTest.prepareAssistedMirrors(context, true).orElseThrow();
+            var preparation = DeploymentStaticLiveAcceptanceTest.prepareLiveMirrors(context, mode).orElseThrow();
             var saved = preparation.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
             assertEquals(TaskResult.SUCCEEDED, saved.outcome(), saved::toString);
             var settings = saved.value().orElseThrow();
@@ -63,7 +67,7 @@ class DeploymentAssistedMirrorPreparationTest extends DeploymentRuntimeFixture {
                 throw new AssertionError("Fixed official sources must not request region consent");
             });
             var observed = new AtomicReference<Throwable>();
-            var captured = context.tasks().submit(new TaskRequest("assisted_mirror_preparation_test",
+            var captured = context.tasks().submit(new TaskRequest("live_mirror_preparation_test",
                 "Capture prepared official sources", List.of(), false), task -> {
                     try {
                         new DeploymentMirrorTasks(context).capture(task, TARGET);
@@ -83,7 +87,7 @@ class DeploymentAssistedMirrorPreparationTest extends DeploymentRuntimeFixture {
                     } catch (Exception | AssertionError failure) {
                         observed.set(failure);
                         return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
-                            ProblemCode.IO_FAILURE, "ASSISTED_MIRROR_PREPARATION_TEST_FAILED",
+                            ProblemCode.IO_FAILURE, "LIVE_MIRROR_PREPARATION_TEST_FAILED",
                             "Official mirror capture failed", Map.of(), Optional.empty())));
                     } finally {
                         DeploymentMirrorTasks.forget(task);
