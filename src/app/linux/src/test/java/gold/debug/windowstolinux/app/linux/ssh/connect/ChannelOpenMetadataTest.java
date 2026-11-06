@@ -29,9 +29,23 @@ class ChannelOpenMetadataTest {
         b.putUInt(32768);
         return b;
     }
+    @Test void packetObservationTimesUseOriginalCommandMonotonicStart() {
+        long commandStarted = System.nanoTime() - Duration.ofSeconds(2).toNanos();
+        var metadata = new ChannelOpenMetadata(7, commandStarted);
+        assertTrue(metadata.writing(packet(90, 7)));
+        metadata.received(packet(91, 7));
+        metadata.writeFailed(new IOException());
+        long observedEnd = (System.nanoTime() - commandStarted) / 1_000_000;
+        var facts = facts(metadata);
+        for (String key : List.of("channelOpenWriteStartedMillis", "channelOpenReplyMillis", "channelOpenWriteCompletedMillis")) {
+            long value = Long.parseLong(facts.get(key));
+            assertTrue(value >= 2000 && value <= observedEnd, key + " must use the original command origin");
+        }
+    }
+
     @Test void exactPacketsAreNonMutatingAndOtherChannelsAndAuthAreIgnored() {
-        var metadata = new ChannelOpenMetadata(7);
-        var other = new ChannelOpenMetadata(8);
+        var metadata = new ChannelOpenMetadata(7, System.nanoTime());
+        var other = new ChannelOpenMetadata(8, System.nanoTime());
         for (int opcode : List.of(50, 90, 91, 92)) {
             var b = packet(opcode, 7);
             byte[] original = b.array().clone();
@@ -61,7 +75,7 @@ class ChannelOpenMetadataTest {
         assertEquals("AVAILABLE", facts(metadata).get("channelOpenObservation"));
     }
     @Test void pendingWrittenFailedAndLateOpenRemainSeparateFromPeerReply() {
-        var metadata = new ChannelOpenMetadata(7);
+        var metadata = new ChannelOpenMetadata(7, System.nanoTime());
         assertTrue(metadata.writing(packet(90, 7)));
         var state = new AtomicReference<>("PENDING");
         var failure = new IOException() {
@@ -100,7 +114,7 @@ class ChannelOpenMetadataTest {
         assertFalse(facts(metadata).toString().contains("private"));
     }
     @Test void openingCancellationAndSynchronousWriteFailureDoNotInventPeerReply() {
-        var metadata = new ChannelOpenMetadata(7);
+        var metadata = new ChannelOpenMetadata(7, System.nanoTime());
         assertTrue(metadata.writing(packet(90, 7)));
         var original = new IOException() {
             @Override public String getMessage() { throw new AssertionError("No exception body read"); }
@@ -115,14 +129,14 @@ class ChannelOpenMetadataTest {
         assertEquals("true", facts.get("channelOpenFutureCanceled"));
         assertEquals("false", facts.get("channelOpenFutureOpened"));
         assertEquals("NOT_OBSERVED", facts.get("channelOpenReply"));
-        var unassigned = new ChannelOpenMetadata(-1);
+        var unassigned = new ChannelOpenMetadata(-1, System.nanoTime());
         assertFalse(unassigned.writing(packet(90, 0xffffffffL)));
         unassigned.received(packet(91, 0xffffffffL));
         assertEquals("NOT_OBSERVED", facts(unassigned).get("channelOpenReply"));
     }
 
     @Test void parserFailureIsMetadataOnlyAndRetainsNoPacket() {
-        var metadata = new ChannelOpenMetadata(7);
+        var metadata = new ChannelOpenMetadata(7, System.nanoTime());
         var broken = new ByteArrayBuffer() {
             @Override public byte rawByte(int pos) { throw new IllegalArgumentException("private"); }
         };
@@ -158,7 +172,7 @@ class ChannelOpenMetadataTest {
              var connection = SshCommandExecutionTest.connect(connector, fixture.server)) {
             var field = connection.getClass().getDeclaredField("session"); field.setAccessible(true);
             var session = (ChannelOpenMetadata.Session) field.get(connection);
-            var metadata = new ChannelOpenMetadata(7);
+            var metadata = new ChannelOpenMetadata(7, System.nanoTime());
             session.bind(metadata);
             var observerRead = new java.util.concurrent.atomic.AtomicBoolean();
             var ignored = new ByteArrayBuffer() {

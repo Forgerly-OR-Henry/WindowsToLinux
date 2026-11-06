@@ -12,16 +12,19 @@ import org.apache.sshd.common.util.buffer.Buffer;
 
 /** Exact local observations, without packet or exception bodies.
  * PENDING/FAILED do not imply zero transmitted bytes; WRITTEN does not imply a peer reply.
- * All times are monotonic milliseconds since this channel was bound, not wall time.
+ * All times are monotonic milliseconds since command execution started, not wall time.
  */
 final class ChannelOpenMetadata {
     private final long channelId;
-    private final long started = System.nanoTime();
+    private final long started;
     private String writeState = "NOT_OBSERVED", writeFailure = "UNKNOWN", reply = "NOT_OBSERVED";
     private long writeStarted = -1, writeCompleted = -1, replyAt = -1, failureReason = -1;
     private OpenFuture opening;
     private boolean unavailable;
-    ChannelOpenMetadata(long channelId) { this.channelId = channelId; }
+    ChannelOpenMetadata(long channelId, long commandStarted) {
+        this.channelId = channelId;
+        this.started = commandStarted;
+    }
 
     synchronized boolean writing(Buffer b) {
         try { return writingPacket(b); }

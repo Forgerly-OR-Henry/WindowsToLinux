@@ -123,7 +123,7 @@ final class SshCommandExecution {
             channel.setErr(capture.stderr());
             dispatched = true;
             phase = DispatchState.CHANNEL_OPENING;
-            channelOpen = new ChannelOpenMetadata(channel.getChannelId());
+            channelOpen = new ChannelOpenMetadata(channel.getChannelId(), started);
             if (session instanceof ChannelOpenMetadata.Session observed) observed.bind(channelOpen);
             var opening = channel.open();
             channelOpen.opening(opening);
