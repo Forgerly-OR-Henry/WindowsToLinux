@@ -10,10 +10,75 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import gold.debug.windowstolinux.mod.deployment.config.mirror.MirrorCatalog;
 import gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.MirrorSelector;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.MirrorSettings;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.ResolvedMirrorPolicy;
 
 final class LockedRepositoryTransportTest {
+    @Test
+    void catalogNugetSignatureRoutesPreserveBytesAndSelectedSourceBoundaries() throws Exception {
+        Path directory = Files.createTempDirectory("n-");
+        Process process = null;
+        try {
+            Path runtime = directory.resolve("runtime.py"), output = directory.resolve("output.log");
+            Files.writeString(runtime, DeploymentMirrorRuntime.runtimeSource(), StandardCharsets.UTF_8);
+            System.out.println("NUGET_SIGNATURE_JVM pid=" + ProcessHandle.current().pid() + " birth="
+                + ProcessHandle.current().info().startInstant().map(Object::toString).orElse("UNKNOWN")
+                + " cwd=" + Path.of("").toAbsolutePath() + " java.io.tmpdir=" + System.getProperty("java.io.tmpdir")
+                + " jna.tmpdir=" + System.getProperty("jna.tmpdir")
+                + " jdk.net.unixdomain.tmpdir=" + System.getProperty("jdk.net.unixdomain.tmpdir")
+                + " runtimeSha256=" + DeploymentMirrorRuntime.runtimeSha256());
+            for (String name : List.of("locked_transport_test.py", "nuget_signature_route_test.py")) {
+                try (var input = getClass().getResourceAsStream(name)) {
+                    if (input == null) throw new IOException("NuGet transport fixture absent: " + name);
+                    Files.copy(input, directory.resolve(name));
+                }
+            }
+            for (String source : List.of("official-nuget", "huawei", "custom")) {
+                var row = source.equals("custom")
+                    ? new MirrorSettings.Row("", "https://custom.invalid/nuget/", false, false, "")
+                    : new MirrorSettings.Row(source, "", false, false, "");
+                var settings = new MirrorSettings(1, Map.of(DownloadPoint.NUGET, List.of(row)), Map.of());
+                var selected = MirrorSelector.resolve(MirrorCatalog.load(), settings, "synthetic-server", "US").withTask("synthetic-task");
+                var frozen = ResolvedMirrorPolicy.fromJson(selected.toJson(), "synthetic-task", "synthetic-server");
+                assertEquals(selected, frozen);
+                assertEquals(1, frozen.points().get(DownloadPoint.NUGET).size());
+                Files.writeString(directory.resolve(source + ".json"), frozen.toJson());
+            }
+            boolean windows = System.getProperty("os.name").startsWith("Windows");
+            var command = List.of(windows ? "E:\\Program\\Python\\Python3.12\\python.exe" : "python3",
+                directory.resolve("nuget_signature_route_test.py").toString(), runtime.toString(),
+                windows ? "E:\\Program\\Git\\mingw64\\bin\\openssl.exe" : "/usr/bin/openssl",
+                "NugetSignatureRouteTests.test_catalog_signature_routes_preserve_bytes_and_boundaries");
+            var builder = new ProcessBuilder(command).directory(directory.toFile()).redirectErrorStream(true).redirectOutput(output.toFile());
+            for (String key : List.of("TEMP", "TMP", "TMPDIR")) builder.environment().put(key, directory.toString());
+            process = builder.start();
+            System.out.println("NUGET_SIGNATURE_PYTHON pid=" + process.pid() + " birth="
+                + process.info().startInstant().map(Object::toString).orElse("UNKNOWN") + " cwd=" + directory);
+            assertTrue(process.waitFor(60, TimeUnit.SECONDS), "Local NuGet transport proof timed out");
+            String result = Files.readString(output);
+            System.out.println(result);
+            System.out.println("NUGET_SIGNATURE_PYTHON terminal=" + process.exitValue() + " alive=" + process.isAlive());
+            assertEquals(0, process.exitValue(), result);
+            assertTrue(result.contains("Ran 1 test"), result);
+            assertTrue(result.contains("OK"), result);
+        } finally {
+            if (process != null && process.isAlive()) {
+                process.descendants().forEach(ProcessHandle::destroyForcibly);
+                process.destroyForcibly();
+                process.waitFor();
+            }
+            try (var paths = Files.walk(directory)) {
+                for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.delete(path);
+            }
+        }
+    }
+
     @Test
     void fixedLockTransportAndScopedCredentialsWorkWithTwoLocalHttpsRepositories() throws Exception {
         Path root = Path.of(System.getProperty("user.dir")).toAbsolutePath();

@@ -690,6 +690,7 @@
       "sourceOrigins": [
         "https://api.nuget.org/v3/index.json",
         "https://api.nuget.org/v3/",
+        "https://api.nuget.org/v3-index/repository-signatures/",
         "https://api.nuget.org/v3-flatcontainer/",
         "https://globalcdn.nuget.org/packages/"
       ],
@@ -1776,6 +1777,10 @@
             {
               "origin": "https://api.nuget.org/v3/",
               "prefix": "https://api.nuget.org/v3/"
+            },
+            {
+              "origin": "https://api.nuget.org/v3-index/repository-signatures/",
+              "prefix": "https://api.nuget.org/v3-index/repository-signatures/"
             },
             {
               "origin": "https://api.nuget.org/v3-flatcontainer/",
