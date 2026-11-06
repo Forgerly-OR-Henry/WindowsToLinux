@@ -1,8 +1,20 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
+## 2026-11-06 R16-P07准备快照：新冻结与raw15资格通过，inventory原次通过
+
+本节仅记录截至inventory于 **2026-11-06T01:57:06.719296Z** 完成的准备里程碑；实时运行与后续阶段见[CURRENT](../../../.ai-workspace/progress/CURRENT.md)。R16代码HEAD仍为`92f35176…`；P07[正式发布](../../../.ai-workspace/evidence/assisted-r16-p07-parent-control-review-20261106-01/parent-formal-promotion-16.json)绑定SOURCE `48f7654d…`、P `84c19ec2…`、R `e0b4881e…`。[用户批准的15秒预算](../../../.ai-workspace/evidence/assisted-r16-p07-budget15-approval-20261106-01/user-budget-approval-16-p07.json)仅在本次新冻结生效；完整检查、MAX25、0.2秒间隔、迟到拒绝、UNKNOWN及审批边界保持，P06原10秒deadline下的UNKNOWN不改判。
+
+[唯一raw资格](../../../.ai-workspace/evidence/assisted-r16-p07-execution-supervisor-20261106-01/fullguard-16-p07-fifteen-second-01-result.json)完整完成17/30/4310检查，耗时 **6.520591200009221秒 < 15秒**，原生退出0，无预热或重试。其范围严格为`SINGLE_RAW_G_ASSERT_FROZEN_NOT_FULL_OBSERVER_FRAMING`：未执行observer framing、无连续覆盖结论、产品及模型调用0，不证明SSH或八业务成功。[资格收尾](../../../.ai-workspace/evidence/assisted-r16-p07-published-raw-qualification-20261106-01/HANDOFF.md)记录原身份核退及两个自有tmp清理；内部Git子进程身份仍为UNKNOWN，仅原同步调用已返回，不据此声称全宿主无进程。
+
+原框架按[父启动审查](../../../.ai-workspace/evidence/assisted-r16-p07-execution-supervisor-20261106-01/parent-launch-review-real-01.json)从`require_escalated`工具上下文启动；合成H2对照支持该选择，但未隔离sandbox/ACL根因，未改生产代码或系统权限。[初始monitor与READY摘要](../../../.ai-workspace/evidence/assisted-r16-p07-execution-owner-20261106-01/initial-monitor-and-ready-observation-real-01.json)记录：原monitor先取得完整VERIFIED checkpoint，supervisor于01:51:53.452891Z观测后才启动driver14636，01:51:59.903005Z观测READY。该摘要的完整样本覆盖17/30/4310，attempt=1、incomplete/readgap/unknown均为0；monitor当时仍在运行，这些采样不代表最终continuous结论。
+
+唯一`000001 reset inventory host-inventory-13`已accepted；[原stage](../../../.ai-workspace/evidence/assisted-r16-p07-execution-supervisor-20261106-01/real-01/stage-000001.json)为success=true，[父只读复核](../../../.ai-workspace/evidence/assisted-r16-p07-execution-supervisor-20261106-01/host-inventory-13-parent-review-16.json)确认既有inspector通过及Runtime关闭标记。[原日志](../../../.ai-workspace/wt/r16f/.ai-workspace/evidence/round-16-preparation-07/13/host-inventory-13.log)为JUnit 1/0/0/0、BUILD SUCCESS；[原退出证据](../../../.ai-workspace/wt/r16f/.ai-workspace/evidence/round-16-preparation-07/13/host-inventory-13-exit.json)记录JVM32732的actualWait=true、native exit0，原出生时间保留六位精度。本快照不判定后续plan、apply或独立after结果；截至inventory完成，八业务仍全部UNLAUNCHED，业务0、STATIC0，验收未完成。
+
+辅助missing-workflow读取失败、btoa错误、默认工具上下文的进程不可见和日期解析误判均原样保留；首次inventory暂存误用LF，被33B门阻止，未rename且driver未消费，随后仅更正一次原33B命令，不能称P07全程零异常。跨上下文探查错误不代替实际native退出，也不把原monitor改判UNKNOWN。P06的raw PASS、inventory FAILED及monitor UNKNOWN，以及更早FAILED／UNKNOWN均保持。准备失败不代表R16业务轮结束；仍须完成R16实际业务轮，再独立验证STATIC八项目，随后返回AI辅助测试。
+
 ## 2026-11-06 R16-P06 inventory失败、monitor UNKNOWN；业务轮尚未启动
 
-当前以本节为准；以下各准备和旧轮记录保留原结论。R16代码HEAD仍为`92f35176…`。P06[正式发布](../../../.ai-workspace/evidence/assisted-r16-p06-parent-control-review-20261106-01/parent-formal-promotion-16.json)绑定SOURCE `dae55f50…`、P `1741a926…`、R `7ddd5a0d…`；[唯一raw资格](../../../.ai-workspace/evidence/assisted-r16-p06-execution-supervisor-20261106-01/fullguard-16-p06-ten-second-01-result.json)完整完成17/30/4310检查，耗时8.969404900009977秒、原退出0。该PASS仅限single raw，不证明连续覆盖或业务通过；P06辅助生成检查的原异常和定点更正亦保留。
+本节保留P06历史检查点；后续准备快照见顶部P07记录，实时运行见CURRENT。R16代码HEAD仍为`92f35176…`。P06[正式发布](../../../.ai-workspace/evidence/assisted-r16-p06-parent-control-review-20261106-01/parent-formal-promotion-16.json)绑定SOURCE `dae55f50…`、P `1741a926…`、R `7ddd5a0d…`；[唯一raw资格](../../../.ai-workspace/evidence/assisted-r16-p06-execution-supervisor-20261106-01/fullguard-16-p06-ten-second-01-result.json)完整完成17/30/4310检查，耗时8.969404900009977秒、原退出0。该PASS仅限single raw，不证明连续覆盖或业务通过；P06辅助生成检查的原异常和定点更正亦保留。
 
 实际monitor先完成两次VERIFIED检查；首checkpoint在00:26:00.376028Z，supervisor随后才启动driver并于00:26:09.878243Z观测READY。唯一`000001 reset inventory`已accepted，但原JVM退出1：H2 `90097-250`拒绝`UPDATE app_state`。只读源码定位在ROOT16本轮状态库第二次打开，尚未执行ROOT15凭据源读取或SSH检查；H2存在文件可写预检失败后自动只读打开的路径，具体环境原因尚未确认，失败库保持原样。
 
@@ -16,7 +28,7 @@ monitor另一次完整结果于00:27:21.718449Z超过原10秒deadline，保留**
 
 ## 2026-11-06 R16-P05单次raw资格通过；实际启动在monitor-first前失败
 
-本节保留P05历史检查点；当前状态见顶部P06记录。R16代码HEAD仍为`92f35176…`；P05[正式发布](../../../.ai-workspace/evidence/assisted-r16-p05-parent-control-review-20261106-01/parent-formal-promotion-16.json)绑定SOURCE `623d5add…`、P `7b013fdc…`、R `b4d916e5…`。旧preview-02因辅助公开证据输入门退出1、无输出，随后独立新review15-02和preview-03通过；原失败保留，不称P05全程零异常。10秒、25次及0.2秒规则保持，15秒提案未批准；P04仅为未批准提案预留，未创建或执行。
+本节保留P05历史检查点；后续准备快照见顶部P07记录，实时运行见CURRENT。R16代码HEAD仍为`92f35176…`；P05[正式发布](../../../.ai-workspace/evidence/assisted-r16-p05-parent-control-review-20261106-01/parent-formal-promotion-16.json)绑定SOURCE `623d5add…`、P `7b013fdc…`、R `b4d916e5…`。旧preview-02因辅助公开证据输入门退出1、无输出，随后独立新review15-02和preview-03通过；原失败保留，不称P05全程零异常。10秒、25次及0.2秒规则保持，15秒提案未批准；P04仅为未批准提案预留，未创建或执行。
 
 [唯一raw资格结果](../../../.ai-workspace/evidence/assisted-r16-p05-execution-supervisor-20261106-01/fullguard-16-p05-ten-second-01-result.json)为 **PASS**：`fullGuardCompleted=true`，17个legacy输出、30个完整输出及4310成员全部完成，耗时 **9.073669000004884秒 < 10秒**，原helper及outer session69650均退出0。结果901B、SHA `35c30b23…`；[资格收尾](../../../.ai-workspace/evidence/assisted-r16-p05-published-raw-qualification-20261106-01/HANDOFF.md)记录原身份退出和自有tmp清理。这仅证明single raw guard资格，不包含observer framing、连续coverage或业务，不与旧P03诊断拼接，也不推算百分比性能提升。
 
