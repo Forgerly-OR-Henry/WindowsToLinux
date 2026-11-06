@@ -32,6 +32,10 @@ final class ClientIoLifecycle extends AbstractIoServiceFactoryFactory {
     /** Actual threads, retained until they have physically exited. / 实际线程，保留至物理退出。 */
     private final ConcurrentLinkedQueue<Thread> workers = new ConcurrentLinkedQueue<>();
 
+    /** Last two workers per fixed role; old workers remain owned by the cleanup queue. */
+    private final java.util.concurrent.atomic.AtomicReferenceArray<Thread> recent = new java.util.concurrent.atomic.AtomicReferenceArray<>(4);
+    private final java.util.concurrent.atomic.AtomicIntegerArray roleSequence = new java.util.concurrent.atomic.AtomicIntegerArray(2);
+
     /** Monotonic thread names within this connection. / 此连接内的单调线程名称序号。 */
     private final AtomicInteger sequence = new AtomicInteger();
 
@@ -115,7 +119,28 @@ final class ClientIoLifecycle extends AbstractIoServiceFactoryFactory {
         Thread thread = new Thread(runnable, prefix + "-" + role + "-" + sequence.incrementAndGet());
         thread.setDaemon(true);
         workers.add(thread);
+        int roleIndex = role.equals("io") ? 0 : 1;
+        recent.set(roleIndex * 2 + (roleSequence.getAndIncrement(roleIndex) & 1), thread);
         return thread;
+    }
+
+    /** Bounded state of this owner's workers, without names or stacks. */
+    java.util.Map<String, String> workerSnapshot() {
+        var facts = new java.util.LinkedHashMap<String, String>();
+        facts.put("channelOpenWorkerSnapshot", "BEFORE_DEADLINE");
+        for (int role = 0; role < 2; role++) {
+            String prefix = "channelOpenWorker" + (role == 0 ? "Io" : "Resume");
+            int count = 0;
+            for (int slot = 0; slot < 2; slot++) {
+                Thread worker = recent.get(role * 2 + slot);
+                if (worker == null) continue;
+                String key = prefix + count++;
+                facts.put(key + "Alive", Boolean.toString(worker.isAlive()));
+                facts.put(key + "State", worker.getState().name());
+            }
+            facts.put(prefix + "Count", Integer.toString(count));
+        }
+        return java.util.Map.copyOf(facts);
     }
 
     /**

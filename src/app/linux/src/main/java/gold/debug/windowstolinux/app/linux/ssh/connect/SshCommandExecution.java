@@ -34,6 +34,10 @@ final class SshCommandExecution {
 
     /** Physical SSH channel retained until actual closure. / 实际关闭前保留的物理 SSH 通道。 */
     private ClientChannel channel;
+    private ChannelOpenMetadata channelOpen;
+    private final ClientIoLifecycle io;
+    private Map<String, String> deadlineWorkers = Map.of("channelOpenWorkerSnapshot", "NOT_OBSERVED");
+    private boolean workerSnapshotTaken;
 
     /** Task-owned input sender, never abandoned on timeout. / 任务持有的输入发送线程，超时时不丢弃。 */
     private Thread sender;
@@ -90,6 +94,11 @@ final class SshCommandExecution {
      * @throws ApiException if request validation fails / 请求校验失败时
      */
     SshCommandExecution(ClientSession session, CommandRequest request) throws ApiException {
+        this(session, request, null);
+    }
+
+    SshCommandExecution(ClientSession session, CommandRequest request, ClientIoLifecycle io) throws ApiException {
+        this.io = io;
         this.session = Objects.requireNonNull(session);
         frame = new SshCommandFrame(request);
         capture = new SshOutputCapture(request.outputLimitBytes());
@@ -114,7 +123,10 @@ final class SshCommandExecution {
             channel.setErr(capture.stderr());
             dispatched = true;
             phase = DispatchState.CHANNEL_OPENING;
+            channelOpen = new ChannelOpenMetadata(channel.getChannelId());
+            if (session instanceof ChannelOpenMetadata.Session observed) observed.bind(channelOpen);
             var opening = channel.open();
+            channelOpen.opening(opening);
             while (!opening.await(remainingMillis(started))) {
                 if (cancellation.requested() || Thread.currentThread().isInterrupted())
                     return unknown("SSH_COMMAND_CANCELLED",
@@ -174,6 +186,8 @@ final class SshCommandExecution {
                 "SSH command effects could not be confirmed after transport failure")
                 : result(TaskResult.FAILED, ProblemCode.IO_FAILURE, "SSH_COMMAND_NOT_SENT",
                 "SSH command could not be dispatched", null);
+        } finally {
+            if (session instanceof ChannelOpenMetadata.Session observed) observed.unbind(channelOpen);
         }
     }
 
@@ -187,6 +201,27 @@ final class SshCommandExecution {
         long remaining = budget - (System.nanoTime() - started);
         if (remaining <= 0)
             throw new java.util.concurrent.TimeoutException();
+        if (phase == DispatchState.CHANNEL_OPENING && !workerSnapshotTaken && remaining <= 100_000_000L) {
+            workerSnapshotTaken = true;
+            if (io != null) {
+                long sampleStarted = System.nanoTime() - started;
+                try {
+                    var snapshot = io.workerSnapshot();
+                    long completed = System.nanoTime() - started;
+                    remaining = budget - completed;
+                    var facts = new LinkedHashMap<String, String>(remaining > 0 ? snapshot
+                        : Map.of("channelOpenWorkerSnapshot", "NOT_OBSERVED"));
+                    facts.put("channelOpenWorkerSnapshotStartedMillis", Long.toString(sampleStarted / 1_000_000));
+                    facts.put("channelOpenWorkerSnapshotCompletedMillis", Long.toString(completed / 1_000_000));
+                    facts.put("channelOpenWorkerSnapshotRemainingMillis", Long.toString(Math.max(0, remaining) / 1_000_000));
+                    deadlineWorkers = Map.copyOf(facts);
+                } catch (RuntimeException unavailable) {
+                    deadlineWorkers = Map.of("channelOpenWorkerSnapshot", "UNAVAILABLE");
+                }
+            }
+            remaining = budget - (System.nanoTime() - started);
+            if (remaining <= 0) throw new java.util.concurrent.TimeoutException();
+        }
         return Math.max(1, Math.min(50, remaining / 1_000_000));
     }
 
@@ -249,6 +284,11 @@ final class SshCommandExecution {
             }
         }
         diagnostics.appendTo(diagnostic);
+        if (channelOpen != null) {
+            try { channelOpen.appendTo(diagnostic); }
+            catch (RuntimeException unavailable) { diagnostic.put("channelOpenObservation", "UNAVAILABLE"); }
+        }
+        diagnostic.putAll(deadlineWorkers);
         diagnostic.put("channelPeerAssigned", Boolean.toString(channel != null && channel.getRecipient() >= 0));
         return new OperationResult<>(outcome, Optional.of(output),
             Optional.of(new Problem(code, event, message, Map.copyOf(diagnostic), Optional.empty())));

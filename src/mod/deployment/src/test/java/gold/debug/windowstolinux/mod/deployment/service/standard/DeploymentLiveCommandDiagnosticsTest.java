@@ -18,6 +18,43 @@ class DeploymentLiveCommandDiagnosticsTest {
     private static final UUID TASK = UUID.fromString("de4f5e16-3a81-471b-9cf8-a851374fe654");
 
     @Test
+    void exactChannelOpenFactsPassBothProjectionsAndRejectPrivateOrMalformedValues() {
+        var context = new java.util.LinkedHashMap<String, String>();
+        context.put("channelOpenObservation", "AVAILABLE");
+        context.put("channelOpenWriteState", "WRITTEN");
+        context.put("channelOpenWriteFailureType", "UNKNOWN");
+        context.put("channelOpenReply", "CONFIRMATION");
+        context.put("channelOpenSnapshotPhase", "RESULT");
+        context.put("channelOpenWorkerSnapshot", "BEFORE_DEADLINE");
+        context.put("channelOpenWorkerIoCount", "2");
+        context.put("channelOpenWorkerResumeCount", "0");
+        for (String role : List.of("Io", "Resume")) for (int i = 0; i < 2; i++) {
+            context.put("channelOpenWorker" + role + i + "Alive", "true");
+            context.put("channelOpenWorker" + role + i + "State", "RUNNABLE");
+        }
+        for (String key : List.of("channelOpenWriteStartedMillis", "channelOpenWriteCompletedMillis",
+            "channelOpenWorkerSnapshotStartedMillis", "channelOpenWorkerSnapshotCompletedMillis", "channelOpenWorkerSnapshotRemainingMillis", "channelOpenReplyMillis", "channelOpenFailureReason", "channelOpenFutureFailureReason",
+            "transportReadCallbacksAtCommandStart", "transportReadCallbacksDuringCommand", "transportSessionAgeMillis"))
+            context.put(key, "4294967295");
+        for (String key : List.of("channelOpenFutureDone", "channelOpenFutureOpened", "channelOpenFutureCanceled", "disconnectObserved"))
+            context.put(key, "false");
+        context.put("channelOpenFutureFailureType", "CHANNEL_OPEN");
+        var expected = context.entrySet().stream().map(e -> "context." + e.getKey() + "=" + e.getValue()).toList();
+        assertEquals(expected, DeploymentStaticLiveAcceptanceTest.safeOriginalCallCauses(String.join("\n", expected)));
+        var lines = new ArrayList<String>();
+        var api = new BodyRejectingApiException(new Problem(ProblemCode.UNKNOWN, "SSH_COMMAND_TRANSPORT", "private", context, Optional.empty()));
+        assertSame(api, assertThrows(BodyRejectingApiException.class, () -> DeploymentStaticLiveAcceptanceTest.observedRemoteCall(
+            DeploymentStaticLiveAcceptanceTest.LiveRemotePhase.EXECUTE, () -> TASK, () -> { throw api; }, lines::add)));
+        for (var fact : expected) assertTrue(lines.stream().anyMatch(line -> line.endsWith("problem[0]." + fact)), fact);
+        for (String key : context.keySet()) assertTrue(DeploymentStaticLiveAcceptanceTest.safeOriginalCallCauses(
+            "context." + key + "=private-host password=secret").isEmpty());
+        for (String invalid : List.of("channelOpenFailureReason=-1", "channelOpenWriteState=ZERO_BYTES_SENT",
+            "channelOpenWorkerIoCount=3", "channelOpenWorkerIo2State=RUNNABLE", "channelOpenFutureDone=TRUE",
+            "channelOpenFutureFailureType=java.io.IOException:private", "channelOpenReply=CONFIRMATION private"))
+            assertTrue(DeploymentStaticLiveAcceptanceTest.safeOriginalCallCauses("context." + invalid).isEmpty());
+    }
+
+    @Test
     void rawReviewShapeExcludesBodiesAndRejectsAmbiguousJson() {
         String shape = DeploymentStaticLiveAcceptanceTest.rawReviewSubmissionShape(
             "{\"decision\":\"DENY\",\"reason\":\"private-value\",\"requiresUserConfirmation\":false}");

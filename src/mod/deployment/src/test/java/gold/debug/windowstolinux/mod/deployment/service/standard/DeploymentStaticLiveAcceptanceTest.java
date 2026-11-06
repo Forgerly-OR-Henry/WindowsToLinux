@@ -7000,7 +7000,18 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                     if (problem.eventCode().matches("[A-Z][A-Z0-9_]{0,95}"))
                         remoteDiagnosticLine(sink, prefix + " event=" + problem.eventCode());
                     problem.diagnosticId().ifPresent(diagnostic -> remoteDiagnosticLine(sink, prefix + " diagnostic=" + diagnostic));
-                    for (var key : List.of("transportFailureType", "disconnectCode", "disconnectInitiatorLocal", "sessionCloseObserved",
+                    for (var key : List.of("channelOpenWorkerSnapshotStartedMillis", "channelOpenWorkerSnapshotCompletedMillis",
+                        "channelOpenWorkerSnapshotRemainingMillis", "channelOpenObservation", "channelOpenWriteState",
+                        "channelOpenWriteFailureType", "channelOpenWriteStartedMillis", "channelOpenWriteCompletedMillis",
+                        "channelOpenReply", "channelOpenReplyMillis", "channelOpenFailureReason", "channelOpenSnapshotPhase",
+                        "channelOpenFutureDone", "channelOpenFutureOpened", "channelOpenFutureCanceled", "channelOpenFutureFailureType",
+                        "channelOpenFutureFailureReason", "channelOpenWorkerSnapshot", "channelOpenWorkerIoCount",
+                        "channelOpenWorkerResumeCount", "disconnectObserved", "transportReadCallbacksAtCommandStart",
+                        "transportReadCallbacksDuringCommand", "transportSessionAgeMillis", "channelOpenWorkerIo0Alive",
+                        "channelOpenWorkerIo0State", "channelOpenWorkerIo1Alive", "channelOpenWorkerIo1State",
+                        "channelOpenWorkerResume0Alive", "channelOpenWorkerResume0State", "channelOpenWorkerResume1Alive",
+                        "channelOpenWorkerResume1State", "transportFailureType", "disconnectCode", "disconnectInitiatorLocal",
+                        "sessionCloseObserved",
                         "transportKeyExchangeState", "transportReadCallbacks", "transportReadHandlerActive", "transportReadCompletedAgeMillis",
                         "transportReadHandlerAgeMillis", "transportReadThreadState", "inputThreadState", "inputState", "commandPhase",
                         "elapsedMillis", "timeoutMillis", "scriptBytes", "stdinBytes", "frameWritePhase", "authorPayloadState",
@@ -8345,6 +8356,17 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         return details.lines()
             .filter(line -> line.matches("(?:code|category|problem\\[[0-9]+\\]\\.(?:code|category))=[A-Z0-9_]+")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:contentCharacters|auxiliaryTextCharacters|inputTokens|outputTokens|cachedInputTokens|cacheMissInputTokens|reasoningOutputTokens|jsonErrorLine|jsonErrorColumn|elapsedMillis|timeoutMillis|scriptBytes|stdinBytes|remoteWindow(?:Open|Failure)(?:MaxSize|Size|PacketSize))=[0-9]{1,12}")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.channelOpenObservation=(?:AVAILABLE|UNAVAILABLE)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:channelOpenWriteState)=(?:NOT_OBSERVED|PENDING|WRITTEN|FAILED)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:channelOpenWriteFailureType|channelOpenFutureFailureType)=(?:UNKNOWN|CHANNEL_OPEN|CANCELLATION|TIMEOUT|IO|OTHER)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.channelOpenReply=(?:NOT_OBSERVED|CONFIRMATION|FAILURE)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.channelOpenSnapshotPhase=RESULT")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.channelOpenWorkerSnapshot=(?:NOT_OBSERVED|BEFORE_DEADLINE|UNAVAILABLE)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:channelOpenFuture(?:Done|Opened|Canceled))=(?:UNKNOWN|true|false)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:disconnectObserved|channelOpenWorker(?:Io|Resume)[01]Alive)=(?:true|false)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.channelOpenWorker(?:Io|Resume)[01]State=(?:NEW|RUNNABLE|BLOCKED|WAITING|TIMED_WAITING|TERMINATED)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.channelOpenWorker(?:Io|Resume)Count=[0-2]")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:channelOpen(?:WriteStartedMillis|WriteCompletedMillis|ReplyMillis|FailureReason|FutureFailureReason|WorkerSnapshot(?:Started|Completed|Remaining)Millis)|transportReadCallbacks(?:AtCommandStart|DuringCommand)|transportSessionAgeMillis)=(?:UNKNOWN|[0-9]{1,12})")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.commandPhase=(?:BEFORE_DISPATCH|CREATING_CHANNEL|CHANNEL_OPENING|WAITING_FOR_EXIT)")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.inputState=(?:NOT_STARTED|SENDING|COMPLETED|FAILED)")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.frameWritePhase=(?:NOT_STARTED|WRITING_LENGTH|WRITING_SCRIPT|WRITING_STDIN|FLUSHING|WRITTEN)")
