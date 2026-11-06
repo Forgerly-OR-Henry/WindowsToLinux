@@ -1,8 +1,8 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-## 2026-11-07 独立 STATIC：S21 修复已提交，待完整新准备
+## 2026-11-07 独立 STATIC：S21 首项失败封存，S22 本地修复完成
 
-见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。S20 完整 TaskBoard PASS／FileTransfer FAILED／后六项未启动保持，异常自有 TMP 已限定清理，normal store 与证据保留。S21 `29965d658e65eb6863bf651ee5db1fc24abe0631` 的 Go 官方源有界跳转修复已本地提交，定点 JUnit 分轮9、3、1均通过，最终合成 Python8/8及必要包通过；这不证明 S20 实际拒绝目标或真实部署成功。新冻结输入与原控制正在派生，尚无新服务器原次；之后须全新 inventory→plan→精确计划父审→apply→独立 after，再从 TaskBoard 按固定八项逐项放行。用户本目标后续 STATIC 明确授权持续适用，不重放或拼接旧轮。AI R17 未启动，R16 首过0/8、旧 UNKNOWN／false 门及旧 SSH 超时原因保持。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
+见 [R16 后独立 STATIC 记录](STATIC-POST-R16-20261106.md)。S20 完整PASS1／FAILED1／后六项未启动保持。S21 全新四阶段通过，首 TaskBoard 原次失败，部署 root 仍 UNKNOWN、future未完成；完整业务0/8，后七项未启动，异常自有TMP已闭合，normal与证据保留。S22 `b7d00a7cd22eb00bcf2c8988b412eedcb301c4d4` 已提交 helper 独立固定摘要同步，保留两个失败测试轮；最终定点20例及必要跳测打包通过，无审批、UNKNOWN或预算变更。新冻结输入核验中，S22服务器四阶段及八业务尚未启动；须全新inventory→plan→精确计划父审→apply→独立after，再从TaskBoard固定顺序验收，不重放或拼接旧轮。用户后续STATIC明确授权持续适用。AI R17未启动，R16首过0/8、旧UNKNOWN／false门及旧SSH超时原因保持，S20实际拒绝目标仍未知。实时状态以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
 
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 

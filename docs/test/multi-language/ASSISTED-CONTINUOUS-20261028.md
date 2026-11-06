@@ -1,8 +1,8 @@
 # ASSISTED 连续首过验证记录
 
-## 2026-11-07 R16 后 STATIC：S21 本地修复完成，准备新冻结
+## 2026-11-07 R16 后 STATIC：S21 首项失败封存，S22 本地修复完成
 
-[独立 STATIC 记录](STATIC-POST-R16-20261106.md)保留此前失败和 UNKNOWN。S20 TaskBoard 完整原次 PASS，FileTransfer 因 Go 模块来源白名单拒绝而 FAILED，64KiB业务未到达，后六项未启动；本轮完整静态通过仍为1/8。S21 `29965d65…` 已补源级精确主机／bucket 跳转规则及自定义源拒绝边界，分轮定点检查与必要打包通过；新冻结输入准备中，服务器四阶段和八业务尚未启动，不能重放或拼接 S20。用户明确确认的本目标后续 STATIC 范围持续适用，旧审批拒绝历史保留。AI R17 未启动，R16 首过0/8及旧 UNKNOWN／false 门保持；旧 SSH 超时原因和 S20 实际拒绝目标仍未确定。实时进度见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+[独立 STATIC 记录](STATIC-POST-R16-20261106.md)保留此前失败和 UNKNOWN。S20 完整PASS1／FAILED1／后六项未启动保持。S21 全新四阶段通过，首 TaskBoard 原次 native/tool1、JUnit1/1/0/0，部署 root 为 UNKNOWN，完整业务0/8，后七项未启动；异常自有TMP已限定闭合，normal与证据保留。S22 `b7d00a7c…` 同步 helper 生产者及四处独立消费者的固定摘要，相关失败组与三个合同方法20例通过，必要跳测打包成功；未调整审批、UNKNOWN 或预算，未改判 S21 原次。新冻结输入核验中，S22 服务器四阶段和八业务尚未启动，后续须完整新准备，不拼接旧轮。用户后续STATIC明确授权持续适用。AI R17 未启动，R16首过0/8及旧UNKNOWN／false门保持；旧SSH超时原因和S20实际拒绝目标仍未确定。实时进度见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 2026-11-06 R16-P08八项原次已封存0/8，框架已关闭；转入独立STATIC阶段
 

@@ -1,6 +1,6 @@
 # R16 后独立 STATIC 验证记录
 
-本记录截至 S21 本地修复验证完成、新冻结输入准备中；S20 保留 TaskBoard 完整原次通过、FileTransfer 原次失败，静态业务为 **1/8**，另六项未启动。S17 至 S21 是独立 STATIC 版本号，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+本记录截至 S21 首 TaskBoard 原次失败封存、S22 本地 helper 固定摘要修复验证完成时；S22 服务器准备和业务尚未启动。S21 四阶段通过，业务为0项完整通过、首项失败且部署结果 UNKNOWN、其余七项未启动。S20 保留 TaskBoard 完整原次通过、FileTransfer 原次失败及另六项未启动，其 **1/8** 不计入后轮。S17 至 S22 是独立 STATIC 版本号，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 已消费原次
 
@@ -11,7 +11,8 @@
 | S17 `8250f202…` | 新 inventory、plan 通过；apply 未完成；after 未启动 | 八项全部未启动 | apply 等待超时，清理实际结果为 UNKNOWN；四阶段未通过 |
 | S18 `275e0650…` | 全新四阶段均通过，完整 after 与 apply.postInventory 相同 | TaskBoard 失败；其余七项未启动 | 业务 QA 通过，最终清理复查失败、CLEAN 缺失；不算完整静态通过 |
 | S20 `39e67c94…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 完整原次 PASS；FileTransfer 原次 FAILED，其余六项未启动 | GO_MODULE 来源白名单拒绝，64KiB业务未到达；STATIC 1/8，AI R17 未启动 |
-| S21 `29965d65…` | 尚未启动；新冻结输入准备中 | 八项均未启动 | 本地有界跳转修复与定点检查通过，不是服务器验收 |
+| S21 `29965d65…` | 全新四阶段通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 原次 FAILED，部署 root 为 UNKNOWN；其余七项未启动 | 完整业务0/8，异常自有 TMP 已闭合；AI R17 未启动 |
+| S22 `b7d00a7c…` | 新冻结输入核验中；服务器四阶段尚未启动 | 八项均未启动 | helper 独立固定摘要同步，定点检查及必要打包通过，尚无真实部署结论 |
 
 前两次 STATIC 的原件分别保留于 [ROOT16 执行证据](../../../.ai-workspace/evidence/post-r16-static-execution-owner-20261106-01/)和 [S16 执行证据](../../../.ai-workspace/evidence/post-r16-static-repair-execution-owner-20261106-01/)。S17 的原件见 [执行证据](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-owner-20261106-01/)及 [父封存审查](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-inputs-20261106-01/s17-preparation-incomplete.PARENT-REVIEW.json)，后者 SHA256 为 `fdd38e32bf67d1a4984cca4941814f883286004f015220621d291680a26ac356`。这些版本各自独立，不拼接准备阶段、通过项或计划。
 
@@ -75,7 +76,25 @@ S21 本地提交 `29965d658e65eb6863bf651ee5db1fc24abe0631` 仅改六个 deploym
 
 定点验证分轮保留：首轮 JUnit **9/0/0/0**；补充自定义冻结端点边界后，仅相关三方法 **3/0/0/0**；最后收紧 Python ASCII 主机格式匹配后，仅 runtime 方法 **1/0/0/0**，其独立 Python 合成场景 **8/8**。最后一轮同时 package，原工具 `67d030` 实际 exit0、29.471秒，生成最终 deployment JAR；此前39.571秒的中间包不冒充最终包。没有全量测试或真实公共下载，合成结果不证明 Linux、TLS、原生 Go 构建或部署成功。见[完整分轮证据与精确 selectors](../../../.ai-workspace/evidence/static-go-module-redirect-fix-20261107-01/README.md)。
 
-为新工作树原 STATIC classpath 补齐 Files 模块，父另执行离线 `-o -pl src/mod/files -am -DskipTests package`，原工具 `ae0ef9` 实际 exit0、BUILD SUCCESS 5.878秒，测试全部跳过，未复制旧 target。相关自有 wrapper／已记录测试 JVM 已窄查消失，两个编译任务 TMP 各经 owner、绝对边界、祖先及整树 nonreparse 检查清除；未采集的内部进程身份仍为 UNKNOWN，不冒充正式 live 四 actor 证明。见[Files 必要编译与收尾](../../../.ai-workspace/evidence/static-s21-integration-20261107-01/README.md)。两处源码及正式记录提交均仅在本地；新冻结输入正在核对，尚无 S21 服务器准备或业务原次。
+为新工作树原 STATIC classpath 补齐 Files 模块，父另执行离线 `-o -pl src/mod/files -am -DskipTests package`，原工具 `ae0ef9` 实际 exit0、BUILD SUCCESS 5.878秒，测试全部跳过，未复制旧 target。相关自有 wrapper／已记录测试 JVM 已窄查消失，两个编译任务 TMP 各经 owner、绝对边界、祖先及整树 nonreparse 检查清除；未采集的内部进程身份仍为 UNKNOWN，不冒充正式 live 四 actor 证明。见[Files 必要编译与收尾](../../../.ai-workspace/evidence/static-s21-integration-20261107-01/README.md)。源码及正式记录提交均仅在本地，后续真实执行另记如下。
+
+## S21 全新准备通过，首项原次失败并封存
+
+本轮重新冻结公开输入与原控制，完整执行新 inventory、plan、精确 apply 和独立 after；四个原 native／tool 均 exit0，各新 JUnit **1/0/0/0**，原最终 VERIFIED 标记齐全。新计划完整回执 SHA256 为 `9b66cc2b63290037e0a3f6c3a121105fcf4e7e3387faf209b6f3963865b6cdbd`，独立重序列化的 canonical plan 为 `56ae7c6792c20010b7e8dcab36078525373a419f720dd7deddaa362aa80e193a`，17280个UTF-8字节；完整目标字段均与本轮 inventory 一致，31个非核心构建包与148个必留包无交集。
+
+apply 回执 SHA256 为 `bde5f1bdc9e150ec5f1e1c9ccea50aff00923070be1d4bd99b223687a45ce95f`，实际清理五个产品目录、三个服务、两个产品账号和31个包；服务文件删除计数原值为3。148个必留系统包完整记录未变，655个剩余包恰为原686减计划31，无升级或额外增删；八个固定产品目录均不存在，账号、组、subid、服务、服务文件及目标包清空，APT缓存为0。
+
+独立 after 的完整 inventory 与本轮 apply.postInventory **全部59382个UTF-8字节相同**，SHA256 为 `82e0d077f2a00d57e542e7bce91bd50ab87665b358533e5e04de4f67f90e2afc`，无排除字段或数值转换。同旧摘要不表示复用旧原次；本轮各有新的任务、JUnit、native和实际工具终态。16个已记录原进程身份均已精确观察消失，自有TMP闭合，normal与证据保留，内部JVM身份仍UNKNOWN。见[本轮完整四阶段父审](../../../.ai-workspace/evidence/post-r16-static-go-redirect-execution-inputs-20261107-01/four-phase-preparation.PARENT-REVIEW.json)，SHA256 `22b0688c15a459b997002798a9e0e7309f13c5cc16b04951ce0db398e0fdb400`。
+
+准备职责结束后，首个 TaskBoard 由独立职责仅执行一次原 STATIC selector。原工具 `616f02` 实际 exit1，新 JUnit **1/1/0/0**、30.797秒；部署 root `aee0522c-d740-49c4-adf8-0acc332cc656` 返回 `DEPLOYMENT_REFERENCE_UNKNOWN`，处于“归档已审阅冻结组件”阶段，outcome／endedAt为空，futureDoneObserved=false，Mod.close 因仍有资源被阻止。未到达 PUBLISHED、BUSINESS、PASS、CLEAN 或最终 modelCalls 断言，不从日志缺失推断远端无副作用。见[原次失败父审](../../../.ai-workspace/evidence/post-r16-static-go-redirect-execution-inputs-20261107-01/s21-task-board-failed.PARENT-REVIEW.json)。本轮完整业务0/8，后七项及AI未启动，不重放此原次。
+
+四个已记录原出生身份均精确观察为 PID_ABSENT。异常自有 TMP 另经 owner、绝对边界、祖先／整树 nonreparse、硬链接及独占删除锁预检后，仅清理两个已审叶目录及空任务根；原工具 `977bec` 实际 exit0，清理进程自身由 `28bf7f` 实际 exit0 确认消失。normal store 与证据保留，内部 JVM 身份及远端副作用仍 UNKNOWN，未执行 normal closeout，见[异常本地收尾父审](../../../.ai-workspace/evidence/post-r16-static-go-redirect-execution-inputs-20261107-01/static-task-board-abnormal-tmp-closed.PARENT-REVIEW.json)。准备中的路径拼接检查错误、纯存证的 MSIX 启动器错误及收尾元数据脚本解析错误均保留，不算服务器原次重试。
+
+## S22 helper 固定摘要同步与定点验证
+
+S21 的 runtime 变化会更新生成 helper 中两处嵌入摘要，而 helper 生产者及四处独立消费者仍固定旧身份。新工作树先用原 `assemblesTheAllowlistedProtocolByteForByte` 复现 `IllegalStateException`，新 JUnit **1/0/1/0**。独立比较确认两个 helper 均为570631字节，仅两处 runtime SHA 不同；替换这两处后全字节一致。原 S21 具体异常栈未导出，因此该确定的本地缺陷不改判其原 UNKNOWN，也不宣称已经证明原次唯一根因。
+
+本地提交 `b7d00a7cd22eb00bcf2c8988b412eedcb301c4d4` 只改五个生产文件、四个直接测试文件中的12处固定摘要字面量，将 helper 身份同步为 `734ad85f336c41aeaab6034b5bd15a03642434e4ff4458b3b6ba06faed530bac`；各消费者仍独立校验固定身份，审批、协议、拒绝断言、UNKNOWN 和预算均保持。首次同步后的24例中8例通过、16例因遗漏的独立合同摘要报错；补齐后仅重跑失败审批组及三个直接合同方法，共 **20/0/0/0**，原工具 `9ee01d` 实际 exit0，未重复审批组以外已通过的7例。必要离线 deployment／Files 打包使用 `-DskipTests`，原工具 `c6b14e` 实际 exit0。全部失败轮保留，见[修复与分轮验证交接](../../../.ai-workspace/evidence/static-helper-runtime-pin-fix-20261107-01/HANDOFF.md)。这属于定点验证，不是全量测试或真实服务器验收；S22 须新冻结并完成全新四阶段后，才从 TaskBoard 开始固定八项。
 
 ## 后续验收条件
 
