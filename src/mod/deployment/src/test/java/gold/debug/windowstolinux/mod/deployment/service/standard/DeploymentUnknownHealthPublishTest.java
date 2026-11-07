@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.ai.*;
 import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
 import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
@@ -23,6 +24,7 @@ import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
@@ -30,9 +32,11 @@ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.DeploymentStandardEntryFixture;
+import gold.debug.windowstolinux.mod.deployment.ai.json.DeploymentJsonFields;
 import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.recovery.DeploymentStandardTaskRecovery;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.recovery.DeploymentStandardPreparationDiagnosticRecovery;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.*;
 import gold.debug.windowstolinux.mod.deployment.config.mirror.MirrorCatalog;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -40,6 +44,56 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 /** Keeps unknown health outside diagnosis and re-publication, then reconciles real receipts. / 未知健康不进入诊断与重发，随后以真实回执核对。 */
 class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixture {
+    // Full local single/graph preparation and publication share this initial wait.
+    private static final long FIRST_PUBLICATION_WAIT_SECONDS = 120;
+    private static final int FINAL_RECONCILIATION_WAIT_SECONDS = 60;
+
+    private final AtomicInteger graphDiagnosticSkips = new AtomicInteger();
+
+    @Override
+    protected PlatformInteractionService.Prompts interactionPrompts() {
+        var original = super.interactionPrompts();
+        return (PlatformInteractionService.Prompts) Proxy.newProxyInstance(
+            PlatformInteractionService.Prompts.class.getClassLoader(), new Class<?>[]{PlatformInteractionService.Prompts.class},
+            (proxy, method, arguments) -> {
+                if (method.getName().equals("text") && arguments.length == 5
+                    && DeploymentStandardPreparationDiagnosticRecovery.GRAPH_SELECTION_TITLE.equals(arguments[0])
+                    && DeploymentStandardPreparationDiagnosticRecovery.GRAPH_SELECTION_PROMPT.equals(arguments[1])
+                    && Boolean.FALSE.equals(arguments[2])) {
+                    assertNotNull(arguments[3]);
+                    assertNotNull(arguments[4]);
+                    var task = (TaskSnapshot) arguments[3];
+                    assertEquals(OWNER, task.ownerId());
+                    assertEquals(VERSION, task.ownerVersion());
+                    assertEquals(DeploymentRefFlow.TASK_TYPE, task.type());
+                    assertEquals(TaskState.UNKNOWN, task.state());
+                    graphDiagnosticSkips.incrementAndGet();
+                    return new char[0];
+                }
+                try { return method.invoke(original, arguments); }
+                catch (InvocationTargetException failure) { throw failure.getCause(); }
+            });
+    }
+
+    private static Map<String, Object> scalarProjection(gold.debug.windowstolinux.appapi.task.run.TaskHandle<?> handle,
+                                                       DeploymentPublishStatePeer peer) {
+        var completion = handle.completion().toCompletableFuture();
+        var result = completion.isDone() && !completion.isCompletedExceptionally() && !completion.isCancelled()
+            ? completion.getNow(null) : null;
+        var projection = new LinkedHashMap<String, Object>();
+        projection.put("state", handle.snapshot().state().name());
+        projection.put("completionDone", completion.isDone());
+        projection.put("completionExceptional", completion.isCompletedExceptionally());
+        projection.put("outcome", result == null ? "ABSENT" : result.outcome().name());
+        projection.put("code", result == null ? "ABSENT" : result.problem().map(problem -> problem.code().name()).orElse("ABSENT"));
+        projection.put("event", result == null ? "ABSENT" : result.problem().map(problem ->
+            Set.of("CONTROLLED_HEALTH_UNKNOWN", "DEPLOYMENT_HEALTH_UNCONFIRMED", "DEPLOYMENT_HEALTH_RECEIPT_INVALID",
+                "DEPLOYMENT_HEALTH_FAILED").contains(problem.eventCode()) ? problem.eventCode() : "UNLISTED").orElse("ABSENT"));
+        projection.put("commands", peer.builds.commands.size());
+        projection.put("mockFailureClass", peer.builds.lastFailure == null ? "NONE" : peer.builds.lastFailure.getClass().getName());
+        return projection;
+    }
+
     private static final String COMPATIBILITY_PROBE = """
         set -eu
         while IFS='=' read -r key value; do
@@ -96,6 +150,7 @@ class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixt
             peer.builds.unknownHealth = true;
             var language = new AtomicInteger();
             var diagnosis = new AtomicInteger();
+            var publicationRequests = new AtomicInteger();
             AiService models = new AiService() {
                 @Override
                 public gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse> call(
@@ -127,6 +182,15 @@ class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixt
 
                 public OperationResult<AiResponse> call(AiRequest request, String expected, TaskContext task)
                     throws ApiException {
+                    try {
+                        return controlledResponse(request, expected, task);
+                    } catch (RuntimeException | Error escaped) {
+                        System.out.println("UNKNOWN_FIXTURE_MODEL_FAILURE count=" + count + " class=" + escaped.getClass().getName());
+                        throw escaped;
+                    }
+                }
+
+                private OperationResult<AiResponse> controlledResponse(AiRequest request, String expected, TaskContext task) {
                     assertEquals("a".repeat(64), expected);
                     String response;
                     if (request.purpose() == AiPurpose.APPROVAL)
@@ -136,16 +200,33 @@ class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixt
                         language.incrementAndGet();
                         try {
                             var facts = new ObjectMapper().readTree(request.messages().getLast().text());
+                            boolean publication = facts.path("state").path("availableTools").isArray();
+                            if (publication) publicationRequests.incrementAndGet();
+                            System.out.println("UNKNOWN_FIXTURE_NATIVE " + new ObjectMapper().writeValueAsString(Map.of(
+                                "count", count, "publicationRequests", publicationRequests.get(),
+                                "stateAvailableToolsArray", publication, "topLevelToolsPresent", facts.has("tools"),
+                                "submitResultOffered", request.tools().stream().anyMatch(tool -> tool.name().equals("submit_result")))));
                             if (facts.has("projectTypes"))
                                 response = DeploymentAssistedGoModelFixture.sourceScan(facts, count);
-                            else if (facts.has("tools"))
-                                response = DeploymentAssistedGoModelFixture.publicationTool(facts);
+                            else if (publication)
+                                response = DeploymentAssistedGoModelFixture.publicationTool(request, facts);
                             else if (Set.of("BUILD", "ROLLBACK_VERIFIED").contains(facts.path("phase").asText())) {
                                 diagnosis.incrementAndGet();
                                 throw new AssertionError("Unknown health must never authorize diagnosis");
-                            } else response = "{\"action\":\"ADVISE\",\"sourceRevision\":\""
-                                + facts.path("sourceRevision").asText()
-                                + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Retain human inputs\",\"unresolved\":[]}}";
+                            } else {
+                                DeploymentJsonFields.exact(facts, Set.of("sourceRevision", "facts", "fields", "observations",
+                                    "evidenceReferences", "feedback", "remaining"));
+                                assertTrue(facts.path("sourceRevision").isTextual()
+                                    && facts.path("sourceRevision").textValue().matches("[0-9a-f]{64}")
+                                    && facts.path("facts").isObject() && facts.path("fields").isArray()
+                                    && facts.path("observations").isArray() && facts.path("evidenceReferences").isArray()
+                                    && facts.path("feedback").isObject(), "Only the current source-analysis request can receive ADVISE");
+                                DeploymentJsonFields.number(facts, "remaining", 1, 12);
+                                assertEquals(List.of("submit_result"), request.tools().stream().map(tool -> tool.name()).toList());
+                                response = "{\"action\":\"ADVISE\",\"sourceRevision\":\""
+                                    + facts.path("sourceRevision").asText()
+                                    + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Retain human inputs\",\"unresolved\":[]}}";
+                            }
                         } catch (Exception failure) {
                             throw new AssertionError(failure);
                         }
@@ -215,16 +296,14 @@ class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixt
                 var handle = new DeploymentStandardEntryFixture(bound, flow).submit(new ServerId("server"),
                     new DeploymentStandardInputs.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(count),
                     true, "MANUAL_REVIEW");
-                long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+                long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(FIRST_PUBLICATION_WAIT_SECONDS);
                 while (handle.snapshot().state() != TaskState.UNKNOWN && handle.snapshot().state() != TaskState.ENDED
                     && System.nanoTime() < until)
                     Thread.sleep(20);
+                System.out.println("UNKNOWN_FIXTURE_STATE " + new ObjectMapper().writeValueAsString(scalarProjection(handle, peer)));
                 assertEquals(TaskState.UNKNOWN, handle.snapshot().state(),
-                    () -> handle.snapshot() + " result=" + handle.completion().toCompletableFuture().getNow(null)
-                        + "; remote commands=" + peer.builds.commands);
-                assertTrue(peer.builds.healthChecks > 0, () -> "Controlled health was not reached; state=" + handle.snapshot().state()
-                    + "; stage=" + handle.snapshot().progressText() + "; commands=" + peer.builds.commands.size()
-                    + "; mockFailureType=" + (peer.builds.lastFailure == null ? "NONE" : peer.builds.lastFailure.getClass().getName()));
+                    () -> scalarProjection(handle, peer).toString());
+                assertTrue(peer.builds.healthChecks > 0, () -> "Controlled health was not reached; " + scalarProjection(handle, peer));
                 assertFalse(peer.builds.present.isEmpty());
                 assertFalse(peer.maintenance.isEmpty());
                 assertEquals(0, diagnosis.get());
@@ -246,10 +325,10 @@ class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixt
                 assertEquals(0, diagnosis.get());
                 assertEquals(0, corrections);
                 peer.builds.unknownHealth = false;
-                var ended = reconcileReady(runtime, handle);
-                assertEquals(TaskState.ENDED, ended.state(), () -> "Actual retained original task=" + ended
-                    + "; remote commands=" + peer.builds.commands + "; current=" + peer.builds.current
-                    + "; snapshots=" + peer.snapshots + "; maintenance=" + peer.maintenance);
+                var ended = reconcileReady(runtime, handle, FINAL_RECONCILIATION_WAIT_SECONDS);
+                System.out.println("UNKNOWN_FIXTURE_STATE " + new ObjectMapper().writeValueAsString(scalarProjection(handle, peer)));
+                assertEquals(TaskState.ENDED, ended.state(), () -> scalarProjection(handle, peer).toString());
+                System.out.println("UNKNOWN_FIXTURE_GRAPH_SELECTION count=" + count + " accepted=" + graphDiagnosticSkips.get());
                 assertEquals(Optional.of(count == 1 ? TaskResult.SUCCEEDED : TaskResult.FAILED), ended.outcome());
                 assertEquals(builds, peer.builds.builds);
                 assertEquals(creates, peer.builds.creates);
