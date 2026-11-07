@@ -2,6 +2,8 @@
 
 用户最新阶段指示：继续完成静态排障及固定八项验证；**静态验证全部完成后暂停，不启动新一轮 AI 辅助验收**。当前静态验证未完成，继续执行本阶段；下文较早的“静态后返回AI”记录保留为历史要求，不再作为自动接续授权。
 
+后续按八项整体影响矩阵推进：共享链路集中修复，八项归档、组件、健康类型与运行契约一起覆盖，再统一冻结验证。当前S27隔离候选包正在实现原因保留、socket completion交接观测与受控测试，尚无新冻结或服务器结果；用户已选择八项整体修复、统一冻结后按固定顺序验证完整八项；现有S26失败封存不续跑。
+
 当前为 **S26 PASS1／FAILED1／UNLAUNCHED6 封存**：TaskBoard完整通过，FileTransfer在重启前inspect返回UNKNOWN，后六项不放行，正在只读定位。S25 保留 PASS3／FAILED1／UNLAUNCHED4，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
 
 此前 S24 为 PASS0／FAILED1／后七项未启动，START 任务保持 UNKNOWN；S23、S22 各为 PASS2／FAILED1／后五项未启动，S21 首项失败且部署 UNKNOWN，S20 为 PASS1／FAILED1／后六项未启动。各轮失败和准备证据独立保留。S17 之后的 S 编号为独立 STATIC 版本，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
@@ -220,9 +222,26 @@ inventory、plan、精确 apply、独立 after 四阶段各一个原次，原工
 
 第二 FileTransfer 原次 `38a588/session28511 → 665205` 实际exit1，原native／Python／controller／bootstrap等待均为1，新JUnit1/1/0/0（431.292秒，SHA256 `0663bffa557958022f564d304909a898af6f0f8125b73b8485d90fc845f6d534`），bookkeeping无失败。应用`wtl-static-file-transfer-11ezoq02j8`仅有PUBLISHED，BUSINESS／PASS／CLEAN均为0，retained uncertainty为1，modelCalls终态断言NOT_REACHED。原HTTP65536场景未改；失败位于`restart()`先行的`applications.inspect()`，原任务`bc024741-278c-4bba-9d1f-30aae066849f`为UNKNOWN／DEPLOYMENT_HEALTH_UNCONFIRMED，endedAt为空、futureDoneObserved=false，Mod.close因该任务仍持有资源受阻。不能声称重启已经执行或完整重启后下载断言通过。
 
-见[第二项失败父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/file-transfer-failed.PARENT-REVIEW.json)，SHA256 `a3e41e44acc5656f2304660398efb1871505f36b336d4bdb1d2e53286002d595`。本轮封存PASS1／FAILED1／UNLAUNCHED6，不继续后六项、不拼前一PASS到下一轮；normal／原证据与异常TMP保留，未执行external preflight或normalcloseout、janitor、远端补查、失败库重开或reconcile。远端effects／future保持UNKNOWN_NOT_RECHECKED。原四出生身份仅由一次限定观察 `dc23db exit0` 确认为ABSENT，父审接受；未清理TMP，该事实不构成远端或业务UNKNOWN已解决。后续任何修复均须新冻结、全新四阶段并从TaskBoard开始，AI仍未启动。
+见[第二项失败父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/file-transfer-failed.PARENT-REVIEW.json)，SHA256 `a3e41e44acc5656f2304660398efb1871505f36b336d4bdb1d2e53286002d595`。本轮封存PASS1／FAILED1／UNLAUNCHED6，不继续后六项、不拼前一PASS到下一轮。封存时normal／原证据与异常TMP均保留，未执行external preflight或normalcloseout、远端补查、失败库重开或reconcile；远端effects／future保持UNKNOWN_NOT_RECHECKED。原四出生身份先由一次限定观察 `dc23db exit0` 确认为ABSENT。之后经独立静态审查和精确执行review，异常janitor原 `f4e8da exit0` 仅清理两指定owned TMP叶及确认空的两个任务根；源内fresh四原出生身份均PID_ABSENT，归属／全树边界／nonreparse／单硬链接与短exclusive DELETE探针通过，探针释放后删除，非连续锁或原子保证。normal／证据保留，未normalcloseout或远端复查，UNKNOWN／futurefalse／endedAtnull／NOT_REACHED／1-1-6不改。见[本地异常TMP闭合父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/static-file-transfer-abnormal-tmp-closed.PARENT-REVIEW.json)，SHA256 `55bead42f6dc0b7da9d2d39a5bd3c8f3f38652ee43216813e5d52f3b97d910ab`。后续任何修复均须新冻结、全新四阶段并从TaskBoard开始，AI仍未启动。
 
 [公开证据只读诊断](../../../.ai-workspace/evidence/static-file-transfer-health-unknown-diagnosis-20261107-01/README.md)（SHA256 `698b16d6b958b17d7077e91ad3013a885e4795299861d6d896cf231ce7539640`）确证第二个健康调用在原55秒预算内未打开SSH通道，作者负载未发送，底层返回FAILED／SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT；其present value／empty exit随后被领域健康门映射为UNKNOWN，并丢失上游类型化context。本地open-write完成、一个socket读取回调待完成，不足以区分对端、传输路径、OS或本地I/O根因；不能认定健康命令实际执行后失败，也不由此加重试、延长预算或改变UNKNOWN语义。当前仅评估最小修复及必要诊断方案，尚未改变冻结源码或取得新服务器结果。
+
+## 八项整体覆盖与下一候选包
+
+八项的共享故障隔离层是SSH session／command channel／socket completion、发布及健康原因映射、归档与运行资源、生命周期和来源机制。前五项Graph在同一会话连续执行组件与整图health；后三项ON_DEMAND不进入相同的RUNNING daemon health循环。应覆盖这些差异，不能把FileTransfer问题仅归为Go，也不能用HTTP探针代表所有组件。
+
+| 项目 | 运行结构 | 必须保留的区别 |
+| --- | --- | --- |
+| TaskBoard | TypeScript前端 → Java后端 | HTTP任务、重启持久化 |
+| FileTransfer | Node网关 → Go后端 | 原65536字节HTTP传输、重启后再下载、uploads绑定 |
+| AssetLending | Node网关 → C#后端 | 借用单完整流程及重启后状态 |
+| CsvInspector | PHP网站与受管queue worker → Python analyzer | rows3／issues6／valid1、worker PID变化、job／export持久化 |
+| SurveyScoring | TypeScript → Kotlin → Ruby scorer | scorer声明PROCESS健康、84.21答卷重启后保留 |
+| LogAnalyzer | Rust CLI → C++ companion | ON_DEMAND／COMMAND，matched6 |
+| DirectoryDiff | Python CLI → C++ companion | ON_DEMAND／COMMAND，快照complete及content绑定 |
+| BinaryInspector | Rust CLI → C companion | ON_DEMAND／COMMAND，records5及样本归档 |
+
+下一本地包按“公共机制定点验证一次＋固定八项真实fixture发现／归档契约”组织，不运行全项目套件。范围为health受限原因保留、completion entered／returned／threw／active及命令基线、两通道交接和inline／suspend-resume受控用例；不改变原预算、重试或UNKNOWN语义。原受影响测试组及八项契约通过后再统一冻结。[Astra具体技术判断](../../../.ai-workspace/evidence/ssh-channel-open-unconfirmed-judgment-20261107-01/README.md)（SHA256 `7427cf5e43ae5636702d1692969f6c638f0df6d8d433bb9b0f2651167472062c`）同时明确：该工作不能提前表述为SSH物理停滞已修复；若新证据仍停留在同一应用层辨识边界，须转向独立边界证据，不能反复堆同义计数和盲重跑。
 
 ## 后续验收条件
 

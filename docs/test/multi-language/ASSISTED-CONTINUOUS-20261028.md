@@ -2,6 +2,8 @@
 
 用户最新指示：当前继续静态排障和验收；**静态验证全部完成后暂停，不启动新一轮 AI 辅助验收**。旧连续首过目标及各失败记录保留，后续AI阶段等待用户恢复指示。
 
+用户要求八项整体推进，当前S27共享候选包已在隔离树实施：统一检查公共SSH／health链路与八项fixture契约，尚未冻结或执行新服务器原次；用户已选择整体修复、统一冻结后按固定顺序验证完整八项。S26封存仍为1/1/6，原失败不重放。其异常owned TMP之后由独立janitor `f4e8da exit0` 限定闭合，[父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/static-file-transfer-abnormal-tmp-closed.PARENT-REVIEW.json)55bead42…97d910ab接受；normal／证据和远端UNKNOWN保留。
+
 ## 2026-11-07 S26 STATIC 封存1/8，FileTransfer inspect UNKNOWN
 
 S26 隔离源码最终本地提交 `350dc78571e43104b99b07e3923f31eee5150625`，工作区干净，未推送。Python 包路由保留文件名，HTML 按解析属性规范输出并统一 LF 位置计算；原 lock／hash、来源策略及业务断言保持。最终受影响的 HTML 五方法和三项身份检查通过，新 JUnit 合计4/0/0/0，必要 deployment 离线包通过且 tests skipped；其他先前结果分轮保留，未重复 JSON／Files 组。父已逐项核对10资源、5生产类和8包／元数据文件，42及26个已知 actor 均 PID_ABSENT、临时目录已清理，内部 JVM 身份 UNKNOWN。见[本地父审](../../../.ai-workspace/evidence/static-python-index-filename-fix-20261107-01/S26-code.PARENT-REVIEW.json)及[独立 STATIC 记录的 S26 段](STATIC-POST-R16-20261106.md#s26-本地索引修复及父审)。
