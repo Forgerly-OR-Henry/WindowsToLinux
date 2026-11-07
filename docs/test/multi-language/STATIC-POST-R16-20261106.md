@@ -2,7 +2,9 @@
 
 用户最新阶段指示：继续完成静态排障及固定八项验证；**静态验证全部完成后暂停，不启动新一轮 AI 辅助验收**。当前静态验证未完成，继续执行本阶段；下文较早的“静态后返回AI”记录保留为历史要求，不再作为自动接续授权。
 
-按八项整体影响矩阵推进：共享链路集中修复，八项归档、组件、健康类型与运行契约一起覆盖，再统一冻结验证。S27 本地共享包最终提交 `4bb69caf51a51b22869f5acdf409968162fa331e`，工作树 clean、未推送，已获本地代码父审接受；统一有限冻结和全新四阶段准备现均通过，首项 TaskBoard 原次正在执行，其余七项尚未放行。用户已选择八项整体修复、统一冻结后按固定顺序验证完整八项，现有 S26 失败封存不续跑。
+按八项整体影响矩阵推进：共享链路集中修复，八项归档、组件、健康类型与运行契约一起覆盖，再统一冻结验证。S27 本地共享包最终提交 `4bb69caf51a51b22869f5acdf409968162fa331e`，隔离源码树 clean、未推送，已获本地代码父审接受；统一有限冻结和全新四阶段准备现均通过，首项 TaskBoard 原次已完整 PASS，第二项 FileTransfer 唯一原次 `c33150 / session89450` 已由父启动、仍待原结果，后六项尚未放行。当前 S27 完整业务通过 **1/8**，不拼接 S26 旧 PASS。用户已选择八项整体修复、统一冻结后按固定顺序验证完整八项，现有 S26 失败封存不续跑。
+
+[S27 TaskBoard 完整业务父审](../../../.ai-workspace/evidence/post-r16-static-eight-shared-execution-inputs-20261107-01/task-board-result.PARENT-REVIEW.json)（SHA-256 `071dc8b983847687f96a00a9cb09c5719a55dc688648eec5e155978adacf8196`）接受首项原次：`ad368a / session54126 → 72452f` 实际退出 0、无剩余 session，原 native 及保留等待均为 0；fresh JUnit **1/0/0/0**，1287.58 秒，SHA-256 `7df9836792ab7e78496ed191583bd08e6673c3774fecc022d2b940aa9122dda5`。同一应用 `wtl-static-task-board-1az5su4zm0 / static-live` 的 PUBLISHED／BUSINESS／PASS／CLEAN 均为 1、modelCalls=0，原真实 HTTP、跨语言流程、重启及持久化断言完整通过，最终 stopped/disabled。预检 `b99ffe` 和正常 closeout `e4a30b` 各原次退出 0，四个已记录原出生身份均 PID_ABSENT、自有 TMP 已闭合；内部 JVM 具体身份仍 UNKNOWN。该结果仅计一项业务通过；四阶段准备及本地定点通过分别保留，不算其余业务通过。第二项仍使用 STATIC 原 **65,536 字节**负载，尚无本轮结果，不按 AI 的 8 MiB 口径记录。固定八项全部正常并完成必要收尾后暂停，不启动 AI；R16 AI 首过仍为 0/8。
 
 [S27 有限冻结父审](../../../.ai-workspace/evidence/post-r16-static-eight-shared-execution-inputs-20261107-01/limited-public-inputs.PARENT-REVIEW.json)覆盖 336 个公开文件、69 个精确 JAR 条目及 54 项原顺序类路径，七个控制输入完整正逆字节核对通过；不宣称整个目录或私库冻结。[本轮全新四阶段父审](../../../.ai-workspace/evidence/post-r16-static-eight-shared-execution-inputs-20261107-01/four-phase-preparation.PARENT-REVIEW.json)记录 inventory、plan、精确 apply、独立 after 各一个原次 actual tool/native 0、fresh JUnit 1/0/0/0，16 个已记录出生身份及自有 TMP 已闭合。独立 after 与本次 apply.postInventory 全部 14 字段及 59,748 UTF-8 字节相同；未使用旧轮回执。精确清理 31 个非核心开发包，691→660 完整有序包记录恰为原清单减去该 31 项，148 个受保护包含 23 个 essential 保持；5 个产品服务、4 个产品账号、5 个现存产品根已按计划处理。计划 6 个 unitFiles，实际显式移除 5 个，原计数保留。短独占锁不提供连续或原子删除保证，内部 JVM 的具体身份仍未独立记录。八项业务结果须由各原次给出，准备通过不算业务通过。
 
@@ -14,7 +16,7 @@ S27 的 health、socket completion、双通道及八项真实 fixture 契约定�
 
 一次辅助诊断采用 detached 启动、未保留原等待，并在内部 JVM 未确认时误清理自有合成 TMP；稍后写出的退出 1／JUnit 2/1 与清理窗口重叠，已[单独校正为受损执行证据](../../../.ai-workspace/evidence/static-s27-graph-recovery-callback-20261107-01/LATE-RESULT-CORRECTION.PARENT-REVIEW.json)，不归因代码或充作正常回归。其三个残留、后续正常诊断及最终通过轮的 TMP 均以核验所有权／FileID 的前台同卷移动保留，原临时路径 absent，不掩盖早先部分删除。后续原进程始终由同一前台会话等待结束后收尾；内部 JVM 具体身份仍按未独立记录处理。以上本地定点结果不作为全量或正式 STATIC 首过证明；本轮统一有限冻结和全新四阶段已通过，真实八项业务验证进行中。
 
-当前为 **S26 PASS1／FAILED1／UNLAUNCHED6 封存**：TaskBoard完整通过，FileTransfer在重启前inspect返回UNKNOWN，后六项未启动，原 UNKNOWN 保留。S25 保留 PASS3／FAILED1／UNLAUNCHED4，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
+旧轮 **S26 PASS1／FAILED1／UNLAUNCHED6 封存**：TaskBoard完整通过，FileTransfer在重启前inspect返回UNKNOWN，后六项未启动，原 UNKNOWN 保留。S25 保留 PASS3／FAILED1／UNLAUNCHED4，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
 
 此前 S24 为 PASS0／FAILED1／后七项未启动，START 任务保持 UNKNOWN；S23、S22 各为 PASS2／FAILED1／后五项未启动，S21 首项失败且部署 UNKNOWN，S20 为 PASS1／FAILED1／后六项未启动。各轮失败和准备证据独立保留。S17 之后的 S 编号为独立 STATIC 版本，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
