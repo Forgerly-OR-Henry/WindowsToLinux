@@ -6,7 +6,11 @@
 
 S27 的 health、socket completion、双通道及八项真实 fixture 契约定点组分别通过，必要离线包及官方 helper/runtime 身份核对通过；原先编译、夹具和 H2 失败分次保留，不合并为单次全绿。[共享包父审](../../../.ai-workspace/evidence/static-eight-shared-health-io-fix-20261107-01/shared-package.PARENT-REVIEW.json)已核对 16 份原阶段 JUnit、100 份证据、34 个稳定公开产物及 10 个 JAR entry，未确证真实 SSH 停滞根因，未执行新服务器原次。
 
-额外 UNKNOWN 资源保留回归仍未通过：严格对齐当前 `state.availableTools` native 请求后，唯一原次 `83085 exit1`、JUnit 2/2/0/0，原 20 秒界限两个参数仍 RUNNING、health=0。[本次报告](../../../.ai-workspace/evidence/static-s27-unknown-native-contract-20261107-01/README.md)保留原失败与最窄标量；工具执行／回执消费边界尚待判定，不延长等待、放宽断言或继续猜改。该测试文件的后续修改尚未提交，故不能据本地八 fixture 通过宣称真实八项验收通过或开始冻结。
+额外 UNKNOWN 资源保留回归仍有一项失败。原 `83085 exit1`／JUnit 2/2/0/0 保留；随后一次临时诊断确认准备正常推进，20 秒时单件已选构建、双件已选第二组件准备，无公开在途调用或工具拒绝。源码也确认 20 秒仅是该本地集成测试的首次总等待，未约定性能要求；移除诊断后，仅把首次等待改为固定 120 秒，恢复 20 秒及全部生产预算不变，所有原业务断言保留。
+
+该修正的唯一原次 `99881 exit1`／fresh JUnit **2/1/0/0**：单件完整通过 63.097 秒；双件首次已到 UNKNOWN，但最后第二次核对恢复仍为 UNKNOWN，原断言要求 ENDED，耗时 76.552 秒；首次等待未耗尽，恢复 helper 也未超时。见[等待修正报告](../../../.ai-workspace/evidence/static-s27-unknown-integration-wait-20261107-01/README.md)与[父审](../../../.ai-workspace/evidence/static-s27-unknown-integration-wait-20261107-01/wait-result.PARENT-REVIEW.json)。运行结束、已知 actor 和自有 TMP 已闭合，但双件原 runtime.close 资源占用失败保留，内部 JVM 身份 UNKNOWN。
+
+只读核对又发现图恢复的可选诊断输入与旧 fixture 拒绝全部文本输入冲突，符合双件远端命令数不增长的现象；旧原次未导出实际外层事件，不能把源码推断当成该次直接证据。下一最小修正仅为精确可选图提示返回空输入，继续普通核对，其余输入仍严格拒绝。后续测试文件仍未提交，不放行冻结、服务器原次或 AI，不把本地八 fixture 契约通过当成真实八项验收通过。
 
 当前为 **S26 PASS1／FAILED1／UNLAUNCHED6 封存**：TaskBoard完整通过，FileTransfer在重启前inspect返回UNKNOWN，后六项不放行，正在只读定位。S25 保留 PASS3／FAILED1／UNLAUNCHED4，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
 
