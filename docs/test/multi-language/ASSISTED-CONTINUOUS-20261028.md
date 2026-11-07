@@ -2,7 +2,7 @@
 
 用户最新指示：当前继续静态排障和验收；**静态验证全部完成后暂停，不启动新一轮 AI 辅助验收**。旧连续首过目标及各失败记录保留，后续AI阶段等待用户恢复指示。
 
-用户要求八项整体推进，当前S27共享候选包已在隔离树实施：统一检查公共SSH／health链路与八项fixture契约，尚未冻结或执行新服务器原次；用户已选择整体修复、统一冻结后按固定顺序验证完整八项。S26封存仍为1/1/6，原失败不重放。其异常owned TMP之后由独立janitor `f4e8da exit0` 限定闭合，[父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/static-file-transfer-abnormal-tmp-closed.PARENT-REVIEW.json)55bead42…97d910ab接受；normal／证据和远端UNKNOWN保留。
+用户要求八项整体推进。S27 共享候选已在隔离树本地提交 `47b14d792047664f1b089882bb594818a7d79f62`，health／socket／双通道与八项 fixture 契约定点组分别通过，但额外 UNKNOWN 两参数回归仍失败，未满足冻结条件，未执行新服务器原次。后续仅该测试文件有未提交的合同修正；原等待界限仍 RUNNING、health=0，不能跳过失败或延长等待，详见[独立 STATIC 最新记录](STATIC-POST-R16-20261106.md)。用户已选择整体修复、统一冻结后按固定顺序验证完整八项。S26 封存仍为 1/1/6，原失败不重放；异常 owned TMP 已由独立 janitor `f4e8da exit0` 限定闭合，[父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/static-file-transfer-abnormal-tmp-closed.PARENT-REVIEW.json)55bead42…97d910ab接受，normal／证据和远端 UNKNOWN 保留。
 
 ## 2026-11-07 S26 STATIC 封存1/8，FileTransfer inspect UNKNOWN
 

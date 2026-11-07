@@ -2,7 +2,11 @@
 
 用户最新阶段指示：继续完成静态排障及固定八项验证；**静态验证全部完成后暂停，不启动新一轮 AI 辅助验收**。当前静态验证未完成，继续执行本阶段；下文较早的“静态后返回AI”记录保留为历史要求，不再作为自动接续授权。
 
-后续按八项整体影响矩阵推进：共享链路集中修复，八项归档、组件、健康类型与运行契约一起覆盖，再统一冻结验证。当前S27隔离候选包正在实现原因保留、socket completion交接观测与受控测试，尚无新冻结或服务器结果；用户已选择八项整体修复、统一冻结后按固定顺序验证完整八项；现有S26失败封存不续跑。
+后续按八项整体影响矩阵推进：共享链路集中修复，八项归档、组件、健康类型与运行契约一起覆盖，再统一冻结验证。S27 共享候选已本地提交 `47b14d792047664f1b089882bb594818a7d79f62`，尚未满足冻结条件；用户已选择八项整体修复、统一冻结后按固定顺序验证完整八项，现有 S26 失败封存不续跑。
+
+S27 的 health、socket completion、双通道及八项真实 fixture 契约定点组分别通过，必要离线包及官方 helper/runtime 身份核对通过；原先编译、夹具和 H2 失败分次保留，不合并为单次全绿。[共享包父审](../../../.ai-workspace/evidence/static-eight-shared-health-io-fix-20261107-01/shared-package.PARENT-REVIEW.json)已核对 16 份原阶段 JUnit、100 份证据、34 个稳定公开产物及 10 个 JAR entry，未确证真实 SSH 停滞根因，未执行新服务器原次。
+
+额外 UNKNOWN 资源保留回归仍未通过：严格对齐当前 `state.availableTools` native 请求后，唯一原次 `83085 exit1`、JUnit 2/2/0/0，原 20 秒界限两个参数仍 RUNNING、health=0。[本次报告](../../../.ai-workspace/evidence/static-s27-unknown-native-contract-20261107-01/README.md)保留原失败与最窄标量；工具执行／回执消费边界尚待判定，不延长等待、放宽断言或继续猜改。该测试文件的后续修改尚未提交，故不能据本地八 fixture 通过宣称真实八项验收通过或开始冻结。
 
 当前为 **S26 PASS1／FAILED1／UNLAUNCHED6 封存**：TaskBoard完整通过，FileTransfer在重启前inspect返回UNKNOWN，后六项不放行，正在只读定位。S25 保留 PASS3／FAILED1／UNLAUNCHED4，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
 
