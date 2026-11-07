@@ -2,17 +2,17 @@
 
 用户最新阶段指示：继续完成静态排障及固定八项验证；**静态验证全部完成后暂停，不启动新一轮 AI 辅助验收**。当前静态验证未完成，继续执行本阶段；下文较早的“静态后返回AI”记录保留为历史要求，不再作为自动接续授权。
 
-后续按八项整体影响矩阵推进：共享链路集中修复，八项归档、组件、健康类型与运行契约一起覆盖，再统一冻结验证。S27 共享候选已本地提交 `47b14d792047664f1b089882bb594818a7d79f62`，尚未满足冻结条件；用户已选择八项整体修复、统一冻结后按固定顺序验证完整八项，现有 S26 失败封存不续跑。
+后续按八项整体影响矩阵推进：共享链路集中修复，八项归档、组件、健康类型与运行契约一起覆盖，再统一冻结验证。S27 本地共享包最终提交 `4bb69caf51a51b22869f5acdf409968162fa331e`，工作树 clean、未推送，已获本地代码父审接受；当前仅准备全新有限冻结输入，尚未放行服务器。用户已选择八项整体修复、统一冻结后按固定顺序验证完整八项，现有 S26 失败封存不续跑。
 
-S27 的 health、socket completion、双通道及八项真实 fixture 契约定点组分别通过，必要离线包及官方 helper/runtime 身份核对通过；原先编译、夹具和 H2 失败分次保留，不合并为单次全绿。[共享包父审](../../../.ai-workspace/evidence/static-eight-shared-health-io-fix-20261107-01/shared-package.PARENT-REVIEW.json)已核对 16 份原阶段 JUnit、100 份证据、34 个稳定公开产物及 10 个 JAR entry，未确证真实 SSH 停滞根因，未执行新服务器原次。
+S27 的 health、socket completion、双通道及八项真实 fixture 契约定点组分别通过，必要离线包及官方 helper/runtime 身份核对通过；原先编译、夹具和 H2 失败分次保留，不合并为单次全绿。[共享包阶段父审](../../../.ai-workspace/evidence/static-eight-shared-health-io-fix-20261107-01/shared-package.PARENT-REVIEW.json)与[最终本地代码父审](../../../.ai-workspace/evidence/static-s27-unknown-full-recovery-wait-20261107-01/S27-code.PARENT-REVIEW.json)覆盖相关原阶段证据、最终 38 个有限公开 pins 及 10 个当前 JAR/classes/resource 对照。helper/runtime 对应实际字节保持，不冒称重复汇编；真实 SSH 停滞根因仍未确证，尚未执行新服务器原次。
 
-额外 UNKNOWN 资源保留回归仍有一项失败。原 `83085 exit1`／JUnit 2/2/0/0 保留；随后一次临时诊断确认准备正常推进，20 秒时单件已选构建、双件已选第二组件准备，无公开在途调用或工具拒绝。源码也确认 20 秒仅是该本地集成测试的首次总等待，未约定性能要求；移除诊断后，仅把首次等待改为固定 120 秒，恢复 20 秒及全部生产预算不变，所有原业务断言保留。
+额外 UNKNOWN 资源保留回归现已在原两参数完整通过：原前台 `40397 → e1b71d` 工具及 Maven 实际退出 0，fresh JUnit **2/0/0/0**，单件 73.516 秒、双件 118.998 秒。原健康检查、保资源、无诊断／重放、单件成功、双件回滚、SQL 状态及资源／session 释放断言全部走完。见[最终报告](../../../.ai-workspace/evidence/static-s27-unknown-full-recovery-wait-20261107-01/README.md)。精确对齐 native 请求、analysis 形状及可选图诊断空输入；未知请求仍拒绝。临时 callback 观测已逆向移除，编译类族无临时诊断残留。
 
-该修正的唯一原次 `99881 exit1`／fresh JUnit **2/1/0/0**：单件完整通过 63.097 秒；双件首次已到 UNKNOWN，但最后第二次核对恢复仍为 UNKNOWN，原断言要求 ENDED，耗时 76.552 秒；首次等待未耗尽，恢复 helper 也未超时。见[等待修正报告](../../../.ai-workspace/evidence/static-s27-unknown-integration-wait-20261107-01/README.md)与[父审](../../../.ai-workspace/evidence/static-s27-unknown-integration-wait-20261107-01/wait-result.PARENT-REVIEW.json)。运行结束、已知 actor 和自有 TMP 已闭合，但双件原 runtime.close 资源占用失败保留，内部 JVM 身份 UNKNOWN。
+本地等待分别为首次完整发布 120 秒、首次保持 UNKNOWN 的恢复默认 20 秒、最后完整恢复 60 秒；共用 helper 默认 20 秒、生产和用户批准的验收预算保持。最后 60 秒有正常前台诊断依据：原 `95405 → 39f821` 在 20 秒仍按原判抛 TimeoutException，同一 future 后于约 28.934 秒返回 ENDED／FAILED，callback 为约 28.927 秒；晚完成不抵销该原 2/0/1/0 红灯，原 83085、99881、43792 等各次失败独立保留，不拼通过项。
 
-只读核对又发现图恢复的可选诊断输入与旧 fixture 拒绝全部文本输入冲突，符合双件远端命令数不增长的现象；旧原次未导出实际外层事件，不能把源码推断当成该次直接证据。下一最小修正仅为精确可选图提示返回空输入，继续普通核对，其余输入仍严格拒绝。后续测试文件仍未提交，不放行冻结、服务器原次或 AI，不把本地八 fixture 契约通过当成真实八项验收通过。
+一次辅助诊断采用 detached 启动、未保留原等待，并在内部 JVM 未确认时误清理自有合成 TMP；稍后写出的退出 1／JUnit 2/1 与清理窗口重叠，已[单独校正为受损执行证据](../../../.ai-workspace/evidence/static-s27-graph-recovery-callback-20261107-01/LATE-RESULT-CORRECTION.PARENT-REVIEW.json)，不归因代码或充作正常回归。其三个残留、后续正常诊断及最终通过轮的 TMP 均以核验所有权／FileID 的前台同卷移动保留，原临时路径 absent，不掩盖早先部分删除。后续原进程始终由同一前台会话等待结束后收尾；内部 JVM 具体身份仍按未独立记录处理。以上是本地定点结果，有限冻结、全新四阶段和真实八项仍待执行，不作为全量或正式 STATIC 首过证明。
 
-当前为 **S26 PASS1／FAILED1／UNLAUNCHED6 封存**：TaskBoard完整通过，FileTransfer在重启前inspect返回UNKNOWN，后六项不放行，正在只读定位。S25 保留 PASS3／FAILED1／UNLAUNCHED4，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
+当前为 **S26 PASS1／FAILED1／UNLAUNCHED6 封存**：TaskBoard完整通过，FileTransfer在重启前inspect返回UNKNOWN，后六项未启动，原 UNKNOWN 保留。S25 保留 PASS3／FAILED1／UNLAUNCHED4，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
 
 此前 S24 为 PASS0／FAILED1／后七项未启动，START 任务保持 UNKNOWN；S23、S22 各为 PASS2／FAILED1／后五项未启动，S21 首项失败且部署 UNKNOWN，S20 为 PASS1／FAILED1／后六项未启动。各轮失败和准备证据独立保留。S17 之后的 S 编号为独立 STATIC 版本，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
@@ -249,7 +249,7 @@ inventory、plan、精确 apply、独立 after 四阶段各一个原次，原工
 | DirectoryDiff | Python CLI → C++ companion | ON_DEMAND／COMMAND，快照complete及content绑定 |
 | BinaryInspector | Rust CLI → C companion | ON_DEMAND／COMMAND，records5及样本归档 |
 
-下一本地包按“公共机制定点验证一次＋固定八项真实fixture发现／归档契约”组织，不运行全项目套件。范围为health受限原因保留、completion entered／returned／threw／active及命令基线、两通道交接和inline／suspend-resume受控用例；不改变原预算、重试或UNKNOWN语义。原受影响测试组及八项契约通过后再统一冻结。[Astra具体技术判断](../../../.ai-workspace/evidence/ssh-channel-open-unconfirmed-judgment-20261107-01/README.md)（SHA256 `7427cf5e43ae5636702d1692969f6c638f0df6d8d433bb9b0f2651167472062c`）同时明确：该工作不能提前表述为SSH物理停滞已修复；若新证据仍停留在同一应用层辨识边界，须转向独立边界证据，不能反复堆同义计数和盲重跑。
+本地包已按“公共机制定点验证＋固定八项真实 fixture 发现／归档契约”完成相关独立定点组，不运行全项目套件。范围为 health 受限原因保留、completion entered／returned／threw／active 及命令基线、两通道交接和 inline／suspend-resume 受控用例；生产预算、重试和 UNKNOWN 语义保持。额外 UNKNOWN 两参数夹具的合同及本地等待修正也已完整验证，现进入新有限冻结输入准备。[Astra具体技术判断](../../../.ai-workspace/evidence/ssh-channel-open-unconfirmed-judgment-20261107-01/README.md)（SHA256 `7427cf5e43ae5636702d1692969f6c638f0df6d8d433bb9b0f2651167472062c`）仍适用：该工作不能提前表述为 SSH 物理停滞已修复；若新证据仍停留在同一应用层辨识边界，须转向独立边界证据，不能反复堆同义计数和盲重跑。
 
 ## 后续验收条件
 
