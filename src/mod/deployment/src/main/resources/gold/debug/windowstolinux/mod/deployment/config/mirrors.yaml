@@ -1239,6 +1239,13 @@
             "github.com",
             "services.gradle.org"
           ],
+          "redirectRules": [
+            {
+              "fromHost": "github.com",
+              "toHost": "release-assets.githubusercontent.com",
+              "pathPrefix": "/github-production-release-asset/696192900/"
+            }
+          ],
           "routes": [
             {
               "origin": "https://services.gradle.org/distributions/",
@@ -1254,7 +1261,7 @@
             }
           ],
           "complete": true,
-          "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
+          "coverageNote": "仅允许 GitHub 向 Gradle 分发仓库的 release asset 路径受限跳转；分发资产主机不作为初始源，越界目标、对象缺失或未映射URL仍按失败处理。",
           "repoTemplates": {}
         }
       }

@@ -21,8 +21,14 @@ class MirrorCatalogTest {
         assertEquals(List.of("proxy.golang.org"), endpoint.allowedHosts());
         assertEquals(expected, endpoint.selection("synthetic-reference").redirectRules());
         assertEquals(policy, ResolvedMirrorPolicy.fromJson(policy.toJson(), "task", "server"));
-        assertEquals(1, catalog.providers().stream().flatMap(provider -> provider.sources().entrySet().stream())
-            .filter(entry -> !entry.getValue().redirectRules().isEmpty()).count());
+        var distributionRules = new TreeMap<String, List<ResolvedMirrorPolicy.RedirectRule>>();
+        catalog.providers().forEach(provider -> provider.sources().forEach((point, source) -> {
+            if (!source.redirectRules().isEmpty()) distributionRules.put(provider.id() + ":" + point, source.redirectRules());
+        }));
+        assertEquals(Map.of("official-go_module:GO_MODULE", expected,
+            "official-gradle_distribution:GRADLE_DISTRIBUTION", List.of(new ResolvedMirrorPolicy.RedirectRule(
+                "github.com", "release-assets.githubusercontent.com", "/github-production-release-asset/696192900/"))),
+            distributionRules);
 
         var custom = new MirrorSettings(1, Map.of(DownloadPoint.GO_MODULE, List.of(
             new MirrorSettings.Row("", "https://company.invalid/go/", false, false, ""))), Map.of());
@@ -36,6 +42,44 @@ class MirrorCatalogTest {
         ((com.fasterxml.jackson.databind.node.ObjectNode) legacy.path("points").path("GO_MODULE").get(0)).remove("redirectRules");
         assertTrue(ResolvedMirrorPolicy.fromJson(json.writeValueAsString(legacy), "task", "server")
             .points().get(DownloadPoint.GO_MODULE).getFirst().redirectRules().isEmpty());
+    }
+
+    @Test void officialGradleDistributionRedirectIsFrozenWithoutBroadeningInitialOrCustomHosts() throws Exception {
+        var catalog = MirrorCatalog.load();
+        var settings = new MirrorSettings(1, Map.of(DownloadPoint.GRADLE_DISTRIBUTION, List.of(
+            new MirrorSettings.Row("official-gradle_distribution", "", false, false, ""))), Map.of());
+        var policy = MirrorSelector.resolve(catalog, settings, "server", "US").withTask("task");
+        var endpoint = policy.points().get(DownloadPoint.GRADLE_DISTRIBUTION).getFirst();
+        var expected = List.of(new ResolvedMirrorPolicy.RedirectRule(
+            "github.com", "release-assets.githubusercontent.com", "/github-production-release-asset/696192900/"));
+        assertEquals(expected, endpoint.redirectRules());
+        assertEquals(List.of("downloads.gradle.org", "github.com", "services.gradle.org"), endpoint.allowedHosts());
+        var origins = List.of("https://services.gradle.org/distributions/", "https://downloads.gradle.org/distributions/",
+            "https://github.com/gradle/gradle-distributions/releases/download/");
+        assertEquals(origins, endpoint.sourceOrigins());
+        assertEquals(origins.stream().map(origin -> new ResolvedMirrorPolicy.Route(origin, origin)).toList(), endpoint.routes());
+        assertEquals(expected, endpoint.selection("synthetic-reference").redirectRules());
+        assertEquals(policy, ResolvedMirrorPolicy.fromJson(policy.toJson(), "task", "server"));
+        assertEquals(1, policy.points().get(DownloadPoint.GRADLE_DISTRIBUTION).size());
+        assertTrue(policy.points().entrySet().stream().filter(entry -> entry.getKey() != DownloadPoint.GRADLE_DISTRIBUTION)
+            .allMatch(entry -> entry.getValue().isEmpty()));
+
+        var custom = new MirrorSettings(1, Map.of(DownloadPoint.GRADLE_DISTRIBUTION, List.of(
+            new MirrorSettings.Row("", "https://company.invalid/gradle/", false, false, ""))), Map.of());
+        var customEndpoint = MirrorSelector.resolve(catalog, custom, "server", "US")
+            .points().get(DownloadPoint.GRADLE_DISTRIBUTION).getFirst();
+        assertTrue(customEndpoint.redirectRules().isEmpty());
+        assertEquals(List.of("company.invalid"), customEndpoint.allowedHosts());
+        assertThrows(IllegalArgumentException.class, () -> new ResolvedMirrorPolicy.Endpoint(
+            endpoint.providerId(), endpoint.protocol(), endpoint.baseUrl(), endpoint.allowedHosts(), false, true,
+            endpoint.sourceOrigins(), endpoint.routes(), endpoint.repoTemplates(), "", false, expected));
+
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var frozen = mapper.readTree(policy.toJson());
+        ((com.fasterxml.jackson.databind.node.ObjectNode) frozen.path("points").path("GRADLE_DISTRIBUTION").get(0))
+            .put("custom", true).put("official", false);
+        var text = mapper.writeValueAsString(frozen);
+        assertThrows(IllegalArgumentException.class, () -> ResolvedMirrorPolicy.fromJson(text, "task", "server"));
     }
 
     @Test void redirectRuleHostsPathsCountsAndSourceEdgesAreValidated() {
