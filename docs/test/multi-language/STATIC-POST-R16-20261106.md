@@ -166,7 +166,15 @@ AssetLending原session30085由 `c579bd` 实际exit1结束，新JUnit **1/1/0/0**
 
 最终Deployment和必要Files离线 `-DskipTests package` 原工具分别8ec650、2edc50实际exit0，测试跳过。父独立核5个生产family共14个class与JAR精确条目SHA一致；Files三个metadata和JAR已补齐，AppLinux／Deployment原包SHA均未变化。自有TMP经owner／祖先整树nonreparse／单硬链接和短独占读检查闭合，已知原handle全终结；内部JVM PID仍UNKNOWN，未全局扫描。第一次辅助清理脚本布尔值错误及后续正确收尾原件分别保留。见[完整分轮交接](../../../.ai-workspace/evidence/static-ssh-exec-read-observation-fix-20261107-01/HANDOFF.md)及[父关键证据审查](../../../.ai-workspace/evidence/static-ssh-exec-read-observation-fix-20261107-01/s25-offline-observation-key-evidence.PARENT-REVIEW.json)，后者SHA256 `bf6cfc19b0b08976aa6cb8213c06825e513ba7730f63132ae0b8b96be2cba153`。
 
-上述只证明本地观测实现和限定机制验证；S24底层超时原因仍未证。D25新冻结输入及控制正在准备，尚未开始S25服务器准备或业务；仍须全新四阶段并从TaskBoard执行固定八项，AI R17未启动。
+上述只证明本地观测实现和限定机制验证；S24底层超时原因仍未证。D25公开输入和控制已限定父审，非完整compiled或private freeze：54个classpath项、9个metadata、6个JSON、13原pins；19个生产类族共55个class加3资源，与58个JAR精确条目一致，6个直接测试类族87个class。Launcher 7处及POM 19处路径／摘要替换可逆恢复旧原字节；STATIC仅两个日志白名单增量可逆恢复旧源原字节，九固定pin文件及12字面值、helper/runtime未变。五controls逆原字节及AST0，checker两原身份和TMP已闭合；辅助统计／父字段及路径错误、日期尾零序列化差异均保原，不重判业务。
+
+## S25 全新四阶段准备
+
+本轮 inventory → plan → 精确 apply → 独立 after 各一个原次实际native/tool0、新JUnit均1/0/0/0，16已记录原出生身份均消失、自有TMP闭合，内部JVM仍UNKNOWN。完整计划12个共享字段与THIS库存GetRawText ordinal相同，31项nonessential清理包逐序匹配且与148个受保护包交集0，23项essential均保留；范围为2账号及对应组、3units／4unitFiles、8固定项目根目录（5存在）。计划canonical SHA为`adb46b50822b83e854e8b90a0b863fdbea996f6ab5d2736e27ebf76f5217a546`；按本轮整份receipt单独绑定并只apply一次。
+
+原apply摘要为purge31／accounts2／roots5／unitFiles3／stoppedUnits3／APTclean=true，保留实际计数，不将3改成计划4。完整post为655包恰686减31，全部原记录保序无额外删除或升级；148core原raw相同，8roots全absent，项目资源为空、APT0。独立after与THISapply.post全部14字段／59382个UTF8字节逐byte相同，无排除或数值归一化，raw SHA`82e0d077f2a00d57e542e7bce91bd50ab87665b358533e5e04de4f67f90e2afc`。见[本轮四阶段父审](../../../.ai-workspace/evidence/post-r16-static-ssh-observation-execution-inputs-20261107-01/four-phase-preparation.PARENT-REVIEW.json)，SHA`8b10f28bd487099f89b37e9af0b428861b45e4d1cd39d58da853d271d7bd5dc5`；相同baseline内容摘要不代表借用旧轮准备PASS。
+
+现仅首项TaskBoard获单项原次业务放行，由新独立职责执行，尚无本轮完整业务PASS；后七项及AI未放行。须继续固定八项顺序，不拼旧轮PASS，原失败／UNKNOWN／false eligibility均保留，AI R17未启动。
 
 ## 后续验收条件
 
