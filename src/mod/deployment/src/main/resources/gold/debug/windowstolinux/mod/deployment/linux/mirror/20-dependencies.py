@@ -1,5 +1,7 @@
 """Ephemeral package repository gateways; never edits a project's manifest or lock."""
 import xml.sax.saxutils
+import html
+import html.parser
 
 
 class RepositoryGateway:
@@ -22,7 +24,9 @@ class RepositoryGateway:
                 try:
                     parts = self.path.split('/', 3)
                     point = parts[1]
-                    if parts[2] == 'u':
+                    if parts[2] == 'f' and point == 'PYTHON_PACKAGE':
+                        original = gateway.python_file_request(parts[3])
+                    elif parts[2] == 'u':
                         encoded, separator, suffix = parts[3].partition('/')
                         if encoded.endswith('.json'):
                             encoded = encoded[:-5]
@@ -57,7 +61,7 @@ class RepositoryGateway:
                             data = downloaded.read_bytes()
                             try:
                                 parsed = json.loads(data)
-                                parsed = gateway.rewrite_json(parsed, point)
+                                parsed = gateway.rewrite_json(parsed, point, base_url=original)
                                 data = json.dumps(parsed, separators=(',', ':'), ensure_ascii=False).encode()
                             except (ValueError, UnicodeError):
                                 if 'json' in content:
@@ -66,15 +70,7 @@ class RepositoryGateway:
                             if metadata['bytes'] > 33554432:
                                 raise MirrorFailure('registry metadata exceeds size limit')
                             data = downloaded.read_bytes()
-                            text = data.decode('utf-8')
-                            def link(match):
-                                absolute = urllib.parse.urljoin(original, match.group(2))
-                                # Fragment hash remains part of the link consumed by pip.
-                                value, fragment = urllib.parse.urldefrag(absolute)
-                                digests = dict(urllib.parse.parse_qsl(fragment))
-                                algorithm = next((item for item in ('sha512', 'sha256') if item in digests), None)
-                                return match.group(1) + gateway.link(point, value, algorithm, digests.get(algorithm)) + ('#' + fragment if fragment else '') + match.group(3)
-                            data = re.sub(r'''(href\s*=\s*["'])([^"']+)(["'])''', link, text, flags=re.I).encode()
+                            data = gateway.rewrite_python_html(data.decode('utf-8'), original).encode()
                     self.send_response(200)
                     self.send_header('Content-Type', content or 'application/octet-stream')
                     self.send_header('Content-Length', str(len(data) if data is not None else metadata['bytes']))
@@ -100,6 +96,7 @@ class RepositoryGateway:
         self.base = 'http://127.0.0.1:' + str(self.server.server_port)
         self.aliases = {}
         self.hashes = {}
+        self.python_files = {}
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     def origin(self, point):
@@ -111,7 +108,82 @@ class RepositoryGateway:
         self.policy.endpoints(point)
         return self.base + '/' + point + '/root/'
 
-    def link(self, point, value, algorithm=None, expected=None):
+    @staticmethod
+    def python_filename(value):
+        name = urllib.parse.unquote(urllib.parse.urlsplit(value).path.rsplit('/', 1)[-1], errors='strict')
+        if not name.lower().endswith(('.whl', '.tar.gz', '.tar.bz2', '.tar.xz', '.tgz', '.zip', '.tar')):
+            return None
+        if any(character in name for character in ('/', '\\')) or any(ord(character) < 32 or ord(character) == 127 for character in name):
+            raise MirrorFailure('invalid Python artifact filename')
+        return urllib.parse.quote(name, safe='-._~')
+
+    def python_file_link(self, value, metadata):
+        original, fragment = urllib.parse.urldefrag(value)
+        filename = self.python_filename(original)
+        if filename is None:
+            return None
+        token = base64.urlsafe_b64encode(original.encode()).decode().rstrip('=')
+        self.python_files[token] = original, filename
+        if metadata is not None:
+            sidecar = self.python_metadata_url(original)
+            if isinstance(metadata, str):
+                metadata = dict(urllib.parse.parse_qsl(metadata))
+            if isinstance(metadata, dict):
+                for algorithm in ('sha512', 'sha256'):
+                    if metadata.get(algorithm):
+                        self.hashes[sidecar] = algorithm, metadata[algorithm]
+                        break
+        return self.base + '/PYTHON_PACKAGE/f/' + token + '/' + filename + ('#' + fragment if fragment else '')
+
+    @staticmethod
+    def python_metadata_url(original):
+        parsed = urllib.parse.urlsplit(original)
+        return urllib.parse.urlunsplit(parsed._replace(path=parsed.path + '.metadata'))
+
+    def python_file_request(self, path):
+        token, separator, filename = path.partition('/')
+        if not separator or token not in self.python_files:
+            raise MirrorFailure('unknown Python artifact route')
+        original, expected = self.python_files[token]
+        if filename == expected:
+            return original
+        if filename == expected + '.metadata':
+            return self.python_metadata_url(original)
+        raise MirrorFailure('Python artifact filename differs from its bound URL')
+
+    def rewrite_python_html(self, text, original):
+        gateway, replacements = self, []
+        lines = text.splitlines(keepends=True)
+        offsets = [0]
+        for line in lines:
+            offsets.append(offsets[-1] + len(line))
+        class Links(html.parser.HTMLParser):
+            def handle_starttag(self, tag, attributes):
+                attributes = dict(attributes)
+                if tag != 'a' or not attributes.get('href'):
+                    return
+                absolute = urllib.parse.urljoin(original, attributes['href'])
+                value, fragment = urllib.parse.urldefrag(absolute)
+                digests = dict(urllib.parse.parse_qsl(fragment))
+                algorithm = next((item for item in ('sha512', 'sha256') if item in digests), None)
+                declaration = attributes.get('data-core-metadata', attributes.get('data-dist-info-metadata'))
+                local = gateway.link('PYTHON_PACKAGE', value, algorithm, digests.get(algorithm), declaration)
+                local += '#' + fragment if fragment else ''
+                raw = self.get_starttag_text()
+                rewritten = re.sub(r'''(?<!\S)href\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)''',
+                                   lambda match: 'href="' + html.escape(local, quote=True) + '"', raw, flags=re.I)
+                line, column = self.getpos()
+                start = offsets[line - 1] + column
+                replacements.append((start, start + len(raw), rewritten))
+            handle_startendtag = handle_starttag
+        parser = Links(convert_charrefs=True)
+        parser.feed(text)
+        parser.close()
+        for start, end, rewritten in reversed(replacements):
+            text = text[:start] + rewritten + text[end:]
+        return text
+
+    def link(self, point, value, algorithm=None, expected=None, metadata=None):
         for candidate in [point] + [p for p in self.policy.points if p != point]:
             for endpoint in self.policy.points.get(candidate, []):
                 for route in endpoint.get('routes', []):
@@ -121,7 +193,11 @@ class RepositoryGateway:
                         value = route['origin'].rstrip('/')
                     if value.startswith(route['origin']) or value.rstrip('/') == route['origin'].rstrip('/'):
                         if algorithm and expected:
-                            self.hashes[value] = algorithm, expected
+                            self.hashes[urllib.parse.urldefrag(value)[0] if candidate == 'PYTHON_PACKAGE' else value] = algorithm, expected
+                        if candidate == 'PYTHON_PACKAGE':
+                            artifact = self.python_file_link(value, metadata)
+                            if artifact is not None:
+                                return artifact
                         markers = [value.index(marker) for marker in ('{', '%', '$') if marker in value]
                         if markers:
                             offset = min(markers)
@@ -134,16 +210,20 @@ class RepositoryGateway:
         # Some metadata contains optional search/publish resources. Route those to a local
         # rejection if requested, rather than failing an otherwise usable service index or
         # allowing the client to bypass this task's source policy.
+        if point == 'PYTHON_PACKAGE':
+            artifact = self.python_file_link(value, metadata)
+            if artifact is not None:
+                return artifact
         encoded = base64.urlsafe_b64encode(value.encode()).decode().rstrip('=')
         return self.base + '/' + point + '/u/' + encoded + ('.json' if value.endswith('.json') else '')
 
-    def rewrite_json(self, value, point, key=''):
+    def rewrite_json(self, value, point, key='', base_url=None):
         # These fields carry URLs in the supported registry protocols, not package identity.
         fields = {'tarball', 'url', 'href', '@id', 'packageBaseAddress', 'registration', 'dl', 'api',
                   'packages', 'metadata-url', 'providers-url', 'p2', 'archives', 'dist', 'download_url'}
         fields.discard('api')
         if isinstance(value, dict):
-            result = {k: self.rewrite_json(v, point, k) for k, v in value.items()}
+            result = {k: self.rewrite_json(v, point, k, base_url) for k, v in value.items()}
             if point == 'NODE_PACKAGE' and value.get('tarball') and value.get('integrity'):
                 for integrity in value['integrity'].split():
                     algorithm, separator, encoded = integrity.partition('-')
@@ -154,14 +234,14 @@ class RepositoryGateway:
                         except ValueError:
                             raise MirrorFailure('invalid npm integrity metadata')
                         break
-            if point == 'PYTHON_PACKAGE' and value.get('url') and isinstance(value.get('hashes'), dict):
-                for algorithm in ('sha512', 'sha256'):
-                    if value['hashes'].get(algorithm):
-                        result['url'] = self.link(point, value['url'], algorithm, value['hashes'][algorithm])
-                        break
+            if point == 'PYTHON_PACKAGE' and value.get('url'):
+                hashes = value.get('hashes', {})
+                algorithm = next((item for item in ('sha512', 'sha256') if hashes.get(item)), None)
+                result['url'] = self.link(point, urllib.parse.urljoin(base_url or '', value['url']), algorithm,
+                                          hashes.get(algorithm), value.get('core-metadata', value.get('dist-info-metadata')))
             return result
         if isinstance(value, list):
-            return [self.rewrite_json(item, point, key) for item in value]
+            return [self.rewrite_json(item, point, key, base_url) for item in value]
         if isinstance(value, str) and value.startswith(('https://', 'http://')) and key in fields:
             return self.link(point, value)
         return value

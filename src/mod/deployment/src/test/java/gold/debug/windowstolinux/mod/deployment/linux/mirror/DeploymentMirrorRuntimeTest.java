@@ -23,6 +23,64 @@ import gold.debug.windowstolinux.mod.deployment.service.mirror.MirrorSettings;
 
 final class DeploymentMirrorRuntimeTest {
     @Test
+    void pythonNamedIndexesPreserveArtifactNamesAndMetadataBindings() throws Exception {
+        Path ownTmp = Path.of(System.getenv("TEMP")).toAbsolutePath();
+        Path directory = Files.createTempDirectory(ownTmp, "python-named-index-");
+        Path cwd = Path.of("").toAbsolutePath();
+        try {
+            Path runtime = directory.resolve("runtime.py");
+            Files.writeString(runtime, DeploymentMirrorRuntime.runtimeSource(), StandardCharsets.UTF_8);
+            Path test = directory.resolve("python_index_test.py");
+            try (var stream = getClass().getResourceAsStream("python_index_test.py")) {
+                if (stream == null) throw new IOException("Python named-index fixture absent");
+                Files.copy(stream, test);
+            }
+            var command = new ArrayList<String>();
+            if (System.getProperty("wtl.python.executable") != null) command.add(System.getProperty("wtl.python.executable"));
+            else if (System.getProperty("os.name").startsWith("Windows")) command.addAll(List.of("py", "-3"));
+            else command.add("python3");
+            command.addAll(List.of("-B", test.toString(), runtime.toString()));
+            var self = ProcessHandle.current();
+            System.out.println("PYTHON_INDEX_JVM pid=" + self.pid() + " birth="
+                + self.info().startInstant().map(instant -> new java.time.format.DateTimeFormatterBuilder()
+                    .appendInstant(7).toFormatter().format(instant)).orElse("UNKNOWN")
+                + " birthFiletime=" + self.info().startInstant().map(instant -> Long.toString(
+                    Math.addExact(Math.multiplyExact(instant.getEpochSecond() + 11644473600L, 10000000L), instant.getNano() / 100))).orElse("UNKNOWN")
+                + " cwd=" + cwd + " java.io.tmpdir=" + System.getProperty("java.io.tmpdir")
+                + " jna.tmpdir=" + System.getProperty("jna.tmpdir")
+                + " jdk.net.unixdomain.tmpdir=" + System.getProperty("jdk.net.unixdomain.tmpdir"));
+            Path log = directory.resolve("output.log");
+            var builder = new ProcessBuilder(command).directory(cwd.toFile()).redirectErrorStream(true).redirectOutput(log.toFile());
+            builder.environment().put("PYTHONDONTWRITEBYTECODE", "1");
+            builder.environment().put("PYTHONIOENCODING", "utf-8");
+            Process process = builder.start();
+            System.out.println("PYTHON_INDEX_LAUNCHER pid=" + process.pid() + " birth="
+                + process.info().startInstant().map(instant -> new java.time.format.DateTimeFormatterBuilder()
+                    .appendInstant(7).toFormatter().format(instant)).orElse("UNKNOWN")
+                + " birthFiletime=" + process.info().startInstant().map(instant -> Long.toString(
+                    Math.addExact(Math.multiplyExact(instant.getEpochSecond() + 11644473600L, 10000000L), instant.getNano() / 100))).orElse("UNKNOWN"));
+            try {
+                boolean finished = process.waitFor(45, TimeUnit.SECONDS);
+                String output = Files.readString(log, StandardCharsets.UTF_8);
+                System.out.println(output);
+                assertTrue(finished, "Python named-index fixture exceeded its bounded wait\n" + output);
+                assertEquals(0, process.exitValue(), output);
+                assertTrue(output.contains("Ran 9 tests"), output);
+                assertTrue(output.contains("OK"), output);
+            } finally {
+                if (process.isAlive()) {
+                    process.descendants().forEach(ProcessHandle::destroyForcibly);
+                    process.destroyForcibly();
+                }
+                process.waitFor();
+                System.out.println("PYTHON_INDEX_LAUNCHER_EXIT pid=" + process.pid() + " exit=" + process.exitValue() + " alive=" + process.isAlive());
+            }
+        } finally {
+            cleanup(directory);
+        }
+    }
+
+    @Test
     void goModuleRedirectRulesPreserveStrictInitialAndPerHopBoundaries() throws Exception {
         Path directory = Files.createTempDirectory("go-module-redirect-");
         try {
