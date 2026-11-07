@@ -182,7 +182,13 @@ AssetLending原session30085由 `c579bd` 实际exit1结束，新JUnit **1/1/0/0**
 
 第三AssetLending独立职责原次 `ca6311/session46835 → 8df328` 实际exit0，新JUnit1/0/0/0（731.004秒，SHA`211d88b7c829af06901b99cdaefdcbffcc2a3342cbc6381a0df8e51f6e854182`）。同应用`wtl-static-asset-lending-wj1hwtwqc/static-live`的PUBLISHED／真实HTTP及跨语言、重启、持久化BUSINESS／PASS modelCalls=0／finally CLEAN stopped/disabled齐全。原native／Python／controller各实际wait0；正常closeout `bf3c63` 实际0，四个精确出生身份均gone，自有TMP闭合，normal／证据保留，内部JVM UNKNOWN。见[第三项完整父审](../../../.ai-workspace/evidence/post-r16-static-ssh-observation-execution-inputs-20261107-01/asset-lending-result.PARENT-REVIEW.json) SHA`05e145baa824f58cd2c7d872c8f0a529a9981a498bc5b380618baa60d35af66f`。旧S23 AssetLending摘要失败仍保留，不借本轮通过改判。
 
-本轮完整3/8。现仅第四CsvInspector获单项放行，另新职责执行原HTTP网页场景；父交接中的CLI类型误称已在执行前按源码纠正，保留原健康、数据校验、重启持久化及导出断言。尚无第四项结果，后四项及AI未放行。不拼旧轮PASS，原失败／UNKNOWN／false eligibility均保留，AI R17未启动。
+## S25 第四项失败封存
+
+第四CsvInspector原 `06ee52/session29518 → eebf5f` 实际exit1，新JUnit1/1/0/0（440.34秒，SHA`ef36935d36a593d14e292a60c22f84f27be9425b994a72d66adccad9db7828ba`），原native／Python／controller全部wait1且bookkeeping无失败。原HTTP网页场景及断言保持；此前CLI类型误称已在执行前按源码纠正，不是本次执行变更。应用`wtl-static-csv-inspector-wx07g403k`在analyzer构建的PIP_LOCKED环节以FAILED／IO_FAILURE／DEPLOYMENT_BUILD_FAILED退出：经本地产品PYTHON_PACKAGE索引，官方镜像attempt1 reason=complete后，pip报告`attrs==26.1.0`无匹配分发。原输出388字节，SHA`b22435a331901a17a64227f56945e944d866773a91e171c34c845c048fa2b34a`。四项PUBLISHED／BUSINESS／PASS／CLEAN标记均为0，modelCalls终态断言NOT_REACHED。
+
+本轮封存PASS3／FAILED1／UNLAUNCHED4，不继续本冻结后四项，不拼前三PASS到新轮，AI R17未启动。见[第四项失败父审](../../../.ai-workspace/evidence/post-r16-static-ssh-observation-execution-inputs-20261107-01/csv-inspector-failed.PARENT-REVIEW.json)，SHA`c14d30440468b31f315df827ed63cb535a0991c3f77c4e9169004551286ae7e6`。原normal／证据及异常TMP保留，没有normal closeout、janitor或远端补查；远端effects／futures保持UNKNOWN_NOT_RECHECKED。仅原四出生身份由一次窄查 `460d4d` 实际0确认PID_ABSENT，内部JVM UNKNOWN；异常TMP候选正另行准备，尚无执行放行。
+
+[官方索引](https://pypi.org/simple/attrs/)确实提供attrs26.1.0，不能归为版本不存在。[独立只读诊断](../../../.ai-workspace/evidence/static-python-locked-index-diagnosis-20261107-01/S25-python-locked-index-readonly-diagnosis.md)（SHA`3be7f244085c6b0e3f31001eb16f8d855c85363de43a79f147eaf93712eb8d25`）发现公开冻结源码与历史runtime副本均把Python工件URL重写为无文件名／扩展名的编码路径；pip会在下载前按路径筛掉无扩展名候选。这是明确代码缺陷，与本次表现吻合，但原代理响应及实际pip版本未采集，不宣称原运行态逐跳还原。新S26隔离修复职责已开启，将保留原锁、hash、镜像策略和业务断言，补命名包索引的真实pip反例；尚无新修复验证或服务器结果。原S24 SSH底层超时原因仍未证，所有旧FAILED／UNKNOWN／false eligibility保留。
 
 ## 后续验收条件
 
