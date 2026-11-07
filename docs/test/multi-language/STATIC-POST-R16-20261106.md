@@ -1,6 +1,8 @@
 # R16 后独立 STATIC 验证记录
 
-本记录截至 S24 全新四阶段准备通过后，首项 TaskBoard 原次失败封存时；本轮为 **PASS0／FAILED1／后七项未启动**，业务 START 任务保持 UNKNOWN，AI 尚未启动。S23 为 **PASS2／FAILED1／后五项未启动**，完整业务2/8；后续修复须新冻结，不拼入两项PASS。S22 保留 **PASS2／FAILED1／后五项未启动**，不能将两项通过拼入新轮。S23 修复已本地提交，28个定点检查及必要打包通过，全新四阶段准备通过。S21 保留首项失败且部署 UNKNOWN／后七项未启动，S20 保留 PASS1／FAILED1／后六项未启动。S17 之后的 S 编号为独立 STATIC 版本，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
+当前为 **S26 本地修复已父审接受，正在准备新冻结的有限公开输入**。S25 保留 PASS3／FAILED1／UNLAUNCHED4；S26 尚未开始服务器四阶段准备或八项业务，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
+
+此前 S24 为 PASS0／FAILED1／后七项未启动，START 任务保持 UNKNOWN；S23、S22 各为 PASS2／FAILED1／后五项未启动，S21 首项失败且部署 UNKNOWN，S20 为 PASS1／FAILED1／后六项未启动。各轮失败和准备证据独立保留。S17 之后的 S 编号为独立 STATIC 版本，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
 ## 已消费原次
 
@@ -15,6 +17,8 @@
 | S22 `b7d00a7c…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard、FileTransfer 完整原次 PASS；AssetLending FAILED，后五项未启动 | NuGet 仓库签名请求502；本轮封存2/8，AI R17 未启动 |
 | S23 `f028e006…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard、FileTransfer 完整原次 PASS；AssetLending FAILED，后五项未启动 | nupkg digest-mismatch→502；本轮封存2/8，AI R17 未启动 |
 | S24 `933b81bc…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 原次 FAILED，START root UNKNOWN；后七项未启动 | 仅发布、业务与CLEAN未达；本轮封存0/8，AI R17 未启动 |
+| S25 `f43f4904…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | 前三项完整 PASS；CsvInspector FAILED，后四项未启动 | Python 包索引构建失败；封存3/8，异常自有 TMP 已闭合 |
+| S26 `350dc785…` | 尚未开始 | 八项均未启动 | 本地索引修复与相关定点检查完成；待新冻结和完整四阶段 |
 
 前两次 STATIC 的原件分别保留于 [ROOT16 执行证据](../../../.ai-workspace/evidence/post-r16-static-execution-owner-20261106-01/)和 [S16 执行证据](../../../.ai-workspace/evidence/post-r16-static-repair-execution-owner-20261106-01/)。S17 的原件见 [执行证据](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-owner-20261106-01/)及 [父封存审查](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-inputs-20261106-01/s17-preparation-incomplete.PARENT-REVIEW.json)，后者 SHA256 为 `fdd38e32bf67d1a4984cca4941814f883286004f015220621d291680a26ac356`。这些版本各自独立，不拼接准备阶段、通过项或计划。
 
@@ -188,7 +192,17 @@ AssetLending原session30085由 `c579bd` 实际exit1结束，新JUnit **1/1/0/0**
 
 本轮封存PASS3／FAILED1／UNLAUNCHED4，不继续本冻结后四项，不拼前三PASS到新轮，AI R17未启动。见[第四项失败父审](../../../.ai-workspace/evidence/post-r16-static-ssh-observation-execution-inputs-20261107-01/csv-inspector-failed.PARENT-REVIEW.json)，SHA`c14d30440468b31f315df827ed63cb535a0991c3f77c4e9169004551286ae7e6`。失败封存时原normal／证据及异常TMP均保留，没有normal closeout或远端补查；远端effects／futures保持UNKNOWN_NOT_RECHECKED。仅原四出生身份由一次窄查 `460d4d` 实际0确认PID_ABSENT，内部JVM UNKNOWN。之后单独审定的P02 janitor原 `a5a6ef` 实际exit0，仅清理两指定CSV自有TMP叶及各自空任务根；源内fresh原四身份均gone，owner／单硬链接／绝对边界及祖先整树nonreparse／短独占DELETE探针通过，探针释放后才Remove-Item，非连续锁或原子删除保证。self33956调用前UTC7及FILETIME已记录，由同一原工具终态证明退出，未另查self。normal／证据保留，无normal closeout、额外API或失败库重开，不重判3/1/4。见[本地异常TMP闭合父审](../../../.ai-workspace/evidence/post-r16-static-ssh-observation-execution-inputs-20261107-01/static-csv-inspector-abnormal-tmp-closed.PARENT-REVIEW.json)，SHA`f5597246b1839aa7539f712a7bf6c0cc68ae5e909703df563904f2ddd2e9b8ca`。
 
-[官方索引](https://pypi.org/simple/attrs/)确实提供attrs26.1.0，不能归为版本不存在。[独立只读诊断](../../../.ai-workspace/evidence/static-python-locked-index-diagnosis-20261107-01/S25-python-locked-index-readonly-diagnosis.md)（SHA`3be7f244085c6b0e3f31001eb16f8d855c85363de43a79f147eaf93712eb8d25`）发现公开冻结源码与历史runtime副本均把Python工件URL重写为无文件名／扩展名的编码路径；pip会在下载前按路径筛掉无扩展名候选。这是明确代码缺陷，与本次表现吻合，但原代理响应及实际pip版本未采集，不宣称原运行态逐跳还原。新S26隔离修复职责已开启，将保留原锁、hash、镜像策略和业务断言，补命名包索引的真实pip反例；尚无新修复验证或服务器结果。原S24 SSH底层超时原因仍未证，所有旧FAILED／UNKNOWN／false eligibility保留。
+[官方索引](https://pypi.org/simple/attrs/)确实提供attrs26.1.0，不能归为版本不存在。[独立只读诊断](../../../.ai-workspace/evidence/static-python-locked-index-diagnosis-20261107-01/S25-python-locked-index-readonly-diagnosis.md)（SHA`3be7f244085c6b0e3f31001eb16f8d855c85363de43a79f147eaf93712eb8d25`）发现公开冻结源码与历史runtime副本均把Python工件URL重写为无文件名／扩展名的编码路径；pip会在下载前按路径筛掉无扩展名候选。这是明确代码缺陷，与本次表现吻合，但原代理响应及实际pip版本未采集，不宣称原运行态逐跳还原。S26已完成隔离修复、命名包索引真实pip反例及相关本地检查，详见下一节；服务器结果仍待全新冻结后验证。原S24 SSH底层超时原因仍未证，所有旧FAILED／UNKNOWN／false eligibility保留。
+
+## S26 本地索引修复及父审
+
+隔离树本地提交 `b23e35c87792593c8d84fd58e4318b02e96a5687` 及追加提交 `350dc78571e43104b99b07e3923f31eee5150625` 已保存，工作区干净，未推送。Python 工件路由保留 wheel／sdist 文件名，并将 token、完整上游 URL 与规范文件名绑定；HTML 按解析后的属性重新序列化，换行位置仅按 LF 计算，避免原正则与解析器分歧留下上游链接。JSON 索引、metadata 独立摘要、查询参数及原 lock／版本／hash 检查保留；镜像顺序、allowhosts、fallback、业务断言和超时未放宽。
+
+最初命名索引 HTML／JSON 的真实 pip 反例均复现无候选。修复期间各失败、夹具问题、CMD 返回0但无新 JUnit 的 NOT_EXECUTED，以及解析缓存污染的早期探针均保留。最终追加检查只重跑受影响的 HTML 五个 Python 方法及三项身份检查，新 JUnit 合计4/0/0/0；其中四种词法变体各实际安装命名包，要求经过 `/good/` 且不能旁路到 `/origin/`，错误 lock hash 仍拒绝。未重复未受影响的 JSON 命名安装和 Files 组，不将多轮结果表述为一轮全套通过。deployment 离线打包原工具实际exit0，测试显式跳过。
+
+[父代码审查](../../../.ai-workspace/evidence/static-python-index-filename-fix-20261107-01/S26-code.PARENT-REVIEW.json)接受本地修复，SHA256 `6ebe89500d971242caddcf1cc20dbdc39fa50c277e319012d68db8204d00dbdf`；[追加交付报告](../../../.ai-workspace/evidence/static-python-index-filename-fix-20261107-01/S26-python-index-html-lexical-followup.md)保留验证明细。[公开产物证明](../../../.ai-workspace/evidence/static-python-index-filename-fix-20261107-01/44-html-source-target-jar-proof.json)中10个资源的 source／target／JAR、5个生产类的 target／JAR 及8个包／元数据文件已由父审重新逐项核对。最终 helper 为570687字节、SHA256 `2093fa548ed6036e44762969ed49b60e2758453c34067e4feb9ca406c1389123`，runtime 为182350字节、SHA256 `ea2f01ae6e7614bf195359c63701d1c18f2dea27a300b4a7cd9ea225b75d71c6`；旧中间身份不用于新冻结。
+
+两次本地验证分别记录的42和26个已知 actor 均为 PID_ABSENT，自有 TMP 已清理。Java startInstant 仅为毫秒精度派生，不冒充独立 Win32 FILETIME 观测；未记录的内部 JVM 身份仍 UNKNOWN。此为有限公开代码及产物审查，尚不证明完整编译树、私有输入或服务器 STATIC 通过。下一步仍须全新冻结、完整四阶段和从 TaskBoard 开始的固定八项。
 
 ## 后续验收条件
 
