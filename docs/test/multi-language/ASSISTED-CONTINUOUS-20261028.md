@@ -1,10 +1,12 @@
 # ASSISTED 连续首过验证记录
 
-## 2026-11-07 S26 STATIC 完整1/8，FileTransfer 原次运行中
+用户最新指示：当前继续静态排障和验收；**静态验证全部完成后暂停，不启动新一轮 AI 辅助验收**。旧连续首过目标及各失败记录保留，后续AI阶段等待用户恢复指示。
+
+## 2026-11-07 S26 STATIC 封存1/8，FileTransfer inspect UNKNOWN
 
 S26 隔离源码最终本地提交 `350dc78571e43104b99b07e3923f31eee5150625`，工作区干净，未推送。Python 包路由保留文件名，HTML 按解析属性规范输出并统一 LF 位置计算；原 lock／hash、来源策略及业务断言保持。最终受影响的 HTML 五方法和三项身份检查通过，新 JUnit 合计4/0/0/0，必要 deployment 离线包通过且 tests skipped；其他先前结果分轮保留，未重复 JSON／Files 组。父已逐项核对10资源、5生产类和8包／元数据文件，42及26个已知 actor 均 PID_ABSENT、临时目录已清理，内部 JVM 身份 UNKNOWN。见[本地父审](../../../.ai-workspace/evidence/static-python-index-filename-fix-20261107-01/S26-code.PARENT-REVIEW.json)及[独立 STATIC 记录的 S26 段](STATIC-POST-R16-20261106.md#s26-本地索引修复及父审)。
 
-随后完成有限公开输入新冻结和全新四阶段，各原工具／native等待exit0、新JUnit1/0/0/0、16个原出生身份和TMP闭合，内部JVM UNKNOWN；独立after与本轮apply.postInventory全14字段及59748个UTF8原字节一致。见[四阶段父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/four-phase-preparation.PARENT-REVIEW.json)。首TaskBoard原次b9067c实际0、freshJUnit1/0/0/0、同app四标记/model0/CLEAN齐；辅助XML Name预检d7c183失败保留，一表达式改DOM getter后P02预检826e82实际0，正常closeout79ed2d实际0、四原身份及TMP闭合，业务未重跑。[首项父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/task-board-result.PARENT-REVIEW.json)接受完整1/8。第二FileTransfer由新职责原38a588/session28511运行，原HTTP65536／重启后下载相等保持，后六项未放行。S25 仍为 PASS3／FAILED1／UNLAUNCHED4，异常自有 TMP 已单独闭合，失败库／证据、NOT_REACHED 和远端 UNKNOWN_NOT_RECHECKED 保留。STATIC 八项完整正常后才返回 AI；AI R17 未启动，R16 首过0/8及旧 FAILED／UNKNOWN／false 不改判。
+随后完成有限公开输入新冻结和全新四阶段，各原工具／native等待exit0、新JUnit1/0/0/0、16个原出生身份和TMP闭合，内部JVM UNKNOWN；独立after与本轮apply.postInventory全14字段及59748个UTF8原字节一致。见[四阶段父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/four-phase-preparation.PARENT-REVIEW.json)。首TaskBoard原次b9067c实际0、freshJUnit1/0/0/0、同app四标记/model0/CLEAN齐；辅助XML Name预检d7c183失败保留，一表达式改DOM getter后P02预检826e82实际0，正常closeout79ed2d实际0、四原身份及TMP闭合，业务未重跑。[首项父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/task-board-result.PARENT-REVIEW.json)接受完整1/8。第二FileTransfer原665205实际1、freshJUnit1/1/0/0，仅PUBLISHED；重启前inspect任务bc024741…为UNKNOWN／DEPLOYMENT_HEALTH_UNCONFIRMED，Mod.close blocked，model终态NOT_REACHED、BUSINESS／PASS／CLEAN未达。[第二项失败父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/file-transfer-failed.PARENT-REVIEW.json)封存PASS1／FAILED1／UNLAUNCHED6，normal／证据／异常TMP保留，未normalcloseout或远端补查，原因只读定位中。S25 仍为 PASS3／FAILED1／UNLAUNCHED4，异常自有 TMP 已单独闭合，失败库／证据、NOT_REACHED 和远端 UNKNOWN_NOT_RECHECKED 保留。按用户最新指示，STATIC 八项完整正常后暂停，不启动新一轮 AI；AI R17 未启动，R16 首过0/8及旧 FAILED／UNKNOWN／false 不改判。
 
 ## 2026-11-07 R16 后 STATIC：S23 第三项失败封存，S24 首项失败封存，S25 第四项失败封存，转入 S26 索引修复
 

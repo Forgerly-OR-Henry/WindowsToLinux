@@ -1,6 +1,8 @@
 # R16 后独立 STATIC 验证记录
 
-当前为 **S26 TaskBoard 完整原次通过，FileTransfer 原次运行中**，完整业务为1/8，后六项未放行。S25 保留 PASS3／FAILED1／UNLAUNCHED4，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
+用户最新阶段指示：继续完成静态排障及固定八项验证；**静态验证全部完成后暂停，不启动新一轮 AI 辅助验收**。当前静态验证未完成，继续执行本阶段；下文较早的“静态后返回AI”记录保留为历史要求，不再作为自动接续授权。
+
+当前为 **S26 PASS1／FAILED1／UNLAUNCHED6 封存**：TaskBoard完整通过，FileTransfer在重启前inspect返回UNKNOWN，后六项不放行，正在只读定位。S25 保留 PASS3／FAILED1／UNLAUNCHED4，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
 
 此前 S24 为 PASS0／FAILED1／后七项未启动，START 任务保持 UNKNOWN；S23、S22 各为 PASS2／FAILED1／后五项未启动，S21 首项失败且部署 UNKNOWN，S20 为 PASS1／FAILED1／后六项未启动。各轮失败和准备证据独立保留。S17 之后的 S 编号为独立 STATIC 版本，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
@@ -18,7 +20,7 @@
 | S23 `f028e006…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard、FileTransfer 完整原次 PASS；AssetLending FAILED，后五项未启动 | nupkg digest-mismatch→502；本轮封存2/8，AI R17 未启动 |
 | S24 `933b81bc…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 原次 FAILED，START root UNKNOWN；后七项未启动 | 仅发布、业务与CLEAN未达；本轮封存0/8，AI R17 未启动 |
 | S25 `f43f4904…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | 前三项完整 PASS；CsvInspector FAILED，后四项未启动 | Python 包索引构建失败；封存3/8，异常自有 TMP 已闭合 |
-| S26 `350dc785…` | 全新四阶段均通过，独立 after 与本轮 apply.postInventory 全14字段及59748原字节相同 | TaskBoard 完整PASS；FileTransfer原次运行中，后六项未放行 | 完整业务1/8，AI R17 未启动 |
+| S26 `350dc785…` | 全新四阶段均通过，独立 after 与本轮 apply.postInventory 全14字段及59748原字节相同 | TaskBoard完整PASS；FileTransfer FAILED，inspect任务UNKNOWN；后六项未启动 | 封存1/8，AI R17 未启动 |
 
 前两次 STATIC 的原件分别保留于 [ROOT16 执行证据](../../../.ai-workspace/evidence/post-r16-static-execution-owner-20261106-01/)和 [S16 执行证据](../../../.ai-workspace/evidence/post-r16-static-repair-execution-owner-20261106-01/)。S17 的原件见 [执行证据](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-owner-20261106-01/)及 [父封存审查](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-inputs-20261106-01/s17-preparation-incomplete.PARENT-REVIEW.json)，后者 SHA256 为 `fdd38e32bf67d1a4984cca4941814f883286004f015220621d291680a26ac356`。这些版本各自独立，不拼接准备阶段、通过项或计划。
 
@@ -216,10 +218,14 @@ inventory、plan、精确 apply、独立 after 四阶段各一个原次，原工
 
 收尾辅助预检首次 `d7c183 exit1` 保留：PowerShell将XML的`$suite.Name`适配为`name`属性，错误发生在实际owner读取之前。仅改为显式DOM getter `$suite.get_Name()`，完整字节逆向及语法检查通过，其余断言、固定源、控制与业务原次未变。P02预检 `826e82 exit0` 后才执行上述正常closeout，owner单硬链接及短FileShare.None读取匹配、释放后收尾；非连续DELETE锁或原子删除保证。父辅助元数据读取的alias错误亦保留，未重跑业务或进程观察；不能称所有辅助检查首尝试全过。
 
-第二 FileTransfer 由新独立职责原次 `38a588/session28511` 运行中；保留原HTTP65536随机字节上传／下载相等、产品重启后再次下载相等、modelCalls=0和finally同应用STOPPED／DISABLED断言。尚无本项完整终态与收尾，不提前计第二项；后六项及AI未放行，旧S25前三PASS不拼入本轮。
+第二 FileTransfer 原次 `38a588/session28511 → 665205` 实际exit1，原native／Python／controller／bootstrap等待均为1，新JUnit1/1/0/0（431.292秒，SHA256 `0663bffa557958022f564d304909a898af6f0f8125b73b8485d90fc845f6d534`），bookkeeping无失败。应用`wtl-static-file-transfer-11ezoq02j8`仅有PUBLISHED，BUSINESS／PASS／CLEAN均为0，retained uncertainty为1，modelCalls终态断言NOT_REACHED。原HTTP65536场景未改；失败位于`restart()`先行的`applications.inspect()`，原任务`bc024741-278c-4bba-9d1f-30aae066849f`为UNKNOWN／DEPLOYMENT_HEALTH_UNCONFIRMED，endedAt为空、futureDoneObserved=false，Mod.close因该任务仍持有资源受阻。不能声称重启已经执行或完整重启后下载断言通过。
+
+见[第二项失败父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/file-transfer-failed.PARENT-REVIEW.json)，SHA256 `a3e41e44acc5656f2304660398efb1871505f36b336d4bdb1d2e53286002d595`。本轮封存PASS1／FAILED1／UNLAUNCHED6，不继续后六项、不拼前一PASS到下一轮；normal／原证据与异常TMP保留，未执行external preflight或normalcloseout、janitor、远端补查、失败库重开或reconcile。远端effects／future保持UNKNOWN_NOT_RECHECKED。原四出生身份仅由一次限定观察 `dc23db exit0` 确认为ABSENT，父审接受；未清理TMP，该事实不构成远端或业务UNKNOWN已解决。后续任何修复均须新冻结、全新四阶段并从TaskBoard开始，AI仍未启动。
+
+[公开证据只读诊断](../../../.ai-workspace/evidence/static-file-transfer-health-unknown-diagnosis-20261107-01/README.md)（SHA256 `698b16d6b958b17d7077e91ad3013a885e4795299861d6d896cf231ce7539640`）确证第二个健康调用在原55秒预算内未打开SSH通道，作者负载未发送，底层返回FAILED／SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT；其present value／empty exit随后被领域健康门映射为UNKNOWN，并丢失上游类型化context。本地open-write完成、一个socket读取回调待完成，不足以区分对端、传输路径、OS或本地I/O根因；不能认定健康命令实际执行后失败，也不由此加重试、延长预算或改变UNKNOWN语义。当前仅评估最小修复及必要诊断方案，尚未改变冻结源码或取得新服务器结果。
 
 ## 后续验收条件
 
 每个新版本或失败后的新轮均须另行冻结，完整执行 inventory → plan → 父审精确计划 → apply → 独立 after；独立 after 须与 apply 的完整 postInventory 对照，不得拼用旧计划、准备 PASS 或业务部分结果。S20 准备记录保留，业务失败后已停轮。后续新冻结仍按 TaskBoard、FileTransfer、AssetLending、CsvInspector、SurveyScoring、LogAnalyzer、DirectoryDiff、BinaryInspector 固定顺序逐项放行，每项均需原业务断言、modelCalls=0、同应用 CLEAN、JUnit 与真实 native/tool 闭合，失败或不确定不放后项。
 
-STATIC FileTransfer 使用原 HTTP 文件应用的 64 KiB 负载，CLI 使用原静态 health probe；不以 ASSISTED 专用检查器替代。STATIC 不运行 AI guard 或私密 key hash，不修改已批准的 AI 15 秒／MAX25／0.2 秒观测规则。八项静态正常后才回到 AI 辅助测试；MOD 仍通过主 APP 四用途标准 API 通信，厂商适配由主 APP 负责。
+STATIC FileTransfer 使用原 HTTP 文件应用的 64 KiB 负载，CLI 使用原静态 health probe；不以 ASSISTED 专用检查器替代。STATIC 不运行 AI guard 或私密 key hash，不修改已批准的 AI 15 秒／MAX25／0.2 秒观测规则。按用户最新指示，八项静态验证全部正常后暂停，不自动开启新一轮 AI 辅助验收；MOD 仍通过主 APP 四用途标准 API 通信，厂商适配由主 APP 负责。
