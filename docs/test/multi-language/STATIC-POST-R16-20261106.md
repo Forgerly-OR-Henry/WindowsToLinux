@@ -1,6 +1,6 @@
 # R16 后独立 STATIC 验证记录
 
-当前为 **S26 全新四阶段准备已通过，第一项 TaskBoard 原次正在运行**，完整业务仍为0/8，后七项未放行。S25 保留 PASS3／FAILED1／UNLAUNCHED4，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
+当前为 **S26 TaskBoard 完整原次通过，FileTransfer 原次运行中**，完整业务为1/8，后六项未放行。S25 保留 PASS3／FAILED1／UNLAUNCHED4，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
 
 此前 S24 为 PASS0／FAILED1／后七项未启动，START 任务保持 UNKNOWN；S23、S22 各为 PASS2／FAILED1／后五项未启动，S21 首项失败且部署 UNKNOWN，S20 为 PASS1／FAILED1／后六项未启动。各轮失败和准备证据独立保留。S17 之后的 S 编号为独立 STATIC 版本，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
@@ -18,7 +18,7 @@
 | S23 `f028e006…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard、FileTransfer 完整原次 PASS；AssetLending FAILED，后五项未启动 | nupkg digest-mismatch→502；本轮封存2/8，AI R17 未启动 |
 | S24 `933b81bc…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 原次 FAILED，START root UNKNOWN；后七项未启动 | 仅发布、业务与CLEAN未达；本轮封存0/8，AI R17 未启动 |
 | S25 `f43f4904…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | 前三项完整 PASS；CsvInspector FAILED，后四项未启动 | Python 包索引构建失败；封存3/8，异常自有 TMP 已闭合 |
-| S26 `350dc785…` | 全新四阶段均通过，独立 after 与本轮 apply.postInventory 全14字段及59748原字节相同 | 第一项 TaskBoard 原次运行中，后七项未放行 | 完整业务0/8，AI R17 未启动 |
+| S26 `350dc785…` | 全新四阶段均通过，独立 after 与本轮 apply.postInventory 全14字段及59748原字节相同 | TaskBoard 完整PASS；FileTransfer原次运行中，后六项未放行 | 完整业务1/8，AI R17 未启动 |
 
 前两次 STATIC 的原件分别保留于 [ROOT16 执行证据](../../../.ai-workspace/evidence/post-r16-static-execution-owner-20261106-01/)和 [S16 执行证据](../../../.ai-workspace/evidence/post-r16-static-repair-execution-owner-20261106-01/)。S17 的原件见 [执行证据](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-owner-20261106-01/)及 [父封存审查](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-inputs-20261106-01/s17-preparation-incomplete.PARENT-REVIEW.json)，后者 SHA256 为 `fdd38e32bf67d1a4984cca4941814f883286004f015220621d291680a26ac356`。这些版本各自独立，不拼接准备阶段、通过项或计划。
 
@@ -212,7 +212,11 @@ inventory、plan、精确 apply、独立 after 四阶段各一个原次，原工
 
 清理后660个包的完整记录和顺序与原696包减去计划内36包一致，core、formatVersion、host 原始字段不变。独立 after 与本轮 apply.postInventory 全14字段 GetRawText 及全部59748个 UTF-8 原字节完全相同，未排除、归一或转换数值。见[四阶段父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/four-phase-preparation.PARENT-REVIEW.json) SHA256 `7be30f42f26dcf680e87e4f973e7fe1facc3cd0ad4c3e8a2b580b311bcfca775`，以及[完整原字节比较](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/independent-after-vs-apply-post.PARENT-COMPARISON.json) SHA256 `417b846282534789c5124fa5c2a492c803163aa4878a2e202425d7462038c4f2`。
 
-首项 TaskBoard 新独立职责原次 `90dc49/session43846` 已启动；原60分钟、HTTP任务创建及正数id、STOP／START／RESTART后标题持久化、modelCalls=0和同应用finally STOPPED／DISABLED断言保持。尚无完整原次终态及收尾，不提前计PASS；后七项与AI未放行。旧S25前三PASS不拼入本轮。
+首项 TaskBoard 新独立职责原次 `90dc49/session43846 → b9067c` 实际exit0，原native／Python／controller／bootstrap等待均为0，新JUnit1/0/0/0（1951.634秒，SHA256 `135381bfdcb226f2009268fc95067f67ab778e45aa87e99e3a0b9fcb5d0bfcca`）。同应用`wtl-static-task-board-10cj8l72xw/static-live`四标记齐全；原HTTP任务创建及正数id、STOP／START／RESTART后标题持久化、modelCalls=0与finally STOPPED／DISABLED断言通过。正常closeout `79ed2d` 实际0，四个原出生身份均PID_ABSENT，自有item／outer TMP及空outer根闭合，内部JVM UNKNOWN。见[首项完整父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/task-board-result.PARENT-REVIEW.json)，SHA256 `077493721d25ed8cb6ede6cda0dfa34bcbd5c3ae462f5361cbc647fd602a8aee`。
+
+收尾辅助预检首次 `d7c183 exit1` 保留：PowerShell将XML的`$suite.Name`适配为`name`属性，错误发生在实际owner读取之前。仅改为显式DOM getter `$suite.get_Name()`，完整字节逆向及语法检查通过，其余断言、固定源、控制与业务原次未变。P02预检 `826e82 exit0` 后才执行上述正常closeout，owner单硬链接及短FileShare.None读取匹配、释放后收尾；非连续DELETE锁或原子删除保证。父辅助元数据读取的alias错误亦保留，未重跑业务或进程观察；不能称所有辅助检查首尝试全过。
+
+第二 FileTransfer 由新独立职责原次 `38a588/session28511` 运行中；保留原HTTP65536随机字节上传／下载相等、产品重启后再次下载相等、modelCalls=0和finally同应用STOPPED／DISABLED断言。尚无本项完整终态与收尾，不提前计第二项；后六项及AI未放行，旧S25前三PASS不拼入本轮。
 
 ## 后续验收条件
 
