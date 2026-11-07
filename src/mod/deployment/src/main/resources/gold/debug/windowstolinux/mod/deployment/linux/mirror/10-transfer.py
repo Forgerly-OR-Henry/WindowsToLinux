@@ -28,6 +28,10 @@ class MirrorFailure(Exception):
     pass
 
 
+class MirrorNotFound(MirrorFailure):
+    """Every admitted candidate returned HTTP 404 for this exact object/request."""
+
+
 def mirror_loopback_peer_uid(local_address, peer_address, table):
     """Use the client's outgoing socket row, never the server's own accepted-socket UID."""
     matches = []
@@ -378,14 +382,21 @@ def _mirror_transfer(policy, point, original, target, algorithm=None, expected=N
     if target.is_symlink():
         raise MirrorFailure('transfer output must not be a symbolic link')
     failures = []
+    not_found = record.setdefault('notFound', set())
+    all_not_found = True
     for endpoint in policy.endpoints(point):
         provider = endpoint['providerId']
+        request_identity = hashlib.sha256(json.dumps([endpoint, headers or {}], sort_keys=True,
+                                                    separators=(',', ':')).encode()).hexdigest()
         if provider in record['exhausted']:
-            failures.append('source-previously-exhausted')
+            confirmed = request_identity in not_found
+            all_not_found = all_not_found and confirmed
+            failures.append('http-404' if confirmed else 'source-previously-exhausted')
             continue
         try:
             selected = policy.validate_url(endpoint, policy.maps(endpoint, original))
         except MirrorFailure as error:
+            all_not_found = False
             mirror_log(point, endpoint, 'incompatible-route')
             failures.append(str(error))
             continue
@@ -548,6 +559,10 @@ def _mirror_transfer(policy, point, original, target, algorithm=None, expected=N
                                                  else type(error).__name__)
                 mirror_log(point, endpoint, reason, attempt)
                 failures.append(reason)
+                if isinstance(error, urllib.error.HTTPError) and error.code == 404 and not progress['failure'] and attempt == 1:
+                    not_found.add(request_identity)
+                else:
+                    all_not_found = False
                 # A deterministic 4xx or corrupted object does not merit another identical request.
                 if isinstance(error, urllib.error.HTTPError) and 400 <= error.code < 500 or reason == 'digest-mismatch':
                     record['exhausted'].add(provider)
@@ -563,6 +578,9 @@ def _mirror_transfer(policy, point, original, target, algorithm=None, expected=N
                 if os.path.exists(temporary):
                     os.unlink(temporary)
         record['exhausted'].add(provider)
+        all_not_found = all_not_found and request_identity in not_found
+    if all_not_found and failures:
+        raise MirrorNotFound('selected sources exhausted: ' + ','.join(failures[-6:]))
     raise MirrorFailure('selected sources exhausted: ' + ','.join(failures[-6:]))
 
 

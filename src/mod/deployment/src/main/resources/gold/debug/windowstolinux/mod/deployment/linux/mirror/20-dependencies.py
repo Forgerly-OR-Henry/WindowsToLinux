@@ -82,6 +82,11 @@ class RepositoryGateway:
                             import shutil
                             with downloaded.open('rb') as source:
                                 shutil.copyfileobj(source, self.wfile, 65536)
+                except MirrorNotFound:
+                    if point in ('GRADLE_PLUGIN', 'MAVEN_REPOSITORY'):
+                        self.send_error(404, 'configured repository object not found')
+                    else:
+                        self.send_error(502, 'configured mirror request failed')
                 except (MirrorFailure, ValueError, IndexError, KeyError, OSError):
                     self.send_error(502, 'configured mirror request failed')
                 finally:
@@ -291,6 +296,150 @@ def reject_unmapped_lock_urls(policy, point, directory):
             raise MirrorFailure('fixed URL in %s cannot honor the selected source policy' % name)
 
 
+def gradle_repository_init(policy, gateway):
+    # Keep the download point with each admitted origin. Gateway.link intentionally
+    # searches other points; a Gradle repository must instead retain this exact route.
+    routes = {}
+    for point in ('GRADLE_PLUGIN', 'MAVEN_REPOSITORY'):
+        for endpoint in policy.endpoints(point):
+            for route in endpoint.get('routes', []) or [{'origin': endpoint['baseUrl']}]:
+                origin = route['origin'].rstrip('/')
+                token = base64.urlsafe_b64encode((origin + '/').encode()).decode().rstrip('=')
+                binding = [point, origin, gateway.base + '/' + point + '/u/' + token + '/']
+                if binding not in routes.setdefault(origin, []):
+                    routes[origin].append(binding)
+    defaults = {point: [point, gateway.origin(point).rstrip('/'), gateway.root(point)]
+                for point in ('GRADLE_PLUGIN', 'MAVEN_REPOSITORY')}
+    return r"""import groovy.transform.CompileStatic
+import org.gradle.api.artifacts.DependencyResolutionListener
+import org.gradle.api.artifacts.ResolvableDependencies
+import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+import org.gradle.api.internal.artifacts.repositories.ResolutionAwareRepository
+import org.gradle.plugin.use.internal.DefaultPluginRequestApplicator
+
+// Use interface calls, rather than Groovy properties or user-supplied metaClass methods.
+@CompileStatic
+class WtlRepositoryAccess {
+  static Class actualClass(Object value) { value.getClass() }
+  static Object descriptor(Object value) { ((ResolutionAwareRepository) value).getDescriptor() }
+  static boolean identical(Object left, Object right) { left.is(right) }
+  static String url(Object value) { ((MavenArtifactRepository) value).getUrl()?.toString() }
+  static List<String> artifacts(Object value) {
+    ((MavenArtifactRepository) value).getArtifactUrls().collect { URI uri -> uri.toString() }
+  }
+  static void route(Object value, String url, List<String> artifacts) {
+    MavenArtifactRepository repository = (MavenArtifactRepository) value
+    repository.setUrl(URI.create(url))
+    repository.setArtifactUrls(artifacts.collect { String item -> URI.create(item) })
+    repository.setAllowInsecureProtocol(true)
+  }
+}
+def wtlRoutes = new groovy.json.JsonSlurper().parseText(new String('__WTL_ROUTES__'.decodeBase64(), 'UTF-8'))
+def wtlDefaults = new groovy.json.JsonSlurper().parseText(new String('__WTL_DEFAULTS__'.decodeBase64(), 'UTF-8'))
+def wtlBindings = new IdentityHashMap()
+def wtlContainers = new IdentityHashMap()
+def wtlPluginSources = Collections.newSetFromMap(new IdentityHashMap())
+def wtlWrapperClass = Class.forName('org.gradle.plugin.use.internal.PluginArtifactRepository', false,
+    DefaultPluginRequestApplicator.class.classLoader)
+def wtlFail = { role, repository, reason ->
+  throw new GradleException('task repository rejected: role=' + role + ' class=' +
+      WtlRepositoryAccess.actualClass(repository).name + ' reason=' + reason)
+}
+def wtlSelect = { value, point, role, repository ->
+  def candidates = wtlRoutes[value?.replaceAll('/+$', '')]
+  if (!candidates) wtlFail(role, repository, 'no-exact-origin-route')
+  def selected = candidates.find { it[0] == point }
+  selected ?: candidates[0]
+}
+def wtlVerify
+wtlVerify = { repository, binding ->
+  if (binding.source != null) {
+    def sourceBinding = wtlBindings[binding.source]
+    wtlVerify(binding.source, sourceBinding)
+    if (!WtlRepositoryAccess.identical(WtlRepositoryAccess.descriptor(repository),
+        WtlRepositoryAccess.descriptor(binding.source))) wtlFail(binding.role, repository, 'plugin-source-descriptor-changed')
+  } else {
+    if (WtlRepositoryAccess.url(repository) != binding.route[2] ||
+        WtlRepositoryAccess.artifacts(repository) != binding.artifacts) {
+      wtlFail(binding.role, repository, 'bound-url-changed point=' + binding.route[0])
+    }
+  }
+}
+def wtlBind = { repository, state ->
+  def prior = wtlBindings[repository]
+  if (prior != null) {
+    wtlVerify(repository, prior)
+    if (state.role == 'pluginManagement' && prior.source == null) wtlPluginSources.add(repository)
+    return
+  }
+  if (repository instanceof MavenArtifactRepository) {
+    def route = wtlSelect(WtlRepositoryAccess.url(repository), state.point, state.role, repository)
+    def artifacts = WtlRepositoryAccess.artifacts(repository).collect {
+      wtlSelect(it, state.point, state.role, repository)[2]
+    }
+    WtlRepositoryAccess.route(repository, route[2], artifacts)
+    wtlBindings[repository] = [role: state.role, route: route, artifacts: artifacts, source: null]
+    if (state.role == 'pluginManagement') wtlPluginSources.add(repository)
+  } else if (WtlRepositoryAccess.identical(WtlRepositoryAccess.actualClass(repository), wtlWrapperClass)) {
+    // Gradle's wrapper delegates its current cached descriptor to the actual source.
+    // Check the source's current URLs first; never trust descriptor content, ID or equals().
+    def source = wtlPluginSources.find { candidate ->
+      wtlVerify(candidate, wtlBindings[candidate])
+      WtlRepositoryAccess.identical(WtlRepositoryAccess.descriptor(repository),
+          WtlRepositoryAccess.descriptor(candidate))
+    }
+    if (source == null) wtlFail(state.role, repository, 'unbound-plugin-wrapper')
+    def inherited = wtlBindings[source]
+    wtlBindings[repository] = [role: state.role, route: inherited.route, artifacts: inherited.artifacts, source: source]
+    logger.info('Task repository wrapper bound role=' + state.role + ' point=' + inherited.route[0])
+  } else {
+    wtlFail(state.role, repository, 'unsupported-repository-type')
+  }
+}
+def wtlCheckAll = {
+  wtlContainers.each { repositories, state -> repositories.each { wtlBind(it, state) } }
+  wtlBindings.each { repository, binding -> wtlVerify(repository, binding) }
+}
+def wtlInstall = { repositories, point, role ->
+  def state = wtlContainers[repositories]
+  if (state != null) {
+    logger.info('Task repository container rechecked role=' + role)
+    repositories.each { wtlBind(it, state) }
+    return
+  }
+  state = [point: point, role: role]
+  wtlContainers[repositories] = state
+  repositories.each { wtlBind(it, state) }
+  if (repositories.empty) {
+    def route = wtlDefaults[point]
+    def repository = repositories.maven { url = URI.create(route[2]); allowInsecureProtocol = true }
+    wtlBindings[repository] = [role: role, route: route, artifacts: [], source: null]
+    if (role == 'pluginManagement') wtlPluginSources.add(repository)
+  }
+  // Each repository container gets one listener, even across both settings callbacks.
+  repositories.whenObjectAdded { repository -> wtlBind(repository, state) }
+  logger.info('Task repository listener installed role=' + role)
+}
+beforeSettings { settings ->
+  wtlInstall(settings.pluginManagement.repositories, 'GRADLE_PLUGIN', 'pluginManagement')
+  wtlInstall(settings.dependencyResolutionManagement.repositories, 'MAVEN_REPOSITORY', 'settingsDependencies')
+}
+settingsEvaluated { settings ->
+  wtlInstall(settings.pluginManagement.repositories, 'GRADLE_PLUGIN', 'pluginManagement')
+  wtlInstall(settings.dependencyResolutionManagement.repositories, 'MAVEN_REPOSITORY', 'settingsDependencies')
+  wtlCheckAll()
+}
+beforeProject { project ->
+  wtlInstall(project.repositories, 'MAVEN_REPOSITORY', 'project')
+  wtlInstall(project.buildscript.repositories, 'MAVEN_REPOSITORY', 'buildscript')
+}
+gradle.addListener([
+  beforeResolve: { ResolvableDependencies dependencies -> wtlCheckAll() },
+  afterResolve: { ResolvableDependencies dependencies -> }
+] as DependencyResolutionListener)
+""".replace('__WTL_ROUTES__', base64.b64encode(json.dumps(routes).encode()).decode()).replace('__WTL_DEFAULTS__', base64.b64encode(json.dumps(defaults).encode()).decode())
+
+
 def dependency_environment(policy, gateway, point, command, directory):
     environment = dict(os.environ)
     root = pathlib.Path(directory)
@@ -348,33 +497,7 @@ def dependency_environment(policy, gateway, point, command, directory):
                                 '-Daether.connector.requestTimeout=' + client_milliseconds] + command[1:]
     elif point == 'GRADLE_PLUGIN':
         init = root / 'mirrors.gradle'
-        plugin_repository = json.dumps(gateway.root(point))
-        dependency_repository = json.dumps(gateway.root('MAVEN_REPOSITORY'))
-        origins = sorted({route['origin'].rstrip('/') for candidate in ('MAVEN_REPOSITORY', point)
-                          for endpoint in policy.endpoints(candidate) for route in endpoint.get('routes', [])})
-        init.write_text('''def wtlOrigins = %s
-def wtlRepos = { repos, selected ->
-  repos.clear()
-  repos.maven { url = uri(selected); allowInsecureProtocol = true }
-  repos.whenObjectAdded { r ->
-    if (!r.hasProperty('url')) throw new GradleException('unsupported task repository protocol')
-    def original = r.url.toString().replaceAll('/+$', '')
-    if (original != selected.replaceAll('/+$', '') && !wtlOrigins.contains(original)) throw new GradleException('repository has no exact task mirror route')
-    r.url = uri(selected)
-    r.allowInsecureProtocol = true
-  }
-}
-beforeSettings { s -> wtlRepos(s.pluginManagement.repositories, %s) }
-settingsEvaluated { s ->
-  wtlRepos(s.pluginManagement.repositories, %s)
-  if (s.hasProperty('dependencyResolutionManagement')) wtlRepos(s.dependencyResolutionManagement.repositories, %s)
-}
-allprojects { p ->
-  wtlRepos(p.repositories, %s)
-  wtlRepos(p.buildscript.repositories, %s)
-}
-''' % (json.dumps(origins), plugin_repository, plugin_repository, dependency_repository,
-       dependency_repository, dependency_repository))
+        init.write_text(gradle_repository_init(policy, gateway), encoding='utf-8')
         command += ['--init-script', str(init), '-Dorg.gradle.internal.http.connectionTimeout=' + str(max(1, int(policy.connect * 1000))),
                     '-Dorg.gradle.internal.http.socketTimeout=' + client_milliseconds]
     elif point == 'RUST_CRATE':

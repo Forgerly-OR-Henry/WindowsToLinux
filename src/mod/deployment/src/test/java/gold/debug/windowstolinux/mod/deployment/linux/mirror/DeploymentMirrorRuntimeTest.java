@@ -106,6 +106,59 @@ final class DeploymentMirrorRuntimeTest {
             "gradle_redirect_test.py", "GRADLE_REDIRECT", 8);
     }
 
+    @Test
+    void realGradleCorePluginsRetainWrapperBindingsAndIdempotentRepositories() throws Exception {
+        runGradleRepositoryFixture("core");
+    }
+
+    @Test
+    void realGradleLocalArtifactsRetainExactPointOriginAndAdditionalArtifactRoutes() throws Exception {
+        runGradleRepositoryFixture("local");
+    }
+
+    @Test
+    void realGradleRejectsUnboundRepositoriesAndLateSourceChangesBeforeNetwork() throws Exception {
+        runGradleRepositoryFixture("reject");
+    }
+
+    @Test
+    void gradleRepositoryNotFoundRetainsExactLedgerEvidenceWithoutMaskingTransferFailures() throws Exception {
+        runGradleRepositoryFixture("status");
+    }
+
+    private void runGradleRepositoryFixture(String group) throws Exception {
+        String executable = System.getProperty("wtl.gradle.executable");
+        String evidenceRoot = System.getProperty("wtl.gradle.test.evidence");
+        assertTrue(executable != null && Files.isRegularFile(Path.of(executable)),
+            "Supply an existing Gradle 8.10.2 executable with -Dwtl.gradle.executable; this test never downloads Gradle");
+        assertTrue(evidenceRoot != null, "Supply task-owned evidence with -Dwtl.gradle.test.evidence");
+        Path directory = Files.createTempDirectory(Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath(), "gradle-repositories-");
+        try {
+            Path runtime = directory.resolve("runtime.py");
+            Files.writeString(runtime, DeploymentMirrorRuntime.runtimeSource(), StandardCharsets.UTF_8);
+            Path fixture = directory.resolve("gradle_repository_test.py");
+            try (var stream = getClass().getResourceAsStream("gradle_repository_test.py")) {
+                if (stream == null) throw new IOException("Real Gradle repository fixture absent");
+                Files.copy(stream, fixture);
+            }
+            Path evidence = Files.createDirectories(Path.of(evidenceRoot).toAbsolutePath().resolve(group + "-" + UUID.randomUUID()));
+            var command = new ArrayList<String>();
+            if (System.getProperty("wtl.python.executable") != null) command.add(System.getProperty("wtl.python.executable"));
+            else if (System.getProperty("os.name").startsWith("Windows")) command.addAll(List.of("py", "-3"));
+            else command.add("python3");
+            command.addAll(List.of("-B", fixture.toString(), runtime.toString(), executable, evidence.toString(), group));
+            System.out.println("GRADLE_REPOSITORY_JVM pid=" + ProcessHandle.current().pid() + " birth="
+                + ProcessHandle.current().info().startInstant().map(Object::toString).orElse("UNKNOWN")
+                + " cwd=" + Path.of("").toAbsolutePath() + " java.io.tmpdir=" + System.getProperty("java.io.tmpdir")
+                + " jna.tmpdir=" + System.getProperty("jna.tmpdir")
+                + " jdk.net.unixdomain.tmpdir=" + System.getProperty("jdk.net.unixdomain.tmpdir"));
+            String output = execute(directory, command, Duration.ofMinutes(15));
+            System.out.println(output);
+            assertTrue(output.contains("Ran 1 test"), output);
+            assertTrue(output.contains("OK"), output);
+        } finally { cleanup(directory); }
+    }
+
     private void runRedirectFixture(DownloadPoint point, String provider, String resource, String marker, int count) throws Exception {
         Path directory = Files.createTempDirectory(Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath(), "mirror-redirect-");
         try {
