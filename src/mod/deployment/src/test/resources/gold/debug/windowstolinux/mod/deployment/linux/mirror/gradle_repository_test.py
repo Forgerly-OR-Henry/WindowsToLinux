@@ -338,6 +338,60 @@ tasks.register('resolveFixture') { doLast {
     def test_not_found_preserves_http_status_and_exact_ledger_evidence_without_masking_failures(self):
         missing = runtime['MirrorNotFound']
         failure = runtime['MirrorFailure']
+        for count in (1, 2):
+            entries = [{'providerId': 'deadline-' + str(index), 'baseUrl': P1,
+                        'allowedHosts': ['plugins.gradle.org'],
+                        'routes': [{'origin': P1, 'prefix': P1}]} for index in range(count)]
+            policy = runtime['MirrorPolicy']({'formatVersion': 1, 'points': {PLUGIN: entries},
+                'timeouts': {'attemptsPerEndpoint': 1}})
+            opener = mock.Mock()
+
+            def expired_not_found(request, **kwargs):
+                if opener.open.call_count == count:
+                    policy.deadline = time.monotonic() - 1
+                raise urllib.error.HTTPError(request.full_url, 404, 'absent', {}, None)
+
+            opener.open.side_effect = expired_not_found
+            # Hold the asynchronous watchdog before its first poll to exercise the
+            # response/deadline boundary without depending on thread scheduling.
+            with mock.patch.object(urllib.request, 'build_opener', return_value=opener), \
+                    mock.patch.object(threading, 'Thread'):
+                for repeat in range(2):
+                    with self.subTest(name='expired-final404', candidates=count, repeat=repeat):
+                        with self.assertRaises(failure) as caught:
+                            runtime['mirror_bytes'](policy, PLUGIN, P1 + 'deadline.pom')
+                        self.assertNotIsInstance(caught.exception, missing)
+                        self.assertEqual('task deadline exceeded', str(caught.exception))
+                        record = policy.transfer_ledger.object((PLUGIN, P1 + 'deadline.pom'))
+                        self.assertEqual(count - 1, len(record['notFound']))
+                        self.assertEqual(count, opener.open.call_count)
+
+        policy = runtime['MirrorPolicy']({'formatVersion': 1, 'points': {PLUGIN: entries},
+            'timeouts': {'attemptsPerEndpoint': 1}})
+        opener = mock.Mock()
+
+        def not_found(request, **kwargs):
+            raise urllib.error.HTTPError(request.full_url, 404, 'absent', {}, None)
+
+        opener.open.side_effect = not_found
+        with mock.patch.object(urllib.request, 'build_opener', return_value=opener), \
+                mock.patch.object(threading, 'Thread'):
+            with self.assertRaises(missing):
+                runtime['mirror_bytes'](policy, PLUGIN, P1 + 'ledger-deadline.pom')
+
+            def expire_after_exhausted_candidates(point):
+                yield from entries
+                policy.deadline = time.monotonic() - 1
+
+            # The cache scan completes while valid; re-entry then expires while
+            # scanning the already exhausted, confirmed-404 candidates.
+            with mock.patch.object(policy, 'endpoints', side_effect=[entries, expire_after_exhausted_candidates(PLUGIN)]):
+                with self.subTest(name='expired-confirmed404-reentry'):
+                    with self.assertRaises(failure) as caught:
+                        runtime['mirror_bytes'](policy, PLUGIN, P1 + 'ledger-deadline.pom')
+                    self.assertNotIsInstance(caught.exception, missing)
+                    self.assertEqual('task deadline exceeded', str(caught.exception))
+                    self.assertEqual(len(entries), opener.open.call_count)
         upstream = 'http://127.0.0.1:%d/' % self.upstream.server_port
         original = P1 + 'object.pom'
         for name, statuses, expected_status in (

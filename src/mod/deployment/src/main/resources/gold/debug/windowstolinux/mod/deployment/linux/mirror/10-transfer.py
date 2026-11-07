@@ -560,6 +560,7 @@ def _mirror_transfer(policy, point, original, target, algorithm=None, expected=N
                 mirror_log(point, endpoint, reason, attempt)
                 failures.append(reason)
                 if isinstance(error, urllib.error.HTTPError) and error.code == 404 and not progress['failure'] and attempt == 1:
+                    policy.remaining()
                     not_found.add(request_identity)
                 else:
                     all_not_found = False
@@ -580,6 +581,7 @@ def _mirror_transfer(policy, point, original, target, algorithm=None, expected=N
         record['exhausted'].add(provider)
         all_not_found = all_not_found and request_identity in not_found
     if all_not_found and failures:
+        policy.remaining()
         raise MirrorNotFound('selected sources exhausted: ' + ','.join(failures[-6:]))
     raise MirrorFailure('selected sources exhausted: ' + ','.join(failures[-6:]))
 
