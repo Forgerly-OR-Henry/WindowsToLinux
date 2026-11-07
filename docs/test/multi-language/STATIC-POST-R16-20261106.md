@@ -154,9 +154,9 @@ AssetLending原session30085由 `c579bd` 实际exit1结束，新JUnit **1/1/0/0**
 
 准备职责结束后，首项TaskBoard另由独立职责执行，原session57233由 `dbf8fb` 实际exit1结束，新JUnit **1/1/0/0**、955.301秒。同应用 `wtl-static-task-board-t6s0g9dok/static-live` 仅有PUBLISHED；业务 `Application START` 任务 `8c13922f-ad3e-46e2-b25c-c74e3c8cd16c` 为UNKNOWN、outcome／endedAt空、futureDoneObserved=false，随后Mod cleanup被该任务阻止。BUSINESS、modelCalls=0终末断言及finally CLEAN均未达，不能将发布算完整通过。见[本轮失败父审](../../../.ai-workspace/evidence/post-r16-static-nuget-content-hash-execution-inputs-20261107-01/s24-task-board-failed.PARENT-REVIEW.json)，SHA256 `8cd9dfd578def77fbcda69d0d83a1381bab72ea2aebd202d5c67fa5d2dfe5352`。本轮封存PASS0／FAILED1／UNLAUNCHED7，不重试或拼S23旧PASS。
 
-原START任务中最终超时操作为 `deployment.publication.inspect.v1`；原SSH结果为SSH_COMMAND_TIMEOUT，通道已确认后，输入线程在写framing长度时等待远端窗口；elapsed20005毫秒，authorPayloadState=MAY_HAVE_BEEN_SENT。START效果与future保持UNKNOWN_NOT_RECHECKED，未补查远端或重开失败库。初始窗口0在SSH协议及标准实现中可以正常，maxSize只记初始大小、callback数也不是包数，非原子采样不能证明从未WINDOW_ADJUST或未发部分header；目前未证明底层根因，不能套用S18未打开通道的诊断。已另开只读源码分析职责，没有因此放宽超时、重试或原断言。
+原START任务中最终超时操作为 `deployment.publication.inspect.v1`；原SSH结果为SSH_COMMAND_TIMEOUT，通道已确认后，输入线程在写framing长度时等待远端窗口；elapsed20005毫秒，authorPayloadState=MAY_HAVE_BEEN_SENT。START效果与future保持UNKNOWN_NOT_RECHECKED，未补查远端或重开失败库。初始窗口0在[SSH窗口协议](https://www.rfc-editor.org/rfc/rfc4254.html#section-5.2)及[固定OpenSSH实现](https://github.com/openssh/openssh-portable/blob/V_9_9_P1/serverloop.c#L516-L545)中可以正常；这不证明本次服务器的实现或所处阶段。maxSize只记初始大小、callback数也不是包数，非原子采样不能证明从未WINDOW_ADJUST或未发部分header；目前未证明底层根因，不能套用S18未打开通道的诊断。已另开只读源码分析职责，没有因此放宽超时、重试或原断言。
 
-四已记录本地出生身份由原工具748427实际exit0唯一窄查，均PID_ABSENT，内部JVM身份仍UNKNOWN。normal／原证据及异常自有TMP保留；异常TMP仅在准备单独候选，尚未执行清理，不调用normal closeout。修复后须另行冻结、完整四阶段并从首项开始固定八项；本轮后七项与AI未启动。
+四已记录本地出生身份由原工具748427实际exit0唯一窄查，均PID_ABSENT。另行审定的异常janitor原工具 `6d1d04` 实际exit0，仅删除两指定自有TMP叶及各自空任务根；候选内fresh四原身份均消失，owner／边界／整树nonreparse／单硬链接及短独占DELETE探针通过，探针释放后才删除。self26176调用前身份已记录，由同一原工具终态证明退出，未加self PID扫描。normal／原证据保留，没有normal closeout或远端复查，内部JVM身份仍UNKNOWN；见[本地异常收尾父审](../../../.ai-workspace/evidence/post-r16-static-nuget-content-hash-execution-inputs-20261107-01/static-task-board-abnormal-tmp-closed.PARENT-REVIEW.json)，SHA256 `3b547f430d76ec67a99e4b7feff3fc17727cc2aa6849000887b1b2c8e6d6fbad`。S25隔离实现职责正补必要exec写入及read调度观测和零窗口机制反例，尚无最终验证、打包或新验收结果，不称原根因已修复。之后仍须另冻结、完整四阶段并从首项开始固定八项；本轮后七项与AI未启动。
 
 ## 后续验收条件
 
