@@ -174,7 +174,11 @@ AssetLending原session30085由 `c579bd` 实际exit1结束，新JUnit **1/1/0/0**
 
 原apply摘要为purge31／accounts2／roots5／unitFiles3／stoppedUnits3／APTclean=true，保留实际计数，不将3改成计划4。完整post为655包恰686减31，全部原记录保序无额外删除或升级；148core原raw相同，8roots全absent，项目资源为空、APT0。独立after与THISapply.post全部14字段／59382个UTF8字节逐byte相同，无排除或数值归一化，raw SHA`82e0d077f2a00d57e542e7bce91bd50ab87665b358533e5e04de4f67f90e2afc`。见[本轮四阶段父审](../../../.ai-workspace/evidence/post-r16-static-ssh-observation-execution-inputs-20261107-01/four-phase-preparation.PARENT-REVIEW.json)，SHA`8b10f28bd487099f89b37e9af0b428861b45e4d1cd39d58da853d271d7bd5dc5`；相同baseline内容摘要不代表借用旧轮准备PASS。
 
-现仅首项TaskBoard获单项原次业务放行，由新独立职责执行，尚无本轮完整业务PASS；后七项及AI未放行。须继续固定八项顺序，不拼旧轮PASS，原失败／UNKNOWN／false eligibility均保留，AI R17未启动。
+## S25 固定八项业务
+
+首TaskBoard新独立职责原次 `3caa38/session31542 → cc4b22` 实际exit0，新JUnit1/0/0/0（1407.406秒，SHA`456d93b706fff81cf0b07a53240c29e6beee1dfa5b93a098fed34d93d8fb10f8`）。同一应用`wtl-static-task-board-vfepho590/static-live`的PUBLISHED、真实HTTP／跨语言流程／重启／持久化BUSINESS、PASS modelCalls=0、finally CLEAN stopped/disabled齐全。原native／Python／controller各实际wait0；正常closeout `9913cd` 实际0，四个精确出生身份均gone，自有TMP闭合，normal／证据保留，内部JVM UNKNOWN。见[首项完整父审](../../../.ai-workspace/evidence/post-r16-static-ssh-observation-execution-inputs-20261107-01/task-board-result.PARENT-REVIEW.json) SHA`363071b32b531700cb77e8c8ee9fe5cbfb8a82ac1edce30a7c6cfa9b81d83930`。额外post-closure汇总helper因过严testcase名称谓词失败56d544，未生成汇总，不重跑原业务或closure；[该辅助错误原件](../../../.ai-workspace/evidence/post-r16-static-ssh-observation-execution-owner-20261107-01/task-board-post-closure-summary-helper-error.ACTUAL-TOOL.json)保留，不改判原次完整通过。
+
+本轮完整1/8。现仅第二FileTransfer获单项放行，由新独立职责执行原65536随机字节HTTP上传／下载／重启后下载相等流程，尚无第二项完整结果；后六项及AI未放行。不拼旧轮PASS，原失败／UNKNOWN／false eligibility均保留，AI R17未启动。
 
 ## 后续验收条件
 
