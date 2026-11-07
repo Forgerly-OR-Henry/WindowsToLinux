@@ -201,7 +201,8 @@ final class SshCommandExecution {
         long remaining = budget - (System.nanoTime() - started);
         if (remaining <= 0)
             throw new java.util.concurrent.TimeoutException();
-        if (phase == DispatchState.CHANNEL_OPENING && !workerSnapshotTaken && remaining <= 100_000_000L) {
+        if ((phase == DispatchState.CHANNEL_OPENING || phase == DispatchState.WAITING_FOR_EXIT)
+            && !workerSnapshotTaken && remaining <= 100_000_000L) {
             workerSnapshotTaken = true;
             if (io != null) {
                 long sampleStarted = System.nanoTime() - started;
@@ -214,6 +215,7 @@ final class SshCommandExecution {
                     facts.put("channelOpenWorkerSnapshotStartedMillis", Long.toString(sampleStarted / 1_000_000));
                     facts.put("channelOpenWorkerSnapshotCompletedMillis", Long.toString(completed / 1_000_000));
                     facts.put("channelOpenWorkerSnapshotRemainingMillis", Long.toString(Math.max(0, remaining) / 1_000_000));
+                    facts.put("channelOpenWorkerSnapshotCommandPhase", phase.name());
                     deadlineWorkers = Map.copyOf(facts);
                 } catch (RuntimeException unavailable) {
                     deadlineWorkers = Map.of("channelOpenWorkerSnapshot", "UNAVAILABLE");

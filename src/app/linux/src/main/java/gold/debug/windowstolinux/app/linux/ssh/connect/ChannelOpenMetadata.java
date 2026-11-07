@@ -10,8 +10,9 @@ import org.apache.sshd.common.io.IoSession;
 import org.apache.sshd.common.io.IoWriteFuture;
 import org.apache.sshd.common.util.buffer.Buffer;
 
-/** Exact local observations, without packet or exception bodies.
+/** Exact open/exec local observations, without packet or exception bodies.
  * PENDING/FAILED do not imply zero transmitted bytes; WRITTEN does not imply a peer reply.
+ * Exec acceptance stays UNKNOWN: the unchanged exec wantReply policy is not a readiness protocol.
  * All times are monotonic milliseconds since command execution started, not wall time.
  */
 final class ChannelOpenMetadata {
@@ -21,6 +22,10 @@ final class ChannelOpenMetadata {
     private long writeStarted = -1, writeCompleted = -1, replyAt = -1, failureReason = -1;
     private OpenFuture opening;
     private boolean unavailable;
+    private long peerChannel = -1;
+    private String execWriteState = "NOT_OBSERVED", execWriteFailure = "UNKNOWN", execWantReply = "UNKNOWN";
+    private long execWriteStarted = -1, execWriteCompleted = -1;
+    private boolean execUnavailable;
     ChannelOpenMetadata(long channelId, long commandStarted) {
         this.channelId = channelId;
         this.started = commandStarted;
@@ -51,6 +56,33 @@ final class ChannelOpenMetadata {
         writeCompleted = elapsed();
         writeFailure = failureType(failure);
     }
+    /** The same channel's fixed exec request, observed before encoding; never reads its command body. */
+    synchronized boolean execWriting(Buffer b) {
+        try {
+            int p = b.rpos();
+            if (peerChannel < 0 || b.available() < 18 || (b.rawByte(p) & 255) != 98
+                || b.rawUInt(p + 1) != peerChannel || b.rawUInt(p + 5) != 4
+                || b.rawByte(p + 9) != 'e' || b.rawByte(p + 10) != 'x'
+                || b.rawByte(p + 11) != 'e' || b.rawByte(p + 12) != 'c') return false;
+            execWriteState = "PENDING";
+            execWriteStarted = elapsed();
+            execWantReply = Boolean.toString(b.rawByte(p + 13) != 0);
+            return true;
+        } catch (RuntimeException failure) { execUnavailable = true; return false; }
+    }
+    synchronized void execWritten(IoWriteFuture future) {
+        try {
+            execWriteState = future.isWritten() ? "WRITTEN" : future.isDone() ? "FAILED" : "PENDING";
+            if (future.isDone()) execWriteCompleted = elapsed();
+            if (future.getException() != null) execWriteFailure = failureType(future.getException());
+        } catch (RuntimeException failure) { execUnavailable = true; }
+    }
+    synchronized void execWriteFailed(Throwable failure) {
+        execWriteState = "FAILED";
+        execWriteCompleted = elapsed();
+        execWriteFailure = failureType(failure);
+    }
+    synchronized void execUnavailable() { execUnavailable = true; }
     synchronized void received(Buffer b) {
         try { receivedPacket(b); } catch (RuntimeException failure) { unavailable = true; }
     }
@@ -60,7 +92,10 @@ final class ChannelOpenMetadata {
         int opcode = b.rawByte(pos) & 255;
         if (opcode != 91 && opcode != 92) return;
         if (b.available() < 5 || b.rawUInt(pos + 1) != channelId) return;
-        if (opcode == 91 && b.available() >= 17) reply = "CONFIRMATION";
+        if (opcode == 91 && b.available() >= 17) {
+            reply = "CONFIRMATION";
+            peerChannel = b.rawUInt(pos + 5);
+        }
         else if (opcode == 92 && b.available() >= 9) {
             reply = "FAILURE";
             failureReason = b.rawUInt(pos + 5);
@@ -84,6 +119,14 @@ final class ChannelOpenMetadata {
         Throwable failure = opening == null ? null : opening.getException();
         facts.put("channelOpenFutureFailureType", failure == null ? "UNKNOWN" : failureType(failure));
         number(facts, "channelOpenFutureFailureReason", failure instanceof SshChannelOpenException f ? Integer.toUnsignedLong(f.getReasonCode()) : -1);
+        facts.put("execRequestObservation", execUnavailable ? "UNAVAILABLE" : execWriteState.equals("NOT_OBSERVED") ? "NOT_OBSERVED" : "AVAILABLE");
+        facts.put("execRequestWriteState", execWriteState);
+        facts.put("execRequestWriteFailureType", execWriteFailure);
+        number(facts, "execRequestWriteStartedMillis", execWriteStarted);
+        number(facts, "execRequestWriteCompletedMillis", execWriteCompleted);
+        facts.put("execRequestWantReply", execWantReply);
+        // A local write is not exec acceptance or readiness, whether or not a reply was requested.
+        facts.put("execRequestPeerAcceptance", "UNKNOWN");
     }
     synchronized void unavailable() { unavailable = true; }
     private long elapsed() { return Math.max(0, System.nanoTime() - started) / 1_000_000; }
@@ -106,15 +149,21 @@ final class ChannelOpenMetadata {
         @Override protected IoWriteFuture doWritePacket(Buffer buffer) throws IOException {
             var observed = bound;
             boolean matched = observed != null && observed.writing(buffer);
+            boolean matchedExec = observed != null && observed.execWriting(buffer);
             try {
                 var future = super.doWritePacket(buffer);
                 if (matched) {
                     try { future.addListener(observed::written); }
                     catch (RuntimeException unavailable) { observed.unavailable(); }
                 }
+                if (matchedExec) {
+                    try { future.addListener(observed::execWritten); }
+                    catch (RuntimeException unavailable) { observed.execUnavailable(); }
+                }
                 return future;
             } catch (IOException | RuntimeException | Error failure) {
                 if (matched) observed.writeFailed(failure);
+                if (matchedExec) observed.execWriteFailed(failure);
                 throw failure;
             }
         }

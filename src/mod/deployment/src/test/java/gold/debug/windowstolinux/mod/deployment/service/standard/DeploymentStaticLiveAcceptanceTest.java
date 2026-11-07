@@ -7001,6 +7001,14 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                         remoteDiagnosticLine(sink, prefix + " event=" + problem.eventCode());
                     problem.diagnosticId().ifPresent(diagnostic -> remoteDiagnosticLine(sink, prefix + " diagnostic=" + diagnostic));
                     for (var key : List.of("channelOpenWorkerSnapshotStartedMillis", "channelOpenWorkerSnapshotCompletedMillis",
+                        "channelOpenWorkerSnapshotCommandPhase", "execRequestObservation", "execRequestWriteState",
+                        "execRequestWriteFailureType", "execRequestWriteStartedMillis", "execRequestWriteCompletedMillis",
+                        "execRequestWantReply", "execRequestPeerAcceptance", "transportSocketReadObservation",
+                        "transportSocketReadCoverage", "transportSocketReadAttempts", "transportSocketReadReturned",
+                        "transportSocketReadCompleted", "transportSocketReadFailed", "transportSocketReadThrown",
+                        "transportSocketReadFutureAttempts", "transportSocketReadActiveCalls", "transportSocketReadAwaitingCallbacks",
+                        "transportSocketReadPending", "transportSocketReadLastResult", "transportSocketReadLastAttemptAgeMillis",
+                        "transportSocketReadLastReturnAgeMillis", "transportSocketReadLastCompletionAgeMillis",
                         "channelOpenWorkerSnapshotRemainingMillis", "channelOpenObservation", "channelOpenWriteState",
                         "channelOpenWriteFailureType", "channelOpenWriteStartedMillis", "channelOpenWriteCompletedMillis",
                         "channelOpenReply", "channelOpenReplyMillis", "channelOpenFailureReason", "channelOpenSnapshotPhase",
@@ -8357,6 +8365,15 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             .filter(line -> line.matches("(?:code|category|problem\\[[0-9]+\\]\\.(?:code|category))=[A-Z0-9_]+")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:contentCharacters|auxiliaryTextCharacters|inputTokens|outputTokens|cachedInputTokens|cacheMissInputTokens|reasoningOutputTokens|jsonErrorLine|jsonErrorColumn|elapsedMillis|timeoutMillis|scriptBytes|stdinBytes|remoteWindow(?:Open|Failure)(?:MaxSize|Size|PacketSize))=[0-9]{1,12}")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.channelOpenObservation=(?:AVAILABLE|UNAVAILABLE)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:execRequestObservation|transportSocketReadObservation)=(?:NOT_OBSERVED|AVAILABLE|UNAVAILABLE)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.execRequestWriteState=(?:NOT_OBSERVED|PENDING|WRITTEN|FAILED)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.execRequestWriteFailureType=(?:UNKNOWN|CHANNEL_OPEN|CANCELLATION|TIMEOUT|IO|OTHER)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:execRequestWantReply|transportSocketReadPending)=(?:UNKNOWN|true|false)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.execRequestPeerAcceptance=UNKNOWN")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.transportSocketReadCoverage=(?:CALLBACK_ONLY|FUTURE_UNOBSERVED|HANDLER_UNOBSERVED)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.transportSocketReadLastResult=(?:NOT_OBSERVED|UNKNOWN|DATA|ZERO|EOF|FAILED|THREW)")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:execRequestWrite(?:Started|Completed)Millis|transportSocketRead(?:Attempts|Returned|Completed|Failed|Thrown|FutureAttempts|ActiveCalls|AwaitingCallbacks|Last(?:Attempt|Return|Completion)AgeMillis))=(?:UNKNOWN|[0-9]{1,12})")
+                || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.channelOpenWorkerSnapshotCommandPhase=(?:CHANNEL_OPENING|WAITING_FOR_EXIT)")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:channelOpenWriteState)=(?:NOT_OBSERVED|PENDING|WRITTEN|FAILED)")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:channelOpenWriteFailureType|channelOpenFutureFailureType)=(?:UNKNOWN|CHANNEL_OPEN|CANCELLATION|TIMEOUT|IO|OTHER)")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.channelOpenReply=(?:NOT_OBSERVED|CONFIRMATION|FAILURE)")

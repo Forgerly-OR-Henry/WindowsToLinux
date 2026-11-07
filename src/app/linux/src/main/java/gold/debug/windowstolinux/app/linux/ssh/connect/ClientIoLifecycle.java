@@ -186,7 +186,10 @@ final class ClientIoLifecycle extends AbstractIoServiceFactoryFactory {
                     // SSHD 2.14.0 仅在构造器保存具体工厂，并仅在此扩展点读取它。
                     // The same session is constructed without an unused factory or NoClose group.
                     // 此处直接创建相同会话，不创建未使用的工厂或 NoClose 群组。
-                    return new Nio2Session(this, properties, actualHandler, socket, null);
+                    var observedSocket = new SshSocketReadDiagnostics(socket);
+                    var session = new Nio2Session(this, properties, actualHandler, observedSocket, null);
+                    observedSocket.attach(session);
+                    return session;
                 }
             };
             connector.setIoServiceEventListener(listener);

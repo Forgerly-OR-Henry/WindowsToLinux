@@ -73,6 +73,7 @@ final class SshCommandDiagnostics implements SessionListener {
             var state = session.getKexState();
             facts.put("transportKeyExchangeState", state == null ? "UNKNOWN" : state.name());
             SshReadDiagnostics.appendTo(reading, facts);
+            SshSocketReadDiagnostics.appendTo(session.getIoSession(), facts);
             facts.put("transportReadCallbacksAtCommandStart", reading == null ? "UNKNOWN"
                 : Long.toString(readCallbacksAtCommandStart));
             facts.put("transportReadCallbacksDuringCommand", reading == null ? "UNKNOWN"

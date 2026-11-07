@@ -43,6 +43,61 @@ class ChannelOpenMetadataTest {
         }
     }
 
+    @Test void execWriteUsesConfirmedPeerChannelAndLeavesPacketsUntouched() {
+        var metadata = new ChannelOpenMetadata(7, System.nanoTime() - Duration.ofSeconds(2).toNanos());
+        var exec = new ByteArrayBuffer(); exec.putByte((byte) 98); exec.putUInt(0xffffffffL);
+        exec.putString("exec"); exec.putBoolean(false); exec.putString("private command body");
+        assertFalse(metadata.execWriting(exec), "No peer channel before open confirmation");
+        assertEquals("NOT_OBSERVED", facts(metadata).get("execRequestObservation"));
+        metadata.received(packet(91, 7));
+        byte[] bytes = exec.array().clone(); int rpos = exec.rpos(), wpos = exec.wpos();
+        assertTrue(metadata.execWriting(exec));
+        assertArrayEquals(bytes, exec.array()); assertEquals(rpos, exec.rpos()); assertEquals(wpos, exec.wpos());
+        var other = new ByteArrayBuffer(); other.putByte((byte) 98); other.putUInt(6);
+        other.putString("exec"); other.putBoolean(false); other.putString("private other");
+        assertFalse(metadata.execWriting(other));
+        var auth = new ByteArrayBuffer() { @Override public long rawUInt(int p) { throw new AssertionError("AUTH fields must not be read"); } };
+        auth.putByte((byte) 50); auth.putRawBytes(new byte[30]); assertFalse(metadata.execWriting(auth));
+        var pending = new SshExecReadObservationTest.PendingWrite(); metadata.execWritten(pending);
+        assertEquals("PENDING", facts(metadata).get("execRequestWriteState"));
+        pending.written(); metadata.execWritten(pending);
+        var facts = facts(metadata);
+        assertEquals("WRITTEN", facts.get("execRequestWriteState"));
+        assertEquals("NOT_OBSERVED", facts.get("channelOpenWriteState"), "The two writes remain independent");
+        assertEquals("UNKNOWN", facts.get("execRequestPeerAcceptance"));
+        assertEquals("false", facts.get("execRequestWantReply"));
+        for (String key : List.of("execRequestWriteStartedMillis", "execRequestWriteCompletedMillis"))
+            assertTrue(Long.parseLong(facts.get(key)) >= 2000, "Command-relative monotonic origin");
+        assertFalse(facts.toString().contains("private"));
+    }
+
+    @Test void execFutureAndSynchronousFailuresRetainNoExceptionBodyOrPacket() {
+        for (boolean asynchronous : List.of(false, true)) {
+            var metadata = new ChannelOpenMetadata(7, System.nanoTime()); metadata.received(packet(91, 7));
+            var exec = new ByteArrayBuffer(); exec.putByte((byte) 98); exec.putUInt(0xffffffffL);
+            exec.putString("exec"); exec.putBoolean(true); exec.putString("private");
+            assertTrue(metadata.execWriting(exec));
+            var original = new IOException() {
+                @Override public String getMessage() { throw new AssertionError("No exception message"); }
+                @Override public StackTraceElement[] getStackTrace() { throw new AssertionError("No exception stack"); }
+            };
+            if (asynchronous) {
+                var future = new SshExecReadObservationTest.PendingWrite(); future.failed(original); metadata.execWritten(future);
+            } else metadata.execWriteFailed(original);
+            var facts = facts(metadata);
+            assertEquals("FAILED", facts.get("execRequestWriteState"));
+            assertEquals("IO", facts.get("execRequestWriteFailureType"));
+            assertEquals("UNKNOWN", facts.get("execRequestPeerAcceptance"));
+            assertEquals("true", facts.get("execRequestWantReply"));
+            var broken = new ByteArrayBuffer() { @Override public byte rawByte(int p) { throw new IllegalArgumentException("private"); } };
+            broken.putRawBytes(new byte[30]); assertFalse(metadata.execWriting(broken));
+            assertEquals("UNAVAILABLE", facts(metadata).get("execRequestObservation"));
+            assertFalse(facts(metadata).toString().contains("private"));
+            for (var field : ChannelOpenMetadata.class.getDeclaredFields())
+                assertFalse(Buffer.class.isAssignableFrom(field.getType()));
+        }
+    }
+
     @Test void exactPacketsAreNonMutatingAndOtherChannelsAndAuthAreIgnored() {
         var metadata = new ChannelOpenMetadata(7, System.nanoTime());
         var other = new ChannelOpenMetadata(8, System.nanoTime());
