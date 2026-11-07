@@ -45,6 +45,21 @@ def wheel():
 WHEEL = wheel()
 WHEEL_SHA = hashlib.sha256(WHEEL).hexdigest()
 METADATA_SHA = hashlib.sha256(METADATA).hexdigest()
+MIXED_PREFIX = '\r' * 2048 + '\v\f\u0085\u2028\n'
+
+
+def simple_anchor(link, style='standard'):
+    href = html.escape(link + '#sha256=' + WHEEL_SHA, quote=True)
+    attributes = (' data-requires-python="&gt;=3.8" data-core-metadata="sha256=' + METADATA_SHA
+                  + '" data-dist-info-metadata="sha256=' + METADATA_SHA + '"')
+    if style == 'slash':
+        return '<a/href="' + href + '"' + attributes + '>' + NAME + '</a>'
+    if style == 'adjacent':
+        return '<a href="ignored.whl"href="' + href + '"' + attributes + '>' + NAME + '</a>'
+    if style == 'quoted_attr':
+        return '<a title=\'note href="untouched.whl"\' data-empty href="' + href + '"' + attributes + '>' + NAME + '</a>'
+    prefix = MIXED_PREFIX if style == 'mixed_newline' else ''
+    return prefix + '<a href="' + href + '"' + attributes + '>' + NAME + '</a>'
 
 
 def identity(pid):
@@ -79,7 +94,7 @@ class Fixture(http.server.BaseHTTPRequestHandler):
             self.send_error(404)
             return
         if path.endswith('/simple/example/'):
-            link = 'https://python.invalid/packages/' + NAME + self.server.query
+            link = self.server.origin + 'packages/' + NAME + self.server.query
             if self.server.mode == 'json':
                 data = json.dumps({'meta': {'api-version': '1.1'}, 'name': 'example', 'files': [{
                     'filename': NAME, 'url': link, 'hashes': {'sha256': WHEEL_SHA},
@@ -87,9 +102,7 @@ class Fixture(http.server.BaseHTTPRequestHandler):
                     'core-metadata': {'sha256': METADATA_SHA}}]}).encode()
                 content = 'application/vnd.pypi.simple.v1+json'
             else:
-                data = ('<!doctype html><a href="' + html.escape(link + '#sha256=' + WHEEL_SHA, quote=True)
-                        + '" data-requires-python="&gt;=3.8" data-core-metadata="sha256=' + METADATA_SHA
-                        + '" data-dist-info-metadata="sha256=' + METADATA_SHA + '">' + NAME + '</a>').encode()
+                data = ('<!doctype html>' + simple_anchor(link, self.server.style)).encode()
                 content = 'text/html; charset=utf-8'
         elif path.endswith('/' + NAME + '.metadata'):
             data = b'corrupt metadata' if self.server.corrupt_metadata else METADATA
@@ -114,6 +127,7 @@ class PythonIndexTests(unittest.TestCase):
         self.server.daemon_threads = False
         self.server.mode, self.server.seen, self.server.corrupt_metadata = 'html', [], False
         self.server.query = '?ticket=a%2Fb&mode=one'
+        self.server.origin, self.server.style = 'https://python.invalid/', 'standard'
         self.thread = threading.Thread(target=self.server.serve_forever)
         self.thread.start()
         self.actors = []
@@ -133,9 +147,9 @@ class PythonIndexTests(unittest.TestCase):
         root = 'http://127.0.0.1:' + str(self.server.server_port)
         entries = [{'providerId': name, 'protocol': 'HTTP', 'baseUrl': root + '/' + name + '/simple/',
                     'allowedHosts': ['127.0.0.1'], 'official': False, 'custom': True,
-                    'sourceOrigins': ['https://python.invalid/simple/', 'https://python.invalid/packages/'],
-                    'routes': [{'origin': 'https://python.invalid/simple/', 'prefix': root + '/' + name + '/simple/'},
-                               {'origin': 'https://python.invalid/packages/', 'prefix': root + '/' + name + '/packages/'}]}
+                    'sourceOrigins': [self.server.origin + 'simple/', self.server.origin + 'packages/'],
+                    'routes': [{'origin': self.server.origin + 'simple/', 'prefix': root + '/' + name + '/simple/'},
+                               {'origin': self.server.origin + 'packages/', 'prefix': root + '/' + name + '/packages/'}]}
                    for name in sources]
         return Policy({'formatVersion': 1, 'points': {'PYTHON_PACKAGE': entries}, 'timeouts': {
             'connectSeconds': 2, 'readSeconds': 4, 'noProgressSeconds': 4,
@@ -149,15 +163,19 @@ class PythonIndexTests(unittest.TestCase):
         self.assertEqual(-1, gateway.server.socket.fileno())
         print('PYTHON_INDEX_CLOSURE gatewayThreadExited=true gatewaySocketClosed=true', flush=True)
 
-    def install_named(self, mode, expected_hash=WHEEL_SHA):
+    def install_named(self, mode, expected_hash=WHEEL_SHA, style='standard', loopback_origin=False):
         self.server.mode = mode
         self.server.query = ''
+        self.server.style = style
+        self.server.seen.clear()
+        if loopback_origin:
+            self.server.origin = 'http://127.0.0.1:' + str(self.server.server_port) + '/origin/'
         lock = self.path / 'requirements.lock'
         locked = ('example==1.0 --hash=sha256:' + expected_hash + '\n').encode()
         lock.write_bytes(locked)
         original = self.path / NAME
         original.write_bytes(WHEEL)
-        target = self.path / 'installed'
+        target = self.path / ('installed-' + style)
         native_popen = subprocess.Popen
         def tracked(*args, **kwargs):
             process = native_popen(*args, **kwargs)
@@ -199,6 +217,39 @@ class PythonIndexTests(unittest.TestCase):
 
     def test_named_index_still_rejects_a_nonmatching_lock_hash(self):
         self.install_named('html', '0' * 64)
+
+    def test_named_html_lexical_variants_install_without_upstream_bypass(self):
+        for style in ('slash', 'adjacent', 'quoted_attr', 'mixed_newline'):
+            with self.subTest(style=style):
+                self.install_named('html', style=style, loopback_origin=True)
+
+    def test_html_rewrite_matches_parser_attributes_positions_and_pip_links(self):
+        from pip._internal.index.collector import IndexContent, parse_links
+        class Anchors(html.parser.HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.anchors = []
+            def handle_starttag(self, tag, attrs):
+                if tag == 'a':
+                    self.anchors.append((self.getpos(), dict(attrs)))
+        with self.gateway() as gateway:
+            for style in ('slash', 'adjacent', 'quoted_attr', 'mixed_newline'):
+                with self.subTest(style=style):
+                    source = simple_anchor('https://python.invalid/packages/' + NAME, style)
+                    parser = Anchors(); parser.feed(source)
+                    rewritten = gateway.rewrite_python_html(source, 'https://python.invalid/simple/example/')
+                    changed = Anchors(); changed.feed(rewritten)
+                    self.assertEqual(1, len(changed.anchors))
+                    original_attributes, changed_attributes = parser.anchors[0][1], changed.anchors[0][1]
+                    self.assertEqual({key: value for key, value in original_attributes.items() if key != 'href'},
+                                     {key: value for key, value in changed_attributes.items() if key != 'href'})
+                    local = changed_attributes['href']
+                    self.assertTrue(local.startswith(gateway.base + '/PYTHON_PACKAGE/f/'))
+                    page = IndexContent(rewritten.encode(), 'text/html', 'utf-8', gateway.root('PYTHON_PACKAGE'), cache_link_parsing=False)
+                    self.assertEqual([local], [link.url for link in parse_links(page)])
+                    if style == 'mixed_newline':
+                        self.assertEqual((2, 0), parser.anchors[0][0])
+                        self.assertTrue(rewritten.startswith(MIXED_PREFIX))
 
     def first_link(self, gateway, mode):
         self.server.mode = mode

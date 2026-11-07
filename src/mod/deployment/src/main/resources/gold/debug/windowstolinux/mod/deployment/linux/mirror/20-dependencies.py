@@ -153,12 +153,14 @@ class RepositoryGateway:
 
     def rewrite_python_html(self, text, original):
         gateway, replacements = self, []
-        lines = text.splitlines(keepends=True)
-        offsets = [0]
-        for line in lines:
-            offsets.append(offsets[-1] + len(line))
+        offsets = [0] + [match.end() for match in re.finditer('\n', text)]
         class Links(html.parser.HTMLParser):
             def handle_starttag(self, tag, attributes):
+                self.rewrite(tag, attributes, False)
+            def handle_startendtag(self, tag, attributes):
+                self.rewrite(tag, attributes, True)
+            def rewrite(self, tag, attributes, closed):
+                # Match pip's last-attribute semantics without re-lexing raw tag text.
                 attributes = dict(attributes)
                 if tag != 'a' or not attributes.get('href'):
                     return
@@ -170,12 +172,13 @@ class RepositoryGateway:
                 local = gateway.link('PYTHON_PACKAGE', value, algorithm, digests.get(algorithm), declaration)
                 local += '#' + fragment if fragment else ''
                 raw = self.get_starttag_text()
-                rewritten = re.sub(r'''(?<!\S)href\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)''',
-                                   lambda match: 'href="' + html.escape(local, quote=True) + '"', raw, flags=re.I)
+                attributes['href'] = local
+                rewritten = '<a' + ''.join(' ' + html.escape(key, quote=True)
+                    + ('' if value is None else '="' + html.escape(value, quote=True) + '"')
+                    for key, value in attributes.items()) + (' />' if closed else '>')
                 line, column = self.getpos()
                 start = offsets[line - 1] + column
                 replacements.append((start, start + len(raw), rewritten))
-            handle_startendtag = handle_starttag
         parser = Links(convert_charrefs=True)
         parser.feed(text)
         parser.close()

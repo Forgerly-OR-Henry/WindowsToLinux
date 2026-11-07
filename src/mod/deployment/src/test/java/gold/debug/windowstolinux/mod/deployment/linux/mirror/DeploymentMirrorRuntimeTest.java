@@ -24,6 +24,20 @@ import gold.debug.windowstolinux.mod.deployment.service.mirror.MirrorSettings;
 final class DeploymentMirrorRuntimeTest {
     @Test
     void pythonNamedIndexesPreserveArtifactNamesAndMetadataBindings() throws Exception {
+        runPythonIndexFixture(List.of(), 11);
+    }
+
+    @Test
+    void pythonHtmlIndexUsesParserConsistentAttributesAndOffsets() throws Exception {
+        runPythonIndexFixture(List.of(
+            "PythonIndexTests.test_named_html_lexical_variants_install_without_upstream_bypass",
+            "PythonIndexTests.test_html_rewrite_matches_parser_attributes_positions_and_pip_links",
+            "PythonIndexTests.test_named_html_index_installs_unchanged_hashed_wheel",
+            "PythonIndexTests.test_named_index_still_rejects_a_nonmatching_lock_hash",
+            "PythonIndexTests.test_percent_encoding_html_entities_relative_json_and_metadata_query_binding"), 5);
+    }
+
+    private void runPythonIndexFixture(List<String> selected, int count) throws Exception {
         Path ownTmp = Path.of(System.getenv("TEMP")).toAbsolutePath();
         Path directory = Files.createTempDirectory(ownTmp, "python-named-index-");
         Path cwd = Path.of("").toAbsolutePath();
@@ -40,6 +54,7 @@ final class DeploymentMirrorRuntimeTest {
             else if (System.getProperty("os.name").startsWith("Windows")) command.addAll(List.of("py", "-3"));
             else command.add("python3");
             command.addAll(List.of("-B", test.toString(), runtime.toString()));
+            command.addAll(selected);
             var self = ProcessHandle.current();
             System.out.println("PYTHON_INDEX_JVM pid=" + self.pid() + " birth="
                 + self.info().startInstant().map(instant -> new java.time.format.DateTimeFormatterBuilder()
@@ -65,7 +80,7 @@ final class DeploymentMirrorRuntimeTest {
                 System.out.println(output);
                 assertTrue(finished, "Python named-index fixture exceeded its bounded wait\n" + output);
                 assertEquals(0, process.exitValue(), output);
-                assertTrue(output.contains("Ran 9 tests"), output);
+                assertTrue(output.contains("Ran " + count + " tests"), output);
                 assertTrue(output.contains("OK"), output);
             } finally {
                 if (process.isAlive()) {
