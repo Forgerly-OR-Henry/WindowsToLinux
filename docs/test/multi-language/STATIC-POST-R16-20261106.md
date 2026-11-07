@@ -1,6 +1,6 @@
 # R16 后独立 STATIC 验证记录
 
-当前为 **S26 本地修复已父审接受，正在准备新冻结的有限公开输入**。S25 保留 PASS3／FAILED1／UNLAUNCHED4；S26 尚未开始服务器四阶段准备或八项业务，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
+当前为 **S26 全新四阶段准备已通过，第一项 TaskBoard 原次正在运行**，完整业务仍为0/8，后七项未放行。S25 保留 PASS3／FAILED1／UNLAUNCHED4，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
 
 此前 S24 为 PASS0／FAILED1／后七项未启动，START 任务保持 UNKNOWN；S23、S22 各为 PASS2／FAILED1／后五项未启动，S21 首项失败且部署 UNKNOWN，S20 为 PASS1／FAILED1／后六项未启动。各轮失败和准备证据独立保留。S17 之后的 S 编号为独立 STATIC 版本，AI 辅助验收的 R17 尚未启动。用户要求的顺序为：完成 R16 原八项，再运行独立 STATIC 验证；静态问题修复并验证正常后，才返回 AI 辅助测试。R16 原八项已封存，首过仍为 **0/8**；其 FAILED、UNKNOWN 和资格 false 不由本阶段改判。实时进展见 [CURRENT](../../../.ai-workspace/progress/CURRENT.md)。
 
@@ -18,7 +18,7 @@
 | S23 `f028e006…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard、FileTransfer 完整原次 PASS；AssetLending FAILED，后五项未启动 | nupkg digest-mismatch→502；本轮封存2/8，AI R17 未启动 |
 | S24 `933b81bc…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | TaskBoard 原次 FAILED，START root UNKNOWN；后七项未启动 | 仅发布、业务与CLEAN未达；本轮封存0/8，AI R17 未启动 |
 | S25 `f43f4904…` | 全新四阶段均通过，完整 after 与本轮 apply.postInventory 相同 | 前三项完整 PASS；CsvInspector FAILED，后四项未启动 | Python 包索引构建失败；封存3/8，异常自有 TMP 已闭合 |
-| S26 `350dc785…` | 尚未开始 | 八项均未启动 | 本地索引修复与相关定点检查完成；待新冻结和完整四阶段 |
+| S26 `350dc785…` | 全新四阶段均通过，独立 after 与本轮 apply.postInventory 全14字段及59748原字节相同 | 第一项 TaskBoard 原次运行中，后七项未放行 | 完整业务0/8，AI R17 未启动 |
 
 前两次 STATIC 的原件分别保留于 [ROOT16 执行证据](../../../.ai-workspace/evidence/post-r16-static-execution-owner-20261106-01/)和 [S16 执行证据](../../../.ai-workspace/evidence/post-r16-static-repair-execution-owner-20261106-01/)。S17 的原件见 [执行证据](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-owner-20261106-01/)及 [父封存审查](../../../.ai-workspace/evidence/post-r16-static-cdn-execution-inputs-20261106-01/s17-preparation-incomplete.PARENT-REVIEW.json)，后者 SHA256 为 `fdd38e32bf67d1a4984cca4941814f883286004f015220621d291680a26ac356`。这些版本各自独立，不拼接准备阶段、通过项或计划。
 
@@ -202,7 +202,17 @@ AssetLending原session30085由 `c579bd` 实际exit1结束，新JUnit **1/1/0/0**
 
 [父代码审查](../../../.ai-workspace/evidence/static-python-index-filename-fix-20261107-01/S26-code.PARENT-REVIEW.json)接受本地修复，SHA256 `6ebe89500d971242caddcf1cc20dbdc39fa50c277e319012d68db8204d00dbdf`；[追加交付报告](../../../.ai-workspace/evidence/static-python-index-filename-fix-20261107-01/S26-python-index-html-lexical-followup.md)保留验证明细。[公开产物证明](../../../.ai-workspace/evidence/static-python-index-filename-fix-20261107-01/44-html-source-target-jar-proof.json)中10个资源的 source／target／JAR、5个生产类的 target／JAR 及8个包／元数据文件已由父审重新逐项核对。最终 helper 为570687字节、SHA256 `2093fa548ed6036e44762969ed49b60e2758453c34067e4feb9ca406c1389123`，runtime 为182350字节、SHA256 `ea2f01ae6e7614bf195359c63701d1c18f2dea27a300b4a7cd9ea225b75d71c6`；旧中间身份不用于新冻结。
 
-两次本地验证分别记录的42和26个已知 actor 均为 PID_ABSENT，自有 TMP 已清理。Java startInstant 仅为毫秒精度派生，不冒充独立 Win32 FILETIME 观测；未记录的内部 JVM 身份仍 UNKNOWN。此为有限公开代码及产物审查，尚不证明完整编译树、私有输入或服务器 STATIC 通过。下一步仍须全新冻结、完整四阶段和从 TaskBoard 开始的固定八项。
+两次本地验证分别记录的42和26个已知 actor 均为 PID_ABSENT，自有 TMP 已清理。Java startInstant 仅为毫秒精度派生，不冒充独立 Win32 FILETIME 观测；未记录的内部 JVM 身份仍 UNKNOWN。此为有限公开代码及产物审查，尚不证明完整编译树、私有输入或服务器 STATIC 通过。该次本地审查结束时服务器尚未启动；之后的新冻结与完整准备见下一节。
+
+## S26 全新四阶段与第一项原次
+
+新冻结只接受有限公开输入，未声明整棵 compiled 或私有状态冻结。父独立核299文件 pins、54项有序类路径、66个精确 JAR 条目、7份候选完整字节逆向及5份控制的语法；[配置父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/configuration-and-public-inputs.PARENT-REVIEW.json) SHA256 `4a1c2c7560dc1f2d9b01404575c84a0da57b900a6163cffd78c9be484d859cdc`。纯解析生成时的路径边界错误、父 WindowsApps 宿主启动失败和辅助元数据检查错误均保留，不计为业务原次，也未重放任何已消费测试。
+
+inventory、plan、精确 apply、独立 after 四阶段各一个原次，原工具及 native 等待均exit0，新 JUnit 各1/0/0/0，16个已记录原出生身份及自有 TMP 闭合；plan 的 bootstrap PID 曾复用，由不同的精确 Win32 FILETIME 证明原身份消失，未终止该进程。内部 JVM 身份 UNKNOWN。新计划的36个非 essential 开发构建包与148个核心包无交集，23个 essential 包均保留；仅审定的6个产品账号及组、7个服务、8个 unitFiles、8个产品目录根（其中5个存在）在范围内。apply 实际摘要为清理36包、6账号、5目录根、7个 unitFiles、停止7服务及清空APT缓存，保留其7个 unitFiles实报，不改写为计划的8个。
+
+清理后660个包的完整记录和顺序与原696包减去计划内36包一致，core、formatVersion、host 原始字段不变。独立 after 与本轮 apply.postInventory 全14字段 GetRawText 及全部59748个 UTF-8 原字节完全相同，未排除、归一或转换数值。见[四阶段父审](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/four-phase-preparation.PARENT-REVIEW.json) SHA256 `7be30f42f26dcf680e87e4f973e7fe1facc3cd0ad4c3e8a2b580b311bcfca775`，以及[完整原字节比较](../../../.ai-workspace/evidence/post-r16-static-python-index-execution-inputs-20261107-01/independent-after-vs-apply-post.PARENT-COMPARISON.json) SHA256 `417b846282534789c5124fa5c2a492c803163aa4878a2e202425d7462038c4f2`。
+
+首项 TaskBoard 新独立职责原次 `90dc49/session43846` 已启动；原60分钟、HTTP任务创建及正数id、STOP／START／RESTART后标题持久化、modelCalls=0和同应用finally STOPPED／DISABLED断言保持。尚无完整原次终态及收尾，不提前计PASS；后七项与AI未放行。旧S25前三PASS不拼入本轮。
 
 ## 后续验收条件
 
