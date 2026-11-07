@@ -31,10 +31,22 @@ final class SshSocketReadDiagnostics extends AsynchronousSocketChannel {
     }
 
     static Snapshot snapshot(IoSession session) {
+        return observe(session).snapshot();
+    }
+
+    static Observation observe(IoSession session) {
         try {
-            if (session != null && session.getAttribute(KEY) instanceof Progress observed) return observed.snapshot();
-            return new Snapshot("NOT_OBSERVED", Map.of(), 0, 0, 0, 0);
-        } catch (RuntimeException unavailable) { return new Snapshot("UNAVAILABLE", Map.of(), 0, 0, 0, 0); }
+            if (session != null && session.getAttribute(KEY) instanceof Progress observed)
+                return new Observation(observed, "AVAILABLE");
+            return new Observation(null, "NOT_OBSERVED");
+        } catch (RuntimeException unavailable) { return new Observation(null, "UNAVAILABLE"); }
+    }
+
+    /** Keeps only scalar progress alive when NIO2 clears its session attributes after close. */
+    record Observation(Progress progress, String observation) {
+        Snapshot snapshot() {
+            return progress == null ? new Snapshot(observation, Map.of(), 0, 0, 0, 0) : progress.snapshot();
+        }
     }
 
     /** One immutable session-wide sample; a TCP read is never attributed to an SSH channel. */

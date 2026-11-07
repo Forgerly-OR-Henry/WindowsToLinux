@@ -6,9 +6,11 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.Set;
 
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import org.apache.sshd.client.session.ClientSession;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -60,6 +62,58 @@ class SshCommandDiagnosticsTest {
             assertEquals("false", facts.get("exitObserved"));
             assertFalse(result.toString().contains("private"));
             assertEquals(1, fixture.calls.get());
+        }
+    }
+
+    @Test
+    void closedLoopbackSessionRetainsSocketObservationAfterIoAttributesAreCleared() throws Exception {
+        try (var fixture = new SshCommandExecutionTest.WireFixture(directory, command -> {
+            command.input.readAllBytes();
+            command.channel.getSession().getIoSession().close(true);
+        }); var connector = new SshConnector();
+             var connection = SshCommandExecutionTest.connect(connector, fixture.server)) {
+            var field = connection.getClass().getDeclaredField("session");
+            field.setAccessible(true);
+            var session = (ClientSession) field.get(connection);
+            var io = session.getIoSession();
+            var diagnostic = new SshCommandDiagnostics();
+            diagnostic.attach(session);
+            try {
+                var before = new LinkedHashMap<String, String>();
+                diagnostic.appendTo(before);
+                assertEquals("AVAILABLE", before.get("transportSocketReadObservation"));
+                var result = connection.execute(new CommandRequest("private author script", new byte[0],
+                    Duration.ofSeconds(3), 100), () -> false);
+                assertEquals(TaskResult.UNKNOWN, result.outcome());
+                assertEquals("SSH_COMMAND_EXIT_UNKNOWN", result.problem().orElseThrow().eventCode());
+                assertEquals(1, fixture.calls.get());
+                assertTrue(session.close(true).awaitUninterruptibly(Duration.ofSeconds(2)));
+                // SSHD completes its close future before clearing the NIO2 attributes.
+                long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+                while (!SshSocketReadDiagnostics.snapshot(io).observation().equals("NOT_OBSERVED")
+                    && System.nanoTime() < deadline)
+                    Thread.sleep(1);
+                assertEquals("NOT_OBSERVED", SshSocketReadDiagnostics.snapshot(io).observation());
+                assertNull(SshReadDiagnostics.reading(io));
+
+                var after = new LinkedHashMap<String, String>();
+                diagnostic.appendTo(after);
+                assertEquals("AVAILABLE", after.get("transportSocketReadObservation"), after.toString());
+                assertEquals(before.get("transportSocketReadAttemptsAtCommandStart"),
+                    after.get("transportSocketReadAttemptsAtCommandStart"));
+                assertTrue(Long.parseLong(after.get("transportSocketReadCompletedDuringCommand"))
+                    + Long.parseLong(after.get("transportSocketReadFailedDuringCommand")) > 0);
+                // A raw TCP close may deliver EOF or a reset, depending on the provider.
+                assertTrue(Set.of("EOF", "FAILED").contains(after.get("transportSocketReadLastResult")));
+                assertEquals("false", after.get("transportSocketReadPending"));
+                assertEquals("true", after.get("sessionCloseObserved"));
+                assertEquals("false", after.get("disconnectObserved"));
+                assertEquals("UNKNOWN", after.get("disconnectInitiatorLocal"));
+                assertFalse(after.toString().contains("private"));
+                assertFalse(after.toString().contains("127.0.0.1"));
+            } finally {
+                diagnostic.close();
+            }
         }
     }
 
