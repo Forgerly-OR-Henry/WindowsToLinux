@@ -178,7 +178,9 @@ AssetLending原session30085由 `c579bd` 实际exit1结束，新JUnit **1/1/0/0**
 
 首TaskBoard新独立职责原次 `3caa38/session31542 → cc4b22` 实际exit0，新JUnit1/0/0/0（1407.406秒，SHA`456d93b706fff81cf0b07a53240c29e6beee1dfa5b93a098fed34d93d8fb10f8`）。同一应用`wtl-static-task-board-vfepho590/static-live`的PUBLISHED、真实HTTP／跨语言流程／重启／持久化BUSINESS、PASS modelCalls=0、finally CLEAN stopped/disabled齐全。原native／Python／controller各实际wait0；正常closeout `9913cd` 实际0，四个精确出生身份均gone，自有TMP闭合，normal／证据保留，内部JVM UNKNOWN。见[首项完整父审](../../../.ai-workspace/evidence/post-r16-static-ssh-observation-execution-inputs-20261107-01/task-board-result.PARENT-REVIEW.json) SHA`363071b32b531700cb77e8c8ee9fe5cbfb8a82ac1edce30a7c6cfa9b81d83930`。额外post-closure汇总helper因过严testcase名称谓词失败56d544，未生成汇总，不重跑原业务或closure；[该辅助错误原件](../../../.ai-workspace/evidence/post-r16-static-ssh-observation-execution-owner-20261107-01/task-board-post-closure-summary-helper-error.ACTUAL-TOOL.json)保留，不改判原次完整通过。
 
-本轮完整1/8。现仅第二FileTransfer获单项放行，由新独立职责执行原65536随机字节HTTP上传／下载／重启后下载相等流程，尚无第二项完整结果；后六项及AI未放行。不拼旧轮PASS，原失败／UNKNOWN／false eligibility均保留，AI R17未启动。
+第二FileTransfer独立职责原次 `51eb62/session89008 → 082e57` 实际exit0，新JUnit1/0/0/0（805.997秒，SHA`2231cab2f5974aafd06a71e6f44f92cc42dcc6ecd2768f8a1e7c8e4347886eeb`）。原65536随机字节HTTP上传／下载相等、产品重启后再次下载相等断言通过；同应用`wtl-static-file-transfer-w356lxbq8/static-live`的PUBLISHED／BUSINESS／PASS modelCalls=0／finally CLEAN stopped/disabled齐全。原native／Python／controller各实际wait0，正常closeout `619b22` 实际0；四个精确出生身份均gone，自有TMP闭合，normal／证据保留，内部JVM UNKNOWN。见[第二项完整父审](../../../.ai-workspace/evidence/post-r16-static-ssh-observation-execution-inputs-20261107-01/file-transfer-result.PARENT-REVIEW.json) SHA`245aa58e6c5936a003c739ca70ae6ed19972ac15e1ccee6f2bbef475b7ea9467`。父首次辅助汇总误读原工具包装层字段的错误保留，按实际schema修正，未重跑原业务或closeout。
+
+本轮完整2/8。现仅第三AssetLending获单项放行，由新独立职责执行，尚无第三项结果；后五项及AI未放行。不拼旧轮PASS，原失败／UNKNOWN／false eligibility均保留，AI R17未启动。
 
 ## 后续验收条件
 
