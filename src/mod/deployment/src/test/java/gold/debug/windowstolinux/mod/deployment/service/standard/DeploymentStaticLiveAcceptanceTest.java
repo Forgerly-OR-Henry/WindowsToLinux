@@ -7000,7 +7000,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                     if (problem.eventCode().matches("[A-Z][A-Z0-9_]{0,95}"))
                         remoteDiagnosticLine(sink, prefix + " event=" + problem.eventCode());
                     problem.diagnosticId().ifPresent(diagnostic -> remoteDiagnosticLine(sink, prefix + " diagnostic=" + diagnostic));
-                    for (var key : List.of("channelOpenWorkerSnapshotStartedMillis", "channelOpenWorkerSnapshotCompletedMillis",
+                    var diagnosticKeys = new java.util.LinkedHashSet<>(List.of("channelOpenWorkerSnapshotStartedMillis", "channelOpenWorkerSnapshotCompletedMillis",
                         "channelOpenWorkerSnapshotCommandPhase", "execRequestObservation", "execRequestWriteState",
                         "execRequestWriteFailureType", "execRequestWriteStartedMillis", "execRequestWriteCompletedMillis",
                         "execRequestWantReply", "execRequestPeerAcceptance", "transportSocketReadObservation",
@@ -7025,7 +7025,10 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                         "elapsedMillis", "timeoutMillis", "scriptBytes", "stdinBytes", "frameWritePhase", "authorPayloadState",
                         "inputSenderCreated", "channelPeerAssigned", "commandOpenRequested", "channelOpenConfirmed", "channelClosed",
                         "sessionOpen", "sessionAuthenticated", "outputObserved", "exitObserved", "remoteWindowOpenMaxSize",
-                        "remoteWindowOpenSize", "remoteWindowOpenPacketSize", "remoteWindowFailureMaxSize", "remoteWindowFailureSize", "remoteWindowFailurePacketSize"))
+                        "remoteWindowOpenSize", "remoteWindowOpenPacketSize", "remoteWindowFailureMaxSize", "remoteWindowFailureSize", "remoteWindowFailurePacketSize"));
+                    diagnosticKeys.addAll(gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentPublishChannel
+                        .runtimeObservationDiagnostics(problem).keySet());
+                    for (var key : diagnosticKeys)
                         remoteContextDiagnostic(problem, key, index, prefix, sink);
                     for (int frame = 0; frame < 6; frame++) {
                         remoteContextDiagnostic(problem, "inputStack[" + frame + "]", index, prefix, sink);
@@ -8360,9 +8363,20 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         safeOriginalCallCauses(details).forEach(line -> System.out.println("STATIC_LIVE_CALL_CAUSE " + line));
     }
 
+    private static boolean safeRuntimeObservationFact(String line) {
+        if (line.length() > 384 || !line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.[A-Za-z0-9]+=[^\\r\\n]*")) return false;
+        int at = line.indexOf("context.") + "context.".length(), separator = line.indexOf('=', at);
+        String key = line.substring(at, separator), value = line.substring(separator + 1);
+        var problem = new Problem(gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNKNOWN,
+            "CONTROLLED_DIAGNOSTIC_PROJECTION", "Typed projection", Map.of(key, value), Optional.empty());
+        return gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentPublishChannel
+            .runtimeObservationDiagnostics(problem).containsKey(key);
+    }
+
     static List<String> safeOriginalCallCauses(String details) {
         return details.lines()
-            .filter(line -> line.matches("(?:code|category|problem\\[[0-9]+\\]\\.(?:code|category))=[A-Z0-9_]+")
+            .filter(line -> safeRuntimeObservationFact(line)
+                || line.matches("(?:code|category|problem\\[[0-9]+\\]\\.(?:code|category))=[A-Z0-9_]+")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:contentCharacters|auxiliaryTextCharacters|inputTokens|outputTokens|cachedInputTokens|cacheMissInputTokens|reasoningOutputTokens|jsonErrorLine|jsonErrorColumn|elapsedMillis|timeoutMillis|scriptBytes|stdinBytes|remoteWindow(?:Open|Failure)(?:MaxSize|Size|PacketSize))=[0-9]{1,12}")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.channelOpenObservation=(?:AVAILABLE|UNAVAILABLE)")
                 || line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:execRequestObservation|transportSocketReadObservation)=(?:NOT_OBSERVED|AVAILABLE|UNAVAILABLE)")

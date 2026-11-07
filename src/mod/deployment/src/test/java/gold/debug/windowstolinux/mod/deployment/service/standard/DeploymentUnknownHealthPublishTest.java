@@ -14,8 +14,9 @@ import gold.debug.windowstolinux.appapi.ai.*;
 import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
 import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
 import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
-import gold.debug.windowstolinux.appapi.ai.model.AiUsage;
 import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
@@ -32,11 +33,42 @@ import gold.debug.windowstolinux.mod.deployment.DeploymentStandardEntryFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.recovery.DeploymentStandardTaskRecovery;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.*;
+import gold.debug.windowstolinux.mod.deployment.config.mirror.MirrorCatalog;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /** Keeps unknown health outside diagnosis and re-publication, then reconciles real receipts. / 未知健康不进入诊断与重发，随后以真实回执核对。 */
 class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixture {
+    private static final String COMPATIBILITY_PROBE = """
+        set -eu
+        while IFS='=' read -r key value; do
+          [ "$key" = ID ] || continue
+          value="$(builtin printf '%s' "$value" | /usr/bin/tr -d '\\042\\047')"
+          case "$value" in ''|*[!a-z0-9_-]*) exit 64;; esac
+          builtin printf '%s\\n' "$value"
+          exit 0
+        done < /etc/os-release
+        exit 69
+        """;
+
+    /** Only the current fixed distribution query is added; other stdin bodies remain rejected by the peer. */
+    private static RemoteSession withFixedCompatibilityProbe(RemoteSession original) {
+        return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(), new Class<?>[]{RemoteSession.class},
+            (proxy, method, arguments) -> {
+                if (method.getName().equals("execute") && arguments[0] instanceof CommandRequest request
+                    && request.script().equals("/bin/bash --noprofile --norc -s")
+                    && java.util.Arrays.equals(request.stdin(), COMPATIBILITY_PROBE.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+                    assertNotNull(arguments[1]);
+                    assertEquals(java.time.Duration.ofSeconds(10), request.timeout());
+                    assertEquals(1024, request.outputLimitBytes());
+                    return success(new CommandResult(Optional.of(0), "ubuntu\n", "", false));
+                }
+                try { return method.invoke(original, arguments); }
+                catch (InvocationTargetException failure) { throw failure.getCause(); }
+            });
+    }
+
     @ParameterizedTest
     @ValueSource(ints = {1, 2})
     void unknownHealthRetainsOriginalResourcesWithoutAdviceOrReplay(int count) throws Exception {
@@ -49,6 +81,15 @@ class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixt
                     .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
                 "fixture-password".toCharArray());
             var original = runtime.modContexts().get(OWNER).context();
+            var catalog = MirrorCatalog.load();
+            var mirrorRows = new EnumMap<DownloadPoint, List<MirrorSettings.Row>>(DownloadPoint.class);
+            for (var point : DownloadPoint.values()) {
+                var official = catalog.providersFor(point).stream().filter(provider -> provider.official()).toList();
+                assertEquals(1, official.size());
+                mirrorRows.put(point, List.of(new MirrorSettings.Row(official.getFirst().id(), "", false, false, "")));
+            }
+            assertEquals(TaskResult.SUCCEEDED, new DeploymentMirrorTasks(original).save(new MirrorSettings(1, mirrorRows, Map.of()))
+                .completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             runtime.tasks().revokeOwnerServices(OWNER, VERSION);
             var tasks = runtime.tasks().bind(OWNER, VERSION, false);
             var peer = new DeploymentPublishStatePeer();
@@ -109,13 +150,16 @@ class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixt
                             throw new AssertionError(failure);
                         }
                     }
-                    return success(new AiResponse(response, "controlled-purpose", "stop",
-                        new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())));
+                    try {
+                        return success(DeploymentAssistedGoModelFixture.nativeResponse(request, "controlled-purpose", response));
+                    } catch (Exception invalidFixtureResponse) {
+                        throw new AssertionError(invalidFixtureResponse);
+                    }
                 }
             };
             LinuxService linux = new LinuxService() {
                 public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
-                    return peer.session(task);
+                    return withFixedCompatibilityProbe(peer.session(task));
                 }
 
                 public RemoteSession connect(RemoteTarget expected, TaskContext task) throws ApiException {
@@ -137,7 +181,7 @@ class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixt
                                 "DEPLOYMENT_TEST_WIRE_CHANGED",
                                 "The controlled transport rejects a different actual wire before any command",
                                 Map.of(), Optional.of(task.id())));
-                        return session;
+                        return withFixedCompatibilityProbe(session);
                     } catch (ApiException | RuntimeException | Error failure) {
                         try {
                             session.close();
@@ -178,7 +222,9 @@ class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixt
                 assertEquals(TaskState.UNKNOWN, handle.snapshot().state(),
                     () -> handle.snapshot() + " result=" + handle.completion().toCompletableFuture().getNow(null)
                         + "; remote commands=" + peer.builds.commands);
-                assertTrue(peer.builds.healthChecks > 0);
+                assertTrue(peer.builds.healthChecks > 0, () -> "Controlled health was not reached; state=" + handle.snapshot().state()
+                    + "; stage=" + handle.snapshot().progressText() + "; commands=" + peer.builds.commands.size()
+                    + "; mockFailureType=" + (peer.builds.lastFailure == null ? "NONE" : peer.builds.lastFailure.getClass().getName()));
                 assertFalse(peer.builds.present.isEmpty());
                 assertFalse(peer.maintenance.isEmpty());
                 assertEquals(0, diagnosis.get());

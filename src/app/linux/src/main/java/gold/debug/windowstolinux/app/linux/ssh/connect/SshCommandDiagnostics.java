@@ -23,10 +23,12 @@ final class SshCommandDiagnostics implements SessionListener {
     private SshReadDiagnostics.Reading reading;
 
     private long readCallbacksAtCommandStart;
+    private SshSocketReadDiagnostics.Snapshot socketAtCommandStart;
 
     void attach(ClientSession value) {
         session = value;
         reading = SshReadDiagnostics.reading(value.getIoSession());
+        socketAtCommandStart = SshSocketReadDiagnostics.snapshot(value.getIoSession());
         if (reading != null)
             readCallbacksAtCommandStart = reading.callbacks();
         value.addSessionListener(this);
@@ -73,7 +75,7 @@ final class SshCommandDiagnostics implements SessionListener {
             var state = session.getKexState();
             facts.put("transportKeyExchangeState", state == null ? "UNKNOWN" : state.name());
             SshReadDiagnostics.appendTo(reading, facts);
-            SshSocketReadDiagnostics.appendTo(session.getIoSession(), facts);
+            SshSocketReadDiagnostics.snapshot(session.getIoSession()).appendTo(facts, socketAtCommandStart);
             facts.put("transportReadCallbacksAtCommandStart", reading == null ? "UNKNOWN"
                 : Long.toString(readCallbacksAtCommandStart));
             facts.put("transportReadCallbacksDuringCommand", reading == null ? "UNKNOWN"
@@ -86,6 +88,7 @@ final class SshCommandDiagnostics implements SessionListener {
             session.removeSessionListener(this);
             session = null;
             reading = null;
+            socketAtCommandStart = null;
         }
     }
 }

@@ -27,10 +27,38 @@ final class SshSocketReadDiagnostics extends AsynchronousSocketChannel {
     void attach(IoSession session) { session.setAttribute(KEY, progress); }
 
     static void appendTo(IoSession session, Map<String, String> facts) {
+        snapshot(session).appendTo(facts, null);
+    }
+
+    static Snapshot snapshot(IoSession session) {
         try {
-            if (session != null && session.getAttribute(KEY) instanceof Progress observed) observed.appendTo(facts);
-            else facts.put("transportSocketReadObservation", "NOT_OBSERVED");
-        } catch (RuntimeException unavailable) { facts.put("transportSocketReadObservation", "UNAVAILABLE"); }
+            if (session != null && session.getAttribute(KEY) instanceof Progress observed) return observed.snapshot();
+            return new Snapshot("NOT_OBSERVED", Map.of(), 0, 0, 0, 0);
+        } catch (RuntimeException unavailable) { return new Snapshot("UNAVAILABLE", Map.of(), 0, 0, 0, 0); }
+    }
+
+    /** One immutable session-wide sample; a TCP read is never attributed to an SSH channel. */
+    record Snapshot(String observation, Map<String, String> facts, long sampledAt, long generation,
+                    long pendingGeneration, long pendingSince) {
+        private static final java.util.List<String> COUNTERS = java.util.List.of("Attempts", "Returned", "Completed",
+            "Failed", "Thrown", "FutureAttempts", "DeliveryEntered", "DeliveryReturned", "DeliveryThrew");
+        Snapshot { facts = Map.copyOf(facts); }
+        void appendTo(Map<String, String> target, Snapshot baseline) {
+            target.put("transportSocketReadObservation", observation);
+            target.putAll(facts);
+            if (baseline == null || !observation.equals("AVAILABLE") || !baseline.observation.equals("AVAILABLE")) return;
+            for (String counter : COUNTERS) {
+                String key = "transportSocketRead" + counter;
+                long before = Long.parseLong(baseline.facts.get(key));
+                long after = Long.parseLong(facts.get(key));
+                target.put(key + "AtCommandStart", Long.toString(before));
+                target.put(key + "DuringCommand", Long.toString(Math.max(0, after - before)));
+            }
+            target.put("transportSocketReadGenerationAtCommandStart", Long.toString(baseline.generation));
+            target.put("transportSocketReadPendingBeforeCommand", pendingGeneration < 0 ? "UNKNOWN"
+                : Boolean.toString(pendingGeneration > 0 && pendingGeneration <= baseline.generation));
+            target.put("transportSocketReadSampleDuringCommandMillis", Long.toString(Math.max(0, sampledAt - baseline.sampledAt) / 1_000_000));
+        }
     }
 
     /** An awaiting callback includes a call still inside read(); it does not assert kernel submission or peer progress.
@@ -39,16 +67,21 @@ final class SshSocketReadDiagnostics extends AsynchronousSocketChannel {
     static final class Progress {
         private long attempts, returned, completed, failed, thrown, futureAttempts;
         private long activeCalls, awaiting, lastAttempt, lastReturn, lastCompletion;
+        private long deliveryEntered, deliveryReturned, deliveryThrew, deliveryActive;
+        private long pendingGeneration, pendingSince;
         private boolean unobserved;
         private String lastResult = "NOT_OBSERVED";
         synchronized Call begin() {
             attempts++; activeCalls++; awaiting++; lastAttempt = System.nanoTime();
-            return new Call(this);
+            if (awaiting == 1) { pendingGeneration = attempts; pendingSince = lastAttempt; }
+            return new Call(this, attempts);
         }
         synchronized void returned() { returned++; activeCalls--; lastReturn = System.nanoTime(); }
         synchronized void threw() { thrown++; activeCalls--; }
-        synchronized void terminal(String result) {
+        synchronized void terminal(String result, long generation) {
             awaiting--;
+            if (awaiting == 0) { pendingGeneration = 0; pendingSince = 0; }
+            else if (pendingGeneration == generation) { pendingGeneration = -1; pendingSince = 0; }
             lastResult = result;
             if (!result.equals("THREW")) lastCompletion = System.nanoTime();
             if (result.equals("FAILED")) failed++;
@@ -56,7 +89,13 @@ final class SshSocketReadDiagnostics extends AsynchronousSocketChannel {
         }
         synchronized void futureAttempt() { futureAttempts++; unobserved = true; }
         synchronized void unobservedRead() { unobserved = true; }
-        synchronized void appendTo(Map<String, String> facts) {
+        synchronized void deliveryEntered() { deliveryEntered++; deliveryActive++; }
+        synchronized void deliveryFinished(boolean returned) {
+            deliveryActive--;
+            if (returned) deliveryReturned++; else deliveryThrew++;
+        }
+        synchronized Snapshot snapshot() {
+            var facts = new java.util.LinkedHashMap<String, String>();
             facts.put("transportSocketReadObservation", "AVAILABLE");
             facts.put("transportSocketReadCoverage", futureAttempts != 0 ? "FUTURE_UNOBSERVED" : unobserved ? "HANDLER_UNOBSERVED" : "CALLBACK_ONLY");
             facts.put("transportSocketReadAttempts", Long.toString(attempts));
@@ -67,12 +106,20 @@ final class SshSocketReadDiagnostics extends AsynchronousSocketChannel {
             facts.put("transportSocketReadFutureAttempts", Long.toString(futureAttempts));
             facts.put("transportSocketReadActiveCalls", Long.toString(activeCalls));
             facts.put("transportSocketReadAwaitingCallbacks", Long.toString(awaiting));
+            facts.put("transportSocketReadDeliveryEntered", Long.toString(deliveryEntered));
+            facts.put("transportSocketReadDeliveryReturned", Long.toString(deliveryReturned));
+            facts.put("transportSocketReadDeliveryThrew", Long.toString(deliveryThrew));
+            facts.put("transportSocketReadDeliveryActive", Long.toString(deliveryActive));
+            facts.put("transportSocketReadGeneration", Long.toString(attempts));
+            facts.put("transportSocketReadPendingGeneration", pendingGeneration < 0 ? "UNKNOWN" : Long.toString(pendingGeneration));
             facts.put("transportSocketReadPending", unobserved ? "UNKNOWN" : Boolean.toString(awaiting != 0));
             facts.put("transportSocketReadLastResult", lastResult);
             long now = System.nanoTime();
             age(facts, "transportSocketReadLastAttemptAgeMillis", now, lastAttempt);
             age(facts, "transportSocketReadLastReturnAgeMillis", now, lastReturn);
             age(facts, "transportSocketReadLastCompletionAgeMillis", now, lastCompletion);
+            age(facts, "transportSocketReadPendingRegistrationAgeMillis", now, pendingSince);
+            return new Snapshot("AVAILABLE", facts, now, attempts, unobserved ? -1 : pendingGeneration, pendingSince);
         }
         private static void age(Map<String, String> facts, String key, long now, long since) {
             facts.put(key, since == 0 ? "UNKNOWN" : Long.toString(Math.max(0, now - since) / 1_000_000));
@@ -82,8 +129,9 @@ final class SshSocketReadDiagnostics extends AsynchronousSocketChannel {
     private static final class Call {
         private final Progress progress;
         private final AtomicBoolean terminal = new AtomicBoolean();
-        private Call(Progress progress) { this.progress = progress; }
-        void finish(String result) { if (terminal.compareAndSet(false, true)) progress.terminal(result); }
+        private final long generation;
+        private Call(Progress progress, long generation) { this.progress = progress; this.generation = generation; }
+        void finish(String result) { if (terminal.compareAndSet(false, true)) progress.terminal(result, generation); }
     }
 
     @Override public <A> void read(ByteBuffer dst, long timeout, TimeUnit unit, A attachment,
@@ -96,10 +144,14 @@ final class SshSocketReadDiagnostics extends AsynchronousSocketChannel {
             delegate.read(dst, timeout, unit, attachment, new CompletionHandler<Integer, A>() {
                 @Override public void completed(Integer result, A value) {
                     call.finish(result == null ? "UNKNOWN" : result < 0 ? "EOF" : result == 0 ? "ZERO" : "DATA");
-                    handler.completed(result, value);
+                    progress.deliveryEntered(); boolean returned = false;
+                    try { handler.completed(result, value); returned = true; }
+                    finally { progress.deliveryFinished(returned); }
                 }
                 @Override public void failed(Throwable failure, A value) {
-                    call.finish("FAILED"); handler.failed(failure, value);
+                    call.finish("FAILED"); progress.deliveryEntered(); boolean returned = false;
+                    try { handler.failed(failure, value); returned = true; }
+                    finally { progress.deliveryFinished(returned); }
                 }
             });
         } catch (RuntimeException | Error original) {
@@ -118,10 +170,14 @@ final class SshSocketReadDiagnostics extends AsynchronousSocketChannel {
             delegate.read(dsts, offset, length, timeout, unit, attachment, new CompletionHandler<Long, A>() {
                 @Override public void completed(Long result, A value) {
                     call.finish(result == null ? "UNKNOWN" : result < 0 ? "EOF" : result == 0 ? "ZERO" : "DATA");
-                    handler.completed(result, value);
+                    progress.deliveryEntered(); boolean returned = false;
+                    try { handler.completed(result, value); returned = true; }
+                    finally { progress.deliveryFinished(returned); }
                 }
                 @Override public void failed(Throwable failure, A value) {
-                    call.finish("FAILED"); handler.failed(failure, value);
+                    call.finish("FAILED"); progress.deliveryEntered(); boolean returned = false;
+                    try { handler.failed(failure, value); returned = true; }
+                    finally { progress.deliveryFinished(returned); }
                 }
             });
         } catch (RuntimeException | Error original) {

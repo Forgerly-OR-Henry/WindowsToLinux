@@ -46,9 +46,14 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.Deploy
 
 /** Sends fixed managed publication verbs through the original reviewed session. / 经原已审阅会话发送固定受管发布动作。 */
 public final class DeploymentPublishChannel {
-    private static final Map<String, String> OBSERVATION_FACT_PATTERNS = Map.ofEntries(
-        Map.entry("observationStage", "inspect|observe"),
-        Map.entry("observationBranch", "dispatch|dispatch-exception|systemd-query|incomplete|identity|protocol|state"),
+    private static final Map<String, String> OBSERVATION_FACT_PATTERNS = observationFactPatterns();
+
+    private static Map<String, String> observationFactPatterns() {
+        var patterns = new LinkedHashMap<>(Map.ofEntries(
+        Map.entry("observationStage", "inspect|observe|health"),
+        Map.entry("observationBranch", "dispatch|dispatch-exception|systemd-query|incomplete|identity|protocol|state|receipt|upstream"),
+        Map.entry("healthUnitId", "[a-z0-9][a-z0-9-]{0,62}"),
+        Map.entry("healthSystemdUnit", "windowstolinux-[a-z0-9][a-z0-9-]{0,62}\\.service"),
         Map.entry("observationOutcome", "SUCCEEDED|FAILED|CANCELLED|UNKNOWN"),
         Map.entry("observationProblemEvent", "[A-Z][A-Z0-9_]{0,119}"),
         Map.entry("exitCode", "-?[0-9]{1,10}"),
@@ -76,7 +81,44 @@ public final class DeploymentPublishChannel {
         Map.entry("elapsedMillis", "[0-9]{1,13}"),
         Map.entry("timeoutMillis", "[0-9]{1,13}"),
         Map.entry("transportFailureType", "(?:java|org\\.apache\\.sshd)\\.[A-Za-z0-9_.$]{1,160}"),
-        Map.entry("transportKeyExchangeState", "[A-Z_]{1,32}"));
+        Map.entry("transportKeyExchangeState", "[A-Z_]{1,32}")));
+        for (String key : List.of("channelOpenObservation", "execRequestObservation", "transportSocketReadObservation"))
+            patterns.put(key, "NOT_OBSERVED|AVAILABLE|UNAVAILABLE");
+        for (String key : List.of("channelOpenWriteState", "execRequestWriteState"))
+            patterns.put(key, "NOT_OBSERVED|PENDING|WRITTEN|FAILED");
+        patterns.put("channelOpenReply", "NOT_OBSERVED|CONFIRMATION|FAILURE");
+        patterns.put("transportSocketReadCoverage", "CALLBACK_ONLY|FUTURE_UNOBSERVED|HANDLER_UNOBSERVED");
+        patterns.put("transportSocketReadLastResult", "NOT_OBSERVED|UNKNOWN|DATA|ZERO|EOF|FAILED|THREW");
+        for (String key : List.of("channelOpenFutureDone", "channelOpenFutureOpened", "channelOpenFutureCanceled",
+            "execRequestWantReply", "transportSocketReadPending", "transportSocketReadPendingBeforeCommand", "disconnectObserved", "transportReadHandlerActive"))
+            patterns.put(key, "UNKNOWN|true|false");
+        patterns.put("execRequestPeerAcceptance", "UNKNOWN");
+        for (String counter : List.of("Attempts", "Returned", "Completed", "Failed", "Thrown", "FutureAttempts",
+            "DeliveryEntered", "DeliveryReturned", "DeliveryThrew")) {
+            String key = "transportSocketRead" + counter;
+            patterns.put(key, "[0-9]{1,13}");
+            patterns.put(key + "AtCommandStart", "[0-9]{1,13}");
+            patterns.put(key + "DuringCommand", "[0-9]{1,13}");
+        }
+        for (String suffix : List.of("ActiveCalls", "AwaitingCallbacks", "DeliveryActive", "Generation", "GenerationAtCommandStart",
+            "PendingGeneration", "PendingRegistrationAgeMillis", "SampleDuringCommandMillis", "LastAttemptAgeMillis",
+            "LastReturnAgeMillis", "LastCompletionAgeMillis"))
+            patterns.put("transportSocketRead" + suffix, "UNKNOWN|[0-9]{1,13}");
+        for (String key : List.of("channelOpenWriteStartedMillis", "channelOpenWriteCompletedMillis", "channelOpenReplyMillis",
+            "execRequestWriteStartedMillis", "execRequestWriteCompletedMillis", "transportReadCallbacksAtCommandStart",
+            "transportReadCallbacksDuringCommand", "transportReadCallbacks", "transportSessionAgeMillis",
+            "channelOpenWorkerSnapshotStartedMillis", "channelOpenWorkerSnapshotCompletedMillis", "channelOpenWorkerSnapshotRemainingMillis",
+            "channelOpenWorkerIoCount", "channelOpenWorkerResumeCount", "transportReadCompletedAgeMillis", "transportReadHandlerAgeMillis"))
+            patterns.put(key, "UNKNOWN|[0-9]{1,13}");
+        patterns.put("channelOpenWorkerSnapshot", "NOT_OBSERVED|BEFORE_DEADLINE|UNAVAILABLE");
+        patterns.put("channelOpenWorkerSnapshotCommandPhase", "CHANNEL_OPENING|WAITING_FOR_EXIT");
+        patterns.put("channelOpenSnapshotPhase", "RESULT");
+        for (String role : List.of("Io0", "Io1", "Resume0", "Resume1")) {
+            patterns.put("channelOpenWorker" + role + "Alive", "UNKNOWN|true|false");
+            patterns.put("channelOpenWorker" + role + "State", "UNKNOWN|NEW|RUNNABLE|BLOCKED|WAITING|TIMED_WAITING|TERMINATED");
+        }
+        return Map.copyOf(patterns);
+    }
 
     /** Borrowed authenticated connection. / 借用的已认证连接。 */
     private final RemoteSession session;
@@ -394,17 +436,28 @@ public final class DeploymentPublishChannel {
             List.of(unit.id(), unit.ownershipManifestSha256(), DeploymentWorkloadArguments.healthPayload(check)),
             Duration.ofSeconds(check.timeoutSeconds() + 45L), 4096);
         if (observed.outcome() == TaskResult.CANCELLED || observed.outcome() == TaskResult.UNKNOWN)
-            return withoutValue(observed);
+            return healthFailure(unit, "upstream", observed, withoutValue(observed));
         if (observed.outcome() == TaskResult.FAILED && observed.value().isEmpty())
-            return withoutValue(observed);
+            return healthFailure(unit, "upstream", observed, withoutValue(observed));
         if (observed.value().isEmpty() || observed.value().orElseThrow().truncated()
             || observed.value().orElseThrow().exitCode().isEmpty())
-            return unknown("DEPLOYMENT_HEALTH_UNCONFIRMED");
+            return healthFailure(unit, "incomplete", observed, unknown("DEPLOYMENT_HEALTH_UNCONFIRMED"));
         if (observed.value().orElseThrow().exitCode().orElseThrow() != 0)
-            return failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HEALTH_FAILED");
+            return healthFailure(unit, "state", observed, failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HEALTH_FAILED"));
         if (!"HEALTHY=1\n".equals(observed.value().orElseThrow().stdout()))
-            return unknown("DEPLOYMENT_HEALTH_RECEIPT_INVALID");
+            return healthFailure(unit, "receipt", observed, unknown("DEPLOYMENT_HEALTH_RECEIPT_INVALID"));
         return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+    }
+
+    private static OperationResult<Void> healthFailure(DeploymentUnitIdentity unit, String branch,
+                                                       OperationResult<CommandResult> observed, OperationResult<Void> conclusion) {
+        var retained = observationFailure("health", branch, observed, conclusion);
+        var problem = retained.problem().orElseThrow();
+        var facts = new LinkedHashMap<>(problem.context());
+        facts.put("healthUnitId", unit.id());
+        facts.put("healthSystemdUnit", unit.systemdUnit());
+        return new OperationResult<>(retained.outcome(), retained.value(), Optional.of(new Problem(problem.code(),
+            problem.eventCode(), problem.message(), Map.copyOf(facts), problem.diagnosticId())));
     }
 
     /** Stops one previously running managed runtime only after its original snapshot is durable. / 仅在原快照持久后停止旧受管运行时。
@@ -855,7 +908,8 @@ public final class DeploymentPublishChannel {
                                                     CommandRequest request, Set<ActionTarget> targets,
                                                     DeploymentSendGuard beforeRequestSend) throws ApiException {
         String observationStage = operation.equals("deployment.publication.inspect.v1") ? "inspect"
-            : operation.equals("deployment.publication.observe.v1") ? "observe" : null;
+            : operation.equals("deployment.publication.observe.v1") ? "observe"
+            : operation.equals("deployment.publication.health.v1") ? "health" : null;
         try (request) {
             var intent = RemoteActions.command(server, planRevision, request).withSemantics(new ActionSemantics(
                 operation, targets));

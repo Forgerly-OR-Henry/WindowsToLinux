@@ -21,6 +21,175 @@ import org.apache.sshd.common.util.Readable;
 import org.junit.jupiter.api.Test;
 
 class SshSocketReadDiagnosticsTest {
+    @Test void actualNio2BlockedCompletionIsDistinctFromPendingSocketAndQueuedResume() throws Exception {
+        var manager = SshClient.setUpDefaultClient(); var raw = new FakeSocket();
+        var observed = new SshSocketReadDiagnostics(raw); var group = new FakeGroup(); var resume = new DirectExecutor();
+        var callback = Executors.newSingleThreadExecutor();
+        var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
+        var handler = new SshReadDiagnostics(new IoHandler() {
+            public void sessionCreated(IoSession session) { }
+            public void sessionClosed(IoSession session) { }
+            public void exceptionCaught(IoSession session, Throwable failure) { fail(failure); }
+            public void messageReceived(IoSession session, Readable message) throws Exception {
+                entered.countDown(); assertTrue(release.await(2, TimeUnit.SECONDS));
+            }
+        });
+        var connector = new Nio2Connector(null, manager, handler, group, resume);
+        var session = new Nio2Session(connector, manager, handler, observed, null); observed.attach(session);
+        try {
+            handler.sessionCreated(session); session.startReading(16); raw.buffer.put(new byte[]{1, 2, 3});
+            var completion = callback.submit(() -> raw.finish(false));
+            assertTrue(entered.await(1, TimeUnit.SECONDS));
+            var socket = facts(session); var ssh = new LinkedHashMap<String, String>(); SshReadDiagnostics.appendTo(session, ssh);
+            assertEquals("1", socket.get("transportSocketReadDeliveryActive"));
+            assertEquals("0", socket.get("transportSocketReadDeliveryReturned"));
+            assertEquals("false", socket.get("transportSocketReadPending"));
+            assertEquals("true", ssh.get("transportReadHandlerActive"));
+            assertEquals(1, raw.readCalls); assertEquals(0, raw.writeCalls);
+            release.countDown(); completion.get(1, TimeUnit.SECONDS);
+            socket = facts(session); assertEquals("0", socket.get("transportSocketReadDeliveryActive"));
+            assertEquals("1", socket.get("transportSocketReadDeliveryReturned"));
+            assertEquals("true", socket.get("transportSocketReadPending"));
+            assertEquals(2, raw.readCalls); assertEquals(0, raw.writeCalls);
+        } finally {
+            release.countDown(); callback.shutdownNow(); assertTrue(callback.awaitTermination(2, TimeUnit.SECONDS));
+            assertTrue(session.close(true).awaitUninterruptibly(Duration.ofSeconds(1)));
+            connector.close(true); resume.shutdown(); group.shutdown(); manager.close(true);
+        }
+    }
+
+    @Test void completionDeliveryCountsNestedInlineAndAsyncWithoutChangingOriginalTrace() throws Exception {
+        for (boolean inline : List.of(false, true)) {
+            var traces = new ArrayList<List<String>>();
+            for (boolean wrapped : List.of(false, true)) {
+                try (var raw = new FakeSocket(); var observed = new SshSocketReadDiagnostics(raw)) {
+                    var io = attributes(); observed.attach(io);
+                    AsynchronousSocketChannel socket = wrapped ? observed : raw;
+                    var trace = new ArrayList<String>();
+                    raw.mode = inline ? "SYNC_OK" : "ASYNC_OK";
+                    var callbacks = new AtomicInteger();
+                    var handler = new CompletionHandler<Integer, Object>() {
+                        public void completed(Integer value, Object attachment) {
+                            int index = callbacks.incrementAndGet(); trace.add("enter:" + index);
+                            if (wrapped) assertEquals(Integer.toString(index == 2 && inline ? 2 : 1), facts(io).get("transportSocketReadDeliveryActive"));
+                            if (index == 1) {
+                                socket.read(ByteBuffer.allocate(4), 0, TimeUnit.SECONDS, null, this);
+                                trace.add("next-returned");
+                                if (wrapped && !inline) {
+                                    var sample = facts(io);
+                                    assertEquals("1", sample.get("transportSocketReadDeliveryActive"));
+                                    assertEquals("1", sample.get("transportSocketReadAwaitingCallbacks"));
+                                    assertEquals("2", sample.get("transportSocketReadReturned"));
+                                }
+                            }
+                            trace.add("return:" + index);
+                        }
+                        public void failed(Throwable failure, Object attachment) { fail(); }
+                    };
+                    socket.read(ByteBuffer.allocate(4), 0, TimeUnit.SECONDS, null, handler); trace.add("first-returned");
+                    if (!inline) { raw.finish(false); raw.finish(false); }
+                    assertEquals(2, raw.readCalls); assertEquals(0, raw.writeCalls);
+                    assertEquals(2, callbacks.get());
+                    if (wrapped) {
+                        var f = facts(io);
+                        assertEquals("2", f.get("transportSocketReadDeliveryEntered"));
+                        assertEquals("2", f.get("transportSocketReadDeliveryReturned"));
+                        assertEquals("0", f.get("transportSocketReadDeliveryThrew"));
+                        assertEquals("0", f.get("transportSocketReadDeliveryActive"));
+                        assertEquals("0", f.get("transportSocketReadAwaitingCallbacks"));
+                        assertEquals("0", f.get("transportSocketReadActiveCalls"));
+                    }
+                    traces.add(trace);
+                }
+            }
+            assertEquals(traces.get(0), traces.get(1), "Observation must preserve inline/asynchronous nesting");
+        }
+    }
+
+    @Test void callbackThrowPreservesIdentityAndDuplicateDeliveryIsCountedSeparatelyFromTerminal() throws Exception {
+        for (String mode : List.of("SYNC_OK", "ASYNC_OK", "SYNC_FAIL", "ASYNC_FAIL")) {
+            try (var raw = new FakeSocket(); var observed = new SshSocketReadDiagnostics(raw)) {
+                var io = attributes(); observed.attach(io); raw.mode = mode;
+                var original = new AssertionError("private handler failure");
+                var handler = new CompletionHandler<Integer, Object>() {
+                    public void completed(Integer value, Object attachment) { throw original; }
+                    public void failed(Throwable failure, Object attachment) { assertSame(raw.failure, failure); throw original; }
+                };
+                if (mode.startsWith("SYNC")) assertSame(original, assertThrows(AssertionError.class,
+                    () -> observed.read(ByteBuffer.allocate(4), 0, TimeUnit.SECONDS, null, handler)));
+                else {
+                    observed.read(ByteBuffer.allocate(4), 0, TimeUnit.SECONDS, null, handler);
+                    var producer = raw.pending;
+                    assertSame(original, assertThrows(AssertionError.class, () -> raw.finish(mode.endsWith("FAIL"))));
+                    assertSame(original, assertThrows(AssertionError.class, () -> producer.completed(3, null)));
+                }
+                var f = facts(io); String deliveries = mode.startsWith("SYNC") ? "1" : "2";
+                assertEquals(deliveries, f.get("transportSocketReadDeliveryEntered"));
+                assertEquals(deliveries, f.get("transportSocketReadDeliveryThrew"));
+                assertEquals("0", f.get("transportSocketReadDeliveryReturned"));
+                assertEquals("0", f.get("transportSocketReadDeliveryActive"));
+                assertEquals("0", f.get("transportSocketReadAwaitingCallbacks"));
+                assertEquals("0", f.get("transportSocketReadActiveCalls"));
+                assertEquals("1", f.get(mode.endsWith("FAIL") ? "transportSocketReadFailed" : "transportSocketReadCompleted"));
+                assertFalse(f.toString().contains("private"));
+            }
+        }
+    }
+
+    @Test void immutableCommandBaselineDistinguishesExistingPendingReadFromNewRead() throws Exception {
+        try (var raw = new FakeSocket(); var observed = new SshSocketReadDiagnostics(raw)) {
+            var io = attributes(); observed.attach(io);
+            var handler = new CompletionHandler<Integer, Object>() {
+                public void completed(Integer result, Object value) { }
+                public void failed(Throwable failure, Object value) { fail(); }
+            };
+            observed.read(ByteBuffer.allocate(4), 0, TimeUnit.SECONDS, null, handler);
+            var baseline = SshSocketReadDiagnostics.snapshot(io);
+            var f = new LinkedHashMap<String, String>();
+            SshSocketReadDiagnostics.snapshot(io).appendTo(f, baseline);
+            assertEquals("true", f.get("transportSocketReadPendingBeforeCommand"));
+            assertEquals("1", f.get("transportSocketReadGenerationAtCommandStart"));
+            assertEquals("0", f.get("transportSocketReadAttemptsDuringCommand"));
+            raw.finish(false);
+            observed.read(ByteBuffer.allocate(4), 0, TimeUnit.SECONDS, null, handler);
+            f.clear(); SshSocketReadDiagnostics.snapshot(io).appendTo(f, baseline);
+            assertEquals("false", f.get("transportSocketReadPendingBeforeCommand"));
+            assertEquals("2", f.get("transportSocketReadPendingGeneration"));
+            assertEquals("1", f.get("transportSocketReadAttemptsDuringCommand"));
+            assertEquals("1", f.get("transportSocketReadDeliveryReturnedDuringCommand"));
+            assertEquals("1", baseline.facts().get("transportSocketReadAttempts"));
+            assertThrows(UnsupportedOperationException.class, () -> baseline.facts().put("private", "private"));
+        }
+    }
+
+    @Test void actualNio2SuspensionKeepsResumeQueuedUntilExecutorRunsWithoutExtraIo() throws Exception {
+        var manager = SshClient.setUpDefaultClient(); var raw = new FakeSocket();
+        var observed = new SshSocketReadDiagnostics(raw); var group = new FakeGroup(); var executor = new QueuedExecutor();
+        var handled = new AtomicInteger();
+        var handler = new IoHandler() {
+            public void sessionCreated(IoSession session) { }
+            public void sessionClosed(IoSession session) { }
+            public void exceptionCaught(IoSession session, Throwable failure) { fail(failure); }
+            public void messageReceived(IoSession session, Readable message) { handled.incrementAndGet(); session.suspendRead(); }
+        };
+        var connector = new Nio2Connector(null, manager, handler, group, executor);
+        var session = new Nio2Session(connector, manager, handler, observed, null); observed.attach(session);
+        try {
+            session.startReading(16); raw.buffer.put(new byte[]{1, 2, 3}); raw.finish(false);
+            assertEquals(1, handled.get()); assertEquals(1, raw.readCalls);
+            assertEquals("0", facts(session).get("transportSocketReadDeliveryActive"));
+            assertEquals("false", facts(session).get("transportSocketReadPending"));
+            session.resumeRead();
+            assertEquals(1, executor.tasks.size()); assertEquals(1, raw.readCalls);
+            executor.tasks.remove().run();
+            assertEquals(2, raw.readCalls); assertEquals(0, raw.writeCalls);
+            assertEquals("1", facts(session).get("transportSocketReadAwaitingCallbacks"));
+        } finally {
+            assertTrue(session.close(true).awaitUninterruptibly(Duration.ofSeconds(1)));
+            connector.close(true); executor.shutdown(); group.shutdown(); manager.close(true);
+        }
+    }
+
     @Test void fluentChannelReturnsKeepReadObservationWithoutChangingOperationsOrExceptions() throws Exception {
         for (String operation : List.of("BIND", "OPTION", "SHUTDOWN_INPUT", "SHUTDOWN_OUTPUT")) {
             try (var raw = new FakeSocket(); var observed = new SshSocketReadDiagnostics(raw)) {
@@ -204,9 +373,10 @@ class SshSocketReadDiagnosticsTest {
         final ReadPendingException pendingThrow = new ReadPendingException();
         final NullPointerException nullHandler = new NullPointerException("private null handler");
         final CompletableFuture<Integer> future = new CompletableFuture<>(); IOException closeFailure;
-        int fluentCalls; IOException fluentFailure;
+        int fluentCalls, readCalls, writeCalls; IOException fluentFailure;
         FakeSocket() { super(AsynchronousChannelProvider.provider()); }
         @Override @SuppressWarnings("unchecked") public <A> void read(ByteBuffer dst, long timeout, TimeUnit unit, A attachment, CompletionHandler<Integer, ? super A> handler) {
+            readCalls++;
             if (handler == null) throw nullHandler;
             if (pending != null) throw pendingThrow;
             this.buffer = dst; this.timeout = timeout; this.unit = unit; this.attachment = attachment;
@@ -225,7 +395,9 @@ class SshSocketReadDiagnosticsTest {
         }
         @Override public Future<Integer> read(ByteBuffer dst) { return future; }
         @Override public Future<Integer> write(ByteBuffer src) { return future; }
-        @Override public <A> void write(ByteBuffer src, long timeout, TimeUnit unit, A attachment, CompletionHandler<Integer, ? super A> handler) { handler.completed(src.remaining(), attachment); }
+        @Override public <A> void write(ByteBuffer src, long timeout, TimeUnit unit, A attachment, CompletionHandler<Integer, ? super A> handler) {
+            writeCalls++; int count = src.remaining(); src.position(src.limit()); handler.completed(count, attachment);
+        }
         @Override public <A> void write(ByteBuffer[] srcs, int offset, int length, long timeout, TimeUnit unit, A attachment, CompletionHandler<Long, ? super A> handler) { handler.completed(0L, attachment); }
         private AsynchronousSocketChannel fluentCall() throws IOException { fluentCalls++; if (fluentFailure != null) throw fluentFailure; return this; }
         @Override public AsynchronousSocketChannel bind(SocketAddress local) throws IOException { assertNull(local); return fluentCall(); }
@@ -251,6 +423,15 @@ class SshSocketReadDiagnosticsTest {
         public boolean isTerminated() { return stopped; }
         public boolean awaitTermination(long timeout, TimeUnit unit) { return stopped; }
         public void execute(Runnable task) { if (stopped) throw new RejectedExecutionException(); task.run(); }
+    }
+    static final class QueuedExecutor extends AbstractExecutorService {
+        final Queue<Runnable> tasks = new ArrayDeque<>(); boolean stopped;
+        public void shutdown() { stopped = true; }
+        public List<Runnable> shutdownNow() { stopped = true; var pending = List.copyOf(tasks); tasks.clear(); return pending; }
+        public boolean isShutdown() { return stopped; }
+        public boolean isTerminated() { return stopped && tasks.isEmpty(); }
+        public boolean awaitTermination(long timeout, TimeUnit unit) { return isTerminated(); }
+        public void execute(Runnable task) { if (stopped) throw new RejectedExecutionException(); tasks.add(task); }
     }
     static final class FakeGroup extends AsynchronousChannelGroup {
         boolean stopped;

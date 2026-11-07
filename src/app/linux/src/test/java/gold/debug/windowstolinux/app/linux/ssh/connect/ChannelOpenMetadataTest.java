@@ -14,6 +14,62 @@ import org.junit.jupiter.api.io.TempDir;
 
 class ChannelOpenMetadataTest {
     @TempDir Path root;
+    @Test void actualNio2TwoChannelHandoffSeparatesAcknowledgedAndDeliberatelyWithheldOpen() throws Exception {
+        for (boolean acknowledge : List.of(true, false)) {
+            var directory = java.nio.file.Files.createDirectories(root.resolve(Boolean.toString(acknowledge)));
+            var secondOpen = new java.util.concurrent.CountDownLatch(1);
+            var channels = new java.util.concurrent.atomic.AtomicInteger();
+            var gate = new DefaultOpenFuture("controlled-second-open", null);
+            var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+            try (var fixture = new SshCommandExecutionTest.WireFixture(directory, command -> {
+                command.input.readAllBytes(); command.exit.onExit(0);
+            }); var connector = new SshConnector()) {
+                fixture.server.server().setChannelFactories(List.of(new org.apache.sshd.common.channel.ChannelFactory() {
+                    public String getName() { return "session"; }
+                    public org.apache.sshd.common.channel.Channel createChannel(org.apache.sshd.common.session.Session ignored) {
+                        return new org.apache.sshd.server.channel.ChannelSession() {
+                            @Override protected org.apache.sshd.client.future.OpenFuture doInit(Buffer buffer) {
+                                if (channels.incrementAndGet() == 1) return super.doInit(buffer);
+                                gate.addListener(opened -> { if (opened.isOpened()) super.doInit(buffer); });
+                                secondOpen.countDown(); return gate;
+                            }
+                        };
+                    }
+                }));
+                try (var connection = SshCommandExecutionTest.connect(connector, fixture.server)) {
+                    var first = connection.execute(new gold.debug.windowstolinux.appapi.linux.command.CommandRequest(
+                        "local first", new byte[0], Duration.ofSeconds(3), 100), () -> false);
+                    assertEquals(gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED, first.outcome());
+                    assertTrue(fixture.commands.getFirst().destroyed.await(1, java.util.concurrent.TimeUnit.SECONDS), "First channel exits and closes before second open");
+                    var pending = executor.submit(() -> connection.execute(new gold.debug.windowstolinux.appapi.linux.command.CommandRequest(
+                        "local second", new byte[0], Duration.ofSeconds(1), 100), () -> false));
+                    assertTrue(secondOpen.await(1, java.util.concurrent.TimeUnit.SECONDS));
+                    assertEquals(2, channels.get(), "Exactly one server open per command");
+                    assertFalse(gate.isDone());
+                    if (acknowledge) gate.setOpened();
+                    var second = pending.get(3, java.util.concurrent.TimeUnit.SECONDS);
+                    assertEquals(acknowledge ? gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED
+                        : gold.debug.windowstolinux.appapi.task.result.TaskResult.FAILED, second.outcome());
+                    assertEquals(acknowledge ? 2 : 1, fixture.calls.get(), "Withheld open never reaches exec/author payload");
+                    if (!acknowledge) {
+                        var problem = second.problem().orElseThrow();
+                        assertEquals("SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT", problem.eventCode());
+                        var f = problem.context();
+                        assertEquals("WRITTEN", f.get("channelOpenWriteState"));
+                        assertEquals("NOT_OBSERVED", f.get("channelOpenReply"));
+                        assertEquals("NOT_SENT", f.get("authorPayloadState"));
+                        assertEquals("0", f.get("transportSocketReadDeliveryActive"));
+                        assertEquals("1", f.get("transportSocketReadAwaitingCallbacks"));
+                        assertEquals("0", f.get("transportSocketReadDeliveryEnteredDuringCommand"));
+                        assertEquals("true", f.get("transportSocketReadPendingBeforeCommand"));
+                    }
+                }
+            } finally {
+                if (!gate.isDone()) gate.setException(new IOException("Controlled omitted acknowledgment cleanup"));
+                executor.shutdownNow(); assertTrue(executor.awaitTermination(3, java.util.concurrent.TimeUnit.SECONDS));
+            }
+        }
+    }
     private static Map<String, String> facts(ChannelOpenMetadata metadata) {
         var facts = new LinkedHashMap<String, String>();
         metadata.appendTo(facts);
