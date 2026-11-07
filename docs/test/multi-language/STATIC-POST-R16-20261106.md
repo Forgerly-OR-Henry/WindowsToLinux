@@ -156,7 +156,17 @@ AssetLending原session30085由 `c579bd` 实际exit1结束，新JUnit **1/1/0/0**
 
 原START任务中最终超时操作为 `deployment.publication.inspect.v1`；原SSH结果为SSH_COMMAND_TIMEOUT，通道已确认后，输入线程在写framing长度时等待远端窗口；elapsed20005毫秒，authorPayloadState=MAY_HAVE_BEEN_SENT。START效果与future保持UNKNOWN_NOT_RECHECKED，未补查远端或重开失败库。初始窗口0在[SSH窗口协议](https://www.rfc-editor.org/rfc/rfc4254.html#section-5.2)及[固定OpenSSH实现](https://github.com/openssh/openssh-portable/blob/V_9_9_P1/serverloop.c#L516-L545)中可以正常；这不证明本次服务器的实现或所处阶段。maxSize只记初始大小、callback数也不是包数，非原子采样不能证明从未WINDOW_ADJUST或未发部分header；目前未证明底层根因，不能套用S18未打开通道的诊断。已另开只读源码分析职责，没有因此放宽超时、重试或原断言。
 
-四已记录本地出生身份由原工具748427实际exit0唯一窄查，均PID_ABSENT。另行审定的异常janitor原工具 `6d1d04` 实际exit0，仅删除两指定自有TMP叶及各自空任务根；候选内fresh四原身份均消失，owner／边界／整树nonreparse／单硬链接及短独占DELETE探针通过，探针释放后才删除。self26176调用前身份已记录，由同一原工具终态证明退出，未加self PID扫描。normal／原证据保留，没有normal closeout或远端复查，内部JVM身份仍UNKNOWN；见[本地异常收尾父审](../../../.ai-workspace/evidence/post-r16-static-nuget-content-hash-execution-inputs-20261107-01/static-task-board-abnormal-tmp-closed.PARENT-REVIEW.json)，SHA256 `3b547f430d76ec67a99e4b7feff3fc17727cc2aa6849000887b1b2c8e6d6fbad`。S25隔离实现职责正补必要exec写入及read调度观测和零窗口机制反例，尚无最终验证、打包或新验收结果，不称原根因已修复。之后仍须另冻结、完整四阶段并从首项开始固定八项；本轮后七项与AI未启动。
+四已记录本地出生身份由原工具748427实际exit0唯一窄查，均PID_ABSENT。另行审定的异常janitor原工具 `6d1d04` 实际exit0，仅删除两指定自有TMP叶及各自空任务根；候选内fresh四原身份均消失，owner／边界／整树nonreparse／单硬链接及短独占DELETE探针通过，探针释放后才删除。self26176调用前身份已记录，由同一原工具终态证明退出，未加self PID扫描。normal／原证据保留，没有normal closeout或远端复查，内部JVM身份仍UNKNOWN；见[本地异常收尾父审](../../../.ai-workspace/evidence/post-r16-static-nuget-content-hash-execution-inputs-20261107-01/static-task-board-abnormal-tmp-closed.PARENT-REVIEW.json)，SHA256 `3b547f430d76ec67a99e4b7feff3fc17727cc2aa6849000887b1b2c8e6d6fbad`。S25的本地实现和有界验证已完成如下，尚无新服务器验收结果，不称原根因已修复。本轮后七项与AI未启动。
+
+## S25 观测补充与本地验证
+
+隔离工作树 `s25f` 已本地提交 `f43f49041e4897a2d850d3d63826cbacbd812dcd`，工作区clean，未推送。11文件包括5个App Linux SSH生产文件及6个直接测试文件；STATIC仅扩两个既有日志出口白名单，业务、负载、预算、wantReply、发送次数、取消和UNKNOWN语义未改。exec固定请求只观察本channel写future和单调时间，peer acceptance始终UNKNOWN；同一现有socket的纯委托记录read尝试、返回及callback进展，不宣称内核已接受或SSH包数，Future/null-handler覆盖保持UNKNOWN；原worker快照增加WAITING_FOR_EXIT。跨层字段不是原子快照。
+
+机制组原10/0/0/0通过。父审发现新fluent返回值可能使链式read绕过观测，先保存真实1/1/0/0反例，再最小修为四方法成功调用一次后返回装饰器；只新方法1/0/0/0复验，原异常对象和Future身份保留。直接回归首13项为12通过、1个旧OpenFuture替身缺协议方法失败，仅补替身方法后只失败方法1/0/0/0；日志投影首2项为1通过、1个新测试契约期望失败，纠正该期望后只失败方法1/0/0/0。各原失败、前置fixture失败、误拷旧XML的fresh=false和历史包均保留，不拼同轮全绿，未跑全量测试。
+
+最终Deployment和必要Files离线 `-DskipTests package` 原工具分别8ec650、2edc50实际exit0，测试跳过。父独立核5个生产family共14个class与JAR精确条目SHA一致；Files三个metadata和JAR已补齐，AppLinux／Deployment原包SHA均未变化。自有TMP经owner／祖先整树nonreparse／单硬链接和短独占读检查闭合，已知原handle全终结；内部JVM PID仍UNKNOWN，未全局扫描。第一次辅助清理脚本布尔值错误及后续正确收尾原件分别保留。见[完整分轮交接](../../../.ai-workspace/evidence/static-ssh-exec-read-observation-fix-20261107-01/HANDOFF.md)及[父关键证据审查](../../../.ai-workspace/evidence/static-ssh-exec-read-observation-fix-20261107-01/s25-offline-observation-key-evidence.PARENT-REVIEW.json)，后者SHA256 `bf6cfc19b0b08976aa6cb8213c06825e513ba7730f63132ae0b8b96be2cba153`。
+
+上述只证明本地观测实现和限定机制验证；S24底层超时原因仍未证。D25新冻结输入及控制正在准备，尚未开始S25服务器准备或业务；仍须全新四阶段并从TaskBoard执行固定八项，AI R17未启动。
 
 ## 后续验收条件
 
