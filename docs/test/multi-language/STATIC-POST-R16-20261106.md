@@ -2,15 +2,17 @@
 
 用户最新阶段指示：继续完成静态排障及固定八项验证；**静态验证全部完成后暂停，不启动新一轮 AI 辅助验收**。当前静态验证未完成，继续执行本阶段；下文较早的“静态后返回AI”记录保留为历史要求，不再作为自动接续授权。
 
-后续按八项整体影响矩阵推进：共享链路集中修复，八项归档、组件、健康类型与运行契约一起覆盖，再统一冻结验证。S27 本地共享包最终提交 `4bb69caf51a51b22869f5acdf409968162fa331e`，工作树 clean、未推送，已获本地代码父审接受；当前仅准备全新有限冻结输入，尚未放行服务器。用户已选择八项整体修复、统一冻结后按固定顺序验证完整八项，现有 S26 失败封存不续跑。
+按八项整体影响矩阵推进：共享链路集中修复，八项归档、组件、健康类型与运行契约一起覆盖，再统一冻结验证。S27 本地共享包最终提交 `4bb69caf51a51b22869f5acdf409968162fa331e`，工作树 clean、未推送，已获本地代码父审接受；统一有限冻结和全新四阶段准备现均通过，首项 TaskBoard 原次正在执行，其余七项尚未放行。用户已选择八项整体修复、统一冻结后按固定顺序验证完整八项，现有 S26 失败封存不续跑。
 
-S27 的 health、socket completion、双通道及八项真实 fixture 契约定点组分别通过，必要离线包及官方 helper/runtime 身份核对通过；原先编译、夹具和 H2 失败分次保留，不合并为单次全绿。[共享包阶段父审](../../../.ai-workspace/evidence/static-eight-shared-health-io-fix-20261107-01/shared-package.PARENT-REVIEW.json)与[最终本地代码父审](../../../.ai-workspace/evidence/static-s27-unknown-full-recovery-wait-20261107-01/S27-code.PARENT-REVIEW.json)覆盖相关原阶段证据、最终 38 个有限公开 pins 及 10 个当前 JAR/classes/resource 对照。helper/runtime 对应实际字节保持，不冒称重复汇编；真实 SSH 停滞根因仍未确证，尚未执行新服务器原次。
+[S27 有限冻结父审](../../../.ai-workspace/evidence/post-r16-static-eight-shared-execution-inputs-20261107-01/limited-public-inputs.PARENT-REVIEW.json)覆盖 336 个公开文件、69 个精确 JAR 条目及 54 项原顺序类路径，七个控制输入完整正逆字节核对通过；不宣称整个目录或私库冻结。[本轮全新四阶段父审](../../../.ai-workspace/evidence/post-r16-static-eight-shared-execution-inputs-20261107-01/four-phase-preparation.PARENT-REVIEW.json)记录 inventory、plan、精确 apply、独立 after 各一个原次 actual tool/native 0、fresh JUnit 1/0/0/0，16 个已记录出生身份及自有 TMP 已闭合。独立 after 与本次 apply.postInventory 全部 14 字段及 59,748 UTF-8 字节相同；未使用旧轮回执。精确清理 31 个非核心开发包，691→660 完整有序包记录恰为原清单减去该 31 项，148 个受保护包含 23 个 essential 保持；5 个产品服务、4 个产品账号、5 个现存产品根已按计划处理。计划 6 个 unitFiles，实际显式移除 5 个，原计数保留。短独占锁不提供连续或原子删除保证，内部 JVM 的具体身份仍未独立记录。八项业务结果须由各原次给出，准备通过不算业务通过。
+
+S27 的 health、socket completion、双通道及八项真实 fixture 契约定点组分别通过，必要离线包及官方 helper/runtime 身份核对通过；原先编译、夹具和 H2 失败分次保留，不合并为单次全绿。[共享包阶段父审](../../../.ai-workspace/evidence/static-eight-shared-health-io-fix-20261107-01/shared-package.PARENT-REVIEW.json)与[最终本地代码父审](../../../.ai-workspace/evidence/static-s27-unknown-full-recovery-wait-20261107-01/S27-code.PARENT-REVIEW.json)覆盖相关原阶段证据、最终 38 个有限公开 pins 及 10 个当前 JAR/classes/resource 对照。helper/runtime 对应实际字节保持，不冒称重复汇编；真实 SSH 停滞根因仍未确证。
 
 额外 UNKNOWN 资源保留回归现已在原两参数完整通过：原前台 `40397 → e1b71d` 工具及 Maven 实际退出 0，fresh JUnit **2/0/0/0**，单件 73.516 秒、双件 118.998 秒。原健康检查、保资源、无诊断／重放、单件成功、双件回滚、SQL 状态及资源／session 释放断言全部走完。见[最终报告](../../../.ai-workspace/evidence/static-s27-unknown-full-recovery-wait-20261107-01/README.md)。精确对齐 native 请求、analysis 形状及可选图诊断空输入；未知请求仍拒绝。临时 callback 观测已逆向移除，编译类族无临时诊断残留。
 
 本地等待分别为首次完整发布 120 秒、首次保持 UNKNOWN 的恢复默认 20 秒、最后完整恢复 60 秒；共用 helper 默认 20 秒、生产和用户批准的验收预算保持。最后 60 秒有正常前台诊断依据：原 `95405 → 39f821` 在 20 秒仍按原判抛 TimeoutException，同一 future 后于约 28.934 秒返回 ENDED／FAILED，callback 为约 28.927 秒；晚完成不抵销该原 2/0/1/0 红灯，原 83085、99881、43792 等各次失败独立保留，不拼通过项。
 
-一次辅助诊断采用 detached 启动、未保留原等待，并在内部 JVM 未确认时误清理自有合成 TMP；稍后写出的退出 1／JUnit 2/1 与清理窗口重叠，已[单独校正为受损执行证据](../../../.ai-workspace/evidence/static-s27-graph-recovery-callback-20261107-01/LATE-RESULT-CORRECTION.PARENT-REVIEW.json)，不归因代码或充作正常回归。其三个残留、后续正常诊断及最终通过轮的 TMP 均以核验所有权／FileID 的前台同卷移动保留，原临时路径 absent，不掩盖早先部分删除。后续原进程始终由同一前台会话等待结束后收尾；内部 JVM 具体身份仍按未独立记录处理。以上是本地定点结果，有限冻结、全新四阶段和真实八项仍待执行，不作为全量或正式 STATIC 首过证明。
+一次辅助诊断采用 detached 启动、未保留原等待，并在内部 JVM 未确认时误清理自有合成 TMP；稍后写出的退出 1／JUnit 2/1 与清理窗口重叠，已[单独校正为受损执行证据](../../../.ai-workspace/evidence/static-s27-graph-recovery-callback-20261107-01/LATE-RESULT-CORRECTION.PARENT-REVIEW.json)，不归因代码或充作正常回归。其三个残留、后续正常诊断及最终通过轮的 TMP 均以核验所有权／FileID 的前台同卷移动保留，原临时路径 absent，不掩盖早先部分删除。后续原进程始终由同一前台会话等待结束后收尾；内部 JVM 具体身份仍按未独立记录处理。以上本地定点结果不作为全量或正式 STATIC 首过证明；本轮统一有限冻结和全新四阶段已通过，真实八项业务验证进行中。
 
 当前为 **S26 PASS1／FAILED1／UNLAUNCHED6 封存**：TaskBoard完整通过，FileTransfer在重启前inspect返回UNKNOWN，后六项未启动，原 UNKNOWN 保留。S25 保留 PASS3／FAILED1／UNLAUNCHED4，AI R17 未启动。下文各旧轮按原状态保留，不拼接通过项。
 
