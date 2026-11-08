@@ -1,8 +1,8 @@
 # ASSISTED连续首过验证：接续与阶段交接
 
-最新接续边界：继续完成静态排障及固定八项验证；**全部八项正常及必要 MAIN 累计集成验证、提交、收尾后暂停，不启动新一轮 AI 辅助验收**。S29 首项 UNKNOWN 已停轮，后七项不得继续；整体目标 active，暂停条件尚未满足。
+用户最新要求（2026-11-08）：完成 S30 总结和本次操作的本机收尾后暂停。**本对话只指出问题，不进行代码冗余清理、重构或修正实施**；详见 [S30 暂停总结](S30-PAUSE-SUMMARY-20261108.md)。八项静态验收及 MAIN 累计源码集成尚未完成，原目标不标记 complete，AI 未启动。此前“全八正常后再暂停”的要求被本次明确暂停指示覆盖。
 
-独立挂载诊断保留各原次结果：首版 FAILED／exit65 `MALFORMED_RECORD`，V2 SUCCEEDED／exit0 取得两个 mutable 挂载；两次本机临时目录均已关闭，诊断库保留。用户另行批准的 [E03 只读归属查询](../../../.ai-workspace/evidence/static-s30-mount-ownership-proposal-20261108-01/mount-ownership-result.PARENT-REVIEW.json)现已原次 SUCCEEDED／exit0：两个候选的任务标记、loop2／loop7 及镜像路径／inode／设备身份匹配；构建单元已不存在，两个正式服务仍 active。首次本机 prep 的旧摘要引用失败原样保留，另名修正控制源仅修摘要关联后执行，未重复服务器查询。E03 一次额度已消费，本机自有临时文件已由原 `9a698d` exit0 清理并独立核实；未 stop／卸载／detach／删除。快照不证明全部占用者不存在或可安全卸载，S29 EOF 原因仍未证；详见 [STATIC 最新记录](STATIC-POST-R16-20261106.md)。这些诊断不增加业务 PASS，不满足暂停条件。 E04 固定卷释放程序与产品客户端已完成本机定点验证，具体新范围已单次询问用户、待答；服务器未执行停止或释放。
+独立挂载诊断保留各原次结果：首版 FAILED／exit65 `MALFORMED_RECORD`，V2 SUCCEEDED／exit0 取得两个 mutable 挂载；两次本机临时目录均已关闭，诊断库保留。用户另行批准的 [E03 只读归属查询](../../../.ai-workspace/evidence/static-s30-mount-ownership-proposal-20261108-01/mount-ownership-result.PARENT-REVIEW.json)现已原次 SUCCEEDED／exit0：两个候选的任务标记、loop2／loop7 及镜像路径／inode／设备身份匹配；构建单元已不存在，两个正式服务仍 active。首次本机 prep 的旧摘要引用失败原样保留，另名修正控制源仅修摘要关联后执行，未重复服务器查询。E03 一次额度已消费，本机自有临时文件已由原 `9a698d` exit0 清理并独立核实；未 stop／卸载／detach／删除。快照不证明全部占用者不存在或可安全卸载，S29 EOF 原因仍未证；详见 [STATIC 最新记录](STATIC-POST-R16-20261106.md)。这些诊断不增加业务 PASS，不满足暂停条件。 E04 随后已获用户批准并原次前置 REFUSED／exit65／LOOP_DEVICE，动作列表为空，两个目标均 UNTOUCHED；本机原进程已退出、自有 TEMP 由原 `513a01` exit0 关闭并独立核实。额度已消费，不重试；依最新指示仅总结问题后暂停。
 
 S29 已因首项 TaskBoard 的 UNKNOWN 停轮：**PASS0／knownFAILED0／UNKNOWN1／RUNNING0／UNLAUNCHED7**，后七项从未启动且不继续；本轮不具完整八项或 8/8 PASS 资格。S30 已完成隔离树代码、正常产物与 474 项有限冻结；新四阶段的首项只读盘点原次以已知 FAILED 结束，尚未进入 plan／apply／after 或八项业务。整体静态排障目标仍 active，全部八项正常、MAIN 完整累计源码必要集成验证、本地提交及收尾后才暂停，不标记 complete，不启动新 AI。MAIN 尚未集成累计源码；ROOT30 相对共同基线的完整累计范围为 130 个源码／测试路径及 5 份历史文档，不能只取本轮 8 文件或旧 ROOT29 相对 ROOT28 的 19 文件。
 
