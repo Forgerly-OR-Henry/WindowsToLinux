@@ -61,12 +61,21 @@ class DeploymentAgentObservationReviewContractTest {
 
     @Test
     void pinnedVerifyBranchUsesAnExistingSharedReadLockAndReturnsBeforePreparation() throws Exception {
-        String fragment;
-        try (var source = Objects.requireNonNull(DeploymentManagedHelperBundle.class.getResourceAsStream(
-            "/gold/debug/windowstolinux/mod/deployment/linux/helper/toolchain/40-binding-protocol.py"))) {
-            fragment = new String(source.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
-        }
-        assertTrue(DeploymentManagedHelperBundle.renderScript().contains(fragment));
+        String fragment = resource("40-binding-protocol.py");
+        String insertion = "# @compat:toolchain-tracked@\n";
+        assertEquals(fragment.indexOf(insertion), fragment.lastIndexOf(insertion));
+        assertTrue(fragment.contains(insertion));
+        fragment = fragment.replace(insertion, resource("tracked-operations.py"));
+        String script = DeploymentManagedHelperBundle.renderScript();
+        String start = "def admitted(ecosystem, version):\n";
+        String end = "WTL_OFFICIAL_TOOLCHAINS\n}\n";
+        int fragmentStart = script.indexOf(start);
+        int fragmentEnd = script.indexOf(end, fragmentStart);
+        assertTrue(fragmentStart >= 0 && fragmentEnd > fragmentStart);
+        assertEquals(fragmentStart, script.lastIndexOf(start));
+        assertEquals(fragmentEnd, script.lastIndexOf(end));
+        assertEquals(fragment + "\n", script.substring(fragmentStart, fragmentEnd),
+            "The complete expanded binding protocol must match the independently pinned helper");
         int verifying = fragment.indexOf("    if verifying:\n");
         int preparing = fragment.indexOf("    else:\n        prepare_shared_directories()", verifying);
         assertTrue(verifying >= 0 && preparing > verifying);
@@ -86,6 +95,13 @@ class DeploymentAgentObservationReviewContractTest {
         assertFalse(body.contains("prepare_shared_directories()"));
         assertFalse(body.contains("download("));
         assertTrue(DeploymentAgentObservationReviewContract.text().contains("engine's internal implementation has absolutely no writes"));
+    }
+
+    private static String resource(String name) throws Exception {
+        try (var source = Objects.requireNonNull(DeploymentManagedHelperBundle.class.getResourceAsStream(
+            "/gold/debug/windowstolinux/mod/deployment/linux/helper/toolchain/" + name))) {
+            return new String(source.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+        }
     }
 
     private static String function(String script, String symbol) {

@@ -64,6 +64,7 @@ class DeploymentAgentObservationBranchEvidenceTest {
             assertFalse(result.trace().contains("--property DropInPaths"));
             assertFalse(result.trace().contains("FIXTURE:DATA_LINKS\n"));
         } else {
+            assertTrue(result.trace().contains("FIXTURE:SYSTEMCTL_EXECUTABLE\n"), result.trace());
             assertTrue(result.trace().contains("--property FragmentPath"));
             assertTrue(result.trace().contains("--property DropInPaths"));
             assertTrue(result.trace().contains("FIXTURE:DATA_LINKS\n"));
@@ -284,18 +285,18 @@ class DeploymentAgentObservationBranchEvidenceTest {
                 [ "$1" = "$fixture_release/source" ] || reject fixture-data-links
                 printf 'FIXTURE:DATA_LINKS\\n' >>"$trace"
             }
-            systemctl() {
+            fixture_systemctl() {
                 printf 'FIXTURE:SYSTEMCTL:%s\\n' "$*" >>"$trace"
                 case "$*" in
                     "show --value --property=ActiveState windowstolinux-build-$fixture_candidate.service") printf 'inactive\\n' ;;
                     "show --value --property=LoadState $fixture_unit_name") printf 'loaded\\n' ;;
-                    "show --value --property=ActiveState $fixture_unit_name") printf 'active\\n' ;;
+                    "show --value --property=ActiveState $fixture_unit_name" | "show --value --property ActiveState $fixture_unit_name") printf 'active\\n' ;;
                     "show --value --property FragmentPath $fixture_unit_name") printf '%s\\n' "$fixture_unit" ;;
                     "show --value --property DropInPaths $fixture_unit_name")
                         if [ "$FIXTURE_SCENARIO" = FOREIGN_DROPIN ]; then printf '/fixture/foreign.conf\\n'; fi
                         ;;
                     "is-active --quiet $fixture_unit_name") return 0 ;;
-                    "is-enabled $fixture_unit_name") printf 'enabled\\n' ;;
+                    "is-enabled $fixture_unit_name" | "show --value --property UnitFileState $fixture_unit_name") printf 'enabled\\n' ;;
                     "show --property=ActiveState,SubState,Result,ExecMainCode,ExecMainStatus,MainPID $fixture_unit_name")
                         printf 'ActiveState=active\\nSubState=running\\nResult=success\\nExecMainCode=0\\nExecMainStatus=0\\nMainPID=17\\n'
                         ;;
@@ -303,6 +304,17 @@ class DeploymentAgentObservationBranchEvidenceTest {
                     *) forbidden systemctl-mutation-or-unexpected-query ;;
                 esac
             }
+            mkdir -p -- "$fixture_root/bin"
+            {
+                printf '%s\\n' '#!/bin/bash' 'set -euo pipefail'
+                declare -f reject forbidden fixture_systemctl
+                printf '%s\\n' 'printf "FIXTURE:SYSTEMCTL_EXECUTABLE\\n" >>"$trace"' 'fixture_systemctl "$@"'
+            } >"$fixture_root/bin/systemctl"
+            chmod 700 -- "$fixture_root/bin/systemctl"
+            export trace fixture_candidate fixture_unit fixture_unit_name FIXTURE_SCENARIO
+            export PATH="$fixture_root/bin:/usr/bin:/bin"
+            [ -x "$fixture_root/bin/systemctl" ] && [ "$(type -t systemctl)" = file ] \
+                && [ "$(type -P systemctl)" = "$fixture_root/bin/systemctl" ] || reject fixture-systemctl-executable
             application_health() { forbidden health; }
             application_admit_run() { forbidden admission; }
             application_maintenance() { forbidden maintenance; }
