@@ -2973,8 +2973,9 @@ class DeploymentAgentApprovalTest {
 
     @Test
     void standaloneApprovalConsumesItsFiniteBudgetAndReleasesItAfterFailure() throws Exception {
+        int standaloneToolAttempts = DeploymentConfigLoader.current().ai().execution().standaloneToolAttempts();
         var f = new Frame();
-        for (int index = 0; index < 80; index++)
+        for (int index = 0; index < standaloneToolAttempts; index++)
             f.fixture.nativeReply(call("request", Map.of("part", "script", "offset", 0, "limit", 100)));
         f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
         try (var request = f.command("printf actual", "")) {
@@ -2982,21 +2983,22 @@ class DeploymentAgentApprovalTest {
             var rejected = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
             assertEquals("TASK_TOOL_BUDGET_EXHAUSTED", rejected.problem().context().get("reviewCode"));
         }
-        assertEquals(80, f.fixture.requests.size());
-        for (int index = 0; index < 80; index++) {
+        assertEquals(standaloneToolAttempts, f.fixture.requests.size());
+        for (int index = 0; index < standaloneToolAttempts; index++) {
             var actual = currentReview(f.fixture.requests.get(index));
-            assertEquals(80 - index, actual.path("remainingTaskTools").asInt());
+            assertEquals(standaloneToolAttempts - index, actual.path("remainingTaskTools").asInt());
         }
         assertEquals(1, f.fixture.replies.size(), "Exhaustion must stop before the queued approval can grant authority");
         assertTrue(f.grants.isEmpty());
         try (var next = DeploymentToolBudget.open(3)) {
             assertEquals(3, DeploymentToolBudget.remaining(), "A failed standalone review must not leak its owned scope");
         }
-        assertEquals(80, DeploymentToolBudget.remaining());
+        assertEquals(standaloneToolAttempts, DeploymentToolBudget.remaining());
     }
 
     @Test
     void nestedApprovalDebitsExistingSharedBudgetWithoutReplenishingOrClosingIt() throws Exception {
+        int standaloneToolAttempts = DeploymentConfigLoader.current().ai().execution().standaloneToolAttempts();
         var f = new Frame();
         try (var shared = DeploymentToolBudget.open(512)) {
             var prior = java.util.stream.IntStream.range(0, 420)
@@ -3013,8 +3015,8 @@ class DeploymentAgentApprovalTest {
             assertEquals("APPROVE", f.review(Map.of()).decision().decision());
             assertEquals(89, DeploymentToolBudget.remaining());
         }
-        assertEquals(80, DeploymentToolBudget.maximum());
-        assertEquals(80, DeploymentToolBudget.remaining());
+        assertEquals(standaloneToolAttempts, DeploymentToolBudget.maximum());
+        assertEquals(standaloneToolAttempts, DeploymentToolBudget.remaining());
     }
 
     private static DeploymentAgentPlan measuredPlan(String entrypoint) {
