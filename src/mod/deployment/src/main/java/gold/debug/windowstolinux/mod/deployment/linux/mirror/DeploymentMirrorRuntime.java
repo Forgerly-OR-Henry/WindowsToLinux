@@ -40,6 +40,10 @@ public final class DeploymentMirrorRuntime {
     /** Toolchain URL roots and redirect trust come from the Mod catalog, including older tasks. */
     public static String renderToolchainSources(String source) {
         var catalog = MirrorCatalog.load();
+        if (!source.contains("__WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__")
+            && !source.contains("__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__")
+            && !source.contains("__WTL_MIRROR_RUNTIME_SHA256__"))
+            return source;
         var origins = new java.util.TreeMap<String, java.util.List<String>>();
         catalog.points().forEach((point, configuration) -> origins.put(point.name(), configuration.sourceOrigins()));
         var hosts = new java.util.TreeSet<String>();
