@@ -2,7 +2,7 @@
 
 用户最新指示：当前继续静态排障和验收；**静态验证全部完成后暂停，不启动新一轮 AI 辅助验收**。旧连续首过目标及各失败记录保留，后续AI阶段等待用户恢复指示。
 
-独立挂载诊断保留各原次结果：首版 FAILED／exit65 `MALFORMED_RECORD`，V2 SUCCEEDED／exit0 取得两个 mutable 挂载；两次本机临时目录均已关闭，诊断库保留。用户另行批准的 [E03 只读归属查询](../../../.ai-workspace/evidence/static-s30-mount-ownership-proposal-20261108-01/mount-ownership-result.PARENT-REVIEW.json)现已原次 SUCCEEDED／exit0：两个候选的任务标记、loop2／loop7 及镜像路径／inode／设备身份匹配；构建单元已不存在，两个正式服务仍 active。首次本机 prep 的旧摘要引用失败原样保留，另名修正控制源仅修摘要关联后执行，未重复服务器查询。E03 一次额度已消费，本机自有临时文件已由原 `9a698d` exit0 清理并独立核实；未 stop／卸载／detach／删除。快照不证明全部占用者不存在或可安全卸载，S29 EOF 原因仍未证；详见 [STATIC 最新记录](STATIC-POST-R16-20261106.md)。这些诊断不增加业务 PASS，不满足暂停条件。
+独立挂载诊断保留各原次结果：首版 FAILED／exit65 `MALFORMED_RECORD`，V2 SUCCEEDED／exit0 取得两个 mutable 挂载；两次本机临时目录均已关闭，诊断库保留。用户另行批准的 [E03 只读归属查询](../../../.ai-workspace/evidence/static-s30-mount-ownership-proposal-20261108-01/mount-ownership-result.PARENT-REVIEW.json)现已原次 SUCCEEDED／exit0：两个候选的任务标记、loop2／loop7 及镜像路径／inode／设备身份匹配；构建单元已不存在，两个正式服务仍 active。首次本机 prep 的旧摘要引用失败原样保留，另名修正控制源仅修摘要关联后执行，未重复服务器查询。E03 一次额度已消费，本机自有临时文件已由原 `9a698d` exit0 清理并独立核实；未 stop／卸载／detach／删除。快照不证明全部占用者不存在或可安全卸载，S29 EOF 原因仍未证；详见 [STATIC 最新记录](STATIC-POST-R16-20261106.md)。这些诊断不增加业务 PASS，不满足暂停条件。 E04 固定卷释放程序与产品客户端已完成本机定点验证，具体新范围已单次询问用户、待答；服务器未执行停止或释放。
 
 S29 已因首项 TaskBoard 的 UNKNOWN 停轮：**PASS0／knownFAILED0／UNKNOWN1／RUNNING0／UNLAUNCHED7**，后七项从未启动且不继续；本轮不具完整八项或 8/8 PASS 资格。S30 已完成隔离树代码、正常产物与 474 项有限冻结；新四阶段的首项只读盘点原次以已知 FAILED 结束，尚未进入 plan／apply／after 或八项业务。整体静态排障目标仍 active，全部八项正常、MAIN 完整累计源码必要集成验证、本地提交及收尾后才暂停，不标记 complete，不启动新 AI。MAIN 尚未集成累计源码；ROOT30 相对共同基线的完整累计范围为 130 个源码／测试路径及 5 份历史文档，不能只取本轮 8 文件或旧 ROOT29 相对 ROOT28 的 19 文件。
 
