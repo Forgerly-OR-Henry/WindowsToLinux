@@ -2,7 +2,7 @@
 
 用户最新指示：当前继续静态排障和验收；**静态验证全部完成后暂停，不启动新一轮 AI 辅助验收**。旧连续首过目标及各失败记录保留，后续AI阶段等待用户恢复指示。
 
-首次另行获准的独立挂载观察已原次 FAILED／exit65 `MALFORMED_RECORD`，未取得挂载明细；一次授权已消费，不重试。原 Java 已退出，原 `389227` 本机清理实际 exit0，失败诊断库与原失败保留。V2 三项格式修正及本地 18＋41 项／静态回执 103 项验证完成，源码／编译类及修正启动清单已父审；[第二次具体范围](../../../.ai-workspace/evidence/static-s30-mount-only-proposal-20261108-02/mount-only-operation-scope.USER-REVIEW.json)尚未获新授权，没有第二次 SDK／服务器操作。原服务器触发分支、挂载归属及 S29 EOF 发起方仍未知；详见 [STATIC 最新记录](STATIC-POST-R16-20261106.md)。这不增加业务 PASS，也不满足暂停条件。
+首次另行获准的独立挂载观察已原次 FAILED／exit65 `MALFORMED_RECORD`，未取得挂载明细；一次授权已消费，不重试。原 Java 已退出，原 `389227` 本机清理实际 exit0，失败诊断库与原失败保留。V2 三项格式修正及本地 18＋41 项／静态回执 103 项验证完成，源码／编译类及修正启动清单已父审；[V2 单次观察](../../../.ai-workspace/evidence/static-s30-mount-only-proposal-20261108-02/mount-only-observation.RESULT-PARENT-REVIEW.json)已获新授权并原次 SUCCEEDED／exit0，取得 backend 与 frontend 两个 mutable 的 ext4 挂载记录（loop2／loop7）。原 474 有限冻结重核通过；本机自有临时目录由原 `86ce23` exit0 清理并独立核实，诊断正常库保留。单次额度已消费，无后续服务器调用。当前挂载与 S29 候选路径相符，但现时完整归属／占用原因及 S29 EOF 发起方仍未证；详见 [STATIC 最新记录](STATIC-POST-R16-20261106.md)。这不增加业务 PASS，也不满足暂停条件。
 
 S29 已因首项 TaskBoard 的 UNKNOWN 停轮：**PASS0／knownFAILED0／UNKNOWN1／RUNNING0／UNLAUNCHED7**，后七项从未启动且不继续；本轮不具完整八项或 8/8 PASS 资格。S30 已完成隔离树代码、正常产物与 474 项有限冻结；新四阶段的首项只读盘点原次以已知 FAILED 结束，尚未进入 plan／apply／after 或八项业务。整体静态排障目标仍 active，全部八项正常、MAIN 完整累计源码必要集成验证、本地提交及收尾后才暂停，不标记 complete，不启动新 AI。MAIN 尚未集成累计源码；ROOT30 相对共同基线的完整累计范围为 130 个源码／测试路径及 5 份历史文档，不能只取本轮 8 文件或旧 ROOT29 相对 ROOT28 的 19 文件。
 
