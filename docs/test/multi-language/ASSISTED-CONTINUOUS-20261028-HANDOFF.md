@@ -2,6 +2,8 @@
 
 最新接续边界：继续完成静态排障及固定八项验证；**全部八项正常及必要 MAIN 累计集成验证、提交、收尾后暂停，不启动新一轮 AI 辅助验收**。S29 首项 UNKNOWN 已停轮，后七项不得继续；整体目标 active，暂停条件尚未满足。
 
+首次另行获准的独立挂载观察已原次 FAILED／exit65 `MALFORMED_RECORD`，未取得挂载明细；一次授权已消费，不重试。原 Java 已退出，原 `389227` 本机清理实际 exit0，失败诊断库与原失败保留。V2 三项格式修正及本地 18＋41 项／静态回执 103 项验证完成，源码／编译类及修正启动清单已父审；[第二次具体范围](../../../.ai-workspace/evidence/static-s30-mount-only-proposal-20261108-02/mount-only-operation-scope.USER-REVIEW.json)尚未获新授权，没有第二次 SDK／服务器操作。原服务器触发分支、挂载归属及 S29 EOF 发起方仍未知；详见 [STATIC 最新记录](STATIC-POST-R16-20261106.md)。这不增加业务 PASS，也不满足暂停条件。
+
 S29 已因首项 TaskBoard 的 UNKNOWN 停轮：**PASS0／knownFAILED0／UNKNOWN1／RUNNING0／UNLAUNCHED7**，后七项从未启动且不继续；本轮不具完整八项或 8/8 PASS 资格。S30 已完成隔离树代码、正常产物与 474 项有限冻结；新四阶段的首项只读盘点原次以已知 FAILED 结束，尚未进入 plan／apply／after 或八项业务。整体静态排障目标仍 active，全部八项正常、MAIN 完整累计源码必要集成验证、本地提交及收尾后才暂停，不标记 complete，不启动新 AI。MAIN 尚未集成累计源码；ROOT30 相对共同基线的完整累计范围为 130 个源码／测试路径及 5 份历史文档，不能只取本轮 8 文件或旧 ROOT29 相对 ROOT28 的 19 文件。
 
 S30 新盘点唯一原工具 `1cc43f / session78676 → 8fb7bd` 已实际退出 1、无剩余 session；[原公开观测](../../../.ai-workspace/evidence/post-r16-static-sftp-channel-lifecycle-execution-inputs-20261108-01/inventory-failed-original.PUBLIC-OBSERVATION.json)为 JUnit **1/1/0/0，37.144 秒**。SSH 认证、指纹及连接正常，远端明确以退出码 65 返回 `TARGET_CONTAINS_MOUNT / inventory-roots / /var/lib/windowstolinux`；这是新准备 FAILED，不是 EOF，也不改变 S29 的 UNKNOWN。现有挂载保护在递归前拒绝目标自身及子挂载，合同保留。产品候选工作卷使用 loop 挂载，S29 两次候选创建／发布后 UNKNOWN 的保留路径可以解释本次拒绝，但具体挂载归属尚未证实；仅凭该错误不能清理。原冻结、失败正常库与证据保留；[本机异常收尾父审](../../../.ai-workspace/evidence/post-r16-static-sftp-channel-lifecycle-execution-inputs-20261108-01/failed-inventory-local-tmp-closed.PARENT-REVIEW.json)已接受原 `1d0836` actual exit0／无 session：四个精确原 PID 再观测均 absent、两个自有临时叶及两个空父目录已删除并核实，未观测的内部 JVM 仍 UNKNOWN；短独占探针在删除前释放，不声称连续锁或原子保证。四阶段后续三项及八项业务均未启动，不重放原盘点或走正常收尾。
