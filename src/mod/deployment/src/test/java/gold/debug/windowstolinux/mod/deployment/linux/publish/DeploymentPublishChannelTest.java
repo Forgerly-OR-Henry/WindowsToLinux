@@ -42,8 +42,11 @@ class DeploymentPublishChannelTest {
     void typedHealthAndSocketFactsSurviveLiveProjectionWithoutUnknownOrSensitiveValues() throws Exception {
         var type = Class.forName("gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticLiveAcceptanceTest");
         var projection = type.getDeclaredMethod("safeOriginalCallCauses", String.class); projection.setAccessible(true);
-        var allowed = List.of("problem[0].context.observationStage=health", "problem[0].context.healthUnitId=demo",
-            "problem[0].context.transportSocketReadDeliveryEnteredDuringCommand=0", "problem[0].context.transportSocketReadPendingBeforeCommand=true");
+        var allowed = new ArrayList<>(List.of("problem[0].context.observationStage=health", "problem[0].context.healthUnitId=demo",
+            "problem[0].context.transportSocketReadDeliveryEnteredDuringCommand=0", "problem[0].context.transportSocketReadPendingBeforeCommand=true",
+            "problem[0].context.transportFailureCauseType=java.io.EOFException"));
+        for (int index = 0; index < 6; index++)
+            allowed.add("problem[0].context.transportFailureStack[" + index + "]=org.apache.sshd.common.session.AbstractSession#exceptionCaught:174");
         var rejected = List.of("problem[0].context.privateCommand=private", "problem[0].context.transportSocketReadDeliveryActive=private",
             "problem[0].context.healthUnitId=" + "a".repeat(200), "problem[0].context.transportSocketReadUnknownCounter=3");
         var all = new ArrayList<>(allowed); all.addAll(rejected);
@@ -62,6 +65,10 @@ class DeploymentPublishChannelTest {
         upstream.put("transportSocketReadDeliveryEnteredDuringCommand", "0");
         upstream.put("transportSocketReadPendingBeforeCommand", "true");
         upstream.put("transportReadHandlerActive", "false");
+        upstream.put("transportFailureType", "org.apache.sshd.common.SshException");
+        upstream.put("transportFailureCauseType", "java.io.EOFException");
+        for (int index = 0; index < 6; index++)
+            upstream.put("transportFailureStack[" + index + "]", "org.apache.sshd.common.session.AbstractSession#exceptionCaught:174");
         upstream.put("command", "private command");
         upstream.put("payload", "private payload");
         upstream.put("unknownFact", "private value");
@@ -90,6 +97,9 @@ class DeploymentPublishChannelTest {
         for (String key : List.of("commandPhase", "timeoutMillis", "authorPayloadState", "channelOpenWriteState",
             "transportSocketReadDeliveryActive", "transportSocketReadDeliveryEnteredAtCommandStart",
             "transportSocketReadDeliveryEnteredDuringCommand", "transportSocketReadPendingBeforeCommand", "transportReadHandlerActive"))
+            assertEquals(upstream.get(key), facts.get(key), key);
+        for (String key : List.of("transportFailureType", "transportFailureCauseType", "transportFailureStack[0]",
+            "transportFailureStack[1]", "transportFailureStack[2]", "transportFailureStack[3]", "transportFailureStack[4]", "transportFailureStack[5]"))
             assertEquals(upstream.get(key), facts.get(key), key);
         assertFalse(result.toString().contains("private"));
         assertFalse(facts.containsKey("transportSocketReadAttempts"));

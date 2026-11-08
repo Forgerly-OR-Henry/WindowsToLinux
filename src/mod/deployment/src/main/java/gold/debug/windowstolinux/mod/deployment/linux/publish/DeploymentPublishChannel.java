@@ -81,7 +81,11 @@ public final class DeploymentPublishChannel {
         Map.entry("elapsedMillis", "[0-9]{1,13}"),
         Map.entry("timeoutMillis", "[0-9]{1,13}"),
         Map.entry("transportFailureType", "(?:java|org\\.apache\\.sshd)\\.[A-Za-z0-9_.$]{1,160}"),
+        Map.entry("transportFailureCauseType", "UNKNOWN|(?:java|org\\.apache\\.sshd)\\.[A-Za-z0-9_.$]{1,160}"),
         Map.entry("transportKeyExchangeState", "[A-Z_]{1,32}")));
+        for (int index = 0; index < 6; index++)
+            patterns.put("transportFailureStack[" + index + "]",
+                "(?:java|jdk|sun\\.nio|org\\.apache\\.sshd|gold\\.debug\\.windowstolinux\\.app\\.linux)\\.[A-Za-z0-9_.$]{1,160}#[A-Za-z0-9_$<>]{1,128}:-?[0-9]{1,10}");
         for (String key : List.of("channelOpenObservation", "execRequestObservation", "transportSocketReadObservation"))
             patterns.put(key, "NOT_OBSERVED|AVAILABLE|UNAVAILABLE");
         for (String key : List.of("channelOpenWriteState", "execRequestWriteState"))
@@ -953,7 +957,8 @@ public final class DeploymentPublishChannel {
         var facts = new LinkedHashMap<String, String>();
         OBSERVATION_FACT_PATTERNS.forEach((key, pattern) -> {
             String value = problem.context().get(key);
-            if (value != null && value.length() <= 180 && value.matches(pattern)) facts.put(key, value);
+            int maxLength = key.startsWith("transportFailureStack[") ? 384 : 180;
+            if (value != null && value.length() <= maxLength && value.matches(pattern)) facts.put(key, value);
         });
         return Map.copyOf(facts);
     }

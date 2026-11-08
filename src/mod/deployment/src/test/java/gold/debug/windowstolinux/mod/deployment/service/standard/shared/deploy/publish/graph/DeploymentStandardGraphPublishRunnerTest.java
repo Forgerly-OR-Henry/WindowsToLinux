@@ -103,9 +103,11 @@ public class DeploymentStandardGraphPublishRunnerTest extends DeploymentRuntimeF
     private static final String CONTROLLED_FINGERPRINT = "SHA256:"
         + Base64.getEncoder().withoutPadding().encodeToString(new byte[32]);
 
+    private static final UUID OBSERVATION_DIAGNOSTIC = UUID.fromString("10000000-0000-4000-8000-000000000030");
+
     /** Confirmed publication and confirmed middle-component health failure. / 已确认发布与已确认中途组件健康失败。 */
     private enum ScenarioType {
-        SUCCESS, HEALTH_FAILED_ROLLBACK, FIRST_HEALTH_FAILED_ROLLBACK, UNPUBLISHED_STATE_CHANGED, MIDDLE_HEALTH_FAILED_ROLLBACK, FIRST_PUBLISH_UNKNOWN, PUBLICATION_REFUSED, PUBLISH_UNKNOWN, ROLLBACK_KNOWN_FAILURE, ORIGINAL_CLEANUP_REFUSED, STAGE_UNKNOWN, CLOSE_UNKNOWN, TOO_MANY, DUPLICATE_ORDER, ROLLBACK_CLEANUP_REFUSED, CANCELLED_BEFORE_SOURCE, TOTAL_SPACE_EXCEEDED, PURPOSE_UNKNOWN, PURPOSE_MISMATCH
+        SUCCESS, HEALTH_FAILED_ROLLBACK, FIRST_HEALTH_FAILED_ROLLBACK, UNPUBLISHED_STATE_CHANGED, MIDDLE_HEALTH_FAILED_ROLLBACK, FIRST_PUBLISH_UNKNOWN, PUBLICATION_REFUSED, PUBLISH_UNKNOWN, FIRST_OBSERVE_UNKNOWN, RECHECK_OBSERVE_UNKNOWN, ROLLBACK_KNOWN_FAILURE, ORIGINAL_CLEANUP_REFUSED, STAGE_UNKNOWN, CLOSE_UNKNOWN, TOO_MANY, DUPLICATE_ORDER, ROLLBACK_CLEANUP_REFUSED, CANCELLED_BEFORE_SOURCE, TOTAL_SPACE_EXCEEDED, PURPOSE_UNKNOWN, PURPOSE_MISMATCH
     }
 
     /** Original grants must pass to the same remote session. / 原授权必须传给同一远端会话。 */
@@ -643,6 +645,12 @@ public class DeploymentStandardGraphPublishRunnerTest extends DeploymentRuntimeF
         runIsolated(ScenarioType.PUBLISH_UNKNOWN);
     }
 
+    @ParameterizedTest
+    @EnumSource(value = ScenarioType.class, names = {"FIRST_OBSERVE_UNKNOWN", "RECHECK_OBSERVE_UNKNOWN"})
+    void unknownObservationRetainsTypedDiagnosticsAcrossGraphWrappersWithoutMoreCalls(ScenarioType scenario) throws Exception {
+        runIsolated(scenario);
+    }
+
     /** A fully observed failed rollback continues other inverse restores while retaining manual review. / 完整观察到的回滚失败仍继续其他逆序恢复，同时保留人工核对。
      * @throws Exception if the controlled child cannot finish / 受控子进程无法完成时 */
     @Test
@@ -694,9 +702,16 @@ public class DeploymentStandardGraphPublishRunnerTest extends DeploymentRuntimeF
      * @throws Exception if the child fails / 子进程失败时 */
     private void runIsolated(ScenarioType scenario) throws Exception {
         var javaBinary = Path.of(System.getProperty("java.home"), "bin", "java.exe");
-        var process = new ProcessBuilder(javaBinary.toString(), "-cp", System.getProperty("java.class.path"),
-            getClass().getName(), "--unknown", root.toString(), scenario.name()).redirectErrorStream(true).start();
+        var process = new ProcessBuilder(javaBinary.toString(), "-Djava.io.tmpdir=" + System.getProperty("java.io.tmpdir"),
+            "-Djna.tmpdir=" + System.getProperty("java.io.tmpdir"),
+            "-Djdk.net.unixdomain.tmpdir=" + System.getProperty("java.io.tmpdir"), "-cp", Objects.requireNonNull(System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"))),
+            getClass().getName(), "--unknown", root.toString(), scenario.name()).directory(workspace().toFile()).redirectErrorStream(true).start();
+        var child = process.toHandle();
         try {
+            var birth = child.info().startInstant().orElseThrow();
+            String birthUtc7 = new java.time.format.DateTimeFormatterBuilder().appendInstant(7).toFormatter().format(birth);
+            String birthFileTime = Long.toString(Math.addExact(Math.multiplyExact(birth.getEpochSecond() + 11644473600L, 10000000L), birth.getNano() / 100));
+            System.out.println("GRAPH_CHILD_STARTED pid=" + child.pid() + " startInstantUtc7=" + birthUtc7 + " startInstantDerivedFileTime=" + birthFileTime);
             assertTrue(process.waitFor(50, TimeUnit.SECONDS), "Isolated graph task timed out");
             String output = new String(process.getInputStream().readAllBytes(),
                 java.nio.charset.StandardCharsets.UTF_8);
@@ -710,6 +725,8 @@ public class DeploymentStandardGraphPublishRunnerTest extends DeploymentRuntimeF
                     assertTrue(process.waitFor(5, TimeUnit.SECONDS), "Task-started child did not exit");
                 }
             }
+            assertFalse(process.isAlive(), "The original graph child must exit");
+            System.out.println("GRAPH_CHILD_EXIT pid=" + child.pid() + " actualExit=" + process.exitValue() + " originalProcessWaitCompleted=true");
         }
     }
 
@@ -1013,10 +1030,23 @@ public class DeploymentStandardGraphPublishRunnerTest extends DeploymentRuntimeF
                 || scenario == ScenarioType.PUBLISH_UNKNOWN || scenario == ScenarioType.ROLLBACK_KNOWN_FAILURE
                 || scenario == ScenarioType.ORIGINAL_CLEANUP_REFUSED || scenario == ScenarioType.STAGE_UNKNOWN
                 || scenario == ScenarioType.CLOSE_UNKNOWN || scenario == ScenarioType.ROLLBACK_CLEANUP_REFUSED
-                || scenario == ScenarioType.UNPUBLISHED_STATE_CHANGED) {
+                || scenario == ScenarioType.UNPUBLISHED_STATE_CHANGED || scenario == ScenarioType.FIRST_OBSERVE_UNKNOWN
+                || scenario == ScenarioType.RECHECK_OBSERVE_UNKNOWN) {
                 for (int attempt = 0; attempt < 200 && task.snapshot().state() != TaskState.UNKNOWN; attempt++)
                     Thread.sleep(10);
                 assertEquals(TaskState.UNKNOWN, task.snapshot().state(), task.snapshot().toString());
+                String observationEvent = "NOT_APPLICABLE";
+                if (scenario == ScenarioType.FIRST_OBSERVE_UNKNOWN || scenario == ScenarioType.RECHECK_OBSERVE_UNKNOWN) {
+                    try (var connection = runtime.persistence().database().openConnection();
+                         var query = connection.prepareStatement("SELECT result_json FROM platform_task WHERE task_id=?")) {
+                        query.setObject(1, task.id());
+                        try (var rows = query.executeQuery()) {
+                            assertTrue(rows.next());
+                            String event = new com.fasterxml.jackson.databind.ObjectMapper().readTree(rows.getString(1)).findPath("eventCode").asText();
+                            observationEvent = event.matches("[A-Z][A-Z0-9_]{0,119}") ? event : "UNAVAILABLE";
+                        }
+                    }
+                }
                 if (scenario == ScenarioType.PUBLICATION_REFUSED) {
                     var checkpoint = new gold.debug.windowstolinux.app.db.task.TaskAuthorCheckpoint(runtime.persistence().database())
                         .find(task.snapshot().id(), OWNER, "1.0.0", "deployment-publication-unit-00").orElseThrow();
@@ -1030,9 +1060,9 @@ public class DeploymentStandardGraphPublishRunnerTest extends DeploymentRuntimeF
                     ? 1
                     : 0, countMod(runtime, "deployment_release"));
                 assertEquals(scenario == ScenarioType.STAGE_UNKNOWN || scenario == ScenarioType.PUBLICATION_REFUSED ? 0
-                        : scenario == ScenarioType.FIRST_PUBLISH_UNKNOWN ? 1
+                        : scenario == ScenarioType.FIRST_PUBLISH_UNKNOWN || scenario == ScenarioType.FIRST_OBSERVE_UNKNOWN ? 1
                         : scenario == ScenarioType.UNPUBLISHED_STATE_CHANGED ? 1 : 2,
-                    actions.stream().filter("publish"::equals).count());
+                    actions.stream().filter("publish"::equals).count(), "UNKNOWN event=" + observationEvent + " fixtureActions=" + actions);
                 assertEquals(
                     scenario == ScenarioType.ROLLBACK_KNOWN_FAILURE
                         || scenario == ScenarioType.ROLLBACK_CLEANUP_REFUSED
@@ -1045,6 +1075,44 @@ public class DeploymentStandardGraphPublishRunnerTest extends DeploymentRuntimeF
                     assertEquals(1, actions.stream().filter("observe-unpublished"::equals).count());
                 assertTrue(
                     scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL") > 0);
+                if (scenario == ScenarioType.FIRST_OBSERVE_UNKNOWN || scenario == ScenarioType.RECHECK_OBSERVE_UNKNOWN) {
+                    assertEquals(scenario == ScenarioType.FIRST_OBSERVE_UNKNOWN ? 1 : 3,
+                        actions.stream().filter("observe"::equals).count());
+                    assertEquals(scenario == ScenarioType.FIRST_OBSERVE_UNKNOWN ? 1 : 3,
+                        actions.stream().filter("health-component"::equals).count());
+                    assertFalse(actions.contains("health-whole"));
+                    try (var connection = runtime.persistence().database().openConnection();
+                         var query = connection.prepareStatement("SELECT result_json FROM platform_task WHERE task_id=?")) {
+                        query.setObject(1, task.id());
+                        try (var rows = query.executeQuery()) {
+                            assertTrue(rows.next());
+                            var result = new com.fasterxml.jackson.databind.ObjectMapper().readTree(rows.getString(1));
+                            assertEquals("UNKNOWN", result.path("outcome").asText());
+                            var problem = result.findValue("eventCode");
+                            assertNotNull(problem);
+                            assertEquals(scenario == ScenarioType.FIRST_OBSERVE_UNKNOWN
+                                ? "DEPLOYMENT_GRAPH_HEALTH_UNCONFIRMED" : "DEPLOYMENT_GRAPH_RECHECK_UNCONFIRMED", problem.asText());
+                            var diagnostic = result.findValue("diagnosticId");
+                            assertNotNull(diagnostic, "Original diagnosticId must survive both Graph wrappers");
+                            assertEquals(OBSERVATION_DIAGNOSTIC.toString(), diagnostic.asText());
+                            var facts = result.findValue("context");
+                            assertNotNull(facts);
+                            for (var fact : observationTransportFacts().entrySet()) {
+                                if (!fact.getKey().contains("private"))
+                                    assertEquals(fact.getValue(), facts.path(fact.getKey()).asText(), fact.getKey());
+                            }
+                            assertFalse(result.toString().contains("private"));
+                            var projectionType = Class.forName("gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticLiveAcceptanceTest");
+                            var projection = projectionType.getDeclaredMethod("safeOriginalCallCauses", String.class);
+                            projection.setAccessible(true);
+                            for (var fact : observationTransportFacts().entrySet()) {
+                                if (fact.getKey().contains("private")) continue;
+                                String detail = "problem[0].context." + fact.getKey() + "=" + facts.path(fact.getKey()).asText();
+                                assertEquals(List.of(detail), projection.invoke(null, detail));
+                            }
+                        }
+                    }
+                }
                 return;
             }
             OperationResult<Void> result;
@@ -1256,6 +1324,7 @@ public class DeploymentStandardGraphPublishRunnerTest extends DeploymentRuntimeF
                                AtomicLong bytes, AtomicReference<Path> path, CountDownLatch callbackEnded) {
         var running = new ConcurrentHashMap<String, Boolean>();
         var firstStage = new AtomicBoolean();
+        var observations = new AtomicInteger();
         var modelReceipt = new AtomicReference<String>();
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
             new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
@@ -1314,7 +1383,15 @@ public class DeploymentStandardGraphPublishRunnerTest extends DeploymentRuntimeF
                     actions.add("build-preflight");
                     return reply("");
                 }
-                if (script.contains("prepare-toolchains 'prepare'")) {
+                if (script.contains("prepare-toolchains 'prepare-diagnosed'")) {
+                    var original = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.decode(((CommandRequest) args[0]).stdin());
+                    assertEquals(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.command(
+                        "prepare-diagnosed", original), script);
+                    assertEquals("server-publication", original.serverId());
+                    assertEquals(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.sha256(
+                        CONTROLLED_FINGERPRINT.getBytes(StandardCharsets.UTF_8)), original.fingerprintSha256());
+                    assertEquals(grants.get((ApprovalGrant) args[1]).revision(), original.planRevision());
+                    assertEquals("GO", original.arguments().get(1));
                     actions.add("prepare-tools");
                     if (hostPrerequisiteGap) {
                         preparationTimeouts.add(((CommandRequest) args[0]).timeout().toSeconds());
@@ -1444,6 +1521,12 @@ public class DeploymentStandardGraphPublishRunnerTest extends DeploymentRuntimeF
                 }
                 if (script.contains("observe-deployment")) {
                     actions.add("observe");
+                    int observed = observations.incrementAndGet();
+                    if (scenario == ScenarioType.FIRST_OBSERVE_UNKNOWN && observed == 1
+                        || scenario == ScenarioType.RECHECK_OBSERVE_UNKNOWN && observed == 3)
+                        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
+                            Optional.of(new Problem(ProblemCode.UNKNOWN, "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT", "private exception body",
+                                observationTransportFacts(), Optional.of(OBSERVATION_DIAGNOSTIC))));
                     var id = script.contains("'db'") ? "db" : script.contains("'api'") ? "api" : "web";
                     boolean active = running.getOrDefault(id, true);
                     return reply("OWNER=1\nRUNNING=" + (active ? "1" : "0")
@@ -1484,6 +1567,17 @@ public class DeploymentStandardGraphPublishRunnerTest extends DeploymentRuntimeF
     /** Complete fixed command response. / 完整固定命令回执。 */
     private static OperationResult<CommandResult> reply(String output) {
         return reply(0, output);
+    }
+
+    private static Map<String, String> observationTransportFacts() {
+        var facts = new LinkedHashMap<String, String>();
+        facts.put("transportFailureType", "org.apache.sshd.common.SshException");
+        facts.put("transportFailureCauseType", "java.io.EOFException");
+        for (int index = 0; index < 6; index++)
+            facts.put("transportFailureStack[" + index + "]", "org.apache.sshd.common.session.AbstractSession#exceptionCaught:174");
+        facts.put("privateCommand", "private argv");
+        facts.put("privatePayload", "private payload");
+        return Map.copyOf(facts);
     }
 
     /** Returns a complete observed native exit. / 返回完整已观察原生退出。 */

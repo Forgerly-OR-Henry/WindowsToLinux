@@ -154,7 +154,7 @@ public final class DeploymentStandardGraphPublishTransaction {
                 gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.healthGraphComponent", id));
             var immediate = healthy(id, plans, units, channels);
             if (immediate.outcome() == TaskResult.UNKNOWN || immediate.outcome() == TaskResult.CANCELLED)
-                return unknown("DEPLOYMENT_GRAPH_HEALTH_UNCONFIRMED");
+                return unknown("DEPLOYMENT_GRAPH_HEALTH_UNCONFIRMED", immediate);
             if (immediate.outcome() == TaskResult.FAILED)
                 return rollback(ordering, units, plans, builds, snapshots, channels, journals, root, affected,
                     DeploymentStandardSinglePublishTransaction.healthFailure(immediate, units.get(id).id()).problem().orElseGet(
@@ -165,7 +165,7 @@ public final class DeploymentStandardGraphPublishTransaction {
                 gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.healthGraphComponent", id));
             var repeated = healthy(id, plans, units, channels);
             if (repeated.outcome() == TaskResult.UNKNOWN || repeated.outcome() == TaskResult.CANCELLED)
-                return unknown("DEPLOYMENT_GRAPH_RECHECK_UNCONFIRMED");
+                return unknown("DEPLOYMENT_GRAPH_RECHECK_UNCONFIRMED", repeated);
             if (repeated.outcome() == TaskResult.FAILED)
                 return rollback(ordering, units, plans, builds, snapshots, channels, journals, root, affected,
                     DeploymentStandardSinglePublishTransaction.healthFailure(repeated, units.get(id).id()).problem()
@@ -205,7 +205,7 @@ public final class DeploymentStandardGraphPublishTransaction {
             gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.graphHealth"));
         var whole = channels.get(healthComponent).healthCheck(units.get(healthComponent), health);
         if (whole.outcome() == TaskResult.UNKNOWN || whole.outcome() == TaskResult.CANCELLED)
-            return unknown("DEPLOYMENT_GRAPH_HEALTH_GATE_UNCONFIRMED");
+            return unknown("DEPLOYMENT_GRAPH_HEALTH_GATE_UNCONFIRMED", whole);
         if (whole.outcome() == TaskResult.FAILED)
             return rollback(ordering, units, plans, builds, snapshots, channels, journals, root, affected,
                 DeploymentStandardSinglePublishTransaction.healthFailure(whole, units.get(healthComponent).id()).problem()
@@ -318,7 +318,7 @@ public final class DeploymentStandardGraphPublishTransaction {
             return health;
         var observed = channels.get(id).observe(units.get(id), runtime);
         if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty())
-            return unknownVoid("DEPLOYMENT_GRAPH_RUNTIME_UNCONFIRMED");
+            return unknownVoid("DEPLOYMENT_GRAPH_RUNTIME_UNCONFIRMED", observed);
         var expected = runtime.workload().mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND
             ? DeploymentRemoteRuntimeObservation.StateType.INSTALLED
             : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
@@ -527,11 +527,24 @@ public final class DeploymentStandardGraphPublishTransaction {
             Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 
+    /** Keeps only bounded diagnostics from an uncertain graph observation. / 仅保留未决图观测的有界诊断。
+     * @param event original graph event / 原图事件
+     * @param observed original observation / 原观测
+     * @return explicit unknown / 显式未知 */
+    private static OperationResult<DeploymentPublishResult> unknown(String event, OperationResult<?> observed) {
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), unknownVoid(event, observed).problem());
+    }
+
     /** Returns uncertainty for a component health observation. / 返回组件健康观察的不确定性。
      * @param event stable event / 稳定事件
+     * @param observed original observation / 原观测
      * @return unknown component result / 未知组件结果 */
-    private static OperationResult<Void> unknownVoid(String event) {
+    private static OperationResult<Void> unknownVoid(String event, OperationResult<?> observed) {
+        var original = observed.problem();
+        var conclusion = problem(ProblemCode.UNKNOWN, event);
         return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
-            Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(new Problem(conclusion.code(), conclusion.eventCode(), conclusion.message(),
+                original.map(DeploymentPublishChannel::runtimeObservationDiagnostics).orElseGet(Map::of),
+                original.flatMap(Problem::diagnosticId))));
     }
 }

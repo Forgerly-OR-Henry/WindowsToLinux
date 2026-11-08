@@ -8364,7 +8364,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
     }
 
     private static boolean safeRuntimeObservationFact(String line) {
-        if (line.length() > 384 || !line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.[A-Za-z0-9]+=[^\\r\\n]*")) return false;
+        if (line.length() > 384 || !line.matches("(?:problem\\[[0-9]+\\]\\.)?context\\.(?:[A-Za-z0-9]+|transportFailureStack\\[[0-5]\\])=[^\\r\\n]*")) return false;
         int at = line.indexOf("context.") + "context.".length(), separator = line.indexOf('=', at);
         String key = line.substring(at, separator), value = line.substring(separator + 1);
         var problem = new Problem(gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNKNOWN,
