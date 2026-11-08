@@ -123,6 +123,8 @@ public final class DeploymentFixedCommandProtocol implements DeploymentCommandPr
             }
         }
         if (intent.semantics().orElseThrow().operation().equals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION)) {
+            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.requireOriginal(request,
+                new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst()), task.id().toString());
             var binding = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.inspect(intent, request, layout);
             var evidence = new java.util.LinkedHashMap<String, Object>(DeploymentCommandEvidence.baseFacts(intent, request, layout, false));
             byte[] input = request.stdin();

@@ -126,6 +126,13 @@ public final class DeploymentMirrorGuidance {
         for (var route : value.path("routes")) routes.add(Map.of(
             "origin", publicUrl(route.path("origin").asText()), "prefix", publicUrl(route.path("prefix").asText())));
         result.put("routes", List.copyOf(routes));
+        var redirects = new ArrayList<Map<String, String>>();
+        for (var valueRule : value.path("redirectRules")) {
+            var rule = new ResolvedMirrorPolicy.RedirectRule(valueRule.path("fromHost").asText(),
+                valueRule.path("toHost").asText(), valueRule.path("pathPrefix").asText());
+            redirects.add(Map.of("fromHost", rule.fromHost(), "toHost", rule.toHost(), "pathPrefix", rule.pathPrefix()));
+        }
+        result.put("redirectRules", List.copyOf(redirects));
         var repositories = new TreeMap<String, String>();
         value.path("repoTemplates").fields().forEachRemaining(entry -> repositories.put(entry.getKey(), publicUrl(entry.getValue().asText())));
         result.put("repoTemplates", Collections.unmodifiableMap(repositories));

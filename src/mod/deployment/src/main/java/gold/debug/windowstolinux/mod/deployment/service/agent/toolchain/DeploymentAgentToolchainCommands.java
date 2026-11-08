@@ -276,11 +276,15 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
         if (commands.remainingSeconds() < 45)
             return budgetExhausted();
         String operation = operation();
-        var result = send("deployment.agent.toolchain.dependencies.v1", dependencyTargets(server, profile),
-            DeploymentAgentToolchainPrograms.dependencies(layout), List.of(profile, operation), Math.min(7200, commands.remainingSeconds()));
+        long seconds = Math.min(7200, commands.remainingSeconds());
+        var result = send("deployment.agent.toolchain.dependencies.v1",
+            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(server, profile, operation, layout),
+            DeploymentAgentToolchainPrograms.dependencies(layout),
+            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.frame(profile, operation, seconds, server, programState.taskId()), seconds);
         if (!complete(result))
             return result;
-        return dependencyReceipt(result.value().orElseThrow().stdout(), profile, operation)
+        return gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyReceipt(
+            result.value().orElseThrow().stdout(), profile, operation, seconds, server, programState.taskId(), layout)
             ? result : unconfirmed("DEPLOYMENT_AGENT_TOOLCHAIN_DEPENDENCIES_UNCONFIRMED");
     }
 
@@ -382,7 +386,6 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
         }
     }
 
-    private static boolean dependencyReceipt(String stdout, String ecosystem, String operation) { return gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyReceipt(stdout, ecosystem, operation); }
 
     private static boolean complete(OperationResult<CommandResult> result) {
         return result.outcome() == TaskResult.SUCCEEDED && result.value().isPresent()

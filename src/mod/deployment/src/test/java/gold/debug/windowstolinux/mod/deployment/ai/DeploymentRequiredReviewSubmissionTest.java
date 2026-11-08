@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class DeploymentRequiredReviewSubmissionTest {
     private static final String REVISION = "fixture-route";
@@ -89,11 +90,10 @@ class DeploymentRequiredReviewSubmissionTest {
     }
 
     @Test
-    void plainTextHealthReviewStopsBeforeHostAuthorizationAndDispatchWithoutRetry() throws Exception {
+    void plainTextHealthReviewStopsBeforeHostAuthorizationAndDispatchAfterOneFormatCorrection() throws Exception {
         var fixture = new NativeAiFixture();
-        fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED,
-            Optional.of(new AiResponse("Unsubmitted controlled review", "fixture-model", "stop",
-                new AiUsage(Optional.of(3558L), Optional.of(659L), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
+        textReply(fixture);
+        textReply(fixture);
         var boundary = boundary(fixture);
         var failure = assertThrows(ApiException.class, () -> boundary.channel().healthCheck(unit(), check()));
 
@@ -101,7 +101,117 @@ class DeploymentRequiredReviewSubmissionTest {
         assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", failure.problem().eventCode());
         assertInstanceOf(IOException.class, failure.getCause());
         assertEquals("A complete native result submission is required", failure.getCause().getMessage());
-        assertStopped(fixture, boundary, 1);
+        assertStopped(fixture, boundary, 2);
+        assertCorrection(fixture);
+    }
+
+    @ParameterizedTest
+    @MethodSource("correctedReviews")
+    void completeTextGetsOneLocalCorrectionAndStillRequiresANativeDecision(boolean retained, String decision) throws Exception {
+        var fixture = new NativeAiFixture();
+        textReply(fixture);
+        fixture.nativeReply(new AiToolCall("corrected", "submit_result", "{\"decision\":\"" + decision
+            + "\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled native review\"}"));
+        var ai = retained ? new DeploymentAiJson(fixture.context, conversation(fixture)) : new DeploymentAiJson(fixture.context);
+        var result = ai.askCommand("Review the exact current request", facts("first"), REVISION,
+            fixture.task, DeploymentReviewDecision::malformed);
+
+        assertEquals(decision, result.path("decision").asText());
+        assertEquals(2, fixture.requests.size());
+        assertCorrection(fixture);
+        var first = fixture.requests.getFirst();
+        var second = fixture.requests.getLast();
+        assertEquals(first.tools(), second.tools());
+        assertEquals(first.timeout(), second.timeout());
+        assertEquals(first.maxOutputTokens(), second.maxOutputTokens());
+        assertEquals(first.generationRecoveryAttempts(), second.generationRecoveryAttempts());
+        assertTrue(second.messages().stream().noneMatch(m -> m.toolResult().isPresent()), "No call id existed for a tool result");
+        var withoutCorrection = new ArrayList<>(second.messages());
+        var correction = withoutCorrection.remove(withoutCorrection.size() - 2);
+        assertEquals(first.messages(), withoutCorrection, "All original evidence stays unchanged and current facts stay last");
+        assertEquals(AiRole.USER, correction.role());
+        assertTrue(correction.text().startsWith("SUBMISSION_REJECTED: native submit_result is missing."));
+        assertTrue(correction.text().contains("Text alone is not a decision or execution permission"));
+        assertTrue(second.messages().stream().noneMatch(m -> m.text().contains("UNTRUSTED_TEXT_APPROVE")));
+
+        if (retained) {
+            deny(fixture, "next-command");
+            ai.askCommand("Review another exact request", facts("second"), REVISION,
+                fixture.task, DeploymentReviewDecision::malformed);
+            var next = fixture.requests.getLast().messages();
+            assertTrue(next.stream().noneMatch(m -> m.text().startsWith("SUBMISSION_REJECTED: native submit_result is missing.")),
+                "A local missing-call correction must not pollute the next command");
+            assertEquals("second", JSON.readTree(next.getLast().text()).path("exactAction").asText());
+            assertTrue(next.stream().anyMatch(m -> m.toolResult().map(r -> r.callId().equals("corrected")).orElse(false)));
+        }
+    }
+
+    private static Stream<Arguments> correctedReviews() {
+        return Stream.of(false, true).flatMap(retained -> Stream.of("APPROVE", "DENY")
+            .map(decision -> Arguments.of(retained, decision)));
+    }
+
+    @ParameterizedTest
+    @MethodSource("mixedInvalidReviews")
+    void missingCallAndInvalidNativeShapeShareTheSameTwoSubmissionBudget(boolean retained, boolean textFirst) throws Exception {
+        var fixture = new NativeAiFixture();
+        if (textFirst) textReply(fixture);
+        fixture.nativeReply(new AiToolCall("bad-native", "submit_result", "{\"decision\":\"APPROVE\"}"));
+        if (!textFirst) textReply(fixture);
+        deny(fixture, "unreachable-third");
+        var ai = retained ? new DeploymentAiJson(fixture.context, conversation(fixture)) : new DeploymentAiJson(fixture.context);
+
+        if (retained) {
+            assertThrows(IOException.class, () -> ai.askCommand("Review current request", facts("first"), REVISION,
+                fixture.task, DeploymentReviewDecision::malformed));
+        } else {
+            var boundary = boundary(fixture);
+            assertThrows(ApiException.class, () -> boundary.channel().healthCheck(unit(), check()));
+            assertStopped(fixture, boundary, 2);
+        }
+        assertEquals(2, fixture.requests.size());
+        assertEquals(1, fixture.replies.size(), "No third model call may escape the common budget");
+        assertEquals(textFirst ? 1 : 0, corrections(fixture).size());
+        assertTrue(fixture.requests.stream().allMatch(r -> r.requiredToolName().isEmpty()));
+    }
+
+    private static Stream<Arguments> mixedInvalidReviews() {
+        return Stream.of(false, true).flatMap(retained -> Stream.of(false, true).map(first -> Arguments.of(retained, first)));
+    }
+
+    @Test
+    void transportUnknownAfterFormatCorrectionStaysUnknownAndDoesNotGetAnotherCall() {
+        var fixture = new NativeAiFixture();
+        textReply(fixture);
+        fixture.replies.add(new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(
+            ProblemCode.UNKNOWN, "MODEL_UNKNOWN", "Controlled unknown transport", Map.of(), Optional.empty()))));
+        deny(fixture, "unreachable-third");
+        var failure = assertThrows(DeploymentAiJson.CapabilityOutcomeException.class, () -> new DeploymentAiJson(fixture.context)
+            .askCommand("Review current request", facts("first"), REVISION, fixture.task, DeploymentReviewDecision::malformed));
+        assertEquals(TaskResult.UNKNOWN, failure.outcome());
+        assertEquals(2, fixture.requests.size());
+        assertEquals(1, fixture.replies.size());
+        assertEquals(1, corrections(fixture).size());
+    }
+
+    @Test
+    void correctionIsNotOfferedForLanguageOtherFinishReasonsOrInconsistentNativeCalls() {
+        for (String finish : List.of("content_filter", "tool_calls", "stop")) {
+            var fixture = new NativeAiFixture();
+            var calls = finish.equals("stop") ? List.of(new AiToolCall("unexpected", "submit_result", "{}")) : List.<AiToolCall>of();
+            fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("Controlled incomplete",
+                "fixture-model", finish, new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
+                calls, Optional.empty())), Optional.empty()));
+            assertThrows(IOException.class, () -> new DeploymentAiJson(fixture.context).askCommand("Review", facts("first"),
+                REVISION, fixture.task, DeploymentReviewDecision::malformed));
+            assertEquals(1, fixture.requests.size());
+            assertTrue(corrections(fixture).isEmpty());
+        }
+        var language = new NativeAiFixture();
+        textReply(language);
+        assertThrows(IOException.class, () -> new DeploymentAiJson(language.context).ask(AiPurpose.LANGUAGE, "Analyse", Map.of(), REVISION, language.task));
+        assertEquals(1, language.requests.size());
+        assertTrue(corrections(language).isEmpty());
     }
 
     @Test
@@ -116,6 +226,79 @@ class DeploymentRequiredReviewSubmissionTest {
         assertEquals("Controlled current request denial", failure.problem().context().get("reviewReason"));
         assertEquals("false", failure.problem().context().get("requiresUserConfirmation"));
         assertStopped(fixture, boundary, 1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void preGrantStageIsSerializedAsSystemPolicyAndDenialCannotAuthorizeOrDispatch(boolean retained) throws Exception {
+        var fixture = new NativeAiFixture();
+        deny(fixture, "stage-denial");
+        var boundary = boundary(fixture, retained, TaskResult.SUCCEEDED);
+        var denied = assertThrows(ApiException.class, () -> boundary.channel().healthCheck(unit(), check()));
+
+        assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
+        assertStopped(fixture, boundary, 1);
+        assertPreGrantStage(fixture, retained);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void approvalStillObtainsTheExactHostGrantBeforeDispatch(boolean retained) throws Exception {
+        var fixture = new NativeAiFixture();
+        fixture.nativeReply(new AiToolCall("stage-approval", "submit_result",
+            "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled safe command review\"}"));
+        var boundary = boundary(fixture, retained, TaskResult.SUCCEEDED);
+
+        assertEquals(TaskResult.SUCCEEDED, boundary.channel().healthCheck(unit(), check()).outcome());
+        assertEquals(1, boundary.authorizations().get());
+        assertEquals(1, boundary.dispatches().get());
+        assertPreGrantStage(fixture, retained);
+    }
+
+    @ParameterizedTest
+    @MethodSource("hostRefusals")
+    void approvalCannotDispatchWhenTheOriginalHostDoesNotGrant(boolean retained, TaskResult outcome) throws Exception {
+        var fixture = new NativeAiFixture();
+        fixture.nativeReply(new AiToolCall("stage-approval-without-grant", "submit_result",
+            "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled safe command review\"}"));
+        var boundary = boundary(fixture, retained, outcome);
+
+        assertEquals(outcome, boundary.channel().healthCheck(unit(), check()).outcome());
+        assertEquals(1, boundary.authorizations().get());
+        assertEquals(0, boundary.dispatches().get());
+        assertPreGrantStage(fixture, retained);
+    }
+
+    private static Stream<Arguments> hostRefusals() {
+        return Stream.of(false, true).flatMap(retained -> Stream.of(TaskResult.FAILED, TaskResult.CANCELLED, TaskResult.UNKNOWN)
+            .map(outcome -> Arguments.of(retained, outcome)));
+    }
+
+    private static void assertPreGrantStage(NativeAiFixture fixture, boolean retained) throws Exception {
+        assertEquals(1, fixture.requests.size());
+        var request = fixture.requests.getFirst();
+        assertTrue(request.requiredToolName().isEmpty(), "Stage clarification must preserve AUTO native submission");
+        String stage = gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources.text(
+            gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentFixedCommandApproval.class, "command-review-stage.md");
+        var facts = JSON.readTree(request.messages().getLast().text());
+        assertEquals("INDEPENDENT_REVIEW_BEFORE_HOST_GRANT", facts.at("/commandAuthorizationStage/phase").asText());
+        assertTrue(facts.at("/commandAuthorizationStage/hostGrantRequestedOnlyAfterApprove").booleanValue());
+        assertFalse(facts.at("/commandAuthorizationStage/hostGrantIssuedByThisBoundary").booleanValue());
+        assertTrue(facts.at("/commandAuthorizationStage/exactHostGrantRequiredBeforeDispatch").booleanValue());
+        assertFalse(facts.has("commandGrant"), "A phase fact must not fabricate host permission");
+        if (retained) {
+            assertTrue(facts.has("currentReviewContract"), "Other current instructions remain USER data");
+            assertFalse(facts.path("currentReviewContract").asText().contains(stage.trim()), "Fixed SYSTEM rule is stripped from USER repetition");
+        }
+        var encoded = gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec.forProtocol(
+            gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_RESPONSES).encode("gpt-6-luna", request,
+                65536, gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.HIGH, Map.of());
+        var wire = JSON.readTree(encoded);
+        String system = wire.path("input").get(0).path("content").get(0).path("text").asText();
+        assertEquals("system", wire.path("input").get(0).path("role").asText());
+        assertTrue(system.contains(stage), "The actual Responses request must carry the fixed stage bytes as SYSTEM");
+        assertEquals(system.indexOf(stage), system.lastIndexOf(stage), "The stage policy is included once");
+        assertEquals("auto", wire.path("tool_choice").asText());
     }
 
     @Test
@@ -174,6 +357,30 @@ class DeploymentRequiredReviewSubmissionTest {
             "{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled current request denial\"}"));
     }
 
+    private static void textReply(NativeAiFixture fixture) {
+        fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED,
+            Optional.of(new AiResponse("UNTRUSTED_TEXT_APPROVE", "fixture-model", "stop",
+                new AiUsage(Optional.of(3558L), Optional.of(659L), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
+    }
+
+    private static List<gold.debug.windowstolinux.appapi.task.log.LogEvent> corrections(NativeAiFixture fixture) {
+        return fixture.events.stream().filter(event -> event.eventCode().equals("DEPLOYMENT_AI_SUBMISSION_CORRECTION")).toList();
+    }
+
+    private static void assertCorrection(NativeAiFixture fixture) throws Exception {
+        var events = corrections(fixture);
+        assertEquals(1, events.size());
+        var event = events.getFirst();
+        assertEquals(Optional.of(fixture.task.id()), event.taskId());
+        assertTrue(event.operationId().isPresent(), "Each correction has an independent diagnostic identity, not a generation retry number");
+        assertTrue(event.outcome().isEmpty(), "A format correction is not a terminal task result");
+        assertEquals(Map.of("purpose", "APPROVAL", "reason", "MISSING_NATIVE_CALL", "rejectedSubmission", "1",
+            "nextSubmission", "2", "maximumSubmissions", "2"), JSON.readValue(event.details().orElseThrow(), Map.class));
+        assertTrue(event.details().orElseThrow().length() < 256);
+        assertTrue(fixture.requests.stream().allMatch(r -> r.requiredToolName().isEmpty()));
+        assertEquals(2, fixture.events.stream().filter(e -> e.eventCode().equals("DEPLOYMENT_AI_USAGE")).count());
+    }
+
     private static DeploymentUnitIdentity unit() {
         return DeploymentUnitIdentity.forManaged("controlled-health", SERVER, "b".repeat(64));
     }
@@ -186,12 +393,29 @@ class DeploymentRequiredReviewSubmissionTest {
     }
 
     private static Boundary boundary(NativeAiFixture fixture) throws Exception {
+        return boundary(fixture, false, null);
+    }
+
+    private static Boundary boundary(NativeAiFixture fixture, boolean retained, TaskResult hostOutcome) throws Exception {
         var authorizations = new AtomicInteger();
         var dispatches = new AtomicInteger();
+        var granted = new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID());
+        var actualRequest = new java.util.concurrent.atomic.AtomicReference<Object>();
         var host = (InteractionService) Proxy.newProxyInstance(InteractionService.class.getClassLoader(),
             new Class<?>[]{InteractionService.class}, (proxy, method, arguments) -> {
                 authorizations.incrementAndGet();
-                throw new AssertionError("Unapproved review reached host authorization: " + method.getName());
+                if (hostOutcome == null) throw new AssertionError("Unapproved review reached host authorization: " + method.getName());
+                assertEquals("approveReviewedAction", method.getName());
+                assertEquals(1, fixture.requests.size(), "The model review must run before the host grant request");
+                assertEquals(0, dispatches.get());
+                assertSame(fixture.task, arguments[4]);
+                var request = ((Optional<?>) arguments[1]).orElseThrow();
+                actualRequest.set(request);
+                return new OperationResult<>(hostOutcome,
+                    hostOutcome == TaskResult.SUCCEEDED ? Optional.of(granted) : Optional.empty(),
+                    hostOutcome == TaskResult.FAILED || hostOutcome == TaskResult.UNKNOWN
+                        ? Optional.of(new Problem(ProblemCode.ACCESS_DENIED, "CONTROLLED_HOST_REFUSAL", "Controlled host result", Map.of(), Optional.empty()))
+                        : Optional.empty());
             });
         var ui = (UiService) Proxy.newProxyInstance(UiService.class.getClassLoader(), new Class<?>[]{UiService.class},
             (proxy, method, arguments) -> {
@@ -208,11 +432,19 @@ class DeploymentRequiredReviewSubmissionTest {
                     throw failure.getCause();
                 }
             });
-        var reviewed = new DeploymentCommandReviewScope(context, host, fixture.task, "AUTOMATIC", false, () -> REVISION);
+        var reviewed = new DeploymentCommandReviewScope(context, host, fixture.task, "AUTOMATIC", false, () -> REVISION,
+            retained ? () -> conversation(fixture) : null);
         var session = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(), new Class<?>[]{RemoteSession.class},
             (proxy, method, arguments) -> {
                 dispatches.incrementAndGet();
-                throw new AssertionError("Unapproved review reached remote execution: " + method.getName());
+                if (hostOutcome == null) throw new AssertionError("Unapproved review reached remote execution: " + method.getName());
+                assertEquals("execute", method.getName());
+                assertEquals(1, authorizations.get());
+                assertEquals(TaskResult.SUCCEEDED, hostOutcome);
+                assertSame(actualRequest.get(), arguments[0], "Dispatch must use the exact host-reviewed request");
+                assertSame(granted, arguments[1], "Only the opaque object returned by the host may reach dispatch");
+                return new OperationResult<>(TaskResult.SUCCEEDED,
+                    Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0), "HEALTHY=1\n", "", false)), Optional.empty());
             });
         return new Boundary(new DeploymentPublishChannel(session, reviewed.interaction(), SERVER, fixture.task, "f".repeat(64)),
             authorizations, dispatches);

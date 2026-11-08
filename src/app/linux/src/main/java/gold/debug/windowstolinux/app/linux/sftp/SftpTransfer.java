@@ -9,6 +9,7 @@ import java.security.*;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.function.Function;
 
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
@@ -23,6 +24,8 @@ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
 import org.apache.sshd.client.session.ClientSession;
+import org.apache.sshd.common.channel.Channel;
+import org.apache.sshd.common.channel.ChannelListener;
 import org.apache.sshd.sftp.client.*;
 import org.apache.sshd.sftp.common.*;
 
@@ -68,7 +71,7 @@ public final class SftpTransfer {
     private ResourceLease fileLease;
 
     /** Whether publication or staging cleanup was verified. / 发布或暂存清理是否已核验。 */
-    private boolean resolved;
+    private volatile boolean resolved;
 
     /** Original plan when reconciling a retained transfer. / 核对保留传输时的原计划。 */
     private final TransferPlan recovery;
@@ -90,6 +93,19 @@ public final class SftpTransfer {
 
     /** Actual SFTP channel, also observed by cancellation cleanup. / 取消清理同时观察的实际 SFTP 通道。 */
     private volatile SftpClient sftp;
+
+    /** Peer acknowledgement is distinct from local immediate closure. / 对端确认不同于本地立即关闭。 */
+    private final CountDownLatch peerClosed = new CountDownLatch(1);
+
+    /** Session-level observation survives the channel's pre-close listener cleanup. / 会话级观察在通道预关闭清理监听器后仍有效。 */
+    private final ChannelListener releaseObserver = new ChannelListener() {
+        @Override
+        public void channelStateChanged(Channel channel, String hint) {
+            var client = sftp;
+            if (client != null && channel == client.getClientChannel() && hint.equals("SSH_MSG_CHANNEL_CLOSE"))
+                peerClosed.countDown();
+        }
+    };
 
     /** Actual local file, closed only after the worker returns. / 仅在工作线程返回后关闭的实际本地文件。 */
     private FileChannel local;
@@ -157,6 +173,14 @@ public final class SftpTransfer {
      * @return verified completion or explicit uncertainty / 经核验的完成或明确不确定性
      */
     public OperationResult<TransferResult> run() {
+        return run(FutureTask::new);
+    }
+
+    /** Observes the same transfer with package-owned task construction. / 使用包内任务构造观察同一次传输。
+     * @param tasks actual worker-task constructor / 实际工作任务构造器
+     * @return verified completion or explicit uncertainty / 经核验的完成或明确不确定性 */
+    OperationResult<TransferResult> run(
+        Function<Callable<OperationResult<TransferResult>>, FutureTask<OperationResult<TransferResult>>> tasks) {
         long reported = 0;
         TransferProgress previous = null;
         if (cancellation.requested() || Thread.currentThread().isInterrupted())
@@ -168,7 +192,8 @@ public final class SftpTransfer {
             originalTimeouts.put(property.getName(), session.getProperties().get(property.getName()));
             property.set(session, providerTimeout);
         }
-        pending = new FutureTask<>(this::perform);
+        session.addChannelListener(releaseObserver);
+        pending = tasks.apply(this::perform);
         worker = Thread.ofVirtual().name("platform-sftp-transfer").start(pending);
         while (true) {
             try {
@@ -758,7 +783,7 @@ public final class SftpTransfer {
 
     /**
      * Releases actual channels and waits for the worker before closing its local file. / 释放实际通道，并等待工作线程后关闭其本地文件。
-     * @return whether every local resource is actually closed / 每个本地资源是否实际关闭
+     * @return whether resources and the peer channel are released, or the parent session is closed / 资源及对端通道已释放，或父会话已关闭
      */
     public boolean close() {
         synchronized (this) {
@@ -766,10 +791,11 @@ public final class SftpTransfer {
         }
         boolean interrupted = Thread.interrupted();
         try {
-            if (sftp != null) {
+            boolean abort = pending != null && !pending.isDone() && !resolved;
+            if (sftp != null && abort) {
                 if (!sftp.getClientChannel().close(true).awaitUninterruptibly(Duration.ofSeconds(5)))
                     return false;
-            } else if (opening && !session.close(true).awaitUninterruptibly(Duration.ofSeconds(5)))
+            } else if (sftp == null && opening && !session.close(true).awaitUninterruptibly(Duration.ofSeconds(5)))
                 return false;
             long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
             while (worker != null && worker.isAlive()) {
@@ -783,8 +809,26 @@ public final class SftpTransfer {
                 }
             }
             // Initialization can finish after the first cleanup observation. / 初始化可能在首次清理观测后完成。
-            if (sftp != null && !sftp.getClientChannel().close(true).awaitUninterruptibly(Duration.ofSeconds(5)))
-                return false;
+            if (sftp != null) {
+                var channel = sftp.getClientChannel();
+                long closeDeadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+                if (!channel.close(abort).awaitUninterruptibly(Duration.ofSeconds(5))) {
+                    channel.close(true);
+                    return false;
+                }
+                while (!session.isClosed() && peerClosed.getCount() != 0) {
+                    long remaining = closeDeadline - System.nanoTime();
+                    if (abort || remaining <= 0) {
+                        channel.close(true);
+                        return false;
+                    }
+                    try {
+                        peerClosed.await(remaining, TimeUnit.NANOSECONDS);
+                    } catch (InterruptedException failure) {
+                        interrupted = true;
+                    }
+                }
+            }
             if (opening && sftp == null && !session.close(true).awaitUninterruptibly(Duration.ofSeconds(5)))
                 return false;
             if (local != null)
@@ -802,6 +846,7 @@ public final class SftpTransfer {
                     session.getProperties().put(key, value);
             });
             originalTimeouts.clear();
+            session.removeChannelListener(releaseObserver);
             return true;
         } catch (IOException | ApiException | RuntimeException failure) {
             return false;

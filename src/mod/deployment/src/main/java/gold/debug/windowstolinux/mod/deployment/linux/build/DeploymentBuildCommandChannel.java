@@ -512,11 +512,17 @@ public final class DeploymentBuildCommandChannel {
                 Math.min(timeout.toSeconds(), available));
         CommandRequest request = new CommandRequest(executable, input,
             Duration.ofSeconds(Math.min(timeout.toSeconds(), available)), output);
+        boolean dependencies = operation.equals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION)
+            || operation.equals("deployment.agent.toolchain.dependencies.v1");
+        if (dependencies)
+            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.requireOriginal(request, server, task.id().toString());
         var intent = RemoteActions.command(server, planRevision, request)
             .withSemantics(new ActionSemantics(operation, targets));
         var grant = DeploymentCommandReviewRouter.approve(interaction, intent, request, task);
         if (grant.outcome() != TaskResult.SUCCEEDED)
             return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
+        if (dependencies && budget.remainingSeconds() < request.timeout().getSeconds())
+            return timeout(); // The original grant cannot authorize a different service budget.
         beforeSend.verify();
         dispatchBoundary.run();
         try {

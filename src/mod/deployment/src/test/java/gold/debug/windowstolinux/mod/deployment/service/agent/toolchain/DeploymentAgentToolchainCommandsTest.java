@@ -60,8 +60,11 @@ class DeploymentAgentToolchainCommandsTest {
 
     @Test
     void dependencyReceiptRequiresOriginalOperationAndEveryExactPackage() throws Exception {
-        for (String invalid : List.of("TOOLCHAIN_DEPENDENCIES={}\n", dependencyReceipt() + "tail", dependencyReceipt().replace(OPERATION, "b".repeat(32)))) {
-            var fixture = new Fixture(true, request -> reply(invalid));
+        for (String mutation : List.of("EMPTY", "TAIL", "OPERATION")) {
+            var fixture = new Fixture(true, request -> {
+                String valid = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DependencyReceiptFixture.receipt(request, "APT", gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original());
+                return reply(mutation.equals("EMPTY") ? "TOOLCHAIN_DEPENDENCIES={}\n" : mutation.equals("TAIL") ? valid + "tail" : valid.replace(OPERATION, "b".repeat(32)));
+            });
             assertEquals(TaskResult.UNKNOWN, fixture.agent.prepare(DeploymentToolchainType.PYTHON, "3.14", "3.14.0", 100, "-").outcome());
             assertEquals(1, fixture.requests.size());
         }
@@ -71,7 +74,7 @@ class DeploymentAgentToolchainCommandsTest {
     void authenticatedDependenciesAndControllerHaveSeparateOriginalGrants() throws Exception {
         var count = new AtomicInteger();
         var fixture = new Fixture(true, request -> request.script().contains(" 'prepare-tracked' '") ? typedSuccess(request) : reply(switch (count.getAndIncrement()) {
-            case 0 -> dependencyReceipt();
+            case 0 -> gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DependencyReceiptFixture.receipt(request, "APT", gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original());
             case 1 ->
                 "TOOLCHAIN_RELEASE=" + DeploymentAgentToolchainReleaseTest.encoded("PYTHON", "3.14", "3.14.0",
                     DeploymentAgentToolchainPrograms.arguments(request.script()).get(5)) + "\n";
@@ -141,13 +144,13 @@ class DeploymentAgentToolchainCommandsTest {
     @ParameterizedTest
     @ValueSource(strings = {"APT", "DNF"})
     void nativePrerequisitesUseExactProfileReceiptAndOriginalIndependentGrant(String manager) throws Exception {
-        var fixture = new Fixture(true, request -> reply(dependencyReceipt(manager, "NATIVE_BUILD")));
+        var fixture = new Fixture(true, request -> reply(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DependencyReceiptFixture.receipt(request, manager, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original())));
         assertEquals(TaskResult.SUCCEEDED, fixture.agent.prepareNativeBuild().outcome());
         assertEquals(1, fixture.requests.size());
         assertEquals(1, fixture.grants.size());
-        assertTrue(fixture.requests.getFirst().script().endsWith("'NATIVE_BUILD' '" + OPERATION + "'"));
+        assertTrue(fixture.requests.getFirst().script().contains("'NATIVE_BUILD' '" + OPERATION + "' '120' '" + SERVER.id() + "'"));
         assertEquals(DeploymentAgentToolchainPrograms.dependencies(), new String(fixture.requests.getFirst().stdin(), StandardCharsets.UTF_8));
-        assertEquals(DeploymentAgentToolchainCommands.dependencyTargets(SERVER, "NATIVE_BUILD"),
+        assertEquals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(SERVER, "NATIVE_BUILD", OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()),
             fixture.intents.getFirst().semantics().orElseThrow().targets());
         assertEquals(Set.of(new ActionTarget(SERVER.id(), "system-package-index", "APT:configured-authenticated-sources"),
             new ActionTarget(SERVER.id(), "system-package-index", "DNF:configured-authenticated-sources"),
@@ -156,7 +159,8 @@ class DeploymentAgentToolchainCommandsTest {
             new ActionTarget(SERVER.id(), "system-repository", "DNF:centos:crb:transaction-only"),
             new ActionTarget(SERVER.id(), "system-package", "cmake"), new ActionTarget(SERVER.id(), "system-package", "ninja-build"),
             new ActionTarget(SERVER.id(), "system-package", "gcc"), new ActionTarget(SERVER.id(), "system-package", "g++"),
-            new ActionTarget(SERVER.id(), "system-package", "gcc-c++")), fixture.intents.getFirst().semantics().orElseThrow().targets());
+            new ActionTarget(SERVER.id(), "system-package", "gcc-c++")), fixture.intents.getFirst().semantics().orElseThrow().targets().stream().filter(t -> t.kind().startsWith("system-package") || t.kind().equals("system-repository")).collect(java.util.stream.Collectors.toSet()));
+        assertTrue(fixture.intents.getFirst().semantics().orElseThrow().targets().contains(new ActionTarget(SERVER.id(), "systemd-unit", "windowstolinux-dependency-" + OPERATION + ".service")));
         assertTrue(fixture.requests.stream().noneMatch(request -> request.script().contains("'prepare'")));
     }
 
@@ -177,7 +181,7 @@ class DeploymentAgentToolchainCommandsTest {
         var denied = new Fixture(false, request -> failReply());
         assertEquals(TaskResult.FAILED, denied.agent.prepareNativeBuild().outcome());
         assertTrue(denied.requests.isEmpty());
-        var malformed = new Fixture(true, request -> reply(dependencyReceipt("APT", "PYTHON")));
+        var malformed = new Fixture(true, request -> reply(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DependencyReceiptFixture.receipt(request, "APT", gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()).replace("\"ecosystem\":\"NATIVE_BUILD\"", "\"ecosystem\":\"PYTHON\"")));
         assertEquals(TaskResult.UNKNOWN, malformed.agent.prepareNativeBuild().outcome());
         assertEquals(1, malformed.requests.size());
     }
@@ -389,21 +393,6 @@ class DeploymentAgentToolchainCommandsTest {
         receipt.put("effectState", "SETTLED_NO_EFFECTS").put("failureCode", "EXECUTION_FAILED").putNull("selection").putNull("bindingSha256");
         receipt.putArray("retainedEffects");
         return DeploymentAgentToolchainTrackedTest.result(receipt);
-    }
-
-    private static String dependencyReceipt() {
-        return dependencyReceipt("APT", "PYTHON");
-    }
-
-    private static String dependencyReceipt(String manager, String profile) {
-        try {
-            var versions = new java.util.LinkedHashMap<String, String>();
-            DeploymentAgentToolchainPrograms.packages(manager, profile).forEach(name -> versions.put(name, "verified-version"));
-            return "TOOLCHAIN_DEPENDENCIES=" + new ObjectMapper().writeValueAsString(Map.of("operation", OPERATION,
-                "ecosystem", profile, "manager", manager, "packages", versions)) + "\n";
-        } catch (java.io.IOException failure) {
-            throw new AssertionError(failure);
-        }
     }
 
     static String binding() {

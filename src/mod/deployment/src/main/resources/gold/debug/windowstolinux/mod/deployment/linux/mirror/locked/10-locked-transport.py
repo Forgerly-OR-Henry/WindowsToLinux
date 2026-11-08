@@ -3,6 +3,137 @@ import html.parser
 import ipaddress
 import shutil
 import ssl
+import zipfile
+
+
+def nuget_content_hash(path):
+    """NuGet's SHA512 of the original ZIP, before its root signature entry was added.
+
+    Preserve every retained byte (including descriptors, extras and comments). Signed
+    archives support the single-volume classic ZIP subset; native NuGet still verifies
+    the CMS, certificates and trust policy. Unsigned ZIP64 archives retain their raw hash.
+    """
+    try:
+        with zipfile.ZipFile(path) as package:
+            signed = any(entry.filename == '.signature.p7s' for entry in package.infolist())
+        with pathlib.Path(path).open('rb') as source:
+            source.seek(0, 2)
+            size = source.tell()
+            def read_at(offset, length):
+                if offset < 0 or length < 0 or offset + length > size:
+                    raise ValueError('ZIP bounds')
+                source.seek(offset)
+                value = source.read(length)
+                if len(value) != length:
+                    raise ValueError('truncated ZIP')
+                return value
+            digest = hashlib.sha512()
+            def hash_range(offset, length):
+                while length:
+                    block = read_at(offset, min(65536, length))
+                    digest.update(block)
+                    offset, length = offset + len(block), length - len(block)
+            if not signed:
+                hash_range(0, size)
+                return digest.hexdigest()
+            tail_offset = max(0, size - 65557)
+            tail = read_at(tail_offset, size - tail_offset)
+            ends = [index for index in range(len(tail) - 21) if tail[index:index + 4] == b'PK\x05\x06'
+                    and index + 22 + struct.unpack_from('<H', tail, index + 20)[0] == len(tail)]
+            if len(ends) != 1:
+                raise ValueError('ambiguous ZIP end')
+            end_offset = tail_offset + ends[0]
+            end = bytearray(tail[ends[0]:])
+            disk, cd_disk, disk_count, count, cd_size, cd_offset = struct.unpack_from('<4H2I', end, 4)
+            if (disk or cd_disk or disk_count != count or count in (0, 65535)
+                    or cd_size == 0xffffffff or cd_offset == 0xffffffff
+                    or cd_offset + cd_size != end_offset
+                    or (end_offset >= 20 and read_at(end_offset - 20, 4) == b'PK\x06\x07')):
+                raise ValueError('unsupported signed ZIP layout')
+            def extra_fields(extra):
+                offset = 0
+                while offset < len(extra):
+                    if offset + 4 > len(extra):
+                        raise ValueError('truncated ZIP extra')
+                    kind, length = struct.unpack_from('<HH', extra, offset)
+                    offset += 4 + length
+                    if kind == 1 or offset > len(extra):
+                        raise ValueError('unsupported signed ZIP extra')
+            records, position, signatures = [], cd_offset, []
+            for _ in range(count):
+                header = read_at(position, 46)
+                if header[:4] != b'PK\x01\x02':
+                    raise ValueError('invalid ZIP directory')
+                fields = struct.unpack('<4s6H3I5H2I', header)
+                _, made, needed, flags, method, stamp, date, crc, compressed, expanded, names, extras, comments, volume, internal, external, local = fields
+                length = 46 + names + extras + comments
+                if (position + length > end_offset or volume or needed > 20 or method not in (0, 8)
+                        or flags & ~0x80e or (method == 0 and flags & 6)
+                        or compressed == 0xffffffff or expanded == 0xffffffff or local == 0xffffffff):
+                    raise ValueError('unsupported signed ZIP entry')
+                name = read_at(position + 46, names)
+                extra_fields(read_at(position + 46 + names, extras))
+                record = {'cd': position, 'length': length, 'local': local, 'name': name,
+                          'needed': needed, 'flags': flags, 'method': method, 'stamp': stamp, 'date': date,
+                          'crc': crc, 'compressed': compressed, 'expanded': expanded}
+                records.append(record)
+                if name == b'.signature.p7s':
+                    if flags or method or compressed != expanded or (external >> 16) & 0xf000 not in (0, 0x8000):
+                        raise ValueError('invalid NuGet signature entry')
+                    signatures.append(record)
+                position += length
+            if position != end_offset or len(signatures) != 1:
+                raise ValueError('invalid NuGet signature directory')
+            physical = sorted(records, key=lambda entry: entry['local'])
+            if physical[0]['local'] != 0:
+                raise ValueError('signed ZIP has leading data')
+            for index, record in enumerate(physical):
+                start = record['local']
+                stop = physical[index + 1]['local'] if index + 1 < count else cd_offset
+                header = read_at(start, 30)
+                if header[:4] != b'PK\x03\x04' or stop <= start:
+                    raise ValueError('invalid or overlapping ZIP local entry')
+                _, needed, flags, method, stamp, date, crc, compressed, expanded, names, extras = struct.unpack('<4s5H3I2H', header)
+                if ((needed, flags, method, stamp, date) != tuple(record[key] for key in ('needed', 'flags', 'method', 'stamp', 'date'))
+                        or read_at(start + 30, names) != record['name']):
+                    raise ValueError('ZIP local entry disagrees with directory')
+                extra_fields(read_at(start + 30 + names, extras))
+                payload_end = start + 30 + names + extras + record['compressed']
+                if payload_end > stop:
+                    raise ValueError('overlapping ZIP payload')
+                expected_sizes = record['crc'], record['compressed'], record['expanded']
+                if flags & 8:
+                    if (crc, compressed, expanded) not in ((0, 0, 0), expected_sizes):
+                        raise ValueError('invalid ZIP descriptor header')
+                    descriptor_size = stop - payload_end
+                    if descriptor_size not in (12, 16):
+                        raise ValueError('invalid ZIP descriptor length')
+                    descriptor = read_at(payload_end, descriptor_size)
+                    if descriptor_size == 16:
+                        if descriptor[:4] != b'PK\x07\x08':
+                            raise ValueError('invalid ZIP descriptor signature')
+                        descriptor = descriptor[4:]
+                    if struct.unpack('<3I', descriptor) != expected_sizes:
+                        raise ValueError('ZIP descriptor disagrees with directory')
+                elif (crc, compressed, expanded) != expected_sizes or payload_end != stop:
+                    raise ValueError('invalid ZIP local sizes or trailing records')
+                record['span'] = stop - start
+            signature = signatures[0]
+            for record in physical:
+                if record is not signature:
+                    hash_range(record['local'], record['span'])
+            for record in records:
+                if record is not signature:
+                    header = bytearray(read_at(record['cd'], record['length']))
+                    adjusted = record['local'] - (signature['span'] if record['local'] > signature['local'] else 0)
+                    struct.pack_into('<I', header, 42, adjusted)
+                    digest.update(header)
+            struct.pack_into('<HHII', end, 8, count - 1, count - 1,
+                             cd_size - signature['length'], cd_offset - signature['span'])
+            digest.update(end)
+            return digest.hexdigest()
+    except (OSError, ValueError, struct.error, zipfile.BadZipFile, NotImplementedError):
+        raise MirrorFailure('invalid or unsupported NuGet package archive') from None
 
 
 class LockedRepositoryTransport:
@@ -202,6 +333,22 @@ class LockedRepositoryTransport:
                 expected = None
                 package_name = urllib.parse.unquote(urllib.parse.urlsplit(url).path).rsplit('/', 1)[-1].lower()
                 nuget_hash = self.nuget_hashes.get(package_name)
+                nuget_record = None
+                if self.point == 'NUGET':
+                    nuget_record = policy.transfer_ledger.object((self.point, url))
+                    if nuget_record.get('owner') == threading.get_ident():
+                        raise MirrorFailure('cyclic NuGet content validation request')
+                    if not nuget_record['lock'].acquire(timeout=policy.remaining()):
+                        raise MirrorFailure('task deadline while binding NuGet content hash')
+                    try:
+                        previous = nuget_record.get('nuget_content_hash_expected')
+                        if previous and nuget_hash and previous != nuget_hash:
+                            raise MirrorFailure('resolved NuGet content checksum changed during the same operation')
+                        nuget_hash = nuget_hash or previous
+                        if nuget_hash:
+                            nuget_record['nuget_content_hash_expected'] = nuget_hash
+                    finally:
+                        nuget_record['lock'].release()
                 try:
                     policy.maps(endpoint, url)
                 except MirrorFailure:
@@ -215,9 +362,23 @@ class LockedRepositoryTransport:
                                 digest.update(chunk)
                         if digest.hexdigest() != expected:
                             raise MirrorFailure('digest-mismatch')
+                def validate_nuget(path, response_headers):
+                    # Both transfer paths invoke this while holding the same object lock.
+                    # Read here too: another transport may bind after our precheck released it.
+                    expected_hash = nuget_record.get('nuget_content_hash_expected')
+                    if not expected_hash:
+                        return
+                    try:
+                        actual = nuget_content_hash(path)
+                    except MirrorFailure:
+                        # Invalid archives are deterministic corrupt objects too: preserve the
+                        # existing one-request rejection and selected-source exhaustion contract.
+                        raise MirrorFailure('digest-mismatch') from None
+                    if actual != expected_hash:
+                        raise MirrorFailure('digest-mismatch')
                 metadata = mirror_transfer(policy, self.point, url, target,
-                                           'sha512' if nuget_hash else None, nuget_hash, headers=headers,
-                                           validator=validate_composer if expected else None)
+                                           headers=headers, validator=validate_nuget if self.point == 'NUGET' else
+                                           validate_composer if expected else None)
                 if (self.point == 'PYTHON_PACKAGE' and 'application/vnd.pypi.simple.v1+json' in (headers or {}).get('Accept', '')
                         and 'json' not in metadata['contentType'] and '/simple/' in urllib.parse.urlsplit(url).path):
                     if metadata['bytes'] > 33554432:

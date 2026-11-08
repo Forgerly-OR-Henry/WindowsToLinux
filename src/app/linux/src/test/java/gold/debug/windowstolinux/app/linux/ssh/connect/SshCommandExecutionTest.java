@@ -32,14 +32,19 @@ public class SshCommandExecutionTest {
             var bytes = new AtomicInteger();
             var inputRequested = new AtomicInteger();
             var inputStarted = new CountDownLatch(1);
+            var openingFailure = new IOException("private channel failure");
             var opening = (org.apache.sshd.client.future.OpenFuture) java.lang.reflect.Proxy.newProxyInstance(
                 getClass().getClassLoader(), new Class<?>[]{org.apache.sshd.client.future.OpenFuture.class},
                 (proxy, method, args) -> switch (method.getName()) {
                     case "await" -> true;
                     case "verify" -> {
-                        if (!opened) throw new IOException("private channel failure");
+                        if (!opened) throw openingFailure;
                         yield proxy;
                     }
+                    case "isDone" -> true;
+                    case "isOpened" -> opened;
+                    case "isCanceled" -> false;
+                    case "getException" -> opened ? null : openingFailure;
                     default -> throw new AssertionError(method.getName());
                 });
             var channel = new org.apache.sshd.client.channel.ChannelExec(SshCommandFrame.COMMAND, null, Map.of()) {

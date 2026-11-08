@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -27,6 +28,8 @@ import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
 import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
 import gold.debug.windowstolinux.appapi.task.action.InteractionService;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
@@ -47,6 +50,76 @@ import org.junit.jupiter.api.Test;
 
 /** Checks original-task helper installation evidence before default publication uses a new server. / 默认发布使用新服务器前核对原任务 helper 安装依据。 */
 class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
+    @Test
+    void probeEvidenceControlsInstallationAndPreservesOriginalFailure() throws Exception {
+        var notSent = new Problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT", "Not sent",
+            Map.of("commandPhase", "CHANNEL_OPENING", "authorPayloadState", "NOT_SENT"), Optional.of(UUID.randomUUID()));
+        var cases = List.of(
+            new OperationResult<CommandResult>(TaskResult.FAILED,
+                Optional.of(new CommandResult(Optional.empty(), "", "", false)), Optional.of(notSent)),
+            new OperationResult<CommandResult>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(notSent)),
+            new OperationResult<CommandResult>(TaskResult.CANCELLED, Optional.empty(), Optional.of(notSent)),
+            exited(7, ""), exited(64, ""), exited(3, ""));
+        for (var probe : cases) {
+            boolean install = probe.value().flatMap(CommandResult::exitCode).filter(code -> code == 64 || code == 3).isPresent();
+            var checkpoints = new java.util.HashMap<String, TaskCheckpoint>();
+            var begins = new AtomicInteger();
+            TaskService tasks = (TaskService) Proxy.newProxyInstance(TaskService.class.getClassLoader(),
+                new Class<?>[]{TaskService.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("findCheckpoint")) return Optional.ofNullable(checkpoints.get(args[1]));
+                    if (method.getName().equals("beginCheckpoint")) {
+                        begins.incrementAndGet();
+                        TaskCheckpoint checkpoint = new TaskCheckpoint() {
+                            Snapshot current = new Snapshot(0, (String) args[2], false);
+                            public Snapshot snapshot() { return current; }
+                            public Snapshot advance(Snapshot expected, String next) {
+                                assertEquals(current, expected);
+                                return current = new Snapshot(current.revision() + 1, next, false);
+                            }
+                            public void close() { current = new Snapshot(current.revision() + 1, current.payload(), true); }
+                        };
+                        checkpoints.put((String) args[1], checkpoint);
+                        return checkpoint;
+                    }
+                    throw new AssertionError(method.getName());
+                });
+            TaskContext task = (TaskContext) Proxy.newProxyInstance(TaskContext.class.getClassLoader(),
+                new Class<?>[]{TaskContext.class}, (proxy, method, args) -> switch (method.getName()) {
+                    case "id" -> UUID.fromString("bd453aba-d5b0-4edf-8a50-b451a619ece1");
+                    case "cancelToken" -> (CancelToken) () -> false;
+                    default -> throw new AssertionError(method.getName());
+                });
+            var installs = new AtomicInteger();
+            var installReviews = new AtomicInteger();
+            var probes = new AtomicInteger();
+            var session = session(request -> {
+                if (request.stdin().length == 0) { probes.incrementAndGet(); return probe; }
+                installs.incrementAndGet();
+                return exited(7, "");
+            });
+            InteractionService unused = (InteractionService) Proxy.newProxyInstance(InteractionService.class.getClassLoader(),
+                new Class<?>[]{InteractionService.class}, (proxy, method, args) -> { throw new AssertionError(method.getName()); });
+            var observed = new DeploymentProtocolBootstrap(tasks, task, new ServerId("synthetic-bootstrap"), session,
+                unused, (intent, request, original) -> {
+                    if (intent.semantics().orElseThrow().operation().equals("deployment.helper.install.tracked.v1"))
+                        installReviews.incrementAndGet();
+                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())), Optional.empty());
+                }).ensure();
+            assertEquals(1, probes.get());
+            assertEquals(install ? 1 : 0, begins.get());
+            assertEquals(install ? 1 : 0, installReviews.get());
+            assertEquals(install ? 1 : 0, installs.get());
+            if (!install) {
+                assertEquals(probe.outcome(), observed.outcome());
+                assertSame(probe.problem().orElseThrow(), observed.problem().orElseThrow());
+                assertTrue(observed.value().isEmpty());
+            } else {
+                assertEquals(TaskResult.FAILED, observed.outcome());
+                assertTrue(checkpoints.get(DeploymentProtocolBootstrapActionLog.KEY).snapshot().released());
+            }
+        }
+    }
+
     /** Host permits the controlled fixed commands. / 宿主允许受控固定命令。 */
     @Override
     protected PlatformRuntime open() throws Exception {
@@ -101,7 +174,7 @@ class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
             var borrowed = session(request -> {
                 if (!request.script().contains("--noprofile")) {
                     assertTrue(request.script().contains("if [ ! -f /usr/bin/sqlite3 ] || [ ! -x /usr/bin/sqlite3 ]; then exit 3; fi"));
-                    return probes.getAndIncrement() == 0 ? exited(1, "") : ok(probeOutput());
+                    return probes.getAndIncrement() == 0 ? exited(64, "") : ok(probeOutput());
                 }
                 String input = new String(request.stdin(), StandardCharsets.UTF_8);
                 if (input.contains("prepare_stage=platform-packages")) {
@@ -169,7 +242,7 @@ class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
             var borrowed = session(request -> {
                 if (request.script().contains("--noprofile"))
                     installed.incrementAndGet();
-                return exited(1, "");
+                return exited(64, "");
             });
             var review = new InteractionService() {
                 public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task)
@@ -229,7 +302,7 @@ class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
                 var failure = new AtomicReference<Throwable>();
                 var borrowed = session(request -> {
                     if (!request.script().contains("--noprofile"))
-                        return exited(1, "");
+                        return exited(64, "");
                     if (new String(request.stdin(), StandardCharsets.UTF_8).contains("prepare_stage=platform-packages"))
                         return observed;
                     return exited(3, "");
@@ -312,8 +385,9 @@ class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
      * @param stdout output / 输出
      * @return command result / 命令结果 */
     private static OperationResult<CommandResult> exited(int code, String stdout) {
-        return new OperationResult<>(TaskResult.SUCCEEDED,
-            Optional.of(new CommandResult(Optional.of(code), stdout, "", false)), Optional.empty());
+        return new OperationResult<>(code == 0 ? TaskResult.SUCCEEDED : TaskResult.FAILED,
+            Optional.of(new CommandResult(Optional.of(code), stdout, "", false)), code == 0 ? Optional.empty()
+                : Optional.of(problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_NONZERO")));
     }
 
     /** Creates one bounded test problem. / 构造有界测试问题。

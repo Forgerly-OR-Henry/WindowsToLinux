@@ -239,20 +239,36 @@ class DeploymentMirrorTasksTest extends DeploymentRuntimeFixture {
                     String installer = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.withMirrors(
                         gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.render(layout), DeploymentMirrorTasks.policy(task));
                     byte[] bytes = installer.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-                    try (var request = new gold.debug.windowstolinux.appapi.linux.command.CommandRequest("exec /bin/bash --noprofile --norc -s", bytes,
+                    try (var request = new gold.debug.windowstolinux.appapi.linux.command.CommandRequest(
+                        gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.LAUNCHER, bytes,
                         java.time.Duration.ofHours(2), 131072)) {
                         var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(TARGET, "mirror-test", request).withSemantics(
                             new gold.debug.windowstolinux.appapi.task.action.ActionSemantics("deployment.helper.install.v1",
                                 gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper.installationTargets(TARGET, layout)));
                         var evidence = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentFixedCommandProtocol(context).inspect(intent, request, layout, task);
                         var transport = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(evidence.get("mirrorTransport"));
-                        assertEquals(gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.runtimeSource(), transport.path("runtimeSource").asText());
+                        assertFalse(transport.has("runtimeSource"));
+                        assertEquals("/completeExecutableInput/sources/mirrorRuntime", transport.path("runtimeSourcePointer").asText());
+                        assertEquals(gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.runtimeSource(),
+                            new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(evidence).at(transport.path("runtimeSourcePointer").asText()).textValue());
                         assertEquals(task.id().toString(), transport.path("frozenPolicy").path("task").asText());
                         var value = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(evidence.get("completeExecutableInput"));
                         assertEquals(installer, gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.reconstruct(value));
                         gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentInstallReviewIntent.upgrade(intent, request, TARGET, "mirror-test", layout);
                         assertTrue(value.path("segments").get(0).path("text").asText().contains("WTL_MIRROR_TASK="));
                     } finally { Arrays.fill(bytes, (byte)0); }
+                    String bootstrapOperation = "0123456789abcdef0123456789abcdef";
+                    String bootstrap = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript.withMirrors(
+                        gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.render(
+                            bootstrapOperation, layout, TARGET, task.id().toString()), DeploymentMirrorTasks.policy(task));
+                    assertEquals(List.of("HELPER_RUNTIME", bootstrapOperation, "7200", TARGET.id(), task.id().toString()),
+                        gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.parseFrame(bootstrap, layout));
+                    var bootstrapEvidence = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(
+                        gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.describe(bootstrap, layout));
+                    assertEquals(bootstrap, gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.reconstruct(bootstrapEvidence));
+                    assertThrows(IllegalArgumentException.class, () ->
+                        gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.parseFrame(
+                            bootstrap.replace("'" + task.id() + "' <<", "'11111111-2222-3333-4444-555555555555' <<"), layout));
                 } finally { DeploymentMirrorTasks.forget(task); }
                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
             });

@@ -5,9 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
 import java.util.Arrays;
-import java.util.HexFormat;
 import java.util.concurrent.TimeUnit;
 
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
@@ -22,10 +20,18 @@ class DeploymentAgentHelperInstallerScriptTest {
     Path temporary;
 
     @Test
-    void defaultFilesInstallerRetainsItsOriginalBytes() throws Exception {
-        assertEquals("3d2b97d4497e42c17e476e49eb0a9ea51addc9697141c1b7cc97afa652676676",
-            HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                .digest(DeploymentHelperInstallerScript.renderFiles().getBytes(StandardCharsets.UTF_8))));
+    void defaultFilesInstallerChecksCurrentPriorIdentityBeforeLayoutAndPackages() {
+        String script = DeploymentHelperInstallerScript.renderFiles();
+        int admission = script.indexOf("\ninstaller_prior_files\n");
+        int lock = script.indexOf("prepare_stage=installer-lock");
+        int initialization = script.indexOf("PREPARE_REJECT=host-layout-conflict");
+        assertTrue(admission >= 0 && admission < lock && lock < initialization);
+        assertTrue(initialization < script.indexOf("prepare_stage=platform-packages"));
+        assertTrue(script.indexOf(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.EXPECTED_SHA256) < admission);
+        assertTrue(script.indexOf(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.buildEntrySha256()) < admission);
+        assertTrue(script.contains("PREPARE_REJECT=%s-prior-content-untrusted"));
+        for (String installer : new String[]{script, DeploymentHelperInstallerScript.render()})
+            assertTrue(installer.contains("deployment_apt -o DPkg::Lock::Timeout=300 install -y --no-remove --no-install-recommends "));
     }
 
     @Test
@@ -38,8 +44,8 @@ class DeploymentAgentHelperInstallerScriptTest {
 
     @Test
     void completeCanonicalInstallerBindsOperationAndEveryGuardedSourceByte() {
-        String fragment = DeploymentAgentHelperInstallerScript.prerequisites(OPERATION);
-        String script = DeploymentAgentHelperInstallerScript.render(OPERATION);
+        String fragment = DeploymentAgentHelperInstallerScript.prerequisites(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), new gold.debug.windowstolinux.appapi.server.model.ServerId("bootstrap"), "11111111-2222-3333-4444-555555555555");
+        String script = DeploymentAgentHelperInstallerScript.render(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), new gold.debug.windowstolinux.appapi.server.model.ServerId("bootstrap"), "11111111-2222-3333-4444-555555555555");
         assertEquals(DeploymentHelperInstallerScript.renderFiles(fragment), script);
         assertEquals(OPERATION, DeploymentAgentHelperInstallerScript.parseOperation(script));
         assertTrue(fragment.contains(DeploymentAgentToolchainPrograms.dependencies()));
@@ -54,14 +60,16 @@ class DeploymentAgentHelperInstallerScriptTest {
 
     @Test
     void operationFrameAndSourceTamperingAreRejectedWithoutEchoingInputs() {
-        String script = DeploymentAgentHelperInstallerScript.render(OPERATION);
+        String script = DeploymentAgentHelperInstallerScript.render(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), new gold.debug.windowstolinux.appapi.server.model.ServerId("bootstrap"), "11111111-2222-3333-4444-555555555555");
         for (String changed : new String[]{script + "echo extra-effect\n", script.replace(OPERATION, "INVALID-OPERATION"),
-            script.replace("'" + OPERATION + "' <<", "'" + OPERATION + "' '--extra' <<"),
+            script.replace("'11111111-2222-3333-4444-555555555555' <<", "'11111111-2222-3333-4444-555555555555' '--extra' <<"),
             script.replace("DEPENDENCY_PACKAGES = json.loads(", "DEPENDENCY_PACKAGES = altered("),
-            script.replace("\n", "\r\n")})
+            script.replace("\n", "\r\n")}) {
+            assertNotEquals(script, changed, "The negative fixture must change actual current bytes");
             assertThrows(IllegalArgumentException.class, () -> DeploymentAgentHelperInstallerScript.parseOperation(changed));
+        }
         for (String invalid : new String[]{"", "a".repeat(31), "A".repeat(32), OPERATION + " --extra"})
-            assertThrows(IllegalArgumentException.class, () -> DeploymentAgentHelperInstallerScript.prerequisites(invalid));
+            assertThrows(IllegalArgumentException.class, () -> DeploymentAgentHelperInstallerScript.prerequisites(invalid, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), new gold.debug.windowstolinux.appapi.server.model.ServerId("bootstrap"), "11111111-2222-3333-4444-555555555555"));
     }
 
     @Test
@@ -73,7 +81,7 @@ class DeploymentAgentHelperInstallerScriptTest {
             + "files_trusted_runtime_path() { [ \"$1\" = /usr/bin/python3 ]; return 1; }\n"
             + "apt-get() { printf transaction > transaction; }\ndnf() { printf transaction > transaction; }\n"
             + "runtime_missing=1\nif [ \"$runtime_missing\" -ne 0 ]; then\n"
-            + DeploymentAgentHelperInstallerScript.prerequisites(OPERATION) + "fi\n"
+            + DeploymentAgentHelperInstallerScript.prerequisites(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), new gold.debug.windowstolinux.appapi.server.model.ServerId("bootstrap"), "11111111-2222-3333-4444-555555555555") + "fi\n"
             + "printf installed > helper-files\n");
         var process = new ProcessBuilder(bash.toString(), "--noprofile", "--norc", fixture.toString())
             .directory(temporary.toFile()).redirectErrorStream(true).start();
@@ -94,21 +102,29 @@ class DeploymentAgentHelperInstallerScriptTest {
 
     @Test
     void isolatedLauncherRejectsInheritedStartupCodeFunctionsAndOptions() throws Exception {
+        assertEquals("exec /usr/bin/env -i LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash --noprofile --norc -p -s",
+            DeploymentAgentHelperInstallerScript.LAUNCHER, "Existing Agent launcher bytes must stay unchanged");
+        assertEquals(DeploymentHelperInstallerScript.LAUNCHER, DeploymentAgentHelperInstallerScript.LAUNCHER);
         Path startup = temporary.resolve("malicious-bash-env.sh");
         Files.writeString(startup, "printf startup > bash-env-marker\n");
+        Path shadow = Files.createDirectory(temporary.resolve("shadow-path"));
+        Files.writeString(shadow.resolve("id"), "#!/bin/bash\nprintf shadow > path-marker\n");
         String inherited = runStartupProbe("exec /bin/bash --noprofile --norc -s", startup);
         assertTrue(Files.exists(temporary.resolve("bash-env-marker")), inherited);
         assertTrue(Files.exists(temporary.resolve("function-marker")), inherited);
         assertTrue(inherited.contains("EXTGLOB=on\n"), inherited);
         assertTrue(inherited.contains("XTRACE=on\n"), inherited);
         assertTrue(inherited.contains("LC_ALL=POSIX\n"), inherited);
-        assertTrue(inherited.contains("PATH=/startup-untrusted:/usr/bin:/bin\n"), inherited);
+        assertTrue(inherited.contains("/shadow-path:/startup-untrusted:/usr/bin:/bin\n"), inherited);
+        assertTrue(Files.exists(temporary.resolve("path-marker")), "Old launcher must exercise the shadow PATH fixture");
         Files.delete(temporary.resolve("bash-env-marker"));
         Files.delete(temporary.resolve("function-marker"));
+        Files.delete(temporary.resolve("path-marker"));
 
         String isolated = runStartupProbe(DeploymentAgentHelperInstallerScript.LAUNCHER, startup);
         assertFalse(Files.exists(temporary.resolve("bash-env-marker")), isolated);
         assertFalse(Files.exists(temporary.resolve("function-marker")), isolated);
+        assertFalse(Files.exists(temporary.resolve("path-marker")), isolated);
         assertEquals("LC_ALL=C\nPATH=/usr/sbin:/usr/bin:/sbin:/bin\nEXTGLOB=off\nXTRACE=off\nLD_LIBRARY_PATH=unset\n",
             isolated);
     }
@@ -119,7 +135,7 @@ class DeploymentAgentHelperInstallerScriptTest {
         String inheritedStartup = "set +p\nexport BASH_ENV=\"$PWD/" + startup.getFileName() + "\"\n"
             + "startup_probe() { printf function > function-marker; }; export -f startup_probe\n"
             + "shopt -s extglob; export BASHOPTS\n"
-            + "export LC_ALL=POSIX PATH=/startup-untrusted:/usr/bin:/bin LD_LIBRARY_PATH=/startup-untrusted\n"
+            + "export LC_ALL=POSIX PATH=\"$PWD/shadow-path:/startup-untrusted:/usr/bin:/bin\" LD_LIBRARY_PATH=/startup-untrusted\n"
             + "set -x; export SHELLOPTS\n";
         var builder = new ProcessBuilder(bash.toString(), "--noprofile", "--norc", "-p", "-c", inheritedStartup + launcher)
             .directory(temporary.toFile()).redirectError(temporary.resolve("startup-trace.log").toFile());
@@ -135,7 +151,7 @@ class DeploymentAgentHelperInstallerScriptTest {
         try {
             try (var input = process.getOutputStream()) {
                 input.write(("printf 'LC_ALL=%s\\nPATH=%s\\n' \"$LC_ALL\" \"$PATH\"\n"
-                    + "if declare -F startup_probe >/dev/null; then startup_probe; fi\n"
+                    + "id >/dev/null\nif declare -F startup_probe >/dev/null; then startup_probe; fi\n"
                     + "if shopt -q extglob; then printf 'EXTGLOB=on\\n'; else printf 'EXTGLOB=off\\n'; fi\n"
                     + "case $- in *x*) printf 'XTRACE=on\\n';; *) printf 'XTRACE=off\\n';; esac\n"
                     + "printf 'LD_LIBRARY_PATH=%s\\n' \"${LD_LIBRARY_PATH-unset}\"\n").getBytes(StandardCharsets.UTF_8));

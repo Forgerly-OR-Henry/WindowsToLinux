@@ -109,8 +109,7 @@ public final class DeploymentProtocolBootstrap {
         if (retained.isPresent())
             return reconcile(retained.orElseThrow());
         var observed = helper.probePlatform();
-        if (observed.outcome() == TaskResult.SUCCEEDED || observed.outcome() == TaskResult.CANCELLED
-            || observed.outcome() == TaskResult.UNKNOWN)
+        if (!DeploymentManagedHelper.installationRequired(observed))
             return observed;
         UUID operationId = UUID.randomUUID();
         String serverDigest = digest(server.id().getBytes(StandardCharsets.UTF_8));

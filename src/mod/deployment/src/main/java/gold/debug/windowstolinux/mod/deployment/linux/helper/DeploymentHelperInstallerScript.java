@@ -5,6 +5,11 @@ import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTem
 
 /** Shared helper and isolation installation; no project language selection. / 共用 helper 及隔离安装，不选择项目语言。 */
 public final class DeploymentHelperInstallerScript {
+    /** Starts fixed installers before inherited Bash hooks, functions, options or PATH can be used. */
+    public static final String LAUNCHER = "exec /usr/bin/env -i LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash --noprofile --norc -p -s";
+
+    /** Same no-effect receipt boundary in tracked and plain bodies; never an execution stage. */
+    static final String BODY_AFTER_RECEIPT = "# WTL_INSTALLER_BODY_AFTER_RECEIPT\n";
     /** Root-owned original installer receipt directory. / root 持有的原安装回执目录。 */
     public static final String RECEIPT_DIRECTORY = "/var/lib/windowstolinux/helper-install-operations";
 
@@ -69,7 +74,7 @@ public final class DeploymentHelperInstallerScript {
               if command -v apt-get >/dev/null; then
                 export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
                 deployment_apt -o DPkg::Lock::Timeout=300 update
-                deployment_apt -o DPkg::Lock::Timeout=300 install -y --no-install-recommends %s
+                deployment_apt -o DPkg::Lock::Timeout=300 install -y --no-upgrade --no-remove --no-install-recommends %s
               elif command -v dnf >/dev/null; then
                 deployment_dnf install -y %s
               else printf 'PREPARE_REJECT=platform-package-manager\\n'; exit 64; fi
@@ -88,7 +93,8 @@ public final class DeploymentHelperInstallerScript {
         if (prerequisitesScript.isBlank() || !prerequisitesScript.endsWith("\n"))
             throw new IllegalArgumentException("Incomplete helper prerequisite stage");
         return "set -euo pipefail\nexport LC_ALL=C\nPATH=/usr/sbin:/usr/bin:/sbin:/bin\nexport PATH\nunset BASH_ENV ENV\n"
-            + renderStageDiagnostics() + DeploymentRemoteLayoutAdmission.initialize(layout) + fixedLayout("""
+            + renderStageDiagnostics() + renderPriorExecutableAdmission(layout) + renderInstallationLock(layout)
+            + "installer_prior_files\n" + DeploymentRemoteLayoutAdmission.initialize(layout) + fixedLayout("""
             [ "$(id -u)" -eq 0 ] || exit 64
             files_trusted_directory() {
               [ ! -L "$1" ] && [ -d "$1" ] || return 1
@@ -366,13 +372,15 @@ public final class DeploymentHelperInstallerScript {
             + """
             [ "$(id -u)" -eq 0 ] || exit 64
             command -v systemctl >/dev/null
-            """ + DeploymentRemoteLayoutAdmission.initialize(layout) + begin + renderInstallationLock(layout)
+            """ + renderPriorExecutableAdmission(layout) + renderInstallationLock(layout)
+            + "installer_prior_files\n" + begin + BODY_AFTER_RECEIPT
+            + DeploymentRemoteLayoutAdmission.initialize(layout)
             + packageCommands() + """
             prepare_stage=platform-packages
             if command -v apt-get >/dev/null; then
               export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
               deployment_apt -o DPkg::Lock::Timeout=300 update
-              deployment_apt -o DPkg::Lock::Timeout=300 install -y --no-install-recommends %s
+              deployment_apt -o DPkg::Lock::Timeout=300 install -y --no-upgrade --no-remove --no-install-recommends %s
             elif command -v dnf >/dev/null; then
               deployment_dnf install -y %s
             else printf 'PREPARE_REJECT=platform-package-manager\\n'; exit 64; fi
@@ -469,8 +477,43 @@ public final class DeploymentHelperInstallerScript {
         return renderHelperInstallation(DeploymentRemoteLayout.original());
     }
 
+    /** Admits clean installation or identical packaged bytes, never an untrusted older version.
+     * Different prior bytes require a separate authenticated upgrade contract; root ownership alone is insufficient.
+     * / 仅准入缺失文件或本次固定字节；不同旧版须另有可信升级契约，root 所有权本身不足以授权覆盖。 */
+    private static String renderPriorExecutableAdmission(DeploymentRemoteLayout layout) {
+        return fixedLayout("""
+            installer_prior_file() {
+              [ -e "$1" ] || [ -L "$1" ] || return 0
+              if [ -L "$1" ] || [ ! -f "$1" ] || [ ! -x "$1" ] ||
+                 [ "$(/usr/bin/stat -c '%u:%g:%a:%h' -- "$1")" != '0:0:755:1' ]; then
+                printf 'PREPARE_REJECT=%s-prior-file-identity\\n' "$3"; exit 64
+              fi
+              if ! printf '%s  %s\\n' "$2" "$1" | /usr/bin/sha256sum --check --status; then
+                printf 'PREPARE_REJECT=%s-prior-content-untrusted\\n' "$3"; exit 64
+              fi
+            }
+            installer_prior_files() {
+              prepare_stage=helper-prior-admission
+              for prior_parent in @HELPER_EXISTING_PARENTS@ @wtl:helper-directory@; do
+                [ ! -e "$prior_parent" ] && [ ! -L "$prior_parent" ] && continue
+                [ ! -L "$prior_parent" ] && [ -d "$prior_parent" ] &&
+                  [ "$(/usr/bin/stat -c '%u:%g' -- "$prior_parent")" = '0:0' ] || {
+                    printf 'PREPARE_REJECT=installer-prior-parent-identity\\n'; exit 64;
+                  }
+                prior_mode=$(/usr/bin/stat -c '%a' -- "$prior_parent") || exit 64
+                (( (8#$prior_mode & 022) == 0 )) || { printf 'PREPARE_REJECT=installer-prior-parent-mode\\n'; exit 64; }
+              done
+            """, layout)
+            + "  installer_prior_file " + quote(layout.helperPath()) + " "
+            + quote(DeploymentManagedHelperBundle.helperSha256(layout)) + " helper\n"
+            + "  installer_prior_file " + quote(layout.buildEntry()) + " "
+            + quote(DeploymentManagedHelperBundle.buildEntrySha256(layout)) + " build-entry\n"
+            + "}\ninstaller_prior_files\n";
+    }
+
     public static String renderHelperInstallation(DeploymentRemoteLayout layout) {
-        return DeploymentRemoteLayoutAdmission.initialize(layout) + renderInstallationLock(layout) + fixedLayout("""
+        return renderPriorExecutableAdmission(layout) + renderInstallationLock(layout) + "installer_prior_files\n"
+            + DeploymentRemoteLayoutAdmission.initialize(layout) + fixedLayout("""
             [ "$(id -u)" -eq 0 ] || { printf 'PREPARE_REJECT=root-management-required\\n'; exit 64; }
             installer_trusted_path() {
               [ ! -L "$1" ] || return 1
@@ -497,6 +540,7 @@ public final class DeploymentHelperInstallerScript {
                 installer_trusted_path "$installer_file" file || { printf 'PREPARE_REJECT=installer-file-ownership\\n'; exit 64; }
               fi
             done
+            prepare_stage=helper-payload-staging
             helper_tmp=$(/usr/bin/mktemp "$installer_directory/.managed-helper.XXXXXX")
             entry_tmp=$(/usr/bin/mktemp "$installer_directory/.build-entry.XXXXXX")
             cleanup_files="$cleanup_files $helper_tmp $entry_tmp"
@@ -513,6 +557,8 @@ public final class DeploymentHelperInstallerScript {
             installer_verify_executable "$entry_tmp" %s || { printf 'PREPARE_REJECT=build-entry-payload-digest\\n'; exit 64; }
             /usr/bin/sync -f "$helper_tmp"
             /usr/bin/sync -f "$entry_tmp"
+            installer_prior_files
+            prepare_stage=helper-publication
             /usr/bin/mv -fT -- "$helper_tmp" %s
             /usr/bin/mv -fT -- "$entry_tmp" %s
             /usr/bin/sync -f "$installer_directory"

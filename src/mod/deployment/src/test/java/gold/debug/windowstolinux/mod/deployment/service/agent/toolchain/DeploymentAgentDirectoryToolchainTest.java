@@ -13,6 +13,7 @@ import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentToolchainSources;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -25,6 +26,8 @@ class DeploymentAgentDirectoryToolchainTest {
     private static final ServerId SERVER = new ServerId("controlled-server");
 
     private static final String OPERATION = "a".repeat(32);
+
+    private static final String TASK = "11111111-2222-3333-4444-555555555555";
 
     private static final DeploymentRemoteLayout LAYOUT = new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths(
         "/srv/wtl/helper", "/srv/wtl/apps", "/srv/wtl/state", "/srv/wtl/config", "/srv/wtl/data"));
@@ -51,9 +54,10 @@ class DeploymentAgentDirectoryToolchainTest {
     @ValueSource(strings = {"resolve", "dependencies"})
     void customInlineEvidenceRequiresExactCurrentLayoutBytesArgumentsAndTargets(String phase) {
         String body = phase.equals("resolve") ? DeploymentAgentToolchainPrograms.resolver(LAYOUT) : DeploymentAgentToolchainPrograms.dependencies(LAYOUT);
-        List<String> arguments = phase.equals("resolve") ? List.of("resolve", "RUST", "1.98", "-", "45", OPERATION) : List.of("NATIVE_BUILD", OPERATION);
+        List<String> arguments = phase.equals("resolve") ? List.of("resolve", "RUST", "1.98", "-", "45", OPERATION)
+            : DeploymentToolchainDependencies.frame("NATIVE_BUILD", OPERATION, 60, SERVER, TASK);
         var targets = phase.equals("resolve") ? DeploymentAgentToolchainCommands.resolverTargets(SERVER, DeploymentToolchainType.RUST, "1.98", "-")
-            : DeploymentAgentToolchainCommands.dependencyTargets(SERVER, "NATIVE_BUILD");
+            : DeploymentToolchainDependencies.dependencyTargets(SERVER, "NATIVE_BUILD", OPERATION, LAYOUT);
         try (var request = new CommandRequest(DeploymentAgentToolchainPrograms.command(arguments), body.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(60), 65536)) {
             ObjectNode current = JSON.createObjectNode().put("operation", "deployment.agent.toolchain." + phase + ".v1")
                 .put("businessRevision", "c".repeat(64)).put("inputKind", "EXECUTABLE_SCRIPT").put("completeExecutableInput", body)

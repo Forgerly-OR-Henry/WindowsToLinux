@@ -18,6 +18,7 @@ from unittest import mock
 
 RESOURCES = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/mod/deployment'
 AGENT = RESOURCES / 'service/agent/toolchain'
+DEPENDENCIES = RESOURCES / 'service/deploy/toolchain'
 SHARED = RESOURCES / 'linux/helper/toolchain'
 OPERATION = '1234567890abcdef1234567890abcdef'
 
@@ -42,8 +43,8 @@ def controller():
 
 
 def dependencies():
-    text = resource(AGENT / 'dependency-packages.json')
-    source = 'import json\nDEPENDENCY_PACKAGES=json.loads(' + repr(text) + ')\n' + resource(AGENT / 'agent-toolchain-dependencies.py')
+    text = resource(DEPENDENCIES / 'dependency-packages.json')
+    source = 'import json\nDEPENDENCY_PACKAGES=json.loads(' + repr(text) + ')\n' + resource(DEPENDENCIES / 'dependency-lifecycle.py') + '\n' + resource(DEPENDENCIES / 'agent-toolchain-dependencies.py')
     namespace = types.ModuleType('dependency_contract')
     exec(compile(source, '<actual-dependency-resources>', 'exec'), namespace.__dict__)
     return namespace, source
@@ -210,7 +211,7 @@ class AgentToolchainIsolationTest(unittest.TestCase):
         self.assertFalse(hasattr(self.c, 'run'))
         d, source = dependencies()
         self.assertEqual(1, source.count('DEPENDENCY_PACKAGES='))
-        actual = json.loads(resource(AGENT / 'dependency-packages.json'))
+        actual = json.loads(resource(DEPENDENCIES / 'dependency-packages.json'))
         for manager in ('APT', 'DNF'):
             for ecosystem in ('PYTHON', 'PHP', 'RUBY'):
                 self.assertEqual(actual[manager][ecosystem], d.dependency_packages(manager, ecosystem))
@@ -1576,6 +1577,8 @@ class AgentToolchainDependenciesTest(unittest.TestCase):
     def setUp(self):
         self.d, self.source = dependencies()
         self.d.OS_PROFILE = {'id': 'ubuntu', 'version': '24.04', 'manager': 'APT'}
+        self.d.DEPENDENCY_WORKER_ADMITTED = True  # Isolate the package/configuration transaction; lifecycle tests exercise entry admission.
+        self.d.DEPENDENCY_DEADLINE_NS = self.d.time.monotonic_ns() + 60000000000
 
     def rejected(self, call):
         with self.assertRaises(self.d.DependencyFailure):
@@ -1736,7 +1739,7 @@ class AgentToolchainDependenciesTest(unittest.TestCase):
             return ''.join(name + '\t1.0-1\n' for name in packages) if 'dpkg-query' in command[0] else ''
         stream = io.StringIO()
         with mock.patch.object(self.d.os, 'geteuid', return_value=0, create=True), mock.patch.object(self.d, 'dependency_profile', return_value=self.d.OS_PROFILE), mock.patch.object(self.d, 'dependency_validate_apt'), mock.patch.object(self.d, 'dependency_tool', lambda name: '/usr/bin/' + name), mock.patch.object(self.d, 'dependency_run', run), contextlib.redirect_stdout(stream):
-            self.d.dependency_main(['PHP', OPERATION])
+            self.d.dependency_transaction(['PHP', OPERATION])
         line = stream.getvalue()
         self.assertEqual(1, len(line.splitlines()))
         value = json.loads(line.removeprefix('TOOLCHAIN_DEPENDENCIES='))
@@ -1747,14 +1750,15 @@ class AgentToolchainDependenciesTest(unittest.TestCase):
         self.assertEqual(packages, transaction[-len(packages):])
         self.assertIn('APT::Get::AllowUnauthenticated=false', transaction)
         self.assertIn('Acquire::AllowInsecureRepositories=false', transaction)
+        self.assertIn('--no-remove', transaction)
         self.assertFalse(any('--allow-unauthenticated' in command for command in commands))
 
     def test_non_source_ecosystem_does_not_install_and_arbitrary_args_are_rejected(self):
         with mock.patch.object(self.d.os, 'geteuid', return_value=0, create=True), mock.patch.object(self.d, 'dependency_run') as commands, contextlib.redirect_stdout(io.StringIO()):
-            self.d.dependency_main(['RUST', OPERATION])
+            self.d.dependency_transaction(['RUST', OPERATION])
             commands.assert_not_called()
             for args in (['RUBY', OPERATION, '--repo=attacker'], ['RUBY', '../op'], ['MODEL', OPERATION]):
-                self.rejected(lambda: self.d.dependency_main(args))
+                self.rejected(lambda: self.d.dependency_transaction(args))
 
     def test_os_profile_and_cross_distribution_sources_are_strict(self):
         for identity, version, manager in (('ubuntu', '24.04', 'APT'), ('debian', '12', 'APT'), ('centos', '10', 'DNF')):
@@ -1937,7 +1941,7 @@ APT::Planner "internal";
     def test_native_build_uses_exact_single_packaged_manifest_for_both_managers(self):
         expected = {'APT': ['cmake', 'ninja-build', 'gcc', 'g++'],
                     'DNF': ['cmake', 'ninja-build', 'gcc', 'gcc-c++']}
-        actual = json.loads(resource(AGENT / 'dependency-packages.json'))
+        actual = json.loads(resource(DEPENDENCIES / 'dependency-packages.json'))
         for manager, packages in expected.items():
             with self.subTest(manager=manager):
                 self.assertEqual({'PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD', 'HELPER_RUNTIME'}, set(actual[manager]))
@@ -1965,7 +1969,7 @@ APT::Planner "internal";
                   mock.patch.object(self.d, 'dependency_tool', lambda name: '/usr/bin/' + name),
                   mock.patch.object(self.d, 'dependency_run', run),
                   contextlib.redirect_stdout(stream)):
-                self.d.dependency_main(['NATIVE_BUILD', OPERATION])
+                self.d.dependency_transaction(['NATIVE_BUILD', OPERATION])
                 (apt if manager == 'APT' else dnf).assert_called_once_with()
                 (dnf if manager == 'APT' else apt).assert_not_called()
             receipt = stream.getvalue()
@@ -1979,6 +1983,7 @@ APT::Planner "internal";
             if manager == 'APT':
                 self.assertIn('APT::Get::AllowUnauthenticated=false', transaction)
                 self.assertIn('Acquire::AllowInsecureRepositories=false', transaction)
+                self.assertIn('--no-remove', transaction)
             else:
                 self.assertIn('--disableplugin=*', transaction)
                 self.assertIn('--setopt=gpgcheck=1', transaction)
@@ -1998,7 +2003,7 @@ APT::Planner "internal";
               mock.patch.object(self.d, 'dependency_tool', lambda name: '/usr/bin/' + name),
               mock.patch.object(self.d, 'dependency_run', side_effect=['', '', valid + 'model-package\t1\n']),
               contextlib.redirect_stdout(stream)):
-            self.rejected(lambda: self.d.dependency_main(['NATIVE_BUILD', OPERATION]))
+            self.rejected(lambda: self.d.dependency_transaction(['NATIVE_BUILD', OPERATION]))
         self.assertEqual('', stream.getvalue())
 
     def test_native_build_refusal_and_extra_parameters_do_not_dispatch_or_emit_receipt(self):
@@ -2008,17 +2013,17 @@ APT::Planner "internal";
               mock.patch.object(self.d, 'dependency_validate_apt', side_effect=self.d.DependencyFailure('UNAUTHENTICATED_APT_CONFIGURATION')),
               mock.patch.object(self.d, 'dependency_run') as run,
               contextlib.redirect_stdout(stream)):
-            self.rejected(lambda: self.d.dependency_main(['NATIVE_BUILD', OPERATION]))
+            self.rejected(lambda: self.d.dependency_transaction(['NATIVE_BUILD', OPERATION]))
             for args in (['NATIVE_BUILD', OPERATION, 'model-package'], ['NATIVE_BUILD', '../op'],
                          ['native_build', OPERATION]):
-                self.rejected(lambda: self.d.dependency_main(args))
+                self.rejected(lambda: self.d.dependency_transaction(args))
             run.assert_not_called()
         self.assertEqual('', stream.getvalue())
 
     def test_rust_still_has_no_system_package_transaction_with_native_profile_present(self):
         stream = io.StringIO()
         with mock.patch.object(self.d.os, 'geteuid', return_value=0, create=True), mock.patch.object(self.d, 'dependency_profile') as profile, mock.patch.object(self.d, 'dependency_run') as run, contextlib.redirect_stdout(stream):
-            self.d.dependency_main(['RUST', OPERATION])
+            self.d.dependency_transaction(['RUST', OPERATION])
             profile.assert_not_called()
             run.assert_not_called()
         receipt = json.loads(stream.getvalue().removeprefix('TOOLCHAIN_DEPENDENCIES='))

@@ -39,6 +39,101 @@ import org.junit.jupiter.api.Test;
 /** Exercises fixed publication receipts with a controlled remote peer. / 用受控远端对等端验证固定发布回执。 */
 class DeploymentPublishChannelTest {
     @Test
+    void typedHealthAndSocketFactsSurviveLiveProjectionWithoutUnknownOrSensitiveValues() throws Exception {
+        var type = Class.forName("gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticLiveAcceptanceTest");
+        var projection = type.getDeclaredMethod("safeOriginalCallCauses", String.class); projection.setAccessible(true);
+        var allowed = new ArrayList<>(List.of("problem[0].context.observationStage=health", "problem[0].context.healthUnitId=demo",
+            "problem[0].context.transportSocketReadDeliveryEnteredDuringCommand=0", "problem[0].context.transportSocketReadPendingBeforeCommand=true",
+            "problem[0].context.transportFailureCauseType=java.io.EOFException"));
+        for (int index = 0; index < 6; index++)
+            allowed.add("problem[0].context.transportFailureStack[" + index + "]=org.apache.sshd.common.session.AbstractSession#exceptionCaught:174");
+        var rejected = List.of("problem[0].context.privateCommand=private", "problem[0].context.transportSocketReadDeliveryActive=private",
+            "problem[0].context.healthUnitId=" + "a".repeat(200), "problem[0].context.transportSocketReadUnknownCounter=3");
+        var all = new ArrayList<>(allowed); all.addAll(rejected);
+        assertEquals(allowed, projection.invoke(null, String.join("\n", all)));
+    }
+
+    @Test
+    void incompleteHealthRetainsOnlyTypedUpstreamCauseAndLocalUnitWithoutRetry() throws Exception {
+        var upstream = new java.util.LinkedHashMap<String, String>();
+        upstream.put("commandPhase", "CHANNEL_OPENING");
+        upstream.put("timeoutMillis", "55000");
+        upstream.put("authorPayloadState", "NOT_SENT");
+        upstream.put("channelOpenWriteState", "WRITTEN");
+        upstream.put("transportSocketReadDeliveryActive", "0");
+        upstream.put("transportSocketReadDeliveryEnteredAtCommandStart", "35");
+        upstream.put("transportSocketReadDeliveryEnteredDuringCommand", "0");
+        upstream.put("transportSocketReadPendingBeforeCommand", "true");
+        upstream.put("transportReadHandlerActive", "false");
+        upstream.put("transportFailureType", "org.apache.sshd.common.SshException");
+        upstream.put("transportFailureCauseType", "java.io.EOFException");
+        for (int index = 0; index < 6; index++)
+            upstream.put("transportFailureStack[" + index + "]", "org.apache.sshd.common.session.AbstractSession#exceptionCaught:174");
+        upstream.put("command", "private command");
+        upstream.put("payload", "private payload");
+        upstream.put("unknownFact", "private value");
+        upstream.put("transportSocketReadAttempts", "9".repeat(200));
+        upstream.put("inputState", "private invalid enum");
+        var diagnostic = UUID.randomUUID();
+        var scripts = new ArrayList<String>();
+        var result = channel(request -> new OperationResult<>(TaskResult.FAILED,
+            Optional.of(new CommandResult(Optional.empty(), "private stdout", "private stderr", false)),
+            Optional.of(new Problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT", "private message",
+                upstream, Optional.of(diagnostic)))), scripts).healthCheck(unit(), new DeploymentHealthCheck.Tcp(8080, 10, 2));
+        assertEquals(TaskResult.UNKNOWN, result.outcome());
+        var problem = result.problem().orElseThrow();
+        assertEquals("DEPLOYMENT_HEALTH_UNCONFIRMED", problem.eventCode());
+        assertEquals(Optional.of(diagnostic), problem.diagnosticId());
+        var facts = problem.context();
+        assertEquals("health", facts.get("observationStage"));
+        assertEquals("incomplete", facts.get("observationBranch"));
+        assertEquals("FAILED", facts.get("observationOutcome"));
+        assertEquals("SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT", facts.get("observationProblemEvent"));
+        assertEquals("true", facts.get("valuePresent"));
+        assertEquals("false", facts.get("truncated"));
+        assertFalse(facts.containsKey("exitCode"));
+        assertEquals("demo", facts.get("healthUnitId"));
+        assertEquals(unit().systemdUnit(), facts.get("healthSystemdUnit"));
+        for (String key : List.of("commandPhase", "timeoutMillis", "authorPayloadState", "channelOpenWriteState",
+            "transportSocketReadDeliveryActive", "transportSocketReadDeliveryEnteredAtCommandStart",
+            "transportSocketReadDeliveryEnteredDuringCommand", "transportSocketReadPendingBeforeCommand", "transportReadHandlerActive"))
+            assertEquals(upstream.get(key), facts.get(key), key);
+        for (String key : List.of("transportFailureType", "transportFailureCauseType", "transportFailureStack[0]",
+            "transportFailureStack[1]", "transportFailureStack[2]", "transportFailureStack[3]", "transportFailureStack[4]", "transportFailureStack[5]"))
+            assertEquals(upstream.get(key), facts.get(key), key);
+        assertFalse(result.toString().contains("private"));
+        assertFalse(facts.containsKey("transportSocketReadAttempts"));
+        assertEquals(facts, DeploymentPublishChannel.runtimeObservationDiagnostics(problem));
+        assertEquals(1, scripts.size(), "Health does not acquire inspect's narrow retry privilege");
+    }
+
+    @Test
+    void healthReceiptBranchesKeepTheirOriginalSemantics() throws Exception {
+        for (String mode : List.of("HEALTHY", "NONZERO", "TRUNCATED", "NO_EXIT", "NO_VALUE", "INVALID", "UNKNOWN", "CANCELLED")) {
+            var scripts = new ArrayList<String>();
+            var result = channel(request -> {
+                if (mode.equals("UNKNOWN") || mode.equals("CANCELLED") || mode.equals("NO_VALUE"))
+                    return new OperationResult<>(mode.equals("NO_VALUE") ? TaskResult.FAILED : TaskResult.valueOf(mode), Optional.empty(),
+                        Optional.of(new Problem(ProblemCode.UNKNOWN, "CONTROLLED_HEALTH_UPSTREAM", "Controlled", Map.of(), Optional.empty())));
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new CommandResult(
+                    mode.equals("NO_EXIT") ? Optional.empty() : Optional.of(mode.equals("NONZERO") ? 9 : 0),
+                    mode.equals("INVALID") ? "HEALTHY=0\nprivate" : "HEALTHY=1\n", "", mode.equals("TRUNCATED"))), Optional.empty());
+            }, scripts).healthCheck(unit(), new DeploymentHealthCheck.Tcp(8080, 10, 2));
+            TaskResult expected = mode.equals("HEALTHY") ? TaskResult.SUCCEEDED : mode.equals("NONZERO") ? TaskResult.FAILED : TaskResult.UNKNOWN;
+            assertEquals(expected, result.outcome(), mode);
+            if (!mode.equals("HEALTHY")) {
+                String event = mode.equals("NONZERO") ? "DEPLOYMENT_HEALTH_FAILED" : mode.equals("INVALID")
+                    ? "DEPLOYMENT_HEALTH_RECEIPT_INVALID" : List.of("NO_VALUE", "CANCELLED").contains(mode)
+                    ? "DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED" : mode.equals("UNKNOWN") ? "CONTROLLED_HEALTH_UPSTREAM" : "DEPLOYMENT_HEALTH_UNCONFIRMED";
+                assertEquals(event, result.problem().orElseThrow().eventCode(), mode);
+                assertEquals("health", result.problem().orElseThrow().context().get("observationStage"));
+            }
+            assertFalse(result.toString().contains("private"));
+            assertEquals(1, scripts.size(), mode);
+        }
+    }
+
+    @Test
     void lifecycleGuardRunsOnceAfterItsGrantAndBeforeOnlyItsEffect() throws Exception {
         for (String mode : List.of("SUCCESS", "APP_DENY", "GLOBAL_DENY", "GUARD_DENY", "ACK_LOST", "CANCELLED", "FAILED", "EXPIRED")) {
             var events = new ArrayList<String>();

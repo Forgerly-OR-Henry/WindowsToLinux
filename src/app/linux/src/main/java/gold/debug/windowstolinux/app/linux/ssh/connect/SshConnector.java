@@ -226,6 +226,12 @@ public final class SshConnector implements AutoCloseable {
         private Connection(SshEndpoint endpoint, HostTrust trust) {
             this.endpoint = endpoint;
             client.setIoServiceFactoryFactory(io);
+            client.setSessionFactory(new org.apache.sshd.client.session.SessionFactory(client) {
+                @Override protected org.apache.sshd.client.session.ClientSessionImpl doCreateSession(
+                    org.apache.sshd.common.io.IoSession transport) throws Exception {
+                    return new ChannelOpenMetadata.Session(client, transport);
+                }
+            });
             client.setHostConfigEntryResolver(HostConfigEntryResolver.EMPTY);
             client.setKeyIdentityProvider(KeyIdentityProvider.EMPTY_KEYS_PROVIDER);
             client.setPasswordIdentityProvider(PasswordIdentityProvider.EMPTY_PASSWORDS_PROVIDER);
@@ -346,7 +352,7 @@ public final class SshConnector implements AutoCloseable {
                 if (uncertain || command != null || transfer != null)
                     throw failure(ProblemCode.BUSY, "SSH_CONNECTION_UNCERTAIN",
                         "SSH connection requires closure after unfinished work");
-                command = new SshCommandExecution(session, request);
+                command = new SshCommandExecution(session, request, io);
                 var result = command.run(cancellation);
                 uncertain = result.outcome() == TaskResult.UNKNOWN;
                 if (command.close())

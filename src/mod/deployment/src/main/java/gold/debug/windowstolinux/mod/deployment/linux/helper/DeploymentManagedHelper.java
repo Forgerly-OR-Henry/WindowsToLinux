@@ -162,7 +162,7 @@ public final class DeploymentManagedHelper {
 
     /** Installs fixed files with a caller-owned complete prerequisite implementation, through exact independent review. */
     public OperationResult<Identity> installFilesWithPrerequisites(String prerequisitesScript) throws ApiException {
-        return installFilesWithPrerequisites("exec /bin/bash --noprofile --norc -s", prerequisitesScript);
+        return installFilesWithPrerequisites(DeploymentHelperInstallerScript.LAUNCHER, prerequisitesScript);
     }
 
     /** Installs caller-owned prerequisites with an exact caller-owned launcher and independent review. */
@@ -171,7 +171,7 @@ public final class DeploymentManagedHelper {
     }
 
     private OperationResult<Identity> install(String script, String operation) throws ApiException {
-        return install(script, operation, "exec /bin/bash --noprofile --norc -s");
+        return install(script, operation, DeploymentHelperInstallerScript.LAUNCHER);
     }
 
     private OperationResult<Identity> install(String script, String operation, String launcher) throws ApiException {
@@ -226,7 +226,7 @@ public final class DeploymentManagedHelper {
             new String(script, StandardCharsets.UTF_8), task.id(), layout);
         byte[] executable = DeploymentHelperInstallerScript.withMirrors(new String(script, StandardCharsets.UTF_8),
             gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task)).getBytes(StandardCharsets.UTF_8);
-        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", executable, Duration.ofHours(2),
+        try (var request = new CommandRequest(DeploymentHelperInstallerScript.LAUNCHER, executable, Duration.ofHours(2),
             131072)) {
             var grant = approve("deployment.helper.install.tracked.v1", request,
                 trackedInstallationTargets(server, layout, operationId));
@@ -249,7 +249,7 @@ public final class DeploymentManagedHelper {
      * @throws ApiException if review or transport fails / 审核或传输失败时 */
     public OperationResult<CommandResult> installationStatus(UUID operationId) throws ApiException {
         byte[] script = DeploymentHelperInstallerScript.renderStatus(operationId, layout).getBytes(StandardCharsets.UTF_8);
-        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", script, Duration.ofSeconds(30),
+        try (var request = new CommandRequest(DeploymentHelperInstallerScript.LAUNCHER, script, Duration.ofSeconds(30),
             2048)) {
             java.util.Arrays.fill(script, (byte) 0);
             var grant = approve("deployment.helper.install.status.v1", request,
@@ -295,9 +295,44 @@ public final class DeploymentManagedHelper {
                     Optional.of(new Identity(DeploymentManagedHelperBundle.PROTOCOL_VERSION,
                         DeploymentManagedHelperBundle.helperSha256(layout), layout)),
                     Optional.empty());
-            return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
-                Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HELPER_IDENTITY")));
+            if (completedProbe(response)) {
+                int exit = response.value().orElseThrow().exitCode().orElseThrow();
+                if (exit == 64 || exit == 0)
+                    return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
+                        Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HELPER_IDENTITY")));
+                if (requirePlatform && exit == 3)
+                    return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
+                        Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HELPER_PLATFORM_PREREQUISITES")));
+            }
+            if (response.outcome() == TaskResult.FAILED)
+                return withoutValue(response);
+            String reason = response.value().isEmpty() ? "MISSING_RESULT"
+                : response.value().orElseThrow().exitCode().isEmpty() ? "MISSING_EXIT"
+                : response.value().orElseThrow().truncated() ? "TRUNCATED_OUTPUT" : "NONZERO_EXIT";
+            return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
+                Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_HELPER_PROBE_UNCONFIRMED",
+                    "Managed helper probe completion was not confirmed", Map.of("reason", reason), Optional.empty())));
         }
+    }
+
+    /** Admits installation only after a completed probe identifies an initializable helper or prerequisite mismatch. */
+    public static boolean installationRequired(OperationResult<Identity> observed) {
+        return observed.outcome() == TaskResult.FAILED && observed.problem()
+            .filter(value -> value.code() == ProblemCode.INCOMPATIBLE
+                && (value.eventCode().equals("DEPLOYMENT_HELPER_IDENTITY")
+                    || value.eventCode().equals("DEPLOYMENT_HELPER_PLATFORM_PREREQUISITES"))).isPresent();
+    }
+
+    private static boolean completedProbe(OperationResult<CommandResult> response) {
+        if (response.value().isEmpty())
+            return false;
+        var value = response.value().orElseThrow();
+        return value.exitCode().isPresent() && !value.truncated()
+            && (response.outcome() == TaskResult.SUCCEEDED && value.exitCode().orElseThrow() == 0
+                || response.outcome() == TaskResult.FAILED && response.problem()
+                    .filter(problem -> problem.code() == ProblemCode.IO_FAILURE
+                        && problem.eventCode().equals("SSH_COMMAND_NONZERO")).isPresent()
+                    && value.exitCode().orElseThrow() != 0);
     }
 
     /** Uses the exact original default or required mode callback before any dispatch. / 任何发送前使用精确原默认或所需模式回调。

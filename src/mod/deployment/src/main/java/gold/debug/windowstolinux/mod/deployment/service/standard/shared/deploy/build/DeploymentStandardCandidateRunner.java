@@ -269,8 +269,9 @@ public final class DeploymentStandardCandidateRunner {
             gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.linux.command.CommandResult> installed;
             try {
                 installed = selection.commands.send(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION,
-                    gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(request.server(), "NATIVE_BUILD"),
-                    gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.command(java.util.List.of("NATIVE_BUILD", operation)), input,
+                    gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(request.server(), "NATIVE_BUILD", operation, request.layout()),
+                    gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.command(
+                        gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.frame("NATIVE_BUILD", operation, seconds, request.server(), task.id().toString())), input,
                     java.time.Duration.ofSeconds(seconds), 65536);
             } finally { java.util.Arrays.fill(input, (byte) 0); }
             if (installed.outcome() != TaskResult.SUCCEEDED) return withoutPreparedValue(installed);
@@ -280,7 +281,8 @@ public final class DeploymentStandardCandidateRunner {
             var result = installed.value().orElseThrow();
             if (result.exitCode().orElseThrow() != 0)
                 return failedPreparation(ProblemCode.IO_FAILURE, "DEPLOYMENT_NATIVE_BUILD_PREREQUISITES_FAILED");
-            if (!gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyReceipt(result.stdout(), "NATIVE_BUILD", operation))
+            if (!gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyReceipt(result.stdout(), "NATIVE_BUILD", operation,
+                    seconds, request.server(), task.id().toString(), request.layout()))
                 return unknownPreparation("DEPLOYMENT_NATIVE_BUILD_PREREQUISITES_UNCONFIRMED");
             if (cancelled(task)) return cancelledPreparation();
             nativeAttempted = true;

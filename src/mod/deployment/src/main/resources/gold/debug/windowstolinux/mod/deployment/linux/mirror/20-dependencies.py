@@ -1,5 +1,7 @@
 """Ephemeral package repository gateways; never edits a project's manifest or lock."""
 import xml.sax.saxutils
+import html
+import html.parser
 
 
 class RepositoryGateway:
@@ -22,7 +24,9 @@ class RepositoryGateway:
                 try:
                     parts = self.path.split('/', 3)
                     point = parts[1]
-                    if parts[2] == 'u':
+                    if parts[2] == 'f' and point == 'PYTHON_PACKAGE':
+                        original = gateway.python_file_request(parts[3])
+                    elif parts[2] == 'u':
                         encoded, separator, suffix = parts[3].partition('/')
                         if encoded.endswith('.json'):
                             encoded = encoded[:-5]
@@ -57,7 +61,7 @@ class RepositoryGateway:
                             data = downloaded.read_bytes()
                             try:
                                 parsed = json.loads(data)
-                                parsed = gateway.rewrite_json(parsed, point)
+                                parsed = gateway.rewrite_json(parsed, point, base_url=original)
                                 data = json.dumps(parsed, separators=(',', ':'), ensure_ascii=False).encode()
                             except (ValueError, UnicodeError):
                                 if 'json' in content:
@@ -66,15 +70,7 @@ class RepositoryGateway:
                             if metadata['bytes'] > 33554432:
                                 raise MirrorFailure('registry metadata exceeds size limit')
                             data = downloaded.read_bytes()
-                            text = data.decode('utf-8')
-                            def link(match):
-                                absolute = urllib.parse.urljoin(original, match.group(2))
-                                # Fragment hash remains part of the link consumed by pip.
-                                value, fragment = urllib.parse.urldefrag(absolute)
-                                digests = dict(urllib.parse.parse_qsl(fragment))
-                                algorithm = next((item for item in ('sha512', 'sha256') if item in digests), None)
-                                return match.group(1) + gateway.link(point, value, algorithm, digests.get(algorithm)) + ('#' + fragment if fragment else '') + match.group(3)
-                            data = re.sub(r'''(href\s*=\s*["'])([^"']+)(["'])''', link, text, flags=re.I).encode()
+                            data = gateway.rewrite_python_html(data.decode('utf-8'), original).encode()
                     self.send_response(200)
                     self.send_header('Content-Type', content or 'application/octet-stream')
                     self.send_header('Content-Length', str(len(data) if data is not None else metadata['bytes']))
@@ -86,6 +82,11 @@ class RepositoryGateway:
                             import shutil
                             with downloaded.open('rb') as source:
                                 shutil.copyfileobj(source, self.wfile, 65536)
+                except MirrorNotFound:
+                    if point in ('GRADLE_PLUGIN', 'MAVEN_REPOSITORY'):
+                        self.send_error(404, 'configured repository object not found')
+                    else:
+                        self.send_error(502, 'configured mirror request failed')
                 except (MirrorFailure, ValueError, IndexError, KeyError, OSError):
                     self.send_error(502, 'configured mirror request failed')
                 finally:
@@ -100,6 +101,7 @@ class RepositoryGateway:
         self.base = 'http://127.0.0.1:' + str(self.server.server_port)
         self.aliases = {}
         self.hashes = {}
+        self.python_files = {}
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     def origin(self, point):
@@ -111,7 +113,85 @@ class RepositoryGateway:
         self.policy.endpoints(point)
         return self.base + '/' + point + '/root/'
 
-    def link(self, point, value, algorithm=None, expected=None):
+    @staticmethod
+    def python_filename(value):
+        name = urllib.parse.unquote(urllib.parse.urlsplit(value).path.rsplit('/', 1)[-1], errors='strict')
+        if not name.lower().endswith(('.whl', '.tar.gz', '.tar.bz2', '.tar.xz', '.tgz', '.zip', '.tar')):
+            return None
+        if any(character in name for character in ('/', '\\')) or any(ord(character) < 32 or ord(character) == 127 for character in name):
+            raise MirrorFailure('invalid Python artifact filename')
+        return urllib.parse.quote(name, safe='-._~')
+
+    def python_file_link(self, value, metadata):
+        original, fragment = urllib.parse.urldefrag(value)
+        filename = self.python_filename(original)
+        if filename is None:
+            return None
+        token = base64.urlsafe_b64encode(original.encode()).decode().rstrip('=')
+        self.python_files[token] = original, filename
+        if metadata is not None:
+            sidecar = self.python_metadata_url(original)
+            if isinstance(metadata, str):
+                metadata = dict(urllib.parse.parse_qsl(metadata))
+            if isinstance(metadata, dict):
+                for algorithm in ('sha512', 'sha256'):
+                    if metadata.get(algorithm):
+                        self.hashes[sidecar] = algorithm, metadata[algorithm]
+                        break
+        return self.base + '/PYTHON_PACKAGE/f/' + token + '/' + filename + ('#' + fragment if fragment else '')
+
+    @staticmethod
+    def python_metadata_url(original):
+        parsed = urllib.parse.urlsplit(original)
+        return urllib.parse.urlunsplit(parsed._replace(path=parsed.path + '.metadata'))
+
+    def python_file_request(self, path):
+        token, separator, filename = path.partition('/')
+        if not separator or token not in self.python_files:
+            raise MirrorFailure('unknown Python artifact route')
+        original, expected = self.python_files[token]
+        if filename == expected:
+            return original
+        if filename == expected + '.metadata':
+            return self.python_metadata_url(original)
+        raise MirrorFailure('Python artifact filename differs from its bound URL')
+
+    def rewrite_python_html(self, text, original):
+        gateway, replacements = self, []
+        offsets = [0] + [match.end() for match in re.finditer('\n', text)]
+        class Links(html.parser.HTMLParser):
+            def handle_starttag(self, tag, attributes):
+                self.rewrite(tag, attributes, False)
+            def handle_startendtag(self, tag, attributes):
+                self.rewrite(tag, attributes, True)
+            def rewrite(self, tag, attributes, closed):
+                # Match pip's last-attribute semantics without re-lexing raw tag text.
+                attributes = dict(attributes)
+                if tag != 'a' or not attributes.get('href'):
+                    return
+                absolute = urllib.parse.urljoin(original, attributes['href'])
+                value, fragment = urllib.parse.urldefrag(absolute)
+                digests = dict(urllib.parse.parse_qsl(fragment))
+                algorithm = next((item for item in ('sha512', 'sha256') if item in digests), None)
+                declaration = attributes.get('data-core-metadata', attributes.get('data-dist-info-metadata'))
+                local = gateway.link('PYTHON_PACKAGE', value, algorithm, digests.get(algorithm), declaration)
+                local += '#' + fragment if fragment else ''
+                raw = self.get_starttag_text()
+                attributes['href'] = local
+                rewritten = '<a' + ''.join(' ' + html.escape(key, quote=True)
+                    + ('' if value is None else '="' + html.escape(value, quote=True) + '"')
+                    for key, value in attributes.items()) + (' />' if closed else '>')
+                line, column = self.getpos()
+                start = offsets[line - 1] + column
+                replacements.append((start, start + len(raw), rewritten))
+        parser = Links(convert_charrefs=True)
+        parser.feed(text)
+        parser.close()
+        for start, end, rewritten in reversed(replacements):
+            text = text[:start] + rewritten + text[end:]
+        return text
+
+    def link(self, point, value, algorithm=None, expected=None, metadata=None):
         for candidate in [point] + [p for p in self.policy.points if p != point]:
             for endpoint in self.policy.points.get(candidate, []):
                 for route in endpoint.get('routes', []):
@@ -121,7 +201,11 @@ class RepositoryGateway:
                         value = route['origin'].rstrip('/')
                     if value.startswith(route['origin']) or value.rstrip('/') == route['origin'].rstrip('/'):
                         if algorithm and expected:
-                            self.hashes[value] = algorithm, expected
+                            self.hashes[urllib.parse.urldefrag(value)[0] if candidate == 'PYTHON_PACKAGE' else value] = algorithm, expected
+                        if candidate == 'PYTHON_PACKAGE':
+                            artifact = self.python_file_link(value, metadata)
+                            if artifact is not None:
+                                return artifact
                         markers = [value.index(marker) for marker in ('{', '%', '$') if marker in value]
                         if markers:
                             offset = min(markers)
@@ -134,16 +218,20 @@ class RepositoryGateway:
         # Some metadata contains optional search/publish resources. Route those to a local
         # rejection if requested, rather than failing an otherwise usable service index or
         # allowing the client to bypass this task's source policy.
+        if point == 'PYTHON_PACKAGE':
+            artifact = self.python_file_link(value, metadata)
+            if artifact is not None:
+                return artifact
         encoded = base64.urlsafe_b64encode(value.encode()).decode().rstrip('=')
         return self.base + '/' + point + '/u/' + encoded + ('.json' if value.endswith('.json') else '')
 
-    def rewrite_json(self, value, point, key=''):
+    def rewrite_json(self, value, point, key='', base_url=None):
         # These fields carry URLs in the supported registry protocols, not package identity.
         fields = {'tarball', 'url', 'href', '@id', 'packageBaseAddress', 'registration', 'dl', 'api',
                   'packages', 'metadata-url', 'providers-url', 'p2', 'archives', 'dist', 'download_url'}
         fields.discard('api')
         if isinstance(value, dict):
-            result = {k: self.rewrite_json(v, point, k) for k, v in value.items()}
+            result = {k: self.rewrite_json(v, point, k, base_url) for k, v in value.items()}
             if point == 'NODE_PACKAGE' and value.get('tarball') and value.get('integrity'):
                 for integrity in value['integrity'].split():
                     algorithm, separator, encoded = integrity.partition('-')
@@ -154,14 +242,14 @@ class RepositoryGateway:
                         except ValueError:
                             raise MirrorFailure('invalid npm integrity metadata')
                         break
-            if point == 'PYTHON_PACKAGE' and value.get('url') and isinstance(value.get('hashes'), dict):
-                for algorithm in ('sha512', 'sha256'):
-                    if value['hashes'].get(algorithm):
-                        result['url'] = self.link(point, value['url'], algorithm, value['hashes'][algorithm])
-                        break
+            if point == 'PYTHON_PACKAGE' and value.get('url'):
+                hashes = value.get('hashes', {})
+                algorithm = next((item for item in ('sha512', 'sha256') if hashes.get(item)), None)
+                result['url'] = self.link(point, urllib.parse.urljoin(base_url or '', value['url']), algorithm,
+                                          hashes.get(algorithm), value.get('core-metadata', value.get('dist-info-metadata')))
             return result
         if isinstance(value, list):
-            return [self.rewrite_json(item, point, key) for item in value]
+            return [self.rewrite_json(item, point, key, base_url) for item in value]
         if isinstance(value, str) and value.startswith(('https://', 'http://')) and key in fields:
             return self.link(point, value)
         return value
@@ -206,6 +294,150 @@ def reject_unmapped_lock_urls(policy, point, directory):
             # Metadata registries in lock formats are native source declarations; actual fixed
             # archive URLs would bypass the task gateway and are intentionally rejected.
             raise MirrorFailure('fixed URL in %s cannot honor the selected source policy' % name)
+
+
+def gradle_repository_init(policy, gateway):
+    # Keep the download point with each admitted origin. Gateway.link intentionally
+    # searches other points; a Gradle repository must instead retain this exact route.
+    routes = {}
+    for point in ('GRADLE_PLUGIN', 'MAVEN_REPOSITORY'):
+        for endpoint in policy.endpoints(point):
+            for route in endpoint.get('routes', []) or [{'origin': endpoint['baseUrl']}]:
+                origin = route['origin'].rstrip('/')
+                token = base64.urlsafe_b64encode((origin + '/').encode()).decode().rstrip('=')
+                binding = [point, origin, gateway.base + '/' + point + '/u/' + token + '/']
+                if binding not in routes.setdefault(origin, []):
+                    routes[origin].append(binding)
+    defaults = {point: [point, gateway.origin(point).rstrip('/'), gateway.root(point)]
+                for point in ('GRADLE_PLUGIN', 'MAVEN_REPOSITORY')}
+    return r"""import groovy.transform.CompileStatic
+import org.gradle.api.artifacts.DependencyResolutionListener
+import org.gradle.api.artifacts.ResolvableDependencies
+import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+import org.gradle.api.internal.artifacts.repositories.ResolutionAwareRepository
+import org.gradle.plugin.use.internal.DefaultPluginRequestApplicator
+
+// Use interface calls, rather than Groovy properties or user-supplied metaClass methods.
+@CompileStatic
+class WtlRepositoryAccess {
+  static Class actualClass(Object value) { value.getClass() }
+  static Object descriptor(Object value) { ((ResolutionAwareRepository) value).getDescriptor() }
+  static boolean identical(Object left, Object right) { left.is(right) }
+  static String url(Object value) { ((MavenArtifactRepository) value).getUrl()?.toString() }
+  static List<String> artifacts(Object value) {
+    ((MavenArtifactRepository) value).getArtifactUrls().collect { URI uri -> uri.toString() }
+  }
+  static void route(Object value, String url, List<String> artifacts) {
+    MavenArtifactRepository repository = (MavenArtifactRepository) value
+    repository.setUrl(URI.create(url))
+    repository.setArtifactUrls(artifacts.collect { String item -> URI.create(item) })
+    repository.setAllowInsecureProtocol(true)
+  }
+}
+def wtlRoutes = new groovy.json.JsonSlurper().parseText(new String('__WTL_ROUTES__'.decodeBase64(), 'UTF-8'))
+def wtlDefaults = new groovy.json.JsonSlurper().parseText(new String('__WTL_DEFAULTS__'.decodeBase64(), 'UTF-8'))
+def wtlBindings = new IdentityHashMap()
+def wtlContainers = new IdentityHashMap()
+def wtlPluginSources = Collections.newSetFromMap(new IdentityHashMap())
+def wtlWrapperClass = Class.forName('org.gradle.plugin.use.internal.PluginArtifactRepository', false,
+    DefaultPluginRequestApplicator.class.classLoader)
+def wtlFail = { role, repository, reason ->
+  throw new GradleException('task repository rejected: role=' + role + ' class=' +
+      WtlRepositoryAccess.actualClass(repository).name + ' reason=' + reason)
+}
+def wtlSelect = { value, point, role, repository ->
+  def candidates = wtlRoutes[value?.replaceAll('/+$', '')]
+  if (!candidates) wtlFail(role, repository, 'no-exact-origin-route')
+  def selected = candidates.find { it[0] == point }
+  selected ?: candidates[0]
+}
+def wtlVerify
+wtlVerify = { repository, binding ->
+  if (binding.source != null) {
+    def sourceBinding = wtlBindings[binding.source]
+    wtlVerify(binding.source, sourceBinding)
+    if (!WtlRepositoryAccess.identical(WtlRepositoryAccess.descriptor(repository),
+        WtlRepositoryAccess.descriptor(binding.source))) wtlFail(binding.role, repository, 'plugin-source-descriptor-changed')
+  } else {
+    if (WtlRepositoryAccess.url(repository) != binding.route[2] ||
+        WtlRepositoryAccess.artifacts(repository) != binding.artifacts) {
+      wtlFail(binding.role, repository, 'bound-url-changed point=' + binding.route[0])
+    }
+  }
+}
+def wtlBind = { repository, state ->
+  def prior = wtlBindings[repository]
+  if (prior != null) {
+    wtlVerify(repository, prior)
+    if (state.role == 'pluginManagement' && prior.source == null) wtlPluginSources.add(repository)
+    return
+  }
+  if (repository instanceof MavenArtifactRepository) {
+    def route = wtlSelect(WtlRepositoryAccess.url(repository), state.point, state.role, repository)
+    def artifacts = WtlRepositoryAccess.artifacts(repository).collect {
+      wtlSelect(it, state.point, state.role, repository)[2]
+    }
+    WtlRepositoryAccess.route(repository, route[2], artifacts)
+    wtlBindings[repository] = [role: state.role, route: route, artifacts: artifacts, source: null]
+    if (state.role == 'pluginManagement') wtlPluginSources.add(repository)
+  } else if (WtlRepositoryAccess.identical(WtlRepositoryAccess.actualClass(repository), wtlWrapperClass)) {
+    // Gradle's wrapper delegates its current cached descriptor to the actual source.
+    // Check the source's current URLs first; never trust descriptor content, ID or equals().
+    def source = wtlPluginSources.find { candidate ->
+      wtlVerify(candidate, wtlBindings[candidate])
+      WtlRepositoryAccess.identical(WtlRepositoryAccess.descriptor(repository),
+          WtlRepositoryAccess.descriptor(candidate))
+    }
+    if (source == null) wtlFail(state.role, repository, 'unbound-plugin-wrapper')
+    def inherited = wtlBindings[source]
+    wtlBindings[repository] = [role: state.role, route: inherited.route, artifacts: inherited.artifacts, source: source]
+    logger.info('Task repository wrapper bound role=' + state.role + ' point=' + inherited.route[0])
+  } else {
+    wtlFail(state.role, repository, 'unsupported-repository-type')
+  }
+}
+def wtlCheckAll = {
+  wtlContainers.each { repositories, state -> repositories.each { wtlBind(it, state) } }
+  wtlBindings.each { repository, binding -> wtlVerify(repository, binding) }
+}
+def wtlInstall = { repositories, point, role ->
+  def state = wtlContainers[repositories]
+  if (state != null) {
+    logger.info('Task repository container rechecked role=' + role)
+    repositories.each { wtlBind(it, state) }
+    return
+  }
+  state = [point: point, role: role]
+  wtlContainers[repositories] = state
+  repositories.each { wtlBind(it, state) }
+  if (repositories.empty) {
+    def route = wtlDefaults[point]
+    def repository = repositories.maven { url = URI.create(route[2]); allowInsecureProtocol = true }
+    wtlBindings[repository] = [role: role, route: route, artifacts: [], source: null]
+    if (role == 'pluginManagement') wtlPluginSources.add(repository)
+  }
+  // Each repository container gets one listener, even across both settings callbacks.
+  repositories.whenObjectAdded { repository -> wtlBind(repository, state) }
+  logger.info('Task repository listener installed role=' + role)
+}
+beforeSettings { settings ->
+  wtlInstall(settings.pluginManagement.repositories, 'GRADLE_PLUGIN', 'pluginManagement')
+  wtlInstall(settings.dependencyResolutionManagement.repositories, 'MAVEN_REPOSITORY', 'settingsDependencies')
+}
+settingsEvaluated { settings ->
+  wtlInstall(settings.pluginManagement.repositories, 'GRADLE_PLUGIN', 'pluginManagement')
+  wtlInstall(settings.dependencyResolutionManagement.repositories, 'MAVEN_REPOSITORY', 'settingsDependencies')
+  wtlCheckAll()
+}
+beforeProject { project ->
+  wtlInstall(project.repositories, 'MAVEN_REPOSITORY', 'project')
+  wtlInstall(project.buildscript.repositories, 'MAVEN_REPOSITORY', 'buildscript')
+}
+gradle.addListener([
+  beforeResolve: { ResolvableDependencies dependencies -> wtlCheckAll() },
+  afterResolve: { ResolvableDependencies dependencies -> }
+] as DependencyResolutionListener)
+""".replace('__WTL_ROUTES__', base64.b64encode(json.dumps(routes).encode()).decode()).replace('__WTL_DEFAULTS__', base64.b64encode(json.dumps(defaults).encode()).decode())
 
 
 def dependency_environment(policy, gateway, point, command, directory):
@@ -265,33 +497,7 @@ def dependency_environment(policy, gateway, point, command, directory):
                                 '-Daether.connector.requestTimeout=' + client_milliseconds] + command[1:]
     elif point == 'GRADLE_PLUGIN':
         init = root / 'mirrors.gradle'
-        plugin_repository = json.dumps(gateway.root(point))
-        dependency_repository = json.dumps(gateway.root('MAVEN_REPOSITORY'))
-        origins = sorted({route['origin'].rstrip('/') for candidate in ('MAVEN_REPOSITORY', point)
-                          for endpoint in policy.endpoints(candidate) for route in endpoint.get('routes', [])})
-        init.write_text('''def wtlOrigins = %s
-def wtlRepos = { repos, selected ->
-  repos.clear()
-  repos.maven { url = uri(selected); allowInsecureProtocol = true }
-  repos.whenObjectAdded { r ->
-    if (!r.hasProperty('url')) throw new GradleException('unsupported task repository protocol')
-    def original = r.url.toString().replaceAll('/+$', '')
-    if (original != selected.replaceAll('/+$', '') && !wtlOrigins.contains(original)) throw new GradleException('repository has no exact task mirror route')
-    r.url = uri(selected)
-    r.allowInsecureProtocol = true
-  }
-}
-beforeSettings { s -> wtlRepos(s.pluginManagement.repositories, %s) }
-settingsEvaluated { s ->
-  wtlRepos(s.pluginManagement.repositories, %s)
-  if (s.hasProperty('dependencyResolutionManagement')) wtlRepos(s.dependencyResolutionManagement.repositories, %s)
-}
-allprojects { p ->
-  wtlRepos(p.repositories, %s)
-  wtlRepos(p.buildscript.repositories, %s)
-}
-''' % (json.dumps(origins), plugin_repository, plugin_repository, dependency_repository,
-       dependency_repository, dependency_repository))
+        init.write_text(gradle_repository_init(policy, gateway), encoding='utf-8')
         command += ['--init-script', str(init), '-Dorg.gradle.internal.http.connectionTimeout=' + str(max(1, int(policy.connect * 1000))),
                     '-Dorg.gradle.internal.http.socketTimeout=' + client_milliseconds]
     elif point == 'RUST_CRATE':

@@ -447,6 +447,18 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                                 TaskContext supplied) throws ApiException {
         var facts = new LinkedHashMap<String, Object>(effectFacts(intent, supplied));
+        if (intent.semantics().filter(value -> Set.of("deployment.helper.install.v1", "deployment.helper.install.files.v1",
+                "deployment.helper.install.tracked.v1").contains(value.operation())).isPresent()) {
+            if (!facts.containsKey("workflowAuthorization"))
+                throw new IllegalArgumentException("Native helper package evidence requires its original workflow");
+            try {
+                facts.put("helperPackageImpact", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence
+                    .helperPackageImpact(intent, request, supplied.id(),
+                        gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied)));
+            } catch (java.io.IOException invalid) {
+                throw new IllegalArgumentException("Native helper package evidence cannot be decoded", invalid);
+            }
+        }
         if (intent.semantics().filter(value -> value.operation().equals("deployment.toolchain.bind.v1")).isPresent())
             facts.put("currentToolchainPlan", bindingPlanFacts(intent, request, supplied));
         if (intent.semantics().filter(value -> value.operation().equals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION)).isPresent())

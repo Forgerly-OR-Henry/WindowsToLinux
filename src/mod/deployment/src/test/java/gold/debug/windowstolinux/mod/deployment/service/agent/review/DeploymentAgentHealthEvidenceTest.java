@@ -1570,7 +1570,8 @@ class DeploymentAgentHealthEvidenceTest {
             assertEquals(frame.healthIntent(request, "none").exactAction(), frame.reviewFacts.getFirst().path("exactAction").asText());
             String actualSystem = frame.aiRequests.getFirst().messages().getFirst().text();
             new DeploymentAiJson(frame.context).askCommand(
-                DeploymentReviewDecision.INSTRUCTION + DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review.md"),
+                DeploymentReviewDecision.INSTRUCTION + DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review.md")
+                    + DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review-stage.md"),
                 Map.of("operation", "deployment.publication.health.v1"), REVISION, frame.task, ignored -> false);
             assertEquals(actualSystem, frame.aiRequests.getLast().messages().getFirst().text(),
                 "The empty hook must keep the original shared command-review policy byte for byte");

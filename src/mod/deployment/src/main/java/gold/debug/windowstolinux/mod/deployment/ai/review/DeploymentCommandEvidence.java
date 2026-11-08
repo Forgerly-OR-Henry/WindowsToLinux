@@ -132,6 +132,10 @@ public final class DeploymentCommandEvidence {
                     ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describe(executable, layout) : executable;
                 facts.put("completeExecutableInput", described);
                 mirrorInput.ifPresent(value -> facts.put("mirrorInputTask", value.task().toString()));
+                if (mirrorInput.isPresent() && described instanceof Map<?, ?> represented
+                    && gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.MIRROR_FORMAT.equals(represented.get("format")))
+                    facts.put("mirrorTransport", gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks
+                        .reviewMaterial(mirrorInput.orElseThrow().policy(), described));
                 if (operation.equals("deployment.model.command.v1")) {
                     if (!request.script().equals(gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.LAUNCHER))
                         throw new IllegalArgumentException("Model command launcher changed");
@@ -209,7 +213,7 @@ public final class DeploymentCommandEvidence {
             result.put("mirrorPolicy", Map.of("task", task.id().toString(), "catalogVersion", root.path("catalogVersion").asText(),
                 "country", root.path("country").asText(), "meaning", "Frozen task sources. Complete executable bootstrap and original helper integrity guard remain subject to review; arbitrary project network scripts and Git are not rewritten."));
             if (preparation.isPresent() || result.containsKey("mirrorInputTask"))
-                result.put("mirrorTransport", gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.reviewMaterial(mirrorPolicy));
+                result.put("mirrorTransport", gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.reviewMaterial(mirrorPolicy, result.get("completeExecutableInput")));
         }
         if (result.get("publicationSnapshot") instanceof Map<?, ?> snapshot) {
             if (!task.id().toString().equals(snapshot.get("task")))
@@ -219,6 +223,7 @@ public final class DeploymentCommandEvidence {
         if (intent.semantics().orElseThrow().operation().equals("deployment.model.command.status.v1"))
             result.put("modelCommandReceiptStatus", gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner
                 .receiptStatusEvidence(context, task, intent, request, layout));
+        gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.verifySourceReferences(new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(result));
         return java.util.Collections.unmodifiableMap(result);
     }
 

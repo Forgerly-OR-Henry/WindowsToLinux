@@ -281,7 +281,7 @@ public class DeploymentStandardGraphPublishRunner {
             return remote(ordering, plans, units, credentials, healthComponent, health, session, task, rootRef.get(),
                 journalRef.get(), corrections);
         } catch (Exception | LinkageError | AssertionError unconfirmed) {
-            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.operationFailure(context, task, unconfirmed);
+            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.operationFailureMetadata(context, task, unconfirmed);
             result = unknown("DEPLOYMENT_GRAPH_REMOTE_UNCONFIRMED");
         }
         try {

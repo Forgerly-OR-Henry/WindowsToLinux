@@ -37,12 +37,77 @@ class DeploymentManagedHelperTest {
     Path temporary;
 
     @Test
+    void defaultRequestsBindIsolatedLauncherAndUnchangedInputLimitsToReviewAndDispatch() throws Exception {
+        var server = new ServerId("launcher-contract");
+        var original = task();
+        var operation = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        String prerequisites = "printf 'controlled prerequisites only\\n'\n";
+        String callerLauncher = "exec /bin/bash --noprofile --norc -s";
+        for (String kind : List.of("full", "files", "prerequisites", "tracked", "status", "explicit")) {
+            String body = switch (kind) {
+                case "full" -> DeploymentHelperInstallerScript.render();
+                case "files" -> DeploymentHelperInstallerScript.renderFiles();
+                case "tracked" -> DeploymentHelperInstallerScript.renderTracked(original.id(), operation,
+                    "a".repeat(64), digest(DeploymentHelperInstallerScript.render()));
+                case "status" -> DeploymentHelperInstallerScript.renderStatus(operation);
+                default -> DeploymentHelperInstallerScript.renderFiles(prerequisites);
+            };
+            var reviewed = new ArrayList<CommandRequest>();
+            var intents = new ArrayList<ActionIntent>();
+            var grants = new ArrayList<ApprovalGrant>();
+            var sent = new ArrayList<CommandRequest>();
+            var replies = new ArrayDeque<OperationResult<CommandResult>>();
+            replies.add(ok(kind.equals("status") || kind.equals("tracked") ? "controlled receipt" : installTail(), ""));
+            if (!kind.equals("status") && !kind.equals("tracked")) replies.add(ok(probeOutput(), ""));
+            RemoteSession session = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
+                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                    if (!method.getName().equals("execute")) throw new AssertionError(method.getName());
+                    var request = (CommandRequest) args[0];
+                    int index = sent.size();
+                    assertSame(grants.get(index), args[1]);
+                    assertEquals(reviewed.get(index).script(), request.script());
+                    assertArrayEquals(reviewed.get(index).stdin(), request.stdin());
+                    assertEquals(reviewed.get(index).timeout(), request.timeout());
+                    assertEquals(reviewed.get(index).outputLimitBytes(), request.outputLimitBytes());
+                    assertEquals(gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server,
+                        "revision", request).withSemantics(intents.get(index).semantics().orElseThrow()), intents.get(index));
+                    sent.add(request.snapshot());
+                    return replies.removeFirst();
+                });
+            var helper = new DeploymentManagedHelper(session, reviews(new ArrayList<>()), server, original,
+                "revision", gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard.NONE,
+                (intent, request, supplied) -> {
+                    assertSame(original, supplied);
+                    intents.add(intent);
+                    reviewed.add(request.snapshot());
+                    var grant = new ApprovalGrant(UUID.randomUUID());
+                    grants.add(grant);
+                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(grant), Optional.empty());
+                });
+            var result = switch (kind) {
+                case "full" -> helper.install();
+                case "files" -> helper.installFiles();
+                case "prerequisites" -> helper.installFilesWithPrerequisites(prerequisites);
+                case "tracked" -> helper.installTracked(body.getBytes(StandardCharsets.UTF_8), () -> {});
+                case "status" -> helper.installationStatus(operation);
+                default -> helper.installFilesWithPrerequisites(callerLauncher, prerequisites);
+            };
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), kind);
+            assertEquals(kind.equals("explicit") ? callerLauncher : DeploymentHelperInstallerScript.LAUNCHER,
+                sent.getFirst().script(), kind);
+            assertArrayEquals(body.getBytes(StandardCharsets.UTF_8), sent.getFirst().stdin(), kind);
+            assertEquals(java.time.Duration.ofSeconds(kind.equals("status") ? 30 : 7200), sent.getFirst().timeout(), kind);
+            assertEquals(kind.equals("status") ? 2048 : 131072, sent.getFirst().outputLimitBytes(), kind);
+        }
+    }
+
+    @Test
     void defaultInstallersPinCurrentSharedRuntimeBytes() throws Exception {
-        assertEquals("ed9611481988bab576df004de4d78666032d563c7354f54b1b5b93a3d774e52a",
+        assertEquals("33eb4354ab3a487581725a9cec19e7393c794cbea5d2cbd2e918d16f05b058f3",
             digest(DeploymentHelperInstallerScript.render()));
-        assertEquals("6bec322a909ac1145a10b8855176551436b27aeb370541b771f73b5e0c87afd7",
+        assertEquals("5268f09f50562a1845878cbceff19b3d94299eebd49f87589bf2c0c18edbfce7",
             digest(DeploymentHelperInstallerScript.renderHelperInstallation()));
-        assertEquals("3fb66b69e7bae8b66da238e994613577642d5921c87a336314858abe92bef3b2",
+        assertEquals("5b92e2644a0ec13d93f0a153137908d82e51f28023a6b8f566f907b23525499c",
             digest(DeploymentHelperInstallerScript.renderTracked(task().id(),
                 UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), "a".repeat(64),
                 digest(DeploymentHelperInstallerScript.render()))));
@@ -275,7 +340,9 @@ class DeploymentManagedHelperTest {
         assertBashSyntax(bash, file);
         Path installer = temporary.resolve("managed-installer");
         String installation = DeploymentHelperInstallerScript.render();
-        assertTrue(installation.indexOf("installer_trusted_path \"$installer_parent\" directory") < installation.indexOf("/usr/bin/install -d"));
+        int parentGuard = installation.indexOf("installer_trusted_path \"$installer_parent\" directory");
+        int createHelperDirectory = installation.indexOf("/usr/bin/install -d -o root -g root -m 755 -- \"$installer_directory\"");
+        assertTrue(parentGuard >= 0 && createHelperDirectory > parentGuard);
         assertTrue(installation.indexOf("installer_trusted_path \"$installer_file\" file") < installation.indexOf("/usr/bin/mv -fT"));
         assertTrue(installation.contains("(( (8#$installer_mode & 022) == 0 ))"));
         assertTrue(installation.contains("acl sudo iproute2 sqlite3\n"));
@@ -358,20 +425,28 @@ class DeploymentManagedHelperTest {
     @Test
     void installedEntryDigestStopsBeforeUnitRegistrationWhenTheActualFileDiffers() throws Exception {
         String script = DeploymentHelperInstallerScript.renderHelperInstallation();
-        String binding = DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.buildEntrySha256()) + " "
-            + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.BUILD_ENTRY_PATH) + " | /usr/bin/sha256sum --check --status";
+        String binding = "installer_verify_executable "
+            + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.BUILD_ENTRY_PATH) + " "
+            + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.buildEntrySha256());
         int bound = script.indexOf(binding);
-        assertTrue(bound >= 0);
-        String check = script.substring(script.lastIndexOf("printf ", bound), script.indexOf('\n', bound));
-        assertTrue(script.indexOf(check) > script.indexOf("/usr/bin/sha256sum --check --status"));
-        assertTrue(script.indexOf(check) < script.indexOf("systemctl enable windowstolinux-workspace-recovery.service"));
+        int published = script.indexOf("/usr/bin/mv -fT -- \"$entry_tmp\"");
+        assertTrue(published >= 0 && bound > published);
+        assertTrue(bound < script.indexOf("systemctl enable windowstolinux-workspace-recovery.service"));
+        int verifier = script.indexOf("installer_verify_executable() {\n");
+        assertTrue(verifier >= 0);
+        int verifierEnd = script.indexOf("\n}", verifier);
+        int digestCheck = script.indexOf("  printf ", verifier);
+        assertTrue(digestCheck > verifier && verifierEnd > digestCheck);
+        String check = script.substring(digestCheck, verifierEnd);
+        assertTrue(check.contains("\"$2\" \"$1\" | /usr/bin/sha256sum --check --status"));
         String bash = System.getProperty("managed.test.bash", "/bin/bash");
         Path entry = temporary.resolve("installed-entry");
         String entryPath = entry.toAbsolutePath().toString().replace('\\', '/');
         if (entryPath.matches("^[A-Za-z]:/.*"))
             entryPath = "/" + Character.toLowerCase(entryPath.charAt(0)) + entryPath.substring(2);
-        String localCheck = check.replace(DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.BUILD_ENTRY_PATH),
-            DeploymentHelperInstallerScript.quote(entryPath));
+        String localCheck = "installed_entry_digest() {\n" + check + "\n}\ninstalled_entry_digest "
+            + DeploymentHelperInstallerScript.quote(entryPath) + " "
+            + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.buildEntrySha256());
         Path command = temporary.resolve("entry-check.sh");
         Files.writeString(command, "set -euo pipefail\n" + localCheck + "\nprintf 'UNIT_REGISTRATION_REACHED\n'\n");
         for (boolean changed : List.of(false, true)) {
@@ -434,6 +509,96 @@ class DeploymentManagedHelperTest {
         assertEquals(0, dispatched.get());
         assertTrue(intents.isEmpty());
         assertTrue(requests.isEmpty());
+    }
+
+    @Test
+    void probeRetainsTransportFailureAndUncertaintyWithoutInventingIdentityEvidence() throws Exception {
+        var diagnostic = UUID.fromString("ffeeddcc-bbaa-9988-7766-554433221100");
+        var failure = new Problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT", "Not sent",
+            Map.of("commandPhase", "CHANNEL_OPENING", "authorPayloadState", "NOT_SENT",
+                "channelOpenConfirmed", "false", "frameWritePhase", "NOT_STARTED", "exitObserved", "false"),
+            Optional.of(diagnostic));
+        for (var outcome : List.of(TaskResult.FAILED, TaskResult.UNKNOWN, TaskResult.CANCELLED)) {
+            for (var exit : List.of(Optional.<Integer>empty(), Optional.of(64))) {
+                var original = new OperationResult<>(outcome,
+                    Optional.of(new CommandResult(exit, "", "", false)), Optional.of(failure));
+                for (boolean platform : List.of(false, true)) {
+                    var replies = new ArrayDeque<OperationResult<CommandResult>>();
+                    replies.add(original);
+                    var requests = new ArrayList<CommandRequest>();
+                    var helper = new DeploymentManagedHelper(session(replies, requests), reviews(new ArrayList<>()),
+                        new ServerId("synthetic-probe"), task(), "revision");
+                    var observed = platform ? helper.probePlatform() : helper.probe();
+                    assertEquals(outcome, observed.outcome());
+                    assertTrue(observed.value().isEmpty());
+                    assertSame(failure, observed.problem().orElseThrow());
+                    assertEquals(diagnostic, observed.problem().orElseThrow().diagnosticId().orElseThrow());
+                    assertFalse(DeploymentManagedHelper.installationRequired(observed));
+                    assertEquals(1, requests.size());
+                    assertEquals(java.time.Duration.ofSeconds(30), requests.getFirst().timeout());
+                }
+            }
+        }
+    }
+
+    @Test
+    void incompleteSuccessfulTransportNeverClaimsHelperIdentityOrInstallationEligibility() throws Exception {
+        var cases = List.of(
+            Optional.<CommandResult>empty(),
+            Optional.of(new CommandResult(Optional.empty(), probeOutput(), "", false)),
+            Optional.of(new CommandResult(Optional.of(0), probeOutput(), "", true)),
+            Optional.of(new CommandResult(Optional.of(64), "", "", false)),
+            Optional.of(new CommandResult(Optional.of(3), "", "", false)));
+        var reasons = List.of("MISSING_RESULT", "MISSING_EXIT", "TRUNCATED_OUTPUT", "NONZERO_EXIT", "NONZERO_EXIT");
+        for (boolean platform : List.of(false, true)) {
+            for (int index = 0; index < cases.size(); index++) {
+                var replies = new ArrayDeque<OperationResult<CommandResult>>();
+                replies.add(new OperationResult<>(TaskResult.SUCCEEDED, cases.get(index), Optional.empty()));
+                var helper = new DeploymentManagedHelper(session(replies, new ArrayList<>()), reviews(new ArrayList<>()),
+                    new ServerId("synthetic-probe"), task(), "revision");
+                var observed = platform ? helper.probePlatform() : helper.probe();
+                assertEquals(TaskResult.UNKNOWN, observed.outcome());
+                assertTrue(observed.value().isEmpty());
+                assertEquals("DEPLOYMENT_HELPER_PROBE_UNCONFIRMED", observed.problem().orElseThrow().eventCode());
+                assertEquals(Map.of("reason", reasons.get(index)), observed.problem().orElseThrow().context());
+                assertFalse(DeploymentManagedHelper.installationRequired(observed));
+            }
+        }
+    }
+
+    @Test
+    void onlyCompletedIdentityOrPlatformEvidenceAdmitsInstallation() throws Exception {
+        var nonzero = new Problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_NONZERO", "Observed exit",
+            Map.of("exitObserved", "true"), Optional.empty());
+        for (boolean platform : List.of(false, true)) {
+            for (int exit : List.of(64, 3, 7)) {
+                for (boolean truncated : List.of(false, true)) {
+                    var replies = new ArrayDeque<OperationResult<CommandResult>>();
+                    replies.add(new OperationResult<>(TaskResult.FAILED,
+                        Optional.of(new CommandResult(Optional.of(exit), "", "", truncated)), Optional.of(nonzero)));
+                    var helper = new DeploymentManagedHelper(session(replies, new ArrayList<>()), reviews(new ArrayList<>()),
+                        new ServerId("synthetic-probe"), task(), "revision");
+                    var observed = platform ? helper.probePlatform() : helper.probe();
+                    boolean initializable = !truncated && (exit == 64 || platform && exit == 3);
+                    assertEquals(initializable, DeploymentManagedHelper.installationRequired(observed));
+                    assertEquals(TaskResult.FAILED, observed.outcome());
+                    if (!initializable) assertSame(nonzero, observed.problem().orElseThrow());
+                    else assertEquals(exit == 64 ? "DEPLOYMENT_HELPER_IDENTITY"
+                        : "DEPLOYMENT_HELPER_PLATFORM_PREREQUISITES", observed.problem().orElseThrow().eventCode());
+                }
+            }
+        }
+        for (boolean truncated : List.of(false, true)) {
+            var replies = new ArrayDeque<OperationResult<CommandResult>>();
+            replies.add(new OperationResult<>(TaskResult.SUCCEEDED,
+                Optional.of(new CommandResult(Optional.of(0), "FORGED=1\n" + probeOutput(), "", truncated)), Optional.empty()));
+            var helper = new DeploymentManagedHelper(session(replies, new ArrayList<>()), reviews(new ArrayList<>()),
+                new ServerId("synthetic-probe"), task(), "revision");
+            var observed = helper.probe();
+            assertEquals(truncated ? TaskResult.UNKNOWN : TaskResult.FAILED, observed.outcome());
+            assertEquals(!truncated, DeploymentManagedHelper.installationRequired(observed));
+            assertTrue(observed.value().isEmpty());
+        }
     }
 
     @Test

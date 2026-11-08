@@ -35,7 +35,7 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
     }
 
     private CommandRequest request() {
-        return request(DeploymentAgentHelperInstallerScript.render(OPERATION), DeploymentAgentHelperInstallerScript.LAUNCHER, Duration.ofHours(2), 131072);
+        return request(DeploymentAgentHelperInstallerScript.render(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), server, "11111111-2222-3333-4444-555555555555"), DeploymentAgentHelperInstallerScript.LAUNCHER, Duration.ofHours(2), 131072);
     }
 
     private ActionIntent original(CommandRequest request) {
@@ -50,7 +50,7 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
             var expanded = DeploymentAgentHelperBootstrapEvidence.upgrade(initial, request, server, REVISION, OPERATION);
             assertEquals(initial.exactAction(), expanded.exactAction());
             assertEquals(initial, expanded.withSemantics(initial.semantics().orElseThrow()));
-            assertEquals(DeploymentAgentHelperBootstrapEvidence.targets(server), expanded.semantics().orElseThrow().targets());
+            assertEquals(DeploymentAgentHelperBootstrapEvidence.targets(server, OPERATION), expanded.semantics().orElseThrow().targets());
             assertTrue(expanded.semantics().orElseThrow().targets().contains(new ActionTarget(server.id(), "system-package-transaction",
                 "APT:authenticated-dependency-closure:HELPER_RUNTIME")));
             assertFalse(expanded.semantics().orElseThrow().targets().stream().anyMatch(t -> t.id().contains("crb")));
@@ -59,15 +59,15 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
             assertTrue(expanded.semantics().orElseThrow().targets().contains(new ActionTarget(server.id(), "service-manager", "systemd")));
             for (String root : List.of("/usr/local/lib/windowstolinux", "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps", "/var/opt/windowstolinux/apps"))
                 assertTrue(expanded.semantics().orElseThrow().targets().contains(new ActionTarget(server.id(), "directory", root)));
-            var evidence = new ObjectMapper().valueToTree(DeploymentAgentHelperBootstrapEvidence.describe(DeploymentAgentHelperInstallerScript.render(OPERATION)));
-            assertEquals(DeploymentAgentHelperInstallerScript.render(OPERATION), DeploymentInstallerEvidence.reconstruct(evidence));
-            assertArrayEquals(DeploymentAgentHelperInstallerScript.render(OPERATION).getBytes(StandardCharsets.UTF_8), request.stdin());
+            var evidence = new ObjectMapper().valueToTree(DeploymentAgentHelperBootstrapEvidence.describe(DeploymentAgentHelperInstallerScript.render(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), server, "11111111-2222-3333-4444-555555555555")));
+            assertEquals(DeploymentAgentHelperInstallerScript.render(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), server, "11111111-2222-3333-4444-555555555555"), DeploymentInstallerEvidence.reconstruct(evidence));
+            assertArrayEquals(DeploymentAgentHelperInstallerScript.render(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), server, "11111111-2222-3333-4444-555555555555").getBytes(StandardCharsets.UTF_8), request.stdin());
         }
     }
 
     @Test
     void changedSourceOperationLauncherBoundsOrOriginalIntentCannotBeUpgraded() {
-        String source = DeploymentAgentHelperInstallerScript.render(OPERATION);
+        String source = DeploymentAgentHelperInstallerScript.render(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), server, "11111111-2222-3333-4444-555555555555");
         for (String fault : List.of("source", "operation", "launcher", "timeout", "output", "server", "revision", "semantics", "targets", "expanded")) {
             try (var request = request(fault.equals("source") ? source + "echo changed\n" : source,
                 fault.equals("launcher") ? "exec /bin/bash --noprofile --norc -s" : DeploymentAgentHelperInstallerScript.LAUNCHER,
@@ -103,7 +103,7 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
 
     @Test
     void bootstrapNavigationLocatesActualGuardsAndFullDependencyProgramWithoutDuplicatingSource() throws Exception {
-        String script = DeploymentAgentHelperInstallerScript.render(OPERATION);
+        String script = DeploymentAgentHelperInstallerScript.render(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), server, "11111111-2222-3333-4444-555555555555");
         var json = new ObjectMapper();
         var evidence = json.valueToTree(DeploymentAgentHelperBootstrapEvidence.describe(script));
         var navigation = json.valueToTree(DeploymentAgentHelperBootstrapEvidence.navigation(script));
@@ -112,8 +112,8 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
         assertEquals(5, navigation.path("wrapperLocations").size());
         assertTrue(navigation.path("dependencyLocations").size() >= 20);
         var locations = new ArrayList<com.fasterxml.jackson.databind.JsonNode>();
-        locations.add(navigation.path("prefixSource"));
-        locations.add(navigation.path("dependencyProgram"));
+        locations.add(navigation.path("dependencySource"));
+        locations.add(navigation.path("dependencyPreamble"));
         navigation.path("wrapperLocations").forEach(locations::add);
         navigation.path("invocations").forEach(locations::add);
         for (var location : locations) {
@@ -126,10 +126,24 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
             assertEquals(location.path("startLine").asInt(), 1 + source.substring(0, first).chars().filter(value -> value == '\n').count());
             assertFalse(location.has("excerpt"), "Navigation cannot repeat a complete executable prefix");
         }
-        String prefix = evidence.at("/segments/0/text").asText();
+        assertFalse(navigation.has("prefixSource"));
+        assertEquals(5,navigation.path("prefixParts").size());
+        var current=json.createObjectNode();
+        current.set("completeExecutableInput",evidence);
+        byte[] stdin=script.getBytes(StandardCharsets.UTF_8);
+        var prefix=new StringBuilder();
+        for(var part:navigation.path("prefixParts"))
+            prefix.append(gold.debug.windowstolinux.mod.deployment.ai.review.MirroredInstallerTestFixture.navigationPart(current,part,stdin));
+        assertTrue(script.startsWith(prefix.toString()));
+        var program=new StringBuilder();
+        for(var part:navigation.at("/dependencyProgram/parts"))
+            program.append(gold.debug.windowstolinux.mod.deployment.ai.review.MirroredInstallerTestFixture.navigationPart(current,part,stdin));
+        assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms.dependencies(),program.toString());
+        assertEquals(4,navigation.at("/dependencyProgram/parts").size());
+        String worker = evidence.at("/sources/dependencyWorker").asText();
         for (var location : navigation.path("dependencyLocations")) {
-            assertEquals("/completeExecutableInput/segments/0/text", location.path("sourcePointer").asText());
-            String line = prefix.lines().skip(location.path("startLine").asLong() - 1).findFirst().orElseThrow();
+            assertEquals("/completeExecutableInput/sources/dependencyWorker", location.path("sourcePointer").asText());
+            String line = worker.lines().skip(location.path("startLine").asLong() - 1).findFirst().orElseThrow();
             assertTrue(line.startsWith("def " + location.path("function").asText() + "("));
         }
         assertTrue(navigation.toString().getBytes(StandardCharsets.UTF_8).length < 16000);
@@ -142,7 +156,7 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
         try (var request = request()) {
             var expanded = DeploymentAgentHelperBootstrapEvidence.upgrade(original(request), request, server, REVISION, OPERATION);
             var complete = current(expanded);
-            String source = DeploymentAgentHelperInstallerScript.render(OPERATION);
+            String source = DeploymentAgentHelperInstallerScript.render(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), server, "11111111-2222-3333-4444-555555555555");
             assertDoesNotThrow(() -> DeploymentAgentHelperBootstrapEvidence.requireCurrent(complete, source));
             for (String fault : List.of("missing", "extra", "duplicate", "foreign", "action", "operation", "servers", "source")) {
                 var changed = new LinkedHashMap<>(complete);
@@ -177,7 +191,7 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
             DeploymentAgentHelperBootstrapEvidence.upgrade(intent, request, server, REVISION, OPERATION);
             return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(problem));
         });
-        var result = helper.installFilesWithPrerequisites(DeploymentAgentHelperInstallerScript.LAUNCHER, DeploymentAgentHelperInstallerScript.prerequisites(OPERATION));
+        var result = helper.installFilesWithPrerequisites(DeploymentAgentHelperInstallerScript.LAUNCHER, DeploymentAgentHelperInstallerScript.prerequisites(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), server, "11111111-2222-3333-4444-555555555555"));
         assertEquals(TaskResult.FAILED, result.outcome());
         assertSame(problem, result.problem().orElseThrow());
         assertEquals(1, reviews.get());
@@ -197,7 +211,7 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
                 DeploymentAgentHelperBootstrapEvidence.upgrade(intent, request, server, REVISION, OPERATION);
                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())), Optional.empty());
             });
-        var result = helper.installFilesWithPrerequisites(DeploymentAgentHelperInstallerScript.LAUNCHER, DeploymentAgentHelperInstallerScript.prerequisites(OPERATION));
+        var result = helper.installFilesWithPrerequisites(DeploymentAgentHelperInstallerScript.LAUNCHER, DeploymentAgentHelperInstallerScript.prerequisites(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), server, "11111111-2222-3333-4444-555555555555"));
         assertEquals(TaskResult.UNKNOWN, result.outcome());
         assertEquals(1, calls.get());
         assertTrue(replies.isEmpty());
@@ -207,7 +221,7 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(), new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
             if (method.getName().equals("execute")) {
                 calls.incrementAndGet();
-                assertEquals(DeploymentAgentHelperInstallerScript.render(OPERATION), new String(((CommandRequest) args[0]).stdin(), StandardCharsets.UTF_8));
+                assertEquals(DeploymentAgentHelperInstallerScript.render(OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), server, "11111111-2222-3333-4444-555555555555"), new String(((CommandRequest) args[0]).stdin(), StandardCharsets.UTF_8));
                 return replies.removeFirst();
             }
             throw new AssertionError(method.getName());

@@ -2,7 +2,8 @@ package gold.debug.windowstolinux.app.linux.sftp;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.io.IOException;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -13,15 +14,23 @@ import java.util.concurrent.atomic.*;
 import gold.debug.windowstolinux.app.linux.ssh.connect.LinuxLoopbackSshServer;
 import gold.debug.windowstolinux.app.linux.ssh.connect.SshCommandExecutionTest;
 import gold.debug.windowstolinux.app.linux.ssh.connect.SshConnector;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
+import org.apache.sshd.client.SshClient;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
+import org.apache.sshd.common.channel.*;
+import org.apache.sshd.common.session.helpers.AbstractConnectionService;
 import org.apache.sshd.common.util.threads.*;
+import org.apache.sshd.server.*;
+import org.apache.sshd.server.channel.ChannelSession;
+import org.apache.sshd.server.command.Command;
 import org.apache.sshd.server.session.ServerSession;
 import org.apache.sshd.sftp.SftpModuleProperties;
 import org.apache.sshd.sftp.server.*;
@@ -31,6 +40,222 @@ import org.junit.jupiter.api.io.TempDir;
 class SftpTransferTest {
     @TempDir
     Path root;
+
+    @Test
+    void verifiedWorkerTailClosesGracefullyBeforeItsFuturePublishesTheResult() throws Exception {
+        var verified = new AtomicReference<OperationResult<TransferResult>>();
+        var verifiedTail = new CountDownLatch(1);
+        var publishResult = new CountDownLatch(1);
+        var closing = new AtomicBoolean();
+        var closeProbe = new AtomicBoolean();
+        var doneAtClose = new AtomicReference<Boolean>();
+        var originalWorker = new AtomicReference<Thread>();
+        var receivedClose = new CountDownLatch(1);
+        var unregistered = new CountDownLatch(1);
+        var serverSession = new AtomicReference<ServerSession>();
+        var releases = new AtomicInteger();
+        try (var fixture = new Fixture(root, 3, new SftpEventListener() {});
+             var client = SshClient.setUpDefaultClient()) {
+            fixture.server.server().addChannelListener(new ChannelListener() {
+                public void channelInitialized(Channel channel) {
+                    serverSession.set((ServerSession) channel.getSession());
+                }
+                public void channelStateChanged(Channel channel, String hint) {
+                    if (hint.equals("SSH_MSG_CHANNEL_CLOSE")) receivedClose.countDown();
+                    if (hint.equals("unregistered")) unregistered.countDown();
+                }
+            });
+            client.setServerKeyVerifier((session, address, key) -> true);
+            client.start();
+            try (var session = client.connect("synthetic-tail-user", "127.0.0.1", fixture.server.server().getPort())
+                .verify(Duration.ofSeconds(5)).getSession()) {
+                session.addPasswordIdentity("synthetic-tail-password");
+                session.auth().verify(Duration.ofSeconds(5));
+                byte[] content = "verified-before-future-publication".getBytes(StandardCharsets.UTF_8);
+                Path source = Files.write(root.resolve("source"), content);
+                var transfer = new SftpTransfer(session, new TransferRequest(source, "/uploaded", content.length),
+                    digest(content), true, Duration.ofSeconds(5), () -> false,
+                    conflict -> TransferConflictChoice.SKIP, plan -> new ResourceLease() {
+                        public UUID id() { return plan.id(); }
+                        public void close() { releases.incrementAndGet(); }
+                    }, progress -> {}, null, false);
+                try {
+                    long started = System.nanoTime();
+                    var observed = transfer.run(callable -> new FutureTask<>(callable) {
+                        protected void set(OperationResult<TransferResult> result) {
+                            originalWorker.set(Thread.currentThread());
+                            verified.set(result);
+                            verifiedTail.countDown();
+                            try {
+                                if (!publishResult.await(15, TimeUnit.SECONDS))
+                                    throw new AssertionError("Verified tail was not released");
+                            } catch (InterruptedException interrupted) {
+                                Thread.currentThread().interrupt();
+                                throw new AssertionError(interrupted);
+                            }
+                            super.set(result);
+                        }
+                        public boolean isDone() {
+                            boolean done = super.isDone();
+                            if (closing.get() && closeProbe.compareAndSet(false, true)) {
+                                doneAtClose.set(done);
+                                publishResult.countDown();
+                            }
+                            return done;
+                        }
+                    });
+                    assertEquals(0, verifiedTail.getCount(), "Real transfer must reach its verified return tail");
+                    assertEquals(TaskResult.SUCCEEDED, verified.get().outcome(), verified.get().toString());
+                    assertEquals(TaskResult.UNKNOWN, observed.outcome(), observed.toString());
+                    assertEquals("SFTP_STALLED", observed.problem().orElseThrow().eventCode());
+                    assertArrayEquals(content, Files.readAllBytes(fixture.remote.resolve("uploaded")));
+                    assertEquals(0, releases.get());
+                    closing.set(true);
+                    boolean closed = transfer.close();
+                    System.out.println("verified-tail: monitor=" + observed.problem().orElseThrow().eventCode()
+                        + ", verified=" + verified.get().outcome() + ", resultIdentity="
+                        + Integer.toHexString(System.identityHashCode(verified.get())) + ", closeIsDone=" + doneAtClose.get()
+                        + ", close=" + closed + ", releases=" + releases.get() + ", receivedClose="
+                        + (receivedClose.getCount() == 0) + ", elapsedNanos=" + (System.nanoTime() - started));
+                    assertEquals(Boolean.FALSE, doneAtClose.get(), "Close must observe the real unpublished FutureTask state");
+                    assertTrue(closed, "Verified worker tail must retain graceful peer-confirmed closure");
+                    assertSame(verified.get(), transfer.afterClose(observed));
+                    assertEquals(1, releases.get());
+                    assertTrue(receivedClose.await(5, TimeUnit.SECONDS), "Server must receive a real CHANNEL_CLOSE");
+                    assertTrue(unregistered.await(5, TimeUnit.SECONDS));
+                    assertEquals(0, serverSession.get().getService(AbstractConnectionService.class).getChannels().size());
+                    assertFalse(session.isClosed());
+                    assertTrue(transfer.close());
+                    assertEquals(1, releases.get(), "Repeated cleanup must not release the lease twice");
+                } finally {
+                    publishResult.countDown();
+                    assertTrue(session.close(true).awaitUninterruptibly(Duration.ofSeconds(5)));
+                    assertTrue(transfer.close(), "Session closure must finish retained transfer cleanup");
+                    if (originalWorker.get() != null)
+                        assertTrue(originalWorker.get().join(Duration.ofSeconds(5)), "Original transfer worker leaked");
+                }
+            }
+        }
+    }
+
+    @Test
+    void successfulTransfersReleaseServerChannelsBeforeReusingTheSameSession() throws Exception {
+        var channels = new ConcurrentHashMap<Channel, CountDownLatch>();
+        var receivedClose = ConcurrentHashMap.<Channel>newKeySet();
+        var serverSession = new AtomicReference<ServerSession>();
+        var commands = new CopyOnWriteArrayList<BarrierCommand>();
+        var observedCounts = new ArrayList<Integer>();
+        var unregistered = new ArrayList<Boolean>();
+        try (var fixture = new Fixture(root, 3, new SftpEventListener() {});
+             var connector = new SshConnector()) {
+            fixture.server.server().addChannelListener(new ChannelListener() {
+                public void channelInitialized(Channel channel) {
+                    channels.put(channel, new CountDownLatch(1));
+                    serverSession.set((ServerSession) channel.getSession());
+                }
+                public void channelStateChanged(Channel channel, String hint) {
+                    if (hint.equals("SSH_MSG_CHANNEL_CLOSE")) receivedClose.add(channel);
+                    if (hint.equals("unregistered")) channels.get(channel).countDown();
+                }
+            });
+            fixture.server.server().setCommandFactory((channel, request) -> {
+                var command = new BarrierCommand(fixture.failures);
+                commands.add(command);
+                return command;
+            });
+            try (var connection = SshCommandExecutionTest.connect(connector, fixture.server)) {
+                for (int ordinal = 1; ordinal <= 2; ordinal++) {
+                    byte[] content = ("synthetic-transfer-" + ordinal + "\n").getBytes(StandardCharsets.UTF_8);
+                    Path source = Files.write(root.resolve("source-" + ordinal), content);
+                    var result = transfer(connection, source, "/uploaded-" + ordinal, content.length,
+                        digest(content), true);
+                    assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
+                    assertArrayEquals(content, Files.readAllBytes(fixture.remote.resolve("uploaded-" + ordinal)));
+                    assertEquals(ordinal, fixture.sftpChannels.size());
+                    try (var request = new CommandRequest("synthetic-barrier", new byte[0], Duration.ofSeconds(5), 1024)) {
+                        var barrier = connection.execute(request, () -> false);
+                        assertEquals(TaskResult.SUCCEEDED, barrier.outcome(), barrier.toString());
+                        assertEquals("protocol-ack\n", barrier.value().orElseThrow().stdout());
+                        assertEquals(0, barrier.value().orElseThrow().exitCode().orElseThrow());
+                    }
+                    assertTrue(commands.getLast().inputCompleted.await(5, TimeUnit.SECONDS));
+                    assertTrue(channels.get(commands.getLast().channel).await(5, TimeUnit.SECONDS));
+                    unregistered.add(channels.get(fixture.sftpChannels.getLast()).await(5, TimeUnit.SECONDS));
+                    observedCounts.add(serverSession.get().getService(AbstractConnectionService.class).getChannels().size());
+                    assertTrue(connection.connected());
+                }
+                assertEquals(List.of(0, 0), observedCounts, "Server channels retained after real exec barriers");
+                assertEquals(List.of(true, true), unregistered);
+                assertTrue(receivedClose.containsAll(fixture.sftpChannels), "Server must receive both CHANNEL_CLOSE messages");
+                assertTrue(channels.keySet().stream().allMatch(channel -> channel.getSession() == serverSession.get()),
+                    "Both transfers and exec barriers must use the original server session");
+            }
+        } finally {
+            for (var command : commands)
+                if (command.worker != null) assertTrue(command.worker.join(Duration.ofSeconds(5)));
+        }
+    }
+
+    @Test
+    void missingPeerCloseAcknowledgementRetainsOwnershipUntilTheSessionCloses() throws Exception {
+        var receivedClose = new CountDownLatch(1);
+        var unregistered = new CountDownLatch(1);
+        var releases = new AtomicInteger();
+        try (var fixture = new Fixture(root, 3, new SftpEventListener() {});
+             var connector = new SshConnector()) {
+            fixture.server.server().setChannelFactories(List.of(new ChannelFactory() {
+                public String getName() { return "session"; }
+                public Channel createChannel(org.apache.sshd.common.session.Session session) {
+                    return new ChannelSession() {
+                        final org.apache.sshd.common.Closeable withheld = new org.apache.sshd.common.util.closeable.AbstractCloseable("withheld-peer-close") {
+                            protected org.apache.sshd.common.future.CloseFuture doCloseGracefully() {
+                                return new org.apache.sshd.common.future.DefaultCloseFuture("no-peer-ack", null);
+                            }
+                        };
+                        public void handleClose() throws IOException {
+                            receivedClose.countDown();
+                            super.handleClose();
+                        }
+                        protected org.apache.sshd.common.Closeable getInnerCloseable() {
+                            return builder().sequential(withheld, super.getInnerCloseable()).build();
+                        }
+                    };
+                }
+            }));
+            fixture.server.server().addChannelListener(new ChannelListener() {
+                public void channelStateChanged(Channel channel, String hint) {
+                    if (hint.equals("unregistered")) unregistered.countDown();
+                }
+            });
+            try (var connection = SshCommandExecutionTest.connect(connector, fixture.server)) {
+                byte[] content = "verified-before-close".getBytes(StandardCharsets.UTF_8);
+                Path source = Files.write(root.resolve("source"), content);
+                long started = System.nanoTime();
+                var result = connection.transfer(new TransferRequest(source, "/uploaded", content.length),
+                    digest(content), true, Duration.ofSeconds(5), () -> false, progress -> {},
+                    conflict -> TransferConflictChoice.SKIP, plan -> new ResourceLease() {
+                        public UUID id() { return plan.id(); }
+                        public void close() { releases.incrementAndGet(); }
+                    });
+                long elapsed = System.nanoTime() - started;
+                assertTrue(elapsed < Duration.ofSeconds(6).toNanos(), "Five-second close wait exceeded scheduling allowance");
+                assertEquals(0, receivedClose.getCount(), "Server must receive the real close request");
+                assertEquals(TaskResult.UNKNOWN, result.outcome(), result.toString());
+                assertEquals("SFTP_RELEASE_PENDING", result.problem().orElseThrow().eventCode());
+                assertArrayEquals(content, Files.readAllBytes(fixture.remote.resolve("uploaded")));
+                assertEquals(0, releases.get(), "Verified publication does not release ownership before channel confirmation");
+                assertEquals(1, unregistered.getCount());
+                assertTrue(connection.connected());
+                assertEquals("SSH_CONNECTION_UNCERTAIN", assertThrows(ApiException.class,
+                    () -> transfer(connection, source, "/forbidden-reuse", content.length, digest(content), true))
+                    .problem().eventCode());
+                connection.close();
+                assertEquals(1, releases.get());
+                assertTrue(unregistered.await(5, TimeUnit.SECONDS));
+                assertEquals(0, connector.retainedConnections());
+            }
+        }
+    }
 
     @Test
     void roundTripsBinaryFilesAndEmptyFilesOnSftpThreeAndSixWithoutOverwriting() throws Exception {
@@ -206,8 +431,13 @@ class SftpTransferTest {
                         }, conflict -> TransferConflictChoice.SKIP, journal());
                     assertEquals(0, entered.getCount());
                     assertEquals(TaskResult.UNKNOWN, result.outcome(), result.toString());
-                    if (timeout)
-                        assertEquals("SFTP_STALLED", result.problem().orElseThrow().eventCode());
+                    if (timeout) {
+                        assertEquals("SFTP_RELEASE_PENDING", result.problem().orElseThrow().eventCode());
+                        assertEquals(1, connector.retainedConnections());
+                        assertEquals("SSH_CONNECTION_UNCERTAIN", assertThrows(ApiException.class,
+                            () -> transfer(connection, source, "/forbidden-reuse", bytes.length, digest(bytes), true))
+                            .problem().eventCode());
+                    }
                     assertFalse(Files.exists(fixture.remote.resolve("partial")));
                     assertEquals(16384, Files.size(temporary(fixture.remote)));
                     assertTrue(temporary(fixture.remote).getFileName().toString()
@@ -365,6 +595,41 @@ class SftpTransferTest {
         }
     }
 
+    static final class BarrierCommand implements Command {
+        final Queue<Throwable> failures;
+        final CountDownLatch inputCompleted = new CountDownLatch(1);
+        InputStream input;
+        OutputStream output;
+        ExitCallback exit;
+        ChannelSession channel;
+        Thread worker;
+        BarrierCommand(Queue<Throwable> failures) { this.failures = failures; }
+        public void setInputStream(InputStream value) { input = value; }
+        public void setOutputStream(OutputStream value) { output = value; }
+        public void setErrorStream(OutputStream value) {}
+        public void setExitCallback(ExitCallback value) { exit = value; }
+        public void start(ChannelSession channel, Environment environment) {
+            this.channel = channel;
+            worker = Thread.ofVirtual().name("fixture-sftp-release-barrier").start(() -> {
+                try {
+                    assertTrue(input.readAllBytes().length > 0);
+                    inputCompleted.countDown();
+                    output.write("protocol-ack\n".getBytes(StandardCharsets.UTF_8));
+                    output.flush();
+                    exit.onExit(0);
+                } catch (Throwable failure) {
+                    failures.add(failure);
+                    exit.onExit(1);
+                }
+            });
+        }
+        public void destroy(ChannelSession channel) throws Exception {
+            if (input != null) input.close();
+            if (worker != null && worker != Thread.currentThread())
+                assertTrue(worker.join(Duration.ofSeconds(5)));
+        }
+    }
+
     static final class Fixture implements AutoCloseable {
         final Path remote;
 
@@ -373,6 +638,8 @@ class SftpTransferTest {
         final List<CloseableExecutorService> executors = new CopyOnWriteArrayList<>();
 
         final Queue<Throwable> failures = new ConcurrentLinkedQueue<>();
+
+        final List<ChannelSession> sftpChannels = new CopyOnWriteArrayList<>();
 
         Fixture(Path directory, int version, SftpEventListener listener) throws Exception {
             this(directory, version, listener, SftpFileSystemAccessor.DEFAULT);
@@ -385,6 +652,7 @@ class SftpTransferTest {
                 @Override
                 public org.apache.sshd.server.command.Command createSubsystem(
                     org.apache.sshd.server.channel.ChannelSession channel) throws IOException {
+                    sftpChannels.add(channel);
                     try {
                         var command = new SftpSubsystem(channel, this) {
                             @Override

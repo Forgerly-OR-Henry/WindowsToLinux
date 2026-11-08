@@ -266,7 +266,10 @@ class LockedTransportTests(unittest.TestCase):
                 self.assertEqual(1, len(repository.requests))
 
     def test_nuget_tls_preserves_config_and_switches_only_corrupt_locked_package(self):
-        payload = b'nuget original signed package bytes'
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, 'w') as package:
+            package.writestr('example.txt', b'NuGet unsigned package payload')
+        payload = stream.getvalue()
         lock = self.project / 'packages.lock.json'
         lock.write_text(json.dumps({'version': 1, 'dependencies': {'net8.0': {'Example': {
             'type': 'Direct', 'resolved': '1.0.0',

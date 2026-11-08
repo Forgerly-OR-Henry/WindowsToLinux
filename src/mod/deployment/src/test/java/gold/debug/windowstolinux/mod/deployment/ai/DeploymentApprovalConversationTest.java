@@ -140,7 +140,7 @@ class DeploymentApprovalConversationTest {
             String script = files ? DeploymentHelperInstallerScript.renderFiles()
                 : gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperReadiness.script();
             reply(fixture, "deny-bootstrap-" + files, "DENY");
-            try (var command = new CommandRequest("exec /bin/bash --noprofile --norc -s", script.getBytes(StandardCharsets.UTF_8),
+            try (var command = new CommandRequest(files ? DeploymentHelperInstallerScript.LAUNCHER : "exec /bin/bash --noprofile --norc -s", script.getBytes(StandardCharsets.UTF_8),
                 files ? Duration.ofHours(2) : Duration.ofSeconds(30), files ? 131072 : 4096)) {
                 var intent = RemoteActions.command(server, "fixture-route", command).withSemantics(new ActionSemantics(operation,
                     files ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper.installationTargets(server,
@@ -154,7 +154,7 @@ class DeploymentApprovalConversationTest {
             assertEquals(0, boundary.grants().get());
             assertEquals(0, boundary.remoteAccesses().get());
             assertEquals(1, fixture.requests.size(), "A valid bootstrap denial is never reapproved");
-            var submitted = json.readTree(fixture.requests.getFirst().messages().getLast().text());
+            var submitted = gold.debug.windowstolinux.mod.deployment.ai.review.MirroredInstallerTestFixture.restoreCarrier(fixture.requests.getFirst().messages());
             assertEquals("EXECUTABLE_SCRIPT", submitted.path("inputKind").asText());
             assertFalse(submitted.has("installedHelperPath"));
             assertFalse(submitted.has("installedBuildEntryPath"));
@@ -185,7 +185,7 @@ class DeploymentApprovalConversationTest {
             "fixture-fingerprint", "a".repeat(64), "fixture-route");
         var ai = new DeploymentAiJson(boundary.context(), conversation);
         String operation = "1234567890abcdef1234567890abcdef";
-        String script = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.render(operation);
+        String script = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.render(operation, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), server, fixture.task.id().toString());
         reply(fixture, "deny-guarded-bootstrap", "DENY");
         try (var command = new CommandRequest(gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.LAUNCHER, script.getBytes(StandardCharsets.UTF_8),
             Duration.ofHours(2), 131072)) {
@@ -200,12 +200,14 @@ class DeploymentApprovalConversationTest {
         assertEquals(1, fixture.requests.size());
         assertEquals(0, boundary.grants().get());
         assertEquals(0, boundary.remoteAccesses().get());
-        var submitted = json.readTree(fixture.requests.getFirst().messages().getLast().text());
+        var submitted = gold.debug.windowstolinux.mod.deployment.ai.review.MirroredInstallerTestFixture.restoreCarrier(fixture.requests.getFirst().messages());
         String reconstructed = DeploymentInstallerEvidence.reconstruct(submitted.path("completeExecutableInput"));
         assertEquals(script, reconstructed);
         assertTrue(reconstructed.contains(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms.dependencies()));
         assertTrue(submitted.path("resourceTargets").toString().contains("authenticated-dependency-closure:HELPER_RUNTIME"));
-        assertEquals(2, submitted.at("/helperInstallationSourceEvidence/installerLocations").size());
+        assertEquals(5, submitted.at("/helperInstallationSourceEvidence/installerLocations").size());
+        assertEquals(8, submitted.at("/helperInstallationSourceEvidence/requiredExecutableEvidencePointers").size());
+        assertEquals(5, submitted.at("/helperInstallationSourceEvidence/agentBootstrap/prefixParts").size());
         assertEquals(5, submitted.at("/helperInstallationSourceEvidence/agentBootstrap/wrapperLocations").size());
         assertFalse(submitted.has("installedHelperPath"));
         assertTrue(fixture.replies.isEmpty());
@@ -384,16 +386,18 @@ class DeploymentApprovalConversationTest {
     }
 
     @Test
-    void namedSubmissionRejectsTextWrongToolAndMultipleCallsWithOriginalBounds() throws Exception {
+    void automaticSubmissionRejectsTextWrongToolAndMultipleCallsWithinTwoSubmissions() throws Exception {
         for (String fault : List.of("text", "other-tool", "multiple-tools")) {
             var fixture = new NativeAiFixture();
             var ai = new DeploymentAiJson(fixture.context, conversation(fixture));
             if (fault.equals("text")) {
-                fixture.replies.add(new gold.debug.windowstolinux.appapi.task.result.OperationResult<>(
+                var text = new gold.debug.windowstolinux.appapi.task.result.OperationResult<>(
                     gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED,
                     Optional.of(new AiResponse("{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"text only\"}",
                         "fixture-model", "stop", new AiUsage(Optional.of(10L), Optional.of(2L), Optional.empty(), Optional.empty(), Optional.empty()))),
-                    Optional.empty()));
+                    Optional.empty());
+                fixture.replies.add(text);
+                fixture.replies.add(text);
             } else if (fault.equals("other-tool")) {
                 fixture.nativeReply(new AiToolCall("wrong-tool", "probe", "{}"));
                 fixture.nativeReply(new AiToolCall("wrong-tool-again", "probe", "{}"));
@@ -402,7 +406,7 @@ class DeploymentApprovalConversationTest {
             }
             assertThrows(java.io.IOException.class, () -> ai.askCommand("Review current command", facts("reviewed-command", "printf current\n"),
                 "fixture-route", fixture.task, DeploymentReviewDecision::malformed));
-            assertEquals(fault.equals("other-tool") ? 2 : 1, fixture.requests.size(), "Existing bounded format correction is preserved");
+            assertEquals(fault.equals("multiple-tools") ? 1 : 2, fixture.requests.size(), "Only the existing two-submission budget is available");
             for (var request : fixture.requests) {
                 assertTrue(request.requiredToolName().isEmpty());
                 assertTrue(request.tools().stream().anyMatch(tool -> tool.name().equals("submit_result")));
@@ -716,20 +720,21 @@ class DeploymentApprovalConversationTest {
                     "A terminal LF closes the last real line without adding a synthetic extra line");
                 assertEquals(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)), count.path("sha256").asText());
             }
+            var navigationFragments = new ArrayList<String>();
             for (var location : evidence.path("locations")) {
                 String source = complete.at(location.path("sourcePointer").asText()).asText();
                 int first = location.path("startLine").asInt(), last = location.path("endLine").asInt();
                 assertTrue(first > 0 && last >= first);
-                assertEquals(location.path("excerpt").asText(), String.join("\n",
-                    Arrays.copyOfRange(source.split("\n"), first - 1, last)));
+                String excerpt = navigationFragment(complete, location);
+                navigationFragments.add(excerpt);
                 try (var resource = DeploymentManagedHelperBundle.class.getResourceAsStream(location.path("resourcePath").asText())) {
                     assertNotNull(resource);
                     String fragment = new String(resource.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
                         .replace("\r\n", "\n").replace("\\\\", "\\");
-                    assertTrue(fragment.contains(location.path("excerpt").asText()));
+                    assertTrue(fragment.contains(excerpt));
                 }
             }
-            String navigation = evidence.path("locations").toString();
+            String navigation = String.join("\n", navigationFragments);
             assertTrue(navigation.contains("root-management-required"));
             assertTrue(navigation.contains("candidate-deployer"));
             assertTrue(navigation.contains("agent_run"));
@@ -746,14 +751,12 @@ class DeploymentApprovalConversationTest {
             assertTrue(navigation.contains("recover_workspaces"));
             assertTrue(navigation.contains("cleanup_candidate"));
             assertTrue(navigation.contains("cleanup_workspace_volume"));
-            for (var location : evidence.path("installerLocations")) {
-                String literal = complete.at(location.path("sourcePointer").asText()).asText();
-                assertEquals(location.path("excerpt").asText(), String.join("\n",
-                    Arrays.copyOfRange(literal.split("\n"), location.path("startLine").asInt() - 1, location.path("endLine").asInt())).stripTrailing());
-            }
-            assertTrue(evidence.path("installerLocations").toString().contains("systemctl enable windowstolinux-workspace-recovery.service"));
-            assertTrue(evidence.path("installerLocations").toString().contains("ExecStart=" + DeploymentManagedHelperBundle.PATH + " workspace-recover"));
-            assertTrue(evidence.path("installerLocations").toString().contains("helper_probe="));
+            var installerFragments = new ArrayList<String>();
+            for (var location : evidence.path("installerLocations")) installerFragments.add(navigationFragment(complete, location));
+            String installerNavigation = String.join("\n", installerFragments);
+            assertTrue(installerNavigation.contains("systemctl enable windowstolinux-workspace-recovery.service"));
+            assertTrue(installerNavigation.contains("ExecStart=" + DeploymentManagedHelperBundle.PATH + " workspace-recover"));
+            assertTrue(installerNavigation.contains("helper_probe="));
             assertTrue(evidence.path("meaning").asText().contains("separate dispatched verb"));
             assertTrue(evidence.path("meaning").asText().contains("future workspace-recover execution"));
         }
@@ -816,12 +819,13 @@ class DeploymentApprovalConversationTest {
             assertTrue(request.tools().stream().anyMatch(tool -> tool.name().equals("submit_result")));
         String policy = request.messages().getFirst().text();
         assertFalse(policy.contains(DeploymentHelperReviewContract.text()), "Expected installation identities do not establish an installed implementation reference");
-        assertTrue(policy.contains("the complete /completeExecutableInput/sources and all five ordered /completeExecutableInput/segments are authoritative executable evidence"));
+        assertTrue(policy.contains("the complete /completeExecutableInput/sources and every ordered /completeExecutableInput/segments leaf are authoritative executable evidence"));
+        assertTrue(policy.contains("runtimeSourcePointer refers to its complete source in this same request"));
         assertTrue(policy.contains("navigation metadata, not review coverage or execution permission"));
         assertTrue(policy.contains("automatic execution registered by this request"));
         assertTrue(policy.contains("future product commands still require fresh independent review"));
         assertTrue(policy.contains("complete managed-candidate cleanup scope now"));
-        var submitted = json.readTree(request.messages().getLast().text());
+        var submitted = gold.debug.windowstolinux.mod.deployment.ai.review.MirroredInstallerTestFixture.restoreCarrier(request.messages());
         assertFalse(submitted.path("currentReviewContract").asText().contains(DeploymentHelperReviewContract.text()));
         assertEquals(json.valueToTree(current.get("completeExecutableInput")), submitted.path("completeExecutableInput"));
         assertEquals(current.get("exactAction"), submitted.path("exactAction").asText());
@@ -844,12 +848,12 @@ class DeploymentApprovalConversationTest {
                 .map(location -> location.path("sourcePointer").asText()).toList());
         for (var location : installerLocations) {
             String literal = submitted.at(location.path("sourcePointer").asText()).asText();
-            assertEquals(literal.stripTrailing(), location.path("excerpt").asText(), "Navigation retains the complete literal wrapper");
+            assertEquals(literal, navigationFragment(submitted, location), "Navigation identifies the original full literal bytes without duplicating them");
             assertEquals(1, location.path("startLine").asInt());
-            assertEquals(literal.stripTrailing().lines().count(), location.path("endLine").asLong());
+            assertEquals(literal.lines().count(), location.path("endLine").asLong());
         }
-        String installerPrefix = installerLocations.get(0).path("excerpt").asText();
-        String installerTail = installerLocations.get(1).path("excerpt").asText();
+        String installerPrefix = navigationFragment(submitted, installerLocations.get(0));
+        String installerTail = navigationFragment(submitted, installerLocations.get(1));
         assertTrue(installerPrefix.contains("ExecStart=" + DeploymentManagedHelperBundle.PATH + " workspace-recover"));
         assertTrue(installerPrefix.contains("PREPARE_REJECT=host-layout-conflict"), "The complete layout/unit admission wrapper remains reviewable");
         assertEquals(" > \"$helper_tmp\"\nprintf '%s' ", executable.at("/segments/2/text").asText(),
@@ -872,13 +876,28 @@ class DeploymentApprovalConversationTest {
             assertTrue(index > previous, "Every installation/digest/service/probe effect remains visible in execution order: " + effect);
             previous = index;
         }
-        var futureEntryCheck = java.util.stream.StreamSupport.stream(navigation.path("locations").spliterator(), false)
-            .filter(location -> location.path("excerpt").asText().contains("reject build-entry-identity")).findFirst().orElseThrow();
+        com.fasterxml.jackson.databind.JsonNode futureEntryCheck = null;
+        for (var location : navigation.path("locations"))
+            if (navigationFragment(submitted, location).contains("reject build-entry-identity")) futureEntryCheck = location;
+        assertNotNull(futureEntryCheck);
         assertEquals("/completeExecutableInput/sources/managedHelper", futureEntryCheck.path("sourcePointer").asText());
-        assertTrue(futureEntryCheck.path("excerpt").asText().contains("$build_entry_sha256"));
+        assertTrue(navigationFragment(submitted, futureEntryCheck).contains("$build_entry_sha256"));
         assertTrue(installer.contains("systemctl daemon-reload\nsystemctl enable windowstolinux-workspace-recovery.service"));
         assertFalse(installer.contains("systemctl start windowstolinux-workspace-recovery.service"));
         assertTrue(fixture.replies.isEmpty());
+    }
+
+    private String navigationFragment(com.fasterxml.jackson.databind.JsonNode current, com.fasterxml.jackson.databind.JsonNode location) throws Exception {
+        assertFalse(location.has("excerpt"), "Navigation must not repeat authoritative source text");
+        String source = current.at(location.path("sourcePointer").asText()).textValue();
+        int start = location.path("startCharacter").intValue();
+        String fragment = source.substring(start, start + location.path("characters").intValue());
+        byte[] raw = fragment.getBytes(StandardCharsets.UTF_8);
+        assertEquals(raw.length, location.path("utf8Bytes").intValue());
+        assertEquals(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(raw)), location.path("sha256").textValue());
+        assertEquals(1 + source.substring(0, start).chars().filter(c -> c == '\n').count(), location.path("startLine").longValue());
+        assertEquals(location.path("startLine").longValue() + fragment.chars().filter(c -> c == '\n').count() - (fragment.endsWith("\n") ? 1 : 0), location.path("endLine").longValue());
+        return fragment;
     }
 
     @Test

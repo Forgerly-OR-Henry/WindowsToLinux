@@ -183,6 +183,17 @@ public final class DeploymentDiagnostics {
             publicReviewReason(reason), Optional.empty());
     }
 
+    /** Projects only an existing dedicated, bounded refusal event using the same redaction as its producer. */
+    public static Optional<String> publicDenialReason(LogEvent event) {
+        if (event == null || !java.util.Set.of("DEPLOYMENT_COMMAND_REVIEW_DENIED", "DEPLOYMENT_ASSISTED_REVIEW_DENIED")
+            .contains(event.eventCode()) || event.level() != LogLevel.WARN || event.details().isPresent()
+            || event.outcome().isPresent() || event.taskId().isEmpty() || !event.operationId().equals(event.taskId())
+            || event.message().isBlank() || event.message().length() > 4096)
+            return Optional.empty();
+        String safe = publicReviewReason(event.message());
+        return safe.isBlank() ? Optional.empty() : Optional.of(safe);
+    }
+
     /** Retains fixed-effect refusal without changing its decision or exposing protected data. */
     public static void assistedReviewDenied(ModContext context, TaskContext task, String reason) {
         new DeploymentDiagnostics(context).event(task.id(), LogLevel.WARN, "DEPLOYMENT_ASSISTED_REVIEW_DENIED",
@@ -215,7 +226,7 @@ public final class DeploymentDiagnostics {
             }
             new DeploymentDiagnostics(context).event(task.id(), LogLevel.ERROR, "DEPLOYMENT_OPERATION_FAILURE",
                 reason.toString(), Optional.empty());
-        } catch (RuntimeException unavailable) {
+        } catch (RuntimeException | LinkageError | AssertionError unavailable) {
             // Optional evidence must not replace the original uncertainty or bypass session closure.
         }
     }
@@ -236,7 +247,7 @@ public final class DeploymentDiagnostics {
 
     private static String publicReviewReason(String text) {
         String safe = text.replaceAll("(?s)-----BEGIN [^-]*PRIVATE KEY-----.*?(?:-----END [^-]*PRIVATE KEY-----|$)",
-                "[credential content excluded]").replaceAll("(?i)\\bBearer\\s+[^\\s,;]+", "Bearer [credential content excluded]")
+                "[credential content excluded]").replaceAll("(?i)\\bBearer\\s+(?!\\[credential content excluded\\](?:$|[\\s,;]))(?:\\[credential content excluded\\])?[^\\s,;]+", "Bearer [credential content excluded]")
             .replaceAll("(?im)^.*(?:password|passwd|secret|token|api[_-]?key|private[_-]?key).*[:=].*$",
                 "[credential content excluded]").replaceAll("[\\p{Cntrl}]", " ");
         return safe.substring(0, Math.min(4096, safe.length()));

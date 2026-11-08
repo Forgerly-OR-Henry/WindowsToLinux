@@ -48,7 +48,7 @@ public final class DeploymentAgentInstallReviewIntent {
         String operation = filesOnly ? "deployment.helper.install.files.v1" : "deployment.helper.install.v1";
         var expected = RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics(operation,
             gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper.installationTargets(server, layout)));
-        if (!original.equals(expected) || !request.script().equals("exec /bin/bash --noprofile --norc -s"))
+        if (!original.equals(expected) || !request.script().equals(DeploymentHelperInstallerScript.LAUNCHER))
             throw new IllegalArgumentException("Agent installer intent differs from its original complete helper installation request");
         byte[] body = request.stdin();
         try {

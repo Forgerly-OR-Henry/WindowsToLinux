@@ -18,6 +18,23 @@ import org.junit.jupiter.api.Test;
 class DeploymentMirrorGuidanceTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    @Test void publicGoSourcesDescribeRedirectOnlyBucketScope() throws Exception {
+        var task = task();
+        var settings = new MirrorSettings(1, Map.of(DownloadPoint.GO_MODULE, List.of(
+            new MirrorSettings.Row("official-go_module", "", false, false, ""))), Map.of());
+        var policy = MirrorSelector.resolve(gold.debug.windowstolinux.mod.deployment.config.mirror.MirrorCatalog.load(),
+            settings, "synthetic-server", "US").withTask(task.id().toString());
+        bind(task, policy.toJson());
+        try {
+            var page = JSON.valueToTree(DeploymentMirrorGuidance.sources(task, "GO_MODULE"));
+            var source = page.path("entries").get(0);
+            assertEquals(JSON.readTree("[\"proxy.golang.org\"]"), source.path("allowedHosts"));
+            assertEquals("storage.googleapis.com", source.path("redirectRules").get(0).path("toHost").asText());
+            assertEquals("/proxy-golang-org-prod/", source.path("redirectRules").get(0).path("pathPrefix").asText());
+            assertEquals(1, page.path("candidateCount").asInt());
+        } finally { DeploymentMirrorTasks.forget(task); }
+    }
+
     @Test void legacyTasksCannotActivateSnapshotGuidanceAndOciUsageNamesAnOutputFile() throws Exception {
         var legacy = task();
         for (var role : DeploymentAgentSkills.Role.values()) {
