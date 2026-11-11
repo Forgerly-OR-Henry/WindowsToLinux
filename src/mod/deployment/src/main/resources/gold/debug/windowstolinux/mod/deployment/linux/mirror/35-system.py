@@ -38,6 +38,10 @@ def mirror_system_command(policy, manager, arguments):
     repositories.append('*) return 65;; esac; }')
     credentials.append('*) return 65;; esac; }')
     shell = 'export WTL_MIRROR_SYSTEM_PYTHON=' + shlex.quote(sys.executable) + '\n'
+    shell += 'wtl_mirror_runtime_sha256=' + shlex.quote(globals().get('MIRROR_RUNTIME_SHA256', '')) + '\n'
+    shell += ('if [ "$EUID" = 0 ]; then\n'
+              '  export TMPDIR="${WTL_MIRROR_POLICY%/*}" TMP="${WTL_MIRROR_POLICY%/*}" TEMP="${WTL_MIRROR_POLICY%/*}"\n'
+              'fi\n')
     shell += 'wtl_mirror_connect_seconds=%d\nwtl_mirror_idle_seconds=%d\nwtl_mirror_low_window_seconds=%d\nwtl_mirror_low_rate=%d\nwtl_mirror_attempts=%d\n' % (
         max(1, int(policy.connect)), max(1, int(policy.idle)), max(1, int(policy.window)), policy.minimum, policy.attempts)
     shell += '\n'.join(providers + routes + repositories + credentials) + '\n' + BOOTSTRAP_SHELL
@@ -45,4 +49,4 @@ def mirror_system_command(policy, manager, arguments):
     if entrypoint is None:
         raise MirrorFailure('unsupported native package operation')
     shell += '\nwtl_' + entrypoint + ' "$@"\n'
-    return ['/bin/bash', '-c', shell, 'wtl-system-package'] + list(arguments)
+    return ['/bin/bash', '-pc', shell, 'wtl-system-package'] + list(arguments)

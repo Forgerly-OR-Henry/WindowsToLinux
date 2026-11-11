@@ -379,12 +379,10 @@ public final class DeploymentManagedHelper {
         targets.add(new ActionTarget(server.id(), "file", layout.buildEntry()));
         for (String root : java.util.List.of(layout.paths().helperDirectory(), layout.paths().applicationsRoot(),
                 layout.paths().stateRoot(), layout.paths().configurationRoot(), layout.paths().dataRoot(),
-                "/etc/systemd/system/multi-user.target.wants"))
+                "/etc/systemd/system"))
             for (String directory : DeploymentRemoteLayoutAdmission.ancestors(root))
                 targets.add(new ActionTarget(server.id(), "directory", directory));
         targets.add(new ActionTarget(server.id(), "file", DeploymentRemoteLayoutAdmission.UNIT_PATH));
-        targets.add(new ActionTarget(server.id(), "file", "/etc/systemd/system/multi-user.target.wants/"
-            + DeploymentRemoteLayoutAdmission.UNIT_NAME));
         targets.add(new ActionTarget(server.id(), "systemd-service", DeploymentRemoteLayoutAdmission.UNIT_NAME));
         targets.add(new ActionTarget(server.id(), "service-manager", "systemd"));
         for (String manager : java.util.List.of("apt-get", "dnf")) {

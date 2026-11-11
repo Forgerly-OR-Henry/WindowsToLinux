@@ -210,6 +210,18 @@ final class DeploymentMirrorRuntimeTest {
             assertTrue(script.contains("WTL_MIRROR_POLICY"));
             assertTrue(script.contains("wtl_mirror_connect_seconds=15\nwtl_mirror_idle_seconds=45"));
             assertTrue(script.contains("wtl_mirror_low_window_seconds=90\nwtl_mirror_low_rate=32768\nwtl_mirror_attempts=1"));
+            int parentCheck = script.indexOf("wtl_mirror_trusted_parent / 0 && wtl_mirror_trusted_parent /tmp 1");
+            int temporaryCreation = script.indexOf("/usr/bin/mktemp -d --");
+            int materialWrite = script.indexOf(" >\"$WTL_MIRROR_POLICY\"");
+            assertTrue(parentCheck >= 0 && parentCheck < temporaryCreation);
+            assertTrue(script.substring(parentCheck, temporaryCreation).contains("""
+                  wtl_mirror_base=/tmp
+                else
+                  wtl_mirror_base="${TMPDIR:-/tmp}"
+                fi
+                """));
+            int privateEnvironment = script.indexOf("export TMPDIR=\"$wtl_mirror_root\" TMP=\"$wtl_mirror_root\" TEMP=\"$wtl_mirror_root\"");
+            assertTrue(temporaryCreation < privateEnvironment && privateEnvironment < materialWrite);
             assertTrue(script.contains("printf 'finished\\n'\n"));
             assertTrue(script.endsWith("\n)\n"));
             Path file = directory.resolve("bootstrap.sh");
@@ -217,6 +229,70 @@ final class DeploymentMirrorRuntimeTest {
             String bash = System.getProperty("os.name").startsWith("Windows")
                 ? "E:\\Program\\Git\\bin\\bash.exe" : "/bin/bash";
             execute(directory, List.of(bash, "-n", file.toString()), Duration.ofSeconds(15));
+        } finally {
+            cleanup(directory);
+        }
+    }
+
+    @Test
+    void privilegedBootstrapChecksItsParentBeforeCreationAndRestrictedBuildKeepsItsQuotaDirectory() throws Exception {
+        Path directory = directory();
+        try {
+            Files.createDirectory(directory.resolve("trusted-root"));
+            Files.createDirectory(directory.resolve("trusted-temp"));
+            String prefix = DeploymentMirrorRuntime.bootstrapPrefix("""
+                {"formatVersion":1,"task":"00000000-0000-0000-0000-000000000001","points":{}}
+                """);
+            int next = prefix.indexOf("if [ -n \"${WTL_MIRROR_BUDGET_SECONDS:-}\"");
+            assertTrue(next > 0);
+            String bootstrap = prefix.substring(0, next)
+                .replace("wtl_mirror_trusted_parent / 0 && wtl_mirror_trusted_parent /tmp 1",
+                    "wtl_mirror_trusted_parent trusted-root 0 && wtl_mirror_trusted_parent trusted-temp 1")
+                .replace("wtl_mirror_base=/tmp", "wtl_mirror_base=trusted-temp")
+                .replace("\"$EUID\"", "\"$fixture_uid\"")
+                .replace("/usr/bin/stat", "fixture_stat").replace("/usr/bin/mktemp", "fixture_mktemp")
+                .replace("/usr/bin/chmod", "fixture_chmod").replace("/usr/bin/rm", "fixture_remove");
+            Path script = directory.resolve("bootstrap-boundary.sh");
+            Files.writeString(script, """
+                fixture_stat() {
+                  case "$2:$4" in
+                    %u:*) printf '0\n' ;;
+                    %a:trusted-root) printf '755\n' ;;
+                    %a:trusted-temp) printf '%s\n' "$fixture_mode" ;;
+                    *) return 1 ;;
+                  esac
+                }
+                fixture_mktemp() {
+                  printf 'CREATE=%s\n' "$3" >&2
+                  printf 'private-task\n'
+                }
+                fixture_chmod() { :; }
+                fixture_remove() { :; }
+                run_case() (
+                  fixture_uid="$1"; fixture_mode="$2"; TMPDIR=quota-temp
+                """ + bootstrap + """
+                  printf 'TMP=%s\n' "$TMPDIR"
+                )
+                printf 'UNSAFE\n'
+                run_case 0 777 || printf 'EXIT=%s\n' "$?"
+                printf 'ROOT\n'
+                run_case 0 1777 || exit "$?"
+                printf 'BUILD\n'
+                run_case 1000 777 || exit "$?"
+                """);
+            String bash = System.getProperty("managed.test.bash", "/bin/bash");
+            String output = execute(directory, List.of(bash, script.toString()), Duration.ofSeconds(15)).replace("\r\n", "\n");
+            assertEquals("""
+                UNSAFE
+                MIRROR_REJECT=privileged-temporary-parent
+                EXIT=65
+                ROOT
+                CREATE=trusted-temp/wtl-mirrors.XXXXXXXX
+                TMP=private-task
+                BUILD
+                CREATE=quota-temp/wtl-mirrors.XXXXXXXX
+                TMP=quota-temp
+                """, output);
         } finally {
             cleanup(directory);
         }

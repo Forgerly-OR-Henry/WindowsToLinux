@@ -565,7 +565,6 @@ public final class DeploymentHelperInstallerScript {
             installer_verify_executable %s %s || { printf 'PREPARE_REJECT=helper-installed-digest\\n'; exit 64; }
             installer_verify_executable %s %s || { printf 'PREPARE_REJECT=build-entry-installed-digest\\n'; exit 64; }
             systemctl daemon-reload
-            systemctl enable windowstolinux-workspace-recovery.service
             helper_probe="$(%s probe)"
             printf '%%s\\n' "$helper_probe" | /usr/bin/grep -qx 'HELPER=1'
             printf '%%s\\n' "$helper_probe" | /usr/bin/grep -qx 'PROTOCOL=%d'

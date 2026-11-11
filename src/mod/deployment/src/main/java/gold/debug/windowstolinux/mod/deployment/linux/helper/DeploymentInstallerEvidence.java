@@ -79,6 +79,9 @@ public final class DeploymentInstallerEvidence {
             facts.put("aptEffects", "Missing root packages may be installed. --no-upgrade retains already installed command-line packages; necessary dependencies may still be installed or upgraded. --no-remove aborts required removals; --no-install-recommends remains set.");
             facts.put("dnfRootPackages", List.of(DeploymentHelperInstallerScript.DNF_PACKAGES.split(" ")));
             facts.put("dnfEffects", "The alternative DNF branch remains install -y; APT's no-upgrade/no-remove guarantees do not apply to DNF.");
+            facts.put("sudoPackagePurpose", "The product publishes sudo-prefixed managed application usage for authorized host operators. The fixed shell body does not invoke sudo or directly edit sudoers. Review sudo package and maintainer-script effects with the other listed root packages.");
+            if (mirror.isPresent())
+                facts.put("mirrorShellFunctions", "The exact wrapper inlines wtl_apt and wtl_dnf definitions into the parent shell before the installer subshell inherits them. The written bootstrap file is not the only copy of those definitions.");
             facts.put("aptDownloads", mirror.isPresent()
                 ? "Runtime freezes URI/name/size/SHA256 from one selected metadata set, authenticates package sources and installs with --no-download. This is not a complete pre-approved transaction or a blanket version pin."
                 : "Native configured APT sources; mirror object freezing is not asserted for this unwrapped request.");

@@ -233,7 +233,7 @@ STATIC/ASSISTED 在最终确认前选额并显示依据；AGENT 在计划接受�
 
 新部署在读取来源和产生远端副作用前捕获五根。独立审批、实际 helper、工具链、上传与发布使用同一捕获；恢复使用原任务证据，应用管理和归档恢复使用原完整发布清单。历史默认记录继续解释为原固定目录，修改 YAML 不迁移既有应用，也不重写待处理命令或上传目标。
 
-安装前通过固定的 `/etc/systemd/system/windowstolinux-workspace-recovery.service` 核对宿主布局，拒绝不同布局、符号链接、外部片段和 drop-in。仅以目录绑定创建该文件不启用服务；完整安装在校验已安装 helper 和 build-entry 摘要后登记服务。固定 systemd、系统包管理、可信系统程序及历史外部 SELinux 状态检查不随目录配置改写。
+安装前通过固定的 `/etc/systemd/system/windowstolinux-workspace-recovery.service` 核对宿主布局，拒绝不同布局、符号链接、外部片段和 drop-in。完整安装在核验 helper 和 build-entry 摘要后重载 systemd。该布局单元不会由安装器启用或启动。当前 helper 的 `workspace-recover` 只检查和报告保留的候选，清理仍走按任务绑定的入口。已有安装保持原有的可执行文件身份校验，更换不同版本需要独立授权的升级流程。固定 systemd、系统包管理、可信系统程序及历史外部 SELinux 状态检查沿用原目录边界。
 
 ### 模型设置与 YAML 的边界
 

@@ -96,9 +96,10 @@ def task_mirrors():
                     fail('ownership', 'privileged mirror input is too large')
                 if path == runtime:
                     payload = data
-        if hashlib.sha256(payload).hexdigest() != '__WTL_MIRROR_RUNTIME_SHA256__':
+        runtime_sha256 = hashlib.sha256(payload).hexdigest()
+        if runtime_sha256 != '__WTL_MIRROR_RUNTIME_SHA256__':
             fail('integrity', 'privileged mirror runtime differs from the shipped implementation')
-        MIRROR_MODULE = {'__name__': 'wtl_task_mirrors'}
+        MIRROR_MODULE = {'__name__': 'wtl_task_mirrors', 'MIRROR_RUNTIME_SHA256': runtime_sha256}
         exec(compile(payload, str(runtime), 'exec'), MIRROR_MODULE)
     policy = MIRROR_MODULE['MirrorPolicy'].from_environment(globals().get('DEADLINE'))
     return MIRROR_MODULE, policy

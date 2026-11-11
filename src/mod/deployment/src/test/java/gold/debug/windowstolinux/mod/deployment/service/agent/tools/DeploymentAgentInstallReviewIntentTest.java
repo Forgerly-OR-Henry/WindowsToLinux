@@ -48,7 +48,6 @@ class DeploymentAgentInstallReviewIntentTest {
                 new ActionTarget(server.id(), "directory", "/var/opt/windowstolinux/apps"),
                 new ActionTarget(server.id(), "file", DeploymentManagedHelperBundle.BUILD_ENTRY_PATH),
                 new ActionTarget(server.id(), "file", "/etc/systemd/system/windowstolinux-workspace-recovery.service"),
-                new ActionTarget(server.id(), "file", "/etc/systemd/system/multi-user.target.wants/windowstolinux-workspace-recovery.service"),
                 new ActionTarget(server.id(), "service-manager", "systemd"),
                 new ActionTarget(server.id(), "systemd-service", "windowstolinux-workspace-recovery.service"),
                 new ActionTarget(server.id(), "package-manager", "apt-get"),

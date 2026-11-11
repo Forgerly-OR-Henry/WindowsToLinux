@@ -239,9 +239,11 @@ def dependency_task_mirrors():
                     dependency_reject('MIRROR_INPUT_REJECTED')
                 if path == runtime:
                     source = value
-        if hashlib.sha256(source).hexdigest() != '__WTL_MIRROR_RUNTIME_SHA256__':
+        runtime_sha256 = hashlib.sha256(source).hexdigest()
+        if runtime_sha256 != '__WTL_MIRROR_RUNTIME_SHA256__':
             dependency_reject('MIRROR_IMPLEMENTATION_CHANGED')
-        DEPENDENCY_MIRROR_MODULE = {'__name__': 'wtl_dependency_task_mirrors'}
+        DEPENDENCY_MIRROR_MODULE = {
+            '__name__': 'wtl_dependency_task_mirrors', 'MIRROR_RUNTIME_SHA256': runtime_sha256}
         exec(compile(source, str(runtime), 'exec'), DEPENDENCY_MIRROR_MODULE)
     return DEPENDENCY_MIRROR_MODULE, DEPENDENCY_MIRROR_MODULE['MirrorPolicy'].from_environment()
 

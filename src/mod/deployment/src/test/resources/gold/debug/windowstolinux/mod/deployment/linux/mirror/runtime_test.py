@@ -2,6 +2,7 @@
 import collections
 import concurrent.futures
 import base64
+import contextlib
 import hashlib
 import http.server
 import io
@@ -9,6 +10,7 @@ import json
 import os
 import pathlib
 import shlex
+import stat
 import subprocess
 import sys
 import tempfile
@@ -137,6 +139,47 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 time.sleep(.03 if self.path.startswith('/slow/') else .3)
         else:
             self.wfile.write(data)
+
+
+class PrivilegedRuntimeTests(unittest.TestCase):
+    def test_dnf_child_executes_only_the_bytes_matching_the_pinned_runtime(self):
+        payload = b'import sys; print(repr(sys.argv))'
+        pinned = hashlib.sha256(payload).hexdigest()
+        policy = Policy({'formatVersion': 1, 'points': {}})
+        with unittest.mock.patch.dict(RUNTIME, {'MIRROR_RUNTIME_SHA256': pinned}):
+            command = RUNTIME['mirror_system_command'](policy, 'dnf', ['install', 'demo'])
+        self.assertEqual(command[:2], ['/bin/bash', '-pc'])
+        self.assertEqual(command[3:], ['wtl-system-package', 'install', 'demo'])
+        self.assertIn('wtl_mirror_runtime_sha256=' + pinned, command[2])
+        loader = command[2].partition(" -I -c '\n")[2].partition("\n' ")[0]
+        self.assertTrue(loader)
+        path = '/tmp/wtl-mirrors.fixture/runtime.py'
+        expected_argv = [path, 'system-dnf', 'install', 'demo']
+        for body, mode, accepted in ((payload, 0o400, True), (payload + b'\n', 0o400, False), (payload, 0o600, False)):
+            with self.subTest(mode=mode, accepted=accepted), contextlib.ExitStack() as stack:
+                stream = io.BytesIO(body)
+                stream.fileno = lambda: 83
+                stack.enter_context(unittest.mock.patch.object(os, 'fdopen', return_value=stream))
+                descriptor = stack.enter_context(unittest.mock.patch.object(os, 'open', return_value=83))
+                stack.enter_context(unittest.mock.patch.object(os, 'O_NOFOLLOW', 1 << 23, create=True))
+                stack.enter_context(unittest.mock.patch.object(os, 'O_NONBLOCK', 1 << 24, create=True))
+                identity = unittest.mock.Mock(st_mode=stat.S_IFREG | mode, st_uid=0, st_nlink=1)
+                stack.enter_context(unittest.mock.patch.object(os, 'fstat', return_value=identity))
+                stack.enter_context(unittest.mock.patch.object(sys, 'argv', ['-c', path, pinned] + expected_argv[1:]))
+                output, errors = io.StringIO(), io.StringIO()
+                stack.enter_context(contextlib.redirect_stdout(output))
+                stack.enter_context(contextlib.redirect_stderr(errors))
+                if accepted:
+                    exec(loader, {})
+                    self.assertEqual(output.getvalue().strip(), repr(expected_argv))
+                    self.assertEqual(errors.getvalue(), '')
+                else:
+                    with self.assertRaises(SystemExit) as rejected:
+                        exec(loader, {})
+                    self.assertEqual(rejected.exception.code, 65)
+                    self.assertEqual(output.getvalue(), '')
+                    self.assertEqual(errors.getvalue(), 'MIRROR_REJECT=privileged-runtime-integrity\n')
+                descriptor.assert_called_once_with(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
 
 
 class RuntimeTests(unittest.TestCase):

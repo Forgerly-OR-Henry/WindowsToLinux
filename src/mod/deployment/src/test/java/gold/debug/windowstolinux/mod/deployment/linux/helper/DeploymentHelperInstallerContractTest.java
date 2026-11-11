@@ -121,7 +121,7 @@ class DeploymentHelperInstallerContractTest {
         assertEquals(DeploymentManagedHelperBundle.renderScript(), Files.readString(temporary.resolve("helper/managed-helper")));
         assertEquals(DeploymentManagedHelperBundle.renderBuildEntry(), Files.readString(temporary.resolve("helper/build-entry")));
         String effects = Files.readString(temporary.resolve("effects"));
-        assertEquals("publish\npublish\ndaemon-reload\nenable\nprobe\n", effects);
+        assertEquals("publish\npublish\ndaemon-reload\nprobe\n", effects);
         assertTrue(Files.readString(fixture.receipt()).endsWith("PHASE=STARTED\n"));
     }
 
@@ -131,7 +131,7 @@ class DeploymentHelperInstallerContractTest {
         var result = execute(fixture.script());
         assertEquals(0, result.exit(), result.output());
         assertTrue(Files.readString(fixture.receipt()).endsWith("PHASE=SUCCEEDED\n"));
-        assertEquals("publish\npublish\ndaemon-reload\nenable\nprobe\nreceipt\n", Files.readString(temporary.resolve("effects")));
+        assertEquals("publish\npublish\ndaemon-reload\nprobe\nreceipt\n", Files.readString(temporary.resolve("effects")));
         String installer = DeploymentHelperInstallerScript.renderHelperInstallation()
             .replace(DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.renderScript()), "'<helper source>'")
             .replace(DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.renderBuildEntry()), "'<build entry source>'");
@@ -154,6 +154,38 @@ class DeploymentHelperInstallerContractTest {
         assertEquals(DeploymentManagedHelperBundle.renderScript(), Files.readString(temporary.resolve("helper/managed-helper")));
         assertEquals(DeploymentManagedHelperBundle.renderBuildEntry(), Files.readString(temporary.resolve("helper/build-entry")));
         assertTrue(Files.readString(fixture.receipt()).endsWith("PHASE=SUCCEEDED\n"));
+    }
+
+    @Test
+    void existingBootUnitOnlyReportsCandidatesAndDoesNotCreateAnAbsentWorkRoot() throws Exception {
+        Path work = temporary.resolve("work");
+        String resource = "/gold/debug/windowstolinux/mod/deployment/linux/helper/workspace/25-workspace-recovery.sh";
+        String recovery;
+        try (var source = java.util.Objects.requireNonNull(getClass().getResourceAsStream(resource))) {
+            recovery = new String(source.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+        }
+        String script = "set -euo pipefail\nwork_root=" + DeploymentHelperInstallerScript.quote(bashPath(work)) + "\n" + """
+            reject() { exit 64; }
+            assert_storage_parent() { [ "$1" = "$work_root" ]; }
+            assert_root_owned_directory() { [ "$1" = "$work_root" ] && [ -d "$1" ]; }
+            assert_candidate_for_deployer() { [ -f "$1/.deployer" ]; }
+            initialise_controlled_roots() { printf 'unexpected initialization\n'; exit 90; }
+            cleanup_candidate() { printf 'unexpected cleanup\n'; exit 91; }
+            """ + recovery + "\nrecover_workspaces\n";
+        var absent = execute(script);
+        assertEquals(0, absent.exit(), absent.output());
+        assertFalse(Files.exists(work));
+
+        Path retained = Files.createDirectories(work.resolve("demo-0123456789abcdef"));
+        Path quarantined = Files.createDirectory(work.resolve("other-0123456789abcdef"));
+        Files.writeString(retained.resolve(".deployer"), "root\n");
+        Files.writeString(retained.resolve("candidate-data"), "keep\n");
+        var observed = execute(script);
+        assertEquals(1, observed.exit(), observed.output());
+        assertTrue(observed.output().contains("WORKSPACE_RETAINED=demo-0123456789abcdef"));
+        assertTrue(observed.output().contains("WORKSPACE_QUARANTINED=other-0123456789abcdef"));
+        assertEquals("keep\n", Files.readString(retained.resolve("candidate-data")));
+        assertTrue(Files.isDirectory(quarantined));
     }
 
     @ParameterizedTest

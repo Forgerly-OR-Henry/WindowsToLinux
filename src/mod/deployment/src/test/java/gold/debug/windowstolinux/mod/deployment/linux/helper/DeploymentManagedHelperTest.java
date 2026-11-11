@@ -103,11 +103,11 @@ class DeploymentManagedHelperTest {
 
     @Test
     void defaultInstallersPinCurrentSharedRuntimeBytes() throws Exception {
-        assertEquals("33eb4354ab3a487581725a9cec19e7393c794cbea5d2cbd2e918d16f05b058f3",
+        assertEquals("33f9eff706b0b8d5cde50f3524a6b8b79eaaa4a87aa6a60b4c74086cc8b92329",
             digest(DeploymentHelperInstallerScript.render()));
-        assertEquals("5268f09f50562a1845878cbceff19b3d94299eebd49f87589bf2c0c18edbfce7",
+        assertEquals("e5d7b3bfc489ae87319e0f6e07df2ada404cad66630edd5ee347cd34da2e45da",
             digest(DeploymentHelperInstallerScript.renderHelperInstallation()));
-        assertEquals("5b92e2644a0ec13d93f0a153137908d82e51f28023a6b8f566f907b23525499c",
+        assertEquals("e04f397cdd8902072c52ba19a53d11d222f51f4262db375035d0be167a86f384",
             digest(DeploymentHelperInstallerScript.renderTracked(task().id(),
                 UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), "a".repeat(64),
                 digest(DeploymentHelperInstallerScript.render()))));
@@ -149,8 +149,8 @@ class DeploymentManagedHelperTest {
         StringBuilder wrapper = new StringBuilder();
         for (var segment : evidence.path("segments"))
             if (segment.path("kind").asText().equals("LITERAL")) wrapper.append(segment.path("text").asText());
-        assertFalse(wrapper.toString().contains("windowstolinux-workspace-recovery.service"));
-        assertFalse(wrapper.toString().contains("workspace-recover"));
+        assertTrue(wrapper.toString().contains(DeploymentRemoteLayoutAdmission.UNIT_PATH));
+        assertTrue(wrapper.toString().contains("WTL_REMOTE_LAYOUT_UNIT_V1"));
         for (String mutation : List.of("systemctl enable", "systemctl disable", "systemctl daemon-reload", "recovery_unit="))
             assertFalse(wrapper.toString().contains(mutation));
         assertTrue(wrapper.toString().contains("systemctl list-unit-files"));
@@ -174,8 +174,11 @@ class DeploymentManagedHelperTest {
         String prefix = evidence.path("segments").get(0).path("text").asText();
         String middle = evidence.path("segments").get(2).path("text").asText();
         String tail = evidence.path("segments").get(4).path("text").asText();
-        assertTrue(prefix.indexOf("files_check\nfiles_check_runtime") < prefix.indexOf("apt-get -o"));
-        assertTrue(prefix.indexOf("PREPARE_REJECT=files-install-not-required") < prefix.indexOf("apt-get -o"));
+        int check = prefix.indexOf("files_check\nfiles_check_runtime");
+        int guard = prefix.indexOf("PREPARE_REJECT=files-install-not-required");
+        int apt = prefix.indexOf("deployment_apt -o");
+        int dnf = prefix.indexOf("deployment_dnf install");
+        assertTrue(check >= 0 && check < guard && guard < apt && guard < dnf);
         assertTrue(prefix.contains("if [ \"$runtime_missing\" -ne 0 ]; then"));
         assertTrue(prefix.contains("[ ! -L \"$1\" ] && [ -f \"$1\" ] && [ -x \"$1\" ]"));
         assertTrue(prefix.contains("= '0:0:755:1'"));
@@ -394,7 +397,7 @@ class DeploymentManagedHelperTest {
     @Test
     void exactApprovedInstallThenProbeAcceptsOnlyThePackagedIdentity() throws Exception {
         var replies = new ArrayDeque<OperationResult<CommandResult>>();
-        replies.add(ok("package log\n" + installTail(), "Created symlink\n"));
+        replies.add(ok("package log\n" + installTail(), ""));
         replies.add(ok(probeOutput(), ""));
         var requests = new ArrayList<CommandRequest>();
         var intents = new ArrayList<ActionIntent>();
@@ -407,11 +410,15 @@ class DeploymentManagedHelperTest {
         assertEquals(List.of("deployment.helper.install.v1", "deployment.helper.probe.v1"),
             intents.stream().map(i -> i.semantics().orElseThrow().operation()).toList());
         assertEquals("Server-Exact", intents.getFirst().serverIds().getFirst());
-        assertEquals(java.util.Set.of(
+        var installTargets = intents.getFirst().semantics().orElseThrow().targets();
+        assertTrue(installTargets.containsAll(java.util.Set.of(
             new gold.debug.windowstolinux.appapi.task.action.ActionTarget("Server-Exact", "deployment-helper", DeploymentManagedHelperBundle.PATH),
             new gold.debug.windowstolinux.appapi.task.action.ActionTarget("Server-Exact", "file", DeploymentManagedHelperBundle.BUILD_ENTRY_PATH),
-            new gold.debug.windowstolinux.appapi.task.action.ActionTarget("Server-Exact", "file", DeploymentRemoteLayoutAdmission.UNIT_PATH)),
-            intents.getFirst().semantics().orElseThrow().targets());
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget("Server-Exact", "file", DeploymentRemoteLayoutAdmission.UNIT_PATH),
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget("Server-Exact", "service-manager", "systemd"),
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget("Server-Exact", "package-set", "apt-get:" + DeploymentHelperInstallerScript.APT_PACKAGES),
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget("Server-Exact", "package-set", "dnf:" + DeploymentHelperInstallerScript.DNF_PACKAGES))));
+        assertTrue(installTargets.stream().noneMatch(target -> target.id().contains("/multi-user.target.wants")));
         assertEquals(java.util.Set.of(new gold.debug.windowstolinux.appapi.task.action.ActionTarget("Server-Exact", "deployment-helper", DeploymentManagedHelperBundle.PATH)),
             intents.getLast().semantics().orElseThrow().targets());
         String installer = new String(requests.getFirst().stdin(), StandardCharsets.UTF_8);
@@ -423,7 +430,7 @@ class DeploymentManagedHelperTest {
     }
 
     @Test
-    void installedEntryDigestStopsBeforeUnitRegistrationWhenTheActualFileDiffers() throws Exception {
+    void installedEntryDigestStopsBeforeSystemdReloadWhenTheActualFileDiffers() throws Exception {
         String script = DeploymentHelperInstallerScript.renderHelperInstallation();
         String binding = "installer_verify_executable "
             + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.BUILD_ENTRY_PATH) + " "
@@ -431,7 +438,8 @@ class DeploymentManagedHelperTest {
         int bound = script.indexOf(binding);
         int published = script.indexOf("/usr/bin/mv -fT -- \"$entry_tmp\"");
         assertTrue(published >= 0 && bound > published);
-        assertTrue(bound < script.indexOf("systemctl enable windowstolinux-workspace-recovery.service"));
+        assertTrue(bound < script.indexOf("\nsystemctl daemon-reload\nhelper_probe="));
+        assertFalse(script.contains("systemctl enable windowstolinux-workspace-recovery.service"));
         int verifier = script.indexOf("installer_verify_executable() {\n");
         assertTrue(verifier >= 0);
         int verifierEnd = script.indexOf("\n}", verifier);

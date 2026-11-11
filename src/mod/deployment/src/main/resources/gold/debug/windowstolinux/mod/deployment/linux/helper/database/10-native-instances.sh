@@ -47,9 +47,10 @@ def native_task_mirrors():
                     raise Failure('MIRROR_INPUT_REJECTED')
                 if path == runtime:
                     source = value
-        if hashlib.sha256(source).hexdigest() != '__WTL_MIRROR_RUNTIME_SHA256__':
+        runtime_sha256 = hashlib.sha256(source).hexdigest()
+        if runtime_sha256 != '__WTL_MIRROR_RUNTIME_SHA256__':
             raise Failure('MIRROR_IMPLEMENTATION_CHANGED')
-        MIRROR_MODULE = {'__name__': 'wtl_native_task_mirrors'}
+        MIRROR_MODULE = {'__name__': 'wtl_native_task_mirrors', 'MIRROR_RUNTIME_SHA256': runtime_sha256}
         exec(compile(source, str(runtime), 'exec'), MIRROR_MODULE)
     return MIRROR_MODULE, MIRROR_MODULE['MirrorPolicy'].from_environment()
 

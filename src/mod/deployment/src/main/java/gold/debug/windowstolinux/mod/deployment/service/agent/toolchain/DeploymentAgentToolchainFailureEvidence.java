@@ -91,9 +91,11 @@ public final class DeploymentAgentToolchainFailureEvidence {
 
     private static final String MIRROR_CONTROLLER_SOURCE = "5679dee3ff3ed23cd1932b50bed4e2c8fc7475301dd41962d5d156eda78cf379";
 
+    private static final String PRIVILEGED_MIRROR_CONTROLLER_SOURCE = "115dcdc0f1cd588db720eb8011a39f1107511bf2458293e38636e1ec9ba3d34c";
+
     private static final Map<String, Integer> PRECREATION_SOURCE_BYTES = Map.of(
         ORIGINAL_PRECREATION_SOURCE, 101904, PROBE_PRECREATION_SOURCE, 108038, TRACKED_CONTROLLER_SOURCE, 154357,
-        MIRROR_CONTROLLER_SOURCE, 165384);
+        MIRROR_CONTROLLER_SOURCE, 165384, PRIVILEGED_MIRROR_CONTROLLER_SOURCE, 165521);
 
     private static final long INSTALL_REQUIRED_BYTES = 9L * 1024 * 1024 * 1024;
 
@@ -104,7 +106,9 @@ public final class DeploymentAgentToolchainFailureEvidence {
             || probeSource(sourceSha256) && (required == INSTALL_REQUIRED_BYTES || required == PROBE_REQUIRED_BYTES);
     }
 
-    private static boolean probeSource(String source) { return PROBE_PRECREATION_SOURCE.equals(source) || TRACKED_CONTROLLER_SOURCE.equals(source) || MIRROR_CONTROLLER_SOURCE.equals(source); }
+    private static boolean probeSource(String source) {
+        return source != null && !ORIGINAL_PRECREATION_SOURCE.equals(source) && PRECREATION_SOURCE_BYTES.containsKey(source);
+    }
 
     private static final String PRECREATION_MEANING = "ONLY_THIS_OPERATION_PRIVATE_RESOURCES_NOT_CREATED; SHARED_DIRECTORIES_AND_PREPARE_LOCK_RETAINED; NOT_CLEANUP_COMPLETE";
 

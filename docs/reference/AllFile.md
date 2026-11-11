@@ -1634,7 +1634,7 @@ WindowsToLinux/
    │  │                    │        ├─ 22-restricted-build.sh  # 临时构建、控制组限制与只读封存
    │  │                    │        ├─ 23-container-builder.sh  # 临时 rootless 账号和 UID/GID 映射
    │  │                    │        ├─ 24-build-entry.sh  # 独立安装的非特权构建与 rootless 后端入口
-   │  │                    │        ├─ 25-workspace-recovery.sh  # 开机回收受管候选，隔离不明残留
+   │  │                    │        ├─ 25-workspace-recovery.sh  # 兼容开机调用，核对并报告保留的候选
    │  │                    │        ├─ 26-build-output.sh  # root 控制器累计输出预算和有界日志
    │  │                    │        ├─ 27-agent-workspace.sh  # 模块资源与配置
    │  │                    │        ├─ apparmor-namespace.sh  # 工作区使用实际引擎 AppArmor profile 探测命名空间

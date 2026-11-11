@@ -2,7 +2,6 @@ package gold.debug.windowstolinux.mod.deployment.service.agent.review;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 
@@ -49,23 +48,15 @@ class DeploymentAgentToolchainPreparationEvidenceTest {
         var selected = DeploymentAgentToolchainPreparationEvidence.select(facts(DeploymentManagedHelperBundle.verifiedCommand(invocation(ecosystem)))).orElseThrow();
         String system = selected.systemSource();
         assertTrue(system.contains("SHIPPED_CATALOG = {\n"));
-        assertTrue(system.contains("/usr/bin/python3 -I - \"$@\" <<'WTL_OFFICIAL_TOOLCHAINS'\n"));
+        assertTrue(system.contains("/usr/bin/python3 -I - \"$@\" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'\n"));
         assertTrue(system.endsWith("\nWTL_OFFICIAL_TOOLCHAINS\n}\n"));
-        String root = "/gold/debug/windowstolinux/mod/deployment/linux/helper/toolchain/";
-        for (String resource : List.of("10-release-metadata.py", "20-installation-boundaries.py", "30-managed-installation.py", "40-binding-protocol.py")) {
-            try (var input = DeploymentManagedHelperBundle.class.getResourceAsStream(root + resource)) {
-                assertNotNull(input);
-                String content = new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
-                if (content.contains("# @compat:centos-repositories@\n")) {
-                    try (var inserted = DeploymentManagedHelperBundle.class.getResourceAsStream(root + "centos-source-repositories.py")) {
-                        assertNotNull(inserted);
-                        content = content.replaceAll("(?m)^[ \\t]*# @compat:centos-repositories@\\n",
-                            java.util.regex.Matcher.quoteReplacement(new String(inserted.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n")));
-                    }
-                }
-                assertTrue(system.contains(content), "Complete expanded source must retain " + resource);
-            }
-        }
+        String helper = DeploymentManagedHelperBundle.renderScript();
+        String endMarker = "\nWTL_OFFICIAL_TOOLCHAINS\n}\n";
+        int start = helper.indexOf("prepare_official_toolchains() {\n");
+        int end = helper.indexOf(endMarker, start);
+        assertTrue(start >= 0 && end > start);
+        assertTrue(system.endsWith(helper.substring(start, end + endMarker.length())),
+            "SYSTEM evidence must retain the complete rendered wrapper after its heading");
         assertFalse(system.contains("# @compat:"));
         assertTrue(system.contains("checksum_text(url + '.sha256')"));
         assertTrue(system.contains("if official.hexdigest() != expected:"));

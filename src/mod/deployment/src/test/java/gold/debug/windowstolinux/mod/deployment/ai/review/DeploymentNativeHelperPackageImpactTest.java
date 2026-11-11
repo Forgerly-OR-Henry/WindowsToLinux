@@ -88,6 +88,8 @@ class DeploymentNativeHelperPackageImpactTest {
                     assertEquals(List.of(DeploymentHelperInstallerScript.APT_PACKAGES.split(" ")),
                         new ObjectMapper().convertValue(impact.path("aptRootPackages"), new com.fasterxml.jackson.core.type.TypeReference<List<String>>() { }));
                     assertTrue(impact.path("aptEffects").asText().contains("dependencies may still be installed or upgraded"));
+                    assertTrue(impact.path("sudoPackagePurpose").asText().contains("sudo-prefixed managed application usage"));
+                    assertEquals(mirrored, impact.has("mirrorShellFunctions"));
                     assertTrue(impact.path("limits").asText().contains("service effects remain possible"));
                     assertArrayEquals(request.stdin(), DeploymentInstallerEvidence.reconstruct(json.at(impact.path("executableEvidencePointer").asText())).getBytes(StandardCharsets.UTF_8));
                     assertFalse(impact.has("permission"));

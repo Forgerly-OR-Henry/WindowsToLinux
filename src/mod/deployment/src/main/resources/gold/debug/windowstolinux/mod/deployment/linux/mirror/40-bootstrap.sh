@@ -149,6 +149,32 @@ wtl_bounded_package_request() (
   trap - EXIT HUP INT TERM
   return "$result"
 )
+wtl_run_mirror_runtime() {
+  local python="$1"
+  shift
+  if [ "$EUID" != 0 ]; then
+    "$python" -I "$WTL_MIRROR_RUNTIME" "$@"; return $?
+  fi
+  # Execute the bytes we checked instead of passing the original path to the interpreter.
+  "$python" -I -c '
+import hashlib, os, stat, sys
+
+path, expected = sys.argv[1:3]
+try:
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as source:
+        identity = os.fstat(source.fileno())
+        if not stat.S_ISREG(identity.st_mode) or identity.st_uid != 0 or identity.st_mode & 0o222 or identity.st_nlink != 1:
+            raise ValueError("invalid runtime file")
+        payload = source.read(4194305)
+    if len(payload) > 4194304 or hashlib.sha256(payload).hexdigest() != expected:
+        raise ValueError("runtime digest differs")
+except (OSError, ValueError):
+    print("MIRROR_REJECT=privileged-runtime-integrity", file=sys.stderr)
+    sys.exit(65)
+sys.argv[:] = [path] + sys.argv[3:]
+exec(compile(payload, path, "exec"), {"__name__": "__main__", "__file__": path})
+' "$WTL_MIRROR_RUNTIME" "${wtl_mirror_runtime_sha256:-}" "$@"
+}
 wtl_system_package() {
   local manager="$1" point provider attempt status=65 file log folder wtl_apt_unresolved=0
   local APT_CONFIG=
@@ -162,7 +188,7 @@ wtl_system_package() {
     printf '%s\n' "MIRROR_REJECT=unplanned-download-point:$point" >&2
     return 65
   fi
-  folder="$(mktemp -d "${TMPDIR:-/tmp}/wtl-system-source.XXXXXXXX")" || return 65
+  folder="$(/usr/bin/mktemp -d -- "${WTL_MIRROR_POLICY%/*}/wtl-system-source.XXXXXXXX")" || return 65
   chmod 700 "$folder"
   log="$folder/request.log"
   local cache="${WTL_MIRROR_POLICY%/*}/system-cache"
@@ -260,7 +286,7 @@ wtl_dnf() {
   local python= shebang point
   for python in "${WTL_MIRROR_SYSTEM_PYTHON:-}" /usr/bin/python3 /usr/libexec/platform-python; do
     if [ -n "$python" ] && [ -x "$python" ] && "$python" -I -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1; then
-      "$python" -I "$WTL_MIRROR_RUNTIME" system-dnf "$@"; return $?
+      wtl_run_mirror_runtime "$python" system-dnf "$@"; return $?
     fi
   done
   if [ -r /usr/bin/dnf ]; then
@@ -268,7 +294,7 @@ wtl_dnf() {
     if [[ "$shebang" =~ ^\#!(/[^[:space:]]*python[0-9.]*)([[:space:]]|$) ]]; then
       python="${BASH_REMATCH[1]}"
       if [ -x "$python" ] && "$python" -I -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1; then
-        "$python" -I "$WTL_MIRROR_RUNTIME" system-dnf "$@"; return $?
+        wtl_run_mirror_runtime "$python" system-dnf "$@"; return $?
       fi
     fi
   fi

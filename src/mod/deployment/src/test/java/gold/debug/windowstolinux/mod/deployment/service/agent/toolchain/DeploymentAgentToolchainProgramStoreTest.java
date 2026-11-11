@@ -31,7 +31,7 @@ public class DeploymentAgentToolchainProgramStoreTest {
         String installer = DeploymentAgentToolchainProgramStore.resource("agent-controller-install.py");
         String contract = DeploymentAgentToolchainProgramStore.contract();
         DeploymentAgentToolchainProgramStore.requireManifest(manifest, controller, loader, installer, contract);
-        assertEquals("5679dee3ff3ed23cd1932b50bed4e2c8fc7475301dd41962d5d156eda78cf379", manifest.path("defaultControllerSha256").asText());
+        assertEquals("115dcdc0f1cd588db720eb8011a39f1107511bf2458293e38636e1ec9ba3d34c", manifest.path("defaultControllerSha256").asText());
         for (int position = 0; position < 4; position++) {
             int changed = position;
             assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainProgramStore.requireManifest(manifest,
@@ -43,7 +43,7 @@ public class DeploymentAgentToolchainProgramStoreTest {
         assertNotEquals(DeploymentAgentToolchainProgramStore.sourceSha256(LAYOUT), DeploymentAgentToolchainProgramStore.sourceSha256(custom));
         assertTrue(DeploymentAgentToolchainProgramStore.path(custom).startsWith(custom.toolchains()));
         assertFalse(DeploymentAgentToolchainProgramStore.loader(custom).contains("managed-helper"));
-        assertTrue(DeploymentAgentToolchainProgramStore.installer(custom).contains("PROGRAM_SOURCE"));
+        assertTrue(DeploymentAgentToolchainProgramStore.installer(custom).contains("CONTROLLER_SOURCE = "));
     }
 
     @Test

@@ -7,11 +7,18 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics;
+import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 
@@ -81,23 +88,9 @@ public final class DeploymentCommandEvidence {
         }
         byte[] input = request.stdin();
         try {
-            if (operation.equals("deployment.toolchain.diagnostic.v1")
-                || operation.equals("deployment.toolchain.prepare.v1") && input.length != 0) {
-                if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Original diagnostic server required");
-                var diagnostic = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.decode(input);
-                if (!diagnostic.planRevision().equals(intent.revision())) throw new IllegalArgumentException("Original diagnostic plan differs");
-                facts.put("toolchainDiagnostic", gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.reviewFacts(
-                    operation.equals("deployment.toolchain.prepare.v1") ? "prepare-diagnosed" : "diagnose-only",
-                    invocation, input, intent.serverIds().getFirst(), intent.semantics().orElseThrow().targets(), layout));
-                facts.put("originalToolchainPreparation", diagnostic.preparationArguments());
-            }
-            boolean trackedToolchain = Set.of("deployment.toolchain.prepare.tracked.v1", "deployment.toolchain.bind.tracked.v1",
-                "deployment.toolchain.observe.tracked.v1", "deployment.toolchain.cleanup.tracked.v1").contains(operation);
-            if (trackedToolchain) {
-                if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Tracked toolchain original server required");
-                facts.put("trackedToolchain", gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.reviewFacts(
-                    operation, invocation, input, intent.serverIds().getFirst(), intent.semantics().orElseThrow().targets(), layout));
-            }
+            boolean trackedToolchain = addToolchainRequestEvidence(intent, invocation, input, layout, facts);
+            if (operation.equals("deployment.build.preflight.v1") && installedHelper)
+                buildPreflight(intent, request, invocation, input.length, layout).ifPresent(value -> facts.put("buildPreflight", value));
             if (operation.equals("deployment.build.run.v1") && invocation.startsWith("exec /usr/bin/python3 -I -c ")) {
                 var collector = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildOutputProtocol.reviewFacts(invocation, input, layout);
                 if (intent.serverIds().size() != 1 || !intent.semantics().orElseThrow().targets().contains(
@@ -157,6 +150,57 @@ public final class DeploymentCommandEvidence {
             Arrays.fill(input, (byte) 0);
         }
         return java.util.Collections.unmodifiableMap(facts);
+    }
+
+    /** Adds evidence for fixed toolchain JSON requests and reports whether the request uses the tracked protocol. */
+    private static boolean addToolchainRequestEvidence(ActionIntent intent, String invocation, byte[] input,
+                                                       DeploymentRemoteLayout layout, Map<String, Object> facts) {
+        var semantics = intent.semantics().orElseThrow();
+        String operation = semantics.operation();
+        if (operation.equals("deployment.toolchain.diagnostic.v1")
+            || operation.equals("deployment.toolchain.prepare.v1") && input.length != 0) {
+            if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Original diagnostic server required");
+            var diagnostic = DeploymentToolchainDiagnostics.decode(input);
+            if (!diagnostic.planRevision().equals(intent.revision())) throw new IllegalArgumentException("Original diagnostic plan differs");
+            facts.put("toolchainDiagnostic", DeploymentToolchainDiagnostics.reviewFacts(
+                operation.equals("deployment.toolchain.prepare.v1") ? "prepare-diagnosed" : "diagnose-only",
+                invocation, input, intent.serverIds().getFirst(), semantics.targets(), layout));
+            facts.put("toolchainRequestTransport", toolchainRequestTransport(facts, input.length, diagnostic.sha256()));
+            facts.put("originalToolchainPreparation", diagnostic.preparationArguments());
+            return false;
+        }
+        if (!Set.of("deployment.toolchain.prepare.tracked.v1", "deployment.toolchain.bind.tracked.v1",
+            "deployment.toolchain.observe.tracked.v1", "deployment.toolchain.cleanup.tracked.v1").contains(operation)) return false;
+        if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Tracked toolchain original server required");
+        var tracked = DeploymentTrackedToolchains.reviewFacts(
+            operation, invocation, input, intent.serverIds().getFirst(), semantics.targets(), layout);
+        facts.put("trackedToolchain", tracked);
+        facts.put("toolchainRequestTransport", toolchainRequestTransport(facts, input.length, (String) tracked.get("requestSha256")));
+        return true;
+    }
+
+    /** Called only after the pinned helper and its exact JSON request have been verified. */
+    private static Map<String, Object> toolchainRequestTransport(Map<String, Object> facts, int bytes, String sha256) {
+        return Map.of("format", "UTF8_JSON", "stdinBytes", bytes, "requestSha256", sha256,
+            "commandRequestStdinFd", 0, "helperPath", facts.get("installedHelperPath"),
+            "helperSha256", facts.get("installedHelperSha256"), "pythonRequestFd", 3, "pythonSourceFd", 0,
+            "helperRedirection", "3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'");
+    }
+
+    /** Describes only the exact engine-only preflight frame for the declared helper target. */
+    private static Optional<Map<String, Object>> buildPreflight(ActionIntent intent, CommandRequest request, String invocation,
+                                                               int stdinBytes, DeploymentRemoteLayout layout) {
+        var engine = Pattern.compile(Pattern.quote("'" + layout.helperPath() + "' build-preflight '")
+            + "(ordinary|docker|podman)'").matcher(invocation);
+        if (stdinBytes != 0 || !engine.matches()
+            || !request.script().equals(DeploymentManagedHelperBundle.verifiedCommand(invocation, layout))
+            || intent.serverIds().size() != 1
+            || !intent.semantics().orElseThrow().targets().equals(Set.of(
+                new ActionTarget(intent.serverIds().getFirst(), "deployment-build", layout.helperPath()))))
+            return Optional.empty();
+        return Optional.of(Map.of("verb", "build-preflight", "argumentRoles", List.of("buildEngine"),
+            "buildEngine", engine.group(1), "stdinBytes", stdinBytes, "helperTarget", layout.helperPath(),
+            "meaning", "Checks host build prerequisites, including a transient systemd isolation probe. ordinary selects non-container build mode. Application and source identity come from the original workflow evidence."));
     }
 
     /** Common request identity and pinned source; mode-owned protocols interpret their own inputs. */

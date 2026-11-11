@@ -173,27 +173,51 @@ public final class DeploymentMirrorRuntime {
                 + "[ -d \"$WTL_MIRROR_CREDENTIALS_DIR\" ] && [ ! -L \"$WTL_MIRROR_CREDENTIALS_DIR\" ] || exit 65\n";
         }
         return "# WTL_MIRROR_TASK=" + task + "\n" + """
-            # Frozen task policy; all generated files live on the current task temporary volume.
-            wtl_mirror_root="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/wtl-mirrors.XXXXXXXX")"
-            /usr/bin/chmod 700 "$wtl_mirror_root"
+            # Root validates the fixed host temporary parent before creating any task files.
+            # The restricted build keeps the temporary directory supplied by its quota volume.
+            wtl_mirror_trusted_parent() {
+              local directory="$1" allow_sticky="$2" mode
+              [ ! -L "$directory" ] && [ -d "$directory" ] && [ "$(/usr/bin/stat -c '%%u' -- "$directory")" = 0 ] || return 65
+              mode="$(/usr/bin/stat -c '%%a' -- "$directory")" || return 65
+              [[ "$mode" =~ ^[0-7]{1,4}$ ]] || return 65
+              (( (8#$mode & 022) == 0 || (allow_sticky == 1 && (8#$mode & 01000) != 0) ))
+            }
+            unset WTL_MIRROR_SYSTEM_PYTHON
+            if [ "$EUID" = 0 ]; then
+              wtl_mirror_trusted_parent / 0 && wtl_mirror_trusted_parent /tmp 1 || {
+                printf 'MIRROR_REJECT=privileged-temporary-parent\\n' >&2; exit 65;
+              }
+              wtl_mirror_base=/tmp
+            else
+              wtl_mirror_base="${TMPDIR:-/tmp}"
+            fi
+            wtl_mirror_root="$(/usr/bin/mktemp -d -- "$wtl_mirror_base/wtl-mirrors.XXXXXXXX")" || exit 65
+            trap '/usr/bin/rm -rf -- "$wtl_mirror_root"' EXIT
+            /usr/bin/chmod 700 "$wtl_mirror_root" || exit 65
+            if [ "$EUID" = 0 ]; then
+              export TMPDIR="$wtl_mirror_root" TMP="$wtl_mirror_root" TEMP="$wtl_mirror_root"
+            fi
             if [ -n "${WTL_MIRROR_BUDGET_SECONDS:-}" ] && [ -z "${WTL_MIRROR_STARTED_AT:-}" ]; then export WTL_MIRROR_STARTED_AT="$(/usr/bin/date +%%s)"; fi
             export WTL_MIRROR_POLICY="$wtl_mirror_root/policy.json"
             export WTL_MIRROR_RUNTIME="$wtl_mirror_root/runtime.py"
             export WTL_MIRROR_SHELL="$wtl_mirror_root/bootstrap.sh"
-            printf '%%s' %s >"$WTL_MIRROR_POLICY"
-            printf '%%s' %s >"$WTL_MIRROR_RUNTIME"
-            printf '%%s' %s >"$WTL_MIRROR_SHELL"
-            /usr/bin/chmod 400 "$WTL_MIRROR_POLICY" "$WTL_MIRROR_RUNTIME" "$WTL_MIRROR_SHELL"
-            wtl_download() { /usr/bin/python3 -I "$WTL_MIRROR_RUNTIME" download "$@"; }
+            wtl_mirror_runtime_sha256=%s
+            printf '%%s' %s >"$WTL_MIRROR_POLICY" || exit 65
+            {
+              printf '%%s' %s >"$WTL_MIRROR_RUNTIME"
+            } || exit 65
+            printf '%%s' %s >"$WTL_MIRROR_SHELL" || exit 65
+            /usr/bin/chmod 400 "$WTL_MIRROR_POLICY" "$WTL_MIRROR_RUNTIME" "$WTL_MIRROR_SHELL" || exit 65
+            wtl_download() { wtl_run_mirror_runtime /usr/bin/python3 download "$@"; }
             wtl_dependency() {
               if declare -F verify_build_command >/dev/null && ! verify_build_command "$2"; then report_build_tool_failure "$2"; return 65; fi
-              if [ -n "${WTL_MIRROR_POLICY:-}" ]; then /usr/bin/python3 -I "$WTL_MIRROR_RUNTIME" dependency "$@";
+              if [ -n "${WTL_MIRROR_POLICY:-}" ]; then wtl_run_mirror_runtime /usr/bin/python3 dependency "$@";
               else shift; "$@"; fi
             }
-            wtl_oci() { /usr/bin/python3 -I "$WTL_MIRROR_RUNTIME" oci "$@"; }
-            wtl_wrapper() { /usr/bin/python3 -I "$WTL_MIRROR_RUNTIME" wrapper "$@"; }
-            wtl_source_url() { /usr/bin/python3 -I "$WTL_MIRROR_RUNTIME" source-url "$@"; }
-            """.formatted(quote(policyJson), quote(runtimeSource()), quote(shell)) + credentialSetup + shell;
+            wtl_oci() { wtl_run_mirror_runtime /usr/bin/python3 oci "$@"; }
+            wtl_wrapper() { wtl_run_mirror_runtime /usr/bin/python3 wrapper "$@"; }
+            wtl_source_url() { wtl_run_mirror_runtime /usr/bin/python3 source-url "$@"; }
+            """.formatted(runtimeSha256(), quote(policyJson), quote(runtimeSource()), quote(shell)) + credentialSetup + shell;
     }
 
     /** Writers call this to retain old-task behavior while routing new-task dependency requests. */

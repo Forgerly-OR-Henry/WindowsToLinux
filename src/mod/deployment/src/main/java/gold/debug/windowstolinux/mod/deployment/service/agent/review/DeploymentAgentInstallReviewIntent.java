@@ -75,11 +75,6 @@ public final class DeploymentAgentInstallReviewIntent {
             new ActionTarget(server.id(), "file", "/etc/systemd/system/windowstolinux-workspace-recovery.service"),
             new ActionTarget(server.id(), "service-manager", "systemd"),
             new ActionTarget(server.id(), "systemd-service", "windowstolinux-workspace-recovery.service")));
-        if (!filesOnly) targets.addAll(Set.of(
-            new ActionTarget(server.id(), "file", "/etc/systemd/system/windowstolinux-workspace-recovery.service"),
-            new ActionTarget(server.id(), "file", "/etc/systemd/system/multi-user.target.wants/windowstolinux-workspace-recovery.service"),
-            new ActionTarget(server.id(), "service-manager", "systemd"),
-            new ActionTarget(server.id(), "systemd-service", "windowstolinux-workspace-recovery.service")));
         return original.withSemantics(new ActionSemantics(operation, Set.copyOf(targets)));
     }
 }

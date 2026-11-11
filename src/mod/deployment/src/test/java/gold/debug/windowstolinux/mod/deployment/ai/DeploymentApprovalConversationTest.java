@@ -275,7 +275,7 @@ class DeploymentApprovalConversationTest {
         assertEquals(1, request.messages().stream().mapToLong(message -> message.text().split("prepare_official_toolchains\\(\\) \\{", -1).length - 1).sum());
         assertFalse(system.contains(fixture.task.id().toString()));
         assertFalse(system.contains(current.path(field).path("requestSha256").asText()));
-        assertFalse(request.messages().getLast().text().contains("def official_url(url):"));
+        assertFalse(request.messages().getLast().text().contains("def official_url(url, point=None, historical=False):"));
         assertTrue(request.messages().stream().flatMap(message -> message.toolResult().stream()).anyMatch(result -> result.callId().equals("prior-native-review-0")),
             "Current source must not consume the original protected historical-batch budget");
         var another = conversation.facts("Review next complete request", toolchainFacts(gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType.NODE), "fixture-route", fixture.task);
@@ -754,11 +754,11 @@ class DeploymentApprovalConversationTest {
             var installerFragments = new ArrayList<String>();
             for (var location : evidence.path("installerLocations")) installerFragments.add(navigationFragment(complete, location));
             String installerNavigation = String.join("\n", installerFragments);
-            assertTrue(installerNavigation.contains("systemctl enable windowstolinux-workspace-recovery.service"));
+            assertFalse(installerNavigation.contains("systemctl enable windowstolinux-workspace-recovery.service"));
             assertTrue(installerNavigation.contains("ExecStart=" + DeploymentManagedHelperBundle.PATH + " workspace-recover"));
             assertTrue(installerNavigation.contains("helper_probe="));
             assertTrue(evidence.path("meaning").asText().contains("separate dispatched verb"));
-            assertTrue(evidence.path("meaning").asText().contains("future workspace-recover execution"));
+            assertTrue(evidence.path("meaning").asText().contains("workspace-recover reports retained candidates"));
         }
         assertEquals(0, fixture.requests.size(), "Navigation only reads local product sources, without API or SSH");
     }
@@ -824,7 +824,7 @@ class DeploymentApprovalConversationTest {
         assertTrue(policy.contains("navigation metadata, not review coverage or execution permission"));
         assertTrue(policy.contains("automatic execution registered by this request"));
         assertTrue(policy.contains("future product commands still require fresh independent review"));
-        assertTrue(policy.contains("complete managed-candidate cleanup scope now"));
+        assertTrue(policy.contains("Candidate cleanup requires its own invocation and authorization"));
         var submitted = gold.debug.windowstolinux.mod.deployment.ai.review.MirroredInstallerTestFixture.restoreCarrier(request.messages());
         assertFalse(submitted.path("currentReviewContract").asText().contains(DeploymentHelperReviewContract.text()));
         assertEquals(json.valueToTree(current.get("completeExecutableInput")), submitted.path("completeExecutableInput"));
@@ -868,7 +868,7 @@ class DeploymentApprovalConversationTest {
                 + " " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.EXPECTED_SHA256),
             "installer_verify_executable " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.BUILD_ENTRY_PATH)
                 + " " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.buildEntrySha256()),
-            "systemctl daemon-reload\nsystemctl enable windowstolinux-workspace-recovery.service",
+            "systemctl daemon-reload",
             "helper_probe=\"$(" + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.PATH) + " probe)\"");
         int previous = -1;
         for (String effect : installationEffects) {
@@ -882,7 +882,8 @@ class DeploymentApprovalConversationTest {
         assertNotNull(futureEntryCheck);
         assertEquals("/completeExecutableInput/sources/managedHelper", futureEntryCheck.path("sourcePointer").asText());
         assertTrue(navigationFragment(submitted, futureEntryCheck).contains("$build_entry_sha256"));
-        assertTrue(installer.contains("systemctl daemon-reload\nsystemctl enable windowstolinux-workspace-recovery.service"));
+        assertTrue(installer.contains("systemctl daemon-reload\nhelper_probe="));
+        assertFalse(installer.contains("systemctl enable windowstolinux-workspace-recovery.service"));
         assertFalse(installer.contains("systemctl start windowstolinux-workspace-recovery.service"));
         assertTrue(fixture.replies.isEmpty());
     }

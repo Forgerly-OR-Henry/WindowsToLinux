@@ -22,7 +22,11 @@ import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics;
+import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType;
 import org.junit.jupiter.api.Test;
 
 class DeploymentCommandEvidenceTest {
@@ -887,14 +891,89 @@ class DeploymentCommandEvidenceTest {
     }
 
     @Test
+    void preflightEvidenceLabelsOnlyTheExactEngineArgumentAndHostTarget() throws Exception {
+        var layout = DeploymentRemoteLayout.original();
+        var server = new ServerId("test-server");
+        var target = new ActionTarget(server.id(), "deployment-build", layout.helperPath());
+        for (String engine : List.of("ordinary", "docker", "podman")) {
+            String invocation = "'" + layout.helperPath() + "' build-preflight '" + engine + "'";
+            String guarded = DeploymentManagedHelperBundle.verifiedCommand(invocation, layout);
+            try (var request = new CommandRequest(guarded, new byte[0], Duration.ofSeconds(30), 65536)) {
+                var action = RemoteActions.command(server, "source-bound-plan", request)
+                    .withSemantics(new ActionSemantics("deployment.build.preflight.v1", Set.of(target)));
+                var facts = DeploymentCommandEvidence.facts(action, request, layout);
+                var preflight = (Map<?, ?>) facts.get("buildPreflight");
+                assertEquals(List.of("buildEngine"), preflight.get("argumentRoles"));
+                assertEquals(engine, preflight.get("buildEngine"));
+                assertEquals(layout.helperPath(), preflight.get("helperTarget"));
+                assertEquals(0, preflight.get("stdinBytes"));
+                assertEquals(action.exactAction(), facts.get("exactAction"));
+                assertEquals("source-bound-plan", facts.get("businessRevision"));
+                var wrongTarget = action.withSemantics(new ActionSemantics("deployment.build.preflight.v1",
+                    Set.of(new ActionTarget(server.id(), "deployment-build", layout.applicationRoot(engine)))));
+                assertFalse(DeploymentCommandEvidence.facts(wrongTarget, request, layout).containsKey("buildPreflight"));
+            }
+        }
+    }
+
+    @Test
+    void toolchainTransportEvidenceDescribesTheExactDiagnosedAndTrackedStdin() throws Exception {
+        var layout = DeploymentRemoteLayout.original();
+        var server = new ServerId("test-server");
+        String revision = "a".repeat(64), task = UUID.randomUUID().toString();
+        var buildTarget = new ActionTarget(server.id(), "deployment-build", layout.toolchains());
+        var diagnostic = new DeploymentToolchainDiagnostics.Request(UUID.randomUUID(), task, server.id(), "b".repeat(64), revision,
+            layout, List.of("prepare", "NODE", "22", "-", "120", "-"));
+        assertToolchainTransport(DeploymentToolchainDiagnostics.command("prepare-diagnosed", diagnostic), diagnostic.bytes(),
+            diagnostic.sha256(), "deployment.toolchain.prepare.v1", Set.of(buildTarget), "toolchainDiagnostic", server, revision, task, layout);
+        var tracked = DeploymentTrackedToolchains.prepare(UUID.randomUUID(), task,
+            new DeploymentTrackedToolchains.Identity(UUID.randomUUID().toString(), "sample-api", 1, revision, "b".repeat(64)),
+            server.id(), layout, DeploymentToolchainType.NODE, "22", "-", 120, "-");
+        assertToolchainTransport(DeploymentTrackedToolchains.command("prepare-tracked", tracked), tracked.bytes(),
+            tracked.sha256(), "deployment.toolchain.prepare.tracked.v1", Set.of(buildTarget, new ActionTarget(server.id(), "task", task)),
+            "trackedToolchain", server, revision, task, layout);
+    }
+
+    private static void assertToolchainTransport(String invocation, byte[] input, String digest, String operation,
+                                                  Set<ActionTarget> targets, String bindingKey, ServerId server,
+                                                  String revision, String task, DeploymentRemoteLayout layout) throws Exception {
+        String script = DeploymentManagedHelperBundle.verifiedCommand(invocation, layout);
+        var semantics = new ActionSemantics(operation, targets);
+        try (var request = new CommandRequest(script, input, Duration.ofSeconds(135), 65536)) {
+            var action = RemoteActions.command(server, revision, request).withSemantics(semantics);
+            var facts = DeploymentCommandEvidence.facts(action, request, layout);
+            var transport = (Map<?, ?>) facts.get("toolchainRequestTransport");
+            assertEquals(0, transport.get("commandRequestStdinFd"));
+            assertEquals(3, transport.get("pythonRequestFd"));
+            assertEquals(0, transport.get("pythonSourceFd"));
+            assertEquals("3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'", transport.get("helperRedirection"));
+            assertEquals(input.length, transport.get("stdinBytes"));
+            assertEquals(digest, transport.get("requestSha256"));
+            assertEquals(layout.helperPath(), transport.get("helperPath"));
+            assertEquals(DeploymentManagedHelperBundle.helperSha256(layout), transport.get("helperSha256"));
+            var binding = (Map<?, ?>) facts.get(bindingKey);
+            assertEquals(task, binding.get("taskId"));
+            assertEquals(new String(input, StandardCharsets.UTF_8), binding.get("originalRequestUtf8"));
+            assertEquals(action.exactAction(), facts.get("exactAction"));
+            assertArrayEquals(input, request.stdin());
+        }
+        try (var drift = new CommandRequest(script.replace("'" + digest + "'", "'" + "f".repeat(64) + "'"),
+                input, Duration.ofSeconds(135), 65536)) {
+            var driftIntent = RemoteActions.command(server, revision, drift).withSemantics(semantics);
+            assertThrows(IllegalArgumentException.class, () -> DeploymentCommandEvidence.facts(driftIntent, drift, layout));
+        }
+    }
+
+    @Test
     void ordinaryInstalledRequestsDropAtLeastNinetyPercentWithoutChangingActualBytes() throws Exception {
         var json = new ObjectMapper();
         for (String suffix : java.util.List.of("", "\nprintf 'additional visible command'\n")) {
             String command = DeploymentManagedHelperBundle.verifiedCommand("'" + DeploymentManagedHelperBundle.PATH + "' build-preflight 'ordinary'" + suffix);
             try (var request = new CommandRequest(command, new byte[0], Duration.ofSeconds(30), 8192)) {
                 var action = RemoteActions.command(new ServerId("test-server"), "frozen", request).withSemantics(new ActionSemantics(
-                    "deployment.build.preflight.v1", Set.of(new ActionTarget("test-server", "deployment-build", "/fixture/candidate"))));
+                    "deployment.build.preflight.v1", Set.of(new ActionTarget("test-server", "deployment-build", DeploymentManagedHelperBundle.PATH))));
                 var compact = DeploymentCommandEvidence.facts(action, request);
+                assertEquals(suffix.isEmpty(), compact.containsKey("buildPreflight"));
                 var old = new java.util.LinkedHashMap<>(compact);
                 old.put("installedHelperScript", DeploymentManagedHelperBundle.renderScript());
                 int before = json.writeValueAsBytes(old).length + 8000;
