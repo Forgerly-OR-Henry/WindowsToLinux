@@ -33,9 +33,9 @@ class DeploymentAgentPublicationCorrectionProgramTest {
         return new DeploymentAgentPublicationCorrectionProgram.Binding(f,new DeploymentAgentPublicationCorrectionProgram.PriorFollowup(UUID.fromString("11111111-2222-4333-8444-555555555555"),491,498,"d".repeat(64),"e".repeat(64),new DeploymentAgentPublicationContractDiagnosticFollowupProgram(layout).sourceVersion()),530,"f".repeat(64));
     }
     @Test void correctionAssemblesCompleteSourceAndReachesTheFixedEntry()throws Exception{
-        assertEquals("ee44f8cce327f38b8b6c519829ef8581301261eee7fbbdc77fb47ce14053f113",new DeploymentAgentPublicationContinuationProgram(layout).sourceVersion());
-        assertEquals("c9c21e6e00a04dec8fd64767cee299eae47d684d88c2f5036efa9b0923cbbc36",new DeploymentAgentPublicationContractDiagnosticProgram(layout).sourceVersion());
-        assertEquals("4bce53b129711ad351344107e8f298b2588c20f0ec82f9856d9b5e3b19eb2021",new DeploymentAgentPublicationRecoveryProgram(layout).version());
+        assertEquals("27a8559aabebfdc35e9499a792d3763bf64be3c0eeb1dec23813642b8b5af22f",new DeploymentAgentPublicationContinuationProgram(layout).sourceVersion());
+        assertEquals("8fb8931aa61b889a3527e78d42fd35b61deaaf77f23e7096d347abef7ab936bd",new DeploymentAgentPublicationContractDiagnosticProgram(layout).sourceVersion());
+        assertEquals("ddc76b6ad25a7d97ef164d3900f7181e3985093155e31e59ef906c26d084961b",new DeploymentAgentPublicationRecoveryProgram(layout).version());
         try(var r=program.request(binding(),UUID.randomUUID());var decoded=program.decode(r.command())){
             assertEquals(r.binding(),decoded.binding());assertArrayEquals(program.source().getBytes(StandardCharsets.UTF_8),r.command().stdin());
             assertEquals(Duration.ofSeconds(180),r.command().timeout());assertEquals(16384,r.command().outputLimitBytes());assertEquals(9,r.resourceTargets().size());

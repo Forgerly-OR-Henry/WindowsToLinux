@@ -103,11 +103,11 @@ class DeploymentManagedHelperTest {
 
     @Test
     void defaultInstallersPinCurrentSharedRuntimeBytes() throws Exception {
-        assertEquals("33f9eff706b0b8d5cde50f3524a6b8b79eaaa4a87aa6a60b4c74086cc8b92329",
+        assertEquals("65a79c08564141a8205510a7a414c19c145cbffb0a0dd35f7081cd916cf1c845",
             digest(DeploymentHelperInstallerScript.render()));
-        assertEquals("e5d7b3bfc489ae87319e0f6e07df2ada404cad66630edd5ee347cd34da2e45da",
+        assertEquals("a98632a69191e878e81c291897058ad79b1069964f48ee3b07531ad8c31e7097",
             digest(DeploymentHelperInstallerScript.renderHelperInstallation()));
-        assertEquals("e04f397cdd8902072c52ba19a53d11d222f51f4262db375035d0be167a86f384",
+        assertEquals("96b5af7b3aa362334c08af9fe8939ca965921bfb3308a984127c8759a23c6bcf",
             digest(DeploymentHelperInstallerScript.renderTracked(task().id(),
                 UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), "a".repeat(64),
                 digest(DeploymentHelperInstallerScript.render()))));
@@ -346,7 +346,10 @@ class DeploymentManagedHelperTest {
         int parentGuard = installation.indexOf("installer_trusted_path \"$installer_parent\" directory");
         int createHelperDirectory = installation.indexOf("/usr/bin/install -d -o root -g root -m 755 -- \"$installer_directory\"");
         assertTrue(parentGuard >= 0 && createHelperDirectory > parentGuard);
-        assertTrue(installation.indexOf("installer_trusted_path \"$installer_file\" file") < installation.indexOf("/usr/bin/mv -fT"));
+        int priorFileCheck = installation.indexOf("installer_trusted_path \"$installer_file\" file");
+        int publishEntry = installation.indexOf("installer_publish_executable \"$entry_tmp\"");
+        int publishHelper = installation.indexOf("installer_publish_executable \"$helper_tmp\"");
+        assertTrue(priorFileCheck >= 0 && publishEntry > priorFileCheck && publishHelper > publishEntry);
         assertTrue(installation.contains("(( (8#$installer_mode & 022) == 0 ))"));
         assertTrue(installation.contains("acl sudo iproute2 sqlite3\n"));
         assertTrue(installation.contains("acl sudo iproute sqlite\n"));
@@ -436,7 +439,7 @@ class DeploymentManagedHelperTest {
             + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.BUILD_ENTRY_PATH) + " "
             + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.buildEntrySha256());
         int bound = script.indexOf(binding);
-        int published = script.indexOf("/usr/bin/mv -fT -- \"$entry_tmp\"");
+        int published = script.indexOf("installer_publish_executable \"$entry_tmp\"");
         assertTrue(published >= 0 && bound > published);
         assertTrue(bound < script.indexOf("\nsystemctl daemon-reload\nhelper_probe="));
         assertFalse(script.contains("systemctl enable windowstolinux-workspace-recovery.service"));

@@ -26,7 +26,7 @@ public final class DeploymentAgentHelperSourceEvidence {
     }
 
     private static final List<Range> RANGES = List.of(
-        new Range("helper_protocol_and_paths", "#!/usr/bin/env bash", "reject() {", false),
+        new Range("helper_protocol_and_paths", "#!/bin/bash -p", "reject() {", false),
         function("reject", "require_root"), function("require_root", "require_deployer"),
         function("require_deployer", "require_app"), function("require_app", "require_candidate"),
         function("require_candidate", "require_digest"), function("require_digest", "require_secret_identifier"),

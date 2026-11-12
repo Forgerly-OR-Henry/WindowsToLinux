@@ -22,6 +22,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 class DeploymentHelperInstallerContractTest {
     private static final String UNTRUSTED_PRIOR = "#!/bin/sh\n# untrusted prior bytes\n";
     private static final String CHANGED_PRIOR = "#!/bin/sh\n# changed after admission\n";
+    private static final String LEGACY_HELPER = "#!/bin/sh\n# fixture managed helper from a known version\n";
+    private static final String LEGACY_ENTRY = "#!/bin/sh\n# fixture build entry from a known version\n";
+    private static final String LEGACY_HELPER_DIGEST = "1a5970444c392ca120874bb39c8e6c0542e088b1d9a186d15affb67b05654836";
+    private static final String LEGACY_ENTRY_DIGEST = "6eb9b24576e51e318044f67b1c77fc34b41c4c979cadfec1a5eb799c5122a91a";
     private Path temporary;
 
     @BeforeEach
@@ -115,7 +119,7 @@ class DeploymentHelperInstallerContractTest {
 
     @Test
     void publishedFilesAreVerifiedAndProbeFailureCannotWriteSuccessReceipt() throws Exception {
-        var fixture = fixture(true, "none");
+        var fixture = fixture(true, "none", "absent", "none");
         var result = execute(fixture.script());
         assertEquals(29, result.exit(), result.output());
         assertEquals(DeploymentManagedHelperBundle.renderScript(), Files.readString(temporary.resolve("helper/managed-helper")));
@@ -127,7 +131,7 @@ class DeploymentHelperInstallerContractTest {
 
     @Test
     void successfulPublicationHoldsItsDirectoryLockUntilTheFinalReceipt() throws Exception {
-        var fixture = fixture(false, "none");
+        var fixture = fixture(false, "none", "absent", "none");
         var result = execute(fixture.script());
         assertEquals(0, result.exit(), result.output());
         assertTrue(Files.readString(fixture.receipt()).endsWith("PHASE=SUCCEEDED\n"));
@@ -142,7 +146,7 @@ class DeploymentHelperInstallerContractTest {
         assertFalse(installer.contains("flock -u"));
         assertFalse(installer.contains("exec {installer_lock}<&-"));
         assertTrue(installer.indexOf("installer_verify_executable \"$entry_tmp\"")
-            < installer.indexOf("/usr/bin/mv -fT -- \"$helper_tmp\""));
+            < installer.indexOf("installer_publish_executable \"$entry_tmp\""));
         assertTrue(installer.lastIndexOf("PREPARE_REJECT=build-entry-installed-digest") < installer.indexOf("helper_probe="));
     }
 
@@ -154,6 +158,44 @@ class DeploymentHelperInstallerContractTest {
         assertEquals(DeploymentManagedHelperBundle.renderScript(), Files.readString(temporary.resolve("helper/managed-helper")));
         assertEquals(DeploymentManagedHelperBundle.renderBuildEntry(), Files.readString(temporary.resolve("helper/build-entry")));
         assertTrue(Files.readString(fixture.receipt()).endsWith("PHASE=SUCCEEDED\n"));
+    }
+
+    @Test
+    void currentExecutablesAreVerifiedWithoutReplacement() throws Exception {
+        var fixture = fixture(false, "none");
+        var result = execute(fixture.script());
+        assertEquals(0, result.exit(), result.output());
+        assertEquals("daemon-reload\nprobe\nreceipt\n", Files.readString(temporary.resolve("effects")));
+    }
+
+    @Test
+    void knownLegacyUpgradeCanFinishWithANewReceiptAfterTheFirstFileWasPublished() throws Exception {
+        var interrupted = fixture(false, "none", "legacy", "before-helper");
+        var first = execute(interrupted.script());
+        assertEquals(29, first.exit(), first.output());
+        assertEquals(LEGACY_HELPER, Files.readString(temporary.resolve("helper/managed-helper")));
+        assertEquals(DeploymentManagedHelperBundle.renderBuildEntry(), Files.readString(temporary.resolve("helper/build-entry")));
+        assertTrue(Files.readString(interrupted.receipt()).endsWith("PHASE=STARTED\n"));
+        assertEquals("publish\n", Files.readString(temporary.resolve("effects")));
+
+        var retry = fixture(false, "none", "retain", "none");
+        var second = execute(retry.script());
+        assertEquals(0, second.exit(), second.output());
+        assertEquals(DeploymentManagedHelperBundle.renderScript(), Files.readString(temporary.resolve("helper/managed-helper")));
+        assertEquals(DeploymentManagedHelperBundle.renderBuildEntry(), Files.readString(temporary.resolve("helper/build-entry")));
+        assertTrue(Files.readString(interrupted.receipt()).endsWith("PHASE=STARTED\n"));
+        assertTrue(Files.readString(retry.receipt()).endsWith("PHASE=SUCCEEDED\n"));
+        assertEquals("publish\npublish\ndaemon-reload\nprobe\nreceipt\n", Files.readString(temporary.resolve("effects")));
+    }
+
+    @Test
+    void originallyAbsentTargetIsNotOverwrittenIfItAppearsDuringPublication() throws Exception {
+        var fixture = fixture(false, "none", "absent", "appeared");
+        var result = execute(fixture.script());
+        assertNotEquals(0, result.exit(), result.output());
+        assertEquals(CHANGED_PRIOR, Files.readString(temporary.resolve("helper/build-entry")));
+        assertFalse(Files.exists(temporary.resolve("helper/managed-helper")));
+        assertTrue(Files.readString(fixture.receipt()).endsWith("PHASE=STARTED\n"));
     }
 
     @Test
@@ -189,28 +231,30 @@ class DeploymentHelperInstallerContractTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"helper", "entry", "metadata"})
+    @ValueSource(strings = {"helper", "entry", "metadata", "wrong-target"})
     void untrustedPriorExecutableRejectsBeforeLayoutPackagesOrReceipt(String prior) throws Exception {
         var fixture = fixture(false, "none", prior, "none");
         var result = execute(fixture.script());
         assertEquals(64, result.exit(), result.output());
+        boolean entry = prior.equals("entry");
         assertTrue(result.output().contains(prior.equals("metadata") ? "helper-prior-file-identity"
-            : (prior.equals("helper") ? "helper" : "build-entry") + "-prior-content-untrusted"), result.output());
+            : (entry ? "build-entry" : "helper") + "-prior-content-untrusted"), result.output());
         assertFalse(Files.exists(temporary.resolve("preflight-effects")), "No layout or package effects before admission");
         assertFalse(Files.exists(temporary.resolve("effects")), "No publication or service effects before admission");
         assertFalse(Files.exists(fixture.receipt()), "Rejected prior files must not create a STARTED receipt");
-        if (!prior.equals("metadata")) assertEquals(UNTRUSTED_PRIOR, Files.readString(temporary.resolve(
-            prior.equals("helper") ? "helper/managed-helper" : "helper/build-entry")));
+        if (!prior.equals("metadata")) assertEquals(prior.equals("wrong-target") ? LEGACY_ENTRY : UNTRUSTED_PRIOR,
+            Files.readString(temporary.resolve(entry ? "helper/build-entry" : "helper/managed-helper")));
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"lock", "staging"})
+    @ValueSource(strings = {"lock", "staging", "staging-known"})
     void changedPriorBytesAreRecheckedUnderLockAndBeforePublication(String mutation) throws Exception {
         var fixture = fixture(false, "none", "same", mutation);
         var result = execute(fixture.script());
         assertEquals(64, result.exit(), result.output());
-        assertTrue(result.output().contains("helper-prior-content-untrusted"), result.output());
-        assertEquals(CHANGED_PRIOR, Files.readString(temporary.resolve("helper/managed-helper")));
+        boolean known = mutation.equals("staging-known");
+        assertTrue(result.output().contains(known ? "installer-prior-changed" : "helper-prior-content-untrusted"), result.output());
+        assertEquals(known ? LEGACY_HELPER : CHANGED_PRIOR, Files.readString(temporary.resolve("helper/managed-helper")));
         assertFalse(Files.exists(temporary.resolve("effects")), "No replacement may follow a failed locked recheck");
         if (mutation.equals("lock")) {
             assertFalse(Files.exists(temporary.resolve("preflight-effects")));
@@ -230,10 +274,12 @@ class DeploymentHelperInstallerContractTest {
             int lock = script.indexOf("prepare_stage=installer-lock");
             int initialization = script.indexOf(DeploymentRemoteLayoutAdmission.initialize(layout));
             assertTrue(check >= 0 && check < lock && lock < initialization);
-            assertTrue(script.substring(lock, initialization).contains("\ninstaller_prior_files\n"));
+            String underLock = script.substring(lock, initialization);
+            assertTrue(underLock.contains("\ninstaller_prior_files\n") || underLock.contains("\ninstaller_capture_prior\n"));
             assertTrue(script.indexOf(DeploymentManagedHelperBundle.helperSha256(layout)) < check);
             assertTrue(script.indexOf(DeploymentManagedHelperBundle.buildEntrySha256(layout)) < check);
         }
+        assertFalse(DeploymentHelperInstallerScript.renderFiles(layout).contains("helper:" + LEGACY_HELPER_DIGEST));
     }
 
     private Fixture fixture(boolean probeFailure, String damaged) throws Exception {
@@ -271,15 +317,26 @@ class DeploymentHelperInstallerContractTest {
                     .replace("command apt-get \"$@\"", "fixture_packages \"$@\"")
                     .replace("command dnf \"$@\"", "fixture_packages \"$@\"")
                     .replace("helper_probe=\"$('" + base + "/helper/managed-helper' probe)\"", "helper_probe=\"$(fixture_probe)\"")
+                    .replace("helper:" + LEGACY_HELPER_DIGEST, "helper:" + sha(LEGACY_HELPER))
+                    .replace("build-entry:" + LEGACY_ENTRY_DIGEST, "build-entry:" + sha(LEGACY_ENTRY))
                     .replace(DeploymentHelperInstallerScript.renderSecurityObservationFunctions(), "")
                     .replace(DeploymentHelperInstallerScript.renderSecurityInvariant(), "");
                 mapped.append(text);
             }
         }
         Files.createDirectories(temporary.resolve("helper"));
-        if (!prior.equals("absent")) {
-            Files.writeString(temporary.resolve("helper/managed-helper"), prior.equals("helper") ? UNTRUSTED_PRIOR : DeploymentManagedHelperBundle.renderScript());
-            Files.writeString(temporary.resolve("helper/build-entry"), prior.equals("entry") ? UNTRUSTED_PRIOR : DeploymentManagedHelperBundle.renderBuildEntry());
+        if (!prior.equals("absent") && !prior.equals("retain")) {
+            Files.writeString(temporary.resolve("helper/managed-helper"), switch (prior) {
+                case "helper" -> UNTRUSTED_PRIOR;
+                case "legacy" -> LEGACY_HELPER;
+                case "wrong-target" -> LEGACY_ENTRY;
+                default -> DeploymentManagedHelperBundle.renderScript();
+            });
+            Files.writeString(temporary.resolve("helper/build-entry"), switch (prior) {
+                case "entry" -> UNTRUSTED_PRIOR;
+                case "legacy" -> LEGACY_ENTRY;
+                default -> DeploymentManagedHelperBundle.renderBuildEntry();
+            });
         }
         String hooks = "fixture=" + DeploymentHelperInstallerScript.quote(base) + "\nfixture_prior="
             + DeploymentHelperInstallerScript.quote(prior) + "\nfixture_mutation=" + DeploymentHelperInstallerScript.quote(mutation) + "\n" + """
@@ -293,8 +350,11 @@ class DeploymentHelperInstallerContractTest {
             fixture_chown() { :; }
             fixture_chmod() { :; }
             fixture_sync() {
-              if [ "$fixture_mutation" = staging ] && [[ "${@: -1}" = */.build-entry.* ]]; then
-                printf '#!/bin/sh\n# changed after admission\n' > "$fixture/helper/managed-helper"
+              if [[ "${@: -1}" = */.build-entry.* ]]; then
+                case "$fixture_mutation" in
+                  staging) printf '#!/bin/sh\n# changed after admission\n' > "$fixture/helper/managed-helper" ;;
+                  staging-known) printf '#!/bin/sh\n# fixture managed helper from a known version\n' > "$fixture/helper/managed-helper" ;;
+                esac
               fi
             }
             fixture_stat() {
@@ -322,6 +382,10 @@ class DeploymentHelperInstallerContractTest {
             }
             fixture_mv() {
               [ -e "/dev/fd/$installer_lock" ] && [ "/dev/fd/$installer_lock" -ef "$fixture/helper" ] || return 28
+              if [ "$fixture_mutation" = before-helper ] && [[ "${@: -1}" = */managed-helper ]]; then return 29; fi
+              if [ "$fixture_mutation" = appeared ] && [[ "${@: -1}" = */build-entry ]]; then
+                printf '#!/bin/sh\n# changed after admission\n' > "$fixture/helper/build-entry"
+              fi
               case "${@: -1}" in *.receipt) printf 'receipt\n' >> "$fixture/effects";; *) printf 'publish\n' >> "$fixture/effects";; esac
               /usr/bin/mv "$@"
             }

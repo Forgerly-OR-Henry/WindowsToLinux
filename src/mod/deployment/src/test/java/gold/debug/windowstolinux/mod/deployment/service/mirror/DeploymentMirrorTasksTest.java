@@ -5,14 +5,20 @@ import java.lang.reflect.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerService;
 import gold.debug.windowstolinux.appapi.server.model.*;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandEvidence;
 import gold.debug.windowstolinux.mod.deployment.config.mirror.MirrorCatalog;
 import gold.debug.windowstolinux.mod.deployment.db.setting.DeploymentMirrorStore;
 
@@ -149,12 +155,29 @@ class DeploymentMirrorTasksTest extends DeploymentRuntimeFixture {
             start(runtime, true);
             var original = noNetwork(runtime.modContexts().get(OWNER).context(), new AtomicInteger());
             var calls = new AtomicInteger();
+            var reviewed = new AtomicReference<ActionIntent>();
             var session = Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class},
                 (proxy, method, args) -> {
                     if (method.getName().equals("close")) return null;
                     assertEquals("execute", method.getName()); calls.incrementAndGet();
-                    String input = new String(((gold.debug.windowstolinux.appapi.linux.command.CommandRequest)args[0]).stdin(), java.nio.charset.StandardCharsets.UTF_8);
+                    var request = (CommandRequest) args[0];
+                    byte[] inputBytes = request.stdin();
+                    String input = new String(inputBytes, java.nio.charset.StandardCharsets.UTF_8);
                     assertTrue(input.contains("/etc/os-release")); assertFalse(input.contains("curl"));
+                    assertEquals(RemoteActions.command(TARGET, reviewed.get().revision(), request).exactAction(), reviewed.get().exactAction());
+                    assertEquals("exec /usr/bin/env -i LC_ALL=C PATH=/usr/bin:/bin /bin/bash --noprofile --norc -p -s", request.script());
+                    var facts = DeploymentCommandEvidence.facts(reviewed.get(), request);
+                    assertEquals(input, facts.get("completeExecutableInput"));
+                    var executable = (Map<?, ?>) facts.get("mirrorCompatibilityInput");
+                    assertEquals("/completeExecutableInput", executable.get("scriptPointer"));
+                    assertEquals(inputBytes.length, executable.get("stdinBytes"));
+                    assertEquals(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(inputBytes)),
+                        executable.get("stdinSha256"));
+                    var startup = (Map<?, ?>) facts.get("builtInSshStartup");
+                    assertEquals(SshCommandFrameProtocol.FRAME_LAUNCHER, startup.get("frameLauncher"));
+                    assertEquals(SshCommandFrameProtocol.SCRIPT_LAUNCHER, startup.get("requestLauncher"));
+                    assertEquals(3, startup.get("requestScriptFd"));
+                    assertEquals(0, startup.get("originalStdinFd"));
                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(
                         Optional.of(0), "ubuntu\n", "", false)), Optional.empty());
                 });
@@ -165,6 +188,7 @@ class DeploymentMirrorTasksTest extends DeploymentRuntimeFixture {
                     assertEquals("approve", method.getName());
                     var intent = (gold.debug.windowstolinux.appapi.task.action.ActionIntent)args[0];
                     assertEquals("deployment.mirror.compatibility.v1", intent.semantics().orElseThrow().operation());
+                    assertTrue(reviewed.compareAndSet(null, intent));
                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID())), Optional.empty());
                 });
             var context = (ModContext)Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
@@ -180,12 +204,13 @@ class DeploymentMirrorTasksTest extends DeploymentRuntimeFixture {
                 DeploymentMirrorTasks.privacyPrompt(() -> { throw new AssertionError("Other distributions must not activate automatic matching"); });
                 var service = new DeploymentMirrorTasks(context);
                 service.capture(task, TARGET, Set.of(DownloadPoint.APT_DEBIAN, DownloadPoint.APT_UBUNTU, DownloadPoint.NODE_PACKAGE));
-                var policy = ResolvedMirrorPolicy.fromJson(DeploymentMirrorTasks.policy(task), task.id().toString(), TARGET.id());
+                var capturedPolicy = DeploymentMirrorTasks.policy(task);
+                var policy = ResolvedMirrorPolicy.fromJson(capturedPolicy, task.id().toString(), TARGET.id());
                 assertEquals(1, policy.points().get(DownloadPoint.APT_UBUNTU).size());
                 assertTrue(policy.points().get(DownloadPoint.APT_DEBIAN).isEmpty());
                 assertTrue(policy.country().isEmpty()); assertEquals(1, calls.get());
                 DeploymentMirrorTasks.forget(task); service.restore(task);
-                assertEquals(policy.toJson(), DeploymentMirrorTasks.policy(task));
+                assertEquals(capturedPolicy, DeploymentMirrorTasks.policy(task));
                 assertEquals(1, calls.get());
                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
             });

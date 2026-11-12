@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
@@ -21,6 +22,7 @@ import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainD
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
 
 /** Adds complete executable input while keeping protected data payloads opaque. / 增补完整可执行输入，受保护数据载荷继续保持不透明。 */
 public final class DeploymentCommandEvidence {
@@ -124,6 +126,8 @@ public final class DeploymentCommandEvidence {
                     : operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
                     ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describe(executable, layout) : executable;
                 facts.put("completeExecutableInput", described);
+                if (operation.equals("deployment.mirror.compatibility.v1"))
+                    facts.put("mirrorCompatibilityInput", DeploymentMirrorTasks.compatibilityEvidence(request.script(), executable, input));
                 mirrorInput.ifPresent(value -> facts.put("mirrorInputTask", value.task().toString()));
                 if (mirrorInput.isPresent() && described instanceof Map<?, ?> represented
                     && gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.MIRROR_FORMAT.equals(represented.get("format")))
@@ -216,6 +220,14 @@ public final class DeploymentCommandEvidence {
             facts.put("platformContractRevision", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.REVISION);
         }
         facts.put("operation", operation);
+        facts.put("builtInSshStartup", Map.of(
+            "frameLauncher", SshCommandFrameProtocol.FRAME_LAUNCHER,
+            "requestLauncher", SshCommandFrameProtocol.SCRIPT_LAUNCHER,
+            "requestScriptFd", 3, "originalStdinFd", 0,
+            "scope", "Built-in SSH exec transport implementation after the SSH server dispatches the fixed frame. "
+                + "Both Bash processes start with privileged mode enabled; this suppresses startup imports without changing the SSH account or granting privileges. "
+                + "The SSH server, its account startup policy and installed interpreters are host prerequisites. "
+                + "These facts describe the shipped code, not a live host measurement. Review further interpreters launched by the request."));
         if (operation.equals("deployment.model.command.v1")) {
             facts.put("commandOrigin", "AI_GENERATED_BODY_WITH_PRODUCT_RECEIPT_WRAPPER");
             facts.put("executionScope", "Selected SSH host identity; not a project-build sandbox. Deployment and authorized host prerequisites only. modelCommand supplies the exact model body and its untrusted rationale, separated from the byte-validated product envelope. The product envelope records only its own task/operation/body-bound receipt. The model body must not alter receipt or approval files. Review both bodies and all host effects; this description does not grant permission.");

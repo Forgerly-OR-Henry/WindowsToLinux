@@ -28,6 +28,19 @@ public final class DeploymentMirrorTasks {
     private static final Set<UUID> ADMITTED = ConcurrentHashMap.newKeySet();
     private static volatile BooleanSupplier privacy = () -> false;
     private static final String PREPARATION_END = "\n)\n";
+    private static final String COMPATIBILITY_LAUNCHER =
+        "exec /usr/bin/env -i LC_ALL=C PATH=/usr/bin:/bin /bin/bash --noprofile --norc -p -s";
+    private static final String COMPATIBILITY_SCRIPT = """
+        set -eu
+        while IFS='=' read -r key value; do
+          [ "$key" = ID ] || continue
+          value="$(builtin printf '%s' "$value" | /usr/bin/tr -d '\\042\\047')"
+          case "$value" in ''|*[!a-z0-9_-]*) exit 64;; esac
+          builtin printf '%s\\n' "$value"
+          exit 0
+        done < /etc/os-release
+        exit 69
+        """;
     private final ModContext context;
 
     public DeploymentMirrorTasks(ModContext context) { this.context = Objects.requireNonNull(context); }
@@ -432,18 +445,8 @@ public final class DeploymentMirrorTasks {
 
     /** Deployment compatibility inspection is separate from region detection and performs no installation. */
     private DownloadPoint packagePoint(TaskContext task, ServerId server) throws ApiException {
-        String script = """
-            set -eu
-            while IFS='=' read -r key value; do
-              [ "$key" = ID ] || continue
-              value="$(builtin printf '%s' "$value" | /usr/bin/tr -d '\\042\\047')"
-              case "$value" in ''|*[!a-z0-9_-]*) exit 64;; esac
-              builtin printf '%s\\n' "$value"
-              exit 0
-            done < /etc/os-release
-            exit 69
-            """;
-        try (var request = new CommandRequest("/bin/bash --noprofile --norc -s", script.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(10), 1024)) {
+        try (var request = new CommandRequest(COMPATIBILITY_LAUNCHER, COMPATIBILITY_SCRIPT.getBytes(StandardCharsets.UTF_8),
+            Duration.ofSeconds(10), 1024)) {
             var intent = RemoteActions.command(server, "mirror-package-platform-v1", request).withSemantics(
                 new gold.debug.windowstolinux.appapi.task.action.ActionSemantics("deployment.mirror.compatibility.v1", Set.of(
                     new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "task", task.id().toString()))));
@@ -474,6 +477,16 @@ public final class DeploymentMirrorTasks {
         }
         throw new ApiException(new Problem(ProblemCode.INCOMPATIBLE, "MIRROR_SYSTEM_SOURCE_PLATFORM_UNKNOWN",
             "The target distribution has no admitted system repository policy", Map.of(), Optional.empty()));
+    }
+
+    /** Binds the fixed launcher and the decoded review text to the exact executable stdin. */
+    public static Map<String, Object> compatibilityEvidence(String launcher, String executable, byte[] input) {
+        if (!COMPATIBILITY_LAUNCHER.equals(launcher) || !COMPATIBILITY_SCRIPT.equals(executable)
+            || !java.util.Arrays.equals(executable.getBytes(StandardCharsets.UTF_8), input))
+            throw new IllegalArgumentException("Mirror compatibility command differs from the fixed launcher or script");
+        return Map.of("launcher", launcher, "scriptPointer", "/completeExecutableInput", "stdinEncoding", "UTF-8",
+            "stdinBytes", input.length, "stdinSha256", sha256(input),
+            "sourceRepresentation", "Count and hash the decoded JSON string including its final newline, without JSON quotes or escape syntax.");
     }
 
     private Optional<String> exitAddress(TaskContext task, ServerId server, MirrorCatalog catalog) throws ApiException {

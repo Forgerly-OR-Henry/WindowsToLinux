@@ -333,6 +333,47 @@ final class DeploymentMirrorRuntimeTest {
     }
 
     @Test
+    void privilegedBootstrapReadsDistributionMetadataAsData() throws Exception {
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isExecutable(Path.of(bash)), "A real Bash binary is required");
+        String prefix = "BOOTSTRAP_SHELL = ";
+        String encoded = DeploymentMirrorRuntime.runtimeSource().lines().filter(line -> line.startsWith(prefix))
+            .findFirst().orElseThrow().substring(prefix.length());
+        String bootstrap = new com.fasterxml.jackson.databind.ObjectMapper().readValue(encoded, String.class);
+        assertFalse(bootstrap.contains(". /etc/os-release"));
+        assertFalse(bootstrap.contains("source /etc/os-release"));
+        String point = bootstrap.substring(0, bootstrap.indexOf("\nwtl_repository_copy()"))
+            .replace("/etc/os-release", "./os-release").replace("/usr/lib/os-release", "./vendor-release");
+        Path directory = directory();
+        try {
+            Files.writeString(directory.resolve("point.sh"), "set -euo pipefail\n" + point + "\n" + """
+                check_point() {
+                  printf '%s\n' 'NAME="Linux"' 'ID_LIKE="debian rhel"' "$1" > os-release
+                  [ "$(wtl_system_point)" = "$2" ]
+                }
+                check_point 'ID=debian' APT_DEBIAN
+                check_point 'ID="ubuntu"' APT_UBUNTU
+                check_point "ID='fedora'" DNF_FEDORA
+                check_point 'ID=rocky' DNF_ROCKY
+                check_point 'ID=almalinux' DNF_ALMA
+                check_point 'ID=ol' DNF_ORACLE
+                check_point 'ID=centos' DNF_CENTOS_STREAM
+                printf '%s\n' 'ID=unsupported' 'ID_LIKE="debian"' > os-release
+                if wtl_system_point; then exit 1; fi
+                /usr/bin/rm -- os-release
+                printf '%s' 'ID="ubuntu"' > vendor-release
+                [ "$(wtl_system_point)" = APT_UBUNTU ]
+                printf 'SYSTEM_POINT=PASS\n'
+                """);
+            String output = execute(directory, List.of(bash, "--noprofile", "--norc", "./point.sh"), Duration.ofSeconds(15));
+            assertTrue(output.contains("MIRROR_REJECT=unmapped-system-distribution"), output);
+            assertTrue(output.contains("SYSTEM_POINT=PASS"), output);
+        } finally {
+            cleanup(directory);
+        }
+    }
+
+    @Test
     void nativeHelperAptPolicyReachesPlanAndFinalNoDownloadArguments() throws Exception {
         Path directory = Files.createTempDirectory("native-helper-apt-");
         try {

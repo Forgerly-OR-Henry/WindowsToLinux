@@ -6,6 +6,7 @@ import java.nio.charset.*;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
@@ -23,11 +24,11 @@ final class SshCommandFrame implements AutoCloseable {
         case "$length" in ''|*[!0-9]*) exit 125;; esac
         [ "$length" -le 16777216 ] || exit 125
         IFS= builtin read -r -N "$length" script || exit 125
-        exec /bin/bash --noprofile --norc -p /dev/fd/3 3< <(builtin printf '%s' "$script")
-        """;
+        %s 3< <(builtin printf '%%s' "$script")
+        """.formatted(SshCommandFrameProtocol.SCRIPT_LAUNCHER);
 
     /** Constant SSH exec request, containing no author script or secret input. / 不含作者脚本或秘密输入的固定 SSH exec 请求。 */
-    static final String COMMAND = "exec /usr/bin/env BASH_ENV=/dev/null ENV=/dev/null LC_ALL=C /bin/bash --noprofile --norc -p -c '"
+    static final String COMMAND = SshCommandFrameProtocol.FRAME_LAUNCHER + " '"
         + BOOTSTRAP.replace("'", "'\"'\"'") + "'";
 
     /** Owned UTF-8 script bytes, wiped after actual sender termination. / 发送线程实际终止后清零的所属 UTF-8 脚本字节。 */

@@ -862,8 +862,11 @@ class DeploymentApprovalConversationTest {
             "installer_verify_executable \"$helper_tmp\" " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.EXPECTED_SHA256),
             "installer_verify_executable \"$entry_tmp\" " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.buildEntrySha256()),
             "/usr/bin/sync -f \"$helper_tmp\"\n/usr/bin/sync -f \"$entry_tmp\"",
-            "/usr/bin/mv -fT -- \"$helper_tmp\" " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.PATH),
-            "/usr/bin/mv -fT -- \"$entry_tmp\" " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.BUILD_ENTRY_PATH),
+            "installer_capture_prior\nprepare_stage=helper-publication",
+            "installer_publish_executable \"$entry_tmp\" " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.BUILD_ENTRY_PATH)
+                + " " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.buildEntrySha256()) + " build-entry \"$installer_prior_entry\"",
+            "installer_publish_executable \"$helper_tmp\" " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.PATH)
+                + " " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.EXPECTED_SHA256) + " helper \"$installer_prior_helper\"",
             "installer_verify_executable " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.PATH)
                 + " " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.EXPECTED_SHA256),
             "installer_verify_executable " + DeploymentHelperInstallerScript.quote(DeploymentManagedHelperBundle.BUILD_ENTRY_PATH)

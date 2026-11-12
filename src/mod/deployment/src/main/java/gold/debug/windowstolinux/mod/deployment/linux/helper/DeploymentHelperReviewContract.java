@@ -9,7 +9,7 @@ public final class DeploymentHelperReviewContract {
     public static final String REVISION = "managed-helper-review.v2";
 
     /** Independently pinned helper source identity. / 独立固定的 helper 源码身份。 */
-    private static final String HELPER_SHA = "1a5970444c392ca120874bb39c8e6c0542e088b1d9a186d15affb67b05654836";
+    private static final String HELPER_SHA = "d10a316ac0078b4dabb286409e12845376d719578c9e2c029686deaf369cc3b4";
 
     /** Independently pinned non-root build entry identity. / 独立固定的非 root 构建入口身份。 */
     private static final String BUILD_SHA = "4fdd1d5d6661c31382647512e4efd96d6e5eb5ef1296512e2a3df25f49706e42";
@@ -41,6 +41,7 @@ public final class DeploymentHelperReviewContract {
         Helper @wtl:helper-directory@/managed-helper SHA256 %s; build-entry @wtl:helper-directory@/build-entry SHA256 %s.
         Only these locally checked, independently pinned sources are platform code.
         Installed calls require the exact pre-invocation guard: root-owned non-symlink helper/parents, no group/world write, exact SHA256. Review commands before/after; no trust for mutations/replacements, sourced code or other executables.
+        The pinned helper starts through its absolute #!/bin/bash -p entry. Bash suppresses startup imports at that entry. This does not clear the entire inherited environment or constrain SSH server startup and later child processes.
         Standard build-run parameters, in order (9): application,candidate,seconds,max processes,memory MiB,max output,engine,script digest,encoded tool binding. Its fixed Python collector verifies the complete executable stdin digest and forwards this helper verb, these exact arguments and that stdin. Original task/workflow authority and captured archive/source association are separate current review evidence; match them independently. The third and fourth standard arguments are execution limits.
         Agent agent-run parameters, in order (9): application,candidate,task,source revision,seconds,max output,engine,script digest,encoded tool binding. It checks source before/after executable stdin, exact prepared binding and build-entry non-root isolation, then invokes the standard restricted build with its own fixed process/memory limits. "-" means no catalog tools, never another binding. agent-patch validates UTF8 revision-bound edits, freezes the task copy and returns its tree digest; promotion requires matching the client prediction.
         Management/candidate ownership requires root; require_deployer accepts SUDO_USER=root or root when unset/empty, except internal Podman CNI hooks. Projects run as restricted non-root. Validate typed ids/digests/paths/manifests/operations; reject unknowns/drift/unsafe paths. No mutable-state proof: match arguments/bindings/resourceTargets and review initialization/selected effects.

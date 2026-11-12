@@ -91,7 +91,7 @@ public final class DeploymentAgentToolchainFailureEvidence {
 
     private static final String MIRROR_CONTROLLER_SOURCE = "5679dee3ff3ed23cd1932b50bed4e2c8fc7475301dd41962d5d156eda78cf379";
 
-    private static final String PRIVILEGED_MIRROR_CONTROLLER_SOURCE = "115dcdc0f1cd588db720eb8011a39f1107511bf2458293e38636e1ec9ba3d34c";
+    private static final String PRIVILEGED_MIRROR_CONTROLLER_SOURCE = "cabda125f54d2e81d6515a78628f389b7a058ef3b1a4203d737eedea5867bdfa";
 
     private static final Map<String, Integer> PRECREATION_SOURCE_BYTES = Map.of(
         ORIGINAL_PRECREATION_SOURCE, 101904, PROBE_PRECREATION_SOURCE, 108038, TRACKED_CONTROLLER_SOURCE, 154357,

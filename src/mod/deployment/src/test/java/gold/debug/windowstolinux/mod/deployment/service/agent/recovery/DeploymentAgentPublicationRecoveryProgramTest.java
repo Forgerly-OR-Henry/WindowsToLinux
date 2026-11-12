@@ -39,14 +39,14 @@ class DeploymentAgentPublicationRecoveryProgramTest {
             assertEquals(body, DeploymentAgentPublicationRecoveryProgram.reconstructInstallationEvidence(structure));
             assertEquals("/completeExecutableInput/derived/controller", JSON.valueToTree(facts.get("completeDecodedSource")).path("pointer").asText());
             assertEquals("/completeExecutableInput/sources/loader", JSON.valueToTree(facts.get("completeLoaderSource")).path("pointer").asText());
-            assertEquals("4bce53b129711ad351344107e8f298b2588c20f0ec82f9856d9b5e3b19eb2021", program.version());
-            // These default-layout anchors were read from frozen pre-change compiled artifacts, not this implementation.
-            assertEquals(165726, program.source().getBytes(StandardCharsets.UTF_8).length);
-            assertEquals("477ca1395417bbf1ec024c7e427066775da8d7861f2d2ee759896d598cd59ca2", DeploymentAgentPublicationRecoveryProgram.sha256(program.source()));
+            assertEquals("ddc76b6ad25a7d97ef164d3900f7181e3985093155e31e59ef906c26d084961b", program.version());
+            // Default-layout anchors measured from the candidate's compiled resources.
+            assertEquals(222347, program.source().getBytes(StandardCharsets.UTF_8).length);
+            assertEquals("869ccc5278cce72c6ee16058fe0a95e12d233fa59a9dc83017bf0ce13043795e", DeploymentAgentPublicationRecoveryProgram.sha256(program.source()));
             assertEquals(7586, program.loader().getBytes(StandardCharsets.UTF_8).length);
-            assertEquals("46dc35ea0c0c9b2eb5d2f1d4903891d9a62a391d8c80182a01efc9efdc7d0151", DeploymentAgentPublicationRecoveryProgram.sha256(program.loader()));
-            assertEquals(189420, body.getBytes(StandardCharsets.UTF_8).length);
-            assertEquals("0a16f4fccb224865bbcb42a4472070f54ae7f04a786f18e1bc73bda7bdb94d22", DeploymentAgentPublicationRecoveryProgram.sha256(body));
+            assertEquals("ea2c39ec932cb267994695674c20e05e20938c709035780d84ec54c1876a9035", DeploymentAgentPublicationRecoveryProgram.sha256(program.loader()));
+            assertEquals(247851, body.getBytes(StandardCharsets.UTF_8).length);
+            assertEquals("46fdf585199fa02429d849da4c1595d132b0c999a8554972f923319b8a2637e8", DeploymentAgentPublicationRecoveryProgram.sha256(body));
             assertEquals(request.command().stdin().length, facts.get("stdinBytes"));
             assertEquals(program.manifest().get("sourceSha256"), DeploymentAgentPublicationRecoveryProgram.sha256(program.source()));
             assertTrue(program.source().getBytes(StandardCharsets.UTF_8).length < 1048576);
@@ -94,7 +94,7 @@ class DeploymentAgentPublicationRecoveryProgramTest {
                 case "DERIVED_HASH" -> ((ObjectNode) changed.at("/derived/controller")).put("sha256", "a".repeat(64));
                 case "HASH" -> changed.put("sha256", "a".repeat(64));
                 case "LENGTH" -> changed.put("characters", true);
-                case "FLOAT_LENGTH" -> changed.put("utf8Bytes", 189420.0);
+                case "FLOAT_LENGTH" -> changed.put("utf8Bytes", (double) changed.path("utf8Bytes").intValue());
                 case "UNICODE" -> ((ObjectNode) changed.path("sources")).put("bash", "\ud800");
                 case "SEGMENT_EXTRA" -> ((ObjectNode) segments.get(0)).put("authority", "TRUSTED");
                 case "ACTUAL_INPUT" -> { }

@@ -23,7 +23,7 @@ import org.junit.jupiter.api.io.TempDir;
 class DeploymentAgentPublicationContractDiagnosticFollowupProgramTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String RES = "/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/";
-    private static final String OLD_VERSION = "c9c21e6e00a04dec8fd64767cee299eae47d684d88c2f5036efa9b0923cbbc36";
+    private static final String OLD_VERSION = "8fb8931aa61b889a3527e78d42fd35b61deaaf77f23e7096d347abef7ab936bd";
     private final DeploymentRemoteLayout layout = DeploymentRemoteLayout.original();
     private final DeploymentAgentPublicationContractDiagnosticFollowupProgram program = new DeploymentAgentPublicationContractDiagnosticFollowupProgram(layout);
 
@@ -38,8 +38,8 @@ class DeploymentAgentPublicationContractDiagnosticFollowupProgramTest {
     @Test void followupPreservesOldSourceIdentityAndRequiresCompletePriorBinding() throws Exception {
         var old = new DeploymentAgentPublicationContractDiagnosticProgram(layout);
         assertEquals(OLD_VERSION, old.sourceVersion());
-        assertEquals("e8d2b02340de6bc2eda89063049dd6bde24779ccef5f56b2ade879462b819ed0", sha(raw("publication-contract-diagnostic.py")));
-        assertEquals("efe782db9fe87f4d5ca5d108af7795f988533af41f1af00cd11877a154eae27d", sha(raw("publication-contract-diagnostic-guard.sh")));
+        assertEquals("d4591a96f051678fbcfdb51b17f6f8d8393aa668658f5e26671ad6f73c8e58cf", sha(raw("publication-contract-diagnostic.py")));
+        assertEquals("8376c99b99df9171dc4beb894165ebd2be669758f393aa67cd0d16151c8e6cab", sha(raw("publication-contract-diagnostic-guard.sh")));
         String oldBash = bashSource(old.source());
         String suffix = "\n" + DeploymentRemoteLayoutTemplate.render(resource("publication-contract-diagnostic-guard.sh"), layout);
         assertTrue(oldBash.endsWith(suffix)); assertEquals(oldBash.length() - suffix.length(), oldBash.indexOf(suffix));

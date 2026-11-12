@@ -25,13 +25,14 @@ class DeploymentAgentPublicationContinuationProgramTest {
  }
  @Test void continuationPreservesInstalledProgramAndReconstructsCurrentBoundRequest()throws Exception{
   var old=new DeploymentAgentPublicationRecoveryProgram(layout);
-  assertEquals("4bce53b129711ad351344107e8f298b2588c20f0ec82f9856d9b5e3b19eb2021",old.version());
-  assertEquals("477ca1395417bbf1ec024c7e427066775da8d7861f2d2ee759896d598cd59ca2",sha(old.source().getBytes(StandardCharsets.UTF_8)));
-  assertEquals("46dc35ea0c0c9b2eb5d2f1d4903891d9a62a391d8c80182a01efc9efdc7d0151",sha(old.loader().getBytes(StandardCharsets.UTF_8)));
-  assertEquals("0a16f4fccb224865bbcb42a4472070f54ae7f04a786f18e1bc73bda7bdb94d22",sha(old.installer().getBytes(StandardCharsets.UTF_8)));
+  assertEquals("ddc76b6ad25a7d97ef164d3900f7181e3985093155e31e59ef906c26d084961b",old.version());
+  assertEquals("869ccc5278cce72c6ee16058fe0a95e12d233fa59a9dc83017bf0ce13043795e",sha(old.source().getBytes(StandardCharsets.UTF_8)));
+  assertEquals("ea2c39ec932cb267994695674c20e05e20938c709035780d84ec54c1876a9035",sha(old.loader().getBytes(StandardCharsets.UTF_8)));
+  assertEquals("46fdf585199fa02429d849da4c1595d132b0c999a8554972f923319b8a2637e8",sha(old.installer().getBytes(StandardCharsets.UTF_8)));
   try(var r=program.request(binding(),UUID.randomUUID())){
    assertEquals(program.source(),new String(r.command().stdin(),StandardCharsets.UTF_8));
-   assertTrue(program.source().contains("BASH_SOURCE = r"+"'".repeat(3)));
+   String assignment=program.source().lines().filter(line->line.startsWith("BASH_SOURCE = ")).findFirst().orElseThrow();
+   assertTrue(JSON.readTree(assignment.substring("BASH_SOURCE = ".length())).textValue().contains("\ncontinuation() {"));
    assertEquals(r.resourceTargets(),DeploymentAgentPublicationContinuationProgram.reviewedResourceTargets(r.command(),layout,new ServerId("host")));
    assertEquals("commandEvidence.completeExecutableInput",DeploymentAgentPublicationContinuationProgram.reviewFacts(r.command(),layout).get("executableInputReference"));
    try(var bad=new CommandRequest(r.command().script(),(program.source()+"\n").getBytes(StandardCharsets.UTF_8),r.command().timeout(),r.command().outputLimitBytes())){assertThrows(IllegalArgumentException.class,()->DeploymentAgentPublicationContinuationProgram.reviewFacts(bad,layout));}

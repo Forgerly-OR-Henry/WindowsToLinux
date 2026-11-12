@@ -1,8 +1,14 @@
 # Source locations and substitutions below are rendered only from the frozen task JSON.
 wtl_system_point() {
-  local ID= ID_LIKE=
-  . /etc/os-release
-  case "$ID" in
+  local release=/etc/os-release line distro_id=
+  if [ ! -e "$release" ] && [ ! -L "$release" ]; then release=/usr/lib/os-release; fi
+  [ -f "$release" ] && [ -r "$release" ] || { printf 'MIRROR_REJECT=unreadable-os-release\n' >&2; return 65; }
+  # Read only the distribution ID. os-release values are never evaluated as shell code.
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ID=*) distro_id="${line#ID=}" ;; esac
+  done <"$release" || return 65
+  case "$distro_id" in \"*\"|\'*\') distro_id="${distro_id:1:-1}" ;; esac
+  case "$distro_id" in
     debian) printf APT_DEBIAN ;;
     ubuntu) printf APT_UBUNTU ;;
     fedora) printf DNF_FEDORA ;;

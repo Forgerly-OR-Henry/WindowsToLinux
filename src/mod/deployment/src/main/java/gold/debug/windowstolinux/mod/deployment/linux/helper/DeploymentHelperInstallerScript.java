@@ -93,7 +93,7 @@ public final class DeploymentHelperInstallerScript {
         if (prerequisitesScript.isBlank() || !prerequisitesScript.endsWith("\n"))
             throw new IllegalArgumentException("Incomplete helper prerequisite stage");
         return "set -euo pipefail\nexport LC_ALL=C\nPATH=/usr/sbin:/usr/bin:/sbin:/bin\nexport PATH\nunset BASH_ENV ENV\n"
-            + renderStageDiagnostics() + renderPriorExecutableAdmission(layout) + renderInstallationLock(layout)
+            + renderStageDiagnostics() + renderPriorExecutableAdmission(layout, false) + renderInstallationLock(layout)
             + "installer_prior_files\n" + DeploymentRemoteLayoutAdmission.initialize(layout) + fixedLayout("""
             [ "$(id -u)" -eq 0 ] || exit 64
             files_trusted_directory() {
@@ -372,8 +372,8 @@ public final class DeploymentHelperInstallerScript {
             + """
             [ "$(id -u)" -eq 0 ] || exit 64
             command -v systemctl >/dev/null
-            """ + renderPriorExecutableAdmission(layout) + renderInstallationLock(layout)
-            + "installer_prior_files\n" + begin + BODY_AFTER_RECEIPT
+            """ + renderPriorExecutableAdmission(layout, true) + renderInstallationLock(layout)
+            + "installer_capture_prior\n" + begin + BODY_AFTER_RECEIPT
             + DeploymentRemoteLayoutAdmission.initialize(layout)
             + packageCommands() + """
             prepare_stage=platform-packages
@@ -477,20 +477,33 @@ public final class DeploymentHelperInstallerScript {
         return renderHelperInstallation(DeploymentRemoteLayout.original());
     }
 
-    /** Admits clean installation or identical packaged bytes, never an untrusted older version.
-     * Different prior bytes require a separate authenticated upgrade contract; root ownership alone is insufficient.
-     * / 仅准入缺失文件或本次固定字节；不同旧版须另有可信升级契约，root 所有权本身不足以授权覆盖。 */
-    private static String renderPriorExecutableAdmission(DeploymentRemoteLayout layout) {
+    /** Admits only missing, current or explicitly pinned product bytes at the selected target. */
+    private static String renderPriorExecutableAdmission(DeploymentRemoteLayout layout, boolean upgrade) {
+        // Original-layout release bytes from R18 (8ec7a0fec), MAIN (7940a2e5d), and 8089f7fc7.
+        // Keep the path binding even if a different layout happens to use an identical entry payload.
+        String legacy = upgrade && DeploymentRemoteLayout.original().equals(layout) ? """
+              case "$3:$installer_digest" in
+                helper:1a5970444c392ca120874bb39c8e6c0542e088b1d9a186d15affb67b05654836 | \\
+                helper:b67a07b96c19842f675063acf8986ebf5e3ccd980de4465ff306e9c7be5d7595 | \\
+                helper:4b44004b76783ff13c7698d54b19a9af2fda640d20b15841755a504724be0d3c | \\
+                build-entry:4fdd1d5d6661c31382647512e4efd96d6e5eb5ef1296512e2a3df25f49706e42 | \\
+                build-entry:6eb9b24576e51e318044f67b1c77fc34b41c4c979cadfec1a5eb799c5122a91a)
+                  return 0 ;;
+              esac
+            """ : "";
         return fixedLayout("""
             installer_prior_file() {
+              installer_digest=absent
               [ -e "$1" ] || [ -L "$1" ] || return 0
               if [ -L "$1" ] || [ ! -f "$1" ] || [ ! -x "$1" ] ||
                  [ "$(/usr/bin/stat -c '%u:%g:%a:%h' -- "$1")" != '0:0:755:1' ]; then
                 printf 'PREPARE_REJECT=%s-prior-file-identity\\n' "$3"; exit 64
               fi
-              if ! printf '%s  %s\\n' "$2" "$1" | /usr/bin/sha256sum --check --status; then
-                printf 'PREPARE_REJECT=%s-prior-content-untrusted\\n' "$3"; exit 64
-              fi
+              installer_digest=$(/usr/bin/sha256sum -- "$1") || exit 64
+              installer_digest="${installer_digest%% *}"
+              [ "$installer_digest" = "$2" ] && return 0
+            """ + legacy + """
+              printf 'PREPARE_REJECT=%s-prior-content-untrusted\\n' "$3"; exit 64
             }
             installer_prior_files() {
               prepare_stage=helper-prior-admission
@@ -505,14 +518,42 @@ public final class DeploymentHelperInstallerScript {
               done
             """, layout)
             + "  installer_prior_file " + quote(layout.helperPath()) + " "
-            + quote(DeploymentManagedHelperBundle.helperSha256(layout)) + " helper\n"
+            + quote(DeploymentManagedHelperBundle.helperSha256(layout)) + " helper\n  installer_observed_helper=$installer_digest\n"
             + "  installer_prior_file " + quote(layout.buildEntry()) + " "
-            + quote(DeploymentManagedHelperBundle.buildEntrySha256(layout)) + " build-entry\n"
-            + "}\ninstaller_prior_files\n";
+            + quote(DeploymentManagedHelperBundle.buildEntrySha256(layout)) + " build-entry\n  installer_observed_entry=$installer_digest\n"
+            + (upgrade ? """
+                }
+                installer_capture_prior() {
+                  installer_prior_files
+                  if [ -n "${installer_prior_helper:-}" ]; then
+                    [ "$installer_prior_helper" = "$installer_observed_helper" ] &&
+                      [ "$installer_prior_entry" = "$installer_observed_entry" ] || {
+                        printf 'PREPARE_REJECT=installer-prior-changed\\n'; exit 64;
+                      }
+                  else
+                    installer_prior_helper="$installer_observed_helper"
+                    installer_prior_entry="$installer_observed_entry"
+                  fi
+                }
+                installer_publish_executable() {
+                  local staged="$1" target="$2" current="$3" role="$4" prior="$5"
+                  installer_prior_file "$target" "$current" "$role"
+                  [ "$installer_digest" = "$prior" ] || { printf 'PREPARE_REJECT=installer-prior-changed\\n'; exit 64; }
+                  if [ "$prior" = absent ]; then
+                    # The staged file and target share a directory. A skipped no-clobber move leaves its source.
+                    /usr/bin/mv -nT -- "$staged" "$target"
+                    [ ! -e "$staged" ] || { printf 'PREPARE_REJECT=installer-target-appeared\\n'; exit 64; }
+                  elif [ "$prior" != "$current" ]; then
+                    /usr/bin/mv -fT -- "$staged" "$target"
+                  fi
+                }
+                installer_prior_files
+                """ :
+                "}\ninstaller_prior_files\n");
     }
 
     public static String renderHelperInstallation(DeploymentRemoteLayout layout) {
-        return renderPriorExecutableAdmission(layout) + renderInstallationLock(layout) + "installer_prior_files\n"
+        return renderPriorExecutableAdmission(layout, true) + renderInstallationLock(layout) + "installer_capture_prior\n"
             + DeploymentRemoteLayoutAdmission.initialize(layout) + fixedLayout("""
             [ "$(id -u)" -eq 0 ] || { printf 'PREPARE_REJECT=root-management-required\\n'; exit 64; }
             installer_trusted_path() {
@@ -533,7 +574,6 @@ public final class DeploymentHelperInstallerScript {
             else
               /usr/bin/install -d -o root -g root -m 755 -- "$installer_directory"
             fi
-            installer_trusted_path "$installer_directory" directory || exit 64
             installer_trusted_path "$installer_directory" directory || exit 64
             for installer_file in @wtl:helper-directory@/managed-helper @wtl:helper-directory@/build-entry /etc/systemd/system/windowstolinux-workspace-recovery.service; do
               if [ -e "$installer_file" ] || [ -L "$installer_file" ]; then
@@ -557,10 +597,10 @@ public final class DeploymentHelperInstallerScript {
             installer_verify_executable "$entry_tmp" %s || { printf 'PREPARE_REJECT=build-entry-payload-digest\\n'; exit 64; }
             /usr/bin/sync -f "$helper_tmp"
             /usr/bin/sync -f "$entry_tmp"
-            installer_prior_files
+            installer_capture_prior
             prepare_stage=helper-publication
-            /usr/bin/mv -fT -- "$helper_tmp" %s
-            /usr/bin/mv -fT -- "$entry_tmp" %s
+            installer_publish_executable "$entry_tmp" %s %s build-entry "$installer_prior_entry"
+            installer_publish_executable "$helper_tmp" %s %s helper "$installer_prior_helper"
             /usr/bin/sync -f "$installer_directory"
             installer_verify_executable %s %s || { printf 'PREPARE_REJECT=helper-installed-digest\\n'; exit 64; }
             installer_verify_executable %s %s || { printf 'PREPARE_REJECT=build-entry-installed-digest\\n'; exit 64; }
@@ -573,7 +613,8 @@ public final class DeploymentHelperInstallerScript {
                 quote(DeploymentManagedHelperBundle.renderBuildEntry(layout)),
                 quote(DeploymentManagedHelperBundle.helperSha256(layout)),
                 quote(DeploymentManagedHelperBundle.buildEntrySha256(layout)),
-                quote(layout.helperPath()), quote(layout.buildEntry()),
+                 quote(layout.buildEntry()), quote(DeploymentManagedHelperBundle.buildEntrySha256(layout)),
+                 quote(layout.helperPath()), quote(DeploymentManagedHelperBundle.helperSha256(layout)),
                 quote(layout.helperPath()), quote(DeploymentManagedHelperBundle.helperSha256(layout)),
                 quote(layout.buildEntry()), quote(DeploymentManagedHelperBundle.buildEntrySha256(layout)),
                 quote(layout.helperPath()), DeploymentManagedHelperBundle.PROTOCOL_VERSION);
