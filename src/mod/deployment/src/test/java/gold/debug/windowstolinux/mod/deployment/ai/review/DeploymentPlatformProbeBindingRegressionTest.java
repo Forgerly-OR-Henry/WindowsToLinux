@@ -43,6 +43,8 @@ class DeploymentPlatformProbeBindingRegressionTest {
         assertTrue(script.startsWith(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER));
         assertEquals(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER.stripTrailing(),
             binding.at("/environment/startupAdmission/marker").asText());
+        assertEquals("-n", binding.at("/composer/interpreterArguments/0").asText());
+        assertTrue(binding.path("optionalCommandAdmission").asText().contains("--no-new-privs"));
         assertTrue(binding.path("meaning").asText().contains("not live program trust"));
         assertTrue(binding.path("meaning").asText().contains("container variants can initialize storage"));
         assertFalse(binding.has("safe"));
@@ -55,6 +57,7 @@ class DeploymentPlatformProbeBindingRegressionTest {
         for (String script : java.util.List.of(original.substring(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER.length()),
             original.replace("env -i", "env"), original.replace("cd -- /", "cd -- /tmp"),
             original.replace("--no-plugins", ""), original.replace("-I -S -B", "-I"),
+            original.replace("--no-new-privs", ""), original.replace("-n -f", "-f"),
             original.replace("probe_file \"$executable\"", "true"), original + "printf changed\n")) {
             assertNotEquals(original, script);
             assertFalse(facts("deployment.candidate.host-probe.v1", script, new byte[0]).has("platformProbe"));

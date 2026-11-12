@@ -288,11 +288,11 @@ public final class SshConnector implements AutoCloseable {
             try {
                 client.start();
                 var connecting = client.connect(endpoint.username(), endpoint.host(), endpoint.port());
-                await(connecting, started, budget, cancellation);
+                await(connecting, started, budget, cancellation, "CONNECT");
                 session = connecting.verify(Duration.ofMillis(1)).getSession();
                 session.addPasswordIdentity(identity);
                 var authentication = session.auth();
-                await(authentication, started, budget, cancellation);
+                await(authentication, started, budget, cancellation, "AUTHENTICATION");
                 authentication.verify(Duration.ofMillis(1));
                 if (fingerprint == null || !session.isAuthenticated())
                     throw failure(ProblemCode.ACCESS_DENIED, "SSH_AUTHENTICATION_FAILED",
@@ -735,16 +735,18 @@ public final class SshConnector implements AutoCloseable {
      * @param started monotonic start time / 单调时钟启动时间
      * @param budget total nanosecond budget / 总纳秒预算
      * @param cancellation task cancellation / 任务取消请求
+     * @param phase stable name of the unfinished operation / 未完成操作的固定名称
      * @throws Exception if time, cancellation or the transport prevents completion / 时间、取消或传输阻止完成时
      */
-    private static void await(WaitableFuture pending, long started, long budget, CancelToken cancellation)
+    private static void await(WaitableFuture pending, long started, long budget, CancelToken cancellation, String phase)
         throws Exception {
         while (true) {
             if (cancellation.requested() || Thread.currentThread().isInterrupted())
                 throw failure(ProblemCode.CANCELLED, "SSH_CONNECT_CANCELLED", "SSH connection was cancelled");
             long remaining = budget - (System.nanoTime() - started);
             if (remaining <= 0)
-                throw failure(ProblemCode.TIMEOUT, "SSH_CONNECT_TIMEOUT", "SSH connection budget expired");
+                throw new ApiException(new Problem(ProblemCode.TIMEOUT, "SSH_CONNECT_TIMEOUT",
+                    "SSH connection budget expired", Map.of("phase", phase), Optional.empty()));
             if (pending.await(Math.max(1, Math.min(100, remaining / 1_000_000))))
                 return;
         }

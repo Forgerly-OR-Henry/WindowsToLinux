@@ -388,6 +388,8 @@ public final class DeploymentManagedHelper {
         for (String manager : java.util.List.of("apt-get", "dnf")) {
             targets.add(new ActionTarget(server.id(), "package-manager", manager));
             targets.add(new ActionTarget(server.id(), "system-package-index", manager + ":configured-sources"));
+            targets.add(new ActionTarget(server.id(), "system-package-transaction",
+                manager + ":configured-dependency-closure:managed-helper"));
         }
         targets.add(new ActionTarget(server.id(), "package-set", "apt-get:" + DeploymentHelperInstallerScript.APT_PACKAGES));
         targets.add(new ActionTarget(server.id(), "package-set", "dnf:" + DeploymentHelperInstallerScript.DNF_PACKAGES));

@@ -116,9 +116,15 @@ class PlatformNativeModelTest {
                     boolean first = turns.getAndIncrement() == 0;
                     String value;
                     if (first) {
-                        var matcher = java.util.regex.Pattern.compile("[0-9a-f-]{36}").matcher(wire.toString());
-                        assertTrue(matcher.find());
-                        value = matcher.group();
+                        var toolSchema = switch (protocol) {
+                            case OPENAI_CHAT_COMPLETIONS -> wire.at("/tools/0/function/parameters");
+                            case OPENAI_RESPONSES -> wire.at("/tools/0/parameters");
+                            case ANTHROPIC_MESSAGES -> wire.at("/tools/0/input_schema");
+                        };
+                        value = toolSchema.at("/properties/challenge/enum/0").asText();
+                        assertTrue(value.matches("[0-9a-f]{12}"));
+                        assertTrue(wire.toString().contains("roundtrip_probe with this JSON object"));
+                        assertEquals(1, toolSchema.at("/properties/challenge/enum").size());
                     } else value = switch (protocol) {
                         case OPENAI_CHAT_COMPLETIONS -> wire.at("/messages/2/content").asText();
                         case OPENAI_RESPONSES -> wire.at("/input/2/output").asText();

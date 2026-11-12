@@ -103,11 +103,11 @@ class DeploymentManagedHelperTest {
 
     @Test
     void defaultInstallersPinCurrentSharedRuntimeBytes() throws Exception {
-        assertEquals("5b40a5740d5fec1786ea74a8edd674b51b0252a2a3a517f7d18d25db3d7e9568",
+        assertEquals("63802ad34630ea5c681effb95af25b4814fb0eabe847b1fcd3302883bfb683fc",
             digest(DeploymentHelperInstallerScript.render()));
-        assertEquals("4e137867bd81ac7ab69e024a88fa6fda69d77488b94b4fcc72d7b3c6fb113789",
+        assertEquals("b9977f854c18d55b439883acb7dca2698e1b131e2ae6e240895fb9fb08b7904d",
             digest(DeploymentHelperInstallerScript.renderHelperInstallation()));
-        assertEquals("9a72cb1f9ffdee274c47f5749af171ec9cb3f6167388b9685ef4ed8b2ab9f4c8",
+        assertEquals("8cf72785e0d0027b6388ef61886238b7cfcd8f3037ef3de2fb4de08302f72e53",
             digest(DeploymentHelperInstallerScript.renderTracked(task().id(),
                 UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), "a".repeat(64),
                 digest(DeploymentHelperInstallerScript.render()))));

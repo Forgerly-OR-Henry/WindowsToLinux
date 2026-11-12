@@ -518,7 +518,7 @@ class DeploymentSourceUiIntegrationTest extends DeploymentRuntimeFixture {
                     var mapper = new ObjectMapper();
                     var request = mapper.readTree(exchange.getRequestBody().readNBytes(65_537));
                     String challenge = request.path("messages").get(0).path("content").asText();
-                    String prefix = "Reply with exactly this code and nothing else: ";
+                    String prefix = "Copy the code on the next line as plain text. Return only the code, without quotes or markup.\n";
                     assertTrue(challenge.startsWith(prefix));
                     String nonce = challenge.substring(prefix.length());
                     assertTrue(nonce.matches("[0-9A-F]{8}"));

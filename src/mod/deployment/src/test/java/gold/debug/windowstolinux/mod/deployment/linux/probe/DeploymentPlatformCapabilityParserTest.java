@@ -4,7 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentEcosystemToolType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
@@ -15,6 +19,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.server.securi
 import gold.debug.windowstolinux.mod.deployment.service.core.model.server.security.DeploymentLinuxSecurityModuleType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.server.security.DeploymentLinuxSecurityState;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class DeploymentPlatformCapabilityParserTest {
     @Test
@@ -108,8 +113,8 @@ class DeploymentPlatformCapabilityParserTest {
                     java.nio.file.Files.writeString(config, "untrusted extension configuration");
                 String script = "set -eu\nscenario='" + scenario + "'\nmarker='" + path.replace("'", "'\"'\"'") + "/executed'\n"
                     + """
-                    probe_command() { return 0; }
-                    probe_run() { "$@"; }
+                    probe_tool() { return 0; }
+                    probe_tool_run() { "$@"; }
                     npm() { printf called >>"$marker"; [ "$scenario" != offline ] || return 1; printf '11.0.0\\n'; }
                     pnpm() { npm "$@"; }
                     yarn() { npm "$@"; }
@@ -151,11 +156,10 @@ class DeploymentPlatformCapabilityParserTest {
         String script = """
             set -eu
             export PATH=/usr/bin:/bin
-            probe_command() { [ "$1" = dotnet ] || [ "$1" = composer ]; }
-            probe_run() { "$@"; }
+            probe_tool() { [ "$1" = dotnet ]; }
+            probe_tool_run() { "$@"; }
             compgen() { :; }
             dotnet() { [ "$*" = --list-sdks ] || exit 91; printf '8.0.123 [/test/sdk]\\n'; }
-            composer() { [ "$*" = '--no-plugins --no-scripts --no-cache --no-interaction --version' ] || exit 92; printf 'Composer version 2.8.1\\n'; }
             """ + DeploymentEcosystemCapabilityProbe.platformToolChecks();
         var process = new ProcessBuilder(bash, "--noprofile", "--norc", "-s").redirectErrorStream(true).start();
         try {
@@ -166,7 +170,118 @@ class DeploymentPlatformCapabilityParserTest {
             String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
             assertEquals(0, process.exitValue(), output);
             assertTrue(output.contains("SERVICE_DOTNET=8.0.123\n") && output.contains("TOOL_DOTNET=8.0.123\n"), output);
-            assertTrue(output.contains("TOOL_COMPOSER=2.8.1\n"), output);
+            assertTrue(output.contains("TOOL_COMPOSER=\n"), output);
+        } finally {
+            if (process.isAlive()) process.destroyForcibly().waitFor();
+        }
+    }
+
+    @Test
+    void declinesPrivilegeBearingToolsAndUnavailablePrivilegeChecks() throws Exception {
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isExecutable(Path.of(bash)));
+        String guards = DeploymentPlatformCapabilityProbe.toolExecutionGuards()
+            .replace("[ -x \"$cap_checker\" ]", "[ \"$scenario\" != checker-missing ]")
+            .replace("[ -x /usr/bin/setpriv ]", "[ \"$scenario\" != runner-missing ]")
+            .replace("/usr/bin/stat", "fixture_stat").replace("/usr/bin/readlink", "fixture_readlink")
+            .replace("probe_getcap=\"$cap_checker\"", "probe_getcap=fixture_getcap")
+            .replace("probe_setpriv=/usr/bin/setpriv", "probe_setpriv=fixture_setpriv");
+        String script = """
+            set -eu
+            probe_file() { return 0; }
+            probe_command() { [ "$1" = fixture ]; printf '/usr/bin/fixture-link\\n'; }
+            fixture_stat() {
+              case "$scenario:$4" in
+                setuid:/usr/bin/fixture-link) printf 4755 ;;
+                setgid:/usr/bin/fixture-link) printf 2755 ;;
+                *) printf 755 ;;
+              esac
+            }
+            fixture_readlink() {
+              case "$3" in
+                /usr/bin/fixture-link) printf '/usr/libexec/fixture\\n' ;;
+                /usr/bin/setpriv) printf '%s\\n' "$3" ;;
+                *) return 1 ;;
+              esac
+            }
+            fixture_getcap() {
+              [ "$1" = /usr/libexec/fixture ] || [ "$1" = /usr/bin/setpriv ] || return 1
+              if [ "$1" = /usr/libexec/fixture ]; then
+                case "$scenario" in
+                  capability) printf 'fixture: recorded file capabilities' ;;
+                  capability-error) return 2 ;;
+                  capability-diagnostic) printf 'cannot determine capabilities' >&2 ;;
+                esac
+              fi
+            }
+            fixture_setpriv() {
+              [ "$*" = '--no-new-privs -- /usr/bin/fixture-link --version' ] || exit 91
+              printf 'OBSERVED=1.2.3\\n'
+            }
+            for scenario in clear setuid setgid capability capability-error capability-diagnostic checker-missing runner-missing; do
+            """ + guards + """
+              if ! probe_tool_run fixture --version; then printf 'UNAVAILABLE=%s\\n' "$scenario"; fi
+            done
+            """;
+        assertEquals("""
+            OBSERVED=1.2.3
+            UNAVAILABLE=setuid
+            UNAVAILABLE=setgid
+            UNAVAILABLE=capability
+            UNAVAILABLE=capability-error
+            UNAVAILABLE=capability-diagnostic
+            UNAVAILABLE=checker-missing
+            UNAVAILABLE=runner-missing
+            """, runProbeFixture(bash, script));
+    }
+
+    @Test
+    void composerUsesNativePhpWithNoIniAndSkipsUnsupportedOrFailedLaunches(@TempDir Path directory) throws Exception {
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isExecutable(Path.of(bash)));
+        Path composer = directory.resolve("composer");
+        Path php = directory.resolve("php");
+        String fixture = "set -eu\nfixture_composer=" + bashPath(composer) + "\nfixture_php=" + bashPath(php) + "\n" + """
+            probe_tool() {
+              case "$1" in
+                composer) printf '%s\\n' "$fixture_composer" ;;
+                php) printf '%s\\n' "$fixture_php" ;;
+                *) return 1 ;;
+              esac
+            }
+            probe_tool_run() {
+              [ "$#" = 10 ] && [ "$1" = "$fixture_php" ] && [ "$2" = -n ] && [ "$3" = -f ] \\
+                && [ "$4" = "$fixture_composer" ] && [ "$5" = -- ] && [ "$COMPOSER_DISABLE_NETWORK" = 1 ] || return 91
+              shift 5
+              [ "$*" = '--no-plugins --no-scripts --no-cache --no-interaction --version' ] || return 92
+              printf 'Composer version 2.8.1\\n'
+              [ "$scenario" != failed ]
+            }
+            """ + DeploymentEcosystemCapabilityProbe.composerVersionProbe();
+        for (String scenario : java.util.List.of("safe", "composer-wrapper", "php-wrapper", "failed")) {
+            Files.writeString(composer, scenario.equals("composer-wrapper") ? "#!/bin/sh\n" : "#!/usr/bin/env php\n");
+            Files.writeString(php, scenario.equals("php-wrapper") ? "#!/bin/sh\n" : "\177ELF");
+            assertEquals(scenario.equals("safe") ? "TOOL_COMPOSER=2.8.1\n" : "TOOL_COMPOSER=\n",
+                runProbeFixture(bash, "scenario=" + scenario + "\n" + fixture), scenario);
+        }
+    }
+
+    private static String bashPath(Path path) {
+        return "'" + path.toString().replace('\\', '/').replace("'", "'\"'\"'") + "'";
+    }
+
+    private static String runProbeFixture(String bash, String script) throws Exception {
+        var directory = Path.of("").toAbsolutePath();
+        var process = new ProcessBuilder(bash, "--noprofile", "--norc", "-s").directory(directory.toFile())
+            .redirectErrorStream(true).start();
+        try {
+            try (var input = process.getOutputStream()) {
+                input.write(script.getBytes(StandardCharsets.UTF_8));
+            }
+            assertTrue(process.waitFor(10, TimeUnit.SECONDS));
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+            assertEquals(0, process.exitValue(), output);
+            return output;
         } finally {
             if (process.isAlive()) process.destroyForcibly().waitFor();
         }
@@ -242,8 +357,8 @@ class DeploymentPlatformCapabilityParserTest {
             String script = """
                 set -eu
                 export PATH=/usr/bin:/bin
-                probe_command() { [ "$1" = python3 ] || [ "$1" = python3.12 ]; }
-                probe_run() { "$@"; }
+                probe_tool() { [ "$1" = python3 ] || [ "$1" = python3.12 ]; }
+                probe_tool_run() { "$@"; }
                 compgen() { printf 'python3.12\\n'; }
                 python3() { [ "$*" = '-I -S -B -' ] || exit 91; "$fixture_python" "$@"; }
                 python3.12() { [ "$*" = '-I -S -B -m venv --help' ] || exit 92; "$fixture_python" "$@"; }
@@ -327,8 +442,8 @@ class DeploymentPlatformCapabilityParserTest {
         String bash = System.getProperty("managed.test.bash", "/bin/bash");
         org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isExecutable(java.nio.file.Path.of(bash)));
         String tools = DeploymentEcosystemCapabilityProbe.platformToolChecks();
-        int jarStart = tools.indexOf("if probe_command jar ");
-        String jarProbe = tools.substring(jarStart, tools.indexOf("if probe_command node ", jarStart));
+        int jarStart = tools.indexOf("if probe_tool jar ");
+        String jarProbe = tools.substring(jarStart, tools.indexOf("if probe_tool node ", jarStart));
         assertTrue(DeploymentPlatformCapabilityProbe.render().contains(jarProbe));
         var directory = java.nio.file.Files.createTempDirectory("jar-fallback-");
         var marker = directory.resolve("compiler-executed");
@@ -337,11 +452,11 @@ class DeploymentPlatformCapabilityParserTest {
                 java.nio.file.Files.deleteIfExists(marker);
                 String script = "set -euo pipefail\nscenario='" + scenario + "'\nmarker='"
                     + marker.toString().replace('\\', '/').replace("'", "'\"'\"'") + "'\n" + """
-                    probe_command() {
+                    probe_tool() {
                       if [ "$1" = jar ]; then [ "$scenario" != jar-denied ];
                       else [ "$1" = javac ] && [ "$scenario" = fallback-safe ]; fi
                     }
-                    probe_run() { probe_command "$1" && "$@"; }
+                    probe_tool_run() { probe_tool "$1" && "$@"; }
                     jar() {
                       [ "$*" = --version ] || exit 92
                       if [ "$scenario" = jar-version ]; then printf 'jar 21.0.1\\n'; else return 1; fi
@@ -510,7 +625,7 @@ class DeploymentPlatformCapabilityParserTest {
         assertTrue(DeploymentPlatformCapabilityProbe.render().contains("FIREWALL_STATE"));
         assertTrue(DeploymentPlatformCapabilityProbe.render().contains("nft list ruleset"));
         assertFalse(DeploymentPlatformCapabilityProbe.render().contains("/windowstolinux/java-21"));
-        assertTrue(DeploymentPlatformCapabilityProbe.render().contains("probe_command java"));
+        assertTrue(DeploymentPlatformCapabilityProbe.render().contains("probe_tool java"));
         assertTrue(DeploymentPlatformCapabilityProbe.render().contains("PACKAGE_ARCH"));
         assertTrue(DeploymentPlatformCapabilityProbe.render().contains("CPU_LEVEL"));
         assertTrue(!DeploymentPlatformCapabilityProbe.render().contains("setenforce"));

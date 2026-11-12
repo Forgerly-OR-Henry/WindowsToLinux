@@ -53,7 +53,9 @@ class DeploymentAgentInstallReviewIntentTest {
                 new ActionTarget(server.id(), "package-manager", "apt-get"),
                 new ActionTarget(server.id(), "package-manager", "dnf"),
                 new ActionTarget(server.id(), "package-set", "apt-get:" + DeploymentHelperInstallerScript.APT_PACKAGES),
-                new ActionTarget(server.id(), "package-set", "dnf:" + DeploymentHelperInstallerScript.DNF_PACKAGES)), expanded.semantics().orElseThrow().targets());
+                new ActionTarget(server.id(), "package-set", "dnf:" + DeploymentHelperInstallerScript.DNF_PACKAGES),
+                new ActionTarget(server.id(), "system-package-transaction", "apt-get:configured-dependency-closure:managed-helper"),
+                new ActionTarget(server.id(), "system-package-transaction", "dnf:configured-dependency-closure:managed-helper")), expanded.semantics().orElseThrow().targets());
             assertArrayEquals(body, request.stdin(), "The pure conversion must not alter or wipe the owned executable input");
             assertFalse(DeploymentAgentRemoteTools.ownsInstallReview(expanded, request, fixture.task, fixture.task, server, REVISION));
             assertFalse(DeploymentAgentRemoteTools.ownsInstallReview(original, request, new NativeAiFixture().task, fixture.task, server, REVISION));

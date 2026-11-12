@@ -91,6 +91,11 @@ class DeploymentNativeHelperPackageImpactTest {
                     assertTrue(impact.path("sudoPackagePurpose").asText().contains("sudo-prefixed managed application usage"));
                     assertEquals(mirrored, impact.has("mirrorShellFunctions"));
                     assertTrue(impact.path("limits").asText().contains("service effects remain possible"));
+                    assertEquals(List.of("apt-get:configured-dependency-closure:managed-helper",
+                        "dnf:configured-dependency-closure:managed-helper"),
+                        new ObjectMapper().convertValue(impact.at("/nativeTransactions/targets"),
+                            new com.fasterxml.jackson.core.type.TypeReference<List<String>>() { }));
+                    assertTrue(impact.at("/nativeTransactions/effects").asText().contains("maintainer scripts"));
                     assertArrayEquals(request.stdin(), DeploymentInstallerEvidence.reconstruct(json.at(impact.path("executableEvidencePointer").asText())).getBytes(StandardCharsets.UTF_8));
                     assertFalse(impact.has("permission"));
                     assertEquals(0, assisted.hosts.get());
@@ -100,7 +105,7 @@ class DeploymentNativeHelperPackageImpactTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"SOURCE", "NO_UPGRADE", "WRAPPER", "TASK", "RECEIPT_SERVER", "SERVER", "TARGET", "LAUNCHER", "MODEL_ROUTE", "MISSING_WORKFLOW", "CLOSED"})
+    @ValueSource(strings = {"SOURCE", "NO_UPGRADE", "WRAPPER", "TASK", "RECEIPT_SERVER", "SERVER", "TARGET", "TRANSACTION_TARGET", "LAUNCHER", "MODEL_ROUTE", "MISSING_WORKFLOW", "CLOSED"})
     void changedNativeMaterialOrOriginalAuthorityCannotProducePackageFacts(String mutation) throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var assisted = new Assisted(fixture)) {
             String executable = fixture.installer("TRACKED", true);
@@ -113,9 +118,11 @@ class DeploymentNativeHelperPackageImpactTest {
                     executable.getBytes(StandardCharsets.UTF_8), java.time.Duration.ofHours(2), 131072)) {
                 var intent = fixture.intent("TRACKED", request);
                 if (mutation.equals("SERVER")) intent = RemoteActions.command(new ServerId("other-server"), intent.revision(), request).withSemantics(intent.semantics().orElseThrow());
-                if (mutation.equals("TARGET")) {
+                if (mutation.equals("TARGET") || mutation.equals("TRANSACTION_TARGET")) {
                     var targets = new HashSet<>(intent.semantics().orElseThrow().targets());
-                    targets.remove(new ActionTarget(fixture.server.id(), "package-manager", "apt-get"));
+                    var removed = mutation.equals("TARGET") ? new ActionTarget(fixture.server.id(), "package-manager", "apt-get")
+                        : new ActionTarget(fixture.server.id(), "system-package-transaction", "apt-get:configured-dependency-closure:managed-helper");
+                    assertTrue(targets.remove(removed));
                     intent = intent.withSemantics(new ActionSemantics("deployment.helper.install.tracked.v1", targets));
                 }
                 var scope = assisted.scope;

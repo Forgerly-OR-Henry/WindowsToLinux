@@ -101,7 +101,7 @@ class DeploymentCommandProtocolTest {
     @Test
     void sharedDependencyBytesAndStrictReceiptsPreserveOriginalProfiles() throws Exception {
         String source = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencies(layout);
-        assertEquals("e288e3c73a34dfe01f67ba9fab5ee4984e542fa80802c1882f66a1948fa3e170", java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8))));
+        assertEquals("2bc2a020dc5cd9c57a2c51384586e0f27ae793d7b2abc64e6558dce6bc03eac7", java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8))));
         assertEquals(source, DeploymentAgentToolchainPrograms.dependencies(layout));
         assertEquals(DeploymentAgentToolchainPrograms.BOOTSTRAP, gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.BOOTSTRAP);
         assertEquals(DeploymentAgentToolchainPrograms.command(List.of("NATIVE_BUILD", "a".repeat(32))),

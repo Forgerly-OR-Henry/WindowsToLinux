@@ -429,14 +429,18 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
         var json = new com.fasterxml.jackson.databind.ObjectMapper()
             .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
             .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
-        String challenge = UUID.randomUUID().toString();
+        String challenge = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         var tool = new gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition("roundtrip_probe",
-            "Return the supplied challenge. After receiving the tool result, reply with exactly its text.",
-            "{\"type\":\"object\",\"properties\":{\"challenge\":{\"type\":\"string\"}},\"required\":[\"challenge\"],\"additionalProperties\":false}");
+            "Receive the exact challenge code. After the tool result arrives, reply with only the result as plain text.",
+            """
+            {"type":"object","properties":{"challenge":{"type":"string","enum":["%s"]}},
+            "required":["challenge"],"additionalProperties":false}
+            """.formatted(challenge));
         var messages = new ArrayList<gold.debug.windowstolinux.appapi.ai.model.AiMessage>();
         messages.add(new gold.debug.windowstolinux.appapi.ai.model.AiMessage(
             gold.debug.windowstolinux.appapi.ai.model.AiRole.USER,
-            "Call roundtrip_probe with challenge " + challenge + ". Then reply with exactly the text returned by the tool.", List.of()));
+            "Call roundtrip_probe with this JSON object: {\"challenge\":\"" + challenge
+                + "\"}. After the tool returns, reply with only its result as plain text, without quotes or markup.", List.of()));
         long started = System.nanoTime();
         var request = new gold.debug.windowstolinux.appapi.ai.model.AiRequest(
             purpose, messages, ceiling,
@@ -456,7 +460,7 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
         } catch (java.io.IOException invalid) {
             return failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_TOOL_PROBE_ARGUMENTS", "Native tool challenge is invalid");
         }
-        String returned = UUID.randomUUID().toString();
+        String returned = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         messages.add(gold.debug.windowstolinux.appapi.ai.model.AiMessage.assistant(response));
         messages.add(gold.debug.windowstolinux.appapi.ai.model.AiMessage.result(
             new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(call.id(), returned, false)));

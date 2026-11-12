@@ -75,6 +75,8 @@ public final class DeploymentAgentInstallReviewIntent {
             new ActionTarget(server.id(), "file", "/etc/systemd/system/windowstolinux-workspace-recovery.service"),
             new ActionTarget(server.id(), "service-manager", "systemd"),
             new ActionTarget(server.id(), "systemd-service", "windowstolinux-workspace-recovery.service")));
+        expected.semantics().orElseThrow().targets().stream()
+            .filter(target -> target.kind().equals("system-package-transaction")).forEach(targets::add);
         return original.withSemantics(new ActionSemantics(operation, Set.copyOf(targets)));
     }
 }

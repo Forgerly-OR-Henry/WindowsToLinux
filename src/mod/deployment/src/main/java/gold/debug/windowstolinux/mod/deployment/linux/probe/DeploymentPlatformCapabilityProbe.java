@@ -72,6 +72,7 @@ public final class DeploymentPlatformCapabilityProbe {
             if probe_command podman >/dev/null 2>&1; then printf 'PODMAN_CLIENT=1\\n'; else printf 'PODMAN_CLIENT=0\\n'; fi
             """
             + containerChecks
+            + toolExecutionGuards()
             + DeploymentEcosystemCapabilityProbe.platformToolChecks()
             + """
             cpu_level=unknown
@@ -193,6 +194,46 @@ public final class DeploymentPlatformCapabilityProbe {
                 [ -d "$probe_directory" ] && probe_protected_path "$probe_directory" || exit 64
               fi
             done
+            """;
+    }
+
+    static String toolExecutionGuards() {
+        return """
+            probe_no_setid() {
+              local mode
+              mode="$(/usr/bin/stat -Lc '%a' -- "$1")" || return 1
+              [[ "$mode" =~ ^[0-7]{3,4}$ ]] && [ $((8#$mode & 06000)) -eq 0 ]
+            }
+            probe_getcap=
+            # The fixed metadata reader shares the protected system utility boundary with stat and readlink.
+            for cap_checker in /usr/sbin/getcap /sbin/getcap; do
+              if [ -x "$cap_checker" ] && probe_file "$cap_checker" && probe_no_setid "$cap_checker"; then
+                probe_getcap="$cap_checker"
+                break
+              fi
+            done
+            probe_tool_file() {
+              local resolved caps
+              [ -n "$probe_getcap" ] && probe_no_setid "$1" || return 1
+              resolved="$(/usr/bin/readlink -e -- "$1")" || return 1
+              caps="$("$probe_getcap" "$resolved" 2>&1)" && [ -z "$caps" ]
+            }
+            probe_setpriv=
+            if [ -x /usr/bin/setpriv ] && probe_file /usr/bin/setpriv && probe_tool_file /usr/bin/setpriv; then
+              probe_setpriv=/usr/bin/setpriv
+            fi
+            probe_tool() {
+              local executable
+              [ -n "$probe_setpriv" ] || return 1
+              executable="$(probe_command "$1")" && probe_tool_file "$executable" || return 1
+              printf '%s\\n' "$executable"
+            }
+            probe_tool_run() {
+              local executable
+              executable="$(probe_tool "$1")" || return 1
+              shift
+              "$probe_setpriv" --no-new-privs -- "$executable" "$@"
+            }
             """;
     }
 

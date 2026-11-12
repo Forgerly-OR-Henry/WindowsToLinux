@@ -79,6 +79,11 @@ public final class DeploymentInstallerEvidence {
             facts.put("aptEffects", "Missing root packages may be installed. --no-upgrade retains already installed command-line packages; necessary dependencies may still be installed or upgraded. --no-remove aborts required removals; --no-install-recommends remains set.");
             facts.put("dnfRootPackages", List.of(DeploymentHelperInstallerScript.DNF_PACKAGES.split(" ")));
             facts.put("dnfEffects", "The alternative DNF branch remains install -y; APT's no-upgrade/no-remove guarantees do not apply to DNF.");
+            facts.put("nativeTransactions", Map.of(
+                "targets", targets.stream().filter(target -> target.kind().equals("system-package-transaction"))
+                    .map(gold.debug.windowstolinux.appapi.task.action.ActionTarget::id).sorted().toList(),
+                "effects", "Root package maintenance for the fixed helper prerequisites includes resolver-selected dependencies, package installation and configuration, distribution maintainer scripts, triggers and registered package-manager hooks. Branch-specific upgrade and removal behavior is stated above.",
+                "limits", "Check source authentication and package configuration guards in the exact current branch. Only effects inherent in the approved native dependency transaction are in scope. The installer has no general authority to alter unrelated services."));
             facts.put("sudoPackagePurpose", "The product publishes sudo-prefixed managed application usage for authorized host operators. The fixed shell body does not invoke sudo or directly edit sudoers. Review sudo package and maintainer-script effects with the other listed root packages.");
             if (mirror.isPresent())
                 facts.put("mirrorShellFunctions", "The exact wrapper inlines wtl_apt and wtl_dnf definitions into the parent shell before the installer subshell inherits them. The written bootstrap file is not the only copy of those definitions.");

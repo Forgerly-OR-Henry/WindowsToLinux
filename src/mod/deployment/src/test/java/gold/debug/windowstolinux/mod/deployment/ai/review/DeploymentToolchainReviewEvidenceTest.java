@@ -22,6 +22,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.app.ai.model.ModelProtocol;
 import gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec;
 import gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel;
+import gold.debug.windowstolinux.app.ai.model.ModelRequestBudgetException;
 import gold.debug.windowstolinux.appapi.ai.model.*;
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
@@ -31,6 +32,7 @@ import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence;
+import gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
 import org.junit.jupiter.api.Test;
@@ -41,6 +43,7 @@ class DeploymentToolchainReviewEvidenceTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final int R20_SMALLEST_REMAINING_BYTES = 365119;
     private static final String PHASE = "toolchainReviewEvidence";
+    private static final String RAW_PAGE = "WTL-COMMAND-EVIDENCE-PAGE-1\n";
 
     @Test
     void nativeInstallerPagesCompleteSourceWhileKeepingActualWorkflowVisible() throws Exception {
@@ -155,7 +158,45 @@ class DeploymentToolchainReviewEvidenceTest {
             String mirrorSource = collect(evidence, mirror, PHASE);
             assertIdentity(mirror, mirrorSource);
             assertTrue(mirrorSource.startsWith("class MirrorPolicy:", mirror.at("/locations/class MirrorPolicy:").intValue()));
-            var restored = restore(JSON.readTree(wire), Map.of(mirrorPointer, mirrorSource));
+            var sources = new LinkedHashMap<>(Map.of(mirrorPointer, mirrorSource));
+            if (kind.equals("bind")) {
+                for (String name : List.of("mirrorBootstrapShell", "mirrorPolicySource")) {
+                    var descriptor = projected.at("/" + PHASE + "/" + name);
+                    assertEquals("EVIDENCE_PAGES", descriptor.path("retrieval").asText());
+                    String source = collect(evidence, descriptor, PHASE);
+                    assertIdentity(descriptor, source);
+                    sources.put(descriptor.path("sourcePointer").asText(), source);
+                    if (name.equals("mirrorPolicySource")) assertEquals(DeploymentMirrorTasks.policy(fixture.task), source);
+                }
+                String helper = DeploymentManagedHelperBundle.renderScript(fixture.layout);
+                var helperDescriptor = projected.at("/" + PHASE + "/installedHelperSource");
+                assertIdentity(helperDescriptor, helper);
+                var ranges = helperDescriptor.path("selectedRanges");
+                assertTrue(ranges.size() > 0);
+                var frame = projected.at("/" + PHASE + "/frames/0");
+                assertEquals(helperDescriptor.path("selectedRangeFrame"), frame.path("sourcePointer"));
+                String frameBody = initial.messages().get(initial.messages().size() - 2).text()
+                    .substring(frame.path("headerCharacters").intValue());
+                assertIdentity(frame, frameBody);
+                for (var range : ranges) {
+                    int offset = range.path("offset").intValue();
+                    int next = range.path("next").intValue();
+                    int start = range.path("startCharacter").intValue();
+                    assertEquals(helper.substring(offset, next), frameBody.substring(start, start + next - offset));
+                }
+                assertTrue(frameBody.contains("def validated_binding"));
+                assertTrue(frameBody.contains("def bind("));
+                var selected = ranges.get(0);
+                String readerSnapshot = JSON.readTree(evidence.messages().getLast().text()).at("/" + PHASE + "/snapshotSha256").asText();
+                var supplied = evidence.reader(1).read(response(Optional.empty(), read("supplied",
+                    readerSnapshot, helperDescriptor.path("sourcePointer").asText(),
+                    selected.path("offset").intValue(), selected.path("next").intValue() - selected.path("offset").intValue()))).getFirst();
+                assertFalse(supplied.error());
+                var suppliedPage = JSON.readTree(supplied.text()).path("value");
+                assertFalse(suppliedPage.has("text"));
+                assertEquals(0, suppliedPage.path("newRanges").size());
+            }
+            var restored = restore(JSON.readTree(wire), sources);
             assertEquals(JSON.readTree(original), restored);
             assertEquals(intent.exactAction(), restored.path("exactAction").asText());
             if (kind.equals("dependencies"))
@@ -229,6 +270,82 @@ class DeploymentToolchainReviewEvidenceTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"csv-inspector", "survey-scoring"})
+    void mirroredBindingRetainsR22EvidenceTrafficWithinObservedByteCeilings(String scenario) throws Exception {
+        boolean csv = scenario.equals("csv-inspector");
+        int ceiling = csv ? 296761 : 334891;
+        int[][] offsets = csv
+            ? new int[][]{{0, 56000, 76000, 104000, 112000, 144000, 158000, 198000},
+                {8000, 16000, 24000, 32000, 40000, 48000, 64000, 84000},
+                {72000, 92000, 100000, 120000, 128000, 136000, 152000, 166000}}
+            : new int[][]{{198000}, {194000, 236000, 142000}, {543000, 201000, 236000}, {146000, 188000, 216000},
+                {183000}, {160811}, {168811}, {176811}};
+        int[] encryptedBytes = csv ? new int[]{17400, 8500, 4300}
+            : new int[]{8950, 6600, 29000, 12300, 2450, 21100, 2000, 1900};
+        try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var request = request("bind", fixture)) {
+            var intent = intent("bind", fixture, request);
+            Callable<OperationResult<ApprovalGrant>> review = () -> DeploymentFixedCommandApproval.approveWithEvidence(
+                assisted.context, assisted.host, intent, request, fixture.task, fixture.model.configurationRevision,
+                "AUTOMATIC", false, (action, command, task) -> assisted.scope.effectFacts(action, task));
+            reply(fixture, verdict("initial-denial", "DENY"));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", assertThrows(ApiException.class, review::call).problem().eventCode());
+            var initial = fixture.model.requests.getFirst();
+            var facts = JSON.readTree(initial.messages().getLast().text());
+            String snapshot = facts.at("/" + PHASE + "/snapshotSha256").asText();
+            String helper = facts.at("/" + PHASE + "/installedHelperSource/sourcePointer").asText();
+            String mirror = facts.at("/mirrorTransport/runtimeSource/sourcePointer").asText();
+            var continuations = new LinkedHashMap<UUID, String>();
+            int callCount = 0;
+            for (int round = 0; round < offsets.length; round++) {
+                var calls = new ArrayList<AiToolCall>();
+                for (int offset : offsets[round]) {
+                    int limit = !csv && offset == 183000 ? 10000 : !csv && offset == 142000 ? 6000 : 8000;
+                    calls.add(read("r22-page-" + callCount++, snapshot, csv && offset != 198000 ? mirror : helper, offset, limit));
+                }
+                reply(fixture, continuations, encryptedBytes[round], calls.toArray(AiToolCall[]::new));
+            }
+            reply(fixture, verdict("final-denial", "DENY"));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", assertThrows(ApiException.class, review::call).problem().eventCode());
+            var last = fixture.model.requests.getLast();
+            byte[] encoded;
+            try {
+                encoded = wire(last, ceiling, continuations);
+            } catch (ModelRequestBudgetException tooLarge) {
+                throw new AssertionError(scenario + " encoded " + tooLarge.encodedBytes() + " > " + ceiling + " bytes", tooLarge);
+            }
+            assertThrows(IllegalArgumentException.class, () -> wire(last, encoded.length - 1, continuations));
+            var input = JSON.readTree(encoded).path("input");
+            var types = input.findValuesAsText("type");
+            assertEquals(offsets.length, types.stream().filter("reasoning"::equals).count());
+            assertEquals(callCount, types.stream().filter("function_call"::equals).count());
+            assertEquals(callCount, types.stream().filter("function_call_output"::equals).count());
+            if (csv) {
+                String runtime = DeploymentMirrorRuntime.runtimeSource();
+                var pages = last.messages().stream().flatMap(message -> message.toolResult().stream())
+                    .map(AiToolResult::text).filter(text -> text.startsWith(RAW_PAGE)).toList();
+                assertEquals(23, pages.size());
+                boolean coveredOverlap = false;
+                for (String raw : pages) {
+                    var payload = pagePayload(raw);
+                    assertEquals(snapshot, payload.path("snapshotSha256").asText());
+                    assertEquals(mirror, payload.path("pointer").asText());
+                    var value = payload.path("value");
+                    if (value.has("newRanges")) {
+                        coveredOverlap = true;
+                        for (var range : value.path("newRanges")) assertRange(runtime, range);
+                    } else {
+                        assertRange(runtime, value);
+                    }
+                }
+                assertTrue(coveredOverlap);
+            }
+            assertEquals(0, assisted.hosts.get());
+            System.out.printf("BINDING_REVIEW_R22_SHAPE scenario=%s bytes=%d ceiling=%d calls=%d%n", scenario, encoded.length, ceiling, callCount);
+        }
+    }
+
     private static CommandRequest request(String kind, MirroredInstallerTestFixture fixture) {
         byte[] stdin = new byte[0];
         String command;
@@ -269,7 +386,7 @@ class DeploymentToolchainReviewEvidenceTest {
             var call = read("restore-" + body.length(), snapshot, descriptor.path("sourcePointer").asText(), body.length(), 8000);
             var reply = reader.read(response(Optional.empty(), call)).getFirst();
             assertFalse(reply.error());
-            var page = JSON.readTree(reply.text()).path("value");
+            var page = pagePayload(reply.text()).path("value");
             assertEquals(body.length(), page.path("offset").intValue());
             assertEquals(descriptor.path("sha256").asText(), page.path("sha256").asText());
             String text = page.path("text").asText();
@@ -335,12 +452,33 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     private static void assertPage(AiToolResult page, String snapshot, String original) throws Exception {
-        var payload = JSON.readTree(page.text());
+        var payload = pagePayload(page.text());
         assertEquals(snapshot, payload.path("snapshotSha256").asText());
         assertEquals(original.substring(0, 120), payload.at("/value/text").asText());
         assertEquals(120, payload.at("/value/next").intValue());
         assertTrue(payload.at("/value/hasMore").asBoolean());
         assertEquals(MirroredInstallerTestFixture.sha(original), payload.at("/value/sha256").asText());
+    }
+
+    private static JsonNode pagePayload(String text) throws Exception {
+        if (!text.startsWith(RAW_PAGE)) return JSON.readTree(text);
+        int bodyStart = text.indexOf('\n', RAW_PAGE.length()) + 1;
+        assertTrue(bodyStart > RAW_PAGE.length());
+        var payload = JSON.readTree(text.substring(RAW_PAGE.length(), bodyStart - 1));
+        var value = (ObjectNode) payload.path("value");
+        Iterable<? extends JsonNode> ranges = value.has("newRanges") ? value.path("newRanges") : List.of(value);
+        int position = bodyStart;
+        for (var range : ranges) {
+            int next = position + range.path("next").intValue() - range.path("offset").intValue();
+            ((ObjectNode) range).put("text", text.substring(position, next));
+            position = next;
+        }
+        assertEquals(text.length(), position);
+        return payload;
+    }
+
+    private static void assertRange(String source, JsonNode range) {
+        assertEquals(source.substring(range.path("offset").intValue(), range.path("next").intValue()), range.path("text").asText());
     }
 
     private static AiToolCall verdict(String id, String decision) throws Exception {
