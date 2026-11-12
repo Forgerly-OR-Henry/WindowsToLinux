@@ -105,6 +105,6 @@ public interface DeploymentCommandReviewModel {
 
     static DeploymentCommandReviewModel submission(DeploymentAiJson ai) {
         return (instructions, facts, intent, request, revision, task) -> new Result(
-            DeploymentReviewDecision.parse(ai.askCommand(instructions, facts, revision, task, DeploymentReviewDecision::malformed)), Map.of());
+            DeploymentReviewDecision.parse(ai.askCommand(instructions, facts, revision, task, DeploymentReviewDecision::malformed, intent, request)), Map.of());
     }
 }

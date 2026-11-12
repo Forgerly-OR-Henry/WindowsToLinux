@@ -14,6 +14,7 @@ import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
 
 /** Shared fixed OS dependency transaction; source consistency never grants permission. */
 public final class DeploymentToolchainDependencies {
@@ -84,7 +85,10 @@ public final class DeploymentToolchainDependencies {
 
     /** A narrowed outer channel cannot execute a frame approved for a different total budget. */
     public static void requireTimeout(CommandRequest request) {
-        var args = arguments(request.script());
+        requireTimeout(request, arguments(request.script()));
+    }
+
+    private static void requireTimeout(CommandRequest request, List<String> args) {
         if (args.size() != 5 || !args.get(2).matches("[1-9][0-9]{0,3}") || request.timeout().getNano() != 0
             || !Long.toString(request.timeout().getSeconds()).equals(args.get(2))
             || request.timeout().getSeconds() < 45 || request.timeout().getSeconds() > 7200)
@@ -92,8 +96,14 @@ public final class DeploymentToolchainDependencies {
     }
 
     public static void requireOriginal(CommandRequest request, ServerId server, String task) {
-        requireTimeout(request);
-        var args = arguments(request.script());
+        var mirror = DeploymentMirrorTasks.preparation(request.script());
+        if (mirror.isPresent()) {
+            var preparation = mirror.orElseThrow();
+            if (!preparation.task().toString().equals(task) || preparation.budgetSeconds() != request.timeout().toSeconds())
+                throw new IllegalArgumentException("Dependency mirror task or budget changed");
+        }
+        var args = arguments(mirror.map(DeploymentMirrorTasks.Preparation::original).orElse(request.script()));
+        requireTimeout(request, args);
         if (!args.equals(frame(args.getFirst(), args.get(1), request.timeout().getSeconds(), server, task)))
             throw new IllegalArgumentException("Dependency original server/task changed");
     }
@@ -117,7 +127,7 @@ public final class DeploymentToolchainDependencies {
     }
 
     static List<String> arguments(String command) {
-        command = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.originalCommand(command);
+        command = DeploymentMirrorTasks.originalCommand(command);
         if (command == null || !command.startsWith(COMMAND_PREFIX))
             throw new IllegalArgumentException("Agent program launcher changed");
         String tail = command.substring(COMMAND_PREFIX.length());

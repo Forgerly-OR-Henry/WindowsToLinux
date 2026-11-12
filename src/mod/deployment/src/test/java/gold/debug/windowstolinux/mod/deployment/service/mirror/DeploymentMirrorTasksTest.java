@@ -82,9 +82,15 @@ class DeploymentMirrorTasksTest extends DeploymentRuntimeFixture {
                     assertTrue(resolved.points().values().stream().allMatch(points -> points.size() == 1 && points.getFirst().custom()));
                     String command = "printf '%s\\n' 'task-specific source'";
                     String wrapped = DeploymentMirrorTasks.preparationCommand(command, task);
+                    assertTrue(wrapped.contains(DeploymentMirrorTasks.PRIVILEGED_LAUNCHER
+                        + "/bin/bash --noprofile --norc -p /dev/fd/4 4<<'WTL_MIRROR_PREPARATION_BODY'\n"));
+                    assertTrue(wrapped.indexOf("root-preparation-required") < wrapped.indexOf("/usr/bin/date"));
                     assertEquals(command, DeploymentMirrorTasks.preparation(wrapped).orElseThrow().original());
                     assertThrows(IllegalArgumentException.class, () -> DeploymentMirrorTasks.preparation(
                         wrapped.replace("root-preparation-required", "changed-preparation")));
+                    assertThrows(IllegalArgumentException.class, () -> DeploymentMirrorTasks.preparation(wrapped.replace("exec -c", "exec")));
+                    assertThrows(IllegalArgumentException.class, () -> DeploymentMirrorTasks.preparationCommand(
+                        "printf hello\nWTL_MIRROR_PREPARATION_BODY\nprintf world", task));
                     assertTrue(context.tasks().findCheckpoint(task, DeploymentMirrorTasks.CHECKPOINT + ".part.0").isPresent());
                     assertDoesNotThrow(() -> DeploymentMirrorTasks.requireProjectScript(task),
                         "A fixed source does not reject unrelated local commands before independent review");

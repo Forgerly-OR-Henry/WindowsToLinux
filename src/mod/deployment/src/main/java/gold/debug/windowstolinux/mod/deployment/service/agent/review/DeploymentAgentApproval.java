@@ -62,7 +62,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
     private static final String AGENT_OPEN_FIELD = "agentOpenPhaseEvidence";
 
     // These phase claims describe this reviewed helper source, not future contract revisions.
-    private static final String AGENT_OPEN_HELPER_SHA = "d10a316ac0078b4dabb286409e12845376d719578c9e2c029686deaf369cc3b4";
+    private static final String AGENT_OPEN_HELPER_SHA = "83d6773e86575fe8582eefb9a164b6912904b61dd3f16821a3cdc39fe02f976c";
 
     private static final Set<String> SOURCE_DEPENDENT_EVENTS = Set.of("PREPARE_EXECUTING", "COMMAND_EXECUTING", "PATCH_EXECUTING",
         "SEAL_EXECUTING", "DELIVERY_EXECUTING", "CAPABILITY_EXECUTING", "PLAN", "PLAN_APPLICATION", "AGENT_QUERY",
@@ -915,9 +915,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
 
     private static Map<String, Object> page(String text, int offset, int limit) {
         if (offset > text.length()) throw new PageArgumentException("offset", "PAGE_CURSOR_OUT_OF_RANGE");
-        int end = Math.min(text.length(), offset + limit);
-        return Map.of("offset", offset, "next", end, "total", text.length(), "hasMore", end < text.length(),
-            "sha256", sha(text), "text", text.substring(offset, end));
+        return gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentEvidencePages.page(text, offset, limit);
     }
 
     private static int number(JsonNode node, String name, int min, int max) {

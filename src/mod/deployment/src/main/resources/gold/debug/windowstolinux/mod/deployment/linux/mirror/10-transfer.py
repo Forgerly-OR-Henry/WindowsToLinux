@@ -163,14 +163,31 @@ class MirrorPolicy:
 
     @staticmethod
     def validate_url(endpoint, url):
-        parsed = urllib.parse.urlsplit(url)
-        # Loopback HTTP is useful to test the real transfer engine without network access.
-        local = parsed.hostname in ('127.0.0.1', '::1', 'localhost')
-        if (parsed.scheme != 'https' and not (local and parsed.scheme == 'http')
-                or parsed.username or parsed.password or parsed.fragment
+        rejection = 'destination/redirect outside selected source allowlist'
+        try:
+            parsed = urllib.parse.urlsplit(url)
+            port = parsed.port
+            if parsed.scheme == 'https':
+                port = 443 if port is None else port
+                if endpoint.get('custom') is True:
+                    base = urllib.parse.urlsplit(endpoint.get('baseUrl', ''))
+                    base_port = base.port
+                    # Only the selected custom origin can opt into a different HTTPS port.
+                    admitted = (base.scheme == 'https' and base.hostname == parsed.hostname
+                                and port == (443 if base_port is None else base_port))
+                else:
+                    admitted = port == 443
+            else:
+                # Loopback HTTP supports local transport fixtures.
+                admitted = parsed.scheme == 'http' and parsed.hostname in ('127.0.0.1', '::1', 'localhost')
+        except ValueError:
+            raise MirrorFailure(rejection) from None
+        if (not admitted or port == 0 or parsed.username is not None or parsed.password is not None
+                or '#' in url or parsed.netloc.endswith(':')
+                or any(ord(char) <= 32 or ord(char) == 127 for char in url)
                 or MirrorPolicy.normalized_host(parsed.hostname) not in {
                     MirrorPolicy.normalized_host(host) for host in endpoint.get('allowedHosts', [])}):
-            raise MirrorFailure('destination/redirect outside selected source allowlist')
+            raise MirrorFailure(rejection)
         return url
 
     @staticmethod

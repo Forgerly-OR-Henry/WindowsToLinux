@@ -225,8 +225,9 @@ public final class DeploymentCommandEvidence {
             "requestLauncher", SshCommandFrameProtocol.SCRIPT_LAUNCHER,
             "requestScriptFd", 3, "originalStdinFd", 0,
             "scope", "Built-in SSH exec transport implementation after the SSH server dispatches the fixed frame. "
+                + "The account shell unsets the listed Linux loader and libc startup variables before starting the first product executable. "
                 + "Both Bash processes start with privileged mode enabled; this suppresses startup imports without changing the SSH account or granting privileges. "
-                + "The SSH server, its account startup policy and installed interpreters are host prerequisites. "
+                + "The SSH server, the initial account shell and its startup policy, and installed interpreters are host prerequisites. "
                 + "These facts describe the shipped code, not a live host measurement. Review further interpreters launched by the request."));
         if (operation.equals("deployment.model.command.v1")) {
             facts.put("commandOrigin", "AI_GENERATED_BODY_WITH_PRODUCT_RECEIPT_WRAPPER");
@@ -257,6 +258,12 @@ public final class DeploymentCommandEvidence {
             throw new IllegalArgumentException("Mirror preparation differs from original task");
         if (preparation.isPresent() && preparation.orElseThrow().budgetSeconds() != request.timeout().toSeconds())
             throw new IllegalArgumentException("Mirror preparation deadline differs from original request");
+        if (preparation.isPresent())
+            result.put("privilegedMirrorPreparation", Map.of(
+                "launcher", DeploymentMirrorTasks.PRIVILEGED_LAUNCHER.stripTrailing(),
+                "bodyFd", 4, "originalStdinFd", 0, "bodyRequiresEffectiveUid", 0,
+                "requestSource", "/exactAction",
+                "meaning", "Exact product launcher and frozen task wrapper comparison. The Bash script is supplied separately from the original request stdin. Review the complete outer request and the fixed inner invocation independently."));
         if (result.containsKey("mirrorInputTask") && !task.id().toString().equals(result.get("mirrorInputTask")))
             throw new IllegalArgumentException("Mirror executable input differs from original task");
         String mirrorPolicy = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task);
@@ -538,8 +545,8 @@ public final class DeploymentCommandEvidence {
             return java.util.Optional.of(Map.of("variant", variant, "comparison", "EXACT_PRODUCT_REQUEST_SCRIPT_AND_EMPTY_STDIN",
                 "scriptSha256", java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(script)),
                 "scriptBytes", script.length, "stdinBytes", 0,
-                "environment", Map.of("launcher", "/usr/bin/env -i", "workingDirectory", "/", "shellArguments", java.util.List.of("--noprofile", "--norc", "-s"), "homeAndXdgPaths", "/dev/null"),
-                "optionalCommandAdmission", "probe_command checks absolute executable, root ownership and non-writable original/resolved parent paths before invocation",
+                "environment", Map.of("launcher", "builtin exec -c /usr/bin/env -i", "workingDirectory", "/", "shellArguments", java.util.List.of("--noprofile", "--norc", "-p", "-s"), "homeAndXdgPaths", "/dev/null"),
+                "optionalCommandAdmission", "probe_command checks the absolute executable, root ownership and non-writable original/resolved parent paths before invoking the checked path",
                 "python", Map.of("discoveryNamePattern", "^python[0-9]+[.][0-9]+$", "venvArguments", java.util.List.of("-I", "-S", "-B", "-m", "venv", "--help"), "pipArguments", java.util.List.of("-I", "-S", "-B", "-")),
                 "composerArguments", java.util.List.of("--no-plugins", "--no-scripts", "--no-cache", "--no-interaction", "--version"),
                 "meaning", "Exact request-byte comparison and literal guard/argument descriptions only; not live program trust, no-effects proof, ownership or authority. Review every reachable effect; container variants can initialize storage."));

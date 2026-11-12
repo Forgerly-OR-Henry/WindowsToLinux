@@ -52,11 +52,12 @@ class DeploymentPlatformCapabilityParserTest {
             java.nio.file.Files.writeString(hook, "printf executed >'" + markerPath + "'\n");
             String script = "export BASH_ENV='" + hook.toString().replace('\\', '/').replace("'", "'\"'\"'") + "'\n"
                 + "export NODE_OPTIONS=--require=untrusted JAVA_TOOL_OPTIONS=untrusted MAVEN_OPTS=untrusted PYTHONPATH=untrusted\n"
+                + "export LD_LIBRARY_PATH= GCONV_PATH=/nonexistent\n"
                 + "npm() { printf executed >'" + markerPath + "'; }; export -f npm\n"
                 + DeploymentPlatformCapabilityProbe.isolatedProbe("""
                 set -eu
                 [ "$PWD" = / ] && [ "$HOME" = /dev/null ]
-                for variable in BASH_ENV NODE_OPTIONS JAVA_TOOL_OPTIONS MAVEN_OPTS PYTHONPATH; do
+                for variable in BASH_ENV NODE_OPTIONS JAVA_TOOL_OPTIONS MAVEN_OPTS PYTHONPATH LD_LIBRARY_PATH GCONV_PATH; do
                   [ -z "${!variable+x}" ] || exit 91
                 done
                 ! declare -F npm >/dev/null || exit 92
@@ -107,7 +108,8 @@ class DeploymentPlatformCapabilityParserTest {
                     java.nio.file.Files.writeString(config, "untrusted extension configuration");
                 String script = "set -eu\nscenario='" + scenario + "'\nmarker='" + path.replace("'", "'\"'\"'") + "/executed'\n"
                     + """
-                    command() { [ "$1" = -v ]; }
+                    probe_command() { return 0; }
+                    probe_run() { "$@"; }
                     npm() { printf called >>"$marker"; [ "$scenario" != offline ] || return 1; printf '11.0.0\\n'; }
                     pnpm() { npm "$@"; }
                     yarn() { npm "$@"; }
@@ -149,7 +151,8 @@ class DeploymentPlatformCapabilityParserTest {
         String script = """
             set -eu
             export PATH=/usr/bin:/bin
-            command() { [ "$1" = -v ] && { [ "$2" = dotnet ] || [ "$2" = composer ]; }; }
+            probe_command() { [ "$1" = dotnet ] || [ "$1" = composer ]; }
+            probe_run() { "$@"; }
             compgen() { :; }
             dotnet() { [ "$*" = --list-sdks ] || exit 91; printf '8.0.123 [/test/sdk]\\n'; }
             composer() { [ "$*" = '--no-plugins --no-scripts --no-cache --no-interaction --version' ] || exit 92; printf 'Composer version 2.8.1\\n'; }
@@ -177,22 +180,25 @@ class DeploymentPlatformCapabilityParserTest {
         try {
             String path = file.toString().replace('\\', '/');
             if (path.matches("^[A-Za-z]:/.*")) path = "/" + Character.toLowerCase(path.charAt(0)) + path.substring(2);
-            for (String scenario : java.util.List.of("safe", "unowned", "writable-file", "writable-parent", "writable-root", "writable-original-parent")) {
+            for (String scenario : java.util.List.of("safe", "unowned", "writable-file", "writable-parent", "writable-root")) {
                 String script = "set -eu\nfile='" + path.replace("'", "'\"'\"'")
                     + "'\nresolved=$(/usr/bin/readlink -f -- \"$file\")\nunsafe_parent=${resolved%/*}\nscenario=" + scenario + "\n"
                     + """
                     probe_stat() {
+                      local mode=755 uid=0
                       case "$2" in
-                        %u) if [ "$scenario" = unowned ] && [ "$4" = "$file" ]; then printf '1000'; else printf '0'; fi ;;
-                        %a) if { [ "$scenario" = writable-file ] && [ "$4" = "$file" ]; } || { { [ "$scenario" = writable-parent ] || [ "$scenario" = writable-original-parent ]; } && [ "$4" = "$unsafe_parent" ]; } || { [ "$scenario" = writable-root ] && [ "$4" = / ]; }; then printf '777'; else printf '755'; fi ;;
+                        %u) printf '0' ;;
+                        %u:%a)
+                          if [ "$scenario" = unowned ] && [ "$4" = "$resolved" ]; then uid=1000; fi
+                          if { [ "$scenario" = writable-file ] && [ "$4" = "$resolved" ]; } \\
+                            || { [ "$scenario" = writable-parent ] && [ "$4" = "$unsafe_parent" ]; } \\
+                            || { [ "$scenario" = writable-root ] && [ "$4" = / ]; }; then mode=777; fi
+                          printf '%s:%s' "$uid" "$mode" ;;
                         *) return 1 ;;
                       esac
                     }
-                    probe_readlink() {
-                      if [ "$scenario" = writable-original-parent ] && [ "$3" = "$file" ]; then printf '/usr/bin/true'; else /usr/bin/readlink "$@"; fi
-                    }
                     """
-                    + DeploymentPlatformCapabilityProbe.probeGuards().replace("/usr/bin/stat", "probe_stat").replace("/usr/bin/readlink", "probe_readlink")
+                    + DeploymentPlatformCapabilityProbe.probeGuards().replace("/usr/bin/stat", "probe_stat")
                     + "if probe_file \"$file\"; then exit 0; else exit 1; fi\n";
                 var process = new ProcessBuilder(bash, "--noprofile", "--norc", "-s").redirectErrorStream(true).start();
                 try {
@@ -201,7 +207,8 @@ class DeploymentPlatformCapabilityParserTest {
                     }
                     assertTrue(process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS));
                     String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                    assertEquals(scenario.equals("safe") ? 0 : 1, process.exitValue(), scenario + ": " + output);
+                    assertEquals(scenario.equals("safe") ? 0 : scenario.equals("writable-root") ? 64 : 1,
+                        process.exitValue(), scenario + ": " + output);
                 } finally {
                     if (process.isAlive()) process.destroyForcibly().waitFor();
                 }
@@ -235,7 +242,8 @@ class DeploymentPlatformCapabilityParserTest {
             String script = """
                 set -eu
                 export PATH=/usr/bin:/bin
-                command() { [ "$1" = -v ] && { [ "$2" = python3 ] || [ "$2" = python3.12 ]; }; }
+                probe_command() { [ "$1" = python3 ] || [ "$1" = python3.12 ]; }
+                probe_run() { "$@"; }
                 compgen() { printf 'python3.12\\n'; }
                 python3() { [ "$*" = '-I -S -B -' ] || exit 91; "$fixture_python" "$@"; }
                 python3.12() { [ "$*" = '-I -S -B -m venv --help' ] || exit 92; "$fixture_python" "$@"; }
@@ -319,8 +327,8 @@ class DeploymentPlatformCapabilityParserTest {
         String bash = System.getProperty("managed.test.bash", "/bin/bash");
         org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isExecutable(java.nio.file.Path.of(bash)));
         String tools = DeploymentEcosystemCapabilityProbe.platformToolChecks();
-        String jarProbe = tools.substring(tools.indexOf("if command -v jar "), tools.indexOf("if command -v node ", tools.indexOf("if command -v jar ")))
-            .replace("command -v ", "probe_command ");
+        int jarStart = tools.indexOf("if probe_command jar ");
+        String jarProbe = tools.substring(jarStart, tools.indexOf("if probe_command node ", jarStart));
         assertTrue(DeploymentPlatformCapabilityProbe.render().contains(jarProbe));
         var directory = java.nio.file.Files.createTempDirectory("jar-fallback-");
         var marker = directory.resolve("compiler-executed");
@@ -333,6 +341,7 @@ class DeploymentPlatformCapabilityParserTest {
                       if [ "$1" = jar ]; then [ "$scenario" != jar-denied ];
                       else [ "$1" = javac ] && [ "$scenario" = fallback-safe ]; fi
                     }
+                    probe_run() { probe_command "$1" && "$@"; }
                     jar() {
                       [ "$*" = --version ] || exit 92
                       if [ "$scenario" = jar-version ]; then printf 'jar 21.0.1\\n'; else return 1; fi
@@ -374,13 +383,14 @@ class DeploymentPlatformCapabilityParserTest {
                 probe_command() {
                   [ "$1" = firewall-cmd ] || { [ "$1" = systemctl ] && [ "$scenario" != untrusted ]; }
                 }
+                probe_run() { probe_command "$1" && "$@"; }
                 systemctl() {
                   [ "$scenario" != untrusted ] || { printf 'REJECTED_TOOL_EXECUTED\\n'; exit 91; }
                   [ "$*" = 'is-active --quiet firewalld' ] || exit 92
                   printf 'VERIFIED_SYSTEMCTL_EXECUTED\\n'
                   [ "$scenario" = active ]
                 }
-                """ + "scenario='" + scenario + "'\n" + DeploymentPlatformCapabilityProbe.firewallProbe().replace("command -v ", "probe_command ");
+                """ + "scenario='" + scenario + "'\n" + DeploymentPlatformCapabilityProbe.firewallProbe();
             Process process = new ProcessBuilder(bash, "-s").redirectErrorStream(true).start();
             try {
                 try (var input = process.getOutputStream()) {
@@ -407,7 +417,8 @@ class DeploymentPlatformCapabilityParserTest {
             String script = """
                 set -eu
                 export LC_ALL=C
-                command() { [ "$1" = -v ] && [ "$2" = ufw ]; }
+                probe_command() { [ "$1" = ufw ]; }
+                probe_run() { probe_command "$1" && "$@"; }
                 systemctl() { return 0; }
                 ufw() {
                   case "$scenario" in

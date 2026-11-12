@@ -29,11 +29,11 @@ class DeploymentAgentPublicationContractDiagnosticProgramTest {
     }
     @Test void contractDiagnosticPreservesOldBytesAndReconstructsExactReadOnlyRequest() throws Exception {
         var old = new DeploymentAgentPublicationRecoveryProgram(layout);
-        assertEquals("ddc76b6ad25a7d97ef164d3900f7181e3985093155e31e59ef906c26d084961b", old.version());
-        assertEquals("869ccc5278cce72c6ee16058fe0a95e12d233fa59a9dc83017bf0ce13043795e", sha(old.source().getBytes(StandardCharsets.UTF_8)));
-        assertEquals("ea2c39ec932cb267994695674c20e05e20938c709035780d84ec54c1876a9035", sha(old.loader().getBytes(StandardCharsets.UTF_8)));
-        assertEquals("46fdf585199fa02429d849da4c1595d132b0c999a8554972f923319b8a2637e8", sha(old.installer().getBytes(StandardCharsets.UTF_8)));
-        assertEquals("27a8559aabebfdc35e9499a792d3763bf64be3c0eeb1dec23813642b8b5af22f", new DeploymentAgentPublicationContinuationProgram(layout).sourceVersion());
+        assertEquals("a15685f6958c9a84d2dea62d05e60458125bdd1d9e4064491636bd7eb4f74a1c", old.version());
+        assertEquals("40697a6f46d7cfec6ad36e13ebeb1fce98190c1d1679a9184d14278e625c8974", sha(old.source().getBytes(StandardCharsets.UTF_8)));
+        assertEquals("87c91c1031ad64588a55bb95463b456eaf01f04be38268c218697264f863121e", sha(old.loader().getBytes(StandardCharsets.UTF_8)));
+        assertEquals("dcb9deae2f84fdbc62c36d19422479abd6dae4d7f0a7e5bd59e411cf065d56c7", sha(old.installer().getBytes(StandardCharsets.UTF_8)));
+        assertEquals("f5726e844c515987a057163b9dc91a1cc245a811ea2d60b3ae805f0661d2d6de", new DeploymentAgentPublicationContinuationProgram(layout).sourceVersion());
         try (var r = program.request(binding(), UUID.randomUUID())) {
             assertArrayEquals(program.source().getBytes(StandardCharsets.UTF_8), r.command().stdin());
             assertEquals(r.resourceTargets(), DeploymentAgentPublicationContractDiagnosticProgram.reviewedResourceTargets(r.command(), layout, new ServerId("host")));

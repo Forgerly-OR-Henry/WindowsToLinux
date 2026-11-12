@@ -28,6 +28,12 @@ public final class DeploymentMirrorTasks {
     private static final Set<UUID> ADMITTED = ConcurrentHashMap.newKeySet();
     private static volatile BooleanSupplier privacy = () -> false;
     private static final String PREPARATION_END = "\n)\n";
+    private static final String PREPARATION_DELIMITER = "WTL_MIRROR_PREPARATION_BODY";
+    private static final String PRIVILEGED_PREPARATION_END = PREPARATION_END + PREPARATION_DELIMITER + "\n";
+    public static final String PRIVILEGED_LAUNCHER =
+        "builtin exec -c /usr/bin/env -i LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root ";
+    private static final String PREPARATION_LAUNCHER = "builtin unset -v TMPDIR || exit 64\n" + PRIVILEGED_LAUNCHER
+        + "/bin/bash --noprofile --norc -p /dev/fd/4 4<<'" + PREPARATION_DELIMITER + "'\n";
     private static final String COMPATIBILITY_LAUNCHER =
         "exec /usr/bin/env -i LC_ALL=C PATH=/usr/bin:/bin /bin/bash --noprofile --norc -p -s";
     private static final String COMPATIBILITY_SCRIPT = """
@@ -64,7 +70,7 @@ public final class DeploymentMirrorTasks {
             throw new IllegalArgumentException("Mirror-bound host body exceeds execution limit");
         return body;
     }
-    /** Preserves the original stdin and injects policy in the same root identity as the fixed helper. */
+    /** Feeds the clean Bash on fd 4, keeping the SSH frame on fd 3 and the original payload on fd 0. */
     public static String preparationCommand(String command, TaskContext task) {
         return preparationCommand(command, task.id());
     }
@@ -79,13 +85,15 @@ public final class DeploymentMirrorTasks {
         String policy = ACTIVE.getOrDefault(task, "");
         if (policy.isEmpty()) return command;
         if (seconds < 1 || seconds > 7200) throw new IllegalArgumentException("Invalid mirror preparation budget");
-        String script = "# WTL_MIRROR_PREPARATION=" + task + "\n# WTL_MIRROR_BUDGET=" + seconds
-            + "\nset -eu\nexport WTL_MIRROR_BUDGET_SECONDS=" + seconds + " WTL_MIRROR_STARTED_AT=\"$(/usr/bin/date +%s)\"\n"
-            + "[ \"$(/usr/bin/id -u)\" -eq 0 ] || { printf 'MIRROR_REJECT=root-preparation-required\\n' >&2; exit 64; }\n"
+        String body = "builtin exec 4<&-\nset -eu\n[ \"$EUID\" -eq 0 ] || { printf 'MIRROR_REJECT=root-preparation-required\\n' >&2; exit 64; }\n"
+            + "export WTL_MIRROR_BUDGET_SECONDS=" + seconds + " WTL_MIRROR_STARTED_AT=\"$(/usr/bin/date +%s)\"\n"
             + withMaterials(gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.bootstrapPrefix(policy), task)
             + "trap 'wtl_mirror_exit=$?; /usr/bin/rm -rf -- \"$wtl_mirror_root\" || exit 70; exit \"$wtl_mirror_exit\"' EXIT\n(\n"
             + command + PREPARATION_END;
-        return script;
+        if (body.lines().anyMatch(PREPARATION_DELIMITER::equals))
+            throw new IllegalArgumentException("Mirror preparation delimiter collision");
+        return "# WTL_MIRROR_PREPARATION=" + task + "\n# WTL_MIRROR_BUDGET=" + seconds + "\n" + PREPARATION_LAUNCHER
+            + body + PREPARATION_DELIMITER + "\n";
     }
     public record Preparation(UUID task, String original, String policy, long budgetSeconds) { }
 
@@ -100,9 +108,9 @@ public final class DeploymentMirrorTasks {
         String policy = ACTIVE.get(id);
         if (policy == null) throw new IllegalArgumentException("Original mirror policy is not bound");
         String emptyBody = preparationCommand("", id, seconds);
-        String prefix = emptyBody.substring(0, emptyBody.length() - PREPARATION_END.length());
-        if (!body.startsWith(prefix) || !body.endsWith(PREPARATION_END)) throw new IllegalArgumentException("Mirror preparation source changed");
-        String original = body.substring(prefix.length(), body.length() - PREPARATION_END.length());
+        String prefix = emptyBody.substring(0, emptyBody.length() - PRIVILEGED_PREPARATION_END.length());
+        if (!body.startsWith(prefix) || !body.endsWith(PRIVILEGED_PREPARATION_END)) throw new IllegalArgumentException("Mirror preparation source changed");
+        String original = body.substring(prefix.length(), body.length() - PRIVILEGED_PREPARATION_END.length());
         if (original.isBlank() || !preparationCommand(original, id, seconds).equals(command))
             throw new IllegalArgumentException("Mirror preparation command changed");
         return Optional.of(new Preparation(id, original, policy, seconds));

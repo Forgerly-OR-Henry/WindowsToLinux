@@ -25,7 +25,7 @@ wtl_repository_copy() {
   wtl_source_routes "$point" "$provider" || return 65
   : >"$output"
   local filtered="$output.wtl-input"
-  awk 'BEGIN {RS=""; ORS="\n\n"} {
+  /usr/bin/awk 'BEGIN {RS=""; ORS="\n\n"} {
     lower=tolower($0)
     if (lower ~ /(^|\n)[ \t]*enabled:[ \t]*(no|false|0)([ \t]*\n|[ \t]*$)/) {
       count=split($0, lines, "\n"); for (i=1; i<=count; i++) print "# " lines[i]
@@ -58,7 +58,7 @@ wtl_repository_copy() {
     fi
     printf '%s\n' "$line" >>"$output"
   done <"$filtered"
-  rm -f -- "$filtered"
+  /usr/bin/rm -f -- "$filtered"
 }
 wtl_dnf_repository_copy() {
   local point="$1" provider="$2" input="$3" output="$4" line repo= next_repo= enabled=1 emitted=0
@@ -129,16 +129,16 @@ wtl_bounded_package_request() (
     tail="${raw##*) }"; read -r -a fields <<<"$tail"; own_start="${fields[19]:-}"
   fi
   trap 'wtl_stop_package_tree "$pid" "$own_start"; wait "$pid" 2>/dev/null || true' EXIT HUP INT TERM
-  last_size="$(du -sb -- "$cache" | awk '{print $1}')"
+  last_size="$(/usr/bin/du -sb -- "$cache" | /usr/bin/awk '{print $1}')"
   while kill -0 "$pid" 2>/dev/null; do
-    sleep 1
-    size="$(du -sb -- "$cache" | awk '{print $1}')"
+    /usr/bin/sleep 1
+    size="$(/usr/bin/du -sb -- "$cache" | /usr/bin/awk '{print $1}')"
     if [ "$size" -gt "$last_size" ]; then
       window_bytes=$((window_bytes + size - last_size)); last_progress="$SECONDS"
     fi
     last_size="$size"
     if [ -n "${WTL_MIRROR_BUDGET_SECONDS:-}" ] && [ -n "${WTL_MIRROR_STARTED_AT:-}" ]; then
-      now="$(date +%s)"
+      now="$(/usr/bin/date +%s)"
       if [ "$((now - WTL_MIRROR_STARTED_AT))" -ge "$WTL_MIRROR_BUDGET_SECONDS" ]; then
         printf 'MIRROR_REJECT=task-deadline\n' >>"$log"; return 65
       fi
@@ -195,32 +195,32 @@ wtl_system_package() {
     return 65
   fi
   folder="$(/usr/bin/mktemp -d -- "${WTL_MIRROR_POLICY%/*}/wtl-system-source.XXXXXXXX")" || return 65
-  chmod 700 "$folder"
+  /usr/bin/chmod 700 "$folder" || return 65
   log="$folder/request.log"
   local cache="${WTL_MIRROR_POLICY%/*}/system-cache"
-  mkdir -p "$cache/lists/partial" "$cache/archives/partial" "$cache/dnf"
+  /usr/bin/mkdir -p "$cache/lists/partial" "$cache/archives/partial" "$cache/dnf" || return 65
   for provider in "${providers[@]}"; do
-    wtl_prepare_system_credential "$point" "$provider" "$folder" || { rm -rf -- "$folder"; return 65; }
-    mkdir -p "$folder/repos"
+    wtl_prepare_system_credential "$point" "$provider" "$folder" || { /usr/bin/rm -rf -- "$folder"; return 65; }
+    /usr/bin/mkdir -p "$folder/repos" || return 65
     if [ "$manager" = apt-get ]; then
       for file in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
         [ -f "$file" ] || continue
-        wtl_repository_copy "$point" "$provider" "$file" "$folder/repos/${file##*/}" || { rm -rf -- "$folder"; return 65; }
+        wtl_repository_copy "$point" "$provider" "$file" "$folder/repos/${file##*/}" || { /usr/bin/rm -rf -- "$folder"; return 65; }
       done
     else
       for file in /etc/yum.repos.d/*.repo; do
         [ -f "$file" ] || continue
-        wtl_dnf_repository_copy "$point" "$provider" "$file" "$folder/repos/${file##*/}" || { rm -rf -- "$folder"; return 65; }
+        wtl_dnf_repository_copy "$point" "$provider" "$file" "$folder/repos/${file##*/}" || { /usr/bin/rm -rf -- "$folder"; return 65; }
       done
-      if ! grep -Eq '^\s*baseurl\s*=\s*https?://' "$folder/repos/"*; then
+      if ! /usr/bin/grep -Eq '^\s*baseurl\s*=\s*https?://' "$folder/repos/"*; then
         printf 'MIRROR_REJECT=dnf-explicit-baseurl-required\n' >&2
-        rm -rf -- "$folder"; return 65
+        /usr/bin/rm -rf -- "$folder"; return 65
       fi
     fi
     for ((attempt=1; attempt<=wtl_mirror_attempts; attempt++)); do
       printf 'MIRROR point=%s source=%s attempt=%s reason=request\n' "$point" "$provider" "$attempt" >&2
       if [ "$manager" = apt-get ]; then
-        wtl_apt_prepare_configuration "$folder" || { rm -rf -- "$folder"; return 65; }
+        wtl_apt_prepare_configuration "$folder" || { /usr/bin/rm -rf -- "$folder"; return 65; }
         wtl_apt_configure_command "$folder" "$cache"
         if [[ " $* " = *' install '* ]]; then
           if wtl_bounded_package_request "$cache" "$log" "${package_command[@]}" update; then
@@ -232,12 +232,12 @@ wtl_system_package() {
                 printf 'MIRROR point=%s source=%s attempt=%s reason=metadata-missing-candidate\n' "$point" "$provider" "$attempt" >&2
                 break
               fi
-              rm -rf -- "$folder"; return "$status"
+              /usr/bin/rm -rf -- "$folder"; return "$status"
             fi
-            mkdir -p "$cache/active-sources"
-            cp -- "$folder/repos/"* "$cache/active-sources/"
+            /usr/bin/mkdir -p "$cache/active-sources" || return 65
+            /usr/bin/cp -- "$folder/repos/"* "$cache/active-sources/" || return 65
             if wtl_apt_install_frozen "$point" "$folder" "$cache" "$log" "$provider" "$@"; then status=0; else status=$?; fi
-            rm -rf -- "$folder"; return "$status"
+            /usr/bin/rm -rf -- "$folder"; return "$status"
           else status=$?; fi
         elif wtl_bounded_package_request "$cache" "$log" "${package_command[@]}" "$@"; then status=0; else status=$?; fi
       else
@@ -247,9 +247,9 @@ wtl_system_package() {
           --setopt=keepcache=true --setopt=retries=1 --setopt="timeout=$wtl_mirror_connect_seconds" --setopt="minrate=$wtl_mirror_low_rate" --setopt=sslverify=true)
         if [[ " $* " = *' install '* ]]; then
           if wtl_bounded_package_request "$cache" "$log" "${package_command[@]}" --downloadonly "$@"; then
-            cat -- "$log"
+            /usr/bin/cat -- "$log"
             if "${package_command[@]}" --cacheonly "$@"; then status=0; else status=$?; fi
-            rm -rf -- "$folder"; return "$status"
+            /usr/bin/rm -rf -- "$folder"; return "$status"
           else status=$?; fi
         elif wtl_bounded_package_request "$cache" "$log" "${package_command[@]}" "$@"; then status=0; else status=$?; fi
       fi
@@ -257,34 +257,36 @@ wtl_system_package() {
       if [ "$status" = 0 ] && [ "$manager" = apt-get ] && [ -n "${wtl_apt_candidate_package:-}" ]; then
         wtl_apt_configure_query
         if wtl_bounded_package_request "$cache" "$folder/candidate" "${query_command[@]}"; then
-          wtl_apt_candidate_output="$(cat -- "$folder/candidate")"
+          wtl_apt_candidate_output="$(/usr/bin/cat -- "$folder/candidate")"
           local candidate
-          candidate="$(awk '/^[[:space:]]*Candidate:/ { print $2; exit }' "$folder/candidate")"
+          candidate="$(/usr/bin/awk '/^[[:space:]]*Candidate:/ { print $2; exit }' "$folder/candidate")"
           if [ -z "$candidate" ] || [ "$candidate" = '(none)' ]; then
-            if [ -z "$candidate" ] && [ -s "$folder/candidate" ] && ! grep -Eq '^N: Unable to locate package [A-Za-z0-9+_.:-]+$' "$folder/candidate"; then
-              rm -rf -- "$folder"; return 65
+            if [ -z "$candidate" ] && [ -s "$folder/candidate" ] && ! /usr/bin/grep -Eq '^N: Unable to locate package [A-Za-z0-9+_.:-]+$' "$folder/candidate"; then
+              /usr/bin/rm -rf -- "$folder"; return 65
             fi
             status=65
             printf 'MIRROR point=%s source=%s attempt=%s reason=metadata-missing-candidate\n' "$point" "$provider" "$attempt" >&2
             break
           fi
-        else status=$?; rm -rf -- "$folder"; return "$status"; fi
+        else status=$?; /usr/bin/rm -rf -- "$folder"; return "$status"; fi
       fi
       if [ "$status" = 0 ]; then
-        if [ "$manager" = apt-get ]; then mkdir -p "$cache/active-sources"; cp -- "$folder/repos/"* "$cache/active-sources/"; fi
-        rm -rf -- "$folder"; return 0
+        if [ "$manager" = apt-get ]; then
+          /usr/bin/mkdir -p "$cache/active-sources" && /usr/bin/cp -- "$folder/repos/"* "$cache/active-sources/" || return 65
+        fi
+        /usr/bin/rm -rf -- "$folder"; return 0
       fi
-      if [ "$manager" = apt-get ] && [[ " $* " = *' remove '* ]]; then rm -rf -- "$folder"; return "$status"; fi
+      if [ "$manager" = apt-get ] && [[ " $* " = *' remove '* ]]; then /usr/bin/rm -rf -- "$folder"; return "$status"; fi
       # Do not replay failed dpkg/rpm scripts or arbitrary installation errors.
-      if ! grep -Eiq 'Failed to fetch|Could not resolve|Connection (failed|timed out|refused|reset)|Timeout|Curl error|Status code: (404|429|5[0-9][0-9])|Hash Sum mismatch|checksum.*(fail|mismatch)|MIRROR_REJECT=(no-progress|low-speed)' "$log"; then
-        rm -rf -- "$folder"; return "$status"
+      if ! /usr/bin/grep -Eiq 'Failed to fetch|Could not resolve|Connection (failed|timed out|refused|reset)|Timeout|Curl error|Status code: (404|429|5[0-9][0-9])|Hash Sum mismatch|checksum.*(fail|mismatch)|MIRROR_REJECT=(no-progress|low-speed)' "$log"; then
+        /usr/bin/rm -rf -- "$folder"; return "$status"
       fi
       printf 'MIRROR point=%s source=%s attempt=%s reason=network-or-integrity\n' "$point" "$provider" "$attempt" >&2
       # Native DNF retries=1 already permits one retry (0 would mean infinity).
       [ "$manager" != dnf ] || break
     done
   done
-  rm -rf -- "$folder"
+  /usr/bin/rm -rf -- "$folder"
   return "$status"
 }
 wtl_apt() { wtl_system_package apt-get "$@"; }

@@ -31,7 +31,7 @@ public class DeploymentAgentToolchainProgramStoreTest {
         String installer = DeploymentAgentToolchainProgramStore.resource("agent-controller-install.py");
         String contract = DeploymentAgentToolchainProgramStore.contract();
         DeploymentAgentToolchainProgramStore.requireManifest(manifest, controller, loader, installer, contract);
-        assertEquals("cabda125f54d2e81d6515a78628f389b7a058ef3b1a4203d737eedea5867bdfa", manifest.path("defaultControllerSha256").asText());
+        assertEquals("343e3273b7d183567e9efa70feb4fe9bea29374f604486a389300a8229588b3e", manifest.path("defaultControllerSha256").asText());
         for (int position = 0; position < 4; position++) {
             int changed = position;
             assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainProgramStore.requireManifest(manifest,
@@ -60,6 +60,19 @@ public class DeploymentAgentToolchainProgramStoreTest {
             assertArrayEquals(original, inline.bytes());
         }
         assertDoesNotThrow(() -> DeploymentAgentToolchainProgramStore.trackedCommand("prepare-tracked", base));
+    }
+
+    @Test
+    void trackedBindRequiresTheExactCleanLauncherAndRetainsItsRequestFrame() {
+        var recipe = DeploymentAgentToolchainTrackedTest.recipe("BIND", UUID.randomUUID().toString());
+        byte[] input = recipe.bytes();
+        String bind = DeploymentAgentToolchainProgramStore.trackedCommand("bind-tracked", recipe);
+        String launcher = "builtin exec -c /usr/bin/env -i LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root ";
+        assertTrue(bind.startsWith(launcher + "/usr/bin/python3 -I -S -c "));
+        assertEquals(recipe.frame("bind-tracked"), DeploymentAgentToolchainProgramStore.arguments(bind, recipe.layout()));
+        assertArrayEquals(input, recipe.bytes());
+        assertThrows(IllegalArgumentException.class,
+            () -> DeploymentAgentToolchainProgramStore.arguments(bind.substring(launcher.length()), recipe.layout()));
     }
 
     @Test

@@ -13,6 +13,7 @@ import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
 
 /** A shipped, explicitly pinned Agent controller version; no installed-helper or arbitrary program fallback. */
 public final class DeploymentAgentToolchainProgramStore {
@@ -110,7 +111,9 @@ public final class DeploymentAgentToolchainProgramStore {
     }
 
     static List<String> arguments(String script, DeploymentRemoteLayout layout) {
-        script = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.originalCommand(script);
+        script = DeploymentMirrorTasks.originalCommand(script);
+        boolean isolatedBind = script.startsWith(DeploymentMirrorTasks.PRIVILEGED_LAUNCHER);
+        if (isolatedBind) script = script.substring(DeploymentMirrorTasks.PRIVILEGED_LAUNCHER.length());
         String prefix = "/usr/bin/python3 -I -S -c " + quote(loader(layout)) + " ";
         if (!script.startsWith(prefix)) throw new IllegalArgumentException("Installed controller loader changed");
         var matcher = Pattern.compile("'([^']*)'(?: |$)").matcher(script.substring(prefix.length()));
@@ -121,7 +124,7 @@ public final class DeploymentAgentToolchainProgramStore {
             argv.add(matcher.group(1));
             cursor = matcher.end();
         }
-        if (argv.size() < 3 || cursor != script.length() - prefix.length())
+        if (argv.size() < 3 || cursor != script.length() - prefix.length() || isolatedBind != argv.getFirst().equals("bind-tracked"))
             throw new IllegalArgumentException("Incomplete installed controller frame");
         return List.copyOf(argv);
     }
@@ -131,7 +134,8 @@ public final class DeploymentAgentToolchainProgramStore {
             throw new IllegalArgumentException("Original controller version is unavailable");
         if (Set.of("prepare-tracked", "bind-tracked").contains(verb) && !recipe.invocationKind().equals("INSTALLED"))
             throw new IllegalArgumentException("Installed creation requires its original installed invocation");
-        return "/usr/bin/python3 -I -S -c " + quote(loader(recipe.layout())) + " " + recipe.frame(verb).stream()
+        String prefix = verb.equals("bind-tracked") ? DeploymentMirrorTasks.PRIVILEGED_LAUNCHER : "";
+        return prefix + "/usr/bin/python3 -I -S -c " + quote(loader(recipe.layout())) + " " + recipe.frame(verb).stream()
             .map(DeploymentAgentToolchainProgramStore::quote).collect(java.util.stream.Collectors.joining(" "));
     }
 

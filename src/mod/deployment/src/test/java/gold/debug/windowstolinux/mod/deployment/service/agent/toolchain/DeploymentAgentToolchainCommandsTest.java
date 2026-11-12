@@ -366,10 +366,12 @@ class DeploymentAgentToolchainCommandsTest {
     }
 
     private static void assertController(CommandRequest request) {
-        assertTrue(request.script().startsWith("/usr/bin/python3 -I -S -c "));
+        var recipe = trackedRecipe(request);
+        String launcher = recipe.phase().equals("BIND")
+            ? gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.PRIVILEGED_LAUNCHER : "";
+        assertTrue(request.script().startsWith(launcher + "/usr/bin/python3 -I -S -c "));
         assertTrue(request.script().contains("PROGRAM_SOURCE"));
         assertFalse(request.script().contains("managed-helper"));
-        var recipe = trackedRecipe(request);
         assertEquals(DeploymentAgentToolchainProgramStore.trackedCommand(recipe.phase().toLowerCase(Locale.ROOT) + "-tracked", recipe), request.script());
         assertTrue(request.stdin().length > 0);
         assertTrue(request.stdin().length < 1048576);

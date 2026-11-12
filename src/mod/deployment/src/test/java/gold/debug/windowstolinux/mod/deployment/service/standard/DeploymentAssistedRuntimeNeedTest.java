@@ -205,10 +205,13 @@ class DeploymentAssistedRuntimeNeedTest {
                 if (method.getName().equals("snapshot")) return new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(0, payload.toString(), true);
                 throw new AssertionError(method.getName());
             });
+        var approvalCheckpoints = NativeAiFixture.approvalCheckpoints(fixture.task);
         var tasks = (gold.debug.windowstolinux.appapi.task.TaskService) Proxy.newProxyInstance(getClass().getClassLoader(),
             new Class<?>[]{gold.debug.windowstolinux.appapi.task.TaskService.class}, (proxy, method, args) -> {
                 if (method.getName().equals("findCheckpoint") && args[0] == fixture.task && args[1].equals("deployment.config.remote-layout.v1"))
                     return Optional.of(checkpoint);
+                if (args[0] == fixture.task && gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalPolicies.KEY.equals(args[1]))
+                    return method.invoke(approvalCheckpoints, args);
                 throw new AssertionError(method.getName());
             });
         var host = (InteractionService) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{InteractionService.class},

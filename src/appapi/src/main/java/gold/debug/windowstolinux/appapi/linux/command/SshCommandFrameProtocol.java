@@ -4,9 +4,15 @@ package gold.debug.windowstolinux.appapi.linux.command;
 public final class SshCommandFrameProtocol {
     private static final String BASH = "/bin/bash --noprofile --norc -p";
 
-    /** Fixed launcher for the frame reader, after the SSH server dispatches exec. */
+    /** Fixed launcher after the SSH server dispatches exec to the account shell.
+     * Linux loader and libc startup settings are removed by that shell before the first product process.
+     */
     public static final String FRAME_LAUNCHER =
-        "exec /usr/bin/env BASH_ENV=/dev/null ENV=/dev/null LC_ALL=C " + BASH + " -c";
+        "unset LD_ASSUME_KERNEL LD_AUDIT LD_BIND_NOT LD_BIND_NOW LD_DEBUG LD_DEBUG_OUTPUT LD_DYNAMIC_WEAK "
+        + "LD_HWCAP_MASK LD_LIBRARY_PATH LD_ORIGIN_PATH LD_POINTER_GUARD LD_PREFER_MAP_32BIT_EXEC LD_PRELOAD "
+        + "LD_PROFILE LD_PROFILE_OUTPUT LD_SHOW_AUXV LD_TRACE_LOADED_OBJECTS LD_TRACE_PRELINKING LD_USE_LOAD_BIAS "
+        + "LD_VERBOSE LD_WARN GLIBC_TUNABLES GCONV_PATH LOCPATH || exit 125\n"
+        + "LC_ALL=C exec /usr/bin/env BASH_ENV=/dev/null ENV=/dev/null LC_ALL=C " + BASH + " -c";
 
     /** Fixed launcher for the framed script on fd 3, with original stdin on fd 0. */
     public static final String SCRIPT_LAUNCHER = "exec " + BASH + " /dev/fd/3";

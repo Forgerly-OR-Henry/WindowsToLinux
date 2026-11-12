@@ -18,7 +18,7 @@ class DeploymentManagedHelperBundleTest {
         String original = DeploymentManagedHelperBundle.renderScript();
         String recovery = DeploymentManagedHelperBundle.renderPublicationRecovery(layout);
         assertEquals(16, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
-        assertEquals("d10a316ac0078b4dabb286409e12845376d719578c9e2c029686deaf369cc3b4",
+        assertEquals("83d6773e86575fe8582eefb9a164b6912904b61dd3f16821a3cdc39fe02f976c",
             HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(original.getBytes(StandardCharsets.UTF_8))));
         assertEquals(original, DeploymentManagedHelperBundle.renderScript());
         assertFalse(recovery.contains("rollback-deployment-first)"));
@@ -38,7 +38,7 @@ class DeploymentManagedHelperBundleTest {
         assertTrue(entry.indexOf("recovery-maintenance-remains") > entry.indexOf("rollback_deployment_first "));
         for (var pin : java.util.Map.of("agent-controller-loader.py", "d04eca875afd038c58b44cd4699470a9f384136ad7cec5c122942d6e0bc204be",
             "agent-controller-install.py", "4c25923129cf686edcd50edab7ed947cd966c92ea590a68f2d79aeb20364ec6a",
-            "agent-controller-program-manifest.json", "1b2e17a92ea60615a752141444d5eefa7c123672b4b0243997c64f0eb3472d5e").entrySet()) {
+            "agent-controller-program-manifest.json", "83e04996fb14428613f3f7c420f6bba79600a919986064b22f2a889d4c0d596a").entrySet()) {
             try (var stream = getClass().getResourceAsStream("/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/" + pin.getKey())) {
                 assertEquals(pin.getValue(), HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(stream.readAllBytes())));
             }

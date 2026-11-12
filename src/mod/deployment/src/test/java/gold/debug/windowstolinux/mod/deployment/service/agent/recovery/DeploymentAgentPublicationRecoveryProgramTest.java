@@ -39,14 +39,14 @@ class DeploymentAgentPublicationRecoveryProgramTest {
             assertEquals(body, DeploymentAgentPublicationRecoveryProgram.reconstructInstallationEvidence(structure));
             assertEquals("/completeExecutableInput/derived/controller", JSON.valueToTree(facts.get("completeDecodedSource")).path("pointer").asText());
             assertEquals("/completeExecutableInput/sources/loader", JSON.valueToTree(facts.get("completeLoaderSource")).path("pointer").asText());
-            assertEquals("ddc76b6ad25a7d97ef164d3900f7181e3985093155e31e59ef906c26d084961b", program.version());
+            assertEquals("a15685f6958c9a84d2dea62d05e60458125bdd1d9e4064491636bd7eb4f74a1c", program.version());
             // Default-layout anchors measured from the candidate's compiled resources.
-            assertEquals(222347, program.source().getBytes(StandardCharsets.UTF_8).length);
-            assertEquals("869ccc5278cce72c6ee16058fe0a95e12d233fa59a9dc83017bf0ce13043795e", DeploymentAgentPublicationRecoveryProgram.sha256(program.source()));
+            assertEquals(222350, program.source().getBytes(StandardCharsets.UTF_8).length);
+            assertEquals("40697a6f46d7cfec6ad36e13ebeb1fce98190c1d1679a9184d14278e625c8974", DeploymentAgentPublicationRecoveryProgram.sha256(program.source()));
             assertEquals(7586, program.loader().getBytes(StandardCharsets.UTF_8).length);
-            assertEquals("ea2c39ec932cb267994695674c20e05e20938c709035780d84ec54c1876a9035", DeploymentAgentPublicationRecoveryProgram.sha256(program.loader()));
-            assertEquals(247851, body.getBytes(StandardCharsets.UTF_8).length);
-            assertEquals("46fdf585199fa02429d849da4c1595d132b0c999a8554972f923319b8a2637e8", DeploymentAgentPublicationRecoveryProgram.sha256(body));
+            assertEquals("87c91c1031ad64588a55bb95463b456eaf01f04be38268c218697264f863121e", DeploymentAgentPublicationRecoveryProgram.sha256(program.loader()));
+            assertEquals(247857, body.getBytes(StandardCharsets.UTF_8).length);
+            assertEquals("dcb9deae2f84fdbc62c36d19422479abd6dae4d7f0a7e5bd59e411cf065d56c7", DeploymentAgentPublicationRecoveryProgram.sha256(body));
             assertEquals(request.command().stdin().length, facts.get("stdinBytes"));
             assertEquals(program.manifest().get("sourceSha256"), DeploymentAgentPublicationRecoveryProgram.sha256(program.source()));
             assertTrue(program.source().getBytes(StandardCharsets.UTF_8).length < 1048576);

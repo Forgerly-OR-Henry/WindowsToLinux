@@ -41,22 +41,25 @@ def fail(category, detail):
     raise PreparationFailure(category, detail)
 
 
-def official_url(url, point=None, historical=False):
-    p = urllib.parse.urlsplit(url)
-    hosts = MIRROR_DEFAULT_ALLOWED_HOSTS
-    frozen = bool(os.environ.get('WTL_MIRROR_POLICY'))
-    if os.environ.get('WTL_MIRROR_POLICY'):
-        _, policy = task_mirrors()
-        hosts = set(MIRROR_DEFAULT_ALLOWED_HOSTS)
-        for candidate in (point, MIRROR_POINT, MIRROR_METADATA_POINT, 'RUBYGEMS'):
-            if candidate:
-                for endpoint in policy.points.get(candidate, []):
-                    hosts.update(endpoint.get('allowedHosts', []))
-                    hosts.update(urllib.parse.urlsplit(origin).hostname for origin in endpoint.get('sourceOrigins', []))
-    if (p.scheme != 'https' or not p.hostname or (p.hostname not in hosts and not (historical and frozen))
-            or p.username or p.password or frozen and p.fragment or not frozen and p.port not in (None, 443)):
-        fail('metadata', 'release URL is outside official HTTPS sources')
-    return url
+def official_url(url, historical=False):
+    rejection = 'release URL is outside official HTTPS sources'
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        fail('metadata', rejection)
+    if (parsed.scheme != 'https' or not parsed.hostname or parsed.username is not None
+            or parsed.password is not None or '#' in url or parsed.netloc.endswith(':')
+            or any(ord(char) <= 32 or ord(char) == 127 for char in url)):
+        fail('metadata', rejection)
+    if historical and os.environ.get('WTL_MIRROR_POLICY'):
+        # A verified installation record may name a source from an older frozen policy.
+        task_mirrors()
+        return url
+    if port not in (None, 443) or parsed.hostname not in MIRROR_DEFAULT_ALLOWED_HOSTS:
+        fail('metadata', rejection)
+    # Frozen routes use the canonical spelling of the HTTPS origin.
+    return parsed._replace(netloc=parsed.hostname).geturl()
 
 
 class OfficialRedirect(urllib.request.HTTPRedirectHandler):
@@ -308,7 +311,7 @@ def release(ecosystem, branch, exact):
         sdks = {s['version']: s for r in data['releases'] for s in r.get('sdks', [r['sdk']])}
         v = choose(sdks, branch, exact)
         f = next(f for f in sdks[v]['files'] if f['rid'] == 'linux-x64' and f['name'].endswith('.tar.gz'))
-        return v, f['url'], 'sha512', f['hash'].lower(), 'flat'
+        return v, official_url(f['url']), 'sha512', f['hash'].lower(), 'flat'
     if ecosystem == 'KOTLIN':
         # Query exact tags when pinned; bounded pagination covers historical branches without a version whitelist.
         assets = []

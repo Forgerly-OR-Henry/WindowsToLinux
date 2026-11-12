@@ -22,36 +22,36 @@ wtl_prepare_system_credential() {
     [[ "$prefix" = https://* ]] || { printf 'MIRROR_REJECT=system-authentication-requires-https\n' >&2; return 65; }
   done
   [ -f "$wtl_credential_file" ] && [ ! -L "$wtl_credential_file" ] || return 65
-  [ "$(stat -c %u -- "$wtl_credential_file")" = "$(id -u)" ] || return 65
-  local mode="$(stat -c %a -- "$wtl_credential_file")"
+  [ "$(/usr/bin/stat -c %u -- "$wtl_credential_file")" = "$EUID" ] || return 65
+  local mode="$(/usr/bin/stat -c %a -- "$wtl_credential_file")"
   [[ "$mode" =~ ^[0-7]{3,4}$ ]] && [ "$((8#$mode & 077))" = 0 ] || return 65
   exec {descriptor}<"$wtl_credential_file"
   IFS= read -r signature <&"$descriptor" || { exec {descriptor}<&-; return 65; }
   IFS= read -r wtl_credential_authorization <&"$descriptor" || { exec {descriptor}<&-; return 65; }
   [ "$signature" = WTL-MIRROR-1 ] || { exec {descriptor}<&-; return 65; }
-  cat <&"$descriptor" >"$folder/source-ca.pem"
+  /usr/bin/cat <&"$descriptor" >"$folder/source-ca.pem" || { exec {descriptor}<&-; return 65; }
   exec {descriptor}<&-
-  chmod 600 -- "$folder/source-ca.pem"
+  /usr/bin/chmod 600 -- "$folder/source-ca.pem" || return 65
   if [ -n "$wtl_credential_authorization" ]; then
     case "$wtl_credential_authorization" in 'Basic '*) ;; *) printf 'MIRROR_REJECT=system-authentication-must-be-basic\n' >&2; return 65;; esac
     encoded="${wtl_credential_authorization#Basic }"
-    decoded="$(printf '%s' "$encoded" | base64 --decode)" || return 65
-    [ "$(printf '%s' "$decoded" | base64 | tr -d '\n')" = "$encoded" ] || return 65
+    decoded="$(printf '%s' "$encoded" | /usr/bin/base64 --decode)" || return 65
+    [ "$(printf '%s' "$decoded" | /usr/bin/base64 | /usr/bin/tr -d '\n')" = "$encoded" ] || return 65
     [[ "$decoded" = *:* && "$decoded" != *[[:space:]\"\'\\]* ]] || return 65
     wtl_credential_username="${decoded%%:*}" wtl_credential_password="${decoded#*:}"
     [ -n "$wtl_credential_username" ] || return 65
     printf 'machine %s login %s password %s\n' "$wtl_credential_scope" "$wtl_credential_username" "$wtl_credential_password" >"$folder/auth.conf"
-    chmod 600 -- "$folder/auth.conf"
+    /usr/bin/chmod 600 -- "$folder/auth.conf" || return 65
     wtl_auth_options=(-o "Dir::Etc::netrc=$folder/auth.conf" -o Dir::Etc::netrcparts=/dev/null)
   fi
   if [ -s "$folder/source-ca.pem" ]; then
     wtl_credential_ca="$folder/trusted-ca.pem"
     : >"$wtl_credential_ca"
     for root_ca in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt; do
-      if [ -f "$root_ca" ]; then cat -- "$root_ca" >>"$wtl_credential_ca"; break; fi
+      if [ -f "$root_ca" ]; then /usr/bin/cat -- "$root_ca" >>"$wtl_credential_ca" || return 65; break; fi
     done
-    cat -- "$folder/source-ca.pem" >>"$wtl_credential_ca"
-    chmod 600 -- "$wtl_credential_ca"
+    /usr/bin/cat -- "$folder/source-ca.pem" >>"$wtl_credential_ca" || return 65
+    /usr/bin/chmod 600 -- "$wtl_credential_ca" || return 65
     for prefix in "${prefixes[@]}"; do
       if [[ "$prefix" != "${wtl_credential_scope%/}" && "$prefix" != "${wtl_credential_scope%/}/"* ]]; then
         printf 'MIRROR_REJECT=apt-private-ca-cannot-extend-credential-path-scope\n' >&2; return 65
@@ -104,10 +104,10 @@ wtl_apt_selected_uri() {
 wtl_apt_prepare_configuration() {
   local folder="$1"
   case "$folder" in *'"'*|*'\'*|*$'\n'*|*$'\r'*) return 65;; esac
-  mkdir -p "$folder/apt.conf.d"
+  /usr/bin/mkdir -p "$folder/apt.conf.d" || return 65
   printf 'Dir::Etc::main "/dev/null";\nDir::Etc::parts "%s";\n' "$folder/apt.conf.d" >"$folder/apt.conf"
   printf 'Dir::Cache::pkgcache "%s";\nDir::Cache::srcpkgcache "%s";\n' "$folder/pkgcache.bin" "$folder/srcpkgcache.bin" >>"$folder/apt.conf"
-  chmod 600 "$folder/apt.conf"
+  /usr/bin/chmod 600 "$folder/apt.conf" || return 65
   APT_CONFIG="$folder/apt.conf"
   export APT_CONFIG
 }
@@ -170,7 +170,7 @@ wtl_apt_install_frozen() {
     object_uris+=("$canonical"); object_names+=("$name"); object_sizes+=("$size"); object_digests+=("$digest")
     [ "${#object_names[@]}" -le 2048 ] || return 65
   done <"$folder/objects"
-  printf 'MIRROR_APT_FROZEN=%s\n' "$(sha256sum "$folder/objects" | awk '{print $1}')"
+  printf 'MIRROR_APT_FROZEN=%s\n' "$(/usr/bin/sha256sum "$folder/objects" | /usr/bin/awk '{print $1}')"
   for index in "${!object_names[@]}"; do
     target="$cache/archives/${object_names[$index]}"; status=65
     for provider in "${providers[@]}"; do
@@ -178,10 +178,10 @@ wtl_apt_install_frozen() {
       wtl_prepare_system_credential "$point" "$provider" "$folder" || return 65
       wtl_apt_configure_download || return 65
       for ((attempt=1; attempt<=wtl_mirror_attempts; attempt++)); do
-        rm -f -- "$target" "$target.FAILED"
+        /usr/bin/rm -f -- "$target" "$target.FAILED"
         printf 'MIRROR point=%s source=%s attempt=%s reason=frozen-object\n' "$point" "$provider" "$attempt" >&2
         if wtl_bounded_package_request "$cache" "$log" "${helper_command[@]}" download-file "$selected" "$target" "${object_digests[$index]}"; then
-          if [ "$(stat -c %s -- "$target")" = "${object_sizes[$index]}" ]; then status=0; break; fi
+          if [ "$(/usr/bin/stat -c %s -- "$target")" = "${object_sizes[$index]}" ]; then status=0; break; fi
           printf 'MIRROR_REJECT=apt-frozen-size-mismatch\n' >>"$log"
         fi
         wtl_package_log "$log"
@@ -190,7 +190,7 @@ wtl_apt_install_frozen() {
       [ "$status" != 0 ] || break
     done
     [ "$status" = 0 ] || return 65
-    rm -f -- "$target.FAILED"
+    /usr/bin/rm -f -- "$target.FAILED"
   done
   # Never refresh metadata or re-resolve against another provider after freezing the objects.
   # Native APT rechecks the same signed metadata/hash and executes dpkg only at this final step.

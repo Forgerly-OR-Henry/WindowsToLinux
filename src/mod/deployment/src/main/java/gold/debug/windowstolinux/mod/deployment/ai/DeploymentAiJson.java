@@ -7,10 +7,13 @@ import java.util.*;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.appapi.ai.model.*;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.log.*;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentToolchainReviewEvidence;
 import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader;
@@ -119,6 +122,22 @@ public final class DeploymentAiJson {
     public JsonNode askCommand(String instruction, Map<String, ?> facts, String revision, TaskContext task,
                                java.util.function.Predicate<JsonNode> malformed)
         throws ApiException, CapabilityOutcomeException, IOException {
+        return askCommand(instruction, facts, revision, task, malformed, Optional.empty());
+    }
+
+    public JsonNode askCommand(String instruction, Map<String, ?> facts, String revision, TaskContext task,
+                               java.util.function.Predicate<JsonNode> malformed, ActionIntent intent, CommandRequest request)
+        throws ApiException, CapabilityOutcomeException, IOException {
+        var evidence = approvalConversation == null && DeploymentToolchainReviewEvidence.supports(intent)
+            ? DeploymentToolchainReviewEvidence.project(facts(facts, 1048576, true), intent, request,
+                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task))
+            : Optional.<DeploymentToolchainReviewEvidence>empty();
+        return askCommand(instruction, facts, revision, task, malformed, evidence);
+    }
+
+    private JsonNode askCommand(String instruction, Map<String, ?> facts, String revision, TaskContext task,
+                                java.util.function.Predicate<JsonNode> malformed, Optional<DeploymentToolchainReviewEvidence> evidence)
+        throws ApiException, CapabilityOutcomeException, IOException {
         return submit(AiPurpose.APPROVAL, instruction + DeploymentSkillResources.text(DeploymentAiJson.class, "finite-command-review.md"),
             facts, revision, task, 1048576, """
                 {"type":"object","additionalProperties":false,
@@ -126,11 +145,18 @@ public final class DeploymentAiJson {
                  "properties":{"decision":{"type":"string","enum":["APPROVE","DENY"]},
                  "requiresUserConfirmation":{"type":"boolean"},
                  "reason":{"type":"string","minLength":1,"maxLength":2000}}}
-                """, node -> malformed.test(node) ? "Command review schema is invalid" : null);
+                """, node -> malformed.test(node) ? "Command review schema is invalid" : null, evidence);
     }
 
     private JsonNode submit(AiPurpose purpose, String policy, Map<String, ?> facts, String revision, TaskContext task,
                             int bound, String schema, java.util.function.Function<JsonNode, String> validate)
+        throws ApiException, CapabilityOutcomeException, IOException {
+        return submit(purpose, policy, facts, revision, task, bound, schema, validate, Optional.empty());
+    }
+
+    private JsonNode submit(AiPurpose purpose, String policy, Map<String, ?> facts, String revision, TaskContext task,
+                            int bound, String schema, java.util.function.Function<JsonNode, String> validate,
+                            Optional<DeploymentToolchainReviewEvidence> evidence)
         throws ApiException, CapabilityOutcomeException, IOException {
         var definition = new AiToolDefinition("submit_result", "Submit the complete structured result required by the business contract. This submission grants no execution permission.",
             schema);
@@ -138,6 +164,7 @@ public final class DeploymentAiJson {
         if (purpose == AiPurpose.APPROVAL)
             policy += "\n" + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.text(
                 gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task));
+        if (evidence.isPresent()) policy += "\n" + DeploymentToolchainReviewEvidence.INSTRUCTION;
         var conversation = purpose == AiPurpose.APPROVAL ? approvalConversation : null;
         try {
             if (conversation != null) facts = conversation.facts(policy, facts, revision, task);
@@ -149,7 +176,10 @@ public final class DeploymentAiJson {
         String current = facts(facts, bound, purpose == AiPurpose.APPROVAL);
         var messages = new ArrayList<AiMessage>();
         messages.add(new AiMessage(AiRole.SYSTEM, policy, List.of()));
-        messages.add(new AiMessage(AiRole.USER, current, List.of()));
+        var definitions = evidence.isPresent() ? List.of(definition, DeploymentToolchainReviewEvidence.TOOL) : List.of(definition);
+        if (evidence.isPresent()) messages.addAll(evidence.orElseThrow().messages());
+        else messages.add(new AiMessage(AiRole.USER, current, List.of()));
+        var evidenceReader = evidence.map(value -> value.reader(output.execution().standaloneToolAttempts()));
         boolean missingNativeSubmission = false;
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
@@ -160,9 +190,12 @@ public final class DeploymentAiJson {
                 throw new IOException("Approval conversation history rejected", rejected);
             }
             // Rebuilt conversation history must receive this request-local correction without retaining it for another command.
-            if (missingNativeSubmission) messages.add(messages.size() - 1, new AiMessage(AiRole.USER, MISSING_NATIVE_SUBMISSION, List.of()));
-            var response = call(purpose, messages, List.of(definition), revision, task, bound > 48000,
-                Optional.empty());
+            if (missingNativeSubmission) {
+                int position = evidence.isPresent() ? 1 : messages.size() - 1;
+                messages.add(position, new AiMessage(AiRole.USER, MISSING_NATIVE_SUBMISSION, List.of()));
+                missingNativeSubmission = false;
+            }
+            var response = requestSubmission(purpose, messages, definitions, revision, task, bound > 48000, evidenceReader);
             if (purpose == AiPurpose.APPROVAL && attempt == 0 && response.finishReason().equals("stop") && response.toolCalls().isEmpty()) {
                 recordMissingSubmissionCorrection(task);
                 missingNativeSubmission = true;
@@ -207,6 +240,20 @@ public final class DeploymentAiJson {
             messages.add(AiMessage.result(receipt));
         }
         throw new IOException("Submission budget exhausted");
+    }
+
+    private AiResponse requestSubmission(AiPurpose purpose, List<AiMessage> messages, List<AiToolDefinition> definitions,
+                                         String revision, TaskContext task, boolean extended,
+                                         Optional<DeploymentToolchainReviewEvidence.Reader> evidenceReader)
+        throws ApiException, CapabilityOutcomeException, IOException {
+        while (true) {
+            var response = call(purpose, messages, definitions, revision, task, extended, Optional.empty());
+            if (evidenceReader.isEmpty()) return response;
+            var result = evidenceReader.orElseThrow().read(response);
+            if (result.isEmpty()) return response;
+            messages.add(AiMessage.assistant(response));
+            messages.add(AiMessage.result(result.orElseThrow()));
+        }
     }
 
     private void recordMissingSubmissionCorrection(TaskContext task) {

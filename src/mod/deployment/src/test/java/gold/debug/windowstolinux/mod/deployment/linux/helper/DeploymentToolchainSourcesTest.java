@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class DeploymentToolchainSourcesTest {
     @Test
     void pureResourceExtractionKeepsDefaultHelperBytesUnchanged() {
-        assertEquals("d10a316ac0078b4dabb286409e12845376d719578c9e2c029686deaf369cc3b4", DeploymentManagedHelperBundle.EXPECTED_SHA256);
+        assertEquals("83d6773e86575fe8582eefb9a164b6912904b61dd3f16821a3cdc39fe02f976c", DeploymentManagedHelperBundle.EXPECTED_SHA256);
         String helper = DeploymentManagedHelperBundle.renderScript();
         String pure = DeploymentToolchainSources.archives();
         assertTrue(helper.contains(pure));
@@ -18,7 +18,7 @@ class DeploymentToolchainSourcesTest {
         String metadata = DeploymentToolchainSources.metadata();
         assertTrue(helper.contains(metadata));
         assertTrue(metadata.contains("SHIPPED_CATALOG = {"));
-        assertTrue(metadata.contains("def official_url(url, point=None, historical=False):"));
+        assertTrue(metadata.contains("def official_url(url, historical=False):"));
         assertTrue(metadata.contains("def task_mirrors():"));
         assertTrue(metadata.contains("MIRROR_MODULE['MirrorPolicy'].from_environment(globals().get('DEADLINE'))"));
         assertTrue(metadata.contains("module['mirror_transfer'](policy, point, official_url(url), target,"));

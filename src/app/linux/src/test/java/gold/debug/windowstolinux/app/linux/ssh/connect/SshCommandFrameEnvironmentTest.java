@@ -12,6 +12,7 @@ import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.shell.ProcessShellFactory;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -20,6 +21,41 @@ import org.junit.jupiter.params.provider.ValueSource;
 class SshCommandFrameEnvironmentTest {
     @TempDir
     Path root;
+
+    @Test
+    void nativeFrameClearsLoaderSettingsAndKeepsOrdinaryEnvironmentAndOriginalInput() throws Exception {
+        Path bash = Path.of(System.getProperty("managed.test.bash", "/bin/bash"));
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isRegularFile(bash), "Set managed.test.bash to validate the native protocol");
+        try (var server = new LinuxLoopbackSshServer(root, ssh -> ssh.setCommandFactory((channel, command) -> {
+            assertEquals(SshCommandFrame.COMMAND, command);
+            Path entry = root.resolve("ordinary-frame.sh");
+            Files.writeString(entry, "export LD_LIBRARY_PATH= GCONV_PATH=/nonexistent WTL_FRAME_ENV=retained\n" + command,
+                StandardCharsets.UTF_8);
+            return new ProcessShellFactory("fixture", List.of(bash.toString(), "--noprofile", "--norc", "-p", entry.toString())) {
+                @Override
+                protected List<String> resolveEffectiveCommand(ChannelSession c, String ignored, List<String> arguments) {
+                    return arguments;
+                }
+            }.createShell(channel);
+        })); var connector = new SshConnector(); var connection = SshCommandExecutionTest.connect(connector, server)) {
+            byte[] input = {0, 1, 10, 13, (byte) 255};
+            String script = """
+                [ ! -v LD_LIBRARY_PATH ] && [ ! -v GCONV_PATH ] || exit 18
+                [ "$BASH_ENV" = /dev/null ] && [ "$ENV" = /dev/null ] || exit 19
+                builtin printf '%s\\n' "$WTL_FRAME_ENV"
+                /usr/bin/sha256sum
+                """;
+            var result = connection.execute(new CommandRequest(script, input, Duration.ofSeconds(10), 4096), () -> false);
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
+            var observed = result.value().orElseThrow();
+            assertEquals(0, observed.exitCode().orElseThrow());
+            assertEquals("", observed.stderr());
+            var lines = observed.stdout().lines().toList();
+            assertEquals(2, lines.size(), observed.stdout());
+            assertEquals("retained", lines.getFirst());
+            assertEquals(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(input)), lines.getLast().split(" ")[0]);
+        }
+    }
 
     @ParameterizedTest
     @ValueSource(strings = {"FUNCTION", "OPTIONS"})
@@ -38,12 +74,14 @@ class SshCommandFrameEnvironmentTest {
         var originalStartupControl = new java.util.concurrent.atomic.AtomicBoolean();
         try (var server = new LinuxLoopbackSshServer(root, ssh -> ssh.setCommandFactory((channel, command) -> {
             assertEquals(SshCommandFrame.COMMAND, command);
-            assertTrue(command.startsWith("exec /usr/bin/env "));
+            String envLauncher = "exec /usr/bin/env ";
+            assertTrue(command.startsWith("unset "));
+            assertTrue(command.indexOf("LD_LIBRARY_PATH") < command.indexOf(envLauncher));
             Path entry = root.resolve("inherited-frame.sh");
             String executed = originalStartupControl.get() ? command.replace("--noprofile --norc -p", "--noprofile --norc")
                 .replace("IFS= builtin read", "IFS= read") : command;
-            Files.writeString(entry, "exec /usr/bin/env " + injected + " "
-                + executed.substring("exec /usr/bin/env ".length()), StandardCharsets.UTF_8);
+            int launch = executed.indexOf(envLauncher) + envLauncher.length();
+            Files.writeString(entry, executed.substring(0, launch) + injected + " " + executed.substring(launch), StandardCharsets.UTF_8);
             return new ProcessShellFactory("fixture", List.of(bash.toString(), "--noprofile", "--norc", entry.toString())) {
                 @Override
                 protected List<String> resolveEffectiveCommand(ChannelSession c, String ignored, List<String> arguments) {

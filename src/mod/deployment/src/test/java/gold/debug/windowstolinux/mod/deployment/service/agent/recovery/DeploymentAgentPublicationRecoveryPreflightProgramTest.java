@@ -2,7 +2,6 @@ package gold.debug.windowstolinux.mod.deployment.service.agent.recovery;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.io.DataInputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
@@ -203,31 +202,11 @@ class DeploymentAgentPublicationRecoveryPreflightProgramTest {
     }
 
     private static String actualSdkCommandConstant() throws Exception {
-        String path = "/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandFrame.class";
-        var values = new ArrayList<String>(); var bootstraps = new ArrayList<String>();
-        try (var raw = DeploymentAgentPublicationRecoveryPreflightProgramTest.class.getResourceAsStream(path)) {
-            assertNotNull(raw, "Actual SDK class required; do not silently substitute a copied bootstrap");
-            var input = new DataInputStream(raw); assertEquals(0xcafebabe, input.readInt()); input.readUnsignedShort(); input.readUnsignedShort();
-            int count = input.readUnsignedShort();
-            for (int i = 1; i < count; i++) switch (input.readUnsignedByte()) {
-                case 1 -> {
-                    String value = input.readUTF();
-                    if (value.startsWith("exec /usr/bin/env BASH_ENV=/dev/null ENV=/dev/null LC_ALL=C /bin/bash ")) values.add(value);
-                    if (value.startsWith("IFS= builtin read -r length") && value.contains("--noprofile --norc -p /dev/fd/3")) bootstraps.add(value);
-                }
-                case 3, 4, 9, 10, 11, 12, 17, 18 -> input.skipNBytes(4);
-                case 5, 6 -> { input.skipNBytes(8); i++; }
-                case 7, 8, 16, 19, 20 -> input.skipNBytes(2);
-                case 15 -> input.skipNBytes(3);
-                default -> throw new AssertionError("Unexpected SDK constant-pool tag");
-            }
-        }
-        assertEquals(1, values.size()); String command = values.getFirst();
-        // COMMAND initializes with BOOTSTRAP.replace: the actual class contains a concat recipe, not necessarily a folded String.
-        if (command.indexOf('\u0001') >= 0) {
-            assertEquals(command.indexOf('\u0001'), command.lastIndexOf('\u0001')); assertEquals(1, bootstraps.size());
-            command = command.replace("\u0001", bootstraps.getFirst().replace("'", "'\"'\"'"));
-        }
+        var frame = Class.forName("gold.debug.windowstolinux.app.linux.ssh.connect.SshCommandFrame");
+        var field = frame.getDeclaredField("COMMAND");
+        field.setAccessible(true);
+        String command = (String) field.get(null);
+        assertTrue(command.startsWith(gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol.FRAME_LAUNCHER + " "));
         assertTrue(command.contains("--noprofile --norc -p -c"));
         assertTrue(command.contains("--noprofile --norc -p /dev/fd/3")); return command;
     }

@@ -1103,7 +1103,7 @@ def agent_record(directory):
     else:
         if not isinstance(record.get('source'), str) or record.get('official_algorithm') not in ('sha256', 'sha512') or not isinstance(record.get('official_digest'), str) or not re.fullmatch('[a-f0-9]{' + ('64' if record['official_algorithm'] == 'sha256' else '128') + '}', record['official_digest']):
             agent_reject('OFFICIAL_DIGEST_RECORD')
-        official_url(record['source'], toolchain_point(record['ecosystem']), historical=True)
+        official_url(record['source'], historical=True)
         expected_directory = ROOT / 'versions' / (record['ecosystem'].lower() + '-' + agent_installation_key(
             record['ecosystem'], record['version'], record['official_digest']))
         if record['directory'] != str(expected_directory):

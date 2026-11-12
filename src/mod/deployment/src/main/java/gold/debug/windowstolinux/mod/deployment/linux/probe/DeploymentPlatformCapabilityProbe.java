@@ -32,9 +32,9 @@ public final class DeploymentPlatformCapabilityProbe {
     public static String renderForContainer(ContainerEngineType engine) {
         return render(switch (engine) {
             case DOCKER ->
-                "if probe_command docker >/dev/null 2>&1 && HOME=/root docker info >/dev/null 2>&1; then printf 'DOCKER_OPERATIONAL=1\\n'; else printf 'DOCKER_OPERATIONAL=0\\n'; fi\nprintf 'PODMAN_OPERATIONAL=0\\nPODMAN_QUADLET=0\\nCONTAINER_OPERATIONAL_PROBED=docker\\n'\n";
+                "if HOME=/root probe_run docker info >/dev/null 2>&1; then printf 'DOCKER_OPERATIONAL=1\\n'; else printf 'DOCKER_OPERATIONAL=0\\n'; fi\nprintf 'PODMAN_OPERATIONAL=0\\nPODMAN_QUADLET=0\\nCONTAINER_OPERATIONAL_PROBED=docker\\n'\n";
             case PODMAN ->
-                "if probe_command podman >/dev/null 2>&1 && HOME=/root podman info >/dev/null 2>&1; then printf 'PODMAN_OPERATIONAL=1\\n'; else printf 'PODMAN_OPERATIONAL=0\\n'; fi\nif probe_command podman >/dev/null 2>&1 && HOME=/root podman quadlet --help >/dev/null 2>&1; then printf 'PODMAN_QUADLET=1\\n'; else printf 'PODMAN_QUADLET=0\\n'; fi\nprintf 'DOCKER_OPERATIONAL=0\\nCONTAINER_OPERATIONAL_PROBED=podman\\n'\n";
+                "if HOME=/root probe_run podman info >/dev/null 2>&1; then printf 'PODMAN_OPERATIONAL=1\\n'; else printf 'PODMAN_OPERATIONAL=0\\n'; fi\nif HOME=/root probe_run podman quadlet --help >/dev/null 2>&1; then printf 'PODMAN_QUADLET=1\\n'; else printf 'PODMAN_QUADLET=0\\n'; fi\nprintf 'DOCKER_OPERATIONAL=0\\nCONTAINER_OPERATIONAL_PROBED=podman\\n'\n";
         });
     }
 
@@ -42,9 +42,12 @@ public final class DeploymentPlatformCapabilityProbe {
      * @param containerChecks implementation-owned fixed checks / 实现所属固定检查
      * @return exact probe / 精确探测 */
     private static String render(String containerChecks) {
-        return isolatedProbe(probeGuards() + osReleaseReader() + "probe_parents / || exit 64\n" + ("""
+        return isolatedProbe(probeGuards() + osReleaseReader() + """
             set -eu
             export LC_ALL=C
+            for probe_utility in awk cut grep head readlink sed sort stat tail tr uname; do
+              probe_file "/usr/bin/$probe_utility" && [ -x "/usr/bin/$probe_utility" ] || exit 64
+            done
             os_release=/etc/os-release
             [ -r "$os_release" ] || os_release=/usr/lib/os-release
             probe_file "$os_release" || exit 64
@@ -55,48 +58,49 @@ public final class DeploymentPlatformCapabilityProbe {
             printf 'DISTRO_ID=%s\\n' "${ID:-unknown}"
             printf 'DISTRO_VARIANT=%s\\n' "${VARIANT_ID:-}"
             printf 'VERSION=%s\\n' "${VERSION_ID:-unknown}"
-            printf 'ARCH='; uname -m
-            if command -v apt-get >/dev/null 2>&1; then printf 'PACKAGE_MANAGER=apt\\n';
-            elif command -v dnf >/dev/null 2>&1; then printf 'PACKAGE_MANAGER=dnf\\n';
+            arch="$(/usr/bin/uname -m)"
+            printf 'ARCH=%s\\n' "$arch"
+            if probe_command apt-get >/dev/null 2>&1; then printf 'PACKAGE_MANAGER=apt\\n';
+            elif probe_command dnf >/dev/null 2>&1; then printf 'PACKAGE_MANAGER=dnf\\n';
             else printf 'PACKAGE_MANAGER=unknown\\n'; fi
-            if command -v dpkg >/dev/null 2>&1; then printf 'PACKAGE_ARCH='; dpkg --print-architecture
-            elif command -v rpm >/dev/null 2>&1; then printf 'PACKAGE_ARCH='; rpm --eval '%{_arch}'
+            if probe_command dpkg >/dev/null 2>&1; then printf 'PACKAGE_ARCH='; probe_run dpkg --print-architecture
+            elif probe_command rpm >/dev/null 2>&1; then printf 'PACKAGE_ARCH='; probe_run rpm --eval '%{_arch}'
             else printf 'PACKAGE_ARCH=unknown\\n'; fi
-            if command -v systemctl >/dev/null 2>&1; then printf 'SYSTEMD=1\\n'; else printf 'SYSTEMD=0\\n'; fi
-            if command -v docker >/dev/null 2>&1; then printf 'DOCKER_CLIENT=1\\n'; else printf 'DOCKER_CLIENT=0\\n'; fi
-            if command -v podman >/dev/null 2>&1; then printf 'PODMAN_CLIENT=1\\n'; else printf 'PODMAN_CLIENT=0\\n'; fi
+            if probe_command systemctl >/dev/null 2>&1; then printf 'SYSTEMD=1\\n'; else printf 'SYSTEMD=0\\n'; fi
+            if probe_command docker >/dev/null 2>&1; then printf 'DOCKER_CLIENT=1\\n'; else printf 'DOCKER_CLIENT=0\\n'; fi
+            if probe_command podman >/dev/null 2>&1; then printf 'PODMAN_CLIENT=1\\n'; else printf 'PODMAN_CLIENT=0\\n'; fi
             """
             + containerChecks
             + DeploymentEcosystemCapabilityProbe.platformToolChecks()
             + """
             cpu_level=unknown
-            if [ "$(uname -m)" = x86_64 ]; then
+            if [ "$arch" = x86_64 ]; then
               cpu_level=x86-64-v1
               loader=
               for candidate in /lib64/ld-linux-x86-64.so.2 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2; do
                 if [ -x "$candidate" ] && probe_file "$candidate"; then loader="$candidate"; break; fi
               done
               if [ -n "$loader" ]; then
-                loader_help="$($loader --help 2>/dev/null || :)"
-                if printf '%s\\n' "$loader_help" | grep -Eq 'x86-64-v4.*supported'; then cpu_level=x86-64-v4
-                elif printf '%s\\n' "$loader_help" | grep -Eq 'x86-64-v3.*supported'; then cpu_level=x86-64-v3
-                elif printf '%s\\n' "$loader_help" | grep -Eq 'x86-64-v2.*supported'; then cpu_level=x86-64-v2
+                loader_help="$("$loader" --help 2>/dev/null || :)"
+                if printf '%s\\n' "$loader_help" | /usr/bin/grep -Eq 'x86-64-v4.*supported'; then cpu_level=x86-64-v4
+                elif printf '%s\\n' "$loader_help" | /usr/bin/grep -Eq 'x86-64-v3.*supported'; then cpu_level=x86-64-v3
+                elif printf '%s\\n' "$loader_help" | /usr/bin/grep -Eq 'x86-64-v2.*supported'; then cpu_level=x86-64-v2
                 fi
               fi
             fi
             printf 'CPU_LEVEL=%s\\n' "$cpu_level"
             if [ -r /proc/cpuinfo ]; then
               printf 'CPU_FLAGS='
-              awk -F: '/^(flags|Features)[[:space:]]*:/ {print $2; exit}' /proc/cpuinfo | tr ' ' ',' | tr -s ',' | cut -c1-2048
+              /usr/bin/awk -F: '/^(flags|Features)[[:space:]]*:/ {print $2; exit}' /proc/cpuinfo | /usr/bin/tr ' ' ',' | /usr/bin/tr -s ',' | /usr/bin/cut -c1-2048
             else
               printf 'CPU_FLAGS=\\n'
             fi
-            if command -v getenforce >/dev/null 2>&1; then
+            if probe_command getenforce >/dev/null 2>&1; then
               printf 'SECURITY_MODULE=selinux\\n'
-              printf 'SECURITY_STATE='; getenforce | tr '[:upper:]' '[:lower:]'
+              printf 'SECURITY_STATE='; probe_run getenforce | /usr/bin/tr '[:upper:]' '[:lower:]'
             elif [ -r /sys/module/apparmor/parameters/enabled ]; then
               printf 'SECURITY_MODULE=apparmor\\n'
-              if grep -Eq '^[Yy]' /sys/module/apparmor/parameters/enabled; then
+              if /usr/bin/grep -Eq '^[Yy]' /sys/module/apparmor/parameters/enabled; then
                 printf 'SECURITY_STATE=enabled\\n'
               else
                 printf 'SECURITY_STATE=disabled\\n'
@@ -105,9 +109,7 @@ public final class DeploymentPlatformCapabilityProbe {
               printf 'SECURITY_MODULE=none\\n'
               printf 'SECURITY_STATE=disabled\\n'
             fi
-            """
-            + firewallProbe()).replace("command -v ", "probe_command ")
-            .replace("[ -x \"$kotlin_compiler\" ]", "[ -x \"$kotlin_compiler\" ] && probe_file \"$kotlin_compiler\""));
+            """ + firewallProbe());
     }
 
     /** Runs fixed metadata checks without inherited startup hooks, project directories or user configuration. / 元数据探测不继承启动钩子、项目目录或用户配置。
@@ -117,11 +119,12 @@ public final class DeploymentPlatformCapabilityProbe {
         if (body.lines().anyMatch("WTL_HOST_CAPABILITY_PROBE"::equals))
             throw new IllegalArgumentException("Capability probe delimiter collision");
         return """
-            exec /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C \\
+            builtin unset -v TMPDIR || exit 64
+            builtin exec -c /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C \\
               HOME=/dev/null XDG_CONFIG_HOME=/dev/null XDG_CACHE_HOME=/dev/null XDG_DATA_HOME=/dev/null \\
               MAVEN_SKIP_RC=1 MAVEN_BASEDIR=/ NPM_CONFIG_USERCONFIG=/dev/null NPM_CONFIG_GLOBALCONFIG=/dev/null \\
               YARN_IGNORE_PATH=1 COREPACK_ENABLE_NETWORK=0 COREPACK_ENABLE_PROJECT_SPEC=0 COREPACK_HOME=/dev/null \\
-              COMPOSER_HOME=/dev/null /bin/bash --noprofile --norc -s <<'WTL_HOST_CAPABILITY_PROBE'
+              COMPOSER_HOME=/dev/null /bin/bash --noprofile --norc -p -s <<'WTL_HOST_CAPABILITY_PROBE'
             """ + "cd -- /\n" + body + "\nWTL_HOST_CAPABILITY_PROBE\n";
     }
 
@@ -131,30 +134,47 @@ public final class DeploymentPlatformCapabilityProbe {
         return """
             set -eu
             export LC_ALL=C PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-            probe_parents() {
-              local parent resolved mode
-              parent="${1%/*}"
-              [ -n "$parent" ] || parent=/
-              while true; do
-                if [ -L "$parent" ]; then [ "$(/usr/bin/stat -c '%u' -- "$parent")" = 0 ] || return 1; fi
-                resolved="$(/usr/bin/readlink -f -- "$parent")" || return 1
-                [ -d "$resolved" ] && [ "$(/usr/bin/stat -c '%u' -- "$resolved")" = 0 ] || return 1
-                mode="$(/usr/bin/stat -c '%a' -- "$resolved")" || return 1
-                [[ "$mode" =~ ^[0-7]{3,4}$ ]] && [ $((8#$mode & 022)) -eq 0 ] || return 1
-                [ "$parent" != / ] || break
-                parent="${parent%/*}"
-                [ -n "$parent" ] || parent=/
+            # stat and readlink are fixed host tools used as the trust anchors for path inspection.
+            probe_protected_node() {
+              local identity mode
+              identity="$(/usr/bin/stat -c '%u:%a' -- "$1")" || return 1
+              [[ "$identity" =~ ^0:[0-7]{3,4}$ ]] || return 1
+              mode="${identity#*:}"
+              [ $((8#$mode & 022)) -eq 0 ]
+            }
+            probe_protected_path() {
+              local pending="${1#/}" current=/ entry path destination links=0
+              [[ "$1" = /* ]] && probe_protected_node / || return 1
+              while [ -n "$pending" ]; do
+                entry="${pending%%/*}"
+                if [[ "$pending" = */* ]]; then pending="${pending#*/}"; else pending=; fi
+                case "$entry" in
+                  '' | .) continue ;;
+                  ..) current="${current%/*}"; current="${current:-/}"; continue ;;
+                esac
+                path="${current%/}/$entry"
+                if [ -L "$path" ]; then
+                  [ "$(/usr/bin/stat -c '%u' -- "$path")" = 0 ] && [ "$((++links))" -le 40 ] || return 1
+                  destination="$(/usr/bin/readlink -n -- "$path" && printf '.')"
+                  [[ "$destination" = *. ]] || return 1
+                  destination="${destination%.}"
+                  [[ -n "$destination" && "$destination" != *[[:cntrl:]]* ]] || return 1
+                  if [[ "$destination" = /* ]]; then current=/; fi
+                  pending="$destination${pending:+/$pending}"
+                else
+                  { [ -d "$path" ] || { [ -z "$pending" ] && [ -f "$path" ]; }; } || return 1
+                  probe_protected_node "$path" || return 1
+                  current="$path"
+                fi
               done
             }
+            probe_parents() {
+              local parent="${1%/*}"
+              parent="${parent:-/}"
+              [ -d "$parent" ] && probe_protected_path "$parent"
+            }
             probe_file() {
-              local resolved mode
-              [[ "$1" = /* ]] && probe_parents "$1" || return 1
-              if [ -L "$1" ]; then [ "$(/usr/bin/stat -c '%u' -- "$1")" = 0 ] || return 1; fi
-              resolved="$(/usr/bin/readlink -f -- "$1")" || return 1
-              [ -f "$resolved" ] && [ "$(/usr/bin/stat -c '%u' -- "$resolved")" = 0 ] || return 1
-              mode="$(/usr/bin/stat -c '%a' -- "$resolved")" || return 1
-              [[ "$mode" =~ ^[0-7]{3,4}$ ]] && [ $((8#$mode & 022)) -eq 0 ] || return 1
-              probe_parents "$resolved"
+              [ -f "$1" ] && probe_protected_path "$1"
             }
             probe_command() {
               local executable
@@ -162,12 +182,16 @@ public final class DeploymentPlatformCapabilityProbe {
               [[ "$executable" = /* ]] && [ -x "$executable" ] && probe_file "$executable" || return 1
               printf '%s\\n' "$executable"
             }
+            probe_run() {
+              local executable
+              executable="$(probe_command "$1")" || return 1
+              shift
+              "$executable" "$@"
+            }
             for probe_directory in /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin; do
-              [ -e "$probe_directory" ] || continue
-              probe_resolved="$(/usr/bin/readlink -f -- "$probe_directory")" || exit 64
-              [ -d "$probe_resolved" ] && [ "$(/usr/bin/stat -c '%u' -- "$probe_resolved")" = 0 ] || exit 64
-              probe_mode="$(/usr/bin/stat -c '%a' -- "$probe_resolved")" || exit 64
-              [[ "$probe_mode" =~ ^[0-7]{3,4}$ ]] && [ $((8#$probe_mode & 022)) -eq 0 ] || exit 64
+              if [ -e "$probe_directory" ] || [ -L "$probe_directory" ]; then
+                [ -d "$probe_directory" ] && probe_protected_path "$probe_directory" || exit 64
+              fi
             done
             """;
     }
@@ -205,16 +229,16 @@ public final class DeploymentPlatformCapabilityProbe {
      */
     static String firewallProbe() {
         return """
-            if command -v firewall-cmd >/dev/null 2>&1; then
+            if probe_command firewall-cmd >/dev/null 2>&1; then
               printf 'FIREWALL=firewalld\\n'
-              if ! command -v systemctl >/dev/null 2>&1; then
+              if ! probe_command systemctl >/dev/null 2>&1; then
                 printf 'FIREWALL_STATE=unknown\\n'
-              elif systemctl is-active --quiet firewalld 2>/dev/null; then
+              elif probe_run systemctl is-active --quiet firewalld 2>/dev/null; then
                 printf 'FIREWALL_STATE=active\\n'
               else printf 'FIREWALL_STATE=inactive\\n'; fi
-            elif command -v ufw >/dev/null 2>&1; then
+            elif probe_command ufw >/dev/null 2>&1; then
               printf 'FIREWALL=ufw\\n'
-              if ufw_status="$(ufw status 2>/dev/null)"; then
+              if ufw_status="$(probe_run ufw status 2>/dev/null)"; then
                 case "$ufw_status" in
                   'Status: active'*) printf 'FIREWALL_STATE=active\\n' ;;
                   'Status: inactive'*) printf 'FIREWALL_STATE=inactive\\n' ;;
@@ -223,9 +247,9 @@ public final class DeploymentPlatformCapabilityProbe {
               else
                 printf 'FIREWALL_STATE=unknown\\n'
               fi
-            elif command -v nft >/dev/null 2>&1; then
+            elif probe_command nft >/dev/null 2>&1; then
               printf 'FIREWALL=nftables\\n'
-              if nft_rules="$(nft list ruleset 2>/dev/null)"; then
+              if nft_rules="$(probe_run nft list ruleset 2>/dev/null)"; then
                 if [ -n "$nft_rules" ]; then printf 'FIREWALL_STATE=active\\n'; else printf 'FIREWALL_STATE=inactive\\n'; fi
               else
                 printf 'FIREWALL_STATE=unknown\\n'
