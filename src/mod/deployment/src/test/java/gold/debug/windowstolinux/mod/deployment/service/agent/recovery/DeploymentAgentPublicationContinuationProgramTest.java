@@ -25,10 +25,10 @@ class DeploymentAgentPublicationContinuationProgramTest {
  }
  @Test void continuationPreservesInstalledProgramAndReconstructsCurrentBoundRequest()throws Exception{
   var old=new DeploymentAgentPublicationRecoveryProgram(layout);
-  assertEquals("a15685f6958c9a84d2dea62d05e60458125bdd1d9e4064491636bd7eb4f74a1c",old.version());
-  assertEquals("40697a6f46d7cfec6ad36e13ebeb1fce98190c1d1679a9184d14278e625c8974",sha(old.source().getBytes(StandardCharsets.UTF_8)));
-  assertEquals("87c91c1031ad64588a55bb95463b456eaf01f04be38268c218697264f863121e",sha(old.loader().getBytes(StandardCharsets.UTF_8)));
-  assertEquals("dcb9deae2f84fdbc62c36d19422479abd6dae4d7f0a7e5bd59e411cf065d56c7",sha(old.installer().getBytes(StandardCharsets.UTF_8)));
+  assertEquals("964e8259b1acc996681c1fbdc782f64f436be6ec92b1aeef6e42f6c4c7c0506b",old.version());
+  assertEquals("151cd3c902776fc447da2e19d093078bcc1f9e935711f39653fc81580e2fe7b8",sha(old.source().getBytes(StandardCharsets.UTF_8)));
+  assertEquals("1ea8adc647eb6f9f1389407ae2047d7b340d7f9ac31f5f8bf1ebe97dd1b77689",sha(old.loader().getBytes(StandardCharsets.UTF_8)));
+  assertEquals("50319f3349c5fd4d122785c177b48527358194bf3e04a4a63bdba22ede1457e3",sha(old.installer().getBytes(StandardCharsets.UTF_8)));
   try(var r=program.request(binding(),UUID.randomUUID())){
    assertEquals(program.source(),new String(r.command().stdin(),StandardCharsets.UTF_8));
    String assignment=program.source().lines().filter(line->line.startsWith("BASH_SOURCE = ")).findFirst().orElseThrow();

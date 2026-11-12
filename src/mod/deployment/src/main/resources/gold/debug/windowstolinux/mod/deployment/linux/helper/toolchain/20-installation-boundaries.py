@@ -1,5 +1,7 @@
 # @compat:toolchain-archives@
 
+import contextlib
+import stat
 import threading
 
 
@@ -71,7 +73,7 @@ def run(command, cwd=None, environment=None):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=True,
-        **tracked_process_options(),
+        **preparation_process_options(),
     )
     readers = [threading.Thread(target=tail.drain, args=(stream,))
                for tail, stream in ((stdout, process.stdout), (stderr, process.stderr))]
@@ -117,7 +119,7 @@ def probe_output(command):
             stderr=subprocess.STDOUT,
             env=os.environ.copy(),
             start_new_session=True,
-            **tracked_process_options(),
+            **preparation_process_options(),
         )
         tracked_process_started(process)
         try:
@@ -134,11 +136,32 @@ def probe_output(command):
 
 
 DEADLINE = None
+PREPARE_LOCK = None
 
 
-def tracked_process_options():
-    descriptor = globals().get('TRACKED_PREPARE_LOCK')
-    return {} if descriptor is None else {'pass_fds': (descriptor,)}
+def preparation_process_options():
+    return {} if PREPARE_LOCK is None else {'pass_fds': (PREPARE_LOCK,)}
+
+
+def require_preparation_lock_file(info):
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+        fail('ownership', 'preparation lock must be a protected root-owned regular file')
+
+
+@contextlib.contextmanager
+def open_preparation_lock(path, creating):
+    try:
+        require_preparation_lock_file(path.lstat())
+    except FileNotFoundError:
+        if not creating:
+            fail('ownership', 'preparation lock must already exist and be root-owned')
+    flags = os.O_RDWR | os.O_CREAT if creating else os.O_RDONLY
+    descriptor = os.open(str(path), flags | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    try:
+        require_preparation_lock_file(os.fstat(descriptor))
+        yield descriptor
+    finally:
+        os.close(descriptor)
 
 
 def tracked_process_started(process):

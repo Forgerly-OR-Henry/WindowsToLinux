@@ -204,11 +204,11 @@ class RuntimeTests(unittest.TestCase):
         COUNTS.clear()
         SEEN_HEADERS.clear()
 
-    def endpoint(self, name):
+    def endpoint(self, name, origin='https://origin.invalid/'):
         return {'providerId': name, 'protocol': 'HTTP', 'baseUrl': self.server.root + '/' + name + '/',
                 'allowedHosts': ['127.0.0.1'], 'official': False, 'custom': True,
-                'sourceOrigins': ['https://origin.invalid/'],
-                'routes': [{'origin': 'https://origin.invalid/', 'prefix': self.server.root + '/' + name + '/'}]}
+                'sourceOrigins': [origin],
+                'routes': [{'origin': origin, 'prefix': self.server.root + '/' + name + '/'}]}
 
     def policy(self, names, **timeouts):
         return Policy({'formatVersion': 1, 'points': {'NODE_PACKAGE': [self.endpoint(name) for name in names]},
@@ -232,16 +232,23 @@ class RuntimeTests(unittest.TestCase):
             transfer(policy, 'NODE_PACKAGE', 'https://origin.invalid/cycle', self.path, validator=recursive)
         self.assertEqual(2, COUNTS['/good/cycle'])
 
-    def apt_fixture(self, manager='apt-get', error='', scheme='https', ipv6=False, authentication=False, arguments=None):
+    def apt_fixture(self, manager='apt-get', error='', scheme='https', ipv6=False, authentication=False, arguments=None,
+                    source=None, extension='list', point='APT_DEBIAN', origins=('https://origin.invalid/',)):
         endpoints = [self.endpoint('apt-missing'), self.endpoint('apt-good')]
         for endpoint in endpoints:
             selected = scheme + '://' + ('[::1]' if ipv6 else 'apt-fixture.invalid') + '/' + endpoint['providerId'] + '/'
             endpoint.update(baseUrl=selected, allowedHosts=['::1' if ipv6 else 'apt-fixture.invalid'], protocol='APT',
-                            routes=[{'origin': 'https://origin.invalid/', 'prefix': selected}])
+                            routes=[{'origin': origin, 'prefix': selected if origin.endswith('/') else selected.rstrip('/')}
+                                    for origin in origins])
             if authentication:
                 endpoint['secretRef'] = 'fixture:1'
-        policy = Policy({'formatVersion': 1, 'points': {'APT_DEBIAN': endpoints}})
-        directory = pathlib.Path(self.temp.name)
+        policy = Policy({'formatVersion': 1, 'points': {point: endpoints}})
+        directory = pathlib.Path(tempfile.mkdtemp(prefix='native-apt-', dir=self.temp.name))
+        repository = directory / 'host-apt' / 'sources.list.d' / ('fixture.' + extension)
+        repository.parent.mkdir(parents=True)
+        if source is None:
+            source = 'deb [signed-by=/usr/share/keyrings/fixture.gpg] https://origin.invalid/ stable main\n'
+        repository.write_bytes(source.encode('utf-8'))
         log = directory / 'native-apt.jsonl'
         policy_path = directory / 'policy.json'
         policy_path.write_text(json.dumps(policy.document))
@@ -259,15 +266,11 @@ class RuntimeTests(unittest.TestCase):
             overrides += ('export ' + key + '="$(cygpath -u ' + shlex.quote(value) + ')"\n' if os.name == 'nt'
                           else 'export ' + key + '=' + shlex.quote(value) + '\n')
         overrides += 'wtl_fixture_server=' + shlex.quote(self.server.root) + '\nwtl_fixture_error=' + shlex.quote(error) + '\n'
+        overrides += 'wtl_fixture_point=' + shlex.quote(point) + '\n'
         overrides += '''
-wtl_system_point() { printf APT_DEBIAN; }
-wtl_fixture_original_copy="$(declare -f wtl_repository_copy)"
-eval "${wtl_fixture_original_copy/wtl_repository_copy/wtl_fixture_repository_copy}"
-wtl_repository_copy() { printf '# mock native source\\n' >"$4"; }
+wtl_system_point() { printf '%s' "$wtl_fixture_point"; }
 wtl_bounded_package_request() { local cache="$1" log="$2"; shift 2; "$@" >"$log" 2>&1; }
 wtl_apt_configure_command() {
-  printf 'deb [signed-by=/usr/share/keyrings/fixture.gpg] https://origin.invalid/ stable main\\n' >"$folder/source.list"
-  wtl_fixture_repository_copy "$point" "$provider" "$folder/source.list" "$1/repos/fixture.list" || return $?
   package_command=("$wtl_fixture_python" "$wtl_fixture_script" native "$provider" "$folder" "$cache" "$wtl_fixture_log" "$wtl_fixture_server" "$wtl_fixture_error" "${wtl_auth_options[@]}" "${wtl_apt_strict_options[@]}")
 }
 wtl_apt_configure_query() {
@@ -278,14 +281,16 @@ wtl_apt_configure_download() {
 }
 '''
         script = directory / 'apt-fixture.sh'
-        script.write_text(command[2][:-len(entry)] + overrides + entry, encoding='utf-8')
+        shell = command[2][:-len(entry)].replace('/etc/apt/sources.list', './host-apt/sources.list')
+        script.write_bytes((shell + overrides + entry).encode('utf-8'))
         command = ['E:/Program/Git/bin/bash.exe' if os.name == 'nt' else '/bin/bash', str(script)] + command[4:]
         global_config = directory / 'global-apt.conf'
         global_config.write_text('DPkg::Pre-Install-Pkgs { "global-hook-must-not-run"; }; Acquire::http::Proxy "http://never-contact.invalid/";')
         environment = dict(os.environ, TEMP=self.temp.name, TMP=self.temp.name, TMPDIR=self.temp.name,
                            PYTHONIOENCODING='utf-8', APT_CONFIG=str(global_config))
-        process = subprocess.run(command, cwd=self.temp.name, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25)
+        process = subprocess.run(command, cwd=directory, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25)
         records = [json.loads(line) for line in log.read_text().splitlines()] if log.is_file() else []
+        self.assertEqual(source.encode('utf-8'), repository.read_bytes())
         return process, records
 
     def test_apt_missing_version_advances_metadata_then_freezes_objects_and_installs_once(self):
@@ -302,7 +307,6 @@ wtl_apt_configure_download() {
         self.assertEqual(3, len(batches))
         for arguments in batches:
             with self.subTest(arguments=arguments):
-                (pathlib.Path(self.temp.name) / 'native-apt.jsonl').unlink(missing_ok=True)
                 process, records = self.apt_fixture(arguments=arguments)
                 self.assertEqual(0, process.returncode, process.stderr.decode(errors='replace'))
                 plans = [record for record in records if record['phase'] == 'plan']
@@ -360,6 +364,135 @@ wtl_apt_configure_download() {
         self.assertIn('system-authentication-requires-https', process.stderr.decode())
         self.assertEqual([], records)
         self.assertEqual(0, COUNTS['/apt-missing/index.json'])
+
+    def test_apt_active_unfrozen_source_uris_are_rejected_before_native_requests(self):
+        cases = [
+            ('list', 'deb file:/mnt/offline stable main\n', 'apt-source-uri-requires-http-or-https'),
+            ('list', 'deb cdrom:[Offline Debian]/ stable main\n', 'apt-source-uri-requires-http-or-https'),
+            ('list', 'deb mirror+https://origin.invalid/ stable main\n', 'apt-source-uri-requires-http-or-https'),
+            ('list', 'deb https://other.invalid/ stable main\n', 'unmapped-system-repository'),
+            ('sources', 'Types: deb\nURIs: file:///mnt/offline\nSuites: stable\nComponents: main\n',
+             'apt-source-uri-requires-http-or-https'),
+            ('sources', 'Types: deb\nuRiS: https://origin.invalid/\n cdrom:[Offline]/\nSuites: stable\nComponents: main\n',
+             'apt-source-uri-requires-http-or-https'),
+        ]
+        for extension, source, reason in cases:
+            with self.subTest(extension=extension, source=source):
+                process, records = self.apt_fixture(source=source, extension=extension)
+                self.assertEqual(65, process.returncode, process.stderr.decode(errors='replace'))
+                self.assertIn('MIRROR_REJECT=' + reason, process.stderr.decode())
+                self.assertEqual([], records)
+        self.assertEqual(0, COUNTS['/apt-missing/index.json'])
+
+    def test_apt_deb822_preserves_keyrings_and_comments_and_rewrites_folded_uris(self):
+        source = ('# Repository source\nTypes: deb deb-src\nURIs: https://origin.invalid/\n'
+                  ' https://origin.invalid/updates/\nSuites: stable\nComponents: main\n'
+                  'Signed-By: /usr/share/keyrings/fixture.gpg\n \t\n'
+                  'Types: deb\nURIs: cdrom:[Offline]/\nSuites: stable\nComponents: main\nEnabled: no\n')
+        process, records = self.apt_fixture(source=source, extension='sources')
+        self.assertEqual(0, process.returncode, process.stderr.decode(errors='replace'))
+        self.assertEqual(1, len([record for record in records if record['phase'] == 'install']))
+        for record in (record for record in records if record['phase'] == 'update'):
+            base = 'https://apt-fixture.invalid/' + record['source'] + '/'
+            self.assertIn('URIs: ' + base + '\n ' + base + 'updates/\n', record['sourceText'])
+            self.assertIn('Signed-By: /usr/share/keyrings/fixture.gpg\n', record['sourceText'])
+            self.assertIn('# Repository source\n', record['sourceText'])
+            self.assertIn('# URIs: cdrom:[Offline]/\n', record['sourceText'])
+
+    def test_apt_debian_and_ubuntu_http_origins_resolve_to_frozen_https_paths(self):
+        profiles = [('APT_DEBIAN', 'http://deb.debian.org/debian'),
+                    ('APT_UBUNTU', 'http://archive.ubuntu.com/ubuntu')]
+        for point, origin in profiles:
+            with self.subTest(point=point):
+                origins = (origin + '/', origin)
+                source = (f'deb [signed-by=/usr/share/keyrings/fixture.gpg] {origin} stable main\n'
+                          f'deb-src {origin}/ stable main # inactive file:/mnt/offline\n')
+                process, records = self.apt_fixture(source=source, point=point, origins=origins)
+                self.assertEqual(0, process.returncode, process.stderr.decode(errors='replace'))
+                for record in (record for record in records if record['phase'] == 'update'):
+                    prefix = 'https://apt-fixture.invalid/' + record['source']
+                    self.assertIn(f'{prefix} stable main\n', record['sourceText'])
+                    self.assertIn(f'deb-src {prefix}/ stable main # inactive file:/mnt/offline\n', record['sourceText'])
+                process, records = self.apt_fixture(source=f'deb {origin}-other stable main\n',
+                                                    point=point, origins=origins)
+                self.assertEqual(65, process.returncode, process.stderr.decode(errors='replace'))
+                self.assertIn('MIRROR_REJECT=unmapped-system-repository', process.stderr.decode())
+                self.assertEqual([], records)
+
+    def test_apt_download_helper_requires_trusted_file_and_each_fixed_ancestor(self):
+        directory = pathlib.Path(self.temp.name)
+        script = directory / 'apt-helper-guard.sh'
+        bootstrap = RUNTIME['BOOTSTRAP_SHELL'].replace("/usr/bin/stat -c '%u:%a'", "fixture_stat -c '%u:%a'")
+        fixture = '''
+bad_path="$1" defect="$2"
+helper=/usr/lib/apt/apt-helper
+fixture_stat() {
+  local path="$4"
+  if [[ "$path" = "$bad_path" ]]; then
+    case "$defect" in
+      owner) printf '1000:755\\n'; return ;;
+      group-write) printf '0:775\\n'; return ;;
+      other-write) printf '0:757\\n'; return ;;
+      invalid-mode) printf '0:unknown\\n'; return ;;
+      stat-failed) return 1 ;;
+    esac
+  fi
+  printf '0:755\\n'
+}
+function [ {
+  if [[ "$1" = '!' ]]; then
+    ! "[" "${@:2}"
+    return
+  fi
+  local path="$2" problem=
+  if [[ "$path" = "$bad_path" ]]; then problem="$defect"; fi
+  case "$1" in
+    -L) [[ "$problem" = symlink ]] ;;
+    -d) [[ "$path" != "$helper" && "$problem" != wrong-type ]] ;;
+    -e) [[ "$problem" != missing ]] ;;
+    -f) [[ "$path" = "$helper" && "$problem" != wrong-type ]] ;;
+    -x) [[ "$problem" != non-executable ]] ;;
+    -u) [[ "$problem" = setuid ]] ;;
+    -g) [[ "$problem" = setgid ]] ;;
+    *) builtin [ "$@" ;;
+  esac
+}
+package_command=(/usr/bin/apt-get -o Dir::Etc::sourcelist=/dev/null)
+wtl_auth_options=() wtl_apt_strict_options=()
+wtl_apt_configure_download || exit "$?"
+printf '%s\\n' "${helper_command[@]}"
+'''
+        script.write_bytes((bootstrap + '\n' + fixture).encode('utf-8'))
+        bash = 'E:/Program/Git/bin/bash.exe' if os.name == 'nt' else '/bin/bash'
+        environment = dict(os.environ, TEMP=self.temp.name, TMP=self.temp.name, TMPDIR=self.temp.name)
+        helper = '/usr/lib/apt/apt-helper'
+        cases = [
+            ('', '', None),
+            ('/', 'group-write', 'untrusted'),
+            ('/usr', 'owner', 'untrusted'),
+            ('/usr/lib', 'symlink', 'untrusted'),
+            ('/usr/lib/apt', 'wrong-type', 'untrusted'),
+            ('/usr/lib/apt', 'stat-failed', 'untrusted'),
+            (helper, 'symlink', 'untrusted'),
+            (helper, 'wrong-type', 'untrusted'),
+            (helper, 'non-executable', 'untrusted'),
+            (helper, 'other-write', 'untrusted'),
+            (helper, 'invalid-mode', 'untrusted'),
+            (helper, 'setuid', 'untrusted'),
+            (helper, 'setgid', 'untrusted'),
+            (helper, 'missing', 'missing'),
+        ]
+        for path, defect, rejected in cases:
+            with self.subTest(path=path, defect=defect):
+                result = subprocess.run([bash, '--noprofile', '--norc', str(script), path, defect],
+                                        cwd=directory, env=environment, capture_output=True, text=True, timeout=10)
+                if rejected:
+                    self.assertEqual(65, result.returncode, result.stderr)
+                    self.assertEqual('', result.stdout)
+                    self.assertIn('MIRROR_REJECT=apt-native-download-helper-' + rejected, result.stderr)
+                else:
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual([helper, '-o', 'Dir::Etc::sourcelist=/dev/null'], result.stdout.splitlines())
 
     def test_child_policy_cannot_reuse_another_endpoints_cached_bytes(self):
         policy = self.policy(['good'])
@@ -436,8 +569,7 @@ wtl_apt_configure_download() {
             RUNTIME['mirror_loopback_peer_uid'](local, peer, 'not a kernel row')
 
     def test_legacy_bracketed_allowlist_is_compared_without_changing_the_url(self):
-        endpoint = self.endpoint('good')
-        endpoint['allowedHosts'] = ['[::1]', 'EXAMPLE.INVALID', '[FE80::1%Eth0]']
+        endpoint = {'allowedHosts': ['[::1]', 'EXAMPLE.INVALID', '[FE80::1%Eth0]']}
         for url in ('https://[::1]/file', 'https://example.invalid/file', 'https://[fe80::1%Eth0]/file'):
             self.assertEqual(Policy.validate_url(endpoint, url), url)
         with self.assertRaises(Failure):
@@ -581,9 +713,12 @@ wtl_apt_configure_download() {
         self.assertEqual(2, COUNTS['/invalid-metadata/apache-maven-3.9.9-bin.zip.sha512'])
         namespace = {'__name__': 'toolchain_metadata_fixture'}
         exec(compile(pathlib.Path(sys.argv[2]).read_text(encoding='utf-8'), sys.argv[2], 'exec'), namespace)
+        origins = namespace['MIRROR_DEFAULT_SOURCE_ORIGINS']
+        metadata_origin = origins['NODE_METADATA'][0]
+        distribution_origin = origins['NODE_DISTRIBUTION'][0]
         policy = Policy({'formatVersion': 1, 'points': {
-            'NODE_METADATA': [self.endpoint('node-bad'), self.endpoint('node-good')],
-            'NODE_DISTRIBUTION': [self.endpoint('good')], 'RUBYGEMS': []}})
+            'NODE_METADATA': [self.endpoint('node-bad', metadata_origin), self.endpoint('node-good', metadata_origin)],
+            'NODE_DISTRIBUTION': [self.endpoint('good', distribution_origin)], 'RUBYGEMS': []}})
         namespace['task_mirrors'] = lambda: (RUNTIME, policy)
         with unittest.mock.patch.dict(os.environ, {'WTL_MIRROR_POLICY': 'fixture'}):
             release = namespace['release']('NODE', '20', '20.10.0')

@@ -32,7 +32,8 @@ class TrackedToolchainBehaviorTest(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = pathlib.Path(self.temporary.name) / 'toolchains'
         self.root.mkdir()
-        self.ns = {'__name__': 'controlled_tracked_test'}
+        self.ns = {'__name__': 'controlled_tracked_test', '__WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__': {},
+                   '__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__': ['nodejs.org']}
         for name in ('10-release-metadata.py', 'archive-boundaries.py', '20-installation-boundaries.py',
                      '30-managed-installation.py', 'tracked-operations.py', '40-binding-protocol.py'):
             source = (SOURCES / name).read_text().replace('# @compat:centos-repositories@', 'repositories = []')
@@ -358,7 +359,7 @@ class TrackedToolchainBehaviorTest(unittest.TestCase):
         process.returncode = 0
         process.wait.return_value = 0
         recorder = mock.Mock()
-        with mock.patch.dict(self.ns, {'TRACKED_PREPARE_LOCK': 17, 'TRACKED_OPERATION': recorder, 'DEADLINE': None}), \
+        with mock.patch.dict(self.ns, {'PREPARE_LOCK': 17, 'TRACKED_OPERATION': recorder, 'DEADLINE': None}), \
                 mock.patch.object(subprocess, 'Popen', return_value=process) as spawn, \
                 mock.patch.object(os, 'killpg', create=True), mock.patch.object(signal, 'SIGKILL', 9, create=True):
             self.ns['run'](['fixed-install-command'])
@@ -397,13 +398,14 @@ class TrackedToolchainProcessBoundaryTest(unittest.TestCase):
             source = ("import fcntl,os,pathlib,subprocess,sys,time\n"
                       "fd=os.open(sys.argv[1],os.O_RDWR|os.O_CREAT,0o600)\n"
                       "fcntl.flock(fd,fcntl.LOCK_EX)\n"
-                      "ns={'__name__':'controlled_actual_process'}\n"
+                      "ns={'__name__':'controlled_actual_process','__WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__':{},"
+                      "'__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__':[]}\n"
                       "for name in ('10-release-metadata.py','20-installation-boundaries.py'):\n"
                       " exec(compile((pathlib.Path(sys.argv[3])/name).read_text(),name,'exec'),ns)\n"
                       "class Journal:\n"
                       " def process_started(self,pid): pathlib.Path(sys.argv[2]).write_text(str(pid))\n"
                       " def process_finished(self,pid): pass\n"
-                      "ns['TRACKED_PREPARE_LOCK']=fd\n"
+                      "ns['PREPARE_LOCK']=fd\n"
                       "ns['TRACKED_OPERATION']=Journal()\n"
                       "ns['run']([sys.executable,'-c','import time; time.sleep(30)'])\n")
             coordinator = subprocess.Popen([sys.executable, '-c', source, str(lock), str(ready), str(SOURCES)])

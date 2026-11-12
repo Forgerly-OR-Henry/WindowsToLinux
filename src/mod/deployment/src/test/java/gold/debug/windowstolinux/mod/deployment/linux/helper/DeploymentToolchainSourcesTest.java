@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class DeploymentToolchainSourcesTest {
     @Test
     void pureResourceExtractionKeepsDefaultHelperBytesUnchanged() {
-        assertEquals("83d6773e86575fe8582eefb9a164b6912904b61dd3f16821a3cdc39fe02f976c", DeploymentManagedHelperBundle.EXPECTED_SHA256);
+        assertEquals("5269a09f9fc4e49209ef30c95d9d52fb5f92e67bfd024471f491014ee78c8bca", DeploymentManagedHelperBundle.EXPECTED_SHA256);
         String helper = DeploymentManagedHelperBundle.renderScript();
         String pure = DeploymentToolchainSources.archives();
         assertTrue(helper.contains(pure));

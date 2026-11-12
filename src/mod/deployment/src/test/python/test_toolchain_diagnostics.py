@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 import uuid
 from unittest import mock
@@ -25,15 +26,17 @@ class ToolchainDiagnosticsTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = pathlib.Path(self.temporary.name) / 'toolchains'
-        self.ns = {'__name__': 'controlled_diagnostics'}
-        for name in ('10-release-metadata.py', 'archive-boundaries.py', '20-installation-boundaries.py', 'tracked-operations.py'):
+        self.ns = {'__name__': 'controlled_diagnostics', '__WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__': {},
+                   '__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__': ['example.invalid']}
+        for name in ('10-release-metadata.py', 'archive-boundaries.py', '20-installation-boundaries.py',
+                     '30-managed-installation.py', 'tracked-operations.py', '40-binding-protocol.py'):
             source = (SOURCES / name).read_text().replace('# @compat:centos-repositories@', 'repositories = []')
             exec(compile(source, name, 'exec'), self.ns)
         self.ns['ROOT'] = self.root
         self.ns['tracked_sync_directory'] = mock.Mock()
         self.ns['tracked_layout'] = mock.Mock()
         self.ns['owned_directory'] = mock.Mock(side_effect=self.owned)
-        self.ns['prepare_shared_directories'] = lambda: self.root.mkdir(exist_ok=True)
+        self.fcntl = types.SimpleNamespace(LOCK_SH=1, LOCK_EX=2, LOCK_NB=4, flock=mock.Mock())
         self.request = {'formatVersion': 1, 'operationId': str(uuid.uuid4()), 'taskId': str(uuid.uuid4()),
                         'serverId': 'fixture-server', 'fingerprintSha256': 'a' * 64, 'planRevision': 'b' * 64,
                         'remoteLayout': LAYOUT, 'arguments': ['prepare', 'PHP', '8.3', '-', '120', '-']}
@@ -52,9 +55,11 @@ class ToolchainDiagnosticsTest(unittest.TestCase):
 
     def invoke(self, verb, raw=None):
         raw = self.raw if raw is None else raw
-        actual = pathlib.Path.lstat
+        actual_lstat, actual_fstat = pathlib.Path.lstat, os.fstat
         output = io.StringIO()
-        with mock.patch.object(pathlib.Path, 'lstat', lambda path: self.controlled_stat(actual(path))), contextlib.redirect_stdout(output):
+        with mock.patch.object(pathlib.Path, 'lstat', lambda path: self.controlled_stat(actual_lstat(path))), \
+                mock.patch.object(os, 'fstat', lambda fd: self.controlled_stat(actual_fstat(fd))), \
+                mock.patch.dict(sys.modules, {'fcntl': self.fcntl}), contextlib.redirect_stdout(output):
             self.ns['installation_diagnostic_main']([verb, self.request['operationId'], hashlib.sha256(raw).hexdigest()], raw)
         return output.getvalue()
 
@@ -70,6 +75,7 @@ class ToolchainDiagnosticsTest(unittest.TestCase):
         kill.assert_called_once_with(4321, 9)
         self.assertEqual(2, process.wait.call_count)
         self.assertEqual(subprocess.PIPE, spawn.call_args.kwargs['stdout'])
+        self.assertEqual((self.fcntl.flock.call_args.args[0],), spawn.call_args.kwargs['pass_fds'])
         self.assertEqual(subprocess.PIPE, spawn.call_args.kwargs['stderr'])
         raise raised.exception
 
@@ -80,7 +86,7 @@ class ToolchainDiagnosticsTest(unittest.TestCase):
                              b'password: hidden\nhttps://user:pass@example.invalid/a?token=anothersecret\n'
                              + ('\u9519\u8bef\n' * 9000).encode() + b'-----BEGIN PRIVATE KEY-----\nprivatebody\n-----END PRIVATE KEY-----\n')
             self.ns['fail']('installation', 'controlled original failure')
-        self.ns['main'] = preparation
+        self.ns['prepare'] = preparation
         with self.assertRaises(self.ns['PreparationFailure']):
             self.invoke('prepare-diagnosed')
         diagnostic = json.loads(self.invoke('diagnose-only'))
@@ -98,12 +104,13 @@ class ToolchainDiagnosticsTest(unittest.TestCase):
         self.assertFalse(diagnostic['timedOut'])
         self.assertIsNone(self.ns['INSTALLATION_DIAGNOSTIC'])
         # Re-reading never calls the preparation implementation or emits the old preparation receipt.
-        self.ns['main'] = mock.Mock(side_effect=AssertionError('must not prepare'))
+        self.ns['prepare'] = mock.Mock(side_effect=AssertionError('must not prepare'))
         self.assertEqual(diagnostic, json.loads(self.invoke('diagnose-only')))
-        self.ns['main'].assert_not_called()
+        self.ns['prepare'].assert_not_called()
+        self.fcntl.flock.assert_called_once()
 
     def test_timeout_kills_and_reaps_owned_process_before_retaining_actual_exit(self):
-        self.ns['main'] = lambda args: self.run_process(b'partial stdout\n', b'actual timeout detail\n', -9, True)
+        self.ns['prepare'] = lambda args: self.run_process(b'partial stdout\n', b'actual timeout detail\n', -9, True)
         with self.assertRaises(subprocess.TimeoutExpired):
             self.invoke('prepare-diagnosed')
         diagnostic = json.loads(self.invoke('diagnose-only'))
@@ -183,11 +190,11 @@ class ToolchainDiagnosticsTest(unittest.TestCase):
         self.assertIn('visible', result)
 
     def test_request_or_attachment_identity_mismatch_refuses_without_replay(self):
-        self.ns['main'] = mock.Mock()
+        self.ns['prepare'] = mock.Mock()
         self.invoke('prepare-diagnosed')
         with self.assertRaises(FileExistsError):
             self.invoke('prepare-diagnosed')
-        self.assertEqual(1, self.ns['main'].call_count)
+        self.assertEqual(1, self.ns['prepare'].call_count)
         changed = dict(self.request, taskId=str(uuid.uuid4()))
         with self.assertRaises(self.ns['PreparationFailure']):
             self.invoke('diagnose-only', json.dumps(changed, separators=(',', ':')).encode())
@@ -197,7 +204,74 @@ class ToolchainDiagnosticsTest(unittest.TestCase):
         path.write_text(json.dumps(data))
         with self.assertRaises(self.ns['PreparationFailure']):
             self.invoke('diagnose-only')
-        self.assertEqual(1, self.ns['main'].call_count)
+        self.assertEqual(1, self.ns['prepare'].call_count)
+
+    def test_installation_waits_for_exclusive_lock_and_preserves_normal_receipt(self):
+        self.ns['SHIPPED_CATALOG'] = {'PHP': ['8.3']}
+        url = 'https://example.invalid/php.tar.gz'
+        self.ns['release'] = mock.Mock(return_value=('8.3.35', url, 'sha256', 'a' * 64, 'php'))
+        self.ns['reuse_system'] = mock.Mock(return_value=None)
+        record = {'ecosystem': 'PHP', 'version': '8.3.35', 'directory': '/fixture', 'origin': 'MANAGED',
+                  'source': url, 'sha256': 'a' * 64}
+
+        def install(*arguments):
+            self.assertEqual(('PHP', '8.3.35', url, 'sha256', 'a' * 64, 'php'), arguments)
+            self.assertEqual(self.fcntl.flock.call_args.args[0], self.ns['PREPARE_LOCK'])
+            self.assertTrue((self.root / 'versions').is_dir())
+            return record
+
+        def retry(seconds):
+            self.assertEqual(0.2, seconds)
+            self.assertFalse((self.root / 'versions').exists())
+            self.ns['release'].assert_not_called()
+
+        self.ns['install'] = mock.Mock(side_effect=install)
+        self.fcntl.flock.side_effect = [BlockingIOError(), None]
+        with mock.patch.object(time, 'sleep', side_effect=retry) as sleep:
+            output = self.invoke('prepare-diagnosed')
+        sleep.assert_called_once()
+        fd = self.fcntl.flock.call_args.args[0]
+        flags = self.fcntl.LOCK_EX | self.fcntl.LOCK_NB
+        self.assertEqual([mock.call(fd, flags)] * 2, self.fcntl.flock.call_args_list)
+        self.assertIsNone(self.ns['PREPARE_LOCK'])
+        self.assertEqual('TOOLCHAIN=' + '|'.join(record.values()) + '\n', output)
+        self.assertEqual('SUCCEEDED', json.loads(self.invoke('diagnose-only'))['preparationStatus'])
+
+    def test_invalid_lock_records_failure_without_execution_or_replay(self):
+        lock = self.root / '.prepare.lock'
+        lock.mkdir(parents=True)
+        self.ns['prepare'] = mock.Mock()
+        with self.assertRaises(self.ns['PreparationFailure']) as failure:
+            self.invoke('prepare-diagnosed')
+        self.assertEqual('ownership', failure.exception.category)
+        self.assertEqual('FAILED', json.loads(self.invoke('diagnose-only'))['preparationStatus'])
+        with self.assertRaises(FileExistsError):
+            self.invoke('prepare-diagnosed')
+        self.ns['prepare'].assert_not_called()
+        self.fcntl.flock.assert_not_called()
+        self.assertTrue(lock.is_dir())
+
+    def test_diagnosed_installation_retains_existing_unmarked_destination(self):
+        digest = 'a' * 64
+        key = self.ns['installation_key']('PHP', '8.3.35', digest)
+        destination = self.root / 'versions' / ('php-' + key)
+        destination.mkdir(parents=True)
+        retained = destination / 'retained'
+        retained.write_bytes(b'original destination content')
+        self.ns['SHIPPED_CATALOG'] = {'PHP': ['8.3']}
+        self.ns['release'] = mock.Mock(return_value=('8.3.35', 'https://example.invalid/php.tar.gz', 'sha256', digest, 'php'))
+        self.ns['discover_system'] = mock.Mock(return_value=None)
+        self.ns['download'] = mock.Mock()
+        with self.assertRaises(self.ns['PreparationFailure']) as failure:
+            self.invoke('prepare-diagnosed')
+        self.assertEqual('ownership', failure.exception.category)
+        diagnostic = json.loads(self.invoke('diagnose-only'))
+        self.assertEqual('FAILED', diagnostic['preparationStatus'])
+        self.assertEqual('ownership', diagnostic['failureCategory'])
+        self.assertIsNone(diagnostic['actualExitCode'])
+        self.assertEqual(b'original destination content', retained.read_bytes())
+        self.assertEqual([retained], list(destination.iterdir()))
+        self.ns['download'].assert_not_called()
 
 
 if __name__ == '__main__':

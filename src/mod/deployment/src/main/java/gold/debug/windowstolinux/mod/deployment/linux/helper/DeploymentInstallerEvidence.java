@@ -83,7 +83,7 @@ public final class DeploymentInstallerEvidence {
             if (mirror.isPresent())
                 facts.put("mirrorShellFunctions", "The exact wrapper inlines wtl_apt and wtl_dnf definitions into the parent shell before the installer subshell inherits them. The written bootstrap file is not the only copy of those definitions.");
             facts.put("aptDownloads", mirror.isPresent()
-                ? "Runtime freezes URI/name/size/SHA256 from one selected metadata set, authenticates package sources and installs with --no-download. This is not a complete pre-approved transaction or a blanket version pin."
+                ? "The task-local APT source copy checks every active URI against the frozen route before metadata update, including rejection of file: and cdrom:. The fixed apt-helper and ancestors are checked before downloads. The runtime freezes URI/name/size/SHA256, authenticates package sources and installs with --no-download. Package effects still require independent review."
                 : "Native configured APT sources; mirror object freezing is not asserted for this unwrapped request.");
             facts.put("limits", "Package maintainer scripts and service effects remain possible; NEEDRESTART_MODE=l is not a blanket service-change ban. Existing readiness checks still must pass; no retry without these protections is introduced. No live state, transaction outcome or permission is asserted. Compare complete source and effects against the referenced actual frozen workflow request.");
             return Collections.unmodifiableMap(facts);

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 
@@ -29,6 +30,7 @@ import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
 import org.junit.jupiter.api.Test;
@@ -39,6 +41,60 @@ class DeploymentToolchainReviewEvidenceTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final int R20_SMALLEST_REMAINING_BYTES = 365119;
     private static final String PHASE = "toolchainReviewEvidence";
+
+    @Test
+    void nativeInstallerPagesCompleteSourceWhileKeepingActualWorkflowVisible() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var request = fixture.request(fixture.installer("TRACKED", true))) {
+            var intent = fixture.intent("TRACKED", request);
+            reply(fixture, verdict("denied-installer", "DENY"));
+            var denied = assertThrows(ApiException.class,
+                () -> ((DeploymentCommandReview) assisted.scope.interaction()).approveCommand(intent, request, fixture.task));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
+            assertEquals(0, assisted.hosts.get());
+            var initial = fixture.model.requests.getFirst();
+            byte[] encoded = wire(initial, 365119, Map.of());
+            var facts = (ObjectNode) JSON.readTree(initial.messages().getLast().text());
+            assertEquals("currentCommandEvidence", facts.fieldNames().next());
+            var authority = facts.at("/currentCommandEvidence/workflowAuthorization");
+            assertEquals(DeploymentNativeHelperPackageImpactTest.WORKFLOW, authority.path("frozenWorkflowRequest").asText());
+            assertEquals(fixture.task.id().toString(), authority.path("task").asText());
+            assertEquals(fixture.server.id(), authority.at("/serverTargets/0").asText());
+            var original = new LinkedHashMap<>(fixture.facts("TRACKED", request));
+            original.put("currentCommandEvidence", assisted.scope.facts(intent, request, fixture.task));
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(original, 1048576),
+                intent, request, fixture.layout).orElseThrow();
+            var sources = (ObjectNode) facts.at("/completeExecutableInput/sources");
+            for (String name : List.of("mirrorRuntime", "managedHelper", "buildEntry")) {
+                var descriptor = sources.path(name);
+                assertEquals("EVIDENCE_PAGES", descriptor.path("retrieval").asText());
+                String source = collect(evidence, descriptor, "installerReviewEvidence");
+                assertIdentity(descriptor, source);
+                sources.put(name, source);
+            }
+            assertArrayEquals(request.stdin(), DeploymentInstallerEvidence.reconstruct(facts.path("completeExecutableInput"))
+                .getBytes(StandardCharsets.UTF_8));
+            System.out.printf("INSTALLER_REVIEW_WIRE bytes=%d ceiling=%d%n", encoded.length, 365119);
+        }
+    }
+
+    @Test
+    void overlappingPagesDeliverAllAndOnlyMissingRangesFromTheSameSource() {
+        String body = "abcd编译😀".repeat(400);
+        var retained = new TreeMap<Integer, Integer>();
+        assertEquals(body.substring(0, 800), page(body, retained, 0, 800).get("text"));
+        assertEquals(body.substring(1200, 1600), page(body, retained, 1200, 400).get("text"));
+        var overlap = page(body, retained, 400, 1600);
+        assertFalse(overlap.containsKey("text"));
+        assertEquals(List.of(Map.of("offset", 800, "next", 1200, "text", body.substring(800, 1200)),
+            Map.of("offset", 1600, "next", 2000, "text", body.substring(1600, 2000))), overlap.get("newRanges"));
+        assertEquals(List.of(), page(body, retained, 0, 2000).get("newRanges"));
+        assertEquals(Map.of(0, 2000), retained);
+    }
+
+    private static Map<String, Object> page(String body, TreeMap<Integer, Integer> retained, int offset, int count) {
+        return DeploymentEvidencePages.retainAndDescribe(body, DeploymentEvidencePages.page(body, offset, count), retained);
+    }
 
     @Test
     void dependencyReviewRejectsAWrapperForAnotherTaskOrBudgetBeforeModelAndHost() throws Exception {
@@ -92,11 +148,11 @@ class DeploymentToolchainReviewEvidenceTest {
             expected.put("commandAuthorizationStage", Map.of("phase", "INDEPENDENT_REVIEW_BEFORE_HOST_GRANT",
                 "hostGrantRequestedOnlyAfterApprove", true, "hostGrantIssuedByThisBoundary", false, "exactHostGrantRequiredBeforeDispatch", true));
             String original = DeploymentAiJson.facts(expected, 1048576);
-            var evidence = DeploymentToolchainReviewEvidence.project(original, intent, request, fixture.layout).orElseThrow();
+            var evidence = DeploymentCommandSourceEvidence.project(original, intent, request, fixture.layout).orElseThrow();
             var mirror = kind.equals("dependencies") ? projected.at("/" + PHASE + "/mirrorRuntime") : projected.at("/mirrorTransport/runtimeSource");
             String mirrorPointer = mirror.path("sourcePointer").asText();
             assertEquals("EVIDENCE_PAGES", mirror.path("retrieval").asText());
-            String mirrorSource = collect(evidence, mirror);
+            String mirrorSource = collect(evidence, mirror, PHASE);
             assertIdentity(mirror, mirrorSource);
             assertTrue(mirrorSource.startsWith("class MirrorPolicy:", mirror.at("/locations/class MirrorPolicy:").intValue()));
             var restored = restore(JSON.readTree(wire), Map.of(mirrorPointer, mirrorSource));
@@ -124,14 +180,16 @@ class DeploymentToolchainReviewEvidenceTest {
             for (int index = 0; index < 6; index++)
                 reads.add(read("range-" + index, snapshot, sourcePointer, index * 8000, 8000));
             reply(fixture, continuations, 6000, reads.toArray(AiToolCall[]::new));
+            reply(fixture, continuations, 6000, read("repeat-0", snapshot, sourcePointer, 0, 8000),
+                read("repeat-1", snapshot, sourcePointer, 6000, 8000), read("repeat-2", snapshot, sourcePointer, 14000, 8000));
             reply(fixture, verdict("approved", "APPROVE"));
             assertEquals(TaskResult.SUCCEEDED, review.call().outcome());
             assertEquals(List.of(intent), assisted.grantedIntents);
-            assertEquals(5, fixture.model.requests.size());
+            assertEquals(6, fixture.model.requests.size());
             assertEquals(initial.messages(), fixture.model.requests.get(1).messages(), "Every review starts with only the complete current facts");
             var finalRequest = fixture.model.requests.getLast();
             var pages = finalRequest.messages().stream().flatMap(message -> message.toolResult().stream()).toList();
-            assertEquals(10, pages.size());
+            assertEquals(13, pages.size());
             assertTrue(pages.get(0).error());
             assertFalse(pages.get(1).error());
             assertFalse(pages.get(2).error());
@@ -139,11 +197,16 @@ class DeploymentToolchainReviewEvidenceTest {
             assertPage(pages.get(2), snapshot, kind.equals("dependencies") ? restored.path("completeExecutableInput").asText()
                 : DeploymentManagedHelperBundle.renderScript(fixture.layout));
             assertPage(pages.get(3), snapshot, mirrorSource);
-            assertEquals("range-5", pages.getLast().callId());
+            assertEquals("repeat-2", pages.getLast().callId());
+            for (var page : pages.subList(10, 13)) {
+                var value = JSON.readTree(page.text()).path("value");
+                assertFalse(value.has("text"));
+                assertEquals(0, value.path("newRanges").size());
+            }
             byte[] continued = wire(finalRequest, R20_SMALLEST_REMAINING_BYTES, continuations);
             var wireInput = JSON.readTree(continued).path("input");
-            assertEquals(10, wireInput.findValuesAsText("type").stream().filter("function_call_output"::equals).count());
-            System.out.printf("TOOLCHAIN_REVIEW_CONTINUATION kind=%s actualBytes=%d ceiling=%d%n", kind,
+            assertEquals(13, wireInput.findValuesAsText("type").stream().filter("function_call_output"::equals).count());
+            System.out.printf("TOOLCHAIN_REVIEW_CONTINUATION kind=%s actualBytes=%d ceiling=%d repeatedSourceCharactersOmitted=24000%n", kind,
                 continued.length, R20_SMALLEST_REMAINING_BYTES);
 
             reply(fixture, read("mixed-evidence", snapshot, mirrorPointer, 0), verdict("mixed-approval", "APPROVE"));
@@ -197,8 +260,8 @@ class DeploymentToolchainReviewEvidenceTest {
         return Base64.getEncoder().encodeToString(payload.getBytes(StandardCharsets.UTF_8));
     }
 
-    private static String collect(DeploymentToolchainReviewEvidence evidence, JsonNode descriptor) throws Exception {
-        String snapshot = JSON.readTree(evidence.messages().getLast().text()).at("/" + PHASE + "/snapshotSha256").asText();
+    private static String collect(DeploymentCommandSourceEvidence evidence, JsonNode descriptor, String phase) throws Exception {
+        String snapshot = JSON.readTree(evidence.messages().getLast().text()).at("/" + phase + "/snapshotSha256").asText();
         var reader = evidence.reader(256);
         var body = new StringBuilder();
         int total = descriptor.path("characters").intValue();

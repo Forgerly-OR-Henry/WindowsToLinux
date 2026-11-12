@@ -229,7 +229,8 @@ class ModelHttpCallTest {
 
     @Test
     void timeoutDiagnosticsDistinguishPhasesWithoutExceptionMessagesOrApplicationTypes() {
-        assertEquals(Map.of("transportFailureType", "java.net.http.HttpConnectTimeoutException", "timeoutPhase", "HTTP_CONNECT"),
+        assertEquals(Map.of("transportFailureType", "java.net.http.HttpConnectTimeoutException", "timeoutPhase", "HTTP_CONNECT",
+                "transportFailureKind", "HTTP_CONNECT_TIMEOUT"),
             ModelHttpCall.transportDetails(new ExecutionException(new CompletionException(new HttpConnectTimeoutException("private-key/endpoint")))));
         assertEquals(Map.of("transportFailureType", "java.net.http.HttpTimeoutException", "timeoutPhase", "HTTP_REQUEST"),
             ModelHttpCall.transportDetails(new CompletionException(new HttpTimeoutException("private-provider-body"))));

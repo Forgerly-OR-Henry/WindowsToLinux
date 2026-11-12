@@ -20,45 +20,54 @@ wtl_system_point() {
   esac
 }
 wtl_repository_copy() {
-  local point="$1" provider="$2" input="$3" output="$4" line original replacement token
-  local -a origins prefixes
-  wtl_source_routes "$point" "$provider" || return 65
-  : >"$output"
-  local filtered="$output.wtl-input"
-  /usr/bin/awk 'BEGIN {RS=""; ORS="\n\n"} {
-    lower=tolower($0)
-    if (lower ~ /(^|\n)[ \t]*enabled:[ \t]*(no|false|0)([ \t]*\n|[ \t]*$)/) {
-      count=split($0, lines, "\n"); for (i=1; i<=count; i++) print "# " lines[i]
-    } else print $0
-  }' "$input" >"$filtered"
+  local point="$1" provider="$2" input="$3" output="$4" line filtered="$3" field= values prefix suffix
+  local one_line='^([[:blank:]]*deb(-src)?[[:blank:]]+(\[[^]]*\][[:blank:]]+)?)([^[:blank:]#]+)([[:blank:]]+[^[:blank:]#].*)$'
+  local field_line='^([A-Za-z0-9-]+):[[:blank:]]*(.*)$'
+  : >"$output" || return 65
+  if [[ "$input" = *.sources ]]; then
+    filtered="$output.wtl-input"
+    # Keep inactive stanzas as comments in the private copy, including folded URI fields.
+    /usr/bin/awk '
+      function flush() {
+        for (i=1; i<=count; i++) print (disabled ? "# " : "") lines[i]
+        count=0; disabled=0
+      }
+      { sub(/\r$/, "") }
+      /^[ \t]*$/ { flush(); print ""; next }
+      { lines[++count]=$0 }
+      tolower($0) ~ /^enabled:[ \t]*(no|false|0)[ \t]*$/ { disabled=1 }
+      END { flush() }
+    ' "$input" >"$filtered" || return 65
+  fi
   while IFS= read -r line || [ -n "$line" ]; do
-    wtl_apt_source_security "$line" || return 65
-    case "$line" in *mirrorlist=*|*metalink=*)
-      # URL-producing metadata cannot silently reactivate an unselected repository.
-      line="#$line" ;;
-    esac
-    for token in "${!origins[@]}"; do
-      original="${origins[$token]}" replacement="${prefixes[$token]}"
-      line="${line//"$original"/"$replacement"}"
-    done
-    if [[ ! "$line" =~ ^[[:space:]]*[\#] ]]; then
-      # Every active HTTP(S) URL must belong to the selected endpoint after substitution.
-      local words word matched
-      read -r -a words <<<"$line"
-      for word in "${words[@]}"; do
-        word="${word#*=}"
-        if [[ "$word" = http://* || "$word" = https://* ]]; then
-          matched=0
-          for replacement in "${prefixes[@]}"; do
-            [[ "$word" = "$replacement"* ]] && matched=1
-          done
-          [ "$matched" = 1 ] || { printf 'MIRROR_REJECT=unmapped-system-repository\n' >&2; return 65; }
+    line="${line%$'\r'}"
+    if [[ "$line" =~ ^[[:blank:]]*$ ]]; then
+      field=
+    elif [[ ! "$line" =~ ^[[:blank:]]*# ]]; then
+      wtl_apt_source_security "$line" || return 65
+      if [[ "$input" = *.sources ]]; then
+        if [[ "$line" =~ $field_line ]]; then
+          field="${BASH_REMATCH[1],,}" prefix="${BASH_REMATCH[1]}: " values="${BASH_REMATCH[2]}"
+        elif [[ "$line" = [[:blank:]]* && -n "$field" ]]; then
+          prefix=" " values="$line"
+        else
+          printf 'MIRROR_REJECT=apt-source-syntax\n' >&2; return 65
         fi
-      done
+        if [ "$field" = uris ]; then
+          values="$(wtl_apt_repository_uris "$point" "$provider" "$values")" || return 65
+          line="$prefix$values"
+        fi
+      elif [[ "$line" =~ $one_line ]]; then
+        prefix="${BASH_REMATCH[1]}" values="${BASH_REMATCH[4]}" suffix="${BASH_REMATCH[5]}"
+        values="$(wtl_apt_repository_uris "$point" "$provider" "$values")" || return 65
+        line="$prefix$values$suffix"
+      else
+        printf 'MIRROR_REJECT=apt-source-syntax\n' >&2; return 65
+      fi
     fi
-    printf '%s\n' "$line" >>"$output"
-  done <"$filtered"
-  /usr/bin/rm -f -- "$filtered"
+    printf '%s\n' "$line" >>"$output" || return 65
+  done <"$filtered" || return 65
+  if [ "$filtered" != "$input" ]; then /usr/bin/rm -f -- "$filtered" || return 65; fi
 }
 wtl_dnf_repository_copy() {
   local point="$1" provider="$2" input="$3" output="$4" line repo= next_repo= enabled=1 emitted=0

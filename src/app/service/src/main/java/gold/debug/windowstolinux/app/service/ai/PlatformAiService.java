@@ -797,16 +797,25 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         }
     }
 
-    /** Allows only explicitly selected incomplete bodies from the current pure client-function protocols. / 仅允许显式选择的当前纯客户端函数协议的不完整正文恢复。 */
+    /** Allows selected connection-timeout or incomplete-body recovery for pure client-function protocols. */
     private static boolean recoverableGeneration(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
                                                  OperationResult<AiResponse> result) {
         boolean pure = switch (profile.protocol()) {
             case OPENAI_CHAT_COMPLETIONS, OPENAI_RESPONSES, ANTHROPIC_MESSAGES -> true;
         };
         return pure && result.outcome() == TaskResult.UNKNOWN && result.value().isEmpty()
-            && result.problem().filter(problem -> problem.code() == ProblemCode.IO_FAILURE
-            && problem.eventCode().equals("AI_TRANSPORT_UNKNOWN")
-            && Set.of("HTTP_BODY_INCOMPLETE", "HTTP_CHUNK_INCOMPLETE").contains(problem.context().getOrDefault("transportFailureKind", "NONE"))).isPresent();
+            && result.problem().filter(PlatformAiService::recoverableGenerationTransport).isPresent();
+    }
+
+    static boolean recoverableGenerationTransport(Problem problem) {
+        var details = problem.context();
+        String kind = details.getOrDefault("transportFailureKind", "NONE");
+        if (problem.code() == ProblemCode.TIMEOUT && problem.eventCode().equals("AI_TIMEOUT")) {
+            return kind.equals("HTTP_CONNECT_TIMEOUT") && "HTTP_CONNECT".equals(details.get("timeoutPhase"))
+                && "java.net.http.HttpConnectTimeoutException".equals(details.get("transportFailureType"));
+        }
+        return problem.code() == ProblemCode.IO_FAILURE && problem.eventCode().equals("AI_TRANSPORT_UNKNOWN")
+            && Set.of("HTTP_BODY_INCOMPLETE", "HTTP_CHUNK_INCOMPLETE").contains(kind);
     }
 
     /** Retains only this physical attempt's reported usage. / 仅保留本次物理尝试的报告用量。 */

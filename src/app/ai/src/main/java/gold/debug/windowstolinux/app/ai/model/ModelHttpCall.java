@@ -205,7 +205,10 @@ public final class ModelHttpCall implements AutoCloseable {
         String type = cause.getClass().getName();
         var details = new HashMap<String, String>();
         details.put("transportFailureType", type.matches("(?:java|javax|jdk)[.][A-Za-z0-9_.$]{1,180}") ? type : "OTHER");
-        if (cause instanceof HttpConnectTimeoutException) details.put("timeoutPhase", "HTTP_CONNECT");
+        if (cause instanceof HttpConnectTimeoutException) {
+            details.put("timeoutPhase", "HTTP_CONNECT");
+            details.put("transportFailureKind", "HTTP_CONNECT_TIMEOUT");
+        }
         else if (cause instanceof HttpTimeoutException) details.put("timeoutPhase", "HTTP_REQUEST");
         var chain = new ArrayList<String>();
         var visited = Collections.newSetFromMap(new IdentityHashMap<Throwable, Boolean>());

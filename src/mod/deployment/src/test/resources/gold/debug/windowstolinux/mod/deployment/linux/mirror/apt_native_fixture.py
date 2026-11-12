@@ -14,12 +14,13 @@ arguments = sys.argv[8:]
 folder, cache = pathlib.Path(folder), pathlib.Path(cache)
 phase = (mode if mode != 'native' else 'plan' if '--print-uris' in arguments
          else 'install' if '--no-download' in arguments else 'update')
+source = next((folder / 'repos').glob('fixture.*')).read_text()
 with pathlib.Path(log).open('a', encoding='utf-8') as output:
     output.write(json.dumps({'phase': phase, 'source': provider, 'arguments': arguments,
         'aptConfig': os.environ.get('APT_CONFIG', ''),
         'aptConfigText': (folder / 'apt.conf').read_text(),
         'configurationParts': [path.name for path in (folder / 'apt.conf.d').iterdir()],
-        'sourceText': (folder / 'repos' / 'fixture.list').read_text()}) + '\n')
+        'sourceText': source}) + '\n')
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 if phase == 'update':
     with opener.open(server + '/' + provider + '/index.json', timeout=3) as response:
@@ -37,7 +38,8 @@ elif phase in ('plan', 'query'):
         sys.exit(100)
     else:
         payload = b'locked-archive-content' * 2048
-        selected = next(value for value in (folder / 'repos' / 'fixture.list').read_text().split() if value.startswith(('http://', 'https://')))
+        selected = next(value for line in source.splitlines() if not line.lstrip().startswith('#')
+                        for value in line.split() if value.startswith(('http://', 'https://')))
         print("'" + selected.rstrip('/') + "/demo.deb' demo_1-1_amd64.deb " + str(len(payload))
               + ' SHA256:' + hashlib.sha256(payload).hexdigest())
 elif phase == 'download':

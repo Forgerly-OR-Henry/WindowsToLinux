@@ -45,6 +45,45 @@ def discover_system(ecosystem, identity):
             'source': 'system:' + str(executable), 'sha256': digest, 'system_files': files, '_home': str(home)}
 
 
+def saved_installation_marker(directory):
+    owned_directory(directory)
+    if directory.is_symlink():
+        fail('ownership', 'installation destination must not be a link')
+    if not directory.exists():
+        return None
+    marker = directory / '.w2l-toolchain.json'
+    if not directory.is_dir():
+        fail('ownership', 'installation destination must be a directory')
+    try:
+        info = marker.lstat()
+    except FileNotFoundError:
+        fail('ownership', 'existing installation has no completion marker')
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+        fail('ownership', 'installation marker must be a protected root-owned regular file')
+    return marker
+
+
+@contextlib.contextmanager
+def create_installation_directory(directory, tracked):
+    if tracked is not None:
+        tracked.create_destination(directory)
+        yield
+        return
+    directory.mkdir(parents=True)
+    created = directory.lstat()
+    try:
+        yield
+    except BaseException:
+        try:
+            current = directory.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            if os.path.samestat(created, current):
+                shutil.rmtree(directory)
+        raise
+
+
 def materialize_system(discovered):
     record = dict(discovered)
     home = pathlib.Path(record.pop('_home'))
@@ -52,18 +91,13 @@ def materialize_system(discovered):
     ecosystem = record['ecosystem']
     files = record['system_files']
     tracked = globals().get('TRACKED_OPERATION')
-    marker = directory / '.w2l-toolchain.json'
-    if marker.is_file():
+    marker = saved_installation_marker(directory)
+    if marker is not None:
         record = json.loads(marker.read_text())
         verify_system(record)
         return record
-    if directory.exists():
-        shutil.rmtree(directory)
-    try:
-        if tracked is None:
-            directory.mkdir()
-        else:
-            tracked.create_destination(directory)
+    with create_installation_directory(directory, tracked):
+        marker = directory / '.w2l-toolchain.json'
         (directory / 'bin').mkdir()
         for f in files:
             target = directory / f['name'] if ecosystem == 'DOTNET' else directory / 'bin' / f['name']
@@ -93,10 +127,6 @@ def materialize_system(discovered):
         else:
             tracked_atomic_json(marker, record, 0o444)
         return record
-    except BaseException:
-        if tracked is None:
-            shutil.rmtree(directory)
-        raise
 
 
 def reuse_system(ecosystem, identity):
@@ -172,16 +202,12 @@ def install(ecosystem, identity, url, algorithm, expected, layout):
         fail('metadata', 'invalid official artifact digest')
     key = installation_key(ecosystem, identity, expected)
     destination = ROOT / 'versions' / (ecosystem.lower() + '-' + key)
-    owned_directory(destination)
-    marker = destination / '.w2l-toolchain.json'
-    if marker.is_file():
+    marker = saved_installation_marker(destination)
+    if marker is not None:
         record = json.loads(marker.read_text())
         probe(ecosystem, destination, identity)
         seal_installation(destination)
         return record
-    if destination.exists():
-        # A directory without its completion marker cannot have been admitted to any immutable release binding.
-        shutil.rmtree(destination)
     work_parent = ROOT / 'work'
     if tracked is None:
         work_parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -198,15 +224,12 @@ def install(ecosystem, identity, url, algorithm, expected, layout):
         source = unpacked if layout == 'flat' else next(iter(unpacked.iterdir()))
         if layout != 'flat' and (not source.is_dir() or len(list(unpacked.iterdir())) != 1):
             fail('archive', 'unexpected official archive layout')
-        try:
+        with create_installation_directory(destination, tracked):
+            marker = destination / '.w2l-toolchain.json'
             dependencies = {}
-            if tracked is not None:
-                tracked.create_destination(destination)
             if layout in ('flat', 'archive'):
-                shutil.copytree(source, destination, symlinks=True, dirs_exist_ok=tracked is not None)
+                shutil.copytree(source, destination, symlinks=True, dirs_exist_ok=True)
             else:
-                if tracked is None:
-                    destination.mkdir(parents=True)
                 if layout == 'rust':
                     run(
                         ['/bin/sh', str(source / 'install.sh'), '--prefix=' + str(destination), '--disable-ldconfig'],
@@ -265,10 +288,6 @@ def install(ecosystem, identity, url, algorithm, expected, layout):
                 seal_installation(destination, marker_pending=True)
                 tracked_atomic_json(marker, record, 0o444)
             return record
-        except BaseException:
-            if tracked is None and destination.exists():
-                shutil.rmtree(destination)
-            raise
 
 
 def probe(ecosystem, directory, expected):

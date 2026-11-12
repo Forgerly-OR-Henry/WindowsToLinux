@@ -18,7 +18,7 @@ class DeploymentManagedHelperBundleTest {
         String original = DeploymentManagedHelperBundle.renderScript();
         String recovery = DeploymentManagedHelperBundle.renderPublicationRecovery(layout);
         assertEquals(16, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
-        assertEquals("83d6773e86575fe8582eefb9a164b6912904b61dd3f16821a3cdc39fe02f976c",
+        assertEquals("5269a09f9fc4e49209ef30c95d9d52fb5f92e67bfd024471f491014ee78c8bca",
             HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(original.getBytes(StandardCharsets.UTF_8))));
         assertEquals(original, DeploymentManagedHelperBundle.renderScript());
         assertFalse(recovery.contains("rollback-deployment-first)"));
@@ -678,6 +678,11 @@ class DeploymentManagedHelperBundleTest {
                 [[ "$lock_calls" = 2 ]] || exit 94
                 : >&"$application_admission_fd"
                 : >&"$application_run_fd"
+            }
+            timeout() {
+                [[ "$#" -ge 4 && "$1" = --signal=KILL && "$2" =~ ^[1-9][0-9]*$ && "$3" = systemctl ]] || return 95
+                shift 3
+                systemctl "$@"
             }
             systemctl() {
                 case "$*" in

@@ -77,25 +77,49 @@ wtl_apt_source_security() {
     printf 'MIRROR_REJECT=apt-source-disables-authentication\n' >&2; return 65
   fi
 }
+wtl_apt_repository_uris() {
+  local point="$1" provider="$2" values="$3" uri selected
+  local IFS=$' \t'
+  local -a uris rewritten=()
+  read -r -a uris <<<"$values"
+  for uri in "${uris[@]}"; do
+    if [[ "$uri" != http://* && "$uri" != https://* ]]; then
+      printf 'MIRROR_REJECT=apt-source-uri-requires-http-or-https\n' >&2; return 65
+    fi
+    if [[ "$uri" = *[[:cntrl:]#?\"\'\\]* || "$uri" = */../* || "$uri" = */.. ]]; then
+      printf 'MIRROR_REJECT=unmapped-system-repository\n' >&2; return 65
+    fi
+    if ! selected="$(wtl_apt_selected_uri "$point" "$provider" "$uri")"; then
+      wtl_apt_canonical_uri "$point" "$provider" "$uri" >/dev/null || {
+        printf 'MIRROR_REJECT=unmapped-system-repository\n' >&2; return 65;
+      }
+      selected="$uri"
+    fi
+    rewritten+=("$selected")
+  done
+  printf '%s' "${rewritten[*]}"
+}
 wtl_apt_canonical_uri() {
-  local point="$1" provider="$2" url="$3" index best=-1 length=0
+  local point="$1" provider="$2" url="$3" index prefix best=-1 length=0
   local -a origins prefixes
   wtl_source_routes "$point" "$provider" || return 65
   for index in "${!prefixes[@]}"; do
-    if [[ "$url" = "${prefixes[$index]}"* ]] && [ "${#prefixes[$index]}" -gt "$length" ]; then
-      best="$index"; length="${#prefixes[$index]}"
+    prefix="${prefixes[$index]}"
+    if [[ "$url" = "$prefix" || ( "$prefix" = */ && "$url" = "$prefix"* ) ]] && [ "${#prefix}" -gt "$length" ]; then
+      best="$index"; length="${#prefix}"
     fi
   done
   [ "$best" -ge 0 ] || return 65
   printf '%s%s' "${origins[$best]}" "${url:$length}"
 }
 wtl_apt_selected_uri() {
-  local point="$1" provider="$2" url="$3" index best=-1 length=0
+  local point="$1" provider="$2" url="$3" index origin best=-1 length=0
   local -a origins prefixes
   wtl_source_routes "$point" "$provider" || return 65
   for index in "${!origins[@]}"; do
-    if [[ "$url" = "${origins[$index]}"* ]] && [ "${#origins[$index]}" -gt "$length" ]; then
-      best="$index"; length="${#origins[$index]}"
+    origin="${origins[$index]}"
+    if [[ "$url" = "$origin" || ( "$origin" = */ && "$url" = "$origin"* ) ]] && [ "${#origin}" -gt "$length" ]; then
+      best="$index"; length="${#origin}"
     fi
   done
   [ "$best" -ge 0 ] || return 65
@@ -148,9 +172,27 @@ wtl_apt_candidate() {
   wtl_system_package apt-get update || return $?
   printf '%s\n' "$wtl_apt_candidate_output"
 }
+wtl_apt_trusted_path() {
+  local path="$1" identity
+  [ ! -L "$path" ] || return 65
+  identity="$(/usr/bin/stat -c '%u:%a' -- "$path" 2>/dev/null)" || return 65
+  [[ "$identity" =~ ^0:([0-7]{1,4})$ ]] || return 65
+  (( (8#${BASH_REMATCH[1]} & 022) == 0 ))
+}
 wtl_apt_configure_download() {
-  [ -x /usr/lib/apt/apt-helper ] || { printf 'MIRROR_REJECT=apt-native-download-helper-missing\n' >&2; return 65; }
-  helper_command=(/usr/lib/apt/apt-helper "${package_command[@]:1}" "${wtl_auth_options[@]}" "${wtl_apt_strict_options[@]}")
+  local helper=/usr/lib/apt/apt-helper parent
+  for parent in / /usr /usr/lib /usr/lib/apt; do
+    if ! wtl_apt_trusted_path "$parent" || [ ! -d "$parent" ]; then
+      printf 'MIRROR_REJECT=apt-native-download-helper-untrusted\n' >&2; return 65
+    fi
+  done
+  if [ ! -e "$helper" ] && [ ! -L "$helper" ]; then
+    printf 'MIRROR_REJECT=apt-native-download-helper-missing\n' >&2; return 65
+  fi
+  if ! wtl_apt_trusted_path "$helper" || [ ! -f "$helper" ] || [ ! -x "$helper" ] || [ -u "$helper" ] || [ -g "$helper" ]; then
+    printf 'MIRROR_REJECT=apt-native-download-helper-untrusted\n' >&2; return 65
+  fi
+  helper_command=("$helper" "${package_command[@]:1}" "${wtl_auth_options[@]}" "${wtl_apt_strict_options[@]}")
 }
 wtl_apt_install_frozen() {
   local point="$1" folder="$2" cache="$3" log="$4" metadata_provider="$5" uri name size digest extra canonical provider attempt status=65 index selected target

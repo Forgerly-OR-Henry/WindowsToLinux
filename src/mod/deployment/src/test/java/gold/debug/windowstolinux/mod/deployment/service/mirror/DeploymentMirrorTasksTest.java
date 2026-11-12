@@ -177,6 +177,8 @@ class DeploymentMirrorTasksTest extends DeploymentRuntimeFixture {
                     var executable = (Map<?, ?>) facts.get("mirrorCompatibilityInput");
                     assertEquals("/completeExecutableInput", executable.get("scriptPointer"));
                     assertEquals(inputBytes.length, executable.get("stdinBytes"));
+                    assertEquals(inputBytes.length, ((List<?>) executable.get("stdinLineBytes")).stream()
+                        .mapToInt(value -> (int) value).sum());
                     assertEquals(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(inputBytes)),
                         executable.get("stdinSha256"));
                     var startup = (Map<?, ?>) facts.get("builtInSshStartup");

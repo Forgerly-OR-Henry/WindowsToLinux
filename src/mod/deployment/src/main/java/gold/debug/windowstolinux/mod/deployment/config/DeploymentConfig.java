@@ -100,7 +100,7 @@ public record DeploymentConfig(Source source, Build build, Environment environme
      * @param deploymentTimeoutSeconds ordinary logical generation deadline / 普通逻辑生成期限
      * @param approvalTimeoutSeconds approval logical generation deadline / 审批逻辑生成期限
      * @param extendedTimeoutSeconds extended logical generation deadline / 扩展逻辑生成期限
-     * @param generationRecoveryAttempts extra incomplete-body generation attempts for independently selected callers, 0..16; 0 disables / 独立调用者选择的正文不完整额外生成次数，0..16；0 关闭 */
+     * @param generationRecoveryAttempts extra pure-generation attempts after a connection timeout or incomplete body, 0..16; 0 disables / 连接超时或正文不完整后的额外纯生成次数，0..16，0 关闭 */
     public record Requests(int deploymentTimeoutSeconds, int approvalTimeoutSeconds, int extendedTimeoutSeconds,
                            int generationRecoveryAttempts) {
         public Requests(int deploymentTimeoutSeconds, int approvalTimeoutSeconds, int extendedTimeoutSeconds) {

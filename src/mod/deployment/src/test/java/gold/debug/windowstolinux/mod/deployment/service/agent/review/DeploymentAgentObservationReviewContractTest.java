@@ -76,14 +76,16 @@ class DeploymentAgentObservationReviewContractTest {
         assertEquals(fragmentEnd, script.lastIndexOf(end));
         assertEquals(fragment + "\n", script.substring(fragmentStart, fragmentEnd),
             "The complete expanded binding protocol must match the independently pinned helper");
-        int verifying = fragment.indexOf("    if verifying:\n");
-        int preparing = fragment.indexOf("    else:\n        prepare_shared_directories()", verifying);
+        int verifying = fragment.indexOf("    if verifying:\n", fragment.indexOf("def main(args):"));
+        int preparing = fragment.indexOf("    else:\n        prepare_root()", verifying);
         assertTrue(verifying >= 0 && preparing > verifying);
         String admission = fragment.substring(verifying, preparing);
-        assertTrue(admission.contains("lock_path.is_file()"));
-        assertTrue(admission.contains("lock_path.stat().st_uid != 0"));
+        assertTrue(admission.contains("owned_directory(directory)"));
         assertFalse(admission.contains("mkdir("));
-        assertTrue(fragment.contains("with lock_path.open('r' if verifying else 'a') as lock:"));
+        assertTrue(fragment.contains("with open_preparation_lock(lock_path, creating=not verifying) as lock:"));
+        String lock = resource("20-installation-boundaries.py");
+        assertTrue(lock.contains("if creating else os.O_RDONLY"));
+        assertTrue(lock.contains("require_preparation_lock_file(os.fstat(descriptor))"));
         assertTrue(fragment.contains("fcntl.LOCK_SH if verifying else fcntl.LOCK_EX"));
         assertTrue(fragment.contains("| fcntl.LOCK_NB"));
         assertTrue(DeploymentAgentObservationReviewContract.text().contains("shared nonblocking flock (LOCK_SH | LOCK_NB)"));

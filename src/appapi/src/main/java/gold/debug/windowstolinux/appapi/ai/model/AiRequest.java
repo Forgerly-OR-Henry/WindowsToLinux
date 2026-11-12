@@ -13,7 +13,7 @@ import java.util.Optional;
  * @param tools copied native function definitions / 复制的原生函数定义
  * @param maxRequestBytes exact encoded request ceiling enforced before network send / 网络发送前执行的精确编码请求字节上限
  * @param requiredToolName optional registered native tool to require; empty retains automatic selection / 可选必须调用的已注册原生工具，空值保留自动选择
- * @param generationRecoveryAttempts extra pure-generation attempts after an incomplete HTTP body, 0..16; no tool or business operation replay / HTTP 正文不完整后的额外纯生成次数，0..16，不重放工具或业务操作
+ * @param generationRecoveryAttempts extra pure-generation attempts after a connection timeout or incomplete HTTP body, 0..16; no tool or business operation replay / HTTP 连接超时或正文不完整后的额外纯生成次数，0..16，不重放工具或业务操作
  * @param modelId optional or exact platform model configuration identity / 可选或精确的平台模型配置标识
  * @param reasoningOverride empty inherits purpose preferences; DEFAULT explicitly omits controls / 空值继承用途偏好，DEFAULT 明确省略控制参数
  */

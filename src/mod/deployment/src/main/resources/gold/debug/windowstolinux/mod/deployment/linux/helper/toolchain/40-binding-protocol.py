@@ -175,13 +175,40 @@ def prepare_shared_directories():
         directory.chmod(0o755)
 
 
+def prepare_root():
+    owned_directory(ROOT)
+    ROOT.mkdir(mode=0o755, parents=True, exist_ok=True)
+
+
+@contextlib.contextmanager
+def preparation_lock(verifying):
+    global DEADLINE, PREPARE_LOCK
+    import fcntl
+
+    lock_path = ROOT / '.prepare.lock'
+    DEADLINE = time.monotonic() + 7200
+    with open_preparation_lock(lock_path, creating=not verifying) as lock:
+        while True:
+            try:
+                fcntl.flock(lock, (fcntl.LOCK_SH if verifying else fcntl.LOCK_EX) | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                remaining()
+                time.sleep(0.2)
+        if not verifying:
+            PREPARE_LOCK = lock
+        try:
+            if not verifying:
+                prepare_shared_directories()
+            yield
+        finally:
+            PREPARE_LOCK = None
+
+
 # @compat:toolchain-tracked@
 
 
 def main(args):
-    global DEADLINE
-    import fcntl
-
     if os.geteuid() != 0:
         fail('permission', 'managed preparation requires the approved privileged environment boundary')
     if args and args[0] in ('prepare-diagnosed', 'diagnose-only'):
@@ -191,7 +218,6 @@ def main(args):
         tracked_main(args)
         return
     verifying = bool(args and args[0] == 'verify')
-    lock_path = ROOT / '.prepare.lock'
     if verifying:
         if len(args) != 2 or not re.fullmatch('[a-f0-9]{64}', args[1]):
             fail('request', 'invalid verification arguments')
@@ -199,24 +225,9 @@ def main(args):
             owned_directory(directory)
             if not directory.is_dir():
                 fail('integrity', 'prepared toolchain directory is missing')
-        if (
-            lock_path.is_symlink()
-            or not lock_path.is_file()
-            or lock_path.stat().st_uid != 0
-            or lock_path.stat().st_mode & 0o022
-        ):
-            fail('ownership', 'preparation lock must already exist and be root-owned')
     else:
-        prepare_shared_directories()
-    DEADLINE = time.monotonic() + 7200
-    with lock_path.open('r' if verifying else 'a') as lock:
-        while True:
-            try:
-                fcntl.flock(lock, (fcntl.LOCK_SH if verifying else fcntl.LOCK_EX) | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                remaining()
-                time.sleep(0.2)
+        prepare_root()
+    with preparation_lock(verifying):
         if verifying:
             binding = ROOT / 'bindings' / args[1]
             owned_directory(binding.parent)
@@ -259,36 +270,41 @@ def main(args):
         if len(args) == 3 and args[0] == 'relocate-venv':
             relocate_venv(args[1], args[2])
             return
-        if (
-            len(args) != 6
-            or args[0] != 'prepare'
-            or not re.fullmatch(r'\d{1,3}(?:\.\d{1,3})?', args[2])
-            or not re.fullmatch(r'(?:-|[0-9][0-9.u+_-]{0,95})', args[3])
-        ):
-            fail('request', 'invalid preparation arguments')
-        if not admitted(args[1], args[2]):
-            fail('unavailable', 'branch is outside the shipped catalog')
-        if args[5] != '-':
-            java = pathlib.Path(args[5])
-            if java.parent != ROOT / 'versions' or not re.fullmatch('java-[a-f0-9]{64}', java.name):
-                fail('request', 'invalid managed Java selection')
-            owned_directory(java)
-            record = json.loads((java / '.w2l-toolchain.json').read_text())
-            if record['ecosystem'] != 'JAVA':
-                fail('request', 'managed Java selection has the wrong ecosystem')
-            os.environ['JAVA_HOME'] = str(java)
-        seconds = int(args[4])
-        if not 30 <= seconds <= 7200:
-            fail('request', 'invalid preparation timeout')
-        DEADLINE = time.monotonic() + seconds
-        identity, url, algorithm, digest, layout = release(args[1], args[2], '' if args[3] == '-' else args[3])
-        record = reuse_system(args[1], identity)
-        if record is None:
-            record = install(args[1], identity, official_url(url), algorithm, digest, layout)
-        print(
-            'TOOLCHAIN='
-            + '|'.join(record[k] for k in ('ecosystem', 'version', 'directory', 'origin', 'source', 'sha256'))
-        )
+        prepare(args)
+
+
+def prepare(args):
+    global DEADLINE
+    if (
+        len(args) != 6
+        or args[0] != 'prepare'
+        or not re.fullmatch(r'\d{1,3}(?:\.\d{1,3})?', args[2])
+        or not re.fullmatch(r'(?:-|[0-9][0-9.u+_-]{0,95})', args[3])
+    ):
+        fail('request', 'invalid preparation arguments')
+    if not admitted(args[1], args[2]):
+        fail('unavailable', 'branch is outside the shipped catalog')
+    if args[5] != '-':
+        java = pathlib.Path(args[5])
+        if java.parent != ROOT / 'versions' or not re.fullmatch('java-[a-f0-9]{64}', java.name):
+            fail('request', 'invalid managed Java selection')
+        owned_directory(java)
+        record = json.loads((java / '.w2l-toolchain.json').read_text())
+        if record['ecosystem'] != 'JAVA':
+            fail('request', 'managed Java selection has the wrong ecosystem')
+        os.environ['JAVA_HOME'] = str(java)
+    seconds = int(args[4])
+    if not 30 <= seconds <= 7200:
+        fail('request', 'invalid preparation timeout')
+    DEADLINE = time.monotonic() + seconds
+    identity, url, algorithm, digest, layout = release(args[1], args[2], '' if args[3] == '-' else args[3])
+    record = reuse_system(args[1], identity)
+    if record is None:
+        record = install(args[1], identity, official_url(url), algorithm, digest, layout)
+    print(
+        'TOOLCHAIN='
+        + '|'.join(record[k] for k in ('ecosystem', 'version', 'directory', 'origin', 'source', 'sha256'))
+    )
 
 
 if __name__ == '__main__':

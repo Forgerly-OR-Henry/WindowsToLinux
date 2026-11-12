@@ -13,7 +13,7 @@ import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.log.*;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentToolchainReviewEvidence;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandSourceEvidence;
 import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader;
@@ -128,15 +128,15 @@ public final class DeploymentAiJson {
     public JsonNode askCommand(String instruction, Map<String, ?> facts, String revision, TaskContext task,
                                java.util.function.Predicate<JsonNode> malformed, ActionIntent intent, CommandRequest request)
         throws ApiException, CapabilityOutcomeException, IOException {
-        var evidence = approvalConversation == null && DeploymentToolchainReviewEvidence.supports(intent)
-            ? DeploymentToolchainReviewEvidence.project(facts(facts, 1048576, true), intent, request,
+        var evidence = approvalConversation == null && DeploymentCommandSourceEvidence.supports(intent)
+            ? DeploymentCommandSourceEvidence.project(facts(facts, 1048576, true), intent, request,
                 gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task))
-            : Optional.<DeploymentToolchainReviewEvidence>empty();
+            : Optional.<DeploymentCommandSourceEvidence>empty();
         return askCommand(instruction, facts, revision, task, malformed, evidence);
     }
 
     private JsonNode askCommand(String instruction, Map<String, ?> facts, String revision, TaskContext task,
-                                java.util.function.Predicate<JsonNode> malformed, Optional<DeploymentToolchainReviewEvidence> evidence)
+                                java.util.function.Predicate<JsonNode> malformed, Optional<DeploymentCommandSourceEvidence> evidence)
         throws ApiException, CapabilityOutcomeException, IOException {
         return submit(AiPurpose.APPROVAL, instruction + DeploymentSkillResources.text(DeploymentAiJson.class, "finite-command-review.md"),
             facts, revision, task, 1048576, """
@@ -156,7 +156,7 @@ public final class DeploymentAiJson {
 
     private JsonNode submit(AiPurpose purpose, String policy, Map<String, ?> facts, String revision, TaskContext task,
                             int bound, String schema, java.util.function.Function<JsonNode, String> validate,
-                            Optional<DeploymentToolchainReviewEvidence> evidence)
+                            Optional<DeploymentCommandSourceEvidence> evidence)
         throws ApiException, CapabilityOutcomeException, IOException {
         var definition = new AiToolDefinition("submit_result", "Submit the complete structured result required by the business contract. This submission grants no execution permission.",
             schema);
@@ -164,7 +164,7 @@ public final class DeploymentAiJson {
         if (purpose == AiPurpose.APPROVAL)
             policy += "\n" + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.text(
                 gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task));
-        if (evidence.isPresent()) policy += "\n" + DeploymentToolchainReviewEvidence.INSTRUCTION;
+        if (evidence.isPresent()) policy += "\n" + DeploymentCommandSourceEvidence.INSTRUCTION;
         var conversation = purpose == AiPurpose.APPROVAL ? approvalConversation : null;
         try {
             if (conversation != null) facts = conversation.facts(policy, facts, revision, task);
@@ -176,7 +176,7 @@ public final class DeploymentAiJson {
         String current = facts(facts, bound, purpose == AiPurpose.APPROVAL);
         var messages = new ArrayList<AiMessage>();
         messages.add(new AiMessage(AiRole.SYSTEM, policy, List.of()));
-        var definitions = evidence.isPresent() ? List.of(definition, DeploymentToolchainReviewEvidence.TOOL) : List.of(definition);
+        var definitions = evidence.isPresent() ? List.of(definition, DeploymentCommandSourceEvidence.TOOL) : List.of(definition);
         if (evidence.isPresent()) messages.addAll(evidence.orElseThrow().messages());
         else messages.add(new AiMessage(AiRole.USER, current, List.of()));
         var evidenceReader = evidence.map(value -> value.reader(output.execution().standaloneToolAttempts()));
@@ -244,7 +244,7 @@ public final class DeploymentAiJson {
 
     private AiResponse requestSubmission(AiPurpose purpose, List<AiMessage> messages, List<AiToolDefinition> definitions,
                                          String revision, TaskContext task, boolean extended,
-                                         Optional<DeploymentToolchainReviewEvidence.Reader> evidenceReader)
+                                         Optional<DeploymentCommandSourceEvidence.Reader> evidenceReader)
         throws ApiException, CapabilityOutcomeException, IOException {
         while (true) {
             var response = call(purpose, messages, definitions, revision, task, extended, Optional.empty());

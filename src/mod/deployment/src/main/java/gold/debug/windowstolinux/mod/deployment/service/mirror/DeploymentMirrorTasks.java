@@ -492,9 +492,11 @@ public final class DeploymentMirrorTasks {
         if (!COMPATIBILITY_LAUNCHER.equals(launcher) || !COMPATIBILITY_SCRIPT.equals(executable)
             || !java.util.Arrays.equals(executable.getBytes(StandardCharsets.UTF_8), input))
             throw new IllegalArgumentException("Mirror compatibility command differs from the fixed launcher or script");
+        var lineBytes = java.util.Arrays.stream(executable.split("(?<=\\n)"))
+            .map(line -> line.getBytes(StandardCharsets.UTF_8).length).toList();
         return Map.of("launcher", launcher, "scriptPointer", "/completeExecutableInput", "stdinEncoding", "UTF-8",
-            "stdinBytes", input.length, "stdinSha256", sha256(input),
-            "sourceRepresentation", "Count and hash the decoded JSON string including its final newline, without JSON quotes or escape syntax.");
+            "stdinBytes", input.length, "stdinSha256", sha256(input), "stdinLineBytes", lineBytes,
+            "sourceRepresentation", "Client verified exact UTF-8 stdin against the decoded script. The ordered line byte counts include the newline bytes. JSON framing and escapes are excluded.");
     }
 
     private Optional<String> exitAddress(TaskContext task, ServerId server, MirrorCatalog catalog) throws ApiException {

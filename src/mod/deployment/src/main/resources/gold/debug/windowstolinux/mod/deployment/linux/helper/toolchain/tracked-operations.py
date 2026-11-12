@@ -1,10 +1,7 @@
 """Original-operation toolchain receipts. Observation never selects or prepares another release."""
-import contextlib
-import stat
 import uuid
 
 TRACKED_OPERATION = None
-TRACKED_PREPARE_LOCK = None
 INSTALLATION_DIAGNOSTIC = None
 DIAGNOSTIC_REQUEST_FIELDS = {'formatVersion', 'operationId', 'taskId', 'serverId', 'fingerprintSha256',
                              'planRevision', 'remoteLayout', 'arguments'}
@@ -195,7 +192,7 @@ def installation_diagnostic_main(args, raw=None):
     directory = parent / request['operationId']
     creating = args[0] == 'prepare-diagnosed'
     if creating:
-        prepare_shared_directories()
+        prepare_root()
         owned_directory(parent)
         parent.mkdir(mode=0o700, exist_ok=True)
         owned_directory(directory)
@@ -209,7 +206,8 @@ def installation_diagnostic_main(args, raw=None):
         INSTALLATION_DIAGNOSTIC = (directory, diagnostic)
         tracked_atomic_json(directory / 'diagnostic.json', diagnostic)
         try:
-            main(request['arguments'])
+            with preparation_lock(verifying=False):
+                prepare(request['arguments'])
             diagnostic['preparationStatus'] = 'SUCCEEDED'
         except BaseException as error:
             diagnostic['preparationStatus'] = 'FAILED'
@@ -254,10 +252,8 @@ class TrackedToolchainOperation:
 
     def select(self, selected):
         directory = pathlib.Path(selected['directory'])
-        owned_directory(directory)
-        if directory.exists() and not (directory / '.w2l-toolchain.json').is_file():
-            fail('ownership', 'an incomplete shared installation is not owned by this operation')
-        self.state.update(phase='SELECTED', selected=selected, ownedDestination=not directory.exists())
+        marker = saved_installation_marker(directory)
+        self.state.update(phase='SELECTED', selected=selected, ownedDestination=marker is None)
         self.save()
 
     def create_destination(self, directory):
@@ -552,7 +548,7 @@ def tracked_require_quiescent(operation):
 
 
 def tracked_main(args, raw=None):
-    global TRACKED_OPERATION, TRACKED_PREPARE_LOCK, DEADLINE
+    global TRACKED_OPERATION, PREPARE_LOCK, DEADLINE
     import fcntl
     if raw is None:
         with os.fdopen(os.dup(3), 'rb') as source:
@@ -561,7 +557,7 @@ def tracked_main(args, raw=None):
     creating = args[0] in ('prepare-tracked', 'bind-tracked')
     cleaning = args[0] == 'cleanup-tracked'
     if creating:
-        prepare_shared_directories()
+        prepare_root()
     else:
         owned_directory(ROOT)
         if not ROOT.is_dir():
@@ -570,45 +566,42 @@ def tracked_main(args, raw=None):
     path = ROOT / '.prepare.lock'
     if not creating:
         tracked_regular(path, 1024)
-    descriptor = os.open(str(path), (os.O_RDWR | os.O_CREAT if creating else os.O_RDONLY)
-                         | getattr(os, 'O_NOFOLLOW', 0), 0o600)
-    try:
-        info = os.fstat(descriptor)
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
-            fail('ownership', 'tracked preparation lock is not root-owned')
+    with open_preparation_lock(path, creating) as descriptor:
         try:
             fcntl.flock(descriptor, (fcntl.LOCK_EX if creating or cleaning else fcntl.LOCK_SH) | fcntl.LOCK_NB)
         except BlockingIOError:
             print(json.dumps(tracked_observation(request, args[2], None, 'lock_busy'), separators=(',', ':')))
             return
-        TRACKED_PREPARE_LOCK = descriptor
-        DEADLINE = time.monotonic() + (request['parameters']['seconds'] if creating and request['kind'] == 'PREPARE' else 180)
-        operation, fresh = tracked_open_operation(request, raw, args[2], creating)
-        if fresh:
-            TRACKED_OPERATION = operation
-            try:
-                if request['kind'] == 'PREPARE':
-                    tracked_prepare(operation)
-                else:
-                    tracked_bind(operation)
-            except (PreparationFailure, subprocess.TimeoutExpired, OSError, ValueError, KeyError, StopIteration) as error:
-                category = error.category if isinstance(error, PreparationFailure) else 'timeout' if isinstance(error, subprocess.TimeoutExpired) else 'installation'
-                operation.state.update(phase='FAILED', executionStatus='FAILED', failureCategory=category)
-                operation.save()
-            finally:
-                TRACKED_OPERATION = None
+        PREPARE_LOCK = descriptor
         try:
-            if cleaning and operation is not None:
-                tracked_cleanup(operation)
-            result = tracked_observation(request, args[2], operation)
-        except (PreparationFailure, subprocess.TimeoutExpired, OSError, ValueError, KeyError, StopIteration) as error:
-            category = error.category if isinstance(error, PreparationFailure) else 'timeout' if isinstance(error, subprocess.TimeoutExpired) else 'integrity'
-            result = tracked_observation(request, args[2], operation, category)
-        encoded = json.dumps(result, separators=(',', ':'), ensure_ascii=False)
-        if len(encoded.encode('utf-8')) > 32768:
-            fail('integrity', 'tracked receipt exceeds its fixed bound')
-        print(encoded)
-    finally:
-        TRACKED_OPERATION = None
-        TRACKED_PREPARE_LOCK = None
-        os.close(descriptor)
+            if creating:
+                prepare_shared_directories()
+            DEADLINE = time.monotonic() + (request['parameters']['seconds'] if creating and request['kind'] == 'PREPARE' else 180)
+            operation, fresh = tracked_open_operation(request, raw, args[2], creating)
+            if fresh:
+                TRACKED_OPERATION = operation
+                try:
+                    if request['kind'] == 'PREPARE':
+                        tracked_prepare(operation)
+                    else:
+                        tracked_bind(operation)
+                except (PreparationFailure, subprocess.TimeoutExpired, OSError, ValueError, KeyError, StopIteration) as error:
+                    category = error.category if isinstance(error, PreparationFailure) else 'timeout' if isinstance(error, subprocess.TimeoutExpired) else 'installation'
+                    operation.state.update(phase='FAILED', executionStatus='FAILED', failureCategory=category)
+                    operation.save()
+                finally:
+                    TRACKED_OPERATION = None
+            try:
+                if cleaning and operation is not None:
+                    tracked_cleanup(operation)
+                result = tracked_observation(request, args[2], operation)
+            except (PreparationFailure, subprocess.TimeoutExpired, OSError, ValueError, KeyError, StopIteration) as error:
+                category = error.category if isinstance(error, PreparationFailure) else 'timeout' if isinstance(error, subprocess.TimeoutExpired) else 'integrity'
+                result = tracked_observation(request, args[2], operation, category)
+            encoded = json.dumps(result, separators=(',', ':'), ensure_ascii=False)
+            if len(encoded.encode('utf-8')) > 32768:
+                fail('integrity', 'tracked receipt exceeds its fixed bound')
+            print(encoded)
+        finally:
+            TRACKED_OPERATION = None
+            PREPARE_LOCK = None

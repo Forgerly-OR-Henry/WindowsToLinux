@@ -19,7 +19,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 class DeploymentAgentObservationBranchEvidenceTest {
     private static final int PINNED_PROTOCOL = 16;
 
-    private static final String PINNED_SHA256 = "83d6773e86575fe8582eefb9a164b6912904b61dd3f16821a3cdc39fe02f976c";
+    private static final String PINNED_SHA256 = "5269a09f9fc4e49209ef30c95d9d52fb5f92e67bfd024471f491014ee78c8bca";
 
     @TempDir
     Path temporary;
@@ -37,7 +37,8 @@ class DeploymentAgentObservationBranchEvidenceTest {
         assertTrue(toolchains.contains("verifying = bool(args and args[0] == 'verify')"));
         assertTrue(toolchains.contains("lock_path = ROOT / '.prepare.lock'"));
         assertTrue(toolchains.contains("fail('ownership', 'preparation lock must already exist and be root-owned')"));
-        assertTrue(toolchains.contains("with lock_path.open('r' if verifying else 'a') as lock:"));
+        assertTrue(toolchains.contains("with open_preparation_lock(lock_path, creating=not verifying) as lock:"));
+        assertTrue(toolchains.contains("require_preparation_lock_file(os.fstat(descriptor))"));
         assertTrue(toolchains.contains("fcntl.flock(lock, (fcntl.LOCK_SH if verifying else fcntl.LOCK_EX) | fcntl.LOCK_NB)"));
         assertTrue(toolchains.contains("hashlib.sha256(payload).hexdigest() != args[1]"));
         assertTrue(toolchains.contains("toolchain completion marker differs from the immutable binding"));

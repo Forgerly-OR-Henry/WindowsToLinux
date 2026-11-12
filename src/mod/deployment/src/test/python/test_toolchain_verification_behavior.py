@@ -38,7 +38,8 @@ class ToolchainVerificationBehaviorTest(unittest.TestCase):
         self.binding.parent.mkdir()
         self.binding.write_bytes(payload)
         self.binding.chmod(0o444)
-        self.namespace = {'__name__': 'controlled_toolchain_test'}
+        self.namespace = {'__name__': 'controlled_toolchain_test', '__WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__': {},
+                          '__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__': []}
         for name in ('10-release-metadata.py', 'archive-boundaries.py', '20-installation-boundaries.py',
                      '30-managed-installation.py', '40-binding-protocol.py'):
             exec(compile((SOURCES / name).read_text(), name, 'exec'), self.namespace)
@@ -47,6 +48,7 @@ class ToolchainVerificationBehaviorTest(unittest.TestCase):
         self.fcntl = types.SimpleNamespace(LOCK_SH=1, LOCK_EX=2, LOCK_NB=4, flock=mock.Mock())
         self.lock_uid = 0
         self.lock_permissions = None
+        self.opened_lock_permissions = 0o600
         self.marker_uid = 0
         self.marker_permissions = 0o444
 
@@ -63,6 +65,7 @@ class ToolchainVerificationBehaviorTest(unittest.TestCase):
     def invoke(self, arguments, readonly=True):
         actual_stat = pathlib.Path.stat
         actual_open = io.open
+        actual_os_open, actual_fstat = os.open, os.fstat
 
         def controlled_stat(path, *args, **kwargs):
             value = actual_stat(path, *args, **kwargs)
@@ -81,12 +84,25 @@ class ToolchainVerificationBehaviorTest(unittest.TestCase):
             self.assertFalse(any(flag in mode for flag in 'wax+'), 'Verification must not open for writing')
             return actual_open(file, mode, *args, **kwargs)
 
+        def readonly_os_open(file, flags, *args, **kwargs):
+            self.assertEqual(self.lock, pathlib.Path(file))
+            self.assertEqual(os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0), flags)
+            return actual_os_open(file, flags, *args, **kwargs)
+
+        def controlled_fstat(fd):
+            fields = list(actual_fstat(fd))
+            fields[4] = self.lock_uid
+            fields[0] = stat.S_IFREG | self.opened_lock_permissions
+            return os.stat_result(fields)
+
         with contextlib.ExitStack() as stack:
             stack.enter_context(mock.patch.dict('sys.modules', {'fcntl': self.fcntl}))
             stack.enter_context(mock.patch.object(os, 'geteuid', return_value=0, create=True))
             stack.enter_context(mock.patch.object(pathlib.Path, 'stat', controlled_stat))
+            stack.enter_context(mock.patch.object(os, 'fstat', controlled_fstat))
             if readonly:
                 stack.enter_context(mock.patch.object(io, 'open', readonly_open))
+                stack.enter_context(mock.patch.object(os, 'open', readonly_os_open))
                 stack.enter_context(mock.patch.object(pathlib.Path, 'mkdir', side_effect=AssertionError('Verification mkdir')))
                 stack.enter_context(mock.patch.object(pathlib.Path, 'chmod', side_effect=AssertionError('Verification chmod')))
             self.namespace['main'](arguments)
@@ -137,6 +153,15 @@ class ToolchainVerificationBehaviorTest(unittest.TestCase):
                 self.assertEqual('ownership', failure.exception.category)
         self.assertEqual(before, self.snapshot())
         self.fcntl.flock.assert_not_called()
+
+    def test_opened_lock_is_validated_before_flock(self):
+        before = self.snapshot()
+        self.opened_lock_permissions = 0o666
+        with self.assertRaises(self.namespace['PreparationFailure']) as failure:
+            self.invoke(['verify', self.identity])
+        self.assertEqual('ownership', failure.exception.category)
+        self.fcntl.flock.assert_not_called()
+        self.assertEqual(before, self.snapshot())
 
     def test_changed_binding_digest_still_fails_without_writes(self):
         self.binding.chmod(0o644)

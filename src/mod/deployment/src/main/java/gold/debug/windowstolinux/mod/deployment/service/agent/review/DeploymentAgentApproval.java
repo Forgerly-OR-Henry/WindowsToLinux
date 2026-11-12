@@ -62,7 +62,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
     private static final String AGENT_OPEN_FIELD = "agentOpenPhaseEvidence";
 
     // These phase claims describe this reviewed helper source, not future contract revisions.
-    private static final String AGENT_OPEN_HELPER_SHA = "83d6773e86575fe8582eefb9a164b6912904b61dd3f16821a3cdc39fe02f976c";
+    private static final String AGENT_OPEN_HELPER_SHA = "5269a09f9fc4e49209ef30c95d9d52fb5f92e67bfd024471f491014ee78c8bca";
 
     private static final Set<String> SOURCE_DEPENDENT_EVENTS = Set.of("PREPARE_EXECUTING", "COMMAND_EXECUTING", "PATCH_EXECUTING",
         "SEAL_EXECUTING", "DELIVERY_EXECUTING", "CAPABILITY_EXECUTING", "PLAN", "PLAN_APPLICATION", "AGENT_QUERY",

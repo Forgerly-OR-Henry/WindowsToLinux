@@ -23,7 +23,7 @@ import org.junit.jupiter.api.io.TempDir;
 class DeploymentAgentPublicationContractDiagnosticFollowupProgramTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String RES = "/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/";
-    private static final String OLD_VERSION = "b97fb521aaddadfc4c77dae61ac6d0f7cb5df7a3923c56fd4cf3d6ce37c9ef3e";
+    private static final String OLD_VERSION = "838998a6b0e1c9ea53ab7e7be2e8f06448a1cbdf2cf46cabd4217df3e0dce29f";
     private final DeploymentRemoteLayout layout = DeploymentRemoteLayout.original();
     private final DeploymentAgentPublicationContractDiagnosticFollowupProgram program = new DeploymentAgentPublicationContractDiagnosticFollowupProgram(layout);
 
