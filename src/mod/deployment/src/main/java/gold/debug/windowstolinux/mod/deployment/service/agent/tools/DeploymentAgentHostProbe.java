@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.service.agent.tools;
 
 import java.util.Objects;
 
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.mod.deployment.linux.probe.DeploymentPlatformCapabilityProbe;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition.ContainerEngineType;
 
@@ -49,7 +50,7 @@ public final class DeploymentAgentHostProbe {
                 client=0; operational=0
                 if probe_command docker >/dev/null 2>&1; then
                   client=1
-                  if HOME=/root docker info >/dev/null 2>&1; then operational=1; fi
+                  if HOME=/root probe_run docker info >/dev/null 2>&1; then operational=1; fi
                 fi
                 printf 'FORMAT=WTL_AGENT_CONTAINER_1\\nENGINE=DOCKER\\nCLIENT=%s\\nOPERATIONAL=%s\\nQUADLET=NOT_APPLICABLE\\n' "$client" "$operational"
                 """;
@@ -57,8 +58,8 @@ public final class DeploymentAgentHostProbe {
                 client=0; operational=0; quadlet=0
                 if probe_command podman >/dev/null 2>&1; then
                   client=1
-                  if HOME=/root podman info >/dev/null 2>&1; then operational=1; fi
-                  if HOME=/root podman quadlet --help >/dev/null 2>&1; then quadlet=1; fi
+                  if HOME=/root probe_run podman info >/dev/null 2>&1; then operational=1; fi
+                  if HOME=/root probe_run podman quadlet --help >/dev/null 2>&1; then quadlet=1; fi
                 fi
                 printf 'FORMAT=WTL_AGENT_CONTAINER_1\\nENGINE=PODMAN\\nCLIENT=%s\\nOPERATIONAL=%s\\nQUADLET=%s\\n' "$client" "$operational" "$quadlet"
                 """;
@@ -71,8 +72,9 @@ public final class DeploymentAgentHostProbe {
         String guards = DeploymentPlatformCapabilityProbe.probeGuards();
         if (baseline)
             guards = guards.replace("/usr/local/sbin:/usr/local/bin:", "").replace("/usr/local/sbin /usr/local/bin ", "");
-        return """
-            exec /usr/bin/env -i PATH=%s LC_ALL=C \\
+        return SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER + """
+            builtin unset -v TMPDIR || exit 64
+            builtin exec -c /usr/bin/env -i PATH=%s LC_ALL=C \\
               HOME=/dev/null XDG_CONFIG_HOME=/dev/null XDG_CACHE_HOME=/dev/null XDG_DATA_HOME=/dev/null \\
               /bin/bash --noprofile --norc -p -s <<'WTL_AGENT_HOST_OBSERVATION'
             cd -- /

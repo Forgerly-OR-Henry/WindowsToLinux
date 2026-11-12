@@ -10,6 +10,7 @@ import java.util.stream.Stream;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
@@ -39,6 +40,9 @@ class DeploymentPlatformProbeBindingRegressionTest {
         assertEquals(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(script.getBytes(StandardCharsets.UTF_8))), binding.path("scriptSha256").asText());
         assertEquals("EXACT_PRODUCT_REQUEST_SCRIPT_AND_EMPTY_STDIN", binding.path("comparison").asText());
         assertEquals(0, binding.path("stdinBytes").asInt());
+        assertTrue(script.startsWith(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER));
+        assertEquals(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER.stripTrailing(),
+            binding.at("/environment/startupAdmission/marker").asText());
         assertTrue(binding.path("meaning").asText().contains("not live program trust"));
         assertTrue(binding.path("meaning").asText().contains("container variants can initialize storage"));
         assertFalse(binding.has("safe"));
@@ -48,7 +52,8 @@ class DeploymentPlatformProbeBindingRegressionTest {
     @Test
     void anyChangedEnvironmentGuardArgumentOrAppendedEffectLosesTheBinding() throws Exception {
         String original = DeploymentPlatformCapabilityProbe.render();
-        for (String script : java.util.List.of(original.replace("env -i", "env"), original.replace("cd -- /", "cd -- /tmp"),
+        for (String script : java.util.List.of(original.substring(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER.length()),
+            original.replace("env -i", "env"), original.replace("cd -- /", "cd -- /tmp"),
             original.replace("--no-plugins", ""), original.replace("-I -S -B", "-I"),
             original.replace("probe_file \"$executable\"", "true"), original + "printf changed\n")) {
             assertNotEquals(original, script);

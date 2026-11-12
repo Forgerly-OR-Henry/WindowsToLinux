@@ -14,6 +14,7 @@ import gold.debug.windowstolinux.appapi.ai.model.AiToolCall;
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
@@ -48,7 +49,7 @@ class DeploymentAgentHostChannelTest {
     @Test
     void baselineContainsOnlyFixedNecessaryQueriesAndProtectedOsReader() {
         String script = DeploymentAgentHostProbe.baseline();
-        assertTrue(script.startsWith("exec /usr/bin/env -i"));
+        assertTrue(script.startsWith(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER + "builtin unset -v TMPDIR || exit 64\nbuiltin exec -c /usr/bin/env -i"));
         assertTrue(script.contains("PATH=/usr/sbin:/usr/bin:/sbin:/bin"));
         assertFalse(script.contains("/usr/local/"));
         assertTrue(DeploymentAgentHostProbe.container(ContainerEngineType.PODMAN)
@@ -67,7 +68,8 @@ class DeploymentAgentHostChannelTest {
         for (String query : List.of("probe_command uname", "probe_command dpkg", "probe_command rpm"))
             assertFalse(script.contains(query));
         assertTrue(script.contains("if probe_command systemctl"));
-        for (String excluded : List.of("compgen", "python", "venv", "node", "java", "npm", "mvn", "dotnet", "composer", "ruby", "--version", "--help", "ld-linux", "/proc/cpuinfo", "firewall", "nft", "ufw", "getenforce", "docker", "podman"))
+        assertFalse(java.util.regex.Pattern.compile("\\bnode\\b").matcher(script).find(), "node");
+        for (String excluded : List.of("compgen", "python", "venv", "java", "npm", "mvn", "dotnet", "composer", "ruby", "--version", "--help", "ld-linux", "/proc/cpuinfo", "firewall", "nft", "ufw", "getenforce", "docker", "podman"))
             assertFalse(script.contains(excluded), excluded);
     }
 

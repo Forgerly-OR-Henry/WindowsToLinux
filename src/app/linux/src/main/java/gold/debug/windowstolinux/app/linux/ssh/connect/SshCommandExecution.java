@@ -111,11 +111,20 @@ final class SshCommandExecution {
      * @return known command result or explicit uncertainty / 已知命令结果或明确不确定性
      */
     OperationResult<CommandResult> run(CancelToken cancellation) {
-        started = System.nanoTime();
+        return run(cancellation, System.nanoTime());
+    }
+
+    /** Runs within the original command deadline, including any fixed pre-dispatch admission. / 在包括固定发送前准入的原命令时限内执行。
+     * @param cancellation original task cancellation / 原任务取消请求
+     * @param admittedAt monotonic start of this request before pre-dispatch checks / 发送前校验开始前记录的本请求单调时钟起点
+     * @return known command result or explicit uncertainty / 已知命令结果或明确不确定性 */
+    OperationResult<CommandResult> run(CancelToken cancellation, long admittedAt) {
+        started = admittedAt;
         try {
             if (cancellation.requested() || Thread.currentThread().isInterrupted())
                 return result(TaskResult.CANCELLED, ProblemCode.CANCELLED, "SSH_COMMAND_CANCELLED",
                     "SSH command was cancelled before dispatch", null);
+            remainingMillis(started);
             phase = DispatchState.CREATING_CHANNEL;
             diagnostics.attach(session);
             channel = session.createExecChannel(SshCommandFrame.COMMAND);
@@ -169,6 +178,9 @@ final class SshCommandExecution {
             if (cancellation.requested() || Thread.currentThread().isInterrupted())
                 return unknown("SSH_COMMAND_CANCELLED",
                     "SSH command cancellation does not confirm its remote effects");
+            if (!dispatched)
+                return result(TaskResult.FAILED, ProblemCode.TIMEOUT, "SSH_COMMAND_TIMEOUT",
+                    "SSH command expired before dispatch", null);
             if (phase == DispatchState.CHANNEL_OPENING && dispatched && !openConfirmed
                 && sender == null && inputState == InputState.NOT_STARTED)
                 return result(TaskResult.FAILED, ProblemCode.IO_FAILURE, "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT",

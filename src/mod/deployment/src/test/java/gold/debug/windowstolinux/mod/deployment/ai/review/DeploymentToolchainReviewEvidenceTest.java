@@ -2,14 +2,17 @@ package gold.debug.windowstolinux.mod.deployment.ai.review;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -34,7 +37,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class DeploymentToolchainReviewEvidenceTest {
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final int R19_REMAINING_BYTES = 544107;
+    private static final int R20_SMALLEST_REMAINING_BYTES = 365119;
     private static final String PHASE = "toolchainReviewEvidence";
 
     @Test
@@ -57,7 +60,7 @@ class DeploymentToolchainReviewEvidenceTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"prepare", "bind", "dependencies"})
-    void responsesCarryCompleteCurrentBytesOnceAndKeepFreshHostAuthorization(String kind) throws Exception {
+    void responsesPageExactSourceAndAcceptEvidenceBatchesBeforeFreshHostAuthorization(String kind) throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
              var request = request(kind, fixture)) {
             var intent = intent(kind, fixture, request);
@@ -79,9 +82,8 @@ class DeploymentToolchainReviewEvidenceTest {
             assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
             assertEquals(0, assisted.hosts.get());
             var initial = fixture.model.requests.getFirst();
-            byte[] wire = wire(initial, R19_REMAINING_BYTES);
+            byte[] wire = wire(initial, R20_SMALLEST_REMAINING_BYTES, Map.of());
             var projected = JSON.readTree(initial.messages().getLast().text());
-            var restored = restore(JSON.readTree(wire));
             var expected = new LinkedHashMap<>(base);
             expected.put("currentCommandEvidence", observed.facts(intent, request, fixture.task));
             expected.put("authorizationPolicy", "AUTOMATIC");
@@ -89,7 +91,16 @@ class DeploymentToolchainReviewEvidenceTest {
             expected.put("presentationLocale", "en");
             expected.put("commandAuthorizationStage", Map.of("phase", "INDEPENDENT_REVIEW_BEFORE_HOST_GRANT",
                 "hostGrantRequestedOnlyAfterApprove", true, "hostGrantIssuedByThisBoundary", false, "exactHostGrantRequiredBeforeDispatch", true));
-            assertEquals(JSON.readTree(DeploymentAiJson.facts(expected, 1048576)), restored);
+            String original = DeploymentAiJson.facts(expected, 1048576);
+            var evidence = DeploymentToolchainReviewEvidence.project(original, intent, request, fixture.layout).orElseThrow();
+            var mirror = kind.equals("dependencies") ? projected.at("/" + PHASE + "/mirrorRuntime") : projected.at("/mirrorTransport/runtimeSource");
+            String mirrorPointer = mirror.path("sourcePointer").asText();
+            assertEquals("EVIDENCE_PAGES", mirror.path("retrieval").asText());
+            String mirrorSource = collect(evidence, mirror);
+            assertIdentity(mirror, mirrorSource);
+            assertTrue(mirrorSource.startsWith("class MirrorPolicy:", mirror.at("/locations/class MirrorPolicy:").intValue()));
+            var restored = restore(JSON.readTree(wire), Map.of(mirrorPointer, mirrorSource));
+            assertEquals(JSON.readTree(original), restored);
             assertEquals(intent.exactAction(), restored.path("exactAction").asText());
             if (kind.equals("dependencies"))
                 assertArrayEquals(request.stdin(), restored.path("completeExecutableInput").asText().getBytes(StandardCharsets.UTF_8));
@@ -98,16 +109,21 @@ class DeploymentToolchainReviewEvidenceTest {
             assertEquals(1048576, initial.maxRequestBytes());
             var baselineMessages = List.of(initial.messages().getFirst(), new AiMessage(AiRole.USER,
                 DeploymentAiJson.facts(expected, 1048576), List.of()));
-            int baseline = wire(copy(initial, baselineMessages, initial.maxRequestBytes()), initial.maxRequestBytes()).length;
-            assertTrue(baseline - wire.length > 130000, "Real Responses encoding should show removal of duplicate executable bytes");
+            int baseline = wire(copy(initial, baselineMessages, initial.maxRequestBytes()), initial.maxRequestBytes(), Map.of()).length;
+            assertTrue(baseline - wire.length > 320000, "Responses encoding should page the fixed mirror source and omit duplicate bytes");
             System.out.printf("TOOLCHAIN_REVIEW_WIRE kind=%s originalFactsCharacters=%d projectedFactsCharacters=%d baselineBytes=%d initialBytes=%d ceiling=%d%n",
-                kind, restored.toString().length(), initial.messages().getLast().text().length(), baseline, wire.length, R19_REMAINING_BYTES);
+                kind, restored.toString().length(), initial.messages().getLast().text().length(), baseline, wire.length, R20_SMALLEST_REMAINING_BYTES);
 
             String snapshot = projected.at("/" + PHASE + "/snapshotSha256").asText();
-            reply(fixture, read("stale", "0".repeat(64), "/exactAction", 0));
-            reply(fixture, read("exact", snapshot, "/exactAction", 0));
             String sourcePointer = kind.equals("dependencies") ? "/completeExecutableInput" : "/" + PHASE + "/installedHelperSource";
-            reply(fixture, read("source", snapshot, sourcePointer, 0));
+            var continuations = new LinkedHashMap<UUID, String>();
+            reply(fixture, continuations, 24000, read("stale", "0".repeat(64), "/exactAction", 0));
+            reply(fixture, continuations, 6000, read("exact", snapshot, "/exactAction", 0),
+                read("source", snapshot, sourcePointer, 0), read("mirror", snapshot, mirrorPointer, 0));
+            var reads = new ArrayList<AiToolCall>();
+            for (int index = 0; index < 6; index++)
+                reads.add(read("range-" + index, snapshot, sourcePointer, index * 8000, 8000));
+            reply(fixture, continuations, 6000, reads.toArray(AiToolCall[]::new));
             reply(fixture, verdict("approved", "APPROVE"));
             assertEquals(TaskResult.SUCCEEDED, review.call().outcome());
             assertEquals(List.of(intent), assisted.grantedIntents);
@@ -115,15 +131,38 @@ class DeploymentToolchainReviewEvidenceTest {
             assertEquals(initial.messages(), fixture.model.requests.get(1).messages(), "Every review starts with only the complete current facts");
             var finalRequest = fixture.model.requests.getLast();
             var pages = finalRequest.messages().stream().flatMap(message -> message.toolResult().stream()).toList();
-            assertEquals(3, pages.size());
+            assertEquals(10, pages.size());
             assertTrue(pages.get(0).error());
             assertFalse(pages.get(1).error());
             assertFalse(pages.get(2).error());
             assertPage(pages.get(1), snapshot, intent.exactAction());
             assertPage(pages.get(2), snapshot, kind.equals("dependencies") ? restored.path("completeExecutableInput").asText()
                 : DeploymentManagedHelperBundle.renderScript(fixture.layout));
+            assertPage(pages.get(3), snapshot, mirrorSource);
+            assertEquals("range-5", pages.getLast().callId());
+            byte[] continued = wire(finalRequest, R20_SMALLEST_REMAINING_BYTES, continuations);
+            var wireInput = JSON.readTree(continued).path("input");
+            assertEquals(10, wireInput.findValuesAsText("type").stream().filter("function_call_output"::equals).count());
             System.out.printf("TOOLCHAIN_REVIEW_CONTINUATION kind=%s actualBytes=%d ceiling=%d%n", kind,
-                wire(finalRequest, R19_REMAINING_BYTES).length, R19_REMAINING_BYTES);
+                continued.length, R20_SMALLEST_REMAINING_BYTES);
+
+            reply(fixture, read("mixed-evidence", snapshot, mirrorPointer, 0), verdict("mixed-approval", "APPROVE"));
+            var mixed = assertThrows(ApiException.class, review::call);
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", mixed.problem().eventCode());
+            assertEquals(List.of(intent), assisted.grantedIntents);
+            var bounded = evidence.reader(2);
+            String evidenceSnapshot = JSON.readTree(evidence.messages().getLast().text()).at("/" + PHASE + "/snapshotSha256").asText();
+            assertEquals(2, bounded.read(response(Optional.empty(), read("a", evidenceSnapshot, mirrorPointer, 0),
+                read("b", evidenceSnapshot, mirrorPointer, 120))).size());
+            assertThrows(IOException.class, () -> bounded.read(response(Optional.empty(), read("c", evidenceSnapshot, mirrorPointer, 240))));
+            var unique = evidence.reader(16);
+            var firstRead = read("reused", evidenceSnapshot, mirrorPointer, 0);
+            assertEquals(1, unique.read(response(Optional.empty(), firstRead)).size());
+            assertThrows(IOException.class, () -> unique.read(response(Optional.empty(), firstRead)));
+            var excessive = new AiToolCall[9];
+            for (int index = 0; index < excessive.length; index++)
+                excessive[index] = read("excessive-" + index, evidenceSnapshot, mirrorPointer, index * 120);
+            assertThrows(IOException.class, () -> unique.read(response(Optional.empty(), excessive)));
         }
     }
 
@@ -158,11 +197,31 @@ class DeploymentToolchainReviewEvidenceTest {
         return Base64.getEncoder().encodeToString(payload.getBytes(StandardCharsets.UTF_8));
     }
 
-    private static JsonNode restore(JsonNode wire) throws Exception {
+    private static String collect(DeploymentToolchainReviewEvidence evidence, JsonNode descriptor) throws Exception {
+        String snapshot = JSON.readTree(evidence.messages().getLast().text()).at("/" + PHASE + "/snapshotSha256").asText();
+        var reader = evidence.reader(256);
+        var body = new StringBuilder();
+        int total = descriptor.path("characters").intValue();
+        while (body.length() < total) {
+            var call = read("restore-" + body.length(), snapshot, descriptor.path("sourcePointer").asText(), body.length(), 8000);
+            var reply = reader.read(response(Optional.empty(), call)).getFirst();
+            assertFalse(reply.error());
+            var page = JSON.readTree(reply.text()).path("value");
+            assertEquals(body.length(), page.path("offset").intValue());
+            assertEquals(descriptor.path("sha256").asText(), page.path("sha256").asText());
+            String text = page.path("text").asText();
+            assertFalse(text.isEmpty());
+            body.append(text);
+            assertEquals(body.length(), page.path("next").intValue());
+        }
+        return body.toString();
+    }
+
+    private static JsonNode restore(JsonNode wire, Map<String, String> pagedSources) throws Exception {
         var messages = wire.path("input");
         var projection = (ObjectNode) JSON.readTree(messages.get(messages.size() - 1).at("/content/0/text").asText());
         var manifest = projection.path(PHASE);
-        var sources = new LinkedHashMap<String, String>();
+        var sources = new LinkedHashMap<>(pagedSources);
         int firstFrame = messages.size() - manifest.path("frames").size() - 1;
         for (var frame : manifest.path("frames")) {
             var message = messages.get(firstFrame + frame.path("ordinal").intValue());
@@ -227,18 +286,37 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     private static AiToolCall read(String id, String snapshot, String pointer, int offset) throws Exception {
-        return new AiToolCall(id, "evidence", JSON.writeValueAsString(Map.of("snapshotSha256", snapshot, "pointer", pointer, "offset", offset, "limit", 120)));
+        return read(id, snapshot, pointer, offset, 120);
     }
 
-    private static void reply(MirroredInstallerTestFixture fixture, AiToolCall call) {
+    private static AiToolCall read(String id, String snapshot, String pointer, int offset, int limit) throws Exception {
+        return new AiToolCall(id, "evidence", JSON.writeValueAsString(Map.of("snapshotSha256", snapshot, "pointer", pointer, "offset", offset, "limit", limit)));
+    }
+
+    private static AiResponse response(Optional<AiContinuation> continuation, AiToolCall... calls) {
         var usage = new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
-        fixture.model.replies.add(new OperationResult<>(TaskResult.SUCCEEDED,
-            Optional.of(new AiResponse("", "fixture-model", "tool_calls", usage, List.of(call), Optional.empty())), Optional.empty()));
+        return new AiResponse("", "fixture-model", "tool_calls", usage, List.of(calls), continuation);
     }
 
-    private static byte[] wire(AiRequest original, int maximum) {
+    private static void reply(MirroredInstallerTestFixture fixture, AiToolCall... calls) {
+        fixture.model.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(response(Optional.empty(), calls)), Optional.empty()));
+    }
+
+    private static void reply(MirroredInstallerTestFixture fixture, Map<UUID, String> continuations, int encryptedBytes,
+                              AiToolCall... calls) throws Exception {
+        var nativeOutput = JSON.createArrayNode();
+        nativeOutput.addObject().put("type", "reasoning").put("encrypted_content", "a".repeat(encryptedBytes));
+        for (var call : calls) nativeOutput.addObject().put("type", "function_call").put("call_id", call.id())
+            .put("name", call.name()).put("arguments", call.arguments());
+        String value = JSON.writeValueAsString(nativeOutput);
+        var continuation = new AiContinuation(UUID.randomUUID(), value.getBytes(StandardCharsets.UTF_8).length);
+        continuations.put(continuation.id(), value);
+        fixture.model.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(response(Optional.of(continuation), calls)), Optional.empty()));
+    }
+
+    private static byte[] wire(AiRequest original, int maximum, Map<UUID, String> continuations) {
         return ModelProtocolCodec.forProtocol(ModelProtocol.OPENAI_RESPONSES).encode("gpt-6-luna",
-            copy(original, original.messages(), maximum), 65536, ModelReasoningLevel.HIGH, Map.of());
+            copy(original, original.messages(), maximum), 65536, ModelReasoningLevel.HIGH, continuations);
     }
 
     private static AiRequest copy(AiRequest original, List<AiMessage> messages, int maximum) {

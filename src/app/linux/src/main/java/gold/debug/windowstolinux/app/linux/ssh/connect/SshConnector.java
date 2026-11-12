@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.app.linux.ssh.connect;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.atomic.*;
@@ -13,6 +14,7 @@ import gold.debug.windowstolinux.app.linux.sftp.TransferPlan;
 import gold.debug.windowstolinux.app.linux.sftp.TransferProgressListener;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
@@ -33,6 +35,10 @@ import org.apache.sshd.common.digest.BuiltinDigests;
 import org.apache.sshd.common.future.WaitableFuture;
 import org.apache.sshd.common.keyprovider.KeyIdentityProvider;
 import org.apache.sshd.core.CoreModuleProperties;
+import org.apache.sshd.sftp.SftpModuleProperties;
+import org.apache.sshd.sftp.client.SftpClientFactory;
+import org.apache.sshd.sftp.client.SftpVersionSelector;
+import org.apache.sshd.sftp.client.impl.AbstractSftpClient;
 
 /** Owns platform SSH clients without importing deployment code or ambient credentials. / 持有平台 SSH 客户端，不引入部署代码或环境凭据。 */
 public final class SshConnector implements AutoCloseable {
@@ -349,18 +355,81 @@ public final class SshConnector implements AutoCloseable {
             try {
                 if (!connected())
                     throw failure(ProblemCode.UNAVAILABLE, "SSH_CONNECTION_CLOSED", "SSH connection is not available");
-                if (uncertain || command != null || transfer != null)
+                if (uncertain || command != null || transfer != null || fileChannel != null)
                     throw failure(ProblemCode.BUSY, "SSH_CONNECTION_UNCERTAIN",
                         "SSH connection requires closure after unfinished work");
                 command = new SshCommandExecution(session, request, io);
-                var result = command.run(cancellation);
-                uncertain = result.outcome() == TaskResult.UNKNOWN;
-                if (command.close())
-                    command = null;
-                return result;
+                long started = System.nanoTime();
+                try {
+                    if (request.script().startsWith(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER))
+                        verifyProtectedSystemProbe(cancellation, started, request.timeout());
+                    var result = command.run(cancellation, started);
+                    uncertain = result.outcome() == TaskResult.UNKNOWN;
+                    return result;
+                } finally {
+                    if (command.close()) command = null;
+                }
             } finally {
                 operating.set(false);
             }
+        }
+
+        /** Uses only same-session SFTP attributes before opening the approved probe's exec channel. / 打开已审批探测执行通道前仅使用同会话的 SFTP 元数据。
+         * @param cancellation original task cancellation / 原任务取消请求
+         * @param started monotonic start time shared with command execution / 与命令执行共用的单调时钟起点
+         * @param timeout original approved request timeout / 原已审批请求期限
+         * @throws ApiException if the launch paths or original deadline cannot be satisfied / 启动路径或原期限无法满足时 */
+        private void verifyProtectedSystemProbe(CancelToken cancellation, long started, Duration timeout) throws ApiException {
+            Thread worker = Thread.currentThread();
+            long budget = timeout.toNanos();
+            CancelToken stop = () -> cancellation.requested() || worker.isInterrupted()
+                || System.nanoTime() - started >= budget;
+            checkProtectedProbeStop(cancellation, stop);
+            var originalTimeouts = new HashMap<String, Object>();
+            try {
+                for (var property : List.of(SftpModuleProperties.SFTP_CHANNEL_OPEN_TIMEOUT, AbstractSftpClient.SFTP_CLIENT_CMD_TIMEOUT,
+                    CoreModuleProperties.IDLE_TIMEOUT)) {
+                    originalTimeouts.put(property.getName(), session.getProperties().get(property.getName()));
+                    long remainingNanos = budget - (System.nanoTime() - started);
+                    // MINA applies the channel-open timeout independently to opening, init write and init reply.
+                    if (property == SftpModuleProperties.SFTP_CHANNEL_OPEN_TIMEOUT) remainingNanos /= 3;
+                    var remaining = Duration.ofNanos(Math.max(1_000_000, remainingNanos));
+                    var configured = property.getRequired(session);
+                    property.set(session, configured.isPositive() && configured.compareTo(remaining) < 0 ? configured : remaining);
+                }
+                // SFTP v3 reports numeric UID and POSIX mode; both attributes must actually be returned.
+                try (var scope = openFileScope(stop, true)) {
+                    boolean protectedPaths = SshProtectedSystemProbe.verify(scope.channel());
+                    checkProtectedProbeStop(cancellation, stop);
+                    if (!protectedPaths)
+                        throw failure(ProblemCode.ACCESS_DENIED, "SSH_PROTECTED_SYSTEM_PROBE_UNCONFIRMED",
+                            "Protected system probe launch paths did not satisfy SFTP metadata checks");
+                }
+            } catch (ApiException rejected) {
+                checkProtectedProbeStop(cancellation, stop);
+                throw rejected;
+            } catch (IOException | RuntimeException unobservable) {
+                checkProtectedProbeStop(cancellation, stop);
+                throw failure(ProblemCode.IO_FAILURE, "SSH_PROTECTED_SYSTEM_PROBE_UNCONFIRMED",
+                    "Protected system probe launch paths could not be confirmed through SFTP");
+            } finally {
+                originalTimeouts.forEach((name, value) -> {
+                    if (value == null) session.getProperties().remove(name);
+                    else session.getProperties().put(name, value);
+                });
+            }
+            checkProtectedProbeStop(cancellation, stop);
+        }
+
+        /** Keeps a cancelled or expired preflight from reaching exec. / 防止取消或超时的发送前校验进入执行。
+         * @param cancellation original task cancellation / 原任务取消请求
+         * @param stop combined cancellation and deadline signal / 合并的取消与期限信号
+         * @throws ApiException if cancellation or expiry prevents dispatch / 取消或超时阻止发送时 */
+        private static void checkProtectedProbeStop(CancelToken cancellation, CancelToken stop) throws ApiException {
+            if (cancellation.requested() || Thread.currentThread().isInterrupted())
+                throw failure(ProblemCode.CANCELLED, "SSH_COMMAND_CANCELLED", "SSH command was cancelled before dispatch");
+            if (stop.requested())
+                throw failure(ProblemCode.TIMEOUT, "SSH_COMMAND_TIMEOUT", "SSH command expired before dispatch");
         }
 
         /**
@@ -469,19 +538,33 @@ public final class SshConnector implements AutoCloseable {
             Objects.requireNonNull(cancellation);
             if (!operating.compareAndSet(false, true))
                 throw failure(ProblemCode.BUSY, "SSH_CONNECTION_BUSY", "SSH connection work has not returned");
+            return openFileScope(cancellation, false);
+        }
+
+        /** Opens an SFTP channel under the operation already held by the caller. / 在调用方已持有的操作作用域内打开 SFTP 通道。
+         * @param cancellation cancellation observed until channel release / 持续观测至通道释放的取消请求
+         * @param commandProbe whether this is a numeric-owner admission for a command / 是否为命令发送前的数字所有者准入
+         * @return owned file scope / 所属文件作用域
+         * @throws IOException if opening or cleanup fails / 打开或清理失败时
+         * @throws ApiException if the connection state or cancellation blocks admission / 连接状态或取消阻止准入时 */
+        private FileScope openFileScope(CancelToken cancellation, boolean commandProbe)
+            throws IOException, ApiException {
+            var scope = new FileScope(commandProbe);
             try {
-                if (!connected() || uncertain || command != null || transfer != null || fileChannel != null)
+                if (!connected() || uncertain || (!commandProbe && command != null) || transfer != null || fileChannel != null)
                     throw failure(ProblemCode.UNAVAILABLE, "SSH_FILE_CHANNEL_UNAVAILABLE", "File channel is unavailable");
                 if (cancellation.requested())
                     throw failure(ProblemCode.CANCELLED, "SSH_FILE_CANCELLED", "File work was cancelled");
-                fileChannel = org.apache.sshd.sftp.client.SftpClientFactory.instance().createSftpClient(session);
+                fileChannel = SftpClientFactory.instance().createSftpClient(session,
+                    commandProbe ? SftpVersionSelector.fixedVersionSelector(3) : SftpVersionSelector.CURRENT);
                 fileOwner = Thread.currentThread();
                 var owned = fileChannel;
                 fileObserver = Thread.ofVirtual().name("wtl-file-cancel").start(() -> {
                     try {
                         while (!Thread.currentThread().isInterrupted()) {
                             if (cancellation.requested()) {
-                                owned.close();
+                                if (commandProbe) owned.getClientChannel().close(true);
+                                else owned.close();
                                 return;
                             }
                             Thread.sleep(100);
@@ -492,10 +575,10 @@ public final class SshConnector implements AutoCloseable {
                         // Closure is checked by the owning worker before its durable release.
                     }
                 });
-                return new FileScope();
+                return scope;
             } catch (java.io.IOException | ApiException | RuntimeException failure) {
                 try {
-                    new FileScope().close();
+                    scope.close();
                 } catch (java.io.IOException cleanup) {
                     failure.addSuppressed(cleanup);
                 }
@@ -505,11 +588,16 @@ public final class SshConnector implements AutoCloseable {
 
         /** Owns one actual primitive channel until explicit physical release. / 持有一个实际原语通道至明确物理释放。 */
         public final class FileScope implements AutoCloseable {
+            /** Whether the enclosing command still owns the connection operation. / 外层命令是否仍持有连接操作。 */
+            private final boolean commandProbe;
+
             /** Makes successful closure idempotent. / 成功关闭后允许幂等调用。 */
             private boolean released;
 
-            /** Creates only inside the owning connection. / 仅在所属连接中创建。 */
-            private FileScope() {
+            /** Creates only inside the owning connection. / 仅在所属连接中创建。
+             * @param commandProbe whether the enclosing command retains operation ownership / 外层命令是否保留操作归属 */
+            private FileScope(boolean commandProbe) {
+                this.commandProbe = commandProbe;
             }
 
             /** Returns the channel only while the exact worker still owns it. / 仅在精确线程持有时返回通道。
@@ -538,7 +626,13 @@ public final class SshConnector implements AutoCloseable {
                 }
                 try {
                     if (fileChannel != null) {
-                        fileChannel.close();
+                        if (commandProbe) {
+                            var channel = fileChannel.getClientChannel();
+                            if (!channel.close(true).awaitUninterruptibly(Duration.ofMillis(1500)) || !channel.isClosed())
+                                throw new IOException("Probe metadata channel release was not confirmed");
+                        } else {
+                            fileChannel.close();
+                        }
                         if (fileChannel.isOpen()) {
                             uncertain = true;
                             throw new java.io.IOException("File channel release was not confirmed");
@@ -553,7 +647,7 @@ public final class SshConnector implements AutoCloseable {
                     uncertain = true;
                     throw failure;
                 } finally {
-                    operating.set(false);
+                    if (!commandProbe) operating.set(false);
                 }
             }
         }

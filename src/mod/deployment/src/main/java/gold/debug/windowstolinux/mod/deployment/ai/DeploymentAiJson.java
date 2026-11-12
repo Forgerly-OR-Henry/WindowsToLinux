@@ -249,10 +249,10 @@ public final class DeploymentAiJson {
         while (true) {
             var response = call(purpose, messages, definitions, revision, task, extended, Optional.empty());
             if (evidenceReader.isEmpty()) return response;
-            var result = evidenceReader.orElseThrow().read(response);
-            if (result.isEmpty()) return response;
+            var results = evidenceReader.orElseThrow().read(response);
+            if (results.isEmpty()) return response;
             messages.add(AiMessage.assistant(response));
-            messages.add(AiMessage.result(result.orElseThrow()));
+            for (var result : results) messages.add(AiMessage.result(result));
         }
     }
 

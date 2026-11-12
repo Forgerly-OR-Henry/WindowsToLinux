@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
@@ -52,6 +53,7 @@ class DeploymentAgentHostProbeEvidenceTest {
         assertEquals("EMPTY", current.get("inputKind"));
         assertFalse(current.containsKey("completeExecutableInput"));
         assertEquals(sha256(DeploymentAgentHostProbe.baseline()), facts.path("scriptSha256").asText());
+        assertEquals(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER.stripTrailing(), facts.at("/startupAdmission/marker").asText());
         assertEquals(json.valueToTree(List.of("apt-get", "dnf", "systemctl")), facts.path("presenceOnly"));
         assertTrue(facts.path("meaning").asText().contains("No remote binary SHA"));
         String source = current.get("exactAction").toString();
@@ -69,6 +71,7 @@ class DeploymentAgentHostProbeEvidenceTest {
     @Test
     void sameLabelAndChangedSourceCannotBorrowNavigationAndNonemptyInputOrWrongBoundsReject() throws Exception {
         for (String script : List.of(DeploymentAgentHostProbe.baseline() + "printf changed > /etc/unreviewed\n",
+            DeploymentAgentHostProbe.baseline().substring(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER.length()),
             DeploymentAgentHostProbe.baseline().replace("/usr/bin/uname -m", "/usr/bin/uname -a"),
             DeploymentAgentHostProbe.baseline().replace("PATH=/usr/sbin:/usr/bin:/sbin:/bin", "PATH=/tmp:/usr/bin"),
             ". /tmp/unverified.sh\n")) {
@@ -92,7 +95,7 @@ class DeploymentAgentHostProbeEvidenceTest {
         var original = (ObjectNode) json.valueToTree(bound);
         assertTrue(conversation.messages(original.toString(), "fixture-route", fixture.task).getFirst().text()
             .contains(DeploymentAgentHostProbeEvidence.INSTRUCTION));
-        for (String field : List.of("scriptSha256", "scriptBytes", "presenceOnly", "locations")) {
+        for (String field : List.of("scriptSha256", "scriptBytes", "presenceOnly", "locations", "startupAdmission")) {
             var changed = original.deepCopy();
             ((ObjectNode) changed.path(DeploymentAgentHostProbeEvidence.FIELD)).put(field, "forged");
             assertThrows(IllegalArgumentException.class, () -> conversation.messages(changed.toString(), "fixture-route", fixture.task));

@@ -4,6 +4,9 @@ package gold.debug.windowstolinux.appapi.linux.command;
 public final class SshCommandFrameProtocol {
     private static final String BASH = "/bin/bash --noprofile --norc -p";
 
+    /** Exact script header requiring same-session SFTP admission of probe launch tools before SSH exec. / 要求在 SSH 执行前以同一会话的 SFTP 准入探测启动工具的精确脚本首行。 */
+    public static final String PROTECTED_SYSTEM_PROBE_HEADER = "# WTL_SSH_PROTECTED_SYSTEM_PROBE_V1\n";
+
     /** Fixed launcher after the SSH server dispatches exec to the account shell.
      * Linux loader and libc startup settings are removed by that shell before the first product process.
      */

@@ -460,12 +460,12 @@ class DeploymentApprovalConversationTest {
         evidence.setAccessible(true);
         String hostProbe = DeploymentAgentHostProbe.baseline();
         String containerProbe = DeploymentAgentHostProbe.container(ContainerEngineType.PODMAN);
-        assertTrue(hostProbe.contains("exec /usr/bin/env -i"));
+        assertTrue(hostProbe.contains("builtin exec -c /usr/bin/env -i"));
         assertTrue(hostProbe.contains("/bin/bash --noprofile --norc -p -s"));
         assertTrue(hostProbe.contains("probe_parents / || exit 64"));
         assertFalse(hostProbe.contains("-m venv --help"));
-        assertFalse(hostProbe.contains("HOME=/root podman info"));
-        assertTrue(containerProbe.contains("HOME=/root podman info"));
+        assertFalse(hostProbe.contains("podman info"));
+        assertTrue(containerProbe.contains("HOME=/root probe_run podman info"));
         for (boolean container : List.of(false, true)) {
             String script = container ? containerProbe : hostProbe;
             String operation = container ? "deployment.candidate.container-probe.v1" : "deployment.candidate.host-probe.v1";

@@ -12,6 +12,7 @@ import java.util.regex.Pattern;
 import com.fasterxml.jackson.databind.JsonNode;
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHostProbe;
 
@@ -20,7 +21,7 @@ public final class DeploymentAgentHostProbeEvidence {
     public static final String FIELD = "agentHostBaselineSourceEvidence";
 
     public static final String INSTRUCTION = """
-        Current canonical host-baseline navigation identifies only the exact rendered script in exactAction. Its digest describes displayed script bytes, not observed remote binaries. This entrypoint relies on the existing trusted SSH/OS startup baseline and protected standard OS utilities; it does not establish that baseline by remote SHA measurement. apt-get, dnf and systemctl are presence checks only. Inspect the actual fixed native queries and enforced guards. These facts grant no permission, waive no independent review, and do not apply to arbitrary commands, container probes or scripts sharing an operation label.
+        Current canonical host-baseline navigation identifies the exact rendered script in exactAction. The exact first-line marker requires the built-in SSH transport to check launcher paths through SFTP metadata on the same authenticated session before SSH exec. Inspect the fixed bootstrap paths, remote filesystem assumption and subsequent shell guards. apt-get, dnf and systemctl are presence checks only. The digest covers script bytes. Independent review still applies to this request and every reachable effect.
         """;
 
     private static final Pattern ACTION = Pattern.compile("\\AWTL-SSH-COMMAND-1\\ntimeout=([^\\n]+)\\noutputLimitBytes=([0-9]+)\\nstdinBytes=([0-9]+)\\nstdinSha256=([0-9a-f]{64})\\nscript:\\n([\\s\\S]+)\\z");
@@ -62,14 +63,18 @@ public final class DeploymentAgentHostProbeEvidence {
             "sourcePointer", "/exactAction", "scriptSha256", sha256(script),
             "scriptBytes", script.getBytes(StandardCharsets.UTF_8).length,
             "locations", List.of(location(exact, script),
+                location(exact, SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER),
                 location(exact, "probe_parents() {"), location(exact, "probe_file() {"),
                 location(exact, "probe_command() {"), location(exact, "os_release_value() {"),
                 location(exact, "/usr/bin/uname -m || exit 64"),
                 location(exact, "/usr/bin/dpkg --print-architecture || exit 64"),
                 location(exact, "/usr/bin/rpm --eval '%{_arch}' || exit 64")),
             "presenceOnly", List.of("apt-get", "dnf", "systemctl"),
-            "startupTrustAssumptions", List.of("authenticated SSH and OS startup", "/usr/bin/env", "/bin/bash", "/usr/bin/stat", "/usr/bin/readlink"),
-            "meaning", "Current script byte identity and source navigation only. Native query files, initial paths, resolved targets and ancestors are checked at execution for root ownership and non-writability. No remote binary SHA, complete symlink-hop traversal, race-free integrity, protection from malicious root, observed success or authorization is claimed."));
+            "startupTrustAssumptions", List.of("authenticated SSH server, its SFTP subsystem and OS startup", "SFTP and SSH exec share the host filesystem view"),
+            "startupAdmission", Map.of("marker", SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER.stripTrailing(),
+                "mechanism", "Same authenticated session, SFTP v3 LSTAT and READLINK before any exec. Requires root ownership, protected POSIX mode and fixed executable paths. Supports a protected /bin directory or the root-owned merged-usr link. Missing or unsafe metadata blocks dispatch.",
+                "executables", List.of("/usr/bin/env", "/bin/bash", "/usr/bin/stat", "/usr/bin/readlink")),
+            "meaning", "Current script byte identity and source navigation. Native query paths are checked by the script after launch-path admission. No remote binary SHA, race-free integrity, protection from malicious root, observed success or authorization is claimed."));
     }
 
     private static Map<String, Object> location(String source, String fragment) {

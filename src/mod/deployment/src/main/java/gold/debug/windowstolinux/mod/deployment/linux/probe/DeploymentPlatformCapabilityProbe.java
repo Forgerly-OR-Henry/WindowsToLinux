@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.linux.probe;
 
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition.ContainerEngineType;
 
 /**
@@ -118,7 +119,7 @@ public final class DeploymentPlatformCapabilityProbe {
     static String isolatedProbe(String body) {
         if (body.lines().anyMatch("WTL_HOST_CAPABILITY_PROBE"::equals))
             throw new IllegalArgumentException("Capability probe delimiter collision");
-        return """
+        return SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER + """
             builtin unset -v TMPDIR || exit 64
             builtin exec -c /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C \\
               HOME=/dev/null XDG_CONFIG_HOME=/dev/null XDG_CACHE_HOME=/dev/null XDG_DATA_HOME=/dev/null \\
@@ -134,7 +135,6 @@ public final class DeploymentPlatformCapabilityProbe {
         return """
             set -eu
             export LC_ALL=C PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-            # stat and readlink are fixed host tools used as the trust anchors for path inspection.
             probe_protected_node() {
               local identity mode
               identity="$(/usr/bin/stat -c '%u:%a' -- "$1")" || return 1
