@@ -110,6 +110,24 @@ class DeploymentToolchainDiagnosticsTest {
     }
 
     @Test
+    void unconfirmedPreparationCarriesOriginalAttachmentIdentityWithoutSendingAgain() throws Exception {
+        var fixture = new Fixture(false);
+        fixture.unknownPrepare = true;
+        var result = fixture.channel().prepare(DeploymentToolchainType.PHP, "8.3", "-", 120, "-");
+        assertEquals(TaskResult.UNKNOWN, result.outcome());
+        assertEquals(Optional.empty(), result.value().orElseThrow().exitCode());
+        var problem = result.problem().orElseThrow();
+        assertEquals("SSH_COMMAND_EXIT_UNKNOWN", problem.eventCode());
+        assertEquals("SOCKET_EOF", problem.context().get("exitUnknownCloseEvidence"));
+        assertEquals(1, fixture.grants.size());
+        assertEquals(1, fixture.commands.size());
+        var original = DeploymentToolchainDiagnostics.decode(fixture.commands.getFirst().stdin());
+        assertEquals(original.operationId().toString(), problem.context().get("toolchainDiagnosticOperation"));
+        assertEquals(original.sha256(), problem.context().get("toolchainDiagnosticRequestSha256"));
+        assertFalse(problem.context().containsKey("toolchainDiagnostic"));
+    }
+
+    @Test
     void mismatchedOriginalTaskIsRejectedBeforeAnyReviewOrTransport() throws Exception {
         var fixture = new Fixture(false);
         var foreign = new DeploymentToolchainDiagnostics.Request(original().operationId(), UUID.randomUUID().toString(),
@@ -150,6 +168,7 @@ class DeploymentToolchainDiagnosticsTest {
         final List<CommandRequest> commands = new ArrayList<>();
         final List<String> events = new ArrayList<>();
         boolean failPersistence;
+        boolean unknownPrepare;
         Fixture(boolean denyDiagnostic) { this.denyDiagnostic = denyDiagnostic; }
         DeploymentBuildCommandChannel channel() {
             var task = (TaskContext) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{TaskContext.class}, (p, method, a) -> {
@@ -163,6 +182,10 @@ class DeploymentToolchainDiagnosticsTest {
                 var request = DeploymentToolchainDiagnostics.decode(command.stdin());
                 if (command.script().contains("'diagnose-only'")) return new OperationResult<>(TaskResult.SUCCEEDED,
                     Optional.of(new CommandResult(Optional.of(0), new String(attachment(request), StandardCharsets.UTF_8), "", false)), Optional.empty());
+                if (unknownPrepare) return new OperationResult<>(TaskResult.UNKNOWN,
+                    Optional.of(new CommandResult(Optional.empty(), "", "", false)),
+                    Optional.of(new Problem(ProblemCode.UNKNOWN, "SSH_COMMAND_EXIT_UNKNOWN", "controlled",
+                        Map.of("exitUnknownCloseEvidence", "SOCKET_EOF"), Optional.empty())));
                 return new OperationResult<>(TaskResult.FAILED, Optional.of(new CommandResult(Optional.of(65),
                     "TOOLCHAIN_FAILURE=installation:official toolchain installation command failed: apt-get\n", "", false)),
                     Optional.of(new Problem(ProblemCode.IO_FAILURE, "ORIGINAL_EXIT_NONZERO", "original failure", Map.of(), Optional.empty())));

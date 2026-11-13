@@ -81,8 +81,11 @@ public final class DeploymentEcosystemCapabilityProbe {
               case "$tool" in npm) key=NPM ;; pnpm) key=PNPM ;; yarn) key=YARN ;; mvn) key=MAVEN ;; esac
               version=
               if [ "$package_probe_safe" -eq 1 ] && probe_tool "$tool" >/dev/null 2>&1; then
-                if [ "$tool" = mvn ]; then version="$(probe_tool_run mvn -version 2>/dev/null | /usr/bin/awk 'NR==1 {print $3}')" || version=
-                else version="$(probe_tool_run "$tool" --version 2>/dev/null)" || version=; fi
+                case "$tool" in
+                  npm) version="$(probe_tool_run npm --offline --no-update-notifier --version 2>/dev/null)" || version= ;;
+                  mvn) version="$(probe_tool_run mvn -version 2>/dev/null | /usr/bin/awk 'NR==1 {print $3}')" || version= ;;
+                  *) version="$(probe_tool_run "$tool" --version 2>/dev/null)" || version= ;;
+                esac
               fi
               printf 'TOOL_%s=%s\\n' "$key" "$version"
             done

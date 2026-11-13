@@ -18,7 +18,7 @@ class DeploymentManagedHelperBundleTest {
         String original = DeploymentManagedHelperBundle.renderScript();
         String recovery = DeploymentManagedHelperBundle.renderPublicationRecovery(layout);
         assertEquals(16, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
-        assertEquals("5269a09f9fc4e49209ef30c95d9d52fb5f92e67bfd024471f491014ee78c8bca",
+        assertEquals("bcb63c832f1dc89a19de021d3f7a0fed0cb2a028097a9c3f285a2d3336b69c15",
             HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(original.getBytes(StandardCharsets.UTF_8))));
         assertEquals(original, DeploymentManagedHelperBundle.renderScript());
         assertFalse(recovery.contains("rollback-deployment-first)"));

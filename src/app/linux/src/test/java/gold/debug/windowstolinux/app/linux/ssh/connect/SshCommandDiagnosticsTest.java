@@ -60,6 +60,9 @@ class SshCommandDiagnosticsTest {
             assertEquals("-1", facts.get("disconnectCode"));
             assertEquals("UNKNOWN", facts.get("disconnectInitiatorLocal"));
             assertEquals("false", facts.get("exitObserved"));
+            assertEquals("false", facts.get("exitSignalObserved"));
+            assertTrue(Set.of("SOCKET_EOF", "SOCKET_READ_FAILURE", "SESSION_CLOSED", "CHANNEL_CLOSED")
+                .contains(facts.get("exitUnknownCloseEvidence")));
             assertFalse(result.toString().contains("private"));
             assertEquals(1, fixture.calls.get());
         }

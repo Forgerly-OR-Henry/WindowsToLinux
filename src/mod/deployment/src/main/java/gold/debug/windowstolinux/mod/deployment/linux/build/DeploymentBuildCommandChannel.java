@@ -287,21 +287,26 @@ public final class DeploymentBuildCommandChannel {
                 preparationReceipts.addLast(receipt.stdout());
             }
         }
-        if (observed.value().isPresent() && observed.value().orElseThrow().exitCode().filter(code -> code != 0).isPresent()
-            && observed.outcome() != TaskResult.CANCELLED) {
+        boolean confirmedNonzero = observed.value().flatMap(CommandResult::exitCode).filter(code -> code != 0).isPresent();
+        if (observed.outcome() == TaskResult.UNKNOWN || (confirmedNonzero && observed.outcome() != TaskResult.CANCELLED)) {
             var context = new java.util.LinkedHashMap<String, String>(observed.problem().map(Problem::context).orElse(Map.of()));
             context.put("toolchainDiagnosticOperation", original.operationId().toString());
             context.put("toolchainDiagnosticRequestSha256", original.sha256());
-            // Failure to retrieve an attachment never replaces the original preparation result.
-            try {
-                var diagnostic = toolchainDiagnostic(original);
-                diagnostic.value().ifPresent(value -> context.put("toolchainDiagnostic", value));
-                if (diagnostic.value().isEmpty()) context.put("toolchainDiagnosticObservation", diagnostic.outcome().name());
-            } catch (ApiException unavailable) {
-                context.put("toolchainDiagnosticObservation", unavailable.problem().eventCode());
+            if (confirmedNonzero) {
+                // Failure to retrieve an attachment never replaces the original preparation result.
+                try {
+                    var diagnostic = toolchainDiagnostic(original);
+                    diagnostic.value().ifPresent(value -> context.put("toolchainDiagnostic", value));
+                    if (diagnostic.value().isEmpty()) context.put("toolchainDiagnosticObservation", diagnostic.outcome().name());
+                } catch (ApiException unavailable) {
+                    context.put("toolchainDiagnosticObservation", unavailable.problem().eventCode());
+                }
             }
-            var problem = observed.problem().orElse(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_TOOLCHAIN_PREPARE_FAILED",
-                "Original toolchain installation command failed", Map.of(), Optional.empty()));
+            var problem = observed.problem().orElseGet(() -> confirmedNonzero
+                ? new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_TOOLCHAIN_PREPARE_FAILED",
+                    "Original toolchain installation command failed", Map.of(), Optional.empty())
+                : new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_TOOLCHAIN_PREPARE_UNKNOWN",
+                    "Original toolchain installation command is unconfirmed", Map.of(), Optional.empty()));
             observed = new OperationResult<>(observed.outcome(), observed.value(), Optional.of(new Problem(problem.code(),
                 problem.eventCode(), problem.message(), context, problem.diagnosticId())));
         }
@@ -562,13 +567,14 @@ public final class DeploymentBuildCommandChannel {
         var facts = new LinkedHashMap<String, String>();
         for (String key : List.of("commandOpenRequested", "channelOpenConfirmed", "inputSenderCreated", "authorPayloadSent",
             "outputObserved", "exitObserved", "channelClosed", "sessionOpen", "sessionAuthenticated", "channelPeerAssigned",
-            "sessionCloseObserved", "disconnectInitiatorLocal", "truncated", "transportReadHandlerActive")) {
+            "sessionCloseObserved", "disconnectInitiatorLocal", "truncated", "transportReadHandlerActive", "exitSignalObserved")) {
             String value = problem.context().get(key);
             if ("true".equals(value) || "false".equals(value)) facts.put(key, value);
         }
         Map.ofEntries(
             Map.entry("commandPhase", "BEFORE_DISPATCH|CREATING_CHANNEL|CHANNEL_OPENING|WAITING_FOR_EXIT"),
             Map.entry("inputState", "NOT_STARTED|SENDING|COMPLETED|FAILED"),
+            Map.entry("exitUnknownCloseEvidence", "CHANNEL_CLOSED|SESSION_CLOSED|SSH_DISCONNECT|SOCKET_EOF|SOCKET_READ_FAILURE"),
             Map.entry("frameWritePhase", "NOT_STARTED|WRITING_LENGTH|WRITING_SCRIPT|WRITING_STDIN|FLUSHING|WRITTEN"),
             Map.entry("scriptBytes", "[0-9]{1,8}"), Map.entry("stdinBytes", "[0-9]{1,8}"),
             Map.entry("remoteWindowOpenMaxSize", "[0-9]{1,10}"),

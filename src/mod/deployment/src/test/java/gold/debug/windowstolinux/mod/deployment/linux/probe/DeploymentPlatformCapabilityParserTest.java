@@ -115,12 +115,14 @@ class DeploymentPlatformCapabilityParserTest {
                     + """
                     probe_tool() { return 0; }
                     probe_tool_run() { "$@"; }
-                    npm() { printf called >>"$marker"; [ "$scenario" != offline ] || return 1; printf '11.0.0\\n'; }
-                    pnpm() { npm "$@"; }
-                    yarn() { npm "$@"; }
+                    print_version() { printf called >>"$marker"; [ "$scenario" != offline ] || return 1; printf '11.0.0\\n'; }
+                    npm() { [ "$*" = '--offline --no-update-notifier --version' ] || return 91; print_version; }
+                    pnpm() { [ "$*" = '--version' ] || return 91; print_version; }
+                    yarn() { [ "$*" = '--version' ] || return 91; print_version; }
                     mvn() { printf called >>"$marker"; printf 'Apache Maven 3.9.12\\n'; }
                     """ + packageProbe.replace("/.mvn", path + "/.mvn");
-                var process = new ProcessBuilder(bash, "--noprofile", "--norc", "-s").redirectErrorStream(true).start();
+                var process = new ProcessBuilder(bash, "--noprofile", "--norc", "-s")
+                    .directory(directory.toFile()).redirectErrorStream(true).start();
                 try {
                     try (var input = process.getOutputStream()) {
                         input.write(script.getBytes(java.nio.charset.StandardCharsets.UTF_8));

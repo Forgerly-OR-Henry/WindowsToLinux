@@ -173,7 +173,8 @@ public final class DeploymentAgentPublicationRecoveryProgram {
     }
 
     public Map<String, String> manifest() {
-        return Map.of("revision", REVISION, "globalHelperSha256", DeploymentManagedHelperBundle.EXPECTED_SHA256,
+        // The installed recovery version includes the helper identity from the fixed recovery source.
+        return Map.of("revision", REVISION, "globalHelperSha256", "5269a09f9fc4e49209ef30c95d9d52fb5f92e67bfd024471f491014ee78c8bca",
             "sourceSha256", sha256(source()), "loaderTemplateSha256", sha256(resource(ROOT + "publication-recovery-loader.py")),
             "installerTemplateSha256", sha256(resource(INSTALL_RESOURCE)), "guardSha256", sha256(resource(ROOT + "publication-recovery-guard.sh")),
             "layoutSha256", layout.digest(), "contractSha256", sha256(REVIEW_CONTRACT));

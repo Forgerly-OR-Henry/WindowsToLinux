@@ -19,16 +19,16 @@ import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToo
 
 class DeploymentHelperReviewContractTest {
     @Test
-    void renderedToolchainWrapperPreservesCanonicalOuterStdinOnDescriptorThree(@TempDir Path temporary) throws Exception {
+    void renderedToolchainWrapperStartsAtRootAndPreservesCanonicalOuterStdinOnDescriptorThree(@TempDir Path temporary) throws Exception {
         String source = DeploymentManagedHelperBundle.renderScript();
         String opening = "prepare_official_toolchains() {\n";
         int start = source.indexOf(opening);
         assertTrue(start >= 0);
-        int headerEnd = source.indexOf('\n', start + opening.length());
-        String header = source.substring(start, headerEnd + 1);
-        String invocation = "/usr/bin/python3 -I - \"$@\" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'";
-        assertEquals(opening + "  " + invocation + "\n", header);
-        String ending = "WTL_OFFICIAL_TOOLCHAINS\n}\n";
+        String invocation = "/usr/bin/python3 -I -S -B - \"$@\" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'";
+        String header = opening + "  (\n    cd -- / || exit 64\n    exec " + invocation + "\n";
+        int headerEnd = start + header.length();
+        assertEquals(header, source.substring(start, headerEnd));
+        String ending = "WTL_OFFICIAL_TOOLCHAINS\n  )\n}\n";
         int end = source.indexOf(ending, headerEnd);
         assertTrue(end > headerEnd);
         String wrapper = source.substring(start, end + ending.length());
@@ -50,6 +50,8 @@ class DeploymentHelperReviewContractTest {
         assertEquals(0, delivered.exit(), delivered.error());
         assertArrayEquals(input, delivered.output());
         assertEquals(request.sha256(), DeploymentTrackedToolchains.sha256(delivered.output()));
+        var wrongDirectory = readThroughWrapper(temporary, "no-cd", wrapper.replace("    cd -- / || exit 64\n", ""), request);
+        assertEquals(91, wrongDirectory.exit());
         for (var changed : List.of(wrapper.replace("3<&0 ", ""),
             wrapper.replace("3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'", "<<'WTL_OFFICIAL_TOOLCHAINS' 3<&0"))) {
             var rejected = readThroughWrapper(temporary, "changed", changed, request);
@@ -64,13 +66,13 @@ class DeploymentHelperReviewContractTest {
         String bash = System.getProperty("managed.test.bash", "/bin/bash");
         org.junit.jupiter.api.Assumptions.assumeTrue(Files.isExecutable(Path.of(bash)), "A real Bash binary is required");
         Path script = temporary.resolve(name + ".sh");
-        Files.writeString(script, "controlled_reader() { cat >/dev/null; cat <&3; }\n"
-            + wrapper.replaceFirst("(?m)^  /usr/bin/python3 -I - ", "  controlled_reader -I - ")
-            + "prepare_official_toolchains \"$@\"\n", StandardCharsets.UTF_8);
+        Files.writeString(script, "controlled_reader() { [ \"$PWD\" = / ] || return 91; cat >/dev/null; cat <&3; }\n"
+            + wrapper.replace("exec /usr/bin/python3 -I -S -B - ", "controlled_reader -I -S -B - ")
+            + "caller_pwd=$PWD\nprepare_official_toolchains \"$@\"\nstatus=$?\n[ \"$PWD\" = \"$caller_pwd\" ] || exit 92\nexit \"$status\"\n", StandardCharsets.UTF_8);
         String path = script.toAbsolutePath().toString().replace('\\', '/');
         if (path.length() > 2 && path.charAt(1) == ':') path = "/" + Character.toLowerCase(path.charAt(0)) + path.substring(2);
         var process = new ProcessBuilder(bash, "--noprofile", "--norc", path,
-            "prepare-diagnosed", request.operationId().toString(), request.sha256()).start();
+            "prepare-diagnosed", request.operationId().toString(), request.sha256()).directory(temporary.toFile()).start();
         try {
             try (var input = process.getOutputStream()) { input.write(request.bytes()); }
             assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Controlled descriptor reader timed out");

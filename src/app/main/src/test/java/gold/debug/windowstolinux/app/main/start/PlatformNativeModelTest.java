@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.app.ai.model.*;
 import gold.debug.windowstolinux.app.service.ai.AiModelProfile;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -80,16 +81,22 @@ class PlatformNativeModelTest {
     @ParameterizedTest
     @CsvSource({"OPENAI_CHAT_COMPLETIONS,true", "OPENAI_CHAT_COMPLETIONS,false", "OPENAI_RESPONSES,true", "OPENAI_RESPONSES,false", "ANTHROPIC_MESSAGES,true", "ANTHROPIC_MESSAGES,false"})
     void nativeRoundTripUsesSelectedProtocolEvenWhenUrlLooksLikeChat(ModelProtocol protocol, boolean allow) throws Exception {
-        nativeRoundTrip(protocol, allow, ModelReasoningLevel.DEFAULT);
+        nativeRoundTrip(protocol, allow, ModelReasoningLevel.DEFAULT, true);
     }
 
     @ParameterizedTest
     @EnumSource(ModelProtocol.class)
     void nativeNoneRoundTripUsesExplicitProtocolSetting(ModelProtocol protocol) throws Exception {
-        nativeRoundTrip(protocol, true, ModelReasoningLevel.NONE);
+        nativeRoundTrip(protocol, true, ModelReasoningLevel.NONE, true);
     }
 
-    private void nativeRoundTrip(ModelProtocol protocol, boolean allow, ModelReasoningLevel effort) throws Exception {
+    @Test
+    void nativeRoundTripRejectsWrongResultWithoutExposingProviderText() throws Exception {
+        nativeRoundTrip(ModelProtocol.OPENAI_RESPONSES, true, ModelReasoningLevel.DEFAULT, false);
+    }
+
+    private void nativeRoundTrip(ModelProtocol protocol, boolean allow, ModelReasoningLevel effort,
+                                 boolean correctToolResult) throws Exception {
         var json = PlatformAiServiceTest.JSON;
         var turns = new AtomicInteger();
         try (var fixture = new PlatformAiServiceTest.Fixture(); var runtime = PlatformOutputTokenPolicyTest.open(root, allow)) {
@@ -125,11 +132,22 @@ class PlatformNativeModelTest {
                         assertTrue(value.matches("[0-9a-f]{12}"));
                         assertTrue(wire.toString().contains("roundtrip_probe with this JSON object"));
                         assertEquals(1, toolSchema.at("/properties/challenge/enum").size());
-                    } else value = switch (protocol) {
-                        case OPENAI_CHAT_COMPLETIONS -> wire.at("/messages/2/content").asText();
-                        case OPENAI_RESPONSES -> wire.at("/input/2/output").asText();
-                        case ANTHROPIC_MESSAGES -> wire.at("/messages/2/content/0/content").asText();
-                    };
+                    } else {
+                        value = switch (protocol) {
+                            case OPENAI_CHAT_COMPLETIONS -> wire.at("/messages/2/content").asText();
+                            case OPENAI_RESPONSES -> wire.at("/input/2/output").asText();
+                            case ANTHROPIC_MESSAGES -> wire.at("/messages/2/content/0/content").asText();
+                        };
+                        String followUp = switch (protocol) {
+                            case OPENAI_CHAT_COMPLETIONS -> wire.at("/messages/3/content").asText();
+                            case OPENAI_RESPONSES -> wire.at("/input/3/content/0/text").asText();
+                            case ANTHROPIC_MESSAGES -> wire.at("/messages/2/content/1/text").asText();
+                        };
+                        assertTrue(value.matches("[0-9a-f]{12}"));
+                        assertTrue(followUp.contains("code from the tool result"));
+                        assertFalse(followUp.contains(value));
+                        value = correctToolResult ? " " + value.toUpperCase(java.util.Locale.ROOT) + " " : "private incorrect result";
+                    }
                     var args = json.createObjectNode().put("challenge", value);
                     switch (protocol) {
                         case OPENAI_CHAT_COMPLETIONS -> {
@@ -176,9 +194,15 @@ class PlatformNativeModelTest {
             var profile = new AiModelProfile("native", fixture.uri("/v1/chat/completions"), "model", "ai/native", effort, protocol);
             service.save(profile, "Native", "fixture-key".toCharArray(), 256);
             var result = service.verify("native", AiCapabilityType.TOOL_CALLING).completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
-            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.problem().toString());
+            assertEquals(correctToolResult ? TaskResult.SUCCEEDED : TaskResult.FAILED, result.outcome(), result.problem().toString());
+            if (!correctToolResult) {
+                var problem = result.problem().orElseThrow();
+                assertEquals("MODEL_TOOL_PROBE_RESULT", problem.eventCode());
+                assertEquals(java.util.Map.of("check", "INCORRECT_TEXT"), problem.context());
+                assertFalse(problem.toString().contains("private incorrect result"));
+            }
             var saved = service.listAiConfigurations().getFirst();
-            assertTrue(saved.verified(AiCapabilityType.TOOL_CALLING));
+            assertEquals(correctToolResult, saved.verified(AiCapabilityType.TOOL_CALLING));
             assertFalse(saved.verified(AiCapabilityType.TEXT));
             assertEquals(protocol, saved.profile().protocol());
             assertEquals(effort, saved.profile().reasoningEffort());

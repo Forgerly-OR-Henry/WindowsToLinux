@@ -542,20 +542,23 @@ public final class DeploymentCommandEvidence {
         }
         byte[] script = request.script().getBytes(StandardCharsets.UTF_8);
         try {
-            return java.util.Optional.of(Map.of("variant", variant, "comparison", "EXACT_PRODUCT_REQUEST_SCRIPT_AND_EMPTY_STDIN",
-                "scriptSha256", java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(script)),
-                "scriptBytes", script.length, "stdinBytes", 0,
-                "environment", Map.of("launcher", "builtin exec -c /usr/bin/env -i", "workingDirectory", "/", "shellArguments", java.util.List.of("--noprofile", "--norc", "-p", "-s"), "homeAndXdgPaths", "/dev/null",
+            return java.util.Optional.of(Map.ofEntries(Map.entry("variant", variant),
+                Map.entry("comparison", "EXACT_PRODUCT_REQUEST_SCRIPT_AND_EMPTY_STDIN"),
+                Map.entry("scriptSha256", java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(script))),
+                Map.entry("scriptBytes", script.length), Map.entry("stdinBytes", 0),
+                Map.entry("environment", Map.of("launcher", "builtin exec -c /usr/bin/env -i", "workingDirectory", "/", "shellArguments", java.util.List.of("--noprofile", "--norc", "-p", "-s"), "homeAndXdgPaths", "/dev/null",
                     "startupAdmission", Map.of("marker", gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER.stripTrailing(),
                         "mechanism", "Before SSH exec, the built-in transport checks root ownership and protected modes for the fixed launch paths and their ancestors using SFTP v3 LSTAT and READLINK on the same authenticated session. Unavailable or unsafe metadata blocks dispatch.",
                         "executables", java.util.List.of("/usr/bin/env", "/bin/bash", "/usr/bin/stat", "/usr/bin/readlink"),
-                        "trustAssumptions", "The authenticated server's SFTP subsystem and exec share the same host filesystem view; the OS startup boundary remains trusted.")),
-                "optionalCommandAdmission", "probe_tool checks each language or build-tool executable and its path for protected ownership and modes, rejects resolved setuid/setgid and nonempty or failed getcap results, then runs the checked path through /usr/bin/setpriv --no-new-privs. Missing checker or runner leaves optional results unavailable.",
-                "python", Map.of("discoveryNamePattern", "^python[0-9]+[.][0-9]+$", "venvArguments", java.util.List.of("-I", "-S", "-B", "-m", "venv", "--help"), "pipArguments", java.util.List.of("-I", "-S", "-B", "-")),
-                "composer", Map.of("interpreterArguments", java.util.List.of("-n", "-f", "<checked Composer PHP entry>", "--"),
+                        "trustAssumptions", "The authenticated server's SFTP subsystem and exec share the same host filesystem view; the OS startup boundary remains trusted."))),
+                Map.entry("optionalCommandAdmission", "probe_tool checks each language or build-tool executable and its path for protected ownership and modes, rejects resolved setuid/setgid and nonempty or failed getcap results, then runs the checked path through /usr/bin/setpriv --no-new-privs. Missing checker or runner leaves optional results unavailable."),
+                Map.entry("python", Map.of("discoveryNamePattern", "^python[0-9]+[.][0-9]+$", "venvArguments", java.util.List.of("-I", "-S", "-B", "-m", "venv", "--help"), "pipArguments", java.util.List.of("-I", "-S", "-B", "-"))),
+                Map.entry("npm", Map.of("arguments", java.util.List.of("--offline", "--no-update-notifier", "--version"),
+                    "configuration", "The probe supplies /dev/null for user and global npm config and skips package-manager version queries when root project configuration exists. These are npm CLI settings.")),
+                Map.entry("composer", Map.of("interpreterArguments", java.util.List.of("-n", "-f", "<checked Composer PHP entry>", "--"),
                     "arguments", java.util.List.of("--no-plugins", "--no-scripts", "--no-cache", "--no-interaction", "--version"),
-                    "admission", "Requires a checked native PHP executable and a checked Composer PHP entry. -n disables PHP ini loading. COMPOSER_DISABLE_NETWORK=1 is set for this probe."),
-                "meaning", "Exact request-byte comparison and literal guard/argument descriptions only; not live program trust, no-effects proof, ownership or authority. Review every reachable effect; container variants can initialize storage."));
+                    "admission", "Requires a checked native PHP executable and a checked Composer PHP entry. -n disables PHP ini loading. COMPOSER_DISABLE_NETWORK=1 is set for this probe.")),
+                Map.entry("meaning", "Exact request-byte comparison and literal guard/argument descriptions only; not live program trust, no-effects proof, ownership or authority. Review every reachable effect; container variants can initialize storage.")));
         } catch (java.security.NoSuchAlgorithmException impossible) {
             throw new IllegalStateException(impossible);
         }

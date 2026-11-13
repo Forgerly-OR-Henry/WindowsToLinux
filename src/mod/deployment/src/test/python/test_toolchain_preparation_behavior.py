@@ -1,4 +1,4 @@
-"""Exercise the actual PHP installation recipe without package, network, or compiler execution."""
+"""Exercise preparation recipes without package, network, or compiler execution."""
 import hashlib
 import pathlib
 import tempfile
@@ -111,6 +111,14 @@ class ToolchainPreparationBehaviorTest(unittest.TestCase):
         self.install()
         self.assertEqual(['-r'], self.commands[-1][1:2])
         self.assertEqual(4, len(self.commands))
+
+    def test_python_version_and_module_checks_use_isolated_interpreters(self):
+        executable = str(self.root / 'bin/python3')
+        self.namespace['probe_output'].return_value = (0, 'Python 3.12.10')
+        self.namespace['probe']('PYTHON', self.root, '3.12.10')
+        self.namespace['probe_output'].assert_called_once_with([executable, '-I', '-S', '-B', '--version'])
+        self.namespace['run'].assert_called_once_with(
+            [executable, '-I', '-S', '-B', '-c', 'import ssl, sqlite3, bz2, lzma, venv, zlib'])
 
     def test_failed_module_validation_removes_the_unadmitted_installation(self):
         self.namespace['source_dependencies'] = mock.Mock()

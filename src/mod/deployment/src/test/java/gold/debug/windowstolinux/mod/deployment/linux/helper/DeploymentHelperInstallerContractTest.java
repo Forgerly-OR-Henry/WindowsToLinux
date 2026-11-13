@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -280,9 +281,12 @@ class DeploymentHelperInstallerContractTest {
             assertTrue(script.indexOf(DeploymentManagedHelperBundle.buildEntrySha256(layout)) < check);
         }
         assertFalse(DeploymentHelperInstallerScript.renderFiles(layout).contains("helper:" + LEGACY_HELPER_DIGEST));
-        String previousRelease = "helper:d10a316ac0078b4dabb286409e12845376d719578c9e2c029686deaf369cc3b4";
-        assertTrue(DeploymentHelperInstallerScript.render(layout).contains(previousRelease));
-        assertFalse(DeploymentHelperInstallerScript.renderFiles(layout).contains(previousRelease));
+        for (String previousRelease : List.of(
+            "helper:5269a09f9fc4e49209ef30c95d9d52fb5f92e67bfd024471f491014ee78c8bca",
+            "helper:d10a316ac0078b4dabb286409e12845376d719578c9e2c029686deaf369cc3b4")) {
+            assertTrue(DeploymentHelperInstallerScript.render(layout).contains(previousRelease));
+            assertFalse(DeploymentHelperInstallerScript.renderFiles(layout).contains(previousRelease));
+        }
     }
 
     private Fixture fixture(boolean probeFailure, String damaged) throws Exception {

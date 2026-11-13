@@ -431,7 +431,7 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
             .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
         String challenge = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         var tool = new gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition("roundtrip_probe",
-            "Receive the exact challenge code. After the tool result arrives, reply with only the result as plain text.",
+            "Receive the exact challenge code.",
             """
             {"type":"object","properties":{"challenge":{"type":"string","enum":["%s"]}},
             "required":["challenge"],"additionalProperties":false}
@@ -440,7 +440,7 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
         messages.add(new gold.debug.windowstolinux.appapi.ai.model.AiMessage(
             gold.debug.windowstolinux.appapi.ai.model.AiRole.USER,
             "Call roundtrip_probe with this JSON object: {\"challenge\":\"" + challenge
-                + "\"}. After the tool returns, reply with only its result as plain text, without quotes or markup.", List.of()));
+                + "\"}.", List.of()));
         long started = System.nanoTime();
         var request = new gold.debug.windowstolinux.appapi.ai.model.AiRequest(
             purpose, messages, ceiling,
@@ -464,6 +464,10 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
         messages.add(gold.debug.windowstolinux.appapi.ai.model.AiMessage.assistant(response));
         messages.add(gold.debug.windowstolinux.appapi.ai.model.AiMessage.result(
             new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(call.id(), returned, false)));
+        messages.add(new gold.debug.windowstolinux.appapi.ai.model.AiMessage(
+            gold.debug.windowstolinux.appapi.ai.model.AiRole.USER,
+            "The roundtrip_probe call has finished. Copy the 12-character code from the tool result as plain text."
+                + " Reply with only that code and make no further tool calls.", List.of()));
         long remaining = java.time.Duration.ofSeconds(30).toNanos() - (System.nanoTime() - started);
         if (remaining <= 0)
             return failed(ProblemCode.TIMEOUT, "MODEL_TOOL_PROBE_TIMEOUT", "Native probe budget expired");
@@ -472,9 +476,15 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
         if (second.outcome() != TaskResult.SUCCEEDED)
             return new OperationResult<>(second.outcome(), Optional.empty(), second.problem());
         var finalResponse = second.value().orElseThrow();
-        return finalResponse.finishReason().equals("stop") && finalResponse.toolCalls().isEmpty()
-            && returned.equals(finalResponse.text().strip()) ? new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty())
-            : failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_TOOL_PROBE_RESULT", "Native tool result was not consumed correctly");
+        if (finalResponse.finishReason().equals("stop") && finalResponse.toolCalls().isEmpty()
+            && returned.equals(finalResponse.text().strip().toLowerCase(Locale.ROOT)))
+            return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+        String resultCheck = !finalResponse.toolCalls().isEmpty() ? "UNEXPECTED_TOOL_CALL"
+            : !finalResponse.finishReason().equals("stop") ? "INCOMPLETE_RESPONSE"
+            : finalResponse.text().isBlank() ? "EMPTY_TEXT" : "INCORRECT_TEXT";
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
+            ProblemCode.CONTRACT_VIOLATION, "MODEL_TOOL_PROBE_RESULT", "Native tool result was not consumed correctly",
+            Map.of("check", resultCheck), Optional.empty())));
     }
 
     /** Normalizes harmless transcript whitespace. / 规范化无害的转写空白。

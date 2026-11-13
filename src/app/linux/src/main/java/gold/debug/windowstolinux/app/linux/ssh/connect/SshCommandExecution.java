@@ -298,6 +298,15 @@ final class SshCommandExecution {
             }
         }
         diagnostics.appendTo(diagnostic);
+        if (event.equals("SSH_COMMAND_EXIT_UNKNOWN")) {
+            diagnostic.put("exitSignalObserved", Boolean.toString(channel != null && channel.getExitSignal() != null));
+            String closeEvidence = "CHANNEL_CLOSED";
+            if ("true".equals(diagnostic.get("disconnectObserved"))) closeEvidence = "SSH_DISCONNECT";
+            else if ("EOF".equals(diagnostic.get("transportSocketReadLastResult"))) closeEvidence = "SOCKET_EOF";
+            else if ("FAILED".equals(diagnostic.get("transportSocketReadLastResult"))) closeEvidence = "SOCKET_READ_FAILURE";
+            else if (!session.isOpen()) closeEvidence = "SESSION_CLOSED";
+            diagnostic.put("exitUnknownCloseEvidence", closeEvidence);
+        }
         if (channelOpen != null) {
             try { channelOpen.appendTo(diagnostic); }
             catch (RuntimeException unavailable) { diagnostic.put("channelOpenObservation", "UNAVAILABLE"); }

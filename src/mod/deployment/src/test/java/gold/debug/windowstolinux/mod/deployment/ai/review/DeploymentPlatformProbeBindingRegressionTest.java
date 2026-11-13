@@ -44,6 +44,11 @@ class DeploymentPlatformProbeBindingRegressionTest {
         assertEquals(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER.stripTrailing(),
             binding.at("/environment/startupAdmission/marker").asText());
         assertEquals("-n", binding.at("/composer/interpreterArguments/0").asText());
+        var npmArguments = binding.at("/npm/arguments");
+        assertEquals("--offline", npmArguments.path(0).asText());
+        assertEquals("--no-update-notifier", npmArguments.path(1).asText());
+        assertEquals("--version", npmArguments.path(2).asText());
+        assertEquals(3, npmArguments.size());
         assertTrue(binding.path("optionalCommandAdmission").asText().contains("--no-new-privs"));
         assertTrue(binding.path("meaning").asText().contains("not live program trust"));
         assertTrue(binding.path("meaning").asText().contains("container variants can initialize storage"));
@@ -57,6 +62,7 @@ class DeploymentPlatformProbeBindingRegressionTest {
         for (String script : java.util.List.of(original.substring(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER.length()),
             original.replace("env -i", "env"), original.replace("cd -- /", "cd -- /tmp"),
             original.replace("--no-plugins", ""), original.replace("-I -S -B", "-I"),
+            original.replace("--offline ", ""), original.replace("--no-update-notifier ", ""),
             original.replace("--no-new-privs", ""), original.replace("-n -f", "-f"),
             original.replace("probe_file \"$executable\"", "true"), original + "printf changed\n")) {
             assertNotEquals(original, script);

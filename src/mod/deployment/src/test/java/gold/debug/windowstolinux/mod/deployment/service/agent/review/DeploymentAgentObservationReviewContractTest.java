@@ -68,7 +68,7 @@ class DeploymentAgentObservationReviewContractTest {
         fragment = fragment.replace(insertion, resource("tracked-operations.py"));
         String script = DeploymentManagedHelperBundle.renderScript();
         String start = "def admitted(ecosystem, version):\n";
-        String end = "WTL_OFFICIAL_TOOLCHAINS\n}\n";
+        String end = "WTL_OFFICIAL_TOOLCHAINS\n  )\n}\n";
         int fragmentStart = script.indexOf(start);
         int fragmentEnd = script.indexOf(end, fragmentStart);
         assertTrue(fragmentStart >= 0 && fragmentEnd > fragmentStart);

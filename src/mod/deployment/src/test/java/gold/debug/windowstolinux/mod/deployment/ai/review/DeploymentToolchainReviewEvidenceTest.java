@@ -29,6 +29,7 @@ import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.task.action.*;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
+import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics;
 import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence;
@@ -159,15 +160,38 @@ class DeploymentToolchainReviewEvidenceTest {
             assertIdentity(mirror, mirrorSource);
             assertTrue(mirrorSource.startsWith("class MirrorPolicy:", mirror.at("/locations/class MirrorPolicy:").intValue()));
             var sources = new LinkedHashMap<>(Map.of(mirrorPointer, mirrorSource));
-            if (kind.equals("bind")) {
-                for (String name : List.of("mirrorBootstrapShell", "mirrorPolicySource")) {
-                    var descriptor = projected.at("/" + PHASE + "/" + name);
-                    assertEquals("EVIDENCE_PAGES", descriptor.path("retrieval").asText());
-                    String source = collect(evidence, descriptor, PHASE);
-                    assertIdentity(descriptor, source);
-                    sources.put(descriptor.path("sourcePointer").asText(), source);
-                    if (name.equals("mirrorPolicySource")) assertEquals(DeploymentMirrorTasks.policy(fixture.task), source);
+            var shell = projected.at("/" + PHASE + "/mirrorBootstrapShell");
+            assertEquals("EVIDENCE_PAGES", shell.path("retrieval").asText());
+            String shellSource = collect(evidence, shell, PHASE);
+            assertIdentity(shell, shellSource);
+            sources.put(shell.path("sourcePointer").asText(), shellSource);
+            var policy = projected.at("/" + PHASE + "/mirrorPolicySource");
+            if (!kind.equals("dependencies")) {
+                assertEquals("EVIDENCE_PAGES", policy.path("retrieval").asText());
+                String policySource = collect(evidence, policy, PHASE);
+                assertIdentity(policy, policySource);
+                assertEquals(DeploymentMirrorTasks.policy(fixture.task), policySource);
+                sources.put(policy.path("sourcePointer").asText(), policySource);
+            } else {
+                var frame = initial.messages().get(1 + policy.path("ordinal").intValue());
+                String inlinePolicy = frame.text().substring(policy.path("headerCharacters").intValue());
+                assertIdentity(policy, inlinePolicy);
+                assertEquals(DeploymentMirrorTasks.policy(fixture.task), inlinePolicy);
+                String snapshot = JSON.readTree(evidence.messages().getLast().text()).at("/" + PHASE + "/snapshotSha256").asText();
+                var worker = projected.at("/" + PHASE + "/dependencyWorker");
+                var alreadySupplied = evidence.reader(2).read(response(Optional.empty(),
+                    read("inline-policy", snapshot, policy.path("sourcePointer").asText(), 0, Math.min(8000, inlinePolicy.length())),
+                    read("inline-worker", snapshot, worker.path("sourcePointer").asText(), 0, 8000)));
+                for (var reply : alreadySupplied) {
+                    assertFalse(reply.error());
+                    assertTrue(reply.text().startsWith(RAW_PAGE));
+                    var page = pagePayload(reply.text()).path("value");
+                    assertFalse(page.has("text"));
+                    assertTrue(page.path("newRanges").isArray());
+                    assertEquals(0, page.path("newRanges").size());
                 }
+            }
+            if (kind.equals("bind")) {
                 String helper = DeploymentManagedHelperBundle.renderScript(fixture.layout);
                 var helperDescriptor = projected.at("/" + PHASE + "/installedHelperSource");
                 assertIdentity(helperDescriptor, helper);
@@ -192,7 +216,7 @@ class DeploymentToolchainReviewEvidenceTest {
                     readerSnapshot, helperDescriptor.path("sourcePointer").asText(),
                     selected.path("offset").intValue(), selected.path("next").intValue() - selected.path("offset").intValue()))).getFirst();
                 assertFalse(supplied.error());
-                var suppliedPage = JSON.readTree(supplied.text()).path("value");
+                var suppliedPage = pagePayload(supplied.text()).path("value");
                 assertFalse(suppliedPage.has("text"));
                 assertEquals(0, suppliedPage.path("newRanges").size());
             }
@@ -240,7 +264,7 @@ class DeploymentToolchainReviewEvidenceTest {
             assertPage(pages.get(3), snapshot, mirrorSource);
             assertEquals("repeat-2", pages.getLast().callId());
             for (var page : pages.subList(10, 13)) {
-                var value = JSON.readTree(page.text()).path("value");
+                var value = pagePayload(page.text()).path("value");
                 assertFalse(value.has("text"));
                 assertEquals(0, value.path("newRanges").size());
             }
@@ -324,26 +348,181 @@ class DeploymentToolchainReviewEvidenceTest {
             if (csv) {
                 String runtime = DeploymentMirrorRuntime.runtimeSource();
                 var pages = last.messages().stream().flatMap(message -> message.toolResult().stream())
-                    .map(AiToolResult::text).filter(text -> text.startsWith(RAW_PAGE)).toList();
-                assertEquals(23, pages.size());
+                    .map(AiToolResult::text).toList();
+                assertEquals(24, pages.size());
                 boolean coveredOverlap = false;
+                int mirrorPages = 0;
                 for (String raw : pages) {
+                    assertTrue(raw.startsWith(RAW_PAGE));
                     var payload = pagePayload(raw);
                     assertEquals(snapshot, payload.path("snapshotSha256").asText());
-                    assertEquals(mirror, payload.path("pointer").asText());
-                    var value = payload.path("value");
-                    if (value.has("newRanges")) {
-                        coveredOverlap = true;
-                        for (var range : value.path("newRanges")) assertRange(runtime, range);
-                    } else {
-                        assertRange(runtime, value);
+                    String pointer = payload.path("pointer").asText();
+                    if (helper.equals(pointer)) {
+                        assertPageRanges(DeploymentManagedHelperBundle.renderScript(fixture.layout), payload.path("value"));
+                        continue;
                     }
+                    assertEquals(mirror, pointer);
+                    mirrorPages++;
+                    var value = payload.path("value");
+                    coveredOverlap |= value.has("newRanges");
+                    assertPageRanges(runtime, value);
                 }
+                assertEquals(23, mirrorPages);
                 assertTrue(coveredOverlap);
             }
             assertEquals(0, assisted.hosts.get());
             System.out.printf("BINDING_REVIEW_R22_SHAPE scenario=%s bytes=%d ceiling=%d calls=%d%n", scenario, encoded.length, ceiling, callCount);
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"file-transfer", "asset-lending", "csv-inspector", "binary-inspector"})
+    void r23LaterApprovalTrafficRetainsExactSourceAndFitsOriginalByteCeilings(String project) throws Exception {
+        var trace = R23Trace.forProject(project);
+        boolean dependencies = trace.ecosystem().equals("NATIVE_BUILD");
+        String kind = dependencies ? "dependencies" : "prepare";
+        try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var request = dependencies ? request(kind, fixture) : diagnosedPreparation(fixture, trace.ecosystem(), trace.branch())) {
+            var intent = intent(kind, fixture, request);
+            Callable<OperationResult<ApprovalGrant>> review = dependencies
+                ? () -> DeploymentFixedCommandApproval.approveWithEvidence(assisted.context, assisted.host, intent, request,
+                    fixture.task, fixture.model.configurationRevision, "AUTOMATIC", false,
+                    (action, command, task) -> assisted.scope.effectFacts(action, task))
+                : () -> ((DeploymentCommandReview) assisted.scope.interaction()).approveCommand(intent, request, fixture.task);
+            reply(fixture, verdict("r23-initial-denial", "DENY"));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", assertThrows(ApiException.class, review::call).problem().eventCode());
+            var initial = fixture.model.requests.getFirst();
+            var facts = JSON.readTree(initial.messages().getLast().text());
+            assertEquals("deployment.toolchain." + kind + ".v1", facts.path("operation").asText());
+            assertIdentity(facts.path("exactAction"), intent.exactAction());
+            if (!dependencies) {
+                assertArrayEquals(request.stdin(), facts.at("/toolchainDiagnostic/originalRequestUtf8").asText()
+                    .getBytes(StandardCharsets.UTF_8));
+                assertEquals(trace.ecosystem(), facts.at("/originalToolchainPreparation/ecosystem").asText());
+            }
+            String snapshot = facts.at("/" + PHASE + "/snapshotSha256").asText();
+            String helper = facts.at("/" + PHASE + "/installedHelperSource/sourcePointer").asText();
+            String mirror = facts.at(dependencies ? "/" + PHASE + "/mirrorRuntime/sourcePointer"
+                : "/mirrorTransport/runtimeSource/sourcePointer").asText();
+            var continuations = new LinkedHashMap<UUID, String>();
+            int callCount = 0;
+            int continuationBytes = 0;
+            for (var batch : trace.batches()) {
+                var calls = new ArrayList<AiToolCall>();
+                for (var page : batch.pages()) {
+                    calls.add(read("r23-page-" + callCount++, snapshot, page.helper() ? helper : mirror, page.offset(), page.limit()));
+                }
+                replyAtTotalBytes(fixture, continuations, batch.continuationBytes() - continuationBytes, calls.toArray(AiToolCall[]::new));
+                continuationBytes = batch.continuationBytes();
+            }
+            reply(fixture, verdict("r23-final-denial", "DENY"));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", assertThrows(ApiException.class, review::call).problem().eventCode());
+            var last = fixture.model.requests.getLast();
+            byte[] encoded;
+            try {
+                encoded = wire(last, trace.ceiling(), continuations);
+            } catch (ModelRequestBudgetException tooLarge) {
+                throw new AssertionError(project + " encoded " + tooLarge.encodedBytes() + " > " + trace.ceiling() + " bytes", tooLarge);
+            }
+            assertThrows(ModelRequestBudgetException.class, () -> wire(last, encoded.length - 1, continuations));
+            assertEquals(65536, JSON.readTree(encoded).path("max_output_tokens").asInt());
+            assertR23Continuations(encoded, continuations, callCount);
+            assertR23Pages(last, snapshot, mirror, helper, fixture);
+            assertEquals(0, assisted.hosts.get());
+            System.out.printf("TOOLCHAIN_REVIEW_R23_SHAPE project=%s bytes=%d ceiling=%d calls=%d%n",
+                project, encoded.length, trace.ceiling(), callCount);
+        }
+    }
+
+    private static void assertR23Continuations(byte[] encoded, Map<UUID, String> continuations, int callCount) throws Exception {
+        var reasoning = new ArrayList<JsonNode>();
+        var calls = new ArrayList<JsonNode>();
+        var outputs = new ArrayList<String>();
+        for (var item : JSON.readTree(encoded).path("input")) {
+            switch (item.path("type").asText()) {
+                case "reasoning" -> reasoning.add(item);
+                case "function_call" -> calls.add(item);
+                case "function_call_output" -> outputs.add(item.path("call_id").asText());
+            }
+        }
+        var expectedReasoning = new ArrayList<JsonNode>();
+        var expectedCalls = new ArrayList<JsonNode>();
+        for (String continuation : continuations.values()) {
+            var items = JSON.readTree(continuation);
+            expectedReasoning.add(items.get(0));
+            for (int index = 1; index < items.size(); index++) expectedCalls.add(items.get(index));
+        }
+        assertEquals(expectedReasoning, reasoning);
+        assertEquals(expectedCalls, calls);
+        assertEquals(callCount, outputs.size());
+        assertEquals(calls.stream().map(call -> call.path("call_id").asText()).toList(), outputs);
+    }
+
+    private static void assertR23Pages(AiRequest request, String snapshot, String mirror, String helper,
+                                        MirroredInstallerTestFixture fixture) throws Exception {
+        String runtime = DeploymentMirrorRuntime.runtimeSource();
+        String helperSource = DeploymentManagedHelperBundle.renderScript(fixture.layout);
+        for (var message : request.messages()) {
+            if (message.toolResult().isEmpty()) continue;
+            var page = message.toolResult().orElseThrow();
+            assertFalse(page.error());
+            assertTrue(page.text().startsWith(RAW_PAGE));
+            var payload = pagePayload(page.text());
+            assertEquals(snapshot, payload.path("snapshotSha256").asText());
+            String pointer = payload.path("pointer").asText();
+            assertTrue(pointer.equals(mirror) || pointer.equals(helper));
+            String source = pointer.equals(mirror) ? runtime : helperSource;
+            var value = payload.path("value");
+            assertEquals(MirroredInstallerTestFixture.sha(source), value.path("sha256").asText());
+            assertPageRanges(source, value);
+        }
+    }
+
+    private record R23Trace(String ecosystem, String branch, int ceiling, List<R23Batch> batches) {
+        static R23Trace forProject(String project) {
+            // Original before-send ceilings, cumulative continuation bytes and native read shapes from the R23 safe projection.
+            // Source pointer kinds were identifiable from the projected lengths 30, 38 and 46.
+            return switch (project) {
+                case "file-transfer" -> new R23Trace("GO", "1.26", 170548, List.of(
+                    new R23Batch(8018, helper(143713), helper(208640), helper(215065), helper(224065), helper(226489),
+                        helper(237448), mirror(193282), mirror(7163))));
+                case "asset-lending" -> new R23Trace("DOTNET", "10", 306410, List.of(
+                    new R23Batch(9136, mirror(109746), mirror(144973), mirror(193282), helper(143713), helper(198433),
+                        helper(208640), helper(224065), helper(237448)),
+                    new R23Batch(15543, helper(150666), helper(154995), helper(160811), helper(215065), mirror(7163), mirror(76140)),
+                    new R23Batch(21412, mirror(3984)),
+                    new R23Batch(31674, helper(168811), helper(176811), helper(182811), helper(224065), mirror(84140)),
+                    new R23Batch(34169, helper(190811))));
+                case "csv-inspector" -> new R23Trace("PYTHON", "3.14", 206514, List.of(
+                    new R23Batch(7523, helper(214000), helper(236000), mirror(143000), mirror(192000), mirror(109000)),
+                    new R23Batch(25068, helper(143500), helper(150000), helper(160000), helper(195000),
+                        new R23Read(true, 237000, 4500), mirror(3800), mirror(76100))));
+                case "binary-inspector" -> new R23Trace("NATIVE_BUILD", "", 310412, List.of(
+                    new R23Batch(5917, mirror(144973), mirror(193282), mirror(113677)),
+                    new R23Batch(10297, mirror(136000), new R23Read(false, 3984, 5000), new R23Read(false, 109746, 4000)),
+                    new R23Batch(13679, mirror(90000)), new R23Batch(15954, new R23Read(false, 101000, 7000)),
+                    new R23Batch(18633, new R23Read(false, 110000, 7000)), new R23Batch(21676, new R23Read(false, 117000, 7000))));
+                default -> throw new IllegalArgumentException(project);
+            };
+        }
+
+        private static R23Read helper(int offset) { return new R23Read(true, offset, 8000); }
+
+        private static R23Read mirror(int offset) { return new R23Read(false, offset, 8000); }
+    }
+
+    private record R23Batch(int continuationBytes, R23Read... pages) { }
+
+    private record R23Read(boolean helper, int offset, int limit) { }
+
+    private static CommandRequest diagnosedPreparation(MirroredInstallerTestFixture fixture, String ecosystem, String branch) {
+        long seconds = 135;
+        var input = new DeploymentToolchainDiagnostics.Request(fixture.operation, fixture.task.id().toString(), fixture.server.id(),
+            "a".repeat(64), "a".repeat(64), fixture.layout, List.of("prepare", ecosystem, branch, "-", "120", "-"));
+        String invocation = DeploymentToolchainDiagnostics.command("prepare-diagnosed", input);
+        String guarded = DeploymentManagedHelperBundle.verifiedCommand(invocation, fixture.layout);
+        String wrapped = DeploymentMirrorTasks.preparationCommand(guarded, fixture.task, seconds);
+        return new CommandRequest(wrapped, input.bytes(), Duration.ofSeconds(seconds), 65536);
     }
 
     private static CommandRequest request(String kind, MirroredInstallerTestFixture fixture) {
@@ -481,6 +660,11 @@ class DeploymentToolchainReviewEvidenceTest {
         assertEquals(source.substring(range.path("offset").intValue(), range.path("next").intValue()), range.path("text").asText());
     }
 
+    private static void assertPageRanges(String source, JsonNode value) {
+        Iterable<? extends JsonNode> ranges = value.has("newRanges") ? value.path("newRanges") : List.of(value);
+        for (var range : ranges) assertRange(source, range);
+    }
+
     private static AiToolCall verdict(String id, String decision) throws Exception {
         return new AiToolCall(id, "submit_result", JSON.writeValueAsString(Map.of("decision", decision,
             "requiresUserConfirmation", false, "reason", "Controlled independent review")));
@@ -505,10 +689,28 @@ class DeploymentToolchainReviewEvidenceTest {
 
     private static void reply(MirroredInstallerTestFixture fixture, Map<UUID, String> continuations, int encryptedBytes,
                               AiToolCall... calls) throws Exception {
+        retainReply(fixture, continuations, nativeOutput("a".repeat(encryptedBytes), calls), calls);
+    }
+
+    private static void replyAtTotalBytes(MirroredInstallerTestFixture fixture, Map<UUID, String> continuations, int totalBytes,
+                                          AiToolCall... calls) throws Exception {
+        var output = nativeOutput("", calls);
+        int framing = JSON.writeValueAsBytes(output).length;
+        ((ObjectNode) output.get(0)).put("encrypted_content", "a".repeat(totalBytes - framing));
+        assertEquals(totalBytes, JSON.writeValueAsBytes(output).length);
+        retainReply(fixture, continuations, output, calls);
+    }
+
+    private static com.fasterxml.jackson.databind.node.ArrayNode nativeOutput(String encrypted, AiToolCall... calls) {
         var nativeOutput = JSON.createArrayNode();
-        nativeOutput.addObject().put("type", "reasoning").put("encrypted_content", "a".repeat(encryptedBytes));
+        nativeOutput.addObject().put("type", "reasoning").put("encrypted_content", encrypted);
         for (var call : calls) nativeOutput.addObject().put("type", "function_call").put("call_id", call.id())
             .put("name", call.name()).put("arguments", call.arguments());
+        return nativeOutput;
+    }
+
+    private static void retainReply(MirroredInstallerTestFixture fixture, Map<UUID, String> continuations, JsonNode nativeOutput,
+                                    AiToolCall... calls) throws Exception {
         String value = JSON.writeValueAsString(nativeOutput);
         var continuation = new AiContinuation(UUID.randomUUID(), value.getBytes(StandardCharsets.UTF_8).length);
         continuations.put(continuation.id(), value);

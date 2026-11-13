@@ -40,7 +40,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "5269a09f9fc4e49209ef30c95d9d52fb5f92e67bfd024471f491014ee78c8bca";
+    public static final String EXPECTED_SHA256 = "bcb63c832f1dc89a19de021d3f7a0fed0cb2a028097a9c3f285a2d3336b69c15";
 
     /**
      * ROOT.
@@ -339,14 +339,14 @@ public final class DeploymentManagedHelperBundle {
 
     /** Renders only the fixed native-first Agent recovery program; the global helper remains unchanged. */
     public static String renderPublicationRecovery(DeploymentRemoteLayout layout) {
-        renderScript(); // Verify every original helper resource against the unchanged protocol pin.
+        renderScript(); // Verify the current shared resources before rendering the fixed recovery program.
         var fragments = List.of("00-protocol-foundation.sh", "input/15-deployment-input.sh",
             "input/16-application-input.sh", "input/17-managed-content.sh", "ecosystem/35-ecosystem-dispatch.sh",
             "toolchain/10-release-metadata.py", "toolchain/20-installation-boundaries.py",
             "toolchain/30-managed-installation.py", "toolchain/40-binding-protocol.py",
             "runtime/40-typed-runtime.sh", "runtime/41-application-admission.sh", "runtime/41-application-runtime.sh",
             "runtime/systemd/61-service-identity.sh", "database/10-native-instances.sh");
-        String base = new String(assemble(DeploymentToolchainCatalog.defaults(), java.util.Objects.requireNonNull(layout), fragments),
+        String base = new String(assemble(DeploymentToolchainCatalog.defaults(), java.util.Objects.requireNonNull(layout), fragments, true),
             StandardCharsets.UTF_8);
         try (var stream = DeploymentManagedHelperBundle.class.getResourceAsStream(
             "/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/publication-recovery-guard.sh")) {
@@ -363,6 +363,15 @@ public final class DeploymentManagedHelperBundle {
     }
 
     private static byte[] assemble(DeploymentToolchainCatalog catalog, DeploymentRemoteLayout layout, List<String> fragments) {
+        return assemble(catalog, layout, fragments, false);
+    }
+
+    private static byte[] assemble(DeploymentToolchainCatalog catalog, DeploymentRemoteLayout layout, List<String> fragments,
+                                   boolean fixedPublicationRecovery) {
+        String toolchainOpening = fixedPublicationRecovery
+            ? "prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'\n"
+            : "prepare_official_toolchains() {\n  (\n    cd -- / || exit 64\n    exec /usr/bin/python3 -I -S -B - \"$@\" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'\n";
+        String toolchainClosing = fixedPublicationRecovery ? "WTL_OFFICIAL_TOOLCHAINS\n}\n" : "WTL_OFFICIAL_TOOLCHAINS\n  )\n}\n";
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         for (String fragment : fragments) {
             try (InputStream stream = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + fragment)) {
@@ -375,12 +384,14 @@ public final class DeploymentManagedHelperBundle {
                     DeploymentRemoteLayoutTemplate.render(expandResourceInserts(content), layout));
                 if (fragment.startsWith("toolchain/")) {
                     if (fragment.endsWith("10-release-metadata.py"))
-                        output.write(
-                            ("prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'\n"
-                                + catalogLiteral(catalog)).getBytes(StandardCharsets.UTF_8));
+                        output.write((toolchainOpening + catalogLiteral(catalog)).getBytes(StandardCharsets.UTF_8));
+                    // Recovery only invokes verify and retains the installed recovery controller's source identity.
+                    if (fixedPublicationRecovery && fragment.endsWith("30-managed-installation.py"))
+                        content = content.replace("'bin/python3', '-I', '-S', '-B', '--version'", "'bin/python3', '--version'")
+                            .replace("str(directory / 'bin/python3'), '-I', '-S', '-B', '-c'", "str(directory / 'bin/python3'), '-c'");
                     output.write((content + "\n").getBytes(StandardCharsets.UTF_8));
                     if (fragment.endsWith("40-binding-protocol.py"))
-                        output.write("WTL_OFFICIAL_TOOLCHAINS\n}\n".getBytes(StandardCharsets.UTF_8));
+                        output.write(toolchainClosing.getBytes(StandardCharsets.UTF_8));
                     continue;
                 }
                 if (fragment.endsWith("00-protocol-foundation.sh")) {

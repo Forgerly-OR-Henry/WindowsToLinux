@@ -104,6 +104,8 @@ public final class DeploymentAgentPublicationContinuationProgram {
             content=gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderToolchainSources(DeploymentRemoteLayoutTemplate.render(content,layout));
             if(fragment.startsWith("toolchain/")){
                 if(fragment.endsWith("10-release-metadata.py"))output.append("prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'\n").append(catalogLiteral(catalog));
+                // The continuation independently reproduces the fixed recovery base and only invokes verify.
+                if(fragment.endsWith("30-managed-installation.py"))content=content.replace("'bin/python3', '-I', '-S', '-B', '--version'", "'bin/python3', '--version'").replace("str(directory / 'bin/python3'), '-I', '-S', '-B', '-c'", "str(directory / 'bin/python3'), '-c'");
                 output.append(content).append('\n');if(fragment.endsWith("40-binding-protocol.py"))output.append("WTL_OFFICIAL_TOOLCHAINS\n}\n");continue;
             }
             if(fragment.endsWith("00-protocol-foundation.sh"))content+="build_entry_sha256="+DeploymentManagedHelperBundle.buildEntrySha256(layout)+"\n";

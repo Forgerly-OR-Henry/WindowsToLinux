@@ -48,10 +48,10 @@ class DeploymentAgentToolchainPreparationEvidenceTest {
         var selected = DeploymentAgentToolchainPreparationEvidence.select(facts(DeploymentManagedHelperBundle.verifiedCommand(invocation(ecosystem)))).orElseThrow();
         String system = selected.systemSource();
         assertTrue(system.contains("SHIPPED_CATALOG = {\n"));
-        assertTrue(system.contains("/usr/bin/python3 -I - \"$@\" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'\n"));
-        assertTrue(system.endsWith("\nWTL_OFFICIAL_TOOLCHAINS\n}\n"));
+        assertTrue(system.contains("cd -- / || exit 64\n    exec /usr/bin/python3 -I -S -B - \"$@\" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'\n"));
+        assertTrue(system.endsWith("\nWTL_OFFICIAL_TOOLCHAINS\n  )\n}\n"));
         String helper = DeploymentManagedHelperBundle.renderScript();
-        String endMarker = "\nWTL_OFFICIAL_TOOLCHAINS\n}\n";
+        String endMarker = "\nWTL_OFFICIAL_TOOLCHAINS\n  )\n}\n";
         int start = helper.indexOf("prepare_official_toolchains() {\n");
         int end = helper.indexOf(endMarker, start);
         assertTrue(start >= 0 && end > start);

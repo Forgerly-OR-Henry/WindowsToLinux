@@ -294,7 +294,7 @@ def probe(ecosystem, directory, expected):
     commands = {
         'JAVA': ['bin/java', '-version'],
         'NODE': ['bin/node', '--version'],
-        'PYTHON': ['bin/python3', '--version'],
+        'PYTHON': ['bin/python3', '-I', '-S', '-B', '--version'],
         'DOTNET': ['dotnet', '--list-sdks'],
         'KOTLIN': ['bin/kotlinc', '-version'],
         'GO': ['bin/go', 'version'],
@@ -315,7 +315,7 @@ def probe(ecosystem, directory, expected):
     if ecosystem == 'JAVA':
         run([str(directory / 'bin/javac'), '-version'])
     if ecosystem == 'PYTHON':
-        run([str(directory / 'bin/python3'), '-c', 'import ssl, sqlite3, bz2, lzma, venv, zlib'])
+        run([str(directory / 'bin/python3'), '-I', '-S', '-B', '-c', 'import ssl, sqlite3, bz2, lzma, venv, zlib'])
     if ecosystem == 'PHP':
         run(
             [

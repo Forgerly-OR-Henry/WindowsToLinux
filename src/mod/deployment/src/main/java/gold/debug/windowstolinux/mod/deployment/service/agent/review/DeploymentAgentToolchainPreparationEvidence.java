@@ -25,9 +25,9 @@ public final class DeploymentAgentToolchainPreparationEvidence {
 
     private static final String OPERATION = "deployment.toolchain.prepare.v1";
 
-    private static final String START = "prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'\n";
+    private static final String START = "prepare_official_toolchains() {\n  (\n    cd -- / || exit 64\n    exec /usr/bin/python3 -I -S -B - \"$@\" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'\n";
 
-    private static final String END = "\nWTL_OFFICIAL_TOOLCHAINS\n}\n";
+    private static final String END = "\nWTL_OFFICIAL_TOOLCHAINS\n  )\n}\n";
 
     private static final String REFERENCE = "AGENT_TOOLCHAIN_PREPARATION_SOURCE_V1";
 

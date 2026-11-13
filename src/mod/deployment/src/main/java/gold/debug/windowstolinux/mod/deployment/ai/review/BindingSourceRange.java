@@ -6,7 +6,7 @@ import java.util.List;
 /** Exact excerpts from the pinned installed helper for the literal bind dispatch. */
 record BindingSourceRange(String section, int offset, int next, String text) {
     private static final String PYTHON_OPEN = "\nprepare_official_toolchains() {\n";
-    private static final String PYTHON_CLOSE = "\nWTL_OFFICIAL_TOOLCHAINS\n}\n";
+    private static final String PYTHON_CLOSE = "\nWTL_OFFICIAL_TOOLCHAINS\n  )\n}\n";
 
     static List<BindingSourceRange> select(String helper) throws IOException {
         int start = anchor(helper, PYTHON_OPEN) + 1;
