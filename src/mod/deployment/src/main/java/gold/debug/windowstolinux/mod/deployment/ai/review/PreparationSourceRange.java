@@ -12,18 +12,43 @@ record PreparationSourceRange(String section, int offset, int next) {
 
     static List<PreparationSourceRange> helper(String helper, String ecosystem, boolean diagnosed) throws IOException {
         var ranges = new ArrayList<PreparationSourceRange>();
-        ranges.add(between(helper, "startupAndOwnership", "#!/bin/bash -p\n", "\nrequire_app() {"));
+        ranges.add(between(helper, "shellStartup", "#!/bin/bash -p\n", "\nhelper_path="));
+        ranges.add(between(helper, "startupOwnership", "require_root() {\n", "\nrequire_app() {"));
         ranges.add(between(helper, "prepareDispatch", "    prepare-toolchains)\n", "    retain)"));
         ranges.add(between(helper, "pythonLauncher", "prepare_official_toolchains() {\n", "\nSHIPPED_CATALOG = "));
+        int release = offset(helper, "def release(ecosystem, branch, exact):");
+        ranges.add(between(helper, "releaseDownloadPoint", "def release(ecosystem, branch, exact):",
+            "\n    if ecosystem == '", release));
         ranges.add(between(helper, "selectedRelease", "    if ecosystem == '" + ecosystem + "':\n",
-            "\n    if ecosystem == '", offset(helper, "def release(ecosystem, branch, exact):")));
-        for (String function : List.of("task_mirrors", "fetch", "download", "open_preparation_lock", "preparation_lock",
-            "prepare", "probe", "owned_directory", "reuse_system", "official_url")) {
+            "\n    if ecosystem == '", release));
+        for (String function : List.of("task_mirrors", "source_origin", "source_url", "toolchain_point", "fetch", "json_at", "download",
+            "open_preparation_lock", "prepare", "owned_directory", "reuse_system", "official_url")) {
             ranges.add(python(helper, "def " + function + "("));
         }
-        ranges.add(python(helper, "def install(ecosystem, identity, url, algorithm, expected, layout):"));
+        boolean archive = ecosystem.equals("GO") || ecosystem.equals("DOTNET");
+        if (archive) {
+            ranges.addAll(archiveInstallation(helper));
+            ranges.add(between(helper, "archiveVersionProbe", "def probe(ecosystem, directory, expected):",
+                "\n    if ecosystem == 'JAVA':\n        run("));
+            ranges.add(python(helper, "def extract(archive, destination):"));
+            if (ecosystem.equals("DOTNET")) ranges.add(between(helper, "dotnetSystemReuse",
+                "def discover_system(ecosystem, identity):", "\n    binaries = "));
+            else ranges.add(python(helper, "def discover_system("));
+        } else if (ecosystem.equals("RUST") && helper.contains("\ndef install_rust_distribution(")) {
+            ranges.add(python(helper, "def install_rust_distribution("));
+            ranges.add(python(helper, "def install_with_rust_distribution("));
+            ranges.add(python(helper, "def probe_managed_rust("));
+            ranges.add(python(helper, "def probe_with_rust_distribution("));
+        } else {
+            ranges.add(python(helper, "def install(ecosystem, identity, url, algorithm, expected, layout):"));
+            ranges.add(python(helper, "def probe(ecosystem, directory, expected):"));
+        }
+        if (!archive) ranges.add(python(helper, "def preparation_lock("));
         if (diagnosed) {
-            ranges.add(python(helper, "def installation_diagnostic_main("));
+            if (archive) {
+                ranges.add(between(helper, "preparationDiagnosticRun", "def installation_diagnostic_main(args, raw=None):",
+                    "\n    owned_directory(ROOT)\n"));
+            } else ranges.add(python(helper, "def installation_diagnostic_main("));
             ranges.add(between(helper, "diagnosticDispatch", "def main(args):\n",
                 "    if args and args[0] in ('prepare-tracked'"));
         }
@@ -33,6 +58,49 @@ record PreparationSourceRange(String section, int offset, int next) {
             for (String function : List.of("ruby_unit", "ruby_probe", "ruby_publish", "ruby_source_install"))
                 ranges.add(python(helper, "def " + function + "("));
         }
+        return List.copyOf(ranges);
+    }
+
+    private static List<PreparationSourceRange> archiveInstallation(String helper) throws IOException {
+        var install = python(helper, "def install(ecosystem, identity, url, algorithm, expected, layout):");
+        int alternate = helper.indexOf("\n            else:\n", install.offset());
+        int finish = helper.indexOf("\n            probe(ecosystem, destination, identity)", alternate);
+        if (alternate < install.offset() || finish <= alternate || finish >= install.next() ||
+            !helper.substring(install.offset(), alternate).contains("if layout in ('flat', 'archive'):"))
+            throw new IOException("Fixed archive installation branch unavailable");
+        return List.of(new PreparationSourceRange("archiveInstall", install.offset(), alternate),
+            new PreparationSourceRange("archiveReceipt", finish, install.next()));
+    }
+
+    static List<PreparationSourceRange> transfer(String runtime, String ecosystem, boolean credentials,
+                                                  boolean packageManager) throws IOException {
+        var ranges = new ArrayList<PreparationSourceRange>();
+        boolean fullTransport = ecosystem.equals("DOTNET");
+        boolean routeExcerpt = fullTransport || ecosystem.equals("GO");
+        if (fullTransport) {
+            ranges.add(python(runtime, "class MirrorTransferLedger:"));
+            ranges.add(python(runtime, "class MirrorPolicy:"));
+        } else if (routeExcerpt) {
+            ranges.add(between(runtime, "mirrorRouteAndRedirectPolicy", "    @staticmethod\n    def validate_url(endpoint, url):",
+                "\n\nclass MirrorRedirect("));
+        }
+        if (routeExcerpt) ranges.add(python(runtime, "class MirrorRedirect("));
+        if (fullTransport) {
+            for (String function : List.of("mirror_transfer", "_mirror_transfer", "mirror_bytes"))
+                ranges.add(python(runtime, "def " + function + "("));
+        } else if (routeExcerpt) {
+            ranges.add(between(runtime, "mirrorInitialRoute", "            selected = policy.validate_url(endpoint, policy.maps(endpoint, original))",
+                "\n        while record['attempts']"));
+            ranges.add(between(runtime, "mirrorTlsRedirectAndCommit", "                        def connect(self):\n",
+                "\n            except (OSError, ValueError, MirrorFailure, urllib.error.URLError, http.client.HTTPException)",
+                offset(runtime, "def _mirror_transfer(")));
+            ranges.add(python(runtime, "def mirror_bytes("));
+        }
+        if (credentials) {
+            ranges.add(python(runtime, "class MirrorCredentialMaterial:"));
+            ranges.add(python(runtime, "def install_mirror_credentials("));
+        }
+        if (packageManager) ranges.add(python(runtime, "def mirror_system_command("));
         return List.copyOf(ranges);
     }
 

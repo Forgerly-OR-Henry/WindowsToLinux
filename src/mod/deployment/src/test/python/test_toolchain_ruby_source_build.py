@@ -1,7 +1,11 @@
 """Exercise the formal Ruby recipe without starting a service or compiling Ruby."""
+import hashlib
+import io
+import json
 import os
 import pathlib
 import shutil
+import subprocess
 import tempfile
 import types
 import unittest
@@ -201,6 +205,8 @@ class RubySourceBuildTest(unittest.TestCase):
                       (stage, self.root / 'ruby.tar.gz', self.root / 'openssl-3.0.3.gem', self.root / 'build.log'))
         argv = raw['run'].call_args.args[0]
         self.assertIn('--wait', argv)
+        self.assertIn('--collect', argv)
+        self.assertNotIn('--quiet', argv)
         self.assertIn('--property=DynamicUser=yes', argv)
         self.assertIn('--property=NoNewPrivileges=yes', argv)
         self.assertIn('--property=PrivateNetwork=yes', argv)
@@ -219,16 +225,114 @@ class RubySourceBuildTest(unittest.TestCase):
         arguments = ['', 'probe', 'net:[1]', 'mnt:[2]', '/protected/ruby', VERSION]
         with mock.patch.object(self.ns['sys'], 'argv', arguments), \
                 mock.patch.object(self.ns['subprocess'], 'run') as run:
-            for uid, links, reason in ((0, [], 'unprivileged dynamic identity'),
-                                       (61200, ['net:[1]'], 'private network and mount namespaces'),
-                                       (61200, ['net:[3]', 'mnt:[2]'], 'private network and mount namespaces')):
+            for uid, links, reason in ((0, [], 90), (61200, ['net:[1]'], 91),
+                                       (61200, ['net:[3]', 'mnt:[2]'], 91)):
                 with self.subTest(uid=uid, links=links), \
                         mock.patch.object(os, 'geteuid', return_value=uid, create=True), \
                         mock.patch.object(os, 'getegid', return_value=uid, create=True), \
                         mock.patch.object(os, 'readlink', side_effect=links), \
-                        self.assertRaisesRegex(SystemExit, reason):
+                        self.assertRaises(SystemExit) as error:
                     exec(worker, {})
+                self.assertEqual(reason, error.exception.code)
         run.assert_not_called()
+
+    def test_confirmed_manager_exit_identifies_fixed_worker_stage_without_raw_output(self):
+        raw = self.ns['ruby_diagnostic']
+        evidence = self.launcher_observation(98)
+        observed = raw(evidence, 'build')
+        self.assertEqual('ruby-build-source-configure', observed['stage'])
+        self.assertEqual('systemd-run', observed['executable'])
+        self.assertEqual(98, observed['actualExitCode'])
+        self.assertEqual('', observed['stderr'])
+        self.assertIn('worker-stage=source-configure\nworker-executable=configure\n', observed['stdout'])
+        self.assertNotIn('sample-private-value', str(observed))
+        self.assertTrue(observed['stderrTruncated'])
+        self.assertEqual('ruby-probe-runtime-verification', raw(self.launcher_observation(103), 'probe')['stage'])
+
+    def test_missing_ambiguous_or_mismatching_manager_evidence_stays_at_launcher_stage(self):
+        convert = self.ns['ruby_diagnostic']
+        for stdout, exit_code in (
+            ('', 98),
+            ('Finished with result: exit-code\nFinished with result: exit-code\n'
+             'Main processes terminated with: code=exited/status=98\n', 98),
+            ('Finished with result: exit-code\nMain processes terminated with: code=exited/status=1\n', 98),
+            ('Finished with result: timeout\nMain processes terminated with: code=killed/status=TERM\n', 1),
+            ('Finished with result: exit-code\nMain processes terminated with: code=exited/status=226\n', 226),
+        ):
+            with self.subTest(stdout=stdout, exit_code=exit_code):
+                observation = dict(self.launcher_observation(exit_code), stdout=stdout, stderr='')
+                diagnostic = convert(observation, 'build')
+                self.assertEqual('ruby-build-launcher', diagnostic['stage'])
+                self.assertNotIn('worker-stage=', diagnostic['stdout'])
+                self.assertEqual(exit_code, diagnostic['actualExitCode'])
+        cancelled = dict(self.launcher_observation(98), cancelled=True)
+        self.assertEqual('ruby-build-launcher', convert(cancelled, 'build')['stage'])
+
+    def test_worker_reports_probe_child_failure_without_echoing_arguments(self):
+        worker = compile(self.ns['RUBY_WORKER'], '<Ruby sandbox worker>', 'exec')
+        arguments = ['', 'probe', 'net:[1]', 'mnt:[2]', '/protected/ruby', VERSION]
+        status = 'NoNewPrivs: 1\nSeccomp: 2\nCapEff: 0\nCapPrm: 0\nCapBnd: 0\n'
+        child_failure = subprocess.CalledProcessError(2, ['sample-private-value'])
+        with mock.patch.object(self.ns['sys'], 'argv', arguments), \
+                mock.patch.object(os, 'geteuid', return_value=61200, create=True), \
+                mock.patch.object(os, 'getegid', return_value=61200, create=True), \
+                mock.patch.object(os, 'readlink', side_effect=['net:[3]', 'mnt:[4]']), \
+                mock.patch.object(os, 'ST_RDONLY', 1, create=True), \
+                mock.patch.object(os, 'statvfs', return_value=types.SimpleNamespace(f_flag=1), create=True), \
+                mock.patch('builtins.open', mock.mock_open(read_data=status)), \
+                mock.patch('socket.AF_UNIX', 1, create=True), \
+                mock.patch('socket.socket', side_effect=PermissionError), \
+                mock.patch.object(subprocess, 'run', side_effect=child_failure) as run, \
+                self.assertRaises(SystemExit) as observed:
+            exec(worker, {})
+        self.assertEqual(103, observed.exception.code)
+        self.assertNotIn('sample-private-value', str(observed.exception))
+        self.assertEqual('/protected/ruby/bin/ruby', run.call_args.args[0][0])
+
+    def test_protected_diagnose_only_keeps_ruby_evidence_and_restores_previous_recorder(self):
+        namespace = self.ns
+        layout = {'fixture': True}
+        request = {'formatVersion': 1, 'operationId': OPERATION_ID,
+                   'taskId': 'f68b21c0-57dc-4d5c-ae0d-5244c8c96f37', 'serverId': 'test-server',
+                   'fingerprintSha256': DIGEST, 'planRevision': DIGEST, 'remoteLayout': layout,
+                   'arguments': ['prepare', 'RUBY', '3.3', VERSION, '120', '-']}
+        raw = json.dumps(request, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        request_digest = hashlib.sha256(raw).hexdigest()
+        recorder = namespace['record_installation_diagnostic']
+        failure = namespace['PreparationFailure']('installation', 'original launcher failure')
+
+        def failed_launcher(command):
+            namespace['record_installation_diagnostic'](self.launcher_observation(99))
+            raise failure
+
+        def prepare(arguments):
+            self.assertEqual(request['arguments'], arguments)
+            namespace['ruby_run'](['/usr/bin/env', 'systemd-run'], 'build')
+
+        namespace.update(prepare_root=mock.Mock(), preparation_lock=lambda verifying: namespace['contextlib'].nullcontext(),
+                         tracked_layout=mock.Mock(), prepare=prepare, run=failed_launcher,
+                         tracked_regular=lambda path, limit: path.read_bytes())
+        entry = namespace['installation_diagnostic_main']
+        with self.assertRaises(namespace['PreparationFailure']) as observed:
+            entry(['prepare-diagnosed', OPERATION_ID, request_digest], raw)
+        self.assertIs(failure, observed.exception)
+        self.assertIs(recorder, namespace['record_installation_diagnostic'])
+        with mock.patch.object(namespace['sys'], 'stdout', new_callable=io.StringIO) as stdout:
+            entry(['diagnose-only', OPERATION_ID, request_digest], raw)
+        diagnostic = json.loads(stdout.getvalue())
+        self.assertEqual(request_digest, diagnostic['requestSha256'])
+        self.assertEqual('FAILED', diagnostic['preparationStatus'])
+        self.assertEqual('installation', diagnostic['failureCategory'])
+        self.assertEqual('ruby-build-source-build', diagnostic['stage'])
+        self.assertIn('worker-executable=make\n', diagnostic['stdout'])
+        self.assertNotIn('sample-private-value', stdout.getvalue())
+
+    @staticmethod
+    def launcher_observation(code):
+        return {'stage': 'installation-command', 'executable': 'env', 'actualExitCode': code,
+                'timedOut': False, 'cancelled': False, 'stdoutTruncated': False, 'stderrTruncated': True,
+                'stdout': f'Finished with result: exit-code\nMain processes terminated with: code=exited/status={code}\n',
+                'stderr': 'unstructured diagnostic sample-private-value\n'}
 
     @staticmethod
     def unallocated(name):

@@ -25,6 +25,19 @@ class PlatformAiGenerationRecoveryTest {
             Map.of("transportFailureKind", "HTTP_BODY_INCOMPLETE"))));
     }
 
+    @Test
+    void emptyResponseHeadersRequireAnUnacceptedResponseAndTheOriginalUnknownResult() {
+        var absent = Map.of("transportFailureKind", "HTTP_HEADERS_EMPTY",
+            "httpHeadersReceived", "false", "httpBodyBytesAccepted", "0");
+        assertTrue(PlatformAiService.recoverableGenerationTransport(problem(ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN", absent)));
+        assertFalse(PlatformAiService.recoverableGenerationTransport(problem(ProblemCode.CANCELLED, "AI_TRANSPORT_UNKNOWN", absent)));
+        assertFalse(PlatformAiService.recoverableGenerationTransport(problem(ProblemCode.IO_FAILURE, "AI_HTTP_REJECTED", absent)));
+        assertFalse(PlatformAiService.recoverableGenerationTransport(problem(ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN",
+            Map.of("transportFailureKind", "HTTP_HEADERS_EMPTY", "httpHeadersReceived", "true", "httpBodyBytesAccepted", "0"))));
+        assertFalse(PlatformAiService.recoverableGenerationTransport(problem(ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN",
+            Map.of("transportFailureKind", "HTTP_HEADERS_EMPTY"))));
+    }
+
     private static Problem problem(ProblemCode code, String event, Map<String, String> details) {
         return new Problem(code, event, "fixture", details, Optional.empty());
     }

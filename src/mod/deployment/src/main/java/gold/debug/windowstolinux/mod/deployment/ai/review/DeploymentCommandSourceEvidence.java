@@ -36,6 +36,7 @@ import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHe
 import gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
 
 /** Lossless projection of fixed command source. The original snapshot and request retain execution identity. */
 public final class DeploymentCommandSourceEvidence {
@@ -46,6 +47,7 @@ public final class DeploymentCommandSourceEvidence {
     private static final String INSTALLED_HELPER_SOURCE = "/" + PROJECTION + "/installedHelperSource";
     private static final String BINDING_SELECTION = "/" + PROJECTION + "/bindingSelection";
     private static final String PREPARATION_SELECTION = "/" + PROJECTION + "/preparationSelection";
+    private static final String PUBLIC_MIRROR_POLICY = "/mirrorTransport/frozenPolicy";
     private static final String PREPARE = "deployment.toolchain.prepare.v1";
     private static final String MIRROR_BOOTSTRAP_SHELL = "/" + PROJECTION + "/mirrorBootstrapShell";
     private static final String MIRROR_POLICY_SOURCE = "/" + PROJECTION + "/mirrorPolicySource";
@@ -65,7 +67,7 @@ public final class DeploymentCommandSourceEvidence {
     private static final int MAX_CORRECTABLE_BATCH = 16;
     // Limits optional prior evidence only; valid ranges requested in the latest batch always stay visible.
     private static final int RETAINED_SOURCE_BYTES = 60 * 1024;
-    private static final int PREPARE_RETAINED_SOURCE_BYTES = 48 * 1024;
+    private static final int PREPARE_RETAINED_SOURCE_BYTES = 4 * 1024;
     private static final int BIND_RETAINED_SOURCE_BYTES = 24 * 1024;
     private static final int MAX_RETAINED_READS = 16;
     private static final Set<String> OPERATIONS = Set.of(PREPARE, BIND,
@@ -83,6 +85,9 @@ public final class DeploymentCommandSourceEvidence {
         "def task_mirrors(", "def official_url(", "def fetch(", "def release(",
         "def download(url, target,", "def extract(", "def discover_system(", "def materialize_system(", "def install(",
         "def source_dependencies(", "def probe(ecosystem, directory, expected):");
+    private static final List<String> RUST_HELPER_LOCATIONS = List.of(
+        "def install_rust_distribution(", "def rust_component_plan(", "def rust_component_copy(", "def probe_managed_rust(",
+        "def extract(archive, destination):");
     private static final List<String> BINDING_HELPER_LOCATIONS = List.of("require_root() {", "require_deployer() {",
         "assert_not_writable_by_others() {", "SHIPPED_CATALOG = {", "ROOT = pathlib.Path(", "def owned_directory(path):",
         "def preparation_lock(verifying):", "def open_preparation_lock(path, creating):", "def run(command, cwd=None, environment=None):",
@@ -94,6 +99,13 @@ public final class DeploymentCommandSourceEvidence {
         Restore the complete command and stdin in segment order. LITERAL copies text; SOURCE_TEXT copies the reference; SHELL_SINGLE_QUOTE wraps it in apostrophes and replaces each apostrophe with '"'"'; JSON_STRING includes its outer double quotes. startCharacter and characters select UTF-16 code units. For mirrored commands, read the reached mirror bootstrap, policy and transfer branches at their staged and invoked uses.
         Match the selected helper dispatch and literal arguments to the original request and authority. For preparation, selectedPreparationRanges identifies exact excerpts; startCharacter counts from the preparationSelection header end. Follow the actual resolver, install/reuse, locks, ownership, probes, and reached package managers, hooks and child executables. Check APT repository signatures, frozen artifact hashes/sizes and final no-download transaction when applicable. DNF and fallback have distinct conditions. For dependencies, review the inline worker and selected package manager and transport.
         Match original limits, targets and effects. Source identity supplies no permission. Deny insufficient evidence or unsafe effects. Send the native submit_result alone.
+        """;
+
+    private static final String PREPARE_INSTRUCTION = """
+        Review the exact current preparation and authority. The selectedPreparationRanges contain exact pinned helper and mirror excerpts. Follow the mirror runtime locations for any unresolved redirect, route, fallback, TLS or digest checks. The current mirrorTransport.frozenPolicy supplies the public endpoints for the metadata, checksum and artifact calls this preparation can reach. Evaluate the endpoints against the executable source. A configured route or digest does not establish that a transfer occurred.
+        The preparationSelection frame holds exact source excerpts. For each manifest entry, startCharacter is relative to headerCharacters; offset through next gives the original UTF-16 coordinates. Follow the reached branches, including locks, SYSTEM reuse, archive bounds, managed installation, probes, any source hooks and the signed APT or DNF transaction when applicable. The outer shell stages policy, runtime and bootstrap definitions; declaring a function does not invoke it. Restore exactAction in order using literal text or referenced source. SHELL_SINGLE_QUOTE surrounds the entire source with apostrophes and replaces each embedded apostrophe with '"'"'.
+        Request only the specific unresolved source ranges using the current snapshotSha256 and the exact sourcePointer, UTF-16 offset and limit from 1 through 8000. Use at most eight evidence calls per response, separate from the verdict. All original source, public policy and command facts remain readable. Exact page and retained frames carry a JSON header followed by original source in range order. The initial excerpts remain visible after a rebase. latestReads records the current requests. Omitted older ranges remain readable.
+        Decide independently. Deny unsafe effects or insufficient evidence. Submit a fresh native submit_result alone.
         """;
 
     private static final String BUILD_INSTRUCTION = """
@@ -170,7 +182,7 @@ public final class DeploymentCommandSourceEvidence {
         } else {
             String helper = DeploymentManagedHelperBundle.renderScript(layout);
             boolean binding = BIND.equals(operation);
-            var descriptor = pagedSource(INSTALLED_HELPER_SOURCE, helper, binding ? BINDING_HELPER_LOCATIONS : HELPER_LOCATIONS);
+            var descriptor = pagedSource(INSTALLED_HELPER_SOURCE, helper, helperLocations(current, binding));
             if (!descriptor.path("sha256").asText().equals(requiredText(current, "installedHelperSha256")))
                 throw new IOException("Review helper source differs from original pin");
             if (binding) {
@@ -184,35 +196,86 @@ public final class DeploymentCommandSourceEvidence {
             }
             manifest.set("installedHelperSource", descriptor);
             sourceBodies.put(INSTALLED_HELPER_SOURCE, helper);
-            if (PREPARE.equals(operation)) addPreparationSelection(current, manifest, messages, snapshot, sourceBodies, initialRanges);
+            if (PREPARE.equals(operation)) {
+                projectPreparationPolicy(current, projected);
+                addPreparationSelection(current, manifest, messages, snapshot, sourceBodies, initialRanges);
+            }
         }
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
         return Optional.of(new DeploymentCommandSourceEvidence(current, original, snapshot, messages, sourceBodies, initialRanges));
+    }
+
+    private static List<String> helperLocations(ObjectNode current, boolean binding) throws IOException {
+        if (binding) return BINDING_HELPER_LOCATIONS;
+        if (!preparationEcosystem(current).equals("RUST")) return HELPER_LOCATIONS;
+        var locations = new ArrayList<>(HELPER_LOCATIONS);
+        locations.addAll(RUST_HELPER_LOCATIONS);
+        return locations;
     }
 
     private static void addPreparationSelection(ObjectNode current, ObjectNode manifest, List<AiMessage> messages,
                                                 String snapshot, Map<String, String> sources,
                                                 Map<String, NavigableMap<Integer, Integer>> initialRanges) throws IOException {
         boolean diagnosed = current.has("originalToolchainPreparation");
-        String ecosystem = current.path(diagnosed ? "originalToolchainPreparation" : "toolchainPreparation").path("ecosystem").asText();
-        if (!ecosystem.matches("JAVA|NODE|GO|DOTNET|KOTLIN|RUST|PYTHON|PHP|RUBY"))
-            throw new IOException("Original toolchain ecosystem unavailable");
+        String ecosystem = preparationEcosystem(current);
         var body = new StringBuilder();
         var selected = manifest.putArray("selectedPreparationRanges");
         String helper = sources.get(INSTALLED_HELPER_SOURCE);
         appendSelection(body, selected, initialRanges, INSTALLED_HELPER_SOURCE, helper,
             PreparationSourceRange.helper(helper, ecosystem, diagnosed));
-        if (PreparationSourceRange.buildsFromSource(ecosystem)) {
-            String shell = sources.get(MIRROR_BOOTSTRAP_SHELL), mirror = sources.get(MIRROR_RUNTIME);
+        boolean packageManager = PreparationSourceRange.buildsFromSource(ecosystem);
+        if (packageManager) {
+            String shell = sources.get(MIRROR_BOOTSTRAP_SHELL);
             appendSelection(body, selected, initialRanges, MIRROR_BOOTSTRAP_SHELL, shell, PreparationSourceRange.apt(shell));
-            appendSelection(body, selected, initialRanges, MIRROR_RUNTIME, mirror,
-                List.of(PreparationSourceRange.python(mirror, "def mirror_system_command(")));
         }
+        String runtime = sources.get(MIRROR_RUNTIME);
+        boolean credentials = current.at(PUBLIC_MIRROR_POLICY + "/points").findValues("credentialManaged").stream()
+            .anyMatch(JsonNode::asBoolean);
+        appendSelection(body, selected, initialRanges, MIRROR_RUNTIME, runtime,
+            PreparationSourceRange.transfer(runtime, ecosystem, credentials, packageManager));
         String source = body.toString();
         sources.put(PREPARATION_SELECTION, source);
         var frame = sourceFrame(messages, snapshot, PREPARATION_SELECTION, source);
         manifest.withArray("frames").add(frame);
         manifest.set("preparationSelection", frame);
+    }
+
+    private static void projectPreparationPolicy(ObjectNode original, ObjectNode projected) throws IOException {
+        String ecosystem = preparationEcosystem(original);
+        if (!(original.at(PUBLIC_MIRROR_POLICY) instanceof ObjectNode frozen) || !frozen.path("points").isObject())
+            throw new IOException("Original public toolchain mirror policy unavailable");
+        var selected = frozen.deepCopy();
+        var points = (ObjectNode) selected.get("points");
+        var required = new HashSet<>(Set.of(ecosystem + "_METADATA", switch (ecosystem) {
+            case "JAVA" -> "JAVA_JDK";
+            case "DOTNET" -> "DOTNET_SDK";
+            case "RUST" -> "RUST_TOOLCHAIN";
+            default -> ecosystem + "_DISTRIBUTION";
+        }));
+        if (ecosystem.equals("RUBY")) required.add("RUBYGEMS");
+        if (PreparationSourceRange.buildsFromSource(ecosystem)) {
+            for (var point : DownloadPoint.values())
+                if (point.name().startsWith("APT_") || point.name().startsWith("DNF_")) required.add(point.name());
+        }
+        if (required.stream().anyMatch(name -> !points.path(name).isArray()))
+            throw new IOException("Current preparation mirror point unavailable");
+        var allPoints = new ArrayList<String>();
+        points.fieldNames().forEachRemaining(allPoints::add);
+        for (String name : allPoints)
+            if (!required.contains(name)) points.remove(name);
+        var mirror = (ObjectNode) projected.path("mirrorTransport");
+        mirror.set("frozenPolicy", selected);
+        mirror.set("completePublicPolicy", pagedSource(PUBLIC_MIRROR_POLICY, frozen.toString(), List.of()));
+        mirror.put("frozenPolicyScope", "Current preparation download points with original endpoint order and complete endpoint fields.");
+        mirror.put("meaning", "Selected public mirror data and exact runtime excerpts apply to this preparation. The original command uses the complete frozen policy, including its bound credential check. Complete policy and runtime source remain readable.");
+    }
+
+    private static String preparationEcosystem(ObjectNode current) throws IOException {
+        String input = current.has("originalToolchainPreparation") ? "originalToolchainPreparation" : "toolchainPreparation";
+        String ecosystem = current.path(input).path("ecosystem").asText();
+        if (!ecosystem.matches("JAVA|NODE|GO|DOTNET|KOTLIN|RUST|PYTHON|PHP|RUBY"))
+            throw new IOException("Original toolchain ecosystem unavailable");
+        return ecosystem;
     }
 
     private static void appendSelection(StringBuilder body, com.fasterxml.jackson.databind.node.ArrayNode selected,
@@ -545,7 +608,7 @@ public final class DeploymentCommandSourceEvidence {
                 return new AiToolResult(call.id(), body, false);
             } catch (IllegalArgumentException invalid) {
                 latestReads.add(new ReadReceipt(call.id(), "", 0, 0, true));
-                return new AiToolResult(call.id(), "EVIDENCE_REQUEST_REJECTED: use the current snapshot, original pointer and bounded cursor. No action was authorized or executed.", true);
+                return new AiToolResult(call.id(), "EVIDENCE_REQUEST_REJECTED: use the current snapshot, original pointer and a valid UTF-16 cursor. Limit is 1 through 8000. No action was authorized or executed.", true);
             }
         }
 
@@ -651,8 +714,13 @@ public final class DeploymentCommandSourceEvidence {
         return BIND.equals(current.path("operation").asText());
     }
 
+    private boolean preparationReview() {
+        return PREPARE.equals(current.path("operation").asText());
+    }
+
     public String instructions() {
         if (buildReview()) return BUILD_INSTRUCTION;
+        if (preparationReview()) return PREPARE_INSTRUCTION;
         return bindingReview() ? BIND_INSTRUCTION : INSTRUCTION;
     }
 

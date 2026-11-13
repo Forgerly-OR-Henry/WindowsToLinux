@@ -797,7 +797,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         }
     }
 
-    /** Allows selected connection-timeout or incomplete-body recovery for pure client-function protocols. */
+    /** Allows bounded recovery of selected transport failures for pure client-function protocols. */
     private static boolean recoverableGeneration(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
                                                  OperationResult<AiResponse> result) {
         boolean pure = switch (profile.protocol()) {
@@ -814,8 +814,12 @@ public final class PlatformAiService implements AiService, AutoCloseable {
             return kind.equals("HTTP_CONNECT_TIMEOUT") && "HTTP_CONNECT".equals(details.get("timeoutPhase"))
                 && "java.net.http.HttpConnectTimeoutException".equals(details.get("transportFailureType"));
         }
-        return problem.code() == ProblemCode.IO_FAILURE && problem.eventCode().equals("AI_TRANSPORT_UNKNOWN")
-            && Set.of("HTTP_BODY_INCOMPLETE", "HTTP_CHUNK_INCOMPLETE").contains(kind);
+        if (problem.code() != ProblemCode.IO_FAILURE || !problem.eventCode().equals("AI_TRANSPORT_UNKNOWN"))
+            return false;
+        return Set.of("HTTP_BODY_INCOMPLETE", "HTTP_CHUNK_INCOMPLETE").contains(kind)
+            || kind.equals("HTTP_HEADERS_EMPTY")
+                && "false".equals(details.get("httpHeadersReceived"))
+                && "0".equals(details.get("httpBodyBytesAccepted"));
     }
 
     /** Retains only this physical attempt's reported usage. / 仅保留本次物理尝试的报告用量。 */

@@ -911,9 +911,17 @@ class DeploymentCommandEvidenceTest {
                 if (engine.equals("ordinary-offline")) {
                     var isolation = (Map<?, ?>) preflight.get("offlineBuildIsolation");
                     assertEquals(DeploymentManagedHelperBundle.helperSha256(layout), isolation.get("helperSha256"));
-                    assertTrue(isolation.get("propertiesSource").toString().contains("RestrictAddressFamilies=none"));
-                    assertTrue(isolation.get("preflightSource").toString().contains("socket.AF_UNIX"));
-                    assertTrue(isolation.get("applicationSource").toString().contains("offline_build_properties"));
+                    var properties = isolation.get("propertiesSource").toString().lines().map(String::strip)
+                        .filter(line -> !line.startsWith("#")).toList();
+                    assertEquals(List.of("offline_build_properties=(", "--property=PrivateNetwork=yes",
+                        "--property='RestrictAddressFamilies= '", "--property=SystemCallArchitectures=native",
+                        "--property=\"SystemCallFilter=~@network-io io_uring_setup io_uring_enter io_uring_register\"",
+                        "--property=SystemCallErrorNumber=EPERM", ")"), properties);
+                    String preflightSource = isolation.get("preflightSource").toString();
+                    assertTrue(preflightSource.contains("\"${offline_build_properties[@]}\""));
+                    assertTrue(preflightSource.contains("socket.AF_INET, socket.AF_INET6, socket.AF_UNIX"));
+                    assertTrue(preflightSource.contains("os.readlink(\"/proc/self/ns/net\") == sys.argv[1]"));
+                    assertTrue(isolation.get("applicationSource").toString().contains("properties+=(\"${offline_build_properties[@]}\")"));
                 }
                 assertEquals(action.exactAction(), facts.get("exactAction"));
                 assertEquals("source-bound-plan", facts.get("businessRevision"));

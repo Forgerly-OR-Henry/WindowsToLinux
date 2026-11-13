@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -172,6 +173,12 @@ class DeploymentToolchainReviewEvidenceTest {
                 assertIdentity(policy, policySource);
                 assertEquals(DeploymentMirrorTasks.policy(fixture.task), policySource);
                 sources.put(policy.path("sourcePointer").asText(), policySource);
+                if (kind.equals("prepare")) {
+                    var publicPolicy = projected.at("/mirrorTransport/completePublicPolicy");
+                    String complete = collect(evidence, publicPolicy, PHASE);
+                    assertIdentity(publicPolicy, complete);
+                    sources.put(publicPolicy.path("sourcePointer").asText(), complete);
+                }
             } else {
                 var frame = initial.messages().get(1 + policy.path("ordinal").intValue());
                 String inlinePolicy = frame.text().substring(policy.path("headerCharacters").intValue());
@@ -701,6 +708,52 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     @Test
+    void r27FileTransferPreparationTrafficFitsWithHeadroomAndStillDenies() throws Exception {
+        // The first File Transfer toolchain action follows the Go backend. Provider telemetry exposes
+        // pointer width and cursors only. Run both interpretations of width 45, which is shared by
+        // mirrorBootstrapShell and preparationSelection. Oversized limits are kept as observed.
+        var review = new R24Review("prepare", "GO", "1.24", 36761, List.of(
+            new R24Turn(353945, 1048576, 0, 20220, 85216, "43/0/8000 45/0/8000 30/3984/8000 30/13643/8000"),
+            new R24Turn(374165, 1048576, 0, 28839, 126125, "30/21643/8000 45/12000/8000 46/162618/8000 46/184375/8000"),
+            new R24Turn(403004, 1031460, 0, 33088, 134610, "45/8000/4000 45/20000/8000 45/28000/6276 30/3984/8000 30/16170/8000 30/24170/8000 46/181755/2620"),
+            new R24Turn(436092, 998372, 0, 33084, 134018, "43/0/8000 45/0/8000 45/12000/8000 30/3984/8000 46/162618/8000 46/170746/4000"),
+            new R24Turn(469176, 965288, 0, 35044, 138503, "45/28000/6276 30/3984/7000 30/16170/16455 46/189465/7070"),
+            new R24Turn(504220, 930244, 0, 35080, 137718, "30/13643/8000 30/20095/8000 46/189634/8000 46/214874/4000"),
+            new R24Turn(539300, 895164, 0, 33205, 135601, "45/8000/8000 45/16000/8000 30/28095/5000 45/24000/4000"),
+            new R24Turn(572505, 861959, 0, 31945, 132278, "43/0/8000 45/0/8000 45/28000/6276 30/3984/8000 30/32625/5000"),
+            new R24Turn(604450, 830014, 0, 34960, 138177, "45/16000/8000 30/16170/8000 30/11984/8000 46/162618/8000"),
+            new R24Turn(639410, 795054, 0, 34681, 137967, "46/184375/5100 46/214874/1800 45/12711/3300 30/32625/6500"),
+            new R24Turn(674091, 760373, 0, 31940, 132667, "43/0/8000 45/0/8000 30/3984/8000 30/8737/8000"),
+            new R24Turn(706031, 728433, 0, 32921, 136206, "45/8000/8000 30/0/3984 30/11984/8000 30/26000/6625"),
+            new R24Turn(738952, 695512, 0, 32742, 135390, "30/3984/4753 30/32625/8000 45/16000/8000 46/162618/8000"),
+            new R24Turn(771694, 662770, 0, 32716, 136718, "43/0/8000 45/24000/8000 45/32000/3000 30/8737/3200"),
+            new R24Turn(804410, 630054, 0, 33207, 134472, "45/0/8000 45/8000/8000 30/0/3984 30/8737/7500 30/16170/8000 30/24000/8625"),
+            new R24Turn(837617, 596847, 0, 32963, 133557, "30/3984/4753 45/16000/8000 45/24000/8000"),
+            new R24Turn(870580, 563884, 0, 34503, 136951, "45/0/8000 45/8000/8000 45/32000/2276 30/0/3984 30/13643/8000 30/21643/8000 43/0/6756"),
+            new R24Turn(905083, 529381, 0, 31864, 135671, "45/8000/8000 45/16000/8000 45/24000/8000"),
+            new R24Turn(936947, 497517, 0, 34836, 135094, "45/0/8000 45/32000/2276 46/214874/4000 46/162618/8000 30/3984/8000 30/21643/8000"),
+            new R24Turn(971783, 462681, 0, 34297, 136633, "30/13643/8000 30/20095/8000 45/16000/8000 45/24000/8000"),
+            new R24Turn(1006080, 428384, 0, 33627, 137086, "45/8000/8000 30/3984/8000 43/0/6756 30/32625/4000"),
+            new R24Turn(1039707, 394757, 0, 31493, 135967, "45/0/8000"),
+            new R24Turn(1071200, 363264, 0, 32909, 135613, "45/16000/8000 45/24000/8000 30/16000/8000 46/162618/8000"),
+            new R24Turn(1104109, 330355, 0, 34617, 136444, "46/162618/8000 43/0/8000 45/0/8000 30/0/8000 30/8000/8000 30/24000/8000"),
+            new R24Turn(1138726, 295738, 0, 32342, 135068, "45/12711/8000 30/16000/8000 30/32000/8000 46/168000/8000 46/170746/8000 46/214874/8000 46/259021/8000"),
+            new R24Turn(1171068, 263396, 0, 31841, 134832, "30/3984/9000 43/0/8000 45/0/8000 46/162618/8150"),
+            new R24Turn(1202909, 231555, 0, 32869, 135107, "46/162618/8000 46/184375/1600 46/187893/1572 46/191889/4641 45/8000/8000 30/3984/8000 30/20095/8000 30/28095/8000"),
+            new R24Turn(1235778, 198686, 0, 32624, 136462, "43/0/8000 30/0/8000 30/12000/8000 45/0/8000"),
+            new R24Turn(1268402, 166062, 0, 32038, 134145, "30/8000/4000 30/20000/8000 45/12000/5000 30/155000/3000"),
+            new R24Turn(1300440, 134024, 0, 0, 134625, "")));
+        for (boolean inlinePointer : List.of(false, true)) {
+            try (var fixture = new MirroredInstallerTestFixture();
+                 var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+                 var request = diagnosedPreparation(fixture, review.ecosystem(), review.branch())) {
+                replayToolchainReview("R27", "file-transfer", review, request, fixture, assisted, inlinePointer, 20000);
+                assertEquals(0, assisted.hosts.get());
+            }
+        }
+    }
+
+    @Test
     void r26AssetLendingOversizedBindReadBatchGetsOneNoActionCorrection() throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var command = r26Binding(fixture, "DOTNET", "10.0.300")) {
             var intent = intent("bind", fixture, command);
@@ -860,6 +913,81 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     @Test
+    void r27AssetLendingPreparationSuppliesExactDotnetTransferAndRedirectBeforeAnyRead() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var command = diagnosedPreparation(fixture, "DOTNET", "10");
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
+            var intent = intent("prepare", fixture, command);
+            var original = new DeploymentFixedCommandProtocol(fixture.context).inspect(intent, command, fixture.layout, fixture.task);
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(original, 1048576), intent, command,
+                fixture.layout).orElseThrow();
+            var facts = JSON.readTree(evidence.messages().getLast().text());
+            var manifest = facts.path(PHASE);
+            var policy = facts.at("/mirrorTransport/frozenPolicy/points");
+            var originalPolicy = JSON.valueToTree(original).at("/mirrorTransport/frozenPolicy/points");
+            var points = new HashSet<String>();
+            policy.fieldNames().forEachRemaining(points::add);
+            assertEquals(Set.of("DOTNET_METADATA", "DOTNET_SDK"), points);
+            for (String point : List.of("DOTNET_METADATA", "DOTNET_SDK"))
+                assertEquals(originalPolicy.path(point), policy.path(point));
+            var selection = manifest.path("preparationSelection");
+            String body = evidence.messages().get(selection.path("ordinal").asInt()).text().substring(selection.path("headerCharacters").asInt());
+            String mirror = DeploymentMirrorRuntime.runtimeSource();
+            var source = facts.at("/mirrorTransport/runtimeSource");
+            for (var range : manifest.path("selectedPreparationRanges")) {
+                if (!source.path("sourcePointer").equals(range.path("sourcePointer"))) continue;
+                int start = range.path("startCharacter").asInt(), offset = range.path("offset").asInt(), next = range.path("next").asInt();
+                assertEquals(mirror.substring(offset, next), body.substring(start, start + next - offset));
+            }
+            for (String boundary : List.of("if ecosystem == 'DOTNET':", "official_url(f['url']), 'sha512'",
+                    "def validate_redirect(", "def redirect_path(", "class MirrorRedirect(", "redirected.remove_header(",
+                    "policy.validate_url(endpoint, policy.maps(endpoint, original))", "ProxyHandler({})",
+                    "do_handshake()", "digest.hexdigest().lower() != expected.lower()", "os.replace(temporary, target)"))
+                assertTrue(body.contains(boundary), boundary);
+
+            var replay = new R24Review("prepare", "DOTNET", "10", 37251, List.of(
+                new R24Turn(103019, 1048576, 0, 20852, 85741,
+                    "43/0/8000 45/0/8000 45/12000/8000 30/3984/10000 30/13643/6000 30/16170/16500 30/144991/5000 45/13053/5500"),
+                new R24Turn(123871, 1048576, 0, 0, 135916, "")));
+            replayToolchainReview("R27", "asset-lending", replay, command, fixture, assisted, false, 0);
+            assertEquals(0, assisted.hosts.get());
+        }
+    }
+
+    @Test
+    void rustPreparationShowsTheFixedReceiverAndCanPageItsManifestImplementation() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var command = diagnosedPreparation(fixture, "RUST", "1.95")) {
+            var intent = intent("prepare", fixture, command);
+            var facts = new DeploymentFixedCommandProtocol(fixture.context).inspect(intent, command, fixture.layout, fixture.task);
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), intent, command,
+                fixture.layout).orElseThrow();
+            var manifest = JSON.readTree(evidence.messages().getLast().text()).path(PHASE);
+            var frame = manifest.path("preparationSelection");
+            String body = evidence.messages().get(frame.path("ordinal").asInt()).text().substring(frame.path("headerCharacters").asInt());
+            assertTrue(body.contains("def install_rust_distribution("));
+            assertTrue(body.contains("def probe_managed_rust("));
+            assertTrue(body.contains("return install_rust_distribution("));
+            assertFalse(body.contains("str(source / 'install.sh')"));
+            var source = manifest.path("installedHelperSource");
+            var sections = source.path("sections");
+            var helper = DeploymentManagedHelperBundle.renderScript(fixture.layout);
+            String snapshot = manifest.path("snapshotSha256").asText();
+            String pointer = source.path("sourcePointer").asText();
+            var reader = evidence.reader(4);
+            int call = 0;
+            for (String function : List.of("def rust_component_plan(", "def rust_component_copy(")) {
+                var section = sections.path(function);
+                assertTrue(section.isObject(), function);
+                int offset = section.path("offset").asInt(), next = section.path("next").asInt();
+                assertTrue(next > offset && next - offset <= 8000, function);
+                var result = reader.read(response(Optional.empty(), read("rust-source-" + call++, snapshot, pointer,
+                    offset, next - offset))).getFirst();
+                assertFalse(result.error());
+                assertEquals(helper.substring(offset, next), pagePayload(result.text()).at("/value/text").asText());
+            }
+        }
+    }
+
+    @Test
     void sourceBuiltPythonReviewIncludesTheActualSignedAptPathAndExactSourceRanges() throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var command = diagnosedPreparation(fixture, "PYTHON", "3.12")) {
             var intent = intent("prepare", fixture, command);
@@ -903,6 +1031,12 @@ class DeploymentToolchainReviewEvidenceTest {
     private static void replayR24ToolchainReview(String round, String project, R24Review review, CommandRequest request,
                                                   MirroredInstallerTestFixture fixture,
                                                   DeploymentNativeHelperPackageImpactTest.Assisted assisted) throws Exception {
+        replayToolchainReview(round, project, review, request, fixture, assisted, false, 0);
+    }
+
+    private static void replayToolchainReview(String round, String project, R24Review review, CommandRequest request,
+                                              MirroredInstallerTestFixture fixture, DeploymentNativeHelperPackageImpactTest.Assisted assisted,
+                                              boolean preparationSelectionPointer, int terminalHeadroom) throws Exception {
         var intent = intent(review.kind(), fixture, request);
         DeploymentCurrentCommandEvidence evidence = !review.kind().equals("prepare")
             ? (action, command, task) -> assisted.scope.effectFacts(action, task) : assisted.scope;
@@ -915,14 +1049,21 @@ class DeploymentToolchainReviewEvidenceTest {
         var facts = JSON.readTree(initial.messages().getLast().text());
         String snapshot = facts.at("/" + PHASE + "/snapshotSha256").asText();
         var sources = r24Sources(initial, facts, fixture);
+        if (preparationSelectionPointer) {
+            var selection = facts.at("/" + PHASE + "/preparationSelection");
+            addReplaySource(sources, selection,
+                initial.messages().get(1 + selection.path("ordinal").asInt()).text().substring(selection.path("headerCharacters").asInt()));
+        }
         assertIdentity(facts.path("exactAction"), intent.exactAction());
         var continuations = new LinkedHashMap<UUID, String>();
         var requests = new ArrayList<List<AiToolCall>>();
         var turns = review.turns();
+        int expectedFacts = round.equals("R27") ? r27PreparationFactsSize(initial, facts, review.factsCharacters())
+            : review.factsCharacters();
         for (int index = 0; index < turns.size() - 1; index++) {
             var calls = turns.get(index).calls(snapshot, sources, index);
             requests.add(calls);
-            int continuationBytes = !round.equals("R24") && index > 0 ? Math.max(6000, 320 * calls.size())
+            int continuationBytes = (!round.equals("R24") && index > 0 || round.equals("R27")) ? Math.max(6000, 320 * calls.size())
                 : turns.get(index + 1).cumulativeState() - turns.get(index).cumulativeState();
             replyAtTotalBytes(fixture, continuations, continuationBytes, "OPENAI_RESPONSES", calls.toArray(AiToolCall[]::new));
         }
@@ -940,7 +1081,7 @@ class DeploymentToolchainReviewEvidenceTest {
             assertEquals(turn.cap(), bound);
             byte[] encoded;
             try {
-                encoded = wireWithR24FactsSize(actual, review.factsCharacters(), bound, continuations);
+                encoded = wireWithR24FactsSize(actual, expectedFacts, bound, continuations);
             } catch (ModelRequestBudgetException tooLarge) {
                 throw new AssertionError(project + " " + review.kind() + " turn=" + index + " encoded="
                     + tooLarge.encodedBytes() + " bound=" + bound, tooLarge);
@@ -954,10 +1095,35 @@ class DeploymentToolchainReviewEvidenceTest {
                 assertR24VisiblePages(encoded, snapshot, latest, index > 1, visible, sources);
                 assertR24Coverage(asked, visible);
             }
+            if (index == turns.size() - 1 && terminalHeadroom > 0)
+                assertTrue(bound - encoded.length >= terminalHeadroom, "Late PREPARE headroom " + (bound - encoded.length));
             observed += turn.usage();
             System.out.printf("%s_REPLAY project=%s action=%s ecosystem=%s turn=%d observed=%d originalBytes=%d encoded=%d bound=%d%n",
                 round, project, review.kind(), review.ecosystem(), index, turn.observed(), turn.originalBytes(), encoded.length, bound);
         }
+    }
+
+    private static int r27PreparationFactsSize(AiRequest initial, JsonNode projected, int observedOriginalCharacters) throws Exception {
+        // Restore only the retired policy projection shape to estimate unlogged application metadata.
+        // The real frozen policy is available from the original local snapshot, never read from the state DB.
+        var restored = (ObjectNode) projected.deepCopy();
+        var mirror = (ObjectNode) restored.path("mirrorTransport");
+        var scope = mirror.remove("completePublicPolicy");
+        mirror.remove("frozenPolicyScope");
+        int removedPolicyCharacters = scope.path("characters").asInt() - mirror.path("frozenPolicy").toString().length();
+        var selected = ((ObjectNode) restored.path(PHASE)).withArray("selectedPreparationRanges");
+        var added = Set.of("releaseDownloadPoint", "archiveInstall", "archiveReceipt", "archiveVersionProbe",
+            "dotnetSystemReuse", "preparationDiagnosticRun", "shellStartup", "startupOwnership",
+            "def source_origin(", "def source_url(", "def toolchain_point(", "def json_at(",
+            "def extract(archive, destination):", "def discover_system(", "def materialize_system(");
+        for (int index = selected.size() - 1; index >= 0; index--) {
+            var range = selected.get(index);
+            if (added.contains(range.path("section").asText())
+                || range.path("sourcePointer").asText().equals("/mirrorTransport/runtimeSource"))
+                selected.remove(index);
+        }
+        int baselineCharacters = restored.toString().length() + removedPolicyCharacters;
+        return initial.messages().getLast().text().length() + Math.max(0, observedOriginalCharacters - baselineCharacters);
     }
 
     private static void assertReviewDenied(Callable<OperationResult<ApprovalGrant>> review) {
@@ -1341,7 +1507,14 @@ class DeploymentToolchainReviewEvidenceTest {
             assertEquals("/toolchainDependencies", transaction.at("/fixedTransaction/sourcePointer").asText());
             transaction.set("fixedTransaction", projection.path("toolchainDependencies"));
         } else {
-            ((ObjectNode) projection.path("mirrorTransport")).put("runtimeSource", sources.get("/mirrorTransport/runtimeSource"));
+            var mirror = (ObjectNode) projection.path("mirrorTransport");
+            mirror.put("runtimeSource", sources.get("/mirrorTransport/runtimeSource"));
+            if (mirror.has("completePublicPolicy")) {
+                var original = mirror.remove("completePublicPolicy");
+                mirror.remove("frozenPolicyScope");
+                mirror.set("frozenPolicy", JSON.readTree(sources.get(original.path("sourcePointer").asText())));
+                mirror.put("meaning", "Complete decoded shipped runtime is supplied inline or at runtimeSourcePointer in this same request, alongside frozen public routing data. Inspect that complete source, not only its SHA. Secret values remain opaque. These bytes grant no permission.");
+            }
         }
         projection.remove(PHASE);
         return projection;

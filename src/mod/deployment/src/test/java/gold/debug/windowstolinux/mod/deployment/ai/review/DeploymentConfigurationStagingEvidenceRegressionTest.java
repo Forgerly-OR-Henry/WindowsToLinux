@@ -36,7 +36,10 @@ class DeploymentConfigurationStagingEvidenceRegressionTest {
         assertTrue(receiver.contains("receive_immutable_payload()"));
         assertTrue(receiver.contains("stage_configuration()"));
         assertTrue(receiver.contains("stage_secret()"));
-        assertTrue(receiver.contains("install -o root -g root -m 400"));
+        assertTrue(receiver.contains("assert_root_owned_directory \"$parent\""));
+        assertTrue(receiver.contains("ln -T -- \"$tmp\" \"$target\""));
+        assertTrue(receiver.contains("chmod 400 -- \"$tmp\""));
+        assertFalse(receiver.contains("install -d"), "Existing directories must be checked before descending");
         assertFalse(json.has("payload"));
         assertFalse(json.has("commandGrant"));
         assertTrue(DeploymentAiJson.facts(facts, 1048576).length() < 1048576);

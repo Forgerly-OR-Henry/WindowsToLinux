@@ -40,8 +40,8 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "11bd7bfd3e41ea21d8a46ef21b37c4eac1ce43059f7edf03fee4600f91a1d156";
-    private static final String RUBY_SOURCE_SHA256 = "6fbdb3681039221f55e38f214a4f60f9b127f5a31d6ce32a17bb13818f9bd206";
+    public static final String EXPECTED_SHA256 = "e75f9efa7e4381bac848a4b5ab69d30a2c6724ed3c40289b241ef4f990ad7e43";
+    private static final String RUBY_SOURCE_SHA256 = "a822ae8edc165ab5fb1193fcf1eafea48205d3819cad5a5fc4741e62eb8bdae8";
 
     /**
      * ROOT.
@@ -422,6 +422,15 @@ public final class DeploymentManagedHelperBundle {
                 content = fixedPublicationRecovery
                     ? gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderPublicationRecoveryToolchainSources(content)
                     : gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderToolchainSources(content);
+                if (!fixedPublicationRecovery && fragment.equals("input/15-deployment-input.sh")) {
+                    String previousReceiver = exactRange(content, "receive_immutable_payload() {\n",
+                        "\nnormalize_secret_environment_name() {\n");
+                    try (var receiver = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + "input/staging-receiver.sh")) {
+                        if (receiver == null) throw new IllegalStateException("Staging receiver fragment unavailable");
+                        String replacement = new String(receiver.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+                        content = content.replace(previousReceiver, replacement + "normalize_secret_environment_name() {\n");
+                    }
+                }
                 if (fragment.startsWith("toolchain/")) {
                     if (fragment.endsWith("10-release-metadata.py"))
                         output.write((toolchainOpening + catalogLiteral(catalog)).getBytes(StandardCharsets.UTF_8));
@@ -429,6 +438,13 @@ public final class DeploymentManagedHelperBundle {
                     if (fixedPublicationRecovery && fragment.endsWith("30-managed-installation.py"))
                         content = content.replace("'bin/python3', '-I', '-S', '-B', '--version'", "'bin/python3', '--version'")
                             .replace("str(directory / 'bin/python3'), '-I', '-S', '-B', '-c'", "str(directory / 'bin/python3'), '-c'");
+                    if (!fixedPublicationRecovery && fragment.endsWith("30-managed-installation.py")) {
+                        String previousRust = exactRange(content, "                if layout == 'rust':\n",
+                            "\n                else:\n");
+                        content = content.replace(previousRust, "                if layout == 'rust':\n"
+                            + "                    fail('request', 'Rust distribution requires the fixed component receiver')\n"
+                            + "                else:\n");
+                    }
                     if (!fixedPublicationRecovery && fragment.endsWith("40-binding-protocol.py")) {
                         try (InputStream ruby = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + "toolchain/ruby-source-build.py")) {
                             if (ruby == null) throw new IllegalStateException("Ruby source build fragment unavailable");
@@ -436,6 +452,11 @@ public final class DeploymentManagedHelperBundle {
                             if (!RUBY_SOURCE_SHA256.equals(sha256(isolated.getBytes(StandardCharsets.UTF_8))))
                                 throw new IllegalStateException("Ruby source build fragment identity changed");
                             content = insertBefore(content, "\n\ndef main(args):", "\n\n" + isolated);
+                        }
+                        try (var rust = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + "toolchain/rust-distribution.py")) {
+                            if (rust == null) throw new IllegalStateException("Rust distribution fragment unavailable");
+                            String installer = new String(rust.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+                            content = insertBefore(content, "\n\ndef main(args):", "\n\n" + installer);
                         }
                     }
                     output.write((content + "\n").getBytes(StandardCharsets.UTF_8));

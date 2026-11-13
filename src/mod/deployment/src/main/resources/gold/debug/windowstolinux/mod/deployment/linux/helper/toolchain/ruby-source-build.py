@@ -3,6 +3,25 @@ RUBY_DYNAMIC_MIN, RUBY_DYNAMIC_MAX = 61184, 65519
 RUBY_BUILD_BYTES = 1024 * 1024 * 1024
 RUBY_BUILD_ENTRIES = 40000
 RUBY_OPENSSL_DIGEST = 'e24fcd69f6e0bac1e1c3cb8667d0ded5c1f6c59d010ecb5c857a771c9cb7565c'
+# These worker-owned exit statuses are below systemd's execution setup status range.
+RUBY_WORKER_FAILURES = {
+    90: ('dynamic-identity', 'python3'),
+    91: ('private-namespaces', 'python3'),
+    92: ('privilege-restrictions', 'python3'),
+    93: ('read-only-mounts', 'python3'),
+    94: ('unix-socket-guard', 'python3'),
+    95: ('staging-mount', 'python3'),
+    96: ('archive-layout', 'python3'),
+    97: ('source-extract', 'tar'),
+    98: ('source-configure', 'configure'),
+    99: ('source-build', 'make'),
+    100: ('source-install', 'make'),
+    101: ('legacy-gem-install', 'ruby'),
+    102: ('prefix-verification', 'ruby'),
+    103: ('runtime-verification', 'ruby'),
+}
+RUBY_MANAGER_RESULTS = frozenset(('success', 'resources', 'protocol', 'timeout', 'exit-code', 'signal',
+                                  'core-dump', 'watchdog', 'start-limit-hit', 'oom-kill', 'skip-condition'))
 RUBY_WORKER = r'''
 import os
 import pathlib
@@ -10,53 +29,70 @@ import socket
 import subprocess
 import sys
 
-mode, network, mount, prefix, version, *arguments = sys.argv[1:]
-if not all(61184 <= identity <= 65519 for identity in (os.geteuid(), os.getegid())):
-    sys.exit("Ruby worker did not receive an unprivileged dynamic identity")
-if os.readlink("/proc/self/ns/net") == network or os.readlink("/proc/self/ns/mnt") == mount:
-    sys.exit("Ruby worker did not receive private network and mount namespaces")
-with open("/proc/self/status") as status:
-    properties = dict(line.split(":", 1) for line in status if ":" in line)
-if (properties["NoNewPrivs"].strip() != "1" or properties["Seccomp"].strip() != "2" or
-        any(int(properties[key].strip(), 16) for key in ("CapEff", "CapPrm", "CapBnd"))):
-    sys.exit("Ruby worker privilege restrictions were not applied")
-if any(not os.statvfs(path).f_flag & os.ST_RDONLY for path in ("/usr", "/etc", "/run")):
-    sys.exit("Ruby worker requires read-only system mounts")
-try:
-    local_socket = socket.socket(socket.AF_UNIX)
-except OSError:
-    pass
-else:
-    local_socket.close()
-    sys.exit("Ruby worker must not open host Unix sockets")
-
 environment = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "TMPDIR": "/tmp", "LC_ALL": "C"}
-def command(*argv, cwd=None):
-    subprocess.run(argv, cwd=cwd, env=environment, stdin=subprocess.DEVNULL, check=True)
+failure = 90
+try:
+    mode, network, mount, prefix, version, *arguments = sys.argv[1:]
+    if not all(61184 <= identity <= 65519 for identity in (os.geteuid(), os.getegid())):
+        sys.exit(failure)
+    failure = 91
+    if os.readlink("/proc/self/ns/net") == network or os.readlink("/proc/self/ns/mnt") == mount:
+        sys.exit(failure)
+    failure = 92
+    with open("/proc/self/status") as status:
+        properties = dict(line.split(":", 1) for line in status if ":" in line)
+    if (properties["NoNewPrivs"].strip() != "1" or properties["Seccomp"].strip() != "2" or
+            any(int(properties[key].strip(), 16) for key in ("CapEff", "CapPrm", "CapBnd"))):
+        sys.exit(failure)
+    failure = 93
+    if any(not os.statvfs(path).f_flag & os.ST_RDONLY for path in ("/usr", "/etc", "/run")):
+        sys.exit(failure)
+    failure = 94
+    try:
+        local_socket = socket.socket(socket.AF_UNIX)
+    except OSError:
+        pass
+    else:
+        local_socket.close()
+        sys.exit(failure)
 
-ruby = prefix + "/bin/ruby"
-if mode == "build":
-    device, inode, legacy = arguments
-    mounted = os.stat(prefix)
-    if (str(mounted.st_dev), str(mounted.st_ino)) != (device, inode):
-        sys.exit("Ruby install prefix did not receive the isolated staging mount")
-    source = pathlib.Path("/tmp/wtl-ruby-source")
-    source.mkdir(mode=0o700)
-    command("/usr/bin/tar", "--extract", "--no-same-owner", "--no-same-permissions",
-            "--file", "/tmp/wtl-ruby-release", "--directory", str(source))
-    release = source / ("ruby-" + version)
-    if list(source.iterdir()) != [release] or release.is_symlink() or not release.is_dir():
-        sys.exit("unexpected official Ruby archive layout")
-    options = ["--with-out-ext=openssl"] if legacy == "legacy" else []
-    command(str(release / "configure"), "--prefix=" + prefix, "--disable-install-doc", *options, cwd=release)
-    command("/usr/bin/make", "-j2", cwd=release)
-    command("/usr/bin/make", "install", cwd=release)
-    if legacy == "legacy":
-        command(ruby, prefix + "/bin/gem", "install", "--local", "/tmp/openssl-3.0.3.gem",
-                "--no-document", "--ignore-dependencies", cwd=release)
-    command(ruby, "-r", "rbconfig", "-e", "abort unless RbConfig::CONFIG.fetch('prefix') == ARGV.fetch(0)", prefix)
+    def command(*argv, cwd=None):
+        subprocess.run(argv, cwd=cwd, env=environment, stdin=subprocess.DEVNULL, check=True)
 
-command(ruby, "-e", "abort unless RUBY_VERSION == ARGV.fetch(0); require 'openssl'; require 'zlib'; require 'yaml'", version)
+    ruby = prefix + "/bin/ruby"
+    if mode == "build":
+        failure = 95
+        device, inode, legacy = arguments
+        mounted = os.stat(prefix)
+        if (str(mounted.st_dev), str(mounted.st_ino)) != (device, inode):
+            sys.exit(failure)
+        source = pathlib.Path("/tmp/wtl-ruby-source")
+        source.mkdir(mode=0o700)
+        failure = 97
+        command("/usr/bin/tar", "--extract", "--no-same-owner", "--no-same-permissions",
+                "--file", "/tmp/wtl-ruby-release", "--directory", str(source))
+        failure = 96
+        release = source / ("ruby-" + version)
+        if list(source.iterdir()) != [release] or release.is_symlink() or not release.is_dir():
+            sys.exit(failure)
+        options = ["--with-out-ext=openssl"] if legacy == "legacy" else []
+        failure = 98
+        command(str(release / "configure"), "--prefix=" + prefix, "--disable-install-doc", *options, cwd=release)
+        failure = 99
+        command("/usr/bin/make", "-j2", cwd=release)
+        failure = 100
+        command("/usr/bin/make", "install", cwd=release)
+        if legacy == "legacy":
+            failure = 101
+            command(ruby, prefix + "/bin/gem", "install", "--local", "/tmp/openssl-3.0.3.gem",
+                    "--no-document", "--ignore-dependencies", cwd=release)
+        failure = 102
+        command(ruby, "-r", "rbconfig", "-e", "abort unless RbConfig::CONFIG.fetch('prefix') == ARGV.fetch(0)", prefix)
+
+    failure = 103
+    command(ruby, "-e", "abort unless RUBY_VERSION == ARGV.fetch(0); require 'openssl'; require 'zlib'; require 'yaml'", version)
+except (OSError, KeyError, ValueError, subprocess.CalledProcessError):
+    sys.exit(failure)
 '''
 
 
@@ -97,6 +133,53 @@ def ruby_mount_path(path):
             any(part in ('.', '..') for part in str(path).split('/'))):
         fail('ownership', 'Ruby sandbox requires an absolute literal mount path')
     return str(path)
+
+
+def ruby_manager_terminal(command):
+    results, exits = [], []
+    for line in (command['stdout'] + '\n' + command['stderr']).splitlines():
+        result = re.fullmatch(r'Finished with result: ([a-z-]{1,32})', line)
+        if result and result[1] in RUBY_MANAGER_RESULTS:
+            results.append(result[1])
+        status = re.fullmatch(r'Main processes terminated with: code=(exited|killed|dumped)/status=([0-9]{1,3}|[A-Z0-9+_-]{1,16})', line)
+        if status:
+            code, value = status.groups()
+            if code != 'exited' or value.isdecimal() and int(value) <= 255:
+                exits.append((code, value))
+    result = results[0] if len(results) == 1 else 'unobserved'
+    code, value = exits[0] if len(exits) == 1 else ('unobserved', 'unobserved')
+    return result, code, value
+
+
+def ruby_diagnostic(command, role):
+    result, code, value = ruby_manager_terminal(command)
+    exit_code = command['actualExitCode']
+    failure = RUBY_WORKER_FAILURES.get(exit_code)
+    worker = (result == 'exit-code' and code == 'exited' and value == str(exit_code) and failure is not None
+              and not (command['timedOut'] or command['cancelled']))
+    stage = 'ruby-' + role + '-launcher'
+    details = ['unit-role=' + role, 'manager-result=' + result, 'manager-main-code=' + code, 'manager-main-status=' + value]
+    if worker:
+        phase, child = failure
+        stage = 'ruby-' + role + '-' + phase
+        details.extend(('worker-stage=' + phase, 'worker-executable=' + child))
+    return {**command, 'stage': stage, 'executable': 'systemd-run',
+            'stdout': '\n'.join(details) + '\n', 'stderr': ''}
+
+
+def ruby_run(command, role):
+    # The synchronous shared runner captures the launcher's streams. The worker's streams stay separate.
+    global record_installation_diagnostic
+    recorder = record_installation_diagnostic
+
+    def record_ruby_observation(observation):
+        recorder(ruby_diagnostic(observation, role))
+
+    record_installation_diagnostic = record_ruby_observation
+    try:
+        run(command)
+    finally:
+        record_installation_diagnostic = recorder
 
 
 def ruby_unit(unit, directory, version, build_mounts=None):
@@ -145,10 +228,10 @@ def ruby_unit(unit, directory, version, build_mounts=None):
         properties.extend(['StandardOutput=null', 'StandardError=null'])
         if directory.startswith(('/var/', '/home/', '/root/')):
             properties.append('BindReadOnlyPaths=' + directory)
-    command = ruby_system_command('systemd-run', '--quiet', '--wait', '--collect', '--slice=system.slice', '--unit=' + unit)
+    command = ruby_system_command('systemd-run', '--wait', '--collect', '--slice=system.slice', '--unit=' + unit)
     command.extend('--property=' + value for value in properties)
     try:
-        run(command + ['--'] + worker)
+        ruby_run(command + ['--'] + worker, 'build' if build_mounts else 'probe')
     except (PreparationFailure, subprocess.TimeoutExpired, OSError):
         subprocess.run(
             ruby_system_command('systemctl', 'stop', '--no-pager', unit), stdin=subprocess.DEVNULL,

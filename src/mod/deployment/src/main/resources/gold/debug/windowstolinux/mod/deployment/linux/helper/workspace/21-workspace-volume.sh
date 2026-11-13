@@ -6,7 +6,8 @@ preflight_systemd_run() (
 
 offline_build_properties=(
     --property=PrivateNetwork=yes
-    --property=RestrictAddressFamilies=none
+    # A nonempty value with no tokens encodes a deny-all allow-list in the transient D-Bus property.
+    --property='RestrictAddressFamilies= '
     --property=SystemCallArchitectures=native
     --property="SystemCallFilter=~@network-io io_uring_setup io_uring_enter io_uring_register"
     --property=SystemCallErrorNumber=EPERM
