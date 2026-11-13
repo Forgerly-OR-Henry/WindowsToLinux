@@ -1,21 +1,29 @@
+preflight_systemd_run() (
+    cd -- / || exit 64
+    exec -c /usr/bin/env PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /usr/bin/systemd-run \
+        --quiet --wait --pipe --collect --property=WorkingDirectory=/ "$@"
+)
+
 preflight_build() {
     [ "$#" -eq 1 ] || reject build-preflight-arguments
     case "$1" in ordinary | docker | podman) ;; *) reject build-engine ;; esac
     for tool in fallocate losetup mkfs.ext4 mount umount findmnt systemd-run; do command -v "$tool" >/dev/null || reject workspace-tools; done
     [ "$(stat -fc %T /sys/fs/cgroup)" = cgroup2fs ] || reject workspace-cgroup-v2-required
     grep -qw memory /sys/fs/cgroup/cgroup.controllers && grep -qw pids /sys/fs/cgroup/cgroup.controllers || reject workspace-resource-controllers
-    systemd-run --quiet --wait --pipe --collect --property=DynamicUser=yes --property=ProtectSystem=strict \
+    preflight_systemd_run --property=DynamicUser=yes --property=ProtectSystem=strict \
         --property=NoNewPrivileges=yes --property=CapabilityBoundingSet= --property=TasksMax=8 \
         --property=MemoryMax=64M --property=MemorySwapMax=0 --property=PrivateDevices=yes \
         --property=ProtectProc=invisible --property=ProcSubset=pid --property=RestrictNamespaces=yes \
-        --property=RuntimeMaxSec=10 --property=KillMode=control-group /usr/bin/true || reject workspace-isolation-unavailable
+        --property=RuntimeMaxSec=10 --property=KillMode=control-group \
+        /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /usr/bin/true || reject workspace-isolation-unavailable
     if [ "$1" != ordinary ]; then
         for tool in useradd usermod userdel newuidmap newgidmap setpriv skopeo; do command -v "$tool" >/dev/null || reject container-identity-tools; done
         if [ "$1" = docker ]; then
             command -v rootlesskit >/dev/null && command -v slirp4netns >/dev/null && command -v dockerd >/dev/null || reject docker-rootless-tools
         else command -v podman >/dev/null || reject podman-rootless-tools; fi
         # @compat:apparmor@
-        systemd-run --quiet --wait --pipe --collect --property=DynamicUser=yes --property=RuntimeMaxSec=10 "${namespace_properties[@]}" \
+        preflight_systemd_run --property=DynamicUser=yes --property=RuntimeMaxSec=10 "${namespace_properties[@]}" \
+            /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C \
             /usr/bin/unshare --user --map-root-user /usr/bin/true || reject container-user-namespace-unavailable
     fi
 }

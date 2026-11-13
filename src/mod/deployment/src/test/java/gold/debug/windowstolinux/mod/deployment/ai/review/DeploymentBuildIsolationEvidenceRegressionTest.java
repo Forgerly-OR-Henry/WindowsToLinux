@@ -29,8 +29,12 @@ class DeploymentBuildIsolationEvidenceRegressionTest {
         assertEquals(DeploymentManagedHelperBundle.renderBuildEntry(layout), facts.get("buildEntrySource"));
         assertEquals(DeploymentManagedHelperBundle.buildEntrySha256(layout), facts.get("buildEntrySha256"));
         assertTrue(helper.contains(facts.get("buildEntrySha256").toString()));
-        String controller = sources.get(1).get("source").toString();
+        String controller = sources.stream()
+            .filter(source -> ((List<?>) source.get("fragments")).contains("workspace/22-restricted-build.sh"))
+            .findFirst().orElseThrow().get("source").toString();
         assertTrue(controller.contains("--property=DynamicUser=yes"));
+        assertTrue(controller.contains("--property=WorkingDirectory=/"));
+        assertTrue(controller.contains("exec -c /usr/bin/env PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /usr/bin/systemd-run"));
         assertTrue(controller.contains("--property=NoNewPrivileges=yes"));
         assertTrue(controller.contains("--property=NoNewPrivileges=no"), "Container branch exceptions must remain visible");
         assertTrue(controller.contains("ReadWritePaths=$mutable"));

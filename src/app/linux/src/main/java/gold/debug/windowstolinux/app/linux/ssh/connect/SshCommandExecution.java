@@ -127,7 +127,7 @@ final class SshCommandExecution {
             remainingMillis(started);
             phase = DispatchState.CREATING_CHANNEL;
             diagnostics.attach(session);
-            channel = session.createExecChannel(SshCommandFrame.COMMAND);
+            channel = session.createExecChannel(frame.command());
             channel.setOut(capture.stdout());
             channel.setErr(capture.stderr());
             dispatched = true;

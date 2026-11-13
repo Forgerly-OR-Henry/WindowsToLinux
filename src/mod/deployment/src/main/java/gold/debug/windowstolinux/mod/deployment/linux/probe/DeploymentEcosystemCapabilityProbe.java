@@ -43,12 +43,7 @@ public final class DeploymentEcosystemCapabilityProbe {
               fi
             done
             printf '\\n'
-            if probe_tool go >/dev/null 2>&1; then
-              printf 'SERVICE_GO='; probe_tool_run go version | /usr/bin/sed -E 's/^go version go([^ ]+).*/\\1/'
-            else printf 'SERVICE_GO=\\n'; fi
-            if probe_tool rustc >/dev/null 2>&1 && probe_tool cargo >/dev/null 2>&1; then
-              printf 'SERVICE_RUST='; probe_tool_run rustc --version | /usr/bin/awk '{print $2}'
-            else printf 'SERVICE_RUST=\\n'; fi
+            """ + toolchainVersionChecks() + """
             # --list-sdks is handled by the native host without loading the CLI SDK or its first-run initialization.
             # https://github.com/dotnet/runtime/blob/v10.0.0/src/native/corehost/fxr/fx_muxer.cpp#L952
             if probe_tool dotnet >/dev/null 2>&1; then
@@ -120,9 +115,6 @@ public final class DeploymentEcosystemCapabilityProbe {
             if probe_tool pipenv >/dev/null 2>&1; then printf 'TOOL_PIPENV='; probe_tool_run pipenv --version | /usr/bin/awk '{print $3}'; else printf 'TOOL_PIPENV=\\n'; fi
             if probe_tool poetry >/dev/null 2>&1; then printf 'TOOL_POETRY='; probe_tool_run poetry --version | /usr/bin/sed -E 's/.* ([0-9][0-9A-Za-z.+_-]*).*/\\1/'; else printf 'TOOL_POETRY=\\n'; fi
             if probe_tool uv >/dev/null 2>&1; then printf 'TOOL_UV='; probe_tool_run uv --version | /usr/bin/awk '{print $2}'; else printf 'TOOL_UV=\\n'; fi
-            if probe_tool go >/dev/null 2>&1; then printf 'TOOL_GO='; probe_tool_run go version | /usr/bin/sed -E 's/^go version go([^ ]+).*/\\1/'; else printf 'TOOL_GO=\\n'; fi
-            if probe_tool rustc >/dev/null 2>&1; then printf 'TOOL_RUSTC='; probe_tool_run rustc --version | /usr/bin/awk '{print $2}'; else printf 'TOOL_RUSTC=\\n'; fi
-            if probe_tool cargo >/dev/null 2>&1; then printf 'TOOL_CARGO='; probe_tool_run cargo --version | /usr/bin/awk '{print $2}'; else printf 'TOOL_CARGO=\\n'; fi
             if probe_tool dotnet >/dev/null 2>&1; then printf 'TOOL_DOTNET='; probe_tool_run dotnet --list-sdks | /usr/bin/awk '{print $1}' | /usr/bin/tail -n 1; else printf 'TOOL_DOTNET=\\n'; fi
             if probe_tool kotlinc >/dev/null 2>&1; then printf 'TOOL_KOTLINC='; probe_tool_run kotlinc -version 2>&1 | /usr/bin/sed -nE 's/.*kotlinc-jvm ([0-9][0-9A-Za-z.+_-]*).*/\\1/p'; else printf 'TOOL_KOTLINC=\\n'; fi
             if probe_tool php >/dev/null 2>&1; then printf 'TOOL_PHP='; probe_tool_run php -n -r 'printf("%d.%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);' 2>/dev/null || :; printf '\\n'; else printf 'TOOL_PHP=\\n'; fi
@@ -137,6 +129,32 @@ public final class DeploymentEcosystemCapabilityProbe {
             printf 'TOOL_NINJA=%s\\n' "$ninja_version"
             if probe_tool cc >/dev/null 2>&1; then printf 'TOOL_C_COMPILER='; probe_tool_run cc -dumpfullversion -dumpversion | /usr/bin/head -n 1; else printf 'TOOL_C_COMPILER=\\n'; fi
             if probe_tool c++ >/dev/null 2>&1; then printf 'TOOL_CPP_COMPILER='; probe_tool_run c++ -dumpfullversion -dumpversion | /usr/bin/head -n 1; else printf 'TOOL_CPP_COMPILER=\\n'; fi
+            """;
+    }
+
+    static String toolchainVersionChecks() {
+        return """
+            probe_rust_version() {
+              local executable resolved sibling version
+              executable="$(probe_tool "$1")" || return 1
+              resolved="$(/usr/bin/readlink -e -- "$executable")" || return 1
+              sibling="${resolved%/*}/rustup"
+              # Skip the usual rustup symlinks and hard links. A fixed non-directory local override
+              # and disabled installation also prevent detached rustup copies from selecting a toolchain.
+              [ "${resolved##*/}" != rustup ] && [ ! "$resolved" -ef "$sibling" ] || return 1
+              version="$(RUSTUP_TOOLCHAIN=/dev/null RUSTUP_HOME=/dev/null RUSTUP_AUTO_INSTALL=0 CARGO_NET_OFFLINE=true \\
+                probe_tool_run "$executable" --version 2>/dev/null)" || return 1
+              printf '%s\\n' "$version" | /usr/bin/awk -v tool="$1" '$1 == tool && $2 ~ /^[0-9]+[.][0-9]+[.][0-9]+[0-9A-Za-z.+_-]*$/ {print $2; exit}'
+            }
+            go_version=
+            if go_output="$(GOTOOLCHAIN=local GOENV=off GOWORK=off GOPROXY=off probe_tool_run go version 2>/dev/null)"; then
+              go_version="$(printf '%s\\n' "$go_output" | /usr/bin/sed -nE 's/^go version go([0-9]+[.][0-9]+[0-9A-Za-z.+_-]*) .*/\\1/p')"
+            fi
+            rust_version="$(probe_rust_version rustc)" || rust_version=
+            cargo_version="$(probe_rust_version cargo)" || cargo_version=
+            printf 'SERVICE_GO=%s\\nTOOL_GO=%s\\n' "$go_version" "$go_version"
+            printf 'TOOL_RUSTC=%s\\nTOOL_CARGO=%s\\n' "$rust_version" "$cargo_version"
+            if [ -n "$cargo_version" ]; then printf 'SERVICE_RUST=%s\\n' "$rust_version"; else printf 'SERVICE_RUST=\\n'; fi
             """;
     }
 

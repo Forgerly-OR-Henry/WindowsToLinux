@@ -40,7 +40,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "bcb63c832f1dc89a19de021d3f7a0fed0cb2a028097a9c3f285a2d3336b69c15";
+    public static final String EXPECTED_SHA256 = "d1f49e69bc269aa49c74921389206ea46953c67de1aff356660d8269e3f2cc94";
 
     /**
      * ROOT.
@@ -380,8 +380,10 @@ public final class DeploymentManagedHelperBundle {
                         "managed-deployment privilege helper fragment is unavailable: " + fragment);
                 }
                 String content = new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
-                content = gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderToolchainSources(
-                    DeploymentRemoteLayoutTemplate.render(expandResourceInserts(content), layout));
+                content = DeploymentRemoteLayoutTemplate.render(expandResourceInserts(content), layout);
+                content = fixedPublicationRecovery
+                    ? gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderPublicationRecoveryToolchainSources(content)
+                    : gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderToolchainSources(content);
                 if (fragment.startsWith("toolchain/")) {
                     if (fragment.endsWith("10-release-metadata.py"))
                         output.write((toolchainOpening + catalogLiteral(catalog)).getBytes(StandardCharsets.UTF_8));

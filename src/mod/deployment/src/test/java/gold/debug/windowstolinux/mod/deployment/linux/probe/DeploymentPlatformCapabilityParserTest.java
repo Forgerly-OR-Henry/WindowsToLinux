@@ -181,11 +181,12 @@ class DeploymentPlatformCapabilityParserTest {
     @Test
     void declinesPrivilegeBearingToolsAndUnavailablePrivilegeChecks() throws Exception {
         String bash = System.getProperty("managed.test.bash", "/bin/bash");
-        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isExecutable(Path.of(bash)));
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isRegularFile(Path.of(bash)));
         String guards = DeploymentPlatformCapabilityProbe.toolExecutionGuards()
             .replace("[ -x \"$cap_checker\" ]", "[ \"$scenario\" != checker-missing ]")
             .replace("[ -x /usr/bin/setpriv ]", "[ \"$scenario\" != runner-missing ]")
             .replace("/usr/bin/stat", "fixture_stat").replace("/usr/bin/readlink", "fixture_readlink")
+            .replace("\"$cap_checker\" \"$resolved_checker\"", "fixture_getcap \"$resolved_checker\"")
             .replace("probe_getcap=\"$cap_checker\"", "probe_getcap=fixture_getcap")
             .replace("probe_setpriv=/usr/bin/setpriv", "probe_setpriv=fixture_setpriv");
         String script = """
@@ -202,11 +203,15 @@ class DeploymentPlatformCapabilityParserTest {
             fixture_readlink() {
               case "$3" in
                 /usr/bin/fixture-link) printf '/usr/libexec/fixture\\n' ;;
-                /usr/bin/setpriv) printf '%s\\n' "$3" ;;
+                /usr/bin/setpriv | /usr/sbin/getcap | /sbin/getcap) printf '%s\\n' "$3" ;;
                 *) return 1 ;;
               esac
             }
             fixture_getcap() {
+              if [[ "$1" = */getcap ]]; then
+                if [ "$scenario" = checker-capability ]; then printf 'recorded capability'; fi
+                return 0
+              fi
               [ "$1" = /usr/libexec/fixture ] || [ "$1" = /usr/bin/setpriv ] || return 1
               if [ "$1" = /usr/libexec/fixture ]; then
                 case "$scenario" in
@@ -220,7 +225,7 @@ class DeploymentPlatformCapabilityParserTest {
               [ "$*" = '--no-new-privs -- /usr/bin/fixture-link --version' ] || exit 91
               printf 'OBSERVED=1.2.3\\n'
             }
-            for scenario in clear setuid setgid capability capability-error capability-diagnostic checker-missing runner-missing; do
+            for scenario in clear setuid setgid capability capability-error capability-diagnostic checker-missing checker-capability runner-missing; do
             """ + guards + """
               if ! probe_tool_run fixture --version; then printf 'UNAVAILABLE=%s\\n' "$scenario"; fi
             done
@@ -233,8 +238,74 @@ class DeploymentPlatformCapabilityParserTest {
             UNAVAILABLE=capability-error
             UNAVAILABLE=capability-diagnostic
             UNAVAILABLE=checker-missing
+            UNAVAILABLE=checker-capability
             UNAVAILABLE=runner-missing
             """, runProbeFixture(bash, script));
+    }
+
+    @Test
+    void hostToolchainQueriesDoNotUseConfiguredGoOrRustOverrides() throws Exception {
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isRegularFile(Path.of(bash)));
+        String versionChecks = DeploymentEcosystemCapabilityProbe.toolchainVersionChecks();
+        assertTrue(DeploymentPlatformCapabilityProbe.render().contains(versionChecks));
+        String fixture = """
+            set -eu
+            export GOTOOLCHAIN=auto GOENV=/project/go-env GOWORK=/go.work GOPROXY=https://example.invalid
+            export RUSTUP_TOOLCHAIN=nightly RUSTUP_HOME=/project/rustup RUSTUP_AUTO_INSTALL=1 CARGO_NET_OFFLINE=false
+            probe_tool() {
+              case "$scenario:$1" in
+                unavailable:cargo) return 1 ;;
+                *) printf '/trusted/bin/%s\\n' "$1" ;;
+              esac
+            }
+            fixture_readlink() {
+              if [ "$scenario" = proxy ]; then printf '/trusted/bin/rustup\\n'; else printf '%s\\n' "$3"; fi
+            }
+            probe_tool_run() {
+              case "$1 $2" in
+                'go version')
+                  [ "$GOTOOLCHAIN:$GOENV:$GOWORK:$GOPROXY" = 'local:off:off:off' ] || return 91
+                  printf 'go version go1.24.6 linux/amd64\\n'
+                  [ "$scenario" != unavailable ]
+                  ;;
+                '/trusted/bin/rustc --version' | '/trusted/bin/cargo --version')
+                  [ "$scenario" != proxy ] || { printf 'PROXY_EXECUTED\\n' >&3; return 92; }
+                  [ "$RUSTUP_TOOLCHAIN:$RUSTUP_HOME:$RUSTUP_AUTO_INSTALL:$CARGO_NET_OFFLINE" = '/dev/null:/dev/null:0:true' ] || return 93
+                  printf '%s 1.89.0 (fixture)\\n' "${1##*/}"
+                  ;;
+                *) return 94 ;;
+              esac
+            }
+            exec 3>&1
+            """ + versionChecks.replace("/usr/bin/readlink", "fixture_readlink");
+        assertEquals("SERVICE_GO=1.24.6\nTOOL_GO=1.24.6\nTOOL_RUSTC=1.89.0\nTOOL_CARGO=1.89.0\nSERVICE_RUST=1.89.0\n",
+            runProbeFixture(bash, "scenario=local\n" + fixture));
+        assertEquals("SERVICE_GO=1.24.6\nTOOL_GO=1.24.6\nTOOL_RUSTC=\nTOOL_CARGO=\nSERVICE_RUST=\n",
+            runProbeFixture(bash, "scenario=proxy\n" + fixture));
+        assertEquals("SERVICE_GO=\nTOOL_GO=\nTOOL_RUSTC=1.89.0\nTOOL_CARGO=\nSERVICE_RUST=\n",
+            runProbeFixture(bash, "scenario=unavailable\n" + fixture));
+    }
+
+    @Test
+    void requiredHostUtilityRejectionStopsTheProbeBeforeReadingHostFacts() throws Exception {
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isRegularFile(Path.of(bash)));
+        String hostProbe = DeploymentPlatformCapabilityProbe.render();
+        String requiredUtilities = hostProbe.substring(hostProbe.indexOf("for probe_utility "),
+            hostProbe.indexOf("os_release=/etc/os-release"));
+        String fixture = """
+            probe_tool() { [ "$scenario" != denied ] || [ "$1" != /usr/bin/awk ]; }
+            for scenario in allowed denied; do
+              status=0
+              (
+            """ + requiredUtilities + """
+                printf 'READ_HOST_FACTS\\n'
+              ) || status=$?
+              printf 'STATUS=%s\\n' "$status"
+            done
+            """;
+        assertEquals("READ_HOST_FACTS\nSTATUS=0\nSTATUS=64\n", runProbeFixture(bash, fixture));
     }
 
     @Test
@@ -500,12 +571,13 @@ class DeploymentPlatformCapabilityParserTest {
                 probe_command() {
                   [ "$1" = firewall-cmd ] || { [ "$1" = systemctl ] && [ "$scenario" != untrusted ]; }
                 }
-                probe_run() { probe_command "$1" && "$@"; }
+                probe_tool() { probe_command "$1"; }
+                probe_tool_run() { probe_tool "$1" && "$@"; }
                 systemctl() {
                   [ "$scenario" != untrusted ] || { printf 'REJECTED_TOOL_EXECUTED\\n'; exit 91; }
                   [ "$*" = 'is-active --quiet firewalld' ] || exit 92
                   printf 'VERIFIED_SYSTEMCTL_EXECUTED\\n'
-                  [ "$scenario" = active ]
+                  [ "$scenario" = active ] || return 3
                 }
                 """ + "scenario='" + scenario + "'\n" + DeploymentPlatformCapabilityProbe.firewallProbe();
             Process process = new ProcessBuilder(bash, "-s").redirectErrorStream(true).start();
@@ -535,7 +607,8 @@ class DeploymentPlatformCapabilityParserTest {
                 set -eu
                 export LC_ALL=C
                 probe_command() { [ "$1" = ufw ]; }
-                probe_run() { probe_command "$1" && "$@"; }
+                probe_tool() { probe_command "$1"; }
+                probe_tool_run() { probe_tool "$1" && "$@"; }
                 systemctl() { return 0; }
                 ufw() {
                   case "$scenario" in

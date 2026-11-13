@@ -24,7 +24,8 @@ public final class DeploymentPlatformCapabilityProbe {
      * @return fixed capability probe / 固定能力探测
      */
     public static String render() {
-        return render("printf 'DOCKER_OPERATIONAL=0\\nPODMAN_OPERATIONAL=0\\nPODMAN_QUADLET=0\\nCONTAINER_OPERATIONAL_PROBED=none\\n'\n");
+        return render("printf 'DOCKER_OPERATIONAL=0\\nPODMAN_OPERATIONAL=0\\nPODMAN_QUADLET=0\\nCONTAINER_OPERATIONAL_PROBED=none\\n'\n",
+            SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER);
     }
 
     /** Checks only the selected container engine; its native store may initialize under separate approval. / 单独审批后仅检查所选容器引擎，原生存储可能初始化。
@@ -36,18 +37,19 @@ public final class DeploymentPlatformCapabilityProbe {
                 "if HOME=/root probe_run docker info >/dev/null 2>&1; then printf 'DOCKER_OPERATIONAL=1\\n'; else printf 'DOCKER_OPERATIONAL=0\\n'; fi\nprintf 'PODMAN_OPERATIONAL=0\\nPODMAN_QUADLET=0\\nCONTAINER_OPERATIONAL_PROBED=docker\\n'\n";
             case PODMAN ->
                 "if HOME=/root probe_run podman info >/dev/null 2>&1; then printf 'PODMAN_OPERATIONAL=1\\n'; else printf 'PODMAN_OPERATIONAL=0\\n'; fi\nif HOME=/root probe_run podman quadlet --help >/dev/null 2>&1; then printf 'PODMAN_QUADLET=1\\n'; else printf 'PODMAN_QUADLET=0\\n'; fi\nprintf 'DOCKER_OPERATIONAL=0\\nCONTAINER_OPERATIONAL_PROBED=podman\\n'\n";
-        });
+        }, SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER);
     }
 
     /** Shares protected metadata and tool checks without inserting model-provided fragments. / 共享受保护元数据与工具检查，不插入模型片段。
      * @param containerChecks implementation-owned fixed checks / 实现所属固定检查
+     * @param header fixed SSH launch boundary / 固定 SSH 启动边界
      * @return exact probe / 精确探测 */
-    private static String render(String containerChecks) {
-        return isolatedProbe(probeGuards() + osReleaseReader() + """
+    private static String render(String containerChecks, String header) {
+        return header + isolatedProbe(probeGuards() + toolExecutionGuards() + osReleaseReader() + """
             set -eu
             export LC_ALL=C
             for probe_utility in awk cut grep head readlink sed sort stat tail tr uname; do
-              probe_file "/usr/bin/$probe_utility" && [ -x "/usr/bin/$probe_utility" ] || exit 64
+              probe_tool "/usr/bin/$probe_utility" >/dev/null || exit 64
             done
             os_release=/etc/os-release
             [ -r "$os_release" ] || os_release=/usr/lib/os-release
@@ -64,15 +66,18 @@ public final class DeploymentPlatformCapabilityProbe {
             if probe_command apt-get >/dev/null 2>&1; then printf 'PACKAGE_MANAGER=apt\\n';
             elif probe_command dnf >/dev/null 2>&1; then printf 'PACKAGE_MANAGER=dnf\\n';
             else printf 'PACKAGE_MANAGER=unknown\\n'; fi
-            if probe_command dpkg >/dev/null 2>&1; then printf 'PACKAGE_ARCH='; probe_run dpkg --print-architecture
-            elif probe_command rpm >/dev/null 2>&1; then printf 'PACKAGE_ARCH='; probe_run rpm --eval '%{_arch}'
-            else printf 'PACKAGE_ARCH=unknown\\n'; fi
+            package_arch=unknown
+            if probe_command dpkg >/dev/null 2>&1; then
+              package_arch="$(probe_tool_run dpkg --print-architecture)" || package_arch=unknown
+            elif probe_command rpm >/dev/null 2>&1; then
+              package_arch="$(probe_tool_run rpm --eval '%{_arch}')" || package_arch=unknown
+            fi
+            printf 'PACKAGE_ARCH=%s\\n' "${package_arch:-unknown}"
             if probe_command systemctl >/dev/null 2>&1; then printf 'SYSTEMD=1\\n'; else printf 'SYSTEMD=0\\n'; fi
             if probe_command docker >/dev/null 2>&1; then printf 'DOCKER_CLIENT=1\\n'; else printf 'DOCKER_CLIENT=0\\n'; fi
             if probe_command podman >/dev/null 2>&1; then printf 'PODMAN_CLIENT=1\\n'; else printf 'PODMAN_CLIENT=0\\n'; fi
             """
             + containerChecks
-            + toolExecutionGuards()
             + DeploymentEcosystemCapabilityProbe.platformToolChecks()
             + """
             cpu_level=unknown
@@ -80,10 +85,10 @@ public final class DeploymentPlatformCapabilityProbe {
               cpu_level=x86-64-v1
               loader=
               for candidate in /lib64/ld-linux-x86-64.so.2 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2; do
-                if [ -x "$candidate" ] && probe_file "$candidate"; then loader="$candidate"; break; fi
+                if probe_tool "$candidate" >/dev/null; then loader="$candidate"; break; fi
               done
               if [ -n "$loader" ]; then
-                loader_help="$("$loader" --help 2>/dev/null || :)"
+                loader_help="$(probe_tool_run "$loader" --help 2>/dev/null || :)"
                 if printf '%s\\n' "$loader_help" | /usr/bin/grep -Eq 'x86-64-v4.*supported'; then cpu_level=x86-64-v4
                 elif printf '%s\\n' "$loader_help" | /usr/bin/grep -Eq 'x86-64-v3.*supported'; then cpu_level=x86-64-v3
                 elif printf '%s\\n' "$loader_help" | /usr/bin/grep -Eq 'x86-64-v2.*supported'; then cpu_level=x86-64-v2
@@ -99,7 +104,8 @@ public final class DeploymentPlatformCapabilityProbe {
             fi
             if probe_command getenforce >/dev/null 2>&1; then
               printf 'SECURITY_MODULE=selinux\\n'
-              printf 'SECURITY_STATE='; probe_run getenforce | /usr/bin/tr '[:upper:]' '[:lower:]'
+              security_state="$(probe_tool_run getenforce 2>/dev/null)" || security_state=unknown
+              printf 'SECURITY_STATE=%s\\n' "${security_state,,}"
             elif [ -r /sys/module/apparmor/parameters/enabled ]; then
               printf 'SECURITY_MODULE=apparmor\\n'
               if /usr/bin/grep -Eq '^[Yy]' /sys/module/apparmor/parameters/enabled; then
@@ -120,7 +126,7 @@ public final class DeploymentPlatformCapabilityProbe {
     static String isolatedProbe(String body) {
         if (body.lines().anyMatch("WTL_HOST_CAPABILITY_PROBE"::equals))
             throw new IllegalArgumentException("Capability probe delimiter collision");
-        return SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER + """
+        return """
             builtin unset -v TMPDIR || exit 64
             builtin exec -c /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C \\
               HOME=/dev/null XDG_CONFIG_HOME=/dev/null XDG_CACHE_HOME=/dev/null XDG_DATA_HOME=/dev/null \\
@@ -208,6 +214,8 @@ public final class DeploymentPlatformCapabilityProbe {
             # The fixed metadata reader shares the protected system utility boundary with stat and readlink.
             for cap_checker in /usr/sbin/getcap /sbin/getcap; do
               if [ -x "$cap_checker" ] && probe_file "$cap_checker" && probe_no_setid "$cap_checker"; then
+                resolved_checker="$(/usr/bin/readlink -e -- "$cap_checker")" || continue
+                checker_caps="$("$cap_checker" "$resolved_checker" 2>&1)" && [ -z "$checker_caps" ] || continue
                 probe_getcap="$cap_checker"
                 break
               fi
@@ -272,14 +280,16 @@ public final class DeploymentPlatformCapabilityProbe {
         return """
             if probe_command firewall-cmd >/dev/null 2>&1; then
               printf 'FIREWALL=firewalld\\n'
-              if ! probe_command systemctl >/dev/null 2>&1; then
-                printf 'FIREWALL_STATE=unknown\\n'
-              elif probe_run systemctl is-active --quiet firewalld 2>/dev/null; then
-                printf 'FIREWALL_STATE=active\\n'
-              else printf 'FIREWALL_STATE=inactive\\n'; fi
+              firewalld_status=0
+              probe_tool_run systemctl is-active --quiet firewalld 2>/dev/null || firewalld_status=$?
+              case "$firewalld_status" in
+                0) printf 'FIREWALL_STATE=active\\n' ;;
+                3) printf 'FIREWALL_STATE=inactive\\n' ;;
+                *) printf 'FIREWALL_STATE=unknown\\n' ;;
+              esac
             elif probe_command ufw >/dev/null 2>&1; then
               printf 'FIREWALL=ufw\\n'
-              if ufw_status="$(probe_run ufw status 2>/dev/null)"; then
+              if ufw_status="$(probe_tool_run ufw status 2>/dev/null)"; then
                 case "$ufw_status" in
                   'Status: active'*) printf 'FIREWALL_STATE=active\\n' ;;
                   'Status: inactive'*) printf 'FIREWALL_STATE=inactive\\n' ;;
@@ -290,7 +300,7 @@ public final class DeploymentPlatformCapabilityProbe {
               fi
             elif probe_command nft >/dev/null 2>&1; then
               printf 'FIREWALL=nftables\\n'
-              if nft_rules="$(probe_run nft list ruleset 2>/dev/null)"; then
+              if nft_rules="$(probe_tool_run nft list ruleset 2>/dev/null)"; then
                 if [ -n "$nft_rules" ]; then printf 'FIREWALL_STATE=active\\n'; else printf 'FIREWALL_STATE=inactive\\n'; fi
               else
                 printf 'FIREWALL_STATE=unknown\\n'

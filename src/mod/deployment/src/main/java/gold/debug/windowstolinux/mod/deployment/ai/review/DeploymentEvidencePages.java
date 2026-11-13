@@ -6,6 +6,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 
@@ -30,22 +31,8 @@ public final class DeploymentEvidencePages {
         int start = (int) page.get("offset");
         int end = (int) page.get("next");
         if (start == end) return page;
-        var missing = new ArrayList<Map<String, Object>>();
-        int cursor = start;
-        int newCharacters = 0;
-        for (var known : retained.headMap(end, false).entrySet()) {
-            if (known.getValue() <= cursor) continue;
-            if (known.getKey() > cursor) {
-                int boundary = known.getKey();
-                missing.add(range(text, cursor, boundary));
-                newCharacters += boundary - cursor;
-            }
-            cursor = Math.min(end, known.getValue());
-        }
-        if (cursor < end) {
-            missing.add(range(text, cursor, end));
-            newCharacters += end - cursor;
-        }
+        var missing = missing(text, start, end, retained);
+        int newCharacters = missing.stream().mapToInt(range -> (int) range.get("next") - (int) range.get("offset")).sum();
         remember(retained, start, end);
         if (end - start - newCharacters <= 64 + 48 * missing.size()) return page;
         var compact = new LinkedHashMap<>(page);
@@ -54,11 +41,23 @@ public final class DeploymentEvidencePages {
         return compact;
     }
 
+    static List<Map<String, Object>> missing(String text, int start, int end, NavigableMap<Integer, Integer> retained) {
+        var missing = new ArrayList<Map<String, Object>>();
+        int cursor = start;
+        for (var known : retained.headMap(end, false).entrySet()) {
+            if (known.getValue() <= cursor) continue;
+            if (known.getKey() > cursor) missing.add(range(text, cursor, known.getKey()));
+            cursor = Math.min(end, known.getValue());
+        }
+        if (cursor < end) missing.add(range(text, cursor, end));
+        return missing;
+    }
+
     private static Map<String, Object> range(String text, int offset, int next) {
         return Map.of("offset", offset, "next", next, "text", text.substring(offset, next));
     }
 
-    private static void remember(NavigableMap<Integer, Integer> retained, int start, int end) {
+    static void remember(NavigableMap<Integer, Integer> retained, int start, int end) {
         var left = retained.floorEntry(start);
         if (left != null && left.getValue() >= start) start = left.getKey();
         var nearby = retained.tailMap(start, true).entrySet().iterator();

@@ -532,7 +532,11 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         facts(intent, request, supplied);
         String instructions = gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources.text(
             DeploymentAssistedApproval.class, "fixed-effect-review.md");
-        if (intent.semantics().filter(value -> value.operation().equals("deployment.toolchain.prepare.v1")).isPresent())
+        String operation = intent.semantics().map(value -> value.operation()).orElse("");
+        if (Set.of("deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1",
+            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION).contains(operation))
+            instructions = toolchainReviewInstructions(instructions, operation);
+        if (operation.equals("deployment.toolchain.prepare.v1"))
             instructions += "\n" + DeploymentAssistedPreparationReview.instructions(intent, request,
                 gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied));
         if (intent.semantics().filter(value -> value.operation().equals("deployment.build.run.v1")).isPresent()) {
@@ -552,6 +556,16 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             instructions += "\n" + gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources.text(
                 DeploymentAssistedApproval.class, "native-dependencies-review.md");
         return instructions;
+    }
+
+    private static String toolchainReviewInstructions(String instructions, String operation) {
+        return instructions.lines().filter(line -> line.startsWith("Review the exact registered fixed effect.")
+            || line.startsWith("reviewedApplicationSources records")
+            || line.startsWith("hostPrerequisiteObservations,")
+            || line.startsWith("For " + operation + ",")
+            || line.startsWith("For tracked and diagnosed toolchain JSON requests,")
+            || line.startsWith("When the supplied evidence establishes the boundaries"))
+            .collect(java.util.stream.Collectors.joining("\n"));
     }
 
     private synchronized Map<String, ?> nativeDependencyFacts(ActionIntent intent,

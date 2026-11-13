@@ -31,6 +31,11 @@ final class SshCommandFrame implements AutoCloseable {
     static final String COMMAND = SshCommandFrameProtocol.FRAME_LAUNCHER + " '"
         + BOOTSTRAP.replace("'", "'\"'\"'") + "'";
 
+    private static final String PRIVILEGE_CHECKED_COMMAND = SshCommandFrameProtocol.PRIVILEGE_CHECKED_FRAME_LAUNCHER + " '"
+        + BOOTSTRAP.replace("'", "'\"'\"'") + "'";
+
+    private final boolean privilegeChecked;
+
     /** Owned UTF-8 script bytes, wiped after actual sender termination. / 发送线程实际终止后清零的所属 UTF-8 脚本字节。 */
     private final byte[] script;
 
@@ -51,6 +56,7 @@ final class SshCommandFrame implements AutoCloseable {
      */
     SshCommandFrame(CommandRequest request) throws ApiException {
         Objects.requireNonNull(request);
+        privilegeChecked = request.script().startsWith(SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER);
         byte[] payload = request.stdin();
         try {
             if (payload.length > MAX_INPUT || request.outputLimitBytes() > MAX_OUTPUT
@@ -75,6 +81,10 @@ final class SshCommandFrame implements AutoCloseable {
             throw SshConnector.failure(ProblemCode.INVALID_INPUT, "SSH_COMMAND_INPUT",
                 "SSH script, input, output limit or timeout violates the request boundary");
         }
+    }
+
+    String command() {
+        return privilegeChecked ? PRIVILEGE_CHECKED_COMMAND : COMMAND;
     }
 
     /**

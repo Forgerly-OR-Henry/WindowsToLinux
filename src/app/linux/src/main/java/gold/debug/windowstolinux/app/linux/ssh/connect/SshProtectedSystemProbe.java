@@ -19,23 +19,37 @@ final class SshProtectedSystemProbe {
 
     /** Checks each ancestor before its children and recognizes the system merged-usr /bin link. / 先核验祖先再核验子项，并识别系统 merged-usr 的 /bin 链接。
      * @param sftp metadata channel on the original authenticated session / 原已认证会话上的元数据通道
+     * @param privilegeChecked whether to require the additional V2 launch tools and reject set-ID / 是否校验 V2 附加启动工具并拒绝 set-ID
      * @return whether every required fixed path met its metadata constraints / 每个必需固定路径是否满足元数据约束
      * @throws IOException if a metadata request fails / 元数据请求失败时 */
-    static boolean verify(SftpClient sftp) throws IOException {
+    static boolean verify(SftpClient sftp, boolean privilegeChecked) throws IOException {
         if (sftp.getVersion() != SftpConstants.SFTP_V3) return false;
         for (String directory : List.of("/", "/usr", "/usr/bin")) {
             if (!protectedDirectory(sftp.lstat(directory))) return false;
         }
         for (String executable : SYSTEM_TOOLS) {
-            if (!protectedExecutable(sftp.lstat(executable))) return false;
+            if (!protectedExecutable(sftp.lstat(executable), privilegeChecked)) return false;
         }
+        if (!protectedBash(sftp, privilegeChecked)) return false;
+        if (!privilegeChecked) return true;
+        if (!protectedExecutable(sftp.lstat("/usr/bin/setpriv"), true)) return false;
+        var sbin = sftp.lstat("/usr/sbin");
+        if (!sbin.isSymbolicLink())
+            return protectedDirectory(sbin) && protectedExecutable(sftp.lstat("/usr/sbin/getcap"), true);
+        if (!rootOwned(sbin)) return false;
+        String target = sftp.readLink("/usr/sbin");
+        return ("bin".equals(target) || "/usr/bin".equals(target))
+            && protectedExecutable(sftp.lstat("/usr/bin/getcap"), true);
+    }
+
+    private static boolean protectedBash(SftpClient sftp, boolean privilegeChecked) throws IOException {
         var bin = sftp.lstat("/bin");
         if (!bin.isSymbolicLink())
-            return protectedDirectory(bin) && protectedExecutable(sftp.lstat("/bin/bash"));
+            return protectedDirectory(bin) && protectedExecutable(sftp.lstat("/bin/bash"), privilegeChecked);
         if (!rootOwned(bin)) return false;
         String target = sftp.readLink("/bin");
         return ("usr/bin".equals(target) || "/usr/bin".equals(target))
-            && protectedExecutable(sftp.lstat("/usr/bin/bash"));
+            && protectedExecutable(sftp.lstat("/usr/bin/bash"), privilegeChecked);
     }
 
     /** Recognizes a protected directory without following an alias. / 识别受保护目录，避免跟随别名。
@@ -47,10 +61,12 @@ final class SshProtectedSystemProbe {
 
     /** Requires a protected regular file with the owner execute bit set. / 要求受保护的普通文件设置所有者执行位。
      * @param attributes metadata for the executable entry itself / 可执行文件项本身的元数据
+     * @param privilegeChecked whether to reject set-ID bits / 是否拒绝 set-ID 位
      * @return whether a protected executable was observed / 是否观测到受保护可执行文件 */
-    private static boolean protectedExecutable(Attributes attributes) {
+    private static boolean protectedExecutable(Attributes attributes, boolean privilegeChecked) {
         return protectedMode(attributes) && attributes.isRegularFile()
-            && (attributes.getPermissions() & 0100) != 0;
+            && (attributes.getPermissions() & 0100) != 0
+            && (!privilegeChecked || (attributes.getPermissions() & 06000) == 0);
     }
 
     /** Rejects modes that grant group or other write access. / 拒绝授予组或其他用户写权限的模式。

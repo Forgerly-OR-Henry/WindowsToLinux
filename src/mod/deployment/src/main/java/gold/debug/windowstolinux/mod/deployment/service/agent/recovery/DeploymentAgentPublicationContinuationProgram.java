@@ -101,7 +101,7 @@ public final class DeploymentAgentPublicationContinuationProgram {
         for(String fragment:FRAGMENTS){
             String content=resource("linux/helper/"+fragment);
             for(var insert:RESOURCE_INSERTS.entrySet())if(content.contains(insert.getKey()))content=content.replaceAll("(?m)^[ \t]*"+java.util.regex.Pattern.quote(insert.getKey()),java.util.regex.Matcher.quoteReplacement(resource("linux/helper/"+insert.getValue())));
-            content=gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderToolchainSources(DeploymentRemoteLayoutTemplate.render(content,layout));
+            content=gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderPublicationRecoveryToolchainSources(DeploymentRemoteLayoutTemplate.render(content,layout));
             if(fragment.startsWith("toolchain/")){
                 if(fragment.endsWith("10-release-metadata.py"))output.append("prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" 3<&0 <<'WTL_OFFICIAL_TOOLCHAINS'\n").append(catalogLiteral(catalog));
                 // The continuation independently reproduces the fixed recovery base and only invokes verify.

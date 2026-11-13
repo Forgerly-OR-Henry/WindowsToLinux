@@ -220,12 +220,14 @@ public final class DeploymentCommandEvidence {
             facts.put("platformContractRevision", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.REVISION);
         }
         facts.put("operation", operation);
+        boolean privilegeChecked = request.script().startsWith(SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER);
         facts.put("builtInSshStartup", Map.of(
-            "frameLauncher", SshCommandFrameProtocol.FRAME_LAUNCHER,
+            "frameLauncher", privilegeChecked ? SshCommandFrameProtocol.PRIVILEGE_CHECKED_FRAME_LAUNCHER : SshCommandFrameProtocol.FRAME_LAUNCHER,
             "requestLauncher", SshCommandFrameProtocol.SCRIPT_LAUNCHER,
             "requestScriptFd", 3, "originalStdinFd", 0,
             "scope", "Built-in SSH exec transport implementation after the SSH server dispatches the fixed frame. "
                 + "The account shell unsets the listed Linux loader and libc startup variables before starting the first product executable. "
+                + (privilegeChecked ? "The account shell first runs the SFTP-admitted getcap to check the launch files. A clear result is required before setpriv establishes no-new-privileges for the frame. " : "")
                 + "Both Bash processes start with privileged mode enabled; this suppresses startup imports without changing the SSH account or granting privileges. "
                 + "The SSH server, the initial account shell and its startup policy, and installed interpreters are host prerequisites. "
                 + "These facts describe the shipped code, not a live host measurement. Review further interpreters launched by the request."));
@@ -547,11 +549,14 @@ public final class DeploymentCommandEvidence {
                 Map.entry("scriptSha256", java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(script))),
                 Map.entry("scriptBytes", script.length), Map.entry("stdinBytes", 0),
                 Map.entry("environment", Map.of("launcher", "builtin exec -c /usr/bin/env -i", "workingDirectory", "/", "shellArguments", java.util.List.of("--noprofile", "--norc", "-p", "-s"), "homeAndXdgPaths", "/dev/null",
-                    "startupAdmission", Map.of("marker", gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER.stripTrailing(),
-                        "mechanism", "Before SSH exec, the built-in transport checks root ownership and protected modes for the fixed launch paths and their ancestors using SFTP v3 LSTAT and READLINK on the same authenticated session. Unavailable or unsafe metadata blocks dispatch.",
-                        "executables", java.util.List.of("/usr/bin/env", "/bin/bash", "/usr/bin/stat", "/usr/bin/readlink"),
-                        "trustAssumptions", "The authenticated server's SFTP subsystem and exec share the same host filesystem view; the OS startup boundary remains trusted."))),
-                Map.entry("optionalCommandAdmission", "probe_tool checks each language or build-tool executable and its path for protected ownership and modes, rejects resolved setuid/setgid and nonempty or failed getcap results, then runs the checked path through /usr/bin/setpriv --no-new-privs. Missing checker or runner leaves optional results unavailable."),
+                    "startupAdmission", platformProbeStartup(variant.equals("HOST")))),
+                Map.entry("optionalCommandAdmission", "Required utility paths, the optional CPU loader, and package, security, firewall and language executables use probe_tool for protected ownership and modes, resolved setuid/setgid rejection and an empty successful getcap result. Required utility failures stop the probe. probe_tool_run uses /usr/bin/setpriv --no-new-privs for optional executions. Container variants separately invoke the selected engine under its protected-path check and allow its native initialization."),
+                Map.entry("go", Map.of("arguments", java.util.List.of("version"), "environment",
+                    Map.of("GOTOOLCHAIN", "local", "GOENV", "off", "GOWORK", "off", "GOPROXY", "off"))),
+                Map.entry("rust", Map.of("commands", java.util.List.of("rustc", "cargo"), "arguments", java.util.List.of("--version"),
+                    "environment", Map.of("RUSTUP_TOOLCHAIN", "/dev/null", "RUSTUP_HOME", "/dev/null",
+                        "RUSTUP_AUTO_INSTALL", "0", "CARGO_NET_OFFLINE", "true"),
+                    "admission", "Skip rustup symlinks and same-inode siblings. The forced local non-directory override blocks rustup toolchain selection, and automatic install is disabled. Publish service Rust only if both version queries succeed.")),
                 Map.entry("python", Map.of("discoveryNamePattern", "^python[0-9]+[.][0-9]+$", "venvArguments", java.util.List.of("-I", "-S", "-B", "-m", "venv", "--help"), "pipArguments", java.util.List.of("-I", "-S", "-B", "-"))),
                 Map.entry("npm", Map.of("arguments", java.util.List.of("--offline", "--no-update-notifier", "--version"),
                     "configuration", "The probe supplies /dev/null for user and global npm config and skips package-manager version queries when root project configuration exists. These are npm CLI settings.")),
@@ -562,5 +567,17 @@ public final class DeploymentCommandEvidence {
         } catch (java.security.NoSuchAlgorithmException impossible) {
             throw new IllegalStateException(impossible);
         }
+    }
+
+    private static Map<String, Object> platformProbeStartup(boolean privilegeChecked) {
+        if (privilegeChecked)
+            return Map.of("marker", SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER.stripTrailing(),
+                "mechanism", "Same-session SFTP v3 LSTAT and READLINK must report protected root-owned launch paths and no executable setuid/setgid bits. The fixed account-shell command uses getcap on itself and the launch files. Any output or nonzero exit prevents launching the frame. setpriv then applies no-new-privileges to the frame and descendants.",
+                "executables", java.util.List.of("/usr/sbin/getcap", "/usr/bin/setpriv", "/usr/bin/env", "/bin/bash", "/usr/bin/stat", "/usr/bin/readlink"),
+                "trustAssumptions", "SFTP v3 lacks Linux capability xattr queries. The first execution of the fixed, SFTP-admitted distro getcap trusts the OS installation and account shell before getcap checks its own xattr. SFTP and exec must see the same protected filesystem.");
+        return Map.of("marker", SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER.stripTrailing(),
+            "mechanism", "Before SSH exec, the built-in transport checks root ownership and protected modes for the fixed launch paths and their ancestors using SFTP v3 LSTAT and READLINK on the same authenticated session. Unavailable or unsafe metadata blocks dispatch.",
+            "executables", java.util.List.of("/usr/bin/env", "/bin/bash", "/usr/bin/stat", "/usr/bin/readlink"),
+            "trustAssumptions", "The authenticated server's SFTP subsystem and exec share the same host filesystem view; the OS startup boundary remains trusted.");
     }
 }

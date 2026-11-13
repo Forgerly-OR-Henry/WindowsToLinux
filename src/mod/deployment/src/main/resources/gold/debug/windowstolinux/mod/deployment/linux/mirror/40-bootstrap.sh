@@ -171,7 +171,7 @@ wtl_run_mirror_runtime() {
     "$python" -I "$WTL_MIRROR_RUNTIME" "$@"; return $?
   fi
   # Execute the bytes we checked instead of passing the original path to the interpreter.
-  "$python" -I -c '
+  "$python" -I -S -B -c '
 import hashlib, os, stat, sys
 
 path, expected = sys.argv[1:3]
@@ -302,7 +302,7 @@ wtl_apt() { wtl_system_package apt-get "$@"; }
 wtl_dnf() {
   local python= shebang point
   for python in "${WTL_MIRROR_SYSTEM_PYTHON:-}" /usr/bin/python3 /usr/libexec/platform-python; do
-    if [ -n "$python" ] && [ -x "$python" ] && "$python" -I -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1; then
+    if [ -n "$python" ] && [ -x "$python" ] && "$python" -I -S -B -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1; then
       wtl_run_mirror_runtime "$python" system-dnf "$@"; return $?
     fi
   done
@@ -310,7 +310,7 @@ wtl_dnf() {
     IFS= read -r shebang </usr/bin/dnf || true
     if [[ "$shebang" =~ ^\#!(/[^[:space:]]*python[0-9.]*)([[:space:]]|$) ]]; then
       python="${BASH_REMATCH[1]}"
-      if [ -x "$python" ] && "$python" -I -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1; then
+      if [ -x "$python" ] && "$python" -I -S -B -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1; then
         wtl_run_mirror_runtime "$python" system-dnf "$@"; return $?
       fi
     fi

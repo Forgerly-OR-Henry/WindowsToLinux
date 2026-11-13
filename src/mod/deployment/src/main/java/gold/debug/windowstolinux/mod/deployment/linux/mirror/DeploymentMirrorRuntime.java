@@ -11,6 +11,8 @@ import gold.debug.windowstolinux.mod.deployment.config.mirror.MirrorCatalog;
 /** Renders task-owned download policy and protocol adapters before executable review. */
 public final class DeploymentMirrorRuntime {
     private static final String ROOT = "/gold/debug/windowstolinux/mod/deployment/linux/mirror/";
+    private static final String PUBLICATION_RECOVERY_MIRROR_SHA256 =
+        "0ef501b4eea1fff29bef1da73b089816d135901bb73cef8997bee3c592a74089";
 
     private DeploymentMirrorRuntime() { }
 
@@ -39,6 +41,15 @@ public final class DeploymentMirrorRuntime {
 
     /** Toolchain URL roots and redirect trust come from the Mod catalog, including older tasks. */
     public static String renderToolchainSources(String source) {
+        return renderToolchainSources(source, false);
+    }
+
+    /** Reproduces the original recovery program, which verifies bindings without preparing toolchains. */
+    public static String renderPublicationRecoveryToolchainSources(String source) {
+        return renderToolchainSources(source, true);
+    }
+
+    private static String renderToolchainSources(String source, boolean publicationRecovery) {
         var catalog = MirrorCatalog.load();
         if (!source.contains("__WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__")
             && !source.contains("__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__")
@@ -59,7 +70,8 @@ public final class DeploymentMirrorRuntime {
             var json = new ObjectMapper();
             return source.replace("__WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__", json.writeValueAsString(origins))
                 .replace("__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__", json.writeValueAsString(hosts))
-                .replace("__WTL_MIRROR_RUNTIME_SHA256__", runtimeSha256());
+                .replace("__WTL_MIRROR_RUNTIME_SHA256__",
+                    publicationRecovery ? PUBLICATION_RECOVERY_MIRROR_SHA256 : runtimeSha256());
         } catch (IOException impossible) {
             throw new IllegalStateException(impossible);
         }

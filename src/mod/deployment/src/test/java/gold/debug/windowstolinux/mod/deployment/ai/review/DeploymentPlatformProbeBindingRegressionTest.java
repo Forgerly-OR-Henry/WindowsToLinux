@@ -40,9 +40,20 @@ class DeploymentPlatformProbeBindingRegressionTest {
         assertEquals(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(script.getBytes(StandardCharsets.UTF_8))), binding.path("scriptSha256").asText());
         assertEquals("EXACT_PRODUCT_REQUEST_SCRIPT_AND_EMPTY_STDIN", binding.path("comparison").asText());
         assertEquals(0, binding.path("stdinBytes").asInt());
-        assertTrue(script.startsWith(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER));
-        assertEquals(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER.stripTrailing(),
-            binding.at("/environment/startupAdmission/marker").asText());
+        boolean host = variant.equals("HOST");
+        String header = host ? SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER
+            : SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER;
+        assertTrue(script.startsWith(header));
+        assertEquals(header.stripTrailing(), binding.at("/environment/startupAdmission/marker").asText());
+        assertEquals(host ? SshCommandFrameProtocol.PRIVILEGE_CHECKED_FRAME_LAUNCHER : SshCommandFrameProtocol.FRAME_LAUNCHER,
+            facts.at("/builtInSshStartup/frameLauncher").asText());
+        if (host) {
+            assertEquals("/usr/sbin/getcap", binding.at("/environment/startupAdmission/executables/0").asText());
+            assertTrue(binding.at("/environment/startupAdmission/trustAssumptions").asText().contains("first execution"));
+        }
+        assertEquals("local", binding.at("/go/environment/GOTOOLCHAIN").asText());
+        assertEquals("/dev/null", binding.at("/rust/environment/RUSTUP_TOOLCHAIN").asText());
+        assertEquals("0", binding.at("/rust/environment/RUSTUP_AUTO_INSTALL").asText());
         assertEquals("-n", binding.at("/composer/interpreterArguments/0").asText());
         var npmArguments = binding.at("/npm/arguments");
         assertEquals("--offline", npmArguments.path(0).asText());
@@ -59,11 +70,13 @@ class DeploymentPlatformProbeBindingRegressionTest {
     @Test
     void anyChangedEnvironmentGuardArgumentOrAppendedEffectLosesTheBinding() throws Exception {
         String original = DeploymentPlatformCapabilityProbe.render();
-        for (String script : java.util.List.of(original.substring(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER.length()),
+        for (String script : java.util.List.of(original.substring(SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER.length()),
+            original.replace(SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER, SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER),
             original.replace("env -i", "env"), original.replace("cd -- /", "cd -- /tmp"),
             original.replace("--no-plugins", ""), original.replace("-I -S -B", "-I"),
             original.replace("--offline ", ""), original.replace("--no-update-notifier ", ""),
             original.replace("--no-new-privs", ""), original.replace("-n -f", "-f"),
+            original.replace("GOTOOLCHAIN=local", "GOTOOLCHAIN=auto"), original.replace("RUSTUP_AUTO_INSTALL=0", "RUSTUP_AUTO_INSTALL=1"),
             original.replace("probe_file \"$executable\"", "true"), original + "printf changed\n")) {
             assertNotEquals(original, script);
             assertFalse(facts("deployment.candidate.host-probe.v1", script, new byte[0]).has("platformProbe"));

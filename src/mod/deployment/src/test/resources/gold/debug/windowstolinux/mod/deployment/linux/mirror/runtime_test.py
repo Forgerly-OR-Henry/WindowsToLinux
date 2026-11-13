@@ -151,8 +151,9 @@ class PrivilegedRuntimeTests(unittest.TestCase):
         self.assertEqual(command[:2], ['/bin/bash', '-pc'])
         self.assertEqual(command[3:], ['wtl-system-package', 'install', 'demo'])
         self.assertIn('wtl_mirror_runtime_sha256=' + pinned, command[2])
-        loader = command[2].partition(" -I -c '\n")[2].partition("\n' ")[0]
+        loader = command[2].partition(" -I -S -B -c '\n")[2].partition("\n' ")[0]
         self.assertTrue(loader)
+        self.assertEqual(2, command[2].count(" -I -S -B -c 'import sys; sys.exit(sys.version_info"))
         path = '/tmp/wtl-mirrors.fixture/runtime.py'
         expected_argv = [path, 'system-dnf', 'install', 'demo']
         for body, mode, accepted in ((payload, 0o400, True), (payload + b'\n', 0o400, False), (payload, 0o600, False)):

@@ -17,6 +17,7 @@ import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandSourc
 import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract;
 
 /** Native model transport and side-effect-free structured submissions. Business validators retain authority. */
 public final class DeploymentAiJson {
@@ -161,9 +162,11 @@ public final class DeploymentAiJson {
         var definition = new AiToolDefinition("submit_result", "Submit the complete structured result required by the business contract. This submission grants no execution permission.",
             schema);
         policy += " Submit exactly one native submit_result call. Its arguments are the complete requested result. Text alone is not a submission.";
-        if (purpose == AiPurpose.APPROVAL)
-            policy += "\n" + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.text(
-                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task));
+        if (purpose == AiPurpose.APPROVAL) {
+            var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
+            policy += "\n" + (evidence.filter(DeploymentCommandSourceEvidence::toolchainReview).isPresent()
+                ? DeploymentHelperReviewContract.toolchainText(layout) : DeploymentHelperReviewContract.text(layout));
+        }
         if (evidence.isPresent()) policy += "\n" + DeploymentCommandSourceEvidence.INSTRUCTION;
         var conversation = purpose == AiPurpose.APPROVAL ? approvalConversation : null;
         try {
@@ -249,10 +252,10 @@ public final class DeploymentAiJson {
         while (true) {
             var response = call(purpose, messages, definitions, revision, task, extended, Optional.empty());
             if (evidenceReader.isEmpty()) return response;
-            var results = evidenceReader.orElseThrow().read(response);
+            var reader = evidenceReader.orElseThrow();
+            var results = reader.read(response);
             if (results.isEmpty()) return response;
-            messages.add(AiMessage.assistant(response));
-            for (var result : results) messages.add(AiMessage.result(result));
+            reader.continueReview(messages, response, results);
         }
     }
 

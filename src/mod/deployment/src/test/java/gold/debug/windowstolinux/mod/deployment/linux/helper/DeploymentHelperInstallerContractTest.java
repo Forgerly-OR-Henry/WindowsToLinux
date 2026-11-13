@@ -282,6 +282,7 @@ class DeploymentHelperInstallerContractTest {
         }
         assertFalse(DeploymentHelperInstallerScript.renderFiles(layout).contains("helper:" + LEGACY_HELPER_DIGEST));
         for (String previousRelease : List.of(
+            "helper:bcb63c832f1dc89a19de021d3f7a0fed0cb2a028097a9c3f285a2d3336b69c15",
             "helper:5269a09f9fc4e49209ef30c95d9d52fb5f92e67bfd024471f491014ee78c8bca",
             "helper:d10a316ac0078b4dabb286409e12845376d719578c9e2c029686deaf369cc3b4")) {
             assertTrue(DeploymentHelperInstallerScript.render(layout).contains(previousRelease));

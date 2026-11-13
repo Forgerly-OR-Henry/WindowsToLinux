@@ -18,7 +18,7 @@ class DeploymentManagedHelperBundleTest {
         String original = DeploymentManagedHelperBundle.renderScript();
         String recovery = DeploymentManagedHelperBundle.renderPublicationRecovery(layout);
         assertEquals(16, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
-        assertEquals("bcb63c832f1dc89a19de021d3f7a0fed0cb2a028097a9c3f285a2d3336b69c15",
+        assertEquals("d1f49e69bc269aa49c74921389206ea46953c67de1aff356660d8269e3f2cc94",
             HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(original.getBytes(StandardCharsets.UTF_8))));
         assertEquals(original, DeploymentManagedHelperBundle.renderScript());
         assertFalse(recovery.contains("rollback-deployment-first)"));
@@ -251,6 +251,50 @@ class DeploymentManagedHelperBundleTest {
         try {
             assertTrue(process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS), "Python validation timed out");
             return process.exitValue();
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+                assertTrue(process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS));
+            }
+        }
+    }
+
+    @Test
+    void buildPreflightStartsTransientProbeWithFixedEnvironment() throws Exception {
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isRegularFile(java.nio.file.Path.of(bash)));
+        String helper = DeploymentManagedHelperBundle.renderScript();
+        String fragment = helper.substring(helper.indexOf("preflight_systemd_run()"),
+            helper.indexOf("# Fixed-capacity candidate storage"));
+        String client = "/usr/bin/systemd-run \\";
+        assertTrue(fragment.contains("exec -c /usr/bin/env PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C " + client));
+        String observer = """
+            /bin/bash --noprofile --norc -c '
+                if [[ -v DBUS_SYSTEM_BUS_ADDRESS || -v WTL_PREFLIGHT_FIXTURE ]]; then exit 71; fi
+                printf "cwd=%s\\nlang=%s\\n" "$PWD" "$LC_ALL"
+                printf "%s\\n" "$@"
+            ' fixture
+            """.stripTrailing() + " \\";
+        String instrumented = fragment.replace(client, observer);
+        var process = new ProcessBuilder(bash, "--noprofile", "--norc", "-s")
+            .directory(temporaryDirectory.toFile()).redirectErrorStream(true).start();
+        try {
+            try (var input = process.getOutputStream()) {
+                input.write(("""
+                    set -eu
+                    reject() { printf 'rejected=%s\\n' "$1"; exit 64; }
+                    stat() { printf 'cgroup2fs\\n'; }
+                    grep() { return 0; }
+                    command() { return 0; }
+                    export DBUS_SYSTEM_BUS_ADDRESS=fixture-address WTL_PREFLIGHT_FIXTURE=fixture-value
+                    """ + instrumented + "\npreflight_build ordinary\n").getBytes(StandardCharsets.UTF_8));
+            }
+            assertTrue(process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS));
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+            assertEquals(0, process.exitValue(), output);
+            assertTrue(output.startsWith("cwd=/\nlang=C\n"), output);
+            assertTrue(output.lines().anyMatch("--property=WorkingDirectory=/"::equals), output);
+            assertTrue(output.endsWith("/usr/bin/env\n-i\nPATH=/usr/sbin:/usr/bin:/sbin:/bin\nLC_ALL=C\n/usr/bin/true\n"), output);
         } finally {
             if (process.isAlive()) {
                 process.destroyForcibly();

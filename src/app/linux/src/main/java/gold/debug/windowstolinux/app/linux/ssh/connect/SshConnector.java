@@ -361,8 +361,9 @@ public final class SshConnector implements AutoCloseable {
                 command = new SshCommandExecution(session, request, io);
                 long started = System.nanoTime();
                 try {
-                    if (request.script().startsWith(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER))
-                        verifyProtectedSystemProbe(cancellation, started, request.timeout());
+                    boolean privilegeChecked = request.script().startsWith(SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER);
+                    if (privilegeChecked || request.script().startsWith(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER))
+                        verifyProtectedSystemProbe(cancellation, started, request.timeout(), privilegeChecked);
                     var result = command.run(cancellation, started);
                     uncertain = result.outcome() == TaskResult.UNKNOWN;
                     return result;
@@ -378,8 +379,10 @@ public final class SshConnector implements AutoCloseable {
          * @param cancellation original task cancellation / 原任务取消请求
          * @param started monotonic start time shared with command execution / 与命令执行共用的单调时钟起点
          * @param timeout original approved request timeout / 原已审批请求期限
+         * @param privilegeChecked whether the frame requires the V2 privilege gate / 命令帧是否要求 V2 特权门禁
          * @throws ApiException if the launch paths or original deadline cannot be satisfied / 启动路径或原期限无法满足时 */
-        private void verifyProtectedSystemProbe(CancelToken cancellation, long started, Duration timeout) throws ApiException {
+        private void verifyProtectedSystemProbe(CancelToken cancellation, long started, Duration timeout,
+                                                boolean privilegeChecked) throws ApiException {
             Thread worker = Thread.currentThread();
             long budget = timeout.toNanos();
             CancelToken stop = () -> cancellation.requested() || worker.isInterrupted()
@@ -399,7 +402,7 @@ public final class SshConnector implements AutoCloseable {
                 }
                 // SFTP v3 reports numeric UID and POSIX mode; both attributes must actually be returned.
                 try (var scope = openFileScope(stop, true)) {
-                    boolean protectedPaths = SshProtectedSystemProbe.verify(scope.channel());
+                    boolean protectedPaths = SshProtectedSystemProbe.verify(scope.channel(), privilegeChecked);
                     checkProtectedProbeStop(cancellation, stop);
                     if (!protectedPaths)
                         throw failure(ProblemCode.ACCESS_DENIED, "SSH_PROTECTED_SYSTEM_PROBE_UNCONFIRMED",
