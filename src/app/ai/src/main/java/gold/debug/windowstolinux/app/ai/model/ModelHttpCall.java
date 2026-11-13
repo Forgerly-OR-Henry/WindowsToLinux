@@ -1,8 +1,10 @@
 package gold.debug.windowstolinux.app.ai.model;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.URI;
 import java.net.http.*;
+import java.nio.channels.UnresolvedAddressException;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
@@ -208,6 +210,8 @@ public final class ModelHttpCall implements AutoCloseable {
         if (cause instanceof HttpConnectTimeoutException) {
             details.put("timeoutPhase", "HTTP_CONNECT");
             details.put("transportFailureKind", "HTTP_CONNECT_TIMEOUT");
+        } else if (cause.getClass() == ConnectException.class && cause.getCause() instanceof UnresolvedAddressException) {
+            details.put("transportFailureKind", "HTTP_CONNECT_ADDRESS_UNRESOLVED");
         }
         else if (cause instanceof HttpTimeoutException) details.put("timeoutPhase", "HTTP_REQUEST");
         var chain = new ArrayList<String>();

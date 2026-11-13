@@ -49,6 +49,9 @@ public final class DeploymentCommandSourceEvidence {
     private static final String PREPARATION_SELECTION = "/" + PROJECTION + "/preparationSelection";
     private static final String PUBLIC_MIRROR_POLICY = "/mirrorTransport/frozenPolicy";
     private static final String PREPARE = "deployment.toolchain.prepare.v1";
+    private static final String NODE_PREPARE_INSTRUCTION = """
+        The confirmed NODE prepare contract uses NODE_METADATA and NODE_DISTRIBUTION. Review the guarded SYSTEM reuse or checked linux-x64 archive flow and the selected mirror route, TLS and digest checks. Use source pages for any unresolved reachable transport logic. This invocation selects no source build, dependency-repository or registry entrypoint.
+        """;
     private static final String MIRROR_BOOTSTRAP_SHELL = "/" + PROJECTION + "/mirrorBootstrapShell";
     private static final String MIRROR_POLICY_SOURCE = "/" + PROJECTION + "/mirrorPolicySource";
     private static final String DEPENDENCY_WORKER = "/" + PROJECTION + "/dependencyWorker";
@@ -227,6 +230,11 @@ public final class DeploymentCommandSourceEvidence {
         String helper = sources.get(INSTALLED_HELPER_SOURCE);
         appendSelection(body, selected, initialRanges, INSTALLED_HELPER_SOURCE, helper,
             PreparationSourceRange.helper(helper, ecosystem, diagnosed));
+        if (ecosystem.equals("NODE")) {
+            String shell = sources.get(MIRROR_BOOTSTRAP_SHELL);
+            appendSelection(body, selected, initialRanges, MIRROR_BOOTSTRAP_SHELL, shell,
+                List.of(PreparationSourceRange.runtimeLauncher(shell)));
+        }
         boolean packageManager = PreparationSourceRange.buildsFromSource(ecosystem);
         if (packageManager) {
             String shell = sources.get(MIRROR_BOOTSTRAP_SHELL);
@@ -280,6 +288,11 @@ public final class DeploymentCommandSourceEvidence {
         if (!ecosystem.matches("JAVA|NODE|GO|DOTNET|KOTLIN|RUST|PYTHON|PHP|RUBY"))
             throw new IOException("Original toolchain ecosystem unavailable");
         return ecosystem;
+    }
+
+    private boolean nodePreparationReview() {
+        String input = current.has("originalToolchainPreparation") ? "originalToolchainPreparation" : "toolchainPreparation";
+        return preparationReview() && "NODE".equals(current.path(input).path("ecosystem").asText());
     }
 
     private static void appendSelection(StringBuilder body, com.fasterxml.jackson.databind.node.ArrayNode selected,
@@ -549,6 +562,8 @@ public final class DeploymentCommandSourceEvidence {
         private final Set<String> seen = new HashSet<>();
         private final Map<String, NavigableMap<Integer, Integer>> delivered = new LinkedHashMap<>();
         private final Map<String, NavigableMap<Integer, Integer>> inline = new LinkedHashMap<>();
+        private final Map<String, NavigableMap<Integer, Integer>> nodeDeliveredRanges = new LinkedHashMap<>();
+        private final boolean nodePreparation = nodePreparationReview();
         private Optional<AiMessage> priorEvidence = Optional.empty();
         private List<ReadReceipt> latestReads = List.of();
         private List<ReadReceipt> priorReads = List.of();
@@ -556,6 +571,7 @@ public final class DeploymentCommandSourceEvidence {
         private boolean rebased;
         private boolean batchCorrectionUsed;
         private boolean latestBatchRejected;
+        private boolean latestNodeReadRepeated;
         private int remaining;
 
         private Reader(int attempts) {
@@ -570,6 +586,7 @@ public final class DeploymentCommandSourceEvidence {
                 for (String pointer : List.of(BUILD_POLICY, MIRROR_RUNTIME, BUILD_SHELL, BUILD_BODY)) suppliedInline(pointer);
             initialRanges.forEach((pointer, ranges) -> delivered.put(pointer, new TreeMap<>(ranges)));
             delivered.forEach((pointer, ranges) -> inline.put(pointer, new TreeMap<>(ranges)));
+            if (nodePreparation) inline.forEach((pointer, ranges) -> nodeDeliveredRanges.put(pointer, new TreeMap<>(ranges)));
         }
 
         private void suppliedInline(String pointer) {
@@ -599,7 +616,20 @@ public final class DeploymentCommandSourceEvidence {
             if (calls.size() > MAX_READS_PER_RESPONSE) return correctReadBatch(calls);
             var results = new ArrayList<AiToolResult>(calls.size());
             for (var call : calls) results.add(read(call));
+            if (nodePreparation) latestNodeReadRepeated = allNodeRangesPreviouslyDelivered();
             return results;
+        }
+
+        private boolean allNodeRangesPreviouslyDelivered() {
+            boolean anyRead = false;
+            for (var read : latestReads) {
+                if (read.rejected() || read.next() == read.offset()) continue;
+                anyRead = true;
+                var known = nodeDeliveredRanges.computeIfAbsent(read.pointer(), ignored -> new TreeMap<>());
+                var floor = known.floorEntry(read.offset());
+                if (floor == null || floor.getValue() < read.next()) return false;
+            }
+            return anyRead;
         }
 
         private List<AiToolResult> correctReadBatch(List<AiToolCall> calls) throws IOException {
@@ -648,14 +678,24 @@ public final class DeploymentCommandSourceEvidence {
                 messages.add(factsIndex, evidence);
                 priorEvidence = Optional.of(evidence);
                 rebased = true;
+                rememberNodeRanges();
                 return;
             }
             messages.add(AiMessage.assistant(response));
             results.forEach(result -> messages.add(AiMessage.result(result)));
+            rememberNodeRanges();
             if (responses) {
                 priorReads = List.copyOf(latestReads);
                 continuedResponses = true;
             }
+        }
+
+        private void rememberNodeRanges() {
+            if (!nodePreparation) return;
+            for (var read : latestReads)
+                if (!read.rejected() && read.next() > read.offset())
+                    DeploymentEvidencePages.remember(nodeDeliveredRanges.computeIfAbsent(read.pointer(), ignored -> new TreeMap<>()),
+                        read.offset(), read.next());
         }
 
         private boolean isResponses(AiResponse response) {
@@ -666,6 +706,7 @@ public final class DeploymentCommandSourceEvidence {
         private AiMessage retainedSource() throws IOException {
             var header = JSON.createObjectNode().put("snapshotSha256", snapshot).put("trust", "UNTRUSTED_DATA");
             if (latestBatchRejected) header.put("latestBatchRejected", "NO_PAGES_READ_MAX_EIGHT_PER_RESPONSE");
+            if (latestNodeReadRepeated) header.put("latestBatchRepeat", "All returned ranges were already delivered during this review. The current retained frame reproduces them. Submit a verdict, or read a concretely missing range.");
             var reads = header.putArray("latestReads");
             for (var receipt : latestReads) {
                 var read = reads.addObject().put("callId", receipt.callId()).put("rejected", receipt.rejected());
@@ -746,7 +787,7 @@ public final class DeploymentCommandSourceEvidence {
 
     public String instructions() {
         if (buildReview()) return BUILD_INSTRUCTION;
-        if (preparationReview()) return PREPARE_INSTRUCTION;
+        if (preparationReview()) return PREPARE_INSTRUCTION + (nodePreparationReview() ? NODE_PREPARE_INSTRUCTION : "");
         return bindingReview() ? BIND_INSTRUCTION : INSTRUCTION;
     }
 

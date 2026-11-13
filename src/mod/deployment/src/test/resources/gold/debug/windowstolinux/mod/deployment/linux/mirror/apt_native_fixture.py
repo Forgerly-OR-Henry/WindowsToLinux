@@ -43,7 +43,9 @@ elif phase in ('plan', 'query'):
         print("'" + selected.rstrip('/') + "/demo.deb' demo_1-1_amd64.deb " + str(len(payload))
               + ' SHA256:' + hashlib.sha256(payload).hexdigest())
 elif phase == 'download':
-    _, selected, target, expected = arguments
+    _, selected, target, expected = arguments[-4:]
+    if pathlib.Path(target).parent != cache / 'download':
+        sys.exit(65)
     parsed = urllib.parse.urlsplit(selected)
     if parsed.scheme not in ('http', 'https') or parsed.hostname not in ('apt-fixture.invalid', '::1') or not parsed.path.startswith('/' + provider + '/'):
         sys.exit(65)
@@ -54,10 +56,10 @@ elif phase == 'download':
         sys.exit(1)
     if expected != 'SHA256:' + hashlib.sha256(payload).hexdigest():
         sys.exit(2)
-    pathlib.Path(target).write_bytes(payload)
+    pathlib.Path(target).write_bytes(b'x' + payload[1:] if error == 'corrupt-staging' else payload)
 elif phase == 'install':
     target = cache / 'archives' / 'demo_1-1_amd64.deb'
-    if not target.is_file():
+    if not target.is_file() or target.read_bytes() != b'locked-archive-content' * 2048:
         sys.exit(100)
     if error == 'post-install-no-match':
         print('E: Unable to locate package demo', file=sys.stderr)

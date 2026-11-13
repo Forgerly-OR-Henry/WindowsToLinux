@@ -1,5 +1,62 @@
 RUST_DISTRIBUTION_RECIPE = 'rust-component-manifest-v3'
 RUST_DISTRIBUTION_COMPONENTS = ('rustc', 'rust-std-x86_64-unknown-linux-gnu', 'cargo')
+RUST_TRANSFER_REASON_CODES = frozenset((
+    'task-deadline', 'connect-timeout', 'no-progress', 'low-speed', 'truncated-response', 'response-size-limit',
+    'digest-mismatch', 'invalid-protocol-metadata', 'source-previously-exhausted', 'incompatible-route',
+))
+RUST_TRANSFER_REASON_ALIASES = {
+    'task deadline exceeded': 'task-deadline',
+    'toolchain preparation exceeded its time budget': 'task-deadline',
+    'task deadline while waiting for an in-flight object': 'task-deadline',
+    'DNS returned no usable address': 'dns-no-address',
+    'destination/redirect outside selected source allowlist': 'redirect-outside-allowlist',
+    'URL has no exact compatible route for selected source': 'incompatible-route',
+    'URLError': 'url-error',
+    'TimeoutError': 'socket-timeout',
+    'IncompleteRead': 'truncated-response',
+    'RemoteDisconnected': 'remote-disconnected',
+    'ValueError': 'invalid-response',
+}
+
+
+def rust_transfer_reasons(detail):
+    # The shared mirror runtime reports at most six attempts. Transfer error text is never attached.
+    prefix = 'selected sources exhausted: '
+    if detail.startswith(prefix):
+        failures = detail[len(prefix):].split(',', 6)
+    elif detail.endswith((': official source request failed', ': official artifact download failed')):
+        failures = [detail.partition(':')[0]]
+    else:
+        failures = [detail]
+    return [reason if reason in RUST_TRANSFER_REASON_CODES or re.fullmatch(r'http-[1-5][0-9]{2}', reason)
+            else RUST_TRANSFER_REASON_ALIASES.get(reason, 'unclassified') for reason in failures[:6]]
+
+
+@contextlib.contextmanager
+def rust_transfer_diagnostic(stage, point):
+    try:
+        yield
+    except PreparationFailure as error:
+        if error.category in ('network', 'timeout'):
+            reasons = rust_transfer_reasons(error.detail)
+            record_installation_diagnostic({
+                'stage': stage, 'executable': '', 'actualExitCode': None, 'timedOut': 'task-deadline' in reasons,
+                'cancelled': False, 'stdout': '', 'stderr': 'mirror-point=' + point + '\ntransfer-reasons='
+                + ','.join(reasons) + '\n', 'stdoutTruncated': False, 'stderrTruncated': False,
+            })
+        raise
+
+
+_previous_rust_distribution_release = release
+
+
+def release_with_rust_diagnostic(ecosystem, branch, exact):
+    if ecosystem != 'RUST':
+        return _previous_rust_distribution_release(ecosystem, branch, exact)
+    # An exact release bypasses tag enumeration and only fetches the distribution checksum.
+    stage = 'rust-release-checksum' if exact else 'rust-release-metadata'
+    with rust_transfer_diagnostic(stage, 'RUST_METADATA'):
+        return _previous_rust_distribution_release(ecosystem, branch, exact)
 
 
 def rust_read_manifest(path, maximum):
@@ -103,7 +160,8 @@ def install_rust_distribution(identity, url, algorithm, expected, layout):
     with work_context as temporary:
         work = pathlib.Path(temporary)
         archive = work / 'release.archive'
-        sha256 = download(url, archive, algorithm, expected)
+        with rust_transfer_diagnostic('rust-archive-download', 'RUST_TOOLCHAIN'):
+            sha256 = download(url, archive, algorithm, expected)
         if tracked is not None:
             tracked.archive_downloaded(sha256)
         unpacked = work / 'unpacked'
@@ -168,3 +226,4 @@ def probe_with_rust_distribution(ecosystem, directory, expected):
 
 install = install_with_rust_distribution
 probe = probe_with_rust_distribution
+release = release_with_rust_diagnostic

@@ -1,4 +1,6 @@
 """Exercise the formal Ruby recipe without starting a service or compiling Ruby."""
+import ast
+import errno
 import hashlib
 import io
 import json
@@ -44,7 +46,7 @@ class RubySourceBuildTest(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
     def stage_installation(self, unit, destination, version, mounts):
-        stage, source, _, _ = mounts
+        stage, source, _ = mounts
         self.assertTrue(source.is_file())
         self.assertEqual(destination, self.destination(version))
         self.assertFalse((destination / '.w2l-toolchain.json').exists())
@@ -202,7 +204,7 @@ class RubySourceBuildTest(unittest.TestCase):
                                             'pwd': types.SimpleNamespace(getpwnam=self.unallocated)}), \
                 mock.patch.object(os, 'readlink', side_effect=('net:[11]', 'mnt:[12]')):
             ruby_unit(command, '/usr/local/lib/windowstolinux/toolchains/versions/ruby-selected', VERSION,
-                      (stage, self.root / 'ruby.tar.gz', self.root / 'openssl-3.0.3.gem', self.root / 'build.log'))
+                      (stage, self.root / 'ruby.tar.gz', self.root / 'openssl-3.0.3.gem'))
         argv = raw['run'].call_args.args[0]
         self.assertIn('--wait', argv)
         self.assertIn('--collect', argv)
@@ -211,6 +213,8 @@ class RubySourceBuildTest(unittest.TestCase):
         self.assertIn('--property=NoNewPrivileges=yes', argv)
         self.assertIn('--property=PrivateNetwork=yes', argv)
         self.assertIn('--property=ProtectSystem=strict', argv)
+        self.assertIn('--property=StandardOutput=null', argv)
+        self.assertIn('--property=StandardError=null', argv)
         self.assertIn('--property=RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK', argv)
         self.assertTrue(any(item.startswith('--property=BindReadOnlyPaths=') and ':/tmp/openssl-3.0.3.gem' in item for item in argv))
         worker_args = argv[argv.index('--') + 1:]
@@ -248,6 +252,43 @@ class RubySourceBuildTest(unittest.TestCase):
         self.assertNotIn('sample-private-value', str(observed))
         self.assertTrue(observed['stderrTruncated'])
         self.assertEqual('ruby-probe-runtime-verification', raw(self.launcher_observation(103), 'probe')['stage'])
+
+    def test_configure_distinguishes_start_errors_and_known_autoconf_failures(self):
+        # Load only the worker declarations so the fixture never enters a sandbox or runs configure.
+        source = ast.parse(self.ns['RUBY_WORKER'], '<Ruby sandbox worker>')
+        source.body = source.body[:next(i for i, node in enumerate(source.body) if isinstance(node, ast.Try))]
+        worker = {}
+        exec(compile(source, '<Ruby sandbox worker>', 'exec'), worker)
+        cases = (
+            (OSError(errno.EACCES, 'private path'), b'', 104, 'start-permission-denied'),
+            (OSError(errno.ENOENT, 'private path'), b'', 105, 'start-path-or-interpreter-missing'),
+            (OSError(errno.ENOEXEC, 'private path'), b'', 106, 'start-executable-format'),
+            (OSError(errno.EROFS, 'private path'), b'', 107, 'start-os-error'),
+            (subprocess.CalledProcessError(1, 'private command'),
+             b'configure: error: no acceptable C compiler found in $PATH', 108, 'c-compiler-missing'),
+            (subprocess.CalledProcessError(77, 'private command'),
+             b'configure: error: C compiler cannot create executables', 109, 'c-compiler-cannot-link'),
+            (subprocess.CalledProcessError(77, 'private command'),
+             b'configure: error: cannot run C compiled programs.', 110, 'compiled-program-cannot-run'),
+            (subprocess.CalledProcessError(-9, 'private command'), b'', 111, 'configure-signalled'),
+        )
+        original = tempfile.TemporaryFile
+        for error, message, status, reason in cases:
+            with self.subTest(status=status):
+                def run(argv, **options):
+                    self.assertEqual(options['stderr'], subprocess.STDOUT)
+                    options['stdout'].write(b'private payload\n' * 2000 + message + b'\n')
+                    options['stdout'].flush()
+                    raise error
+
+                with mock.patch.object(tempfile, 'TemporaryFile', lambda **kw: original(dir=self.root)), \
+                        mock.patch.object(subprocess, 'run', side_effect=run), self.assertRaises(SystemExit) as observed:
+                    worker['configure'](self.root, '/protected/ruby', [])
+                self.assertEqual(status, observed.exception.code)
+                diagnostic = self.ns['ruby_diagnostic'](self.launcher_observation(status), 'build')
+                self.assertEqual('ruby-build-source-configure', diagnostic['stage'])
+                self.assertIn('configure-failure=' + reason + '\n', diagnostic['stdout'])
+                self.assertNotIn('private', str(diagnostic))
 
     def test_missing_ambiguous_or_mismatching_manager_evidence_stays_at_launcher_stage(self):
         convert = self.ns['ruby_diagnostic']

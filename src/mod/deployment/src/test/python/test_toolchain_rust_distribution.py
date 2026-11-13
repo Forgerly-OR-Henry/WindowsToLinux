@@ -15,6 +15,12 @@ from unittest import mock
 FRAGMENTS = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/mod/deployment/linux/helper/toolchain'
 
 
+class PreparationFailure(Exception):
+    def __init__(self, category, detail):
+        self.category, self.detail = category, detail
+        super().__init__(detail)
+
+
 class RustDistributionTest(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -50,12 +56,13 @@ class RustDistributionTest(unittest.TestCase):
         self.key = hashlib.sha256(('RUST\n' + self.version + '\n' + self.digest).encode()).hexdigest()
         self.probes = []
         self.published = []
-        self.ns = dict(pathlib=pathlib, json=json, os=os, re=re, shutil=shutil,
+        self.ns = dict(contextlib=contextlib, pathlib=pathlib, json=json, os=os, re=re, shutil=shutil,
                        tempfile=tempfile, stat=stat, ROOT=self.root, installation_key=mock.Mock(return_value=self.key),
                        toolchain_point=lambda _: 'RUST_TOOLCHAIN', saved_installation_marker=self.marker,
                        owned_directory=mock.Mock(), download=mock.Mock(return_value=self.digest), extract=self.extract,
                        create_installation_directory=self.create, tracked_regular=lambda path, _: path.read_bytes(),
                        tracked_atomic_json=self.record, probe=self.probe, probe_output=mock.Mock(),
+                       release=mock.Mock(), PreparationFailure=PreparationFailure, record_installation_diagnostic=mock.Mock(),
                        install=mock.Mock(side_effect=AssertionError('vendor install invoked')),
                        fail=self.fail_with_category)
         exec(compile((FRAGMENTS / 'rust-distribution.py').read_bytes(), 'rust-distribution.py', 'exec'), self.ns)
@@ -88,6 +95,36 @@ class RustDistributionTest(unittest.TestCase):
     def record(self, marker, value, mode):
         self.published.append((marker, mode))
         marker.write_text(json.dumps(value), encoding='utf-8')
+
+    def test_rust_transfer_failures_record_only_fixed_phase_and_route_reasons(self):
+        release = self.ns['_previous_rust_distribution_release']
+        recorder = self.ns['record_installation_diagnostic']
+        failure = PreparationFailure('network', 'selected sources exhausted: http-503,private token,no-progress')
+        release.side_effect = failure
+        for exact, expected_stage in (('', 'rust-release-metadata'), (self.version, 'rust-release-checksum')):
+            with self.subTest(exact=exact), self.assertRaises(PreparationFailure) as observed:
+                self.ns['release']('RUST', '1.95', exact)
+            self.assertIs(failure, observed.exception)
+            diagnostic = recorder.call_args.args[0]
+            self.assertEqual(expected_stage, diagnostic['stage'])
+            self.assertEqual('mirror-point=RUST_METADATA\ntransfer-reasons=http-503,unclassified,no-progress\n',
+                             diagnostic['stderr'])
+            self.assertIsNone(diagnostic['actualExitCode'])
+            self.assertFalse(diagnostic['timedOut'])
+        recorder.reset_mock()
+        with self.assertRaises(PreparationFailure):
+            self.ns['release']('RUBY', '3.3', '')
+        recorder.assert_not_called()
+        self.ns['download'].side_effect = PreparationFailure('network', 'task deadline exceeded')
+        with self.assertRaises(PreparationFailure):
+            self.ns['install']('RUST', self.version, self.url, 'sha256', self.digest, 'rust')
+        diagnostic = recorder.call_args.args[0]
+        self.assertEqual('rust-archive-download', diagnostic['stage'])
+        self.assertEqual('mirror-point=RUST_TOOLCHAIN\ntransfer-reasons=task-deadline\n', diagnostic['stderr'])
+        self.assertTrue(diagnostic['timedOut'])
+        self.assertFalse(self.published)
+        self.assertFalse((self.versions / ('rust-' + self.key)).exists())
+        self.assertEqual([], list((self.root / 'work').iterdir()))
 
     def test_installs_selected_regular_components_without_executing_installer_or_changing_binding_path(self):
         previous_mask = os.umask(0o077)

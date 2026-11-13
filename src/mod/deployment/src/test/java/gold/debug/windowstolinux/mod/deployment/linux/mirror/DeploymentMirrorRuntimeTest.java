@@ -411,6 +411,7 @@ final class DeploymentMirrorRuntimeTest {
             command.addAll(List.of(test.toString(), runtime.toString(), "unused-metadata", argumentsFile.toString()));
             String output = execute(directory, command, Duration.ofSeconds(60));
             System.out.println(output);
+            assertTrue(output.contains("Ran 3 tests"), output);
             assertTrue(output.contains("OK"), output);
             assertFalse(output.contains("FAILED"), output);
         } finally {

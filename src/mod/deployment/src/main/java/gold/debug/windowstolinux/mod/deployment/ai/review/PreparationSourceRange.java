@@ -13,6 +13,7 @@ record PreparationSourceRange(String section, int offset, int next) {
     static List<PreparationSourceRange> helper(String helper, String ecosystem, boolean diagnosed) throws IOException {
         var ranges = new ArrayList<PreparationSourceRange>();
         boolean rust = ecosystem.equals("RUST");
+        boolean node = ecosystem.equals("NODE");
         ranges.add(between(helper, "shellStartup", "#!/bin/bash -p\n", "\nhelper_path="));
         ranges.add(between(helper, "startupOwnership", "require_root() {\n", "\nrequire_app() {"));
         ranges.add(between(helper, "prepareDispatch", "    prepare-toolchains)\n", "    retain)"));
@@ -27,7 +28,7 @@ record PreparationSourceRange(String section, int offset, int next) {
         }
         if (!rust) ranges.add(python(helper, "def reuse_system("));
         ranges.add(python(helper, "def official_url("));
-        boolean archive = ecosystem.equals("GO") || ecosystem.equals("DOTNET");
+        boolean archive = ecosystem.equals("GO") || ecosystem.equals("DOTNET") || node;
         if (archive) {
             ranges.addAll(archiveInstallation(helper));
             ranges.add(between(helper, "archiveVersionProbe", "def probe(ecosystem, directory, expected):",
@@ -36,6 +37,10 @@ record PreparationSourceRange(String section, int offset, int next) {
             if (ecosystem.equals("DOTNET")) ranges.add(between(helper, "dotnetSystemReuse",
                 "def discover_system(ecosystem, identity):", "\n    binaries = "));
             else ranges.add(python(helper, "def discover_system("));
+            if (node) {
+                for (String function : List.of("checksum_text", "saved_installation_marker", "verify_system"))
+                    ranges.add(python(helper, "def " + function + "("));
+            }
         } else if (rust) {
             ranges.addAll(rustPreparation(helper, diagnosed));
         } else {
@@ -142,6 +147,17 @@ record PreparationSourceRange(String section, int offset, int next) {
                     "\ndef mirror_bytes(", transfer));
             ranges.add(python(runtime, "def mirror_bytes("));
         }
+        if (ecosystem.equals("NODE")) {
+            ranges.add(between(runtime, "nodeMirrorRouteAdmission",
+                "            selected = policy.validate_url(endpoint, policy.maps(endpoint, original))",
+                "\n        while record['attempts']"));
+            ranges.add(python(runtime, "class MirrorRedirect("));
+            int transfer = offset(runtime, "def _mirror_transfer(");
+            ranges.add(between(runtime, "nodeMirrorTLS", "                        def connect(self):\n",
+                "\n                class Http(", transfer));
+            ranges.add(between(runtime, "nodeMirrorDigest", "                handlers = [urllib.request.ProxyHandler({}), Http(), Https(), MirrorRedirect(endpoint, policy)]",
+                "\n                mirror_log(point, endpoint, 'complete', attempt)", transfer));
+        }
         if (credentials) {
             ranges.add(python(runtime, "class MirrorCredentialMaterial:"));
             ranges.add(python(runtime, "def install_mirror_credentials("));
@@ -155,6 +171,10 @@ record PreparationSourceRange(String section, int offset, int next) {
         return List.of(between(shell, "aptRepositoryConfiguration", "wtl_repository_copy() {\n", "\nwtl_dnf_repository_copy() {"),
             between(shell, "systemPackage", "wtl_system_package() {\n", "\nwtl_dnf() {"),
             new PreparationSourceRange("aptSecurityAndFrozenTransaction", functions, shell.length()));
+    }
+
+    static PreparationSourceRange runtimeLauncher(String shell) throws IOException {
+        return between(shell, "mirrorRuntimeLauncher", "wtl_run_mirror_runtime() {\n", "\nwtl_system_package() {");
     }
 
     static boolean buildsFromSource(String ecosystem) {

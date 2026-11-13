@@ -13,6 +13,7 @@ import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.log.*;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandEvidence;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandSourceEvidence;
 import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig;
@@ -123,21 +124,24 @@ public final class DeploymentAiJson {
     public JsonNode askCommand(String instruction, Map<String, ?> facts, String revision, TaskContext task,
                                java.util.function.Predicate<JsonNode> malformed)
         throws ApiException, CapabilityOutcomeException, IOException {
-        return askCommand(instruction, facts, revision, task, malformed, Optional.empty());
+        return askCommand(instruction, facts, revision, task, malformed, Optional.empty(), false);
     }
 
     public JsonNode askCommand(String instruction, Map<String, ?> facts, String revision, TaskContext task,
                                java.util.function.Predicate<JsonNode> malformed, ActionIntent intent, CommandRequest request)
         throws ApiException, CapabilityOutcomeException, IOException {
-        var evidence = approvalConversation == null && DeploymentCommandSourceEvidence.supports(intent)
-            ? DeploymentCommandSourceEvidence.project(facts(facts, 1048576, true), intent, request,
-                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task))
+        if (approvalConversation != null) return askCommand(instruction, facts, revision, task, malformed);
+        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
+        var evidence = DeploymentCommandSourceEvidence.supports(intent)
+            ? DeploymentCommandSourceEvidence.project(facts(facts, 1048576, true), intent, request, layout)
             : Optional.<DeploymentCommandSourceEvidence>empty();
-        return askCommand(instruction, facts, revision, task, malformed, evidence);
+        boolean nativeObservation = DeploymentCommandEvidence.nativePublicationApplication(intent, request, layout).isPresent();
+        return askCommand(instruction, facts, revision, task, malformed, evidence, nativeObservation);
     }
 
     private JsonNode askCommand(String instruction, Map<String, ?> facts, String revision, TaskContext task,
-                                java.util.function.Predicate<JsonNode> malformed, Optional<DeploymentCommandSourceEvidence> evidence)
+                                java.util.function.Predicate<JsonNode> malformed, Optional<DeploymentCommandSourceEvidence> evidence,
+                                boolean nativeObservation)
         throws ApiException, CapabilityOutcomeException, IOException {
         return submit(AiPurpose.APPROVAL, instruction + DeploymentSkillResources.text(DeploymentAiJson.class, "finite-command-review.md"),
             facts, revision, task, 1048576, """
@@ -146,25 +150,25 @@ public final class DeploymentAiJson {
                  "properties":{"decision":{"type":"string","enum":["APPROVE","DENY"]},
                  "requiresUserConfirmation":{"type":"boolean"},
                  "reason":{"type":"string","minLength":1,"maxLength":2000}}}
-                """, node -> malformed.test(node) ? "Command review schema is invalid" : null, evidence);
+                """, node -> malformed.test(node) ? "Command review schema is invalid" : null, evidence, nativeObservation);
     }
 
     private JsonNode submit(AiPurpose purpose, String policy, Map<String, ?> facts, String revision, TaskContext task,
                             int bound, String schema, java.util.function.Function<JsonNode, String> validate)
         throws ApiException, CapabilityOutcomeException, IOException {
-        return submit(purpose, policy, facts, revision, task, bound, schema, validate, Optional.empty());
+        return submit(purpose, policy, facts, revision, task, bound, schema, validate, Optional.empty(), false);
     }
 
     private JsonNode submit(AiPurpose purpose, String policy, Map<String, ?> facts, String revision, TaskContext task,
                             int bound, String schema, java.util.function.Function<JsonNode, String> validate,
-                            Optional<DeploymentCommandSourceEvidence> evidence)
+                            Optional<DeploymentCommandSourceEvidence> evidence, boolean nativeObservation)
         throws ApiException, CapabilityOutcomeException, IOException {
         var definition = new AiToolDefinition("submit_result", "Submit the complete structured result required by the business contract. This submission grants no execution permission.",
             schema);
         policy += " Submit exactly one native submit_result call. Its arguments are the complete requested result. Text alone is not a submission.";
         if (purpose == AiPurpose.APPROVAL) {
             var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
-            policy += "\n" + reviewContract(evidence, layout);
+            policy += "\n" + reviewContract(evidence, layout, nativeObservation);
         }
         if (evidence.isPresent()) policy += "\n" + evidence.orElseThrow().instructions();
         var conversation = purpose == AiPurpose.APPROVAL ? approvalConversation : null;
@@ -245,7 +249,9 @@ public final class DeploymentAiJson {
     }
 
     private static String reviewContract(Optional<DeploymentCommandSourceEvidence> evidence,
-                                          gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+                                          gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout,
+                                          boolean nativeObservation) {
+        if (nativeObservation) return DeploymentHelperReviewContract.nativeObservationText(layout);
         if (evidence.filter(DeploymentCommandSourceEvidence::bindingReview).isPresent())
             return DeploymentHelperReviewContract.bindingText(layout);
         if (evidence.filter(DeploymentCommandSourceEvidence::toolchainReview).isPresent())

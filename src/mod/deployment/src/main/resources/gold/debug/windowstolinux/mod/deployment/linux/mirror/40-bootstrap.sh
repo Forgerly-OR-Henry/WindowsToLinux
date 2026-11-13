@@ -196,18 +196,24 @@ wtl_system_package() {
   shift
   point="$(wtl_system_point)" || return 65
   local -a providers
-  local -a package_command query_command wtl_auth_options wtl_apt_strict_options
+  local -a package_command query_command wtl_auth_options wtl_apt_strict_options wtl_apt_options
   local wtl_credential_file= wtl_credential_scope= wtl_credential_ref= wtl_credential_authorization= wtl_credential_username= wtl_credential_password= wtl_credential_ca=
   wtl_source_providers "$point" || return 65
   if [ "${#providers[@]}" -eq 0 ]; then
     printf '%s\n' "MIRROR_REJECT=unplanned-download-point:$point" >&2
     return 65
   fi
-  folder="$(/usr/bin/mktemp -d -- "${WTL_MIRROR_POLICY%/*}/wtl-system-source.XXXXXXXX")" || return 65
-  /usr/bin/chmod 700 "$folder" || return 65
-  log="$folder/request.log"
   local cache="${WTL_MIRROR_POLICY%/*}/system-cache"
-  /usr/bin/mkdir -p "$cache/lists/partial" "$cache/archives/partial" "$cache/dnf" || return 65
+  if [ "$manager" = apt-get ] && [ -n "${wtl_apt_root:-}" ]; then
+    folder="$wtl_apt_root/source"
+    cache="$wtl_apt_root/cache"
+    wtl_apt_prepare_sandbox "$folder" "$cache" || { printf 'MIRROR_REJECT=apt-sandbox-paths\n' >&2; return 65; }
+  else
+    folder="$(/usr/bin/mktemp -d -- "${WTL_MIRROR_POLICY%/*}/wtl-system-source.XXXXXXXX")" || return 65
+    /usr/bin/chmod 700 "$folder" || return 65
+    /usr/bin/mkdir -p "$cache/lists/partial" "$cache/archives/partial" "$cache/dnf" || return 65
+  fi
+  log="$folder/request.log"
   for provider in "${providers[@]}"; do
     wtl_prepare_system_credential "$point" "$provider" "$folder" || { /usr/bin/rm -rf -- "$folder"; return 65; }
     /usr/bin/mkdir -p "$folder/repos" || return 65
@@ -232,7 +238,7 @@ wtl_system_package() {
         wtl_apt_prepare_configuration "$folder" || { /usr/bin/rm -rf -- "$folder"; return 65; }
         wtl_apt_configure_command "$folder" "$cache"
         if [[ " $* " = *' install '* ]]; then
-          if wtl_bounded_package_request "$cache" "$log" "${package_command[@]}" update; then
+          if wtl_apt_update "$cache" "$log" "${package_command[@]}" update; then
             wtl_package_log "$log"
             if wtl_apt_resolve_frozen "$folder" "$log" "$@"; then :
             else
@@ -248,6 +254,8 @@ wtl_system_package() {
             if wtl_apt_install_frozen "$point" "$folder" "$cache" "$log" "$provider" "$@"; then status=0; else status=$?; fi
             /usr/bin/rm -rf -- "$folder"; return "$status"
           else status=$?; fi
+        elif [[ " $* " = *' update '* ]]; then
+          if wtl_apt_update "$cache" "$log" "${package_command[@]}" "$@"; then status=0; else status=$?; fi
         elif wtl_bounded_package_request "$cache" "$log" "${package_command[@]}" "$@"; then status=0; else status=$?; fi
       else
         printf '[main]\nplugins=0\nusername=\npassword=\nproxy=\n' >"$folder/dnf.conf"
@@ -298,7 +306,18 @@ wtl_system_package() {
   /usr/bin/rm -rf -- "$folder"
   return "$status"
 }
-wtl_apt() { wtl_system_package apt-get "$@"; }
+wtl_apt() (
+  local wtl_apt_root= wtl_apt_uid= wtl_apt_gid= wtl_apt_candidate_output=
+  if [ "$EUID" = 0 ]; then
+    wtl_apt_sandbox_identity || { printf 'MIRROR_REJECT=apt-sandbox-identity\n' >&2; return 65; }
+    wtl_apt_root="$(/usr/bin/mktemp -d -- /tmp/wtl-apt.XXXXXXXX)" || return 65
+    trap '/usr/bin/rm -rf -- "$wtl_apt_root"' EXIT
+    trap 'exit 65' HUP INT TERM
+    umask 077
+  fi
+  wtl_system_package apt-get "$@" || return "$?"
+  if [ -n "${wtl_apt_candidate_package:-}" ]; then printf '%s\n' "$wtl_apt_candidate_output"; fi
+)
 wtl_dnf() {
   local python= shebang point
   for python in "${WTL_MIRROR_SYSTEM_PYTHON:-}" /usr/bin/python3 /usr/libexec/platform-python; do

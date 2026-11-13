@@ -234,7 +234,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(2, COUNTS['/good/cycle'])
 
     def apt_fixture(self, manager='apt-get', error='', scheme='https', ipv6=False, authentication=False, arguments=None,
-                    source=None, extension='list', point='APT_DEBIAN', origins=('https://origin.invalid/',)):
+                    source=None, extension='list', point='APT_DEBIAN', origins=('https://origin.invalid/',), sandbox=False):
         endpoints = [self.endpoint('apt-missing'), self.endpoint('apt-good')]
         for endpoint in endpoints:
             selected = scheme + '://' + ('[::1]' if ipv6 else 'apt-fixture.invalid') + '/' + endpoint['providerId'] + '/'
@@ -268,21 +268,49 @@ class RuntimeTests(unittest.TestCase):
                           else 'export ' + key + '=' + shlex.quote(value) + '\n')
         overrides += 'wtl_fixture_server=' + shlex.quote(self.server.root) + '\nwtl_fixture_error=' + shlex.quote(error) + '\n'
         overrides += 'wtl_fixture_point=' + shlex.quote(point) + '\n'
+        overrides += 'wtl_fixture_uid=' + ('0' if sandbox else '1000') + '\n'
+        overrides += 'wtl_fixture_windows=' + ('1' if os.name == 'nt' else '0') + '\n'
         overrides += '''
 wtl_system_point() { printf '%s' "$wtl_fixture_point"; }
 wtl_bounded_package_request() { local cache="$1" log="$2"; shift 2; "$@" >"$log" 2>&1; }
+wtl_apt_sandbox_identity() {
+  [ "$wtl_fixture_error" != sandbox-identity ] || return 65
+  wtl_apt_uid=42 wtl_apt_gid=43
+}
+fixture_chgrp() { [ "$1" = -- ] && [ "$2" = 43 ]; }
+fixture_chown() { [ "$1" = -- ] && [ "$2" = 42:43 ]; }
+wtl_apt_as_downloader() {
+  [ "$wtl_apt_uid:$wtl_apt_gid" = 42:43 ] || return 65
+  if [ "$1" = /bin/bash ]; then
+    [ "$wtl_fixture_error" != sandbox-access ] || return 65
+    shift 8
+    for directory; do
+      [ -d "$directory" ] || return 65
+    done
+  elif [ "$1" = /usr/bin/dd ] && [ "$wtl_fixture_windows" = 1 ]; then
+    [ "$3" = iflag=nofollow,nonblock,count_bytes ] || return 65
+    /usr/bin/dd "$2" iflag=nonblock,count_bytes "${@:4}"
+  else
+    "$@"
+  fi
+}
 wtl_apt_configure_command() {
-  package_command=("$wtl_fixture_python" "$wtl_fixture_script" native "$provider" "$folder" "$cache" "$wtl_fixture_log" "$wtl_fixture_server" "$wtl_fixture_error" "${wtl_auth_options[@]}" "${wtl_apt_strict_options[@]}")
+  fixture_apt_configure_command "$@" || return 65
+  package_command=("$wtl_fixture_python" "$wtl_fixture_script" native "$provider" "$folder" "$cache" "$wtl_fixture_log" "$wtl_fixture_server" "$wtl_fixture_error" "${package_command[@]:1}")
 }
 wtl_apt_configure_query() {
   query_command=("$wtl_fixture_python" "$wtl_fixture_script" query "$provider" "$folder" "$cache" "$wtl_fixture_log" "$wtl_fixture_server" "$wtl_fixture_error")
 }
 wtl_apt_configure_download() {
-  helper_command=("$wtl_fixture_python" "$wtl_fixture_script" download "$provider" "$folder" "$cache" "$wtl_fixture_log" "$wtl_fixture_server" "$wtl_fixture_error")
+  helper_command=("$wtl_fixture_python" "$wtl_fixture_script" download "$provider" "$folder" "$cache" "$wtl_fixture_log" "$wtl_fixture_server" "$wtl_fixture_error" "${wtl_apt_options[@]}" "${wtl_auth_options[@]}")
 }
 '''
         script = directory / 'apt-fixture.sh'
-        shell = command[2][:-len(entry)].replace('/etc/apt/sources.list', './host-apt/sources.list')
+        shell = (command[2][:-len(entry)].replace('/etc/apt/sources.list', './host-apt/sources.list')
+                 .replace('wtl_apt_configure_command() {', 'fixture_apt_configure_command() {')
+                 .replace('if [ "$EUID" = 0 ]; then\n    wtl_apt_sandbox_identity', 'if [ "$wtl_fixture_uid" = 0 ]; then\n    wtl_apt_sandbox_identity')
+                 .replace('/tmp/wtl-apt.XXXXXXXX', '${WTL_MIRROR_POLICY%/*}/wtl-apt.XXXXXXXX')
+                 .replace('/usr/bin/chgrp --', 'fixture_chgrp --').replace('/usr/bin/chown --', 'fixture_chown --'))
         script.write_bytes((shell + overrides + entry).encode('utf-8'))
         command = ['E:/Program/Git/bin/bash.exe' if os.name == 'nt' else '/bin/bash', str(script)] + command[4:]
         global_config = directory / 'global-apt.conf'
@@ -292,7 +320,32 @@ wtl_apt_configure_download() {
         process = subprocess.run(command, cwd=directory, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25)
         records = [json.loads(line) for line in log.read_text().splitlines()] if log.is_file() else []
         self.assertEqual(source.encode('utf-8'), repository.read_bytes())
+        self.assertEqual([], list(directory.glob('wtl-apt.*')), 'transaction must remove its private staging')
         return process, records
+
+    def test_apt_rejects_invalid_sandbox_before_native_network_operations(self):
+        for error in ('sandbox-identity', 'sandbox-access'):
+            with self.subTest(error=error):
+                process, records = self.apt_fixture(error=error, sandbox=True)
+                self.assertEqual(65, process.returncode, process.stderr.decode(errors='replace'))
+                self.assertIn('apt-sandbox-' + ('identity' if error == 'sandbox-identity' else 'paths'), process.stderr.decode())
+                self.assertEqual([], records)
+        self.assertEqual(0, COUNTS['/apt-missing/index.json'] + COUNTS['/apt-good/demo.deb'])
+
+    def test_apt_pins_network_method_user_and_rechecks_staged_download_before_install(self):
+        process, records = self.apt_fixture(sandbox=True, error='corrupt-staging')
+        self.assertEqual(65, process.returncode, process.stderr.decode(errors='replace'))
+        self.assertIn('apt-frozen-archive-mismatch', process.stdout.decode(), process.stderr.decode(errors='replace'))
+        self.assertTrue(any(record['phase'] == 'download' for record in records))
+        self.assertFalse(any(record['phase'] == 'install' for record in records))
+        process, records = self.apt_fixture(sandbox=True)
+        self.assertEqual(0, process.returncode, process.stderr.decode(errors='replace'))
+        self.assertEqual(1, len([record for record in records if record['phase'] == 'install']))
+        for record in (record for record in records if record['phase'] != 'query'):
+            self.assertIn('APT::Sandbox::User=_apt', record['arguments'])
+            self.assertIn('Binary::http::APT::Sandbox::User=_apt', record['arguments'])
+            self.assertIn('Binary::https::APT::Sandbox::User=_apt', record['arguments'])
+            self.assertNotIn('APT::Sandbox::User=root', record['arguments'])
 
     def test_apt_missing_version_advances_metadata_then_freezes_objects_and_installs_once(self):
         process, records = self.apt_fixture()
@@ -458,8 +511,9 @@ function [ {
     *) builtin [ "$@" ;;
   esac
 }
-package_command=(/usr/bin/apt-get -o Dir::Etc::sourcelist=/dev/null)
-wtl_auth_options=() wtl_apt_strict_options=()
+package_command=(/usr/bin/apt-get -o Acquire::https::CAInfo=/stale-ca)
+wtl_apt_options=(-o Dir::Etc::sourcelist=/dev/null)
+wtl_auth_options=(-o Acquire::https::CAInfo=/selected-ca)
 wtl_apt_configure_download || exit "$?"
 printf '%s\\n' "${helper_command[@]}"
 '''
@@ -493,7 +547,8 @@ printf '%s\\n' "${helper_command[@]}"
                     self.assertIn('MIRROR_REJECT=apt-native-download-helper-' + rejected, result.stderr)
                 else:
                     self.assertEqual(0, result.returncode, result.stderr)
-                    self.assertEqual([helper, '-o', 'Dir::Etc::sourcelist=/dev/null'], result.stdout.splitlines())
+                    self.assertEqual([helper, '-o', 'Dir::Etc::sourcelist=/dev/null',
+                                      '-o', 'Acquire::https::CAInfo=/selected-ca'], result.stdout.splitlines())
 
     def test_child_policy_cannot_reuse_another_endpoints_cached_bytes(self):
         policy = self.policy(['good'])
@@ -749,5 +804,9 @@ printf '%s\\n' "${helper_command[@]}"
 
 
 if __name__ == '__main__':
-    selected = ['RuntimeTests.test_native_helper_package_flags_reach_plan_and_final_no_download'] if len(sys.argv) > 3 else []
+    selected = [] if len(sys.argv) <= 3 else [
+        'RuntimeTests.test_native_helper_package_flags_reach_plan_and_final_no_download',
+        'RuntimeTests.test_apt_rejects_invalid_sandbox_before_native_network_operations',
+        'RuntimeTests.test_apt_pins_network_method_user_and_rechecks_staged_download_before_install',
+    ]
     unittest.main(argv=[sys.argv[0]] + selected, verbosity=2)

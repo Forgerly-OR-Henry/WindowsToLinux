@@ -309,6 +309,24 @@ class DeploymentPlatformCapabilityParserTest {
     }
 
     @Test
+    void poetryRequiresPluginFreeNoninteractiveSuccessfulVersion() throws Exception {
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isExecutable(Path.of(bash)));
+        String fixture = """
+            set -eu
+            probe_tool_run() {
+              [ "$*" = 'poetry --no-plugins --no-interaction --version' ] || return 91
+              if [ "$scenario" = malformed ]; then printf 'unrelated 2.2.1\\n'; else printf 'Poetry (version 2.2.1)\\n'; fi
+              [ "$scenario" != failed ]
+            }
+            """ + DeploymentEcosystemCapabilityProbe.poetryVersionProbe();
+        for (String scenario : java.util.List.of("valid", "malformed", "failed")) {
+            assertEquals(scenario.equals("valid") ? "TOOL_POETRY=2.2.1\n" : "TOOL_POETRY=\n",
+                runProbeFixture(bash, "scenario=" + scenario + "\n" + fixture), scenario);
+        }
+    }
+
+    @Test
     void composerUsesNativePhpWithNoIniAndSkipsUnsupportedOrFailedLaunches(@TempDir Path directory) throws Exception {
         String bash = System.getProperty("managed.test.bash", "/bin/bash");
         org.junit.jupiter.api.Assumptions.assumeTrue(Files.isExecutable(Path.of(bash)));

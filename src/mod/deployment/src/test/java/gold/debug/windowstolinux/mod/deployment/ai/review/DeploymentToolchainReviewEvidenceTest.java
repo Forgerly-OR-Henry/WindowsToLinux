@@ -1007,6 +1007,70 @@ class DeploymentToolchainReviewEvidenceTest {
     private record R28Preparation(String ecosystem, String branch, int factsCharacters, int cap, String lastReads) { }
 
     @Test
+    void r29AssetLendingNodePreparationStartsWithExactReachedEvidenceInsideOriginalCeiling() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture();
+             var command = diagnosedPreparation(fixture, "NODE", "24");
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
+            var intent = intent("prepare", fixture, command);
+            Callable<OperationResult<ApprovalGrant>> approve = () -> DeploymentFixedCommandApproval.approveWithEvidence(
+                assisted.context, assisted.host, intent, command, fixture.task, fixture.model.configurationRevision,
+                "AUTOMATIC", false, assisted.scope);
+            reply(fixture, verdict("r29-node-deny", "DENY"));
+            assertReviewDenied(approve);
+            var initial = fixture.model.requests.getFirst();
+            var facts = JSON.readTree(initial.messages().getLast().text());
+            var selection = facts.at("/" + PHASE + "/preparationSelection");
+            String frame = initial.messages().get(1 + selection.path("ordinal").asInt()).text()
+                .substring(selection.path("headerCharacters").asInt());
+            for (String marker : List.of("SHASUMS256.txt", "linux-x64.tar.gz", "def checksum_text(",
+                    "def extract(archive, destination):", "def discover_system(", "def verify_system(",
+                    "wtl_run_mirror_runtime() {", "class MirrorRedirect(", "do_handshake()",
+                    "digest.hexdigest().lower() != expected.lower()", "os.replace(temporary, target)"))
+                assertTrue(frame.contains(marker), marker);
+            assertFalse(frame.contains("source_dependencies(layout)"), "Node's archive facts do not repeat the unrelated source-build branch");
+            assertEquals("NODE", facts.at("/originalToolchainPreparation/ecosystem").asText());
+            var points = new HashSet<String>();
+            facts.at("/mirrorTransport/frozenPolicy/points").fieldNames().forEachRemaining(points::add);
+            assertEquals(Set.of("NODE_DISTRIBUTION", "NODE_METADATA"), points);
+            String snapshot = facts.at("/" + PHASE + "/snapshotSha256").asText();
+            var sources = r24Sources(initial, facts, fixture);
+            var prior = new R24Turn(0, 0, 0, 0, 0, "30/3984/8000 30/8737/6000 30/16170/8000 45/0/8000 45/13053/4000")
+                .calls(snapshot, sources, 0);
+            var finalBatch = new R24Turn(0, 0, 0, 0, 0, "30/3984/8000 30/20095/8000 30/76140/8000 45/13053/4000")
+                .calls(snapshot, sources, 1);
+            var continuations = new LinkedHashMap<UUID, String>();
+            replyAtTotalBytes(fixture, continuations, 6000, "OPENAI_RESPONSES", prior.toArray(AiToolCall[]::new));
+            replyAtTotalBytes(fixture, continuations, 6000, "OPENAI_RESPONSES", finalBatch.toArray(AiToolCall[]::new));
+            var repeated = new R24Turn(0, 0, 0, 0, 0, "30/3984/8000 30/20095/8000 30/76140/8000 45/13053/4000")
+                .calls(snapshot, sources, 2);
+            replyAtTotalBytes(fixture, continuations, 6000, "OPENAI_RESPONSES", repeated.toArray(AiToolCall[]::new));
+            reply(fixture, verdict("r29-node-final-deny", "DENY"));
+            assertReviewDenied(approve);
+            assertEquals(0, assisted.hosts.get());
+            int fresh = wireWithR24FactsSize(initial, 33687, 881058, Map.of()).length;
+            var latest = fixture.model.requests.get(fixture.model.requests.size() - 2);
+            byte[] late = wireWithR24FactsSize(latest, 33687, 1048576, Map.of());
+            var visible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            seedInlineSourceRanges(facts, visible);
+            var asked = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            collectRequestedCoverage(asked, finalBatch, sources);
+            assertR24VisiblePages(late, snapshot, finalBatch, true, visible, sources);
+            assertR24Coverage(asked, visible);
+            var repeatRequest = fixture.model.requests.getLast();
+            assertTrue(repeatRequest.messages().stream().anyMatch(message -> message.text().contains("\"latestBatchRepeat\"")));
+            byte[] repeatWire = wireWithR24FactsSize(repeatRequest, 33687, 1048576, Map.of());
+            var repeatedVisible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            seedInlineSourceRanges(facts, repeatedVisible);
+            assertR24VisiblePages(repeatWire, snapshot, repeated, true, repeatedVisible, sources);
+            assertR24Coverage(asked, repeatedVisible);
+            assertEquals(late.length, assertThrows(ModelRequestBudgetException.class,
+                () -> wireWithR24FactsSize(latest, 33687, late.length - 1, Map.of())).encodedBytes());
+            System.out.printf("R29_NODE_PREPARE_REPLAY freshEncoded=%d originalStartCap=881058 lateEncoded=%d repeatedEncoded=%d originalLateCap=100228 oldLateEncoded=129656%n",
+                fresh, late.length, repeatWire.length);
+        }
+    }
+
+    @Test
     void preparationRebaseKeepsExactUsefulEarlierPagesAndAvoidsDuplicateResends() throws Exception {
         try (var fixture = new MirroredInstallerTestFixture();
              var request = diagnosedPreparation(fixture, "PHP", "8.3")) {

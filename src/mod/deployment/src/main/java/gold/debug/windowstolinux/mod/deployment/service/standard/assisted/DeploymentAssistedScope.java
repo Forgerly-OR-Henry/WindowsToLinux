@@ -497,8 +497,10 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     @Override
     public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                                 TaskContext supplied) throws ApiException {
-        var facts = new LinkedHashMap<String, Object>(effectFacts(intent, supplied));
         String operation = intent.semantics().map(value -> value.operation()).orElse("");
+        var observation = nativePublicationApplication(intent, request, supplied);
+        if (observation.isPresent()) return publicationObservationFacts(intent, observation.orElseThrow(), supplied);
+        var facts = new LinkedHashMap<String, Object>(effectFacts(intent, supplied));
         if (Set.of(DeploymentAssistedCandidateReview.QUERY, DeploymentAssistedCandidateReview.VERIFY).contains(operation)) {
             if (!facts.containsKey("workflowAuthorization"))
                 throw new IllegalArgumentException("Candidate observation requires original workflow authority");
@@ -591,6 +593,13 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 if (!matched)
                     throw new IllegalArgumentException("Preparation differs from reviewed runtime requirements");
                 facts.put("currentToolchainPlan", planned.evidence());
+                // The matching plan already binds the selected application's exact source archive.
+                facts.remove("sourceArchiveObservations");
+                facts.remove("toolchainPreparationObservations");
+                facts.remove("hostPrerequisiteObservations");
+                var currentSource = reviewedApplicationSources.get(planned.evidence().get("application"));
+                if (currentSource != null)
+                    facts.put("reviewedApplicationSources", Map.of("applications", List.of(currentSource)));
                 var host = prePreparationHost;
                 if (host != null && planned.identity().equals(host.get("reviewedPlanSha256")))
                     facts.put("currentPrePreparationHost", host);
@@ -614,7 +623,13 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     public String reviewInstructions(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                                      TaskContext supplied) throws ApiException {
         // Revalidate original authority before selecting any trusted current-action supplement.
-        facts(intent, request, supplied);
+        var facts = facts(intent, request, supplied);
+        if (facts.containsKey("publicationObservationScope"))
+            return """
+                Match the exact guarded native observation's application, owner marker, release target and original workflow.
+                publicationObservationScope carries the selected application's frozen association when captured and describes the scope of the upcoming read.
+                Check the installed helper pin, literal limits and the native observation contract. An earlier publication or health receipt does not prove present state or supply the fresh host grant. Request a verdict only for this observation.
+                """;
         String instructions = gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources.text(
             DeploymentAssistedApproval.class, "fixed-effect-review.md");
         String operation = intent.semantics().map(value -> value.operation()).orElse("");
@@ -651,6 +666,34 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             || line.startsWith("For tracked and diagnosed toolchain JSON requests,")
             || line.startsWith("When the supplied evidence establishes the boundaries"))
             .collect(java.util.stream.Collectors.joining("\n"));
+    }
+
+    private Optional<String> nativePublicationApplication(ActionIntent intent,
+        gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, TaskContext supplied) throws ApiException {
+        if (intent.semantics().filter(value -> Set.of("deployment.publication.inspect.v1", "deployment.publication.observe.v1")
+            .contains(value.operation())).isEmpty()) return Optional.empty();
+        return gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandEvidence.nativePublicationApplication(
+            intent, request, gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied));
+    }
+
+    private synchronized Map<String, ?> publicationObservationFacts(ActionIntent intent, String application, TaskContext supplied)
+        throws ApiException {
+        sameTask(supplied);
+        verify();
+        if (workflow == null) return Map.of();
+        var authority = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(workflow, task, intent);
+        validateWorkflow(authority);
+        var scope = new LinkedHashMap<String, Object>();
+        scope.put("application", application);
+        scope.put("server", intent.serverIds().getFirst());
+        scope.put("operation", intent.semantics().orElseThrow().operation());
+        var association = reviewedApplicationSources.get(application);
+        if (association != null) scope.put("reviewedApplicationSource", association);
+        var facts = new LinkedHashMap<String, Object>();
+        facts.put("workflowAuthorization", authority);
+        if (sourceSelection != null) facts.put("sourceSelection", sourceSelection);
+        facts.put("publicationObservationScope", Map.copyOf(scope));
+        return Map.copyOf(facts);
     }
 
     private synchronized Map<String, ?> nativeDependencyFacts(ActionIntent intent,

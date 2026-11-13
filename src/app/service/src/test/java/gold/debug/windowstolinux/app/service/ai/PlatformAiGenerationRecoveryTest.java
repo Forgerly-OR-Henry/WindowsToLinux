@@ -38,6 +38,22 @@ class PlatformAiGenerationRecoveryTest {
             Map.of("transportFailureKind", "HTTP_HEADERS_EMPTY"))));
     }
 
+    @Test
+    void unresolvedConnectAddressRequiresTheExactCauseAndNoAcceptedResponse() {
+        var details = new java.util.HashMap<>(Map.of("transportFailureKind", "HTTP_CONNECT_ADDRESS_UNRESOLVED",
+            "transportCauseTypes", "java.net.ConnectException>java.nio.channels.UnresolvedAddressException",
+            "httpHeadersReceived", "false", "httpBodyBytesAccepted", "0"));
+        assertTrue(PlatformAiService.recoverableGenerationTransport(problem(ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN", details)));
+        details.put("httpHeadersReceived", "true");
+        assertFalse(PlatformAiService.recoverableGenerationTransport(problem(ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN", details)));
+        details.put("httpHeadersReceived", "false");
+        details.put("httpBodyBytesAccepted", "1");
+        assertFalse(PlatformAiService.recoverableGenerationTransport(problem(ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN", details)));
+        details.put("httpBodyBytesAccepted", "0");
+        details.put("transportCauseTypes", "java.net.ConnectException");
+        assertFalse(PlatformAiService.recoverableGenerationTransport(problem(ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN", details)));
+    }
+
     private static Problem problem(ProblemCode code, String event, Map<String, String> details) {
         return new Problem(code, event, "fixture", details, Optional.empty());
     }

@@ -51,7 +51,12 @@ wtl_prepare_system_credential() {
       if [ -f "$root_ca" ]; then /usr/bin/cat -- "$root_ca" >>"$wtl_credential_ca" || return 65; break; fi
     done
     /usr/bin/cat -- "$folder/source-ca.pem" >>"$wtl_credential_ca" || return 65
-    /usr/bin/chmod 600 -- "$wtl_credential_ca" || return 65
+    if [[ "$point" = APT_* && -n "${wtl_apt_root:-}" ]]; then
+      /usr/bin/chgrp -- "$wtl_apt_gid" "$wtl_credential_ca" && /usr/bin/chmod 640 -- "$wtl_credential_ca" || return 65
+      wtl_apt_as_downloader /usr/bin/test -r "$wtl_credential_ca" || return 65
+    else
+      /usr/bin/chmod 600 -- "$wtl_credential_ca" || return 65
+    fi
     for prefix in "${prefixes[@]}"; do
       if [[ "$prefix" != "${wtl_credential_scope%/}" && "$prefix" != "${wtl_credential_scope%/}/"* ]]; then
         printf 'MIRROR_REJECT=apt-private-ca-cannot-extend-credential-path-scope\n' >&2; return 65
@@ -125,6 +130,49 @@ wtl_apt_selected_uri() {
   [ "$best" -ge 0 ] || return 65
   printf '%s%s' "${prefixes[$best]}" "${url:$length}"
 }
+wtl_apt_sandbox_identity() {
+  local entry
+  entry="$(/usr/bin/getent passwd _apt)" || return 65
+  [[ "$entry" =~ ^_apt:[^:]*:([1-9][0-9]{0,9}):([1-9][0-9]{0,9}):[^:]*:[^:]*:[^:]*$ ]] || return 65
+  wtl_apt_uid="${BASH_REMATCH[1]}" wtl_apt_gid="${BASH_REMATCH[2]}"
+  [ "$wtl_apt_uid" -lt 4294967295 ] && [ "$wtl_apt_gid" -lt 4294967295 ] || return 65
+  # The fixed sticky temporary parent allows a fresh sandbox path beside the root-only policy.
+  wtl_apt_trusted_path / && [ ! -L /tmp ] && [ -d /tmp ] && [ -k /tmp ] \
+    && [ "$(/usr/bin/stat -c %u -- /tmp)" = 0 ]
+}
+wtl_apt_as_downloader() {
+  /usr/bin/setpriv --reuid="$wtl_apt_uid" --regid="$wtl_apt_gid" --clear-groups --no-new-privs -- "$@"
+}
+wtl_apt_prepare_sandbox() {
+  local folder="$1" cache="$2"
+  /usr/bin/mkdir -p -- "$folder" "$cache/lists/partial" "$cache/lists/auxfiles" \
+    "$cache/archives/partial" "$cache/download" "$cache/tmp" || return 65
+  /usr/bin/chgrp -- "$wtl_apt_gid" "$wtl_apt_root" "$folder" "$cache" "$cache/lists" "$cache/archives" || return 65
+  /usr/bin/chmod 710 -- "$wtl_apt_root" "$folder" "$cache" "$cache/archives" || return 65
+  # APT may reuse a signed index from lists/ while verifying and decompressing metadata.
+  /usr/bin/chmod 750 -- "$cache/lists" || return 65
+  /usr/bin/chown -- "$wtl_apt_uid:$wtl_apt_gid" "$cache/lists/partial" "$cache/lists/auxfiles" \
+    "$cache/archives/partial" "$cache/download" "$cache/tmp" || return 65
+  wtl_apt_as_downloader /bin/bash --noprofile --norc -pc '
+    [ "$EUID" = "$1" ] && [ "$(/usr/bin/id -g)" = "$2" ] || exit 65
+    shift 2
+    for directory; do
+      probe="$(/usr/bin/mktemp -- "$directory/.wtl-access.XXXXXXXX")" || exit 65
+      /usr/bin/rm -f -- "$probe" || exit 65
+    done
+  ' wtl-apt-access "$wtl_apt_uid" "$wtl_apt_gid" "$cache/lists/partial" "$cache/lists/auxfiles" \
+    "$cache/archives/partial" "$cache/download" "$cache/tmp" || return 65
+}
+wtl_apt_update() {
+  local cache="$1"
+  if [ -n "${wtl_apt_root:-}" ]; then
+    # Signature verification can need temporary files after APT lowers its identity.
+    # Keep this directory out of the environment used by dpkg and package scripts.
+    TMPDIR="$cache/tmp" TMP="$cache/tmp" TEMP="$cache/tmp" wtl_bounded_package_request "$@"
+  else
+    wtl_bounded_package_request "$@"
+  fi
+}
 wtl_apt_prepare_configuration() {
   local folder="$1"
   case "$folder" in *'"'*|*'\'*|*$'\n'*|*$'\r'*) return 65;; esac
@@ -137,10 +185,15 @@ wtl_apt_prepare_configuration() {
 }
 wtl_apt_configure_command() {
   local folder="$1" cache="$2"
-  package_command=(/usr/bin/apt-get -o Dir::Etc::sourcelist=/dev/null -o "Dir::Etc::sourceparts=$folder/repos"
+  wtl_apt_options=(-o Dir::Etc::sourcelist=/dev/null -o "Dir::Etc::sourceparts=$folder/repos"
     -o APT::Update::Error-Mode=any -o Acquire::Retries=0 -o "Acquire::http::Timeout=$wtl_mirror_connect_seconds" -o "Acquire::https::Timeout=$wtl_mirror_connect_seconds"
-    -o "Dir::State::lists=$cache/lists" -o "Dir::Cache::archives=$cache/archives" -o APT::Sandbox::User=root
-    "${wtl_auth_options[@]}" "${wtl_apt_strict_options[@]}")
+    -o "Dir::State::lists=$cache/lists" -o "Dir::Cache::archives=$cache/archives"
+    -o APT::Sandbox::User=_apt -o APT::Sandbox::Verify=true
+    # Older APT can clear the global sandbox setting if a destination is inaccessible.
+    # HTTP methods apply their own Binary config before dropping privileges.
+    -o Binary::http::APT::Sandbox::User=_apt -o Binary::https::APT::Sandbox::User=_apt
+    "${wtl_apt_strict_options[@]}")
+  package_command=(/usr/bin/apt-get "${wtl_apt_options[@]}" "${wtl_auth_options[@]}")
 }
 wtl_apt_resolution_missing() {
   local log="$1" line found=0
@@ -168,9 +221,8 @@ wtl_apt_configure_query() {
 }
 wtl_apt_candidate() {
   [ "$#" = 2 ] && [ "$1" = policy ] && [[ "$2" =~ ^[a-z0-9][a-z0-9+.-]*(:[a-z0-9-]+)?$ ]] || return 65
-  local wtl_apt_candidate_package="$2" wtl_apt_candidate_output=
-  wtl_system_package apt-get update || return $?
-  printf '%s\n' "$wtl_apt_candidate_output"
+  local wtl_apt_candidate_package="$2"
+  wtl_apt update
 }
 wtl_apt_trusted_path() {
   local path="$1" identity
@@ -192,10 +244,24 @@ wtl_apt_configure_download() {
   if ! wtl_apt_trusted_path "$helper" || [ ! -f "$helper" ] || [ ! -x "$helper" ] || [ -u "$helper" ] || [ -g "$helper" ]; then
     printf 'MIRROR_REJECT=apt-native-download-helper-untrusted\n' >&2; return 65
   fi
-  helper_command=("$helper" "${package_command[@]:1}" "${wtl_auth_options[@]}" "${wtl_apt_strict_options[@]}")
+  helper_command=("$helper" "${wtl_apt_options[@]}" "${wtl_auth_options[@]}")
+}
+wtl_apt_promote_archive() {
+  local staged="$1" target="$2" size="$3" expected="$4" checksum
+  [ ! -L "$staged" ] && [ -f "$staged" ] || return 65
+  if [ -n "${wtl_apt_root:-}" ]; then
+    # Read with the downloader's rights and limit the copy. The root-owned archive
+    # is verified independently of the copy or any later change to staged bytes.
+    wtl_apt_as_downloader /usr/bin/dd if="$staged" iflag=nofollow,nonblock,count_bytes count="$((size + 1))" status=none >"$target" || return 65
+  else
+    /usr/bin/cp -- "$staged" "$target" || return 65
+  fi
+  [ "$(/usr/bin/stat -c %s -- "$target")" = "$size" ] || return 65
+  checksum="$(/usr/bin/sha256sum -- "$target")" || return 65
+  [ "${checksum%% *}" = "${expected#SHA256:}" ]
 }
 wtl_apt_install_frozen() {
-  local point="$1" folder="$2" cache="$3" log="$4" metadata_provider="$5" uri name size digest extra canonical provider attempt status=65 index selected target
+  local point="$1" folder="$2" cache="$3" log="$4" metadata_provider="$5" uri name size digest extra canonical provider attempt status=65 index selected target staged
   shift 5
   local -a object_uris=() object_names=() object_sizes=() object_digests=() helper_command
   local -A seen=()
@@ -204,27 +270,29 @@ wtl_apt_install_frozen() {
     [[ "$uri" = \'* ]] || continue
     [[ "$uri" = \'*\' && "$name" =~ ^[A-Za-z0-9_%:+~.-]+[.]deb$ && "$size" =~ ^[0-9]+$ \
       && "$digest" =~ ^SHA256:[a-fA-F0-9]{64}$ && -z "$extra" ]] || { printf 'MIRROR_REJECT=apt-strong-frozen-object-required\n' >&2; return 65; }
-    [ "$size" -le 2147483648 ] || return 65
+    [[ "$size" =~ ^(0|[1-9][0-9]{0,9})$ ]] && [ "$size" -le 2147483648 ] || return 65
     uri="${uri#\'}"; uri="${uri%\'}"
     canonical="$(wtl_apt_canonical_uri "$point" "$metadata_provider" "$uri")" || return 65
     [ -z "${seen[$name]:-}" ] || { printf 'MIRROR_REJECT=apt-duplicate-frozen-object\n' >&2; return 65; }
     seen[$name]=1
-    object_uris+=("$canonical"); object_names+=("$name"); object_sizes+=("$size"); object_digests+=("$digest")
+    digest="${digest#SHA256:}"
+    object_uris+=("$canonical"); object_names+=("$name"); object_sizes+=("$size"); object_digests+=("SHA256:${digest,,}")
     [ "${#object_names[@]}" -le 2048 ] || return 65
   done <"$folder/objects"
+  /usr/bin/mkdir -p -- "$cache/download" || return 65
   printf 'MIRROR_APT_FROZEN=%s\n' "$(/usr/bin/sha256sum "$folder/objects" | /usr/bin/awk '{print $1}')"
   for index in "${!object_names[@]}"; do
-    target="$cache/archives/${object_names[$index]}"; status=65
+    target="$cache/archives/${object_names[$index]}"; staged="$cache/download/${object_names[$index]}"; status=65
     for provider in "${providers[@]}"; do
       selected="$(wtl_apt_selected_uri "$point" "$provider" "${object_uris[$index]}")" || continue
       wtl_prepare_system_credential "$point" "$provider" "$folder" || return 65
       wtl_apt_configure_download || return 65
       for ((attempt=1; attempt<=wtl_mirror_attempts; attempt++)); do
-        /usr/bin/rm -f -- "$target" "$target.FAILED"
+        /usr/bin/rm -f -- "$target" "$staged" "$staged.FAILED" || return 65
         printf 'MIRROR point=%s source=%s attempt=%s reason=frozen-object\n' "$point" "$provider" "$attempt" >&2
-        if wtl_bounded_package_request "$cache" "$log" "${helper_command[@]}" download-file "$selected" "$target" "${object_digests[$index]}"; then
-          if [ "$(/usr/bin/stat -c %s -- "$target")" = "${object_sizes[$index]}" ]; then status=0; break; fi
-          printf 'MIRROR_REJECT=apt-frozen-size-mismatch\n' >>"$log"
+        if wtl_bounded_package_request "$cache" "$log" "${helper_command[@]}" download-file "$selected" "$staged" "${object_digests[$index]}"; then
+          if wtl_apt_promote_archive "$staged" "$target" "${object_sizes[$index]}" "${object_digests[$index]}"; then status=0; break; fi
+          printf 'MIRROR_REJECT=apt-frozen-archive-mismatch\n' >>"$log"
         fi
         wtl_package_log "$log"
         printf 'MIRROR point=%s source=%s attempt=%s reason=frozen-object-transfer-failed\n' "$point" "$provider" "$attempt" >&2
@@ -232,7 +300,7 @@ wtl_apt_install_frozen() {
       [ "$status" != 0 ] || break
     done
     [ "$status" = 0 ] || return 65
-    /usr/bin/rm -f -- "$target.FAILED"
+    /usr/bin/rm -f -- "$staged" "$staged.FAILED"
   done
   # Never refresh metadata or re-resolve against another provider after freezing the objects.
   # Native APT rechecks the same signed metadata/hash and executes dpkg only at this final step.

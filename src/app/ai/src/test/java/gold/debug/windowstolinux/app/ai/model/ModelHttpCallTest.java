@@ -241,6 +241,13 @@ class ModelHttpCallTest {
 
     @Test
     void transportDiagnosticsClassifyStandardHttpBoundariesAndKeepNestedCausesBodyFree() {
+        var unresolved = new java.net.ConnectException("private-endpoint");
+        unresolved.initCause(new java.nio.channels.UnresolvedAddressException());
+        var connection = ModelHttpCall.transportDetails(new ExecutionException(unresolved));
+        assertEquals("HTTP_CONNECT_ADDRESS_UNRESOLVED", connection.get("transportFailureKind"));
+        assertEquals("java.net.ConnectException>java.nio.channels.UnresolvedAddressException", connection.get("transportCauseTypes"));
+        assertFalse(connection.toString().contains("private-endpoint"));
+        assertFalse(ModelHttpCall.transportDetails(new java.net.ConnectException("private-endpoint")).containsKey("transportFailureKind"));
         var nested = new IOException("HTTP/1.1 header parser received no bytes",
             new java.io.EOFException("private-provider-body/password=fixture"));
         var details = ModelHttpCall.transportDetails(new ExecutionException(nested));

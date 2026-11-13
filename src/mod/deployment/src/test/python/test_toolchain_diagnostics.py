@@ -29,7 +29,7 @@ class ToolchainDiagnosticsTest(unittest.TestCase):
         self.ns = {'__name__': 'controlled_diagnostics', '__WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__': {},
                    '__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__': ['example.invalid']}
         for name in ('10-release-metadata.py', 'archive-boundaries.py', '20-installation-boundaries.py',
-                     '30-managed-installation.py', 'tracked-operations.py', '40-binding-protocol.py'):
+                     '30-managed-installation.py', 'tracked-operations.py', 'rust-distribution.py', '40-binding-protocol.py'):
             source = (SOURCES / name).read_text().replace('# @compat:centos-repositories@', 'repositories = []')
             exec(compile(source, name, 'exec'), self.ns)
         self.ns['ROOT'] = self.root
@@ -118,6 +118,37 @@ class ToolchainDiagnosticsTest(unittest.TestCase):
         self.assertTrue(diagnostic['timedOut'])
         self.assertEqual('timeout', diagnostic['failureCategory'])
         self.assertEqual('partial stdout\n', diagnostic['stdout'])
+
+    def test_rust_archive_deadline_is_preserved_by_original_operation_diagnose_only(self):
+        class MirrorFailure(Exception):
+            pass
+
+        self.request['arguments'] = ['prepare', 'RUST', '1.95', '1.95.0', '120', '-']
+        self.raw = json.dumps(self.request, separators=(',', ':')).encode()
+        self.ns.update(SHIPPED_CATALOG={'RUST': ['1.95']}, reuse_system=mock.Mock(return_value=None))
+        release_url = 'https://example.invalid/dist/rust-1.95.0-x86_64-unknown-linux-gnu.tar.gz'
+        endpoint = {'sourceOrigins': ['https://example.invalid/']}
+        policy = types.SimpleNamespace(endpoints=lambda _: [endpoint])
+        checksum = mock.Mock(return_value=(b'a' * 64 + b'\n', {}))
+        archive = mock.Mock(side_effect=MirrorFailure('task deadline exceeded'))
+        self.ns['task_mirrors'] = mock.Mock(return_value=(
+            {'MirrorFailure': MirrorFailure, 'mirror_bytes': checksum, 'mirror_transfer': archive}, policy
+        ))
+
+        with self.assertRaises(self.ns['PreparationFailure']):
+            self.invoke('prepare-diagnosed')
+        result = json.loads(self.invoke('diagnose-only'))
+        self.assertEqual('FAILED', result['preparationStatus'])
+        self.assertEqual('network', result['failureCategory'])
+        self.assertEqual('rust-archive-download', result['stage'])
+        self.assertEqual('mirror-point=RUST_TOOLCHAIN\ntransfer-reasons=task-deadline\n', result['stderr'])
+        self.assertTrue(result['timedOut'])
+        self.assertIsNone(result['actualExitCode'])
+        self.assertNotIn(release_url, str(result))
+        self.assertEqual(('RUST_METADATA', release_url + '.sha256'), checksum.call_args.args[1:3])
+        self.assertEqual(('RUST_TOOLCHAIN', release_url), archive.call_args.args[1:3])
+        self.assertEqual(1, checksum.call_count)
+        self.assertEqual(1, archive.call_count)
 
     def test_apt_wait_and_installation_keep_one_deadline_after_command_construction(self):
         clock = [100]

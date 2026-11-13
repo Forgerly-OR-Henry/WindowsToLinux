@@ -817,7 +817,8 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         if (problem.code() != ProblemCode.IO_FAILURE || !problem.eventCode().equals("AI_TRANSPORT_UNKNOWN"))
             return false;
         return Set.of("HTTP_BODY_INCOMPLETE", "HTTP_CHUNK_INCOMPLETE").contains(kind)
-            || kind.equals("HTTP_HEADERS_EMPTY")
+            || (kind.equals("HTTP_HEADERS_EMPTY") || kind.equals("HTTP_CONNECT_ADDRESS_UNRESOLVED")
+                && "java.net.ConnectException>java.nio.channels.UnresolvedAddressException".equals(details.get("transportCauseTypes")))
                 && "false".equals(details.get("httpHeadersReceived"))
                 && "0".equals(details.get("httpBodyBytesAccepted"));
     }

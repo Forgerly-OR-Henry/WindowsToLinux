@@ -113,7 +113,7 @@ public final class DeploymentEcosystemCapabilityProbe {
               printf '%s\\n' "$pip_version"
             else printf '\\n'; fi
             if probe_tool pipenv >/dev/null 2>&1; then printf 'TOOL_PIPENV='; probe_tool_run pipenv --version | /usr/bin/awk '{print $3}'; else printf 'TOOL_PIPENV=\\n'; fi
-            if probe_tool poetry >/dev/null 2>&1; then printf 'TOOL_POETRY='; probe_tool_run poetry --version | /usr/bin/sed -E 's/.* ([0-9][0-9A-Za-z.+_-]*).*/\\1/'; else printf 'TOOL_POETRY=\\n'; fi
+            """ + poetryVersionProbe() + """
             if probe_tool uv >/dev/null 2>&1; then printf 'TOOL_UV='; probe_tool_run uv --version | /usr/bin/awk '{print $2}'; else printf 'TOOL_UV=\\n'; fi
             if probe_tool dotnet >/dev/null 2>&1; then printf 'TOOL_DOTNET='; probe_tool_run dotnet --list-sdks | /usr/bin/awk '{print $1}' | /usr/bin/tail -n 1; else printf 'TOOL_DOTNET=\\n'; fi
             if probe_tool kotlinc >/dev/null 2>&1; then printf 'TOOL_KOTLINC='; probe_tool_run kotlinc -version 2>&1 | /usr/bin/sed -nE 's/.*kotlinc-jvm ([0-9][0-9A-Za-z.+_-]*).*/\\1/p'; else printf 'TOOL_KOTLINC=\\n'; fi
@@ -155,6 +155,14 @@ public final class DeploymentEcosystemCapabilityProbe {
             printf 'SERVICE_GO=%s\\nTOOL_GO=%s\\n' "$go_version" "$go_version"
             printf 'TOOL_RUSTC=%s\\nTOOL_CARGO=%s\\n' "$rust_version" "$cargo_version"
             if [ -n "$cargo_version" ]; then printf 'SERVICE_RUST=%s\\n' "$rust_version"; else printf 'SERVICE_RUST=\\n'; fi
+            """;
+    }
+
+    static String poetryVersionProbe() {
+        return """
+            poetry_output="$(probe_tool_run poetry --no-plugins --no-interaction --version </dev/null 2>/dev/null)" || poetry_output=
+            poetry_version="$(printf '%s\\n' "$poetry_output" | /usr/bin/sed -nE 's/^Poetry \\(version ([0-9]+[.][0-9]+[0-9A-Za-z.+_-]*)\\)$/\\1/p')"
+            printf 'TOOL_POETRY=%s\\n' "$poetry_version"
             """;
     }
 

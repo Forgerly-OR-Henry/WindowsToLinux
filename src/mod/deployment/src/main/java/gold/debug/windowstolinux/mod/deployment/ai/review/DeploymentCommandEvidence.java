@@ -398,6 +398,33 @@ public final class DeploymentCommandEvidence {
         return java.util.Optional.of(Collections.unmodifiableMap(facts));
     }
 
+    /** Recognizes the complete guarded native publication observation from the fixed channel. */
+    public static Optional<String> nativePublicationApplication(ActionIntent intent, CommandRequest request,
+                                                                DeploymentRemoteLayout layout) {
+        String operation = intent.semantics().map(value -> value.operation()).orElse("");
+        String verb = switch (operation) {
+            case "deployment.publication.inspect.v1" -> "inspect-runtime";
+            case "deployment.publication.observe.v1" -> "observe-deployment";
+            default -> "";
+        };
+        if (verb.isEmpty() || intent.serverIds().size() != 1 || !request.timeout().equals(java.time.Duration.ofSeconds(20))
+            || request.outputLimitBytes() != 4096 || request.stdin().length != 0) return Optional.empty();
+        String invocation = "WTL_SYSTEMD_QUERY_SECONDS=20 '" + layout.helperPath() + "' '" + verb + "' ";
+        var suffix = Pattern.compile(Pattern.quote(invocation) + "'([a-z0-9][a-z0-9-]{0,62})' '[a-f0-9]{64}'\\z")
+            .matcher(request.script());
+        if (!suffix.find() || !DeploymentManagedHelperBundle.verifiedCommand(suffix.group(), layout).equals(request.script()))
+            return Optional.empty();
+        var server = new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst());
+        var semantics = intent.semantics().orElseThrow();
+        String application = suffix.group(1);
+        var target = new ActionTarget(server.id(), "deployment-release", layout.applicationRoot(application));
+        if (!semantics.targets().equals(Set.of(target))
+            || !gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, intent.revision(), request)
+                .withSemantics(semantics).equals(intent))
+            return Optional.empty();
+        return Optional.of(application);
+    }
+
     /** Labels the common app/owner arguments of exact installed management calls and binds their derived targets. */
     private static java.util.Optional<Map<String, Object>> managedApplication(String script, byte[] input, ActionIntent intent,
                                                                               gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
@@ -565,6 +592,8 @@ public final class DeploymentCommandEvidence {
                 Map.entry("python", Map.of("discoveryNamePattern", "^python[0-9]+[.][0-9]+$", "venvArguments", java.util.List.of("-I", "-S", "-B", "-m", "venv", "--help"), "pipArguments", java.util.List.of("-I", "-S", "-B", "-"))),
                 Map.entry("npm", Map.of("arguments", java.util.List.of("--offline", "--no-update-notifier", "--version"),
                     "configuration", "The probe supplies /dev/null for user and global npm config and skips package-manager version queries when root project configuration exists. These are npm CLI settings.")),
+                Map.entry("poetry", Map.of("arguments", java.util.List.of("--no-plugins", "--no-interaction", "--version"),
+                    "admission", "Uses probe_tool_run for the checked command. Requires successful version output with plugins and interaction disabled.")),
                 Map.entry("composer", Map.of("interpreterArguments", java.util.List.of("-n", "-f", "<checked Composer PHP entry>", "--"),
                     "arguments", java.util.List.of("--no-plugins", "--no-scripts", "--no-cache", "--no-interaction", "--version"),
                     "admission", "Requires a checked native PHP executable and a checked Composer PHP entry. -n disables PHP ini loading. COMPOSER_DISABLE_NETWORK=1 is set for this probe.")),

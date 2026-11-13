@@ -20,16 +20,52 @@ RUBY_WORKER_FAILURES = {
     102: ('prefix-verification', 'ruby'),
     103: ('runtime-verification', 'ruby'),
 }
+RUBY_CONFIGURE_FAILURES = {
+    104: 'start-permission-denied',
+    105: 'start-path-or-interpreter-missing',
+    106: 'start-executable-format',
+    107: 'start-os-error',
+    108: 'c-compiler-missing',
+    109: 'c-compiler-cannot-link',
+    110: 'compiled-program-cannot-run',
+    111: 'configure-signalled',
+}
 RUBY_MANAGER_RESULTS = frozenset(('success', 'resources', 'protocol', 'timeout', 'exit-code', 'signal',
                                   'core-dump', 'watchdog', 'start-limit-hit', 'oom-kill', 'skip-condition'))
 RUBY_WORKER = r'''
+import errno
 import os
 import pathlib
 import socket
 import subprocess
 import sys
+import tempfile
 
 environment = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "TMPDIR": "/tmp", "LC_ALL": "C"}
+
+def configure(release, prefix, options):
+    # Classify failures inside the unprivileged unit. No configure or config.log text leaves it.
+    with tempfile.TemporaryFile(dir="/tmp") as output:
+        try:
+            subprocess.run((str(release / "configure"), "--prefix=" + prefix, "--disable-install-doc", *options),
+                           cwd=release, env=environment, stdin=subprocess.DEVNULL,
+                           stdout=output, stderr=subprocess.STDOUT, check=True)
+        except OSError as error:
+            sys.exit({errno.EACCES: 104, errno.EPERM: 104, errno.ENOENT: 105, errno.ENOEXEC: 106}.get(error.errno, 107))
+        except subprocess.CalledProcessError as error:
+            if error.returncode < 0:
+                sys.exit(111)
+            output.seek(max(0, os.fstat(output.fileno()).st_size - 16384))
+            messages = {
+                b"configure: error: no acceptable C compiler found in $PATH": 108,
+                b"configure: error: C compiler cannot create executables": 109,
+                b"configure: error: cannot run C compiled programs.": 110,
+            }
+            for line in reversed(output.read(16384).splitlines()):
+                if line in messages:
+                    sys.exit(messages[line])
+            raise
+
 failure = 90
 try:
     mode, network, mount, prefix, version, *arguments = sys.argv[1:]
@@ -77,7 +113,7 @@ try:
             sys.exit(failure)
         options = ["--with-out-ext=openssl"] if legacy == "legacy" else []
         failure = 98
-        command(str(release / "configure"), "--prefix=" + prefix, "--disable-install-doc", *options, cwd=release)
+        configure(release, prefix, options)
         failure = 99
         command("/usr/bin/make", "-j2", cwd=release)
         failure = 100
@@ -155,6 +191,9 @@ def ruby_diagnostic(command, role):
     result, code, value = ruby_manager_terminal(command)
     exit_code = command['actualExitCode']
     failure = RUBY_WORKER_FAILURES.get(exit_code)
+    configure_failure = RUBY_CONFIGURE_FAILURES.get(exit_code) if role == 'build' else None
+    if configure_failure is not None:
+        failure = RUBY_WORKER_FAILURES[98]
     worker = (result == 'exit-code' and code == 'exited' and value == str(exit_code) and failure is not None
               and not (command['timedOut'] or command['cancelled']))
     stage = 'ruby-' + role + '-launcher'
@@ -163,6 +202,8 @@ def ruby_diagnostic(command, role):
         phase, child = failure
         stage = 'ruby-' + role + '-' + phase
         details.extend(('worker-stage=' + phase, 'worker-executable=' + child))
+        if configure_failure is not None:
+            details.append('configure-failure=' + configure_failure)
     return {**command, 'stage': stage, 'executable': 'systemd-run',
             'stdout': '\n'.join(details) + '\n', 'stderr': ''}
 
@@ -209,25 +250,24 @@ def ruby_unit(unit, directory, version, build_mounts=None):
         'UnsetEnvironment=LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT GLIBC_TUNABLES',
         'KillMode=control-group', 'TimeoutStartSec=15s', 'TimeoutStopSec=5s', 'RuntimeMaxSec=' + str(seconds) + 's',
         'TasksMax=128', 'LimitFSIZE=268435456', 'LimitCORE=0', 'UMask=0022',
+        'StandardOutput=null', 'StandardError=null',
     ]
     worker = ['/usr/bin/python3', '-I', '-S', '-B', '-c', RUBY_WORKER]
     worker.extend(['build' if build_mounts else 'probe', os.readlink('/proc/self/ns/net'),
                    os.readlink('/proc/self/ns/mnt'), directory, version])
     if build_mounts:
-        stage, archive, gem, log = build_mounts
+        stage, archive, gem = build_mounts
         staged = stage.lstat()
         sources = [ruby_mount_path(archive) + ':/tmp/wtl-ruby-release']
         if gem is not None:
             sources.append(ruby_mount_path(gem) + ':/tmp/openssl-3.0.3.gem')
         properties.extend([
             'BindReadOnlyPaths=' + ' '.join(sources), 'BindPaths=' + ruby_mount_path(stage) + ':' + directory,
-            'ReadWritePaths=' + directory, 'StandardOutput=append:' + ruby_mount_path(log), 'StandardError=inherit',
+            'ReadWritePaths=' + directory,
         ])
         worker.extend([str(staged.st_dev), str(staged.st_ino), 'legacy' if gem is not None else 'standard'])
-    else:
-        properties.extend(['StandardOutput=null', 'StandardError=null'])
-        if directory.startswith(('/var/', '/home/', '/root/')):
-            properties.append('BindReadOnlyPaths=' + directory)
+    elif directory.startswith(('/var/', '/home/', '/root/')):
+        properties.append('BindReadOnlyPaths=' + directory)
     command = ruby_system_command('systemd-run', '--wait', '--collect', '--slice=system.slice', '--unit=' + unit)
     command.extend('--property=' + value for value in properties)
     try:
@@ -414,7 +454,7 @@ def ruby_source_install(identity, url, algorithm, expected, layout):
         stage.chmod(0o777)
         with create_installation_directory(destination, tracked):
             sandbox_started = True
-            ruby_unit(unit, destination, identity, (stage, archive, gem, work / 'build.log'))
+            ruby_unit(unit, destination, identity, (stage, archive, gem))
             sandbox_settled = True
             ruby_publish(stage, destination)
             ruby_probe(destination, identity)
