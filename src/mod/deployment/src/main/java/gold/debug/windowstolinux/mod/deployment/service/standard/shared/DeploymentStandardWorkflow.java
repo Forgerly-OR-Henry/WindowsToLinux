@@ -661,23 +661,21 @@ public final class DeploymentStandardWorkflow {
      * @return known helper readiness or retained uncertainty / 已知 helper 就绪或留存未知
      * @throws ApiException if original access or persistence fails / 原访问或持久化失败时 */
     private OperationResult<Void> ensureHelper(ServerId server, TaskContext task) throws ApiException {
-        try (var session = context.linux().connect(server, task)) {
-            var checked = new DeploymentProtocolBootstrap(context.tasks(), task, server, session, context.interaction(),
-                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task))
-                .ensure();
-            if (checked.outcome() == TaskResult.FAILED && checked.problem()
-                .filter(problem -> "DEPLOYMENT_ALTERNATIVE_REQUIRED".equals(problem.eventCode())).isPresent()) {
-                var original = DeploymentProtocolBootstrapActionLog.find(context.tasks(), task);
-                if (original.isPresent() && "INTENT".equals(original.orElseThrow().facts().phase())) {
-                    var refusal = checked.problem().orElseThrow();
-                    return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
-                        refusal.code(), refusal.eventCode(),
-                        "Read-only helper verification failed; no supported alternative installer is available, so the refused installer was not sent",
-                        refusal.context(), refusal.diagnosticId())));
-                }
+        var checked = DeploymentProtocolBootstrap.ensureForPublication(context.tasks(), task, server, context.linux(),
+            context.interaction(),
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task));
+        if (checked.outcome() == TaskResult.FAILED && checked.problem()
+            .filter(problem -> "DEPLOYMENT_ALTERNATIVE_REQUIRED".equals(problem.eventCode())).isPresent()) {
+            var original = DeploymentProtocolBootstrapActionLog.find(context.tasks(), task);
+            if (original.isPresent() && "INTENT".equals(original.orElseThrow().facts().phase())) {
+                var refusal = checked.problem().orElseThrow();
+                return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
+                    refusal.code(), refusal.eventCode(),
+                    "Read-only helper verification failed; no supported alternative installer is available, so the refused installer was not sent",
+                    refusal.context(), refusal.diagnosticId())));
             }
-            return new OperationResult<>(checked.outcome(), Optional.empty(), checked.problem());
         }
+        return new OperationResult<>(checked.outcome(), Optional.empty(), checked.problem());
     }
 
     /** Detects an unresolved original remote preparation before releasing its marker or source. / 释放标记或来源前识别未决原远端准备。
@@ -728,11 +726,18 @@ public final class DeploymentStandardWorkflow {
         var plan = DeploymentDatabasePlanActionLog.find(context.tasks(), task);
         if (retained.isPresent() && "DISPATCHED".equals(retained.orElseThrow().facts().phase())) {
             var facts = retained.orElseThrow().facts();
+            var cause = result.problem().filter(problem -> problem.eventCode().startsWith("DEPLOYMENT_HELPER_BOOTSTRAP_"));
+            var details = new HashMap<String, String>();
+            cause.ifPresent(problem -> {
+                details.putAll(problem.context());
+                details.put("causeEvent", problem.eventCode());
+            });
+            details.put("serverId", facts.serverId());
+            details.put("operationId", facts.operationId().toString());
             return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_HELPER_BOOTSTRAP_UNRESOLVED",
                     "Original helper installation needs exact receipt review",
-                    Map.of("serverId", facts.serverId(), "operationId", facts.operationId().toString()),
-                    Optional.empty())));
+                    details, cause.flatMap(Problem::diagnosticId))));
         }
         if (plan.isPresent() && !new DeploymentDatabaseStages(context).releaseKnown(task, plan.orElseThrow()))
             return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),

@@ -18,9 +18,12 @@ class DeploymentManagedHelperBundleTest {
         String original = DeploymentManagedHelperBundle.renderScript();
         String recovery = DeploymentManagedHelperBundle.renderPublicationRecovery(layout);
         assertEquals(16, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
-        assertEquals("d1f49e69bc269aa49c74921389206ea46953c67de1aff356660d8269e3f2cc94",
+        assertEquals("11bd7bfd3e41ea21d8a46ef21b37c4eac1ce43059f7edf03fee4600f91a1d156",
             HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(original.getBytes(StandardCharsets.UTF_8))));
         assertEquals(original, DeploymentManagedHelperBundle.renderScript());
+        assertTrue(original.contains("def ruby_source_install("));
+        assertFalse(recovery.contains("def ruby_source_install("));
+        assertFalse(recovery.contains("ordinary-offline"));
         assertFalse(recovery.contains("rollback-deployment-first)"));
         assertFalse(recovery.contains("application_assert_native_job_stopped()"));
         assertFalse(recovery.contains("stop_candidate_build()"));

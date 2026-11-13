@@ -4,9 +4,17 @@ preflight_systemd_run() (
         --quiet --wait --pipe --collect --property=WorkingDirectory=/ "$@"
 )
 
+offline_build_properties=(
+    --property=PrivateNetwork=yes
+    --property=RestrictAddressFamilies=none
+    --property=SystemCallArchitectures=native
+    --property="SystemCallFilter=~@network-io io_uring_setup io_uring_enter io_uring_register"
+    --property=SystemCallErrorNumber=EPERM
+)
+
 preflight_build() {
     [ "$#" -eq 1 ] || reject build-preflight-arguments
-    case "$1" in ordinary | docker | podman) ;; *) reject build-engine ;; esac
+    case "$1" in ordinary | ordinary-offline | docker | podman) ;; *) reject build-engine ;; esac
     for tool in fallocate losetup mkfs.ext4 mount umount findmnt systemd-run; do command -v "$tool" >/dev/null || reject workspace-tools; done
     [ "$(stat -fc %T /sys/fs/cgroup)" = cgroup2fs ] || reject workspace-cgroup-v2-required
     grep -qw memory /sys/fs/cgroup/cgroup.controllers && grep -qw pids /sys/fs/cgroup/cgroup.controllers || reject workspace-resource-controllers
@@ -16,7 +24,24 @@ preflight_build() {
         --property=ProtectProc=invisible --property=ProcSubset=pid --property=RestrictNamespaces=yes \
         --property=RuntimeMaxSec=10 --property=KillMode=control-group \
         /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /usr/bin/true || reject workspace-isolation-unavailable
-    if [ "$1" != ordinary ]; then
+    if [ "$1" = ordinary-offline ]; then
+        local host_network
+        host_network="$(/usr/bin/readlink /proc/1/ns/net)" || reject workspace-network-unavailable
+        preflight_systemd_run --property=DynamicUser=yes --property=NoNewPrivileges=yes \
+            --property=CapabilityBoundingSet= --property=RuntimeMaxSec=10 "${offline_build_properties[@]}" \
+            /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /usr/bin/python3 -I -S -B -c '
+import errno, os, socket, sys
+if os.geteuid() == 0 or os.readlink("/proc/self/ns/net") == sys.argv[1]:
+    raise SystemExit(64)
+for family in (socket.AF_INET, socket.AF_INET6, socket.AF_UNIX):
+    try:
+        with socket.socket(family):
+            raise SystemExit(64)
+    except OSError as error:
+        if error.errno not in (errno.EPERM, errno.EACCES, errno.EAFNOSUPPORT):
+            raise
+' "$host_network" || reject workspace-network-unavailable
+    elif [ "$1" != ordinary ]; then
         for tool in useradd usermod userdel newuidmap newgidmap setpriv skopeo; do command -v "$tool" >/dev/null || reject container-identity-tools; done
         if [ "$1" = docker ]; then
             command -v rootlesskit >/dev/null && command -v slirp4netns >/dev/null && command -v dockerd >/dev/null || reject docker-rootless-tools

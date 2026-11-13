@@ -2,12 +2,14 @@ package gold.debug.windowstolinux.mod.deployment.service.core.setup;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import gold.debug.windowstolinux.appapi.linux.LinuxService;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
@@ -19,12 +21,33 @@ import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.linux.database.DeploymentNativeDatabaseWire;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper;
+import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentPublishChannel;
 
 /** Installs a missing managed helper once under an original, recoverable publication task. / 在可恢复的原发布任务下只安装一次缺失的受管 helper。 */
 public final class DeploymentProtocolBootstrap {
+    /** Exact local absence evidence required before retrying only the receipt read. / 仅重读回执前必须具备的本地未发送证据。 */
+    private static final Map<String, String> UNSENT_RECEIPT_QUERY = Map.ofEntries(
+        Map.entry("installerObservedExitCode", "0"),
+        Map.entry("statusOutcome", "FAILED"),
+        Map.entry("statusProblemCode", "IO_FAILURE"),
+        Map.entry("statusProblemEvent", "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT"),
+        Map.entry("commandPhase", "CHANNEL_OPENING"),
+        Map.entry("commandOpenRequested", "true"),
+        Map.entry("channelOpenWriteState", "WRITTEN"),
+        Map.entry("channelOpenReply", "NOT_OBSERVED"),
+        Map.entry("channelOpenConfirmed", "false"),
+        Map.entry("channelPeerAssigned", "false"),
+        Map.entry("inputState", "NOT_STARTED"),
+        Map.entry("inputSenderCreated", "false"),
+        Map.entry("authorPayloadState", "NOT_SENT"),
+        Map.entry("outputObserved", "false"),
+        Map.entry("exitObserved", "false"),
+        Map.entry("statusOutputOrTruncation", "false"));
+
     private final gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout;
     /** Retains one original installer in a standalone or existing recovery checkpoint. / 在独立或既有恢复检查点内保留一项原安装。 */
     public interface Journal {
@@ -99,6 +122,73 @@ public final class DeploymentProtocolBootstrap {
         this.server = Objects.requireNonNull(server);
         this.helper = new DeploymentManagedHelper(Objects.requireNonNull(session), Objects.requireNonNull(interaction),
             server, task, "deployment-helper-bootstrap-v1", gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard.NONE, review, layout);
+    }
+
+    /** Gives the initial publication one fresh, separately approved read after a proven unsent receipt query.
+     * / 初次发布中，确认回执查询未发送后，用新连接和独立审批再读一次。
+     * @param tasks original checkpoint service / 原检查点服务
+     * @param task original publication task / 原发布任务
+     * @param server original admitted server / 原准入服务器
+     * @param linux publication capability pinned to the original task and authenticated wire key / 绑定原任务与认证 wire 密钥的发布能力
+     * @param interaction original-mode command review and host grant capability / 原模式命令审核与宿主授权能力
+     * @param layout original remote layout / 原远端布局
+     * @return verified identity or retained original uncertainty / 已核身份或留存原不确定性
+     * @throws ApiException if initial access or persistence fails / 初始访问或持久化失败时 */
+    public static OperationResult<DeploymentManagedHelper.Identity> ensureForPublication(
+        TaskService tasks, TaskContext task, ServerId server, LinuxService linux, InteractionService interaction,
+        DeploymentRemoteLayout layout) throws ApiException {
+        boolean initial = tasks.findCheckpoint(task, DeploymentProtocolBootstrapActionLog.KEY).isEmpty();
+        OperationResult<DeploymentManagedHelper.Identity> first = null;
+        try (var session = linux.connect(server, task)) {
+            first = new DeploymentProtocolBootstrap(tasks, task, server, session, interaction, layout).ensure();
+        } catch (ApiException failure) {
+            if (first == null || first.outcome() != TaskResult.UNKNOWN) throw failure;
+            return withSecondProblem(first, "firstSessionCloseEvent", failure.problem());
+        }
+        if (!initial || task.cancelToken().requested() || Thread.currentThread().isInterrupted()
+            || !receiptQueryUnsent(first))
+            return first;
+        try {
+            var journal = DeploymentProtocolBootstrapActionLog.find(tasks, task);
+            if (journal.isEmpty() || !journal.orElseThrow().facts().phase().equals("DISPATCHED"))
+                return first;
+            try (var fresh = linux.connect(server, task)) {
+                var observed = new DeploymentProtocolBootstrap(tasks, task, server, fresh, interaction, layout)
+                    .reconcile(journal.orElseThrow());
+                if (observed.outcome() == TaskResult.SUCCEEDED) return observed;
+                return withSecondProblem(first, "receiptRetryEvent", observed.problem().orElseThrow());
+            }
+        } catch (ApiException unavailable) {
+            return withSecondProblem(first, "receiptRetryEvent", unavailable.problem());
+        }
+    }
+
+    /** Checks typed evidence for the specific receipt read before admitting a fresh observation. / 准入新观测前核对该回执读取的类型化证据。
+     * @param result original bootstrap outcome / 原 bootstrap 结果
+     * @return whether the read is proven unsent after a zero installer exit / 安装退出零后是否已证实读取未发送 */
+    private static boolean receiptQueryUnsent(OperationResult<DeploymentManagedHelper.Identity> result) {
+        return result.outcome() == TaskResult.UNKNOWN && result.problem().filter(problem -> {
+            var facts = problem.context();
+            return problem.eventCode().equals("DEPLOYMENT_HELPER_BOOTSTRAP_STATUS_UNCONFIRMED")
+                && facts.entrySet().containsAll(UNSENT_RECEIPT_QUERY.entrySet())
+                && !facts.containsKey("statusExitCode");
+        }).isPresent();
+    }
+
+    /** Adds a secondary diagnostic while retaining the first receipt failure. / 保留第一次回执失败并追加后续诊断。
+     * @param first original unresolved receipt observation / 原未决回执观测
+     * @param key diagnostic key for the later failure / 后续失败的诊断键
+     * @param second later typed problem / 后续类型化问题
+     * @return original unknown outcome with both observations / 保留两次观测的原未知结果 */
+    private static OperationResult<DeploymentManagedHelper.Identity> withSecondProblem(
+        OperationResult<DeploymentManagedHelper.Identity> first, String key, Problem second) {
+        var problem = first.problem().orElseThrow();
+        var details = new HashMap<>(problem.context());
+        if (second.eventCode().matches("[A-Z][A-Z0-9_]{0,119}")) details.put(key, second.eventCode());
+        var cause = second.context().get("statusProblemEvent");
+        if (cause != null && cause.matches("[A-Z][A-Z0-9_]{0,119}")) details.put(key + "Cause", cause);
+        second.diagnosticId().ifPresent(id -> details.put(key + "DiagnosticId", id.toString()));
+        return unknown(problem.eventCode(), details, problem.diagnosticId());
     }
 
     /** Verifies an already installed helper or performs one original tracked installation. / 核实既有 helper 或执行一次原任务留痕安装。
@@ -219,7 +309,20 @@ public final class DeploymentProtocolBootstrap {
             journal.close();
             return failed("DEPLOYMENT_HELPER_BOOTSTRAP_FAILED");
         }
-        return settle(journal);
+        var settled = settle(journal);
+        if (settled.outcome() != TaskResult.UNKNOWN || !installerExitZero(observed)) return settled;
+        var problem = settled.problem().orElseThrow();
+        var details = new HashMap<>(problem.context());
+        details.put("installerObservedExitCode", "0");
+        return unknown(problem.eventCode(), details, problem.diagnosticId());
+    }
+
+    /** Checks the bounded installer exit independently of receipt and helper verification. / 独立于回执和 helper 核验检查有界安装退出。
+     * @param observed original installer command outcome / 原安装命令结果
+     * @return whether the actual installer process exited zero with complete output / 实际安装进程是否退出零且输出完整 */
+    private static boolean installerExitZero(OperationResult<CommandResult> observed) {
+        return observed.outcome() == TaskResult.SUCCEEDED && observed.value()
+            .filter(value -> !value.truncated() && value.exitCode().equals(Optional.of(0))).isPresent();
     }
 
     /** Checks the root-owned terminal receipt and actual helper bytes before releasing occupancy. / 释放占用前核对 root 回执与实际 helper 字节。
@@ -233,17 +336,18 @@ public final class DeploymentProtocolBootstrap {
         try {
             observed = helper.installationStatus(facts.operationId());
         } catch (ApiException unavailable) {
-            return unknown("DEPLOYMENT_HELPER_BOOTSTRAP_STATUS_UNAVAILABLE");
+            return unknownObservation("DEPLOYMENT_HELPER_BOOTSTRAP_STATUS_UNAVAILABLE",
+                new OperationResult<CommandResult>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(unavailable.problem())));
         }
         if (!knownSuccessfulExit(observed))
-            return unknown("DEPLOYMENT_HELPER_BOOTSTRAP_STATUS_UNCONFIRMED");
+            return unknownObservation("DEPLOYMENT_HELPER_BOOTSTRAP_STATUS_UNCONFIRMED", observed);
         String expected = DeploymentHelperInstallerScript.receipt(task.id(), facts.operationId(), facts.serverDigest(),
             facts.bodyDigest(), "SUCCEEDED", layout);
         if (!expected.equals(observed.value().orElseThrow().stdout()))
             return unknown("DEPLOYMENT_HELPER_BOOTSTRAP_RECEIPT_CONFLICT");
         var identity = helper.probePlatform();
         if (identity.outcome() != TaskResult.SUCCEEDED)
-            return unknown("DEPLOYMENT_HELPER_BOOTSTRAP_IDENTITY_UNCONFIRMED");
+            return unknownObservation("DEPLOYMENT_HELPER_BOOTSTRAP_IDENTITY_UNCONFIRMED", identity);
         journal.terminal(true);
         journal.close();
         return identity;
@@ -281,8 +385,39 @@ public final class DeploymentProtocolBootstrap {
      * @param event stable event code / 稳定事件码
      * @return unknown result / 未知结果 */
     private static OperationResult<DeploymentManagedHelper.Identity> unknown(String event) {
+        return unknown(event, Map.of(), Optional.empty());
+    }
+
+    /** Projects typed observation facts from a receipt or identity read. / 从回执或身份读取中投影类型化观测事实。
+     * @param event original bootstrap event code / 原 bootstrap 事件码
+     * @param observed read outcome / 读取结果
+     * @return unresolved installation with the observed diagnostic facts / 带观测诊断事实的未决安装 */
+    private static OperationResult<DeploymentManagedHelper.Identity> unknownObservation(String event, OperationResult<?> observed) {
+        var details = new HashMap<String, String>();
+        observed.problem().ifPresent(problem -> {
+            details.putAll(DeploymentPublishChannel.runtimeObservationDiagnostics(problem));
+            details.put("statusProblemCode", problem.code().name());
+            if (problem.eventCode().matches("[A-Z][A-Z0-9_]{0,119}"))
+                details.put("statusProblemEvent", problem.eventCode());
+        });
+        details.put("statusOutcome", observed.outcome().name());
+        if (observed.value().orElse(null) instanceof CommandResult result) {
+            result.exitCode().ifPresent(exit -> details.put("statusExitCode", Integer.toString(exit)));
+            details.put("statusOutputOrTruncation",
+                Boolean.toString(result.truncated() || !result.stdout().isEmpty() || !result.stderr().isEmpty()));
+        }
+        return unknown(event, details, observed.problem().flatMap(Problem::diagnosticId));
+    }
+
+    /** Reports original uncertainty with its safe evidence and diagnostic reference. / 保留原不确定性、安全证据及诊断引用。
+     * @param event original bootstrap event code / 原 bootstrap 事件码
+     * @param details bounded typed facts / 有界类型化事实
+     * @param diagnosticId original diagnostic reference / 原诊断引用
+     * @return unresolved original installation / 未决原安装 */
+    private static OperationResult<DeploymentManagedHelper.Identity> unknown(String event, Map<String, String> details,
+                                                                                Optional<UUID> diagnosticId) {
         return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-            event, "Original managed helper installation needs exact receipt review", Map.of(), Optional.empty())));
+            event, "Original managed helper installation needs exact receipt review", details, diagnosticId)));
     }
 
     /** Reports an original installation known to have failed. / 报告确知失败的原安装。

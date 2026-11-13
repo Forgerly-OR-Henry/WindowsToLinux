@@ -291,7 +291,9 @@ class DeploymentToolchainReviewEvidenceTest {
             var excessive = new AiToolCall[9];
             for (int index = 0; index < excessive.length; index++)
                 excessive[index] = read("excessive-" + index, evidenceSnapshot, mirrorPointer, index * 120);
-            assertThrows(IOException.class, () -> unique.read(response(Optional.empty(), excessive)));
+            if (kind.equals("bind")) {
+                assertTrue(unique.read(response(Optional.empty(), excessive)).stream().allMatch(AiToolResult::error));
+            } else assertThrows(IOException.class, () -> unique.read(response(Optional.empty(), excessive)));
         }
     }
 
@@ -658,6 +660,117 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     @Test
+    void r26FileTransferBindingTrafficFitsOriginalPhysicalSendBudgets() throws Exception {
+        // Both original binds. The logs disclose only pointer lengths and cursors for these reads.
+        var reviews = List.of(
+            new R24Review("bind", "GO", "1.24.13", 31468, List.of(
+                new R24Turn(390183, 1044281, 0, 16697, 64215, "43/0/8000 45/12600/4500 45/0/1800 46/169298/400 46/205050/1800 46/175869/3000 46/188186/700 41/0/6500"),
+                new R24Turn(406880, 1027584, 20391, 24450, 108509, "45/1800/8000 45/9800/2800 45/17100/8000 45/25100/8000 45/33100/1176"),
+                new R24Turn(431330, 1003134, 0, 31046, 116302, "45/0/8000"),
+                new R24Turn(462376, 972088, 0, 32010, 115660, "46/179096/700 46/169298/650 46/237842/1600 46/195081/5000"),
+                new R24Turn(494386, 940078, 0, 32874, 118597, "45/0/8000 45/8000/8000 45/16000/8000 45/24000/8000 45/32000/3000"),
+                new R24Turn(527260, 907204, 0, 30767, 118549, "41/0/7000"),
+                new R24Turn(558027, 876437, 0, 30054, 117906, "46/571337/1500 46/145614/1600 30/3984/1000 30/76140/1800"),
+                new R24Turn(588081, 846383, 0, 33571, 123182, "46/236800/4500"),
+                new R24Turn(621652, 812812, 0, 33570, 125782, ""))),
+            new R24Review("bind", "NODE", "24.22.3", 32527, List.of(
+                new R24Turn(850005, 584459, 0, 17059, 65368, "43/0/7000 45/0/8000 45/8000/8000 45/16000/8000 45/24000/8000 45/32000/3000 46/169298/400 46/188186/1200"),
+                new R24Turn(867064, 567400, 20675, 22378, 104092, "45/8000/8000 45/16000/8000 45/24000/8000 45/32000/3000 46/169298/400 46/188186/1200 46/175869/3000 46/205050/1800"),
+                new R24Turn(889442, 545022, 0, 33583, 118270, "46/179096/1200 46/238500/3000 46/199600/3500 46/168500/2500"),
+                new R24Turn(923025, 511439, 0, 32571, 127672, "41/0/8000 30/144000/3000 46/241000/1600 46/199000/2400"),
+                new R24Turn(955596, 478868, 0, 33439, 123808, "45/0/8000 46/237842/3276"),
+                new R24Turn(989035, 445429, 0, 36864, 131790, "46/145614/8000 46/238760/4000 46/199619/3000"),
+                new R24Turn(1025899, 408565, 0, 33289, 131002, "23/0/8000"),
+                new R24Turn(1059188, 375276, 0, 33425, 130602, "23/8000/8000 41/0/8000 46/153614/8000 46/238760/8000 46/241118/4000 46/202619/2000 45/24000/8000 43/0/8000"),
+                new R24Turn(1092613, 341851, 0, 33521, 132478, "23/0/8000 23/8000/8000 41/0/8000 46/169298/8000 46/179096/8000 46/188186/8000 46/205050/8000 54/3984/8000"),
+                new R24Turn(1126134, 308330, 0, 33398, 131205, "45/0/8000 45/30000/4276 46/238760/6000 46/241118/5642 46/199619/3000"),
+                new R24Turn(1159532, 274932, 0, 32476, 129862, "41/0/7000 43/0/7000 30/0/8000 30/144991/8000 46/177911/8000 46/238760/8000"),
+                new R24Turn(1192008, 242456, 0, 33054, 130887, "46/169298/1000 46/188186/1000 46/205050/2500 46/1731/2200 46/237842/1900 46/241024/1500 46/177911/1000"),
+                new R24Turn(1225062, 209402, 0, 31425, 130162, "23/0/8000"),
+                new R24Turn(1256487, 177977, 0, 33090, 131408, "45/0/8000"),
+                new R24Turn(1289577, 144887, 0, 30235, 124656, "46/199619/8000 46/246760/8000 46/238760/982 46/241118/1406 41/0/8000 43/0/7000 45/0/3000"),
+                new R24Turn(1319812, 114652, 0, 0, 132629, ""))));
+        try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
+            for (var review : reviews) {
+                try (var request = r26Binding(fixture, review.ecosystem(), review.branch())) {
+                    replayR24ToolchainReview("R26", "file-transfer", review, request, fixture, assisted);
+                }
+            }
+            assertEquals(0, assisted.hosts.get());
+        }
+    }
+
+    @Test
+    void r26AssetLendingOversizedBindReadBatchGetsOneNoActionCorrection() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var command = r26Binding(fixture, "DOTNET", "10.0.300")) {
+            var intent = intent("bind", fixture, command);
+            var facts = new DeploymentFixedCommandProtocol(fixture.context).inspect(intent, command, fixture.layout, fixture.task);
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), intent, command,
+                fixture.layout).orElseThrow();
+            var messages = new ArrayList<>(evidence.messages());
+            var current = JSON.readTree(messages.getLast().text());
+            String snapshot = current.at("/" + PHASE + "/snapshotSha256").asText();
+            String helper = current.at("/" + PHASE + "/installedHelperSource/sourcePointer").asText();
+            String mirror = current.at("/mirrorTransport/runtimeSource/sourcePointer").asText();
+            String shell = current.at("/" + PHASE + "/mirrorBootstrapShell/sourcePointer").asText();
+            var original = List.of(
+                read("asset-0", snapshot, helper, 238760, 3200),
+                read("asset-1", snapshot, helper, 179096, 529),
+                read("asset-2", snapshot, helper, 169298, 323),
+                read("asset-3", snapshot, helper, 175869, 2874),
+                read("asset-4", snapshot, helper, 188186, 494),
+                read("asset-5", snapshot, shell, 0, 5600),
+                read("asset-6", snapshot, mirror, 144991, 3647),
+                read("asset-7", snapshot, "/unresolvedAssetLendingSource", 0, 906),
+                read("asset-8", snapshot, shell, 0, 1487));
+            var reader = evidence.reader(32);
+            for (int round = 0; round < 2; round++) {
+                var response = mockResponses(read("previous-" + round, snapshot, mirror, round * 120, 120));
+                reader.continueReview(messages, response, reader.read(response));
+            }
+            var response = mockResponses(original.toArray(AiToolCall[]::new));
+            var rejected = reader.read(response);
+            assertEquals(original.stream().map(AiToolCall::id).toList(), rejected.stream().map(AiToolResult::callId).toList());
+            assertTrue(rejected.stream().allMatch(result -> result.error() && result.text().contains("no pages were read")));
+            reader.continueReview(messages, response, rejected);
+            String frame = messages.get(messages.size() - 2).text();
+            int first = frame.indexOf('\n') + 1;
+            var header = JSON.readTree(frame.substring(first, frame.indexOf('\n', first)));
+            assertEquals("NO_PAGES_READ_MAX_EIGHT_PER_RESPONSE", header.path("latestBatchRejected").asText());
+            assertEquals(9, header.path("latestReads").size());
+            for (var receipt : header.path("latestReads")) {
+                assertTrue(receipt.path("rejected").asBoolean());
+                assertFalse(receipt.has("pointer"));
+            }
+            assertFalse(messages.stream().anyMatch(item -> item.continuation().isPresent() || item.toolResult().isPresent()));
+            var corrected = reader.read(mockResponses(read("asset-correction", snapshot, shell, 0, 5600)));
+            var page = pagePayload(corrected.getFirst().text());
+            assertEquals(r24Shell(fixture).substring(0, 5600), page.at("/value/text").asText());
+            var secondOversized = original.stream().map(call -> new AiToolCall("again-" + call.id(), call.name(), call.arguments()))
+                .toArray(AiToolCall[]::new);
+            assertThrows(IOException.class, () -> reader.read(mockResponses(secondOversized)));
+            var mixed = new AiToolCall[]{read("new-page", snapshot, shell, 0, 5600), verdict("mixed-verdict", "APPROVE")};
+            assertThrows(IOException.class, () -> evidence.reader(32).read(mockResponses(mixed)));
+            assertThrows(IOException.class, () -> evidence.reader(8).read(response));
+        }
+    }
+
+    private static CommandRequest r26Binding(MirroredInstallerTestFixture fixture, String ecosystem, String version) {
+        String branch = version.substring(0, ecosystem.equals("GO") ? version.lastIndexOf('.') : version.indexOf('.'));
+        String declaration = Base64.getEncoder().encodeToString(branch.getBytes(StandardCharsets.UTF_8));
+        String canonical = "WTL-TOOLS-1\tcurrent\n" + ecosystem + "\tLANGUAGE_TARGET\t" + declaration + "\tZml4dHVyZQ==\tSERIES\t"
+            + branch
+            + "\t" + version + "\t" + fixture.layout.toolchains() + "/versions/" + ecosystem.toLowerCase(java.util.Locale.ROOT) + "-"
+            + "c".repeat(64) + "\tMANAGED\t" + Base64.getEncoder().encodeToString("https://example.invalid/tool".getBytes(StandardCharsets.UTF_8))
+            + "\t" + "d".repeat(64) + "\n";
+        String literal = Base64.getEncoder().encodeToString(canonical.getBytes(StandardCharsets.UTF_8));
+        String invocation = "'" + fixture.layout.helperPath() + "' prepare-toolchains 'bind' '" + literal + "'";
+        String guarded = DeploymentManagedHelperBundle.verifiedCommand(invocation, fixture.layout);
+        return new CommandRequest(DeploymentMirrorTasks.preparationCommand(guarded, fixture.task, 180),
+            new byte[0], Duration.ofSeconds(180), 65536);
+    }
+
+    @Test
     void r25LogAnalyzerFirstBuildWireRestoresCompleteExecutableInputWithinOriginalBudget() throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
             String body = "# LogAnalyzer staged build fixture — 中文\nset -eu\n"
@@ -809,7 +922,7 @@ class DeploymentToolchainReviewEvidenceTest {
         for (int index = 0; index < turns.size() - 1; index++) {
             var calls = turns.get(index).calls(snapshot, sources, index);
             requests.add(calls);
-            int continuationBytes = round.equals("R25") && index > 0 ? Math.max(6000, 320 * calls.size())
+            int continuationBytes = !round.equals("R24") && index > 0 ? Math.max(6000, 320 * calls.size())
                 : turns.get(index + 1).cumulativeState() - turns.get(index).cumulativeState();
             replyAtTotalBytes(fixture, continuations, continuationBytes, "OPENAI_RESPONSES", calls.toArray(AiToolCall[]::new));
         }

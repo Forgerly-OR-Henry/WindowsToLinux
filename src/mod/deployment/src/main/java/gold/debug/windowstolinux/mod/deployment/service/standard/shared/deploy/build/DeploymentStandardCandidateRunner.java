@@ -232,6 +232,8 @@ public final class DeploymentStandardCandidateRunner {
         if (DeploymentHostMatcher.evaluatePlatform(facts.value().orElseThrow())
             .support() != DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION)
             return failedPreparation(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HOST_UNSUPPORTED");
+        preparationObserver.hostObservedBeforePreparation(rendered.value().orElseThrow().reviewedPlanSha256(),
+            facts.value().orElseThrow(), task);
         var capacity = channel.availableBytes();
         if (capacity.outcome() != TaskResult.SUCCEEDED)
             return withoutPreparedValue(capacity);

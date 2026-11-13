@@ -33,6 +33,10 @@ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.ui.UiService;
 import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement;
 
 /** Freezes one original assisted task and its language-call budget without replacing platform authority. / 冻结一项原辅助任务及语言调用预算，不替换平台权限。 */
 public final class DeploymentAssistedScope implements ModContext, gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence {
@@ -82,6 +86,8 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     }
 
     private PreparedBinding preparedBinding;
+
+    private volatile Map<String, Object> prePreparationHost;
 
     public void bindPreparation(
         gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
@@ -174,6 +180,25 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             }
 
             @Override
+            public void hostObservedBeforePreparation(String identity, DeploymentLinuxCapabilityFacts host,
+                                                      TaskContext actual) throws ApiException {
+                synchronized (DeploymentAssistedScope.this) {
+                    requireCurrent(actual);
+                    if (!captured.identity().equals(identity))
+                        throw new IllegalArgumentException("Original host probe plan changed");
+                    prePreparationHost = Map.of("reviewedPlanSha256", identity, "server", captured.server(),
+                        "task", actual.id().toString(), "application", captured.plan().request().facts().applicationId(),
+                        "platform", Map.of("distro", host.distro().name(), "version", host.version(),
+                            "architecture", host.architecture(), "packageManager", host.packageManager(),
+                            "packageArchitecture", host.packageArchitecture()),
+                        "observedTools", Map.of("python3Available", host.python3Available(),
+                            "pythonVenvBranches", host.pythonVersions(), "ecosystemVersions", host.ecosystemToolVersions(),
+                            "serviceVersions", host.serviceRuntimeVersions(), "systemdAvailable", host.systemdAvailable()),
+                        "meaning", "Successful complete fixed host probe before this component's catalog preparation. These are prior observations, not a package inventory, exact reusable tool identity, current build prerequisites or authorization. The selected helper checks exact reuse and may enter the independently reviewed fixed preparation path.");
+                }
+            }
+
+            @Override
             public void hostObserved(String identity,
                                      gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts host,
                                      gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
@@ -194,8 +219,10 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         sameTask(supplied);
         verify();
         var previous = toolchainPlan;
-        if (previous == null || previous.plan() != plan || !previous.identity().equals(expected))
+        if (previous == null || previous.plan() != plan || !previous.identity().equals(expected)) {
             preparedBinding = null;
+            prePreparationHost = null;
+        }
         toolchainPlan = null;
         var request = plan.request();
         var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied);
@@ -243,10 +270,8 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         evidence.put("archiveSha256", request.archive().sha256());
         evidence.put("relativeRoot", request.archive().relativeRoot());
         evidence.put("runtimeKind", request.runtime().getClass().getSimpleName());
-        evidence.put("requirements", requirements.stream().map(requirement -> Map.of(
-            "ecosystem", requirement.ecosystem().name(), "version", requirement.version().map(value -> value.text()).orElse(""),
-            "constraint", requirement.constraint().name(), "source", requirement.source(),
-            "derivation", request.facts().toolchainRequirements().contains(requirement) ? "SOURCE_DECLARATION" : "REVIEWED_RUNTIME")).toList());
+        evidence.put("requirements", requirements.stream()
+            .map(requirement -> requirementFacts(requirement, request.facts().toolchainRequirements().contains(requirement))).toList());
         evidence.put("meaning", "Intended tool requirements derived by the same fixed product planner used for this source-bound reviewed runtime. Source declarations are separate and need not include product runtime dependencies. This is a planned dependency, not an installation observation or approval. Review original workflow authority and the exact current effects independently.");
         if (request.runtime() instanceof gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition.StaticSite)
             evidence.put("runtimeDependencyReason", "This reviewed StaticSite uses the product managed Python 3.12 http.server to serve built assets; Node, when selected, builds those assets. Python is a fixed runtime requirement and need not be declared by package.json. The pinned helper static launch branch uses the prepared Python executable; this does not prove it is installed or authorize an effect.");
@@ -365,18 +390,29 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         return toolchainPlan;
     }
 
+    private static Map<String, String> requirementFacts(ToolchainRequirement requirement, boolean declared) {
+        return Map.of("ecosystem", requirement.ecosystem().name(),
+            "version", requirement.version().map(value -> value.text()).orElse(""),
+            "constraint", requirement.constraint().name(), "source", requirement.source(),
+            "derivation", declared ? "SOURCE_DECLARATION" : "REVIEWED_RUNTIME");
+    }
+
+    private static List<ToolchainRequirement> requirementsForStage(ToolchainPlan planned, boolean systemCompiler) {
+        var catalog = DeploymentToolchainCatalog.defaults();
+        return planned.requirements().stream().filter(requirement -> {
+            var branches = catalog.candidates(requirement);
+            if (branches.isEmpty()) throw new IllegalArgumentException("Unsupported preparation requirement");
+            return (branches.getFirst().installation() == DeploymentToolchainCatalog.InstallationType.SYSTEM_COMPILER)
+                == systemCompiler;
+        }).toList();
+    }
+
     private static void requireSelections(ToolchainPlan planned,
                                           gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools) {
         var catalog = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.defaults();
         if (!catalog.revision().equals(tools.catalogRevision()))
             throw new IllegalArgumentException("Prepared catalog changed");
-        var expected = new ArrayList<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement>();
-        for (var requirement : planned.requirements()) {
-            var branches = catalog.candidates(requirement);
-            if (branches.isEmpty()) throw new IllegalArgumentException("Unsupported preparation requirement");
-            if (branches.getFirst().installation() != gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.InstallationType.SYSTEM_COMPILER)
-                expected.add(requirement);
-        }
+        var expected = requirementsForStage(planned, false);
         if (!expected.equals(tools.selections().stream().map(value -> value.requirement()).toList()))
             throw new IllegalArgumentException("Prepared selections differ from current component requirements");
         var policy = new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainSelectionPolicy(catalog);
@@ -416,7 +452,16 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             if (observed == null || observed.plan().plan() != planned.plan() || !observed.plan().identity().equals(planned.identity())
                 || !observed.canonical().equals(canonical) || !observed.tools().equals(tools))
                 throw new IllegalArgumentException("Binding differs from actual current-plan preparation receipts");
-            return planned.evidence();
+            var declared = planned.plan().request().facts().toolchainRequirements();
+            return Map.of("currentToolchainPlan", planned.evidence(), "currentToolchainBindingStage", Map.of(
+                "application", planned.plan().request().facts().applicationId(), "reviewedPlanSha256", planned.identity(),
+                "bindingSha256", DeploymentToolchainBindingCodec.identity(tools),
+                "catalogPrepared", tools.selections().stream().map(selection -> Map.of(
+                    "ecosystem", selection.requirement().ecosystem().name(), "version", selection.version().text(),
+                    "directory", selection.directory(), "origin", selection.origin().name(), "sha256", selection.sha256())).toList(),
+                "deferredHostCompilers", requirementsForStage(planned, true).stream()
+                    .map(requirement -> requirementFacts(requirement, declared.contains(requirement))).toList(),
+                "meaning", "Only catalog preparations represented by the exact current binding are sealed by this operation. SYSTEM_COMPILER requirements are evaluated by the fixed post-bind host probe and runtime matcher before candidate creation. The native prerequisite transaction, when applicable, requires separate independent review, exact host grant and a fresh successful probe. No full runtime or compiler readiness has been inferred from this binding."));
         } catch (java.io.IOException invalid) {
             throw new IllegalArgumentException("Binding requires complete canonical UTF-8", invalid);
         } finally {
@@ -497,7 +542,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             }
         }
         if (intent.semantics().filter(value -> value.operation().equals("deployment.toolchain.bind.v1")).isPresent())
-            facts.put("currentToolchainPlan", bindingPlanFacts(intent, request, supplied));
+            facts.putAll(bindingPlanFacts(intent, request, supplied));
         if (intent.semantics().filter(value -> value.operation().equals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION)).isPresent())
             facts.put("currentNativeBuildPrerequisites", nativeDependencyFacts(intent, request, supplied));
         if (intent.semantics().filter(value -> value.operation().startsWith(
@@ -546,6 +591,9 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 if (!matched)
                     throw new IllegalArgumentException("Preparation differs from reviewed runtime requirements");
                 facts.put("currentToolchainPlan", planned.evidence());
+                var host = prePreparationHost;
+                if (host != null && planned.identity().equals(host.get("reviewedPlanSha256")))
+                    facts.put("currentPrePreparationHost", host);
             }
         }
         if (intent.semantics().filter(value -> value.operation().equals("deployment.publication.publish.v1")).isPresent()) {

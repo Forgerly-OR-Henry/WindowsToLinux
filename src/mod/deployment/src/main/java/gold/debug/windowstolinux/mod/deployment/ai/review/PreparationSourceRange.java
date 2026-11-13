@@ -29,6 +29,10 @@ record PreparationSourceRange(String section, int offset, int next) {
         }
         if (buildsFromSource(ecosystem))
             ranges.add(python(helper, "def source_dependencies("));
+        if (ecosystem.equals("RUBY")) {
+            for (String function : List.of("ruby_unit", "ruby_probe", "ruby_publish", "ruby_source_install"))
+                ranges.add(python(helper, "def " + function + "("));
+        }
         return List.copyOf(ranges);
     }
 

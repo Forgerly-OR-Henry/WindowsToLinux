@@ -895,7 +895,7 @@ class DeploymentCommandEvidenceTest {
         var layout = DeploymentRemoteLayout.original();
         var server = new ServerId("test-server");
         var target = new ActionTarget(server.id(), "deployment-build", layout.helperPath());
-        for (String engine : List.of("ordinary", "docker", "podman")) {
+        for (String engine : List.of("ordinary", "ordinary-offline", "docker", "podman")) {
             String invocation = "'" + layout.helperPath() + "' build-preflight '" + engine + "'";
             String guarded = DeploymentManagedHelperBundle.verifiedCommand(invocation, layout);
             try (var request = new CommandRequest(guarded, new byte[0], Duration.ofSeconds(30), 65536)) {
@@ -907,6 +907,14 @@ class DeploymentCommandEvidenceTest {
                 assertEquals(engine, preflight.get("buildEngine"));
                 assertEquals(layout.helperPath(), preflight.get("helperTarget"));
                 assertEquals(0, preflight.get("stdinBytes"));
+                assertEquals(engine.equals("ordinary-offline"), preflight.containsKey("offlineBuildIsolation"));
+                if (engine.equals("ordinary-offline")) {
+                    var isolation = (Map<?, ?>) preflight.get("offlineBuildIsolation");
+                    assertEquals(DeploymentManagedHelperBundle.helperSha256(layout), isolation.get("helperSha256"));
+                    assertTrue(isolation.get("propertiesSource").toString().contains("RestrictAddressFamilies=none"));
+                    assertTrue(isolation.get("preflightSource").toString().contains("socket.AF_UNIX"));
+                    assertTrue(isolation.get("applicationSource").toString().contains("offline_build_properties"));
+                }
                 assertEquals(action.exactAction(), facts.get("exactAction"));
                 assertEquals("source-bound-plan", facts.get("businessRevision"));
                 var wrongTarget = action.withSemantics(new ActionSemantics("deployment.build.preflight.v1",

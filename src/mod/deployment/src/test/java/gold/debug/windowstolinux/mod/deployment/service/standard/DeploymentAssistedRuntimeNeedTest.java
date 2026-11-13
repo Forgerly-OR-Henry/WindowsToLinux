@@ -120,6 +120,9 @@ class DeploymentAssistedRuntimeNeedTest {
                             var result = ((DeploymentCommandReview) scope.interaction()).approveCommand(intent, actual, front && mutation.equals("TASK") ? new NativeAiFixture().task : fixture.task);
                             var facts = new ObjectMapper().valueToTree(scope.facts(intent, actual, fixture.task));
                             assertEquals(plan.request().facts().applicationId(), facts.at("/currentToolchainPlan/application").asText());
+                            assertEquals(plan.request().facts().applicationId(), facts.at("/currentToolchainBindingStage/application").asText());
+                            assertEquals(DeploymentToolchainBindingCodec.identity(tools), facts.at("/currentToolchainBindingStage/bindingSha256").asText());
+                            assertEquals(tools.selections().size(), facts.at("/currentToolchainBindingStage/catalogPrepared").size());
                             assertEquals(front ? "frontend" : "backend", facts.at("/currentToolchainPlan/relativeRoot").asText());
                             assertEquals(2, facts.at("/sourceArchiveObservations/archives").size(), "Sibling source context is retained");
                             if (front) assertTrue(facts.at("/currentToolchainPlan/runtimeDependencyReason").asText().contains("Python 3.12"));
@@ -428,9 +431,14 @@ class DeploymentAssistedRuntimeNeedTest {
                         if (!Set.of("VALID", "DENY").contains(mutation))
                             assertThrows(IllegalArgumentException.class, () -> scope.facts(intent, complete, fixture.task));
                         else {
+                            scope.preparationObserver(plan, fixture.task).hostObservedBeforePreparation(identity, hostFacts(false), fixture.task);
                             var facts = new ObjectMapper().valueToTree(scope.facts(intent, complete, fixture.task));
                             assertEquals("StaticSite", facts.at("/currentToolchainPlan/runtimeKind").asText());
                             assertEquals(identity, facts.at("/currentToolchainPlan/reviewedPlanSha256").asText());
+                            assertEquals(identity, facts.at("/currentPrePreparationHost/reviewedPlanSha256").asText());
+                            assertEquals("24.04", facts.at("/currentPrePreparationHost/platform/version").asText());
+                            assertEquals("3.12", facts.at("/currentPrePreparationHost/observedTools/pythonVenvBranches/0").asText());
+                            assertFalse(facts.has("hostPrerequisiteObservations"));
                             var application = facts.at("/reviewedApplicationSources/applications/0");
                             assertEquals("wtl-survey", application.path("application").asText());
                             assertEquals("frontend", application.path("relativeRoot").asText());
@@ -494,7 +502,8 @@ class DeploymentAssistedRuntimeNeedTest {
 
     private static gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts hostFacts(boolean ready) {
         var values = new HashMap<String, String>(Map.of("DISTRO_ID", "ubuntu", "VERSION", "24.04", "ARCH", "x86_64",
-            "PACKAGE_MANAGER", "apt", "PACKAGE_ARCH", "amd64", "SYSTEMD", "1", "CPU_LEVEL", "x86-64-v1"));
+            "PACKAGE_MANAGER", "apt", "PACKAGE_ARCH", "amd64", "SYSTEMD", "1", "CPU_LEVEL", "x86-64-v1",
+            "PYTHON3", "1", "PYTHON_VERSIONS", "3.12"));
         if (ready) {
             values.put("TOOL_CMAKE", "3.28.3");
             values.put("TOOL_NINJA", "1.11.1");

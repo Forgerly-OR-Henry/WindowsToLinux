@@ -164,8 +164,7 @@ public final class DeploymentAiJson {
         policy += " Submit exactly one native submit_result call. Its arguments are the complete requested result. Text alone is not a submission.";
         if (purpose == AiPurpose.APPROVAL) {
             var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
-            policy += "\n" + (evidence.filter(DeploymentCommandSourceEvidence::toolchainReview).isPresent()
-                ? DeploymentHelperReviewContract.toolchainText(layout) : DeploymentHelperReviewContract.text(layout));
+            policy += "\n" + reviewContract(evidence, layout);
         }
         if (evidence.isPresent()) policy += "\n" + evidence.orElseThrow().instructions();
         var conversation = purpose == AiPurpose.APPROVAL ? approvalConversation : null;
@@ -243,6 +242,15 @@ public final class DeploymentAiJson {
             messages.add(AiMessage.result(receipt));
         }
         throw new IOException("Submission budget exhausted");
+    }
+
+    private static String reviewContract(Optional<DeploymentCommandSourceEvidence> evidence,
+                                          gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        if (evidence.filter(DeploymentCommandSourceEvidence::bindingReview).isPresent())
+            return DeploymentHelperReviewContract.bindingText(layout);
+        if (evidence.filter(DeploymentCommandSourceEvidence::toolchainReview).isPresent())
+            return DeploymentHelperReviewContract.toolchainText(layout);
+        return DeploymentHelperReviewContract.text(layout);
     }
 
     private AiResponse requestSubmission(AiPurpose purpose, List<AiMessage> messages, List<AiToolDefinition> definitions,

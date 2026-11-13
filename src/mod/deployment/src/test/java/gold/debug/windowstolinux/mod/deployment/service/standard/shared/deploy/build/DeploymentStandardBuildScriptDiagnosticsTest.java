@@ -7,11 +7,33 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentCompanion;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentWorkload;
 import org.junit.jupiter.api.Test;
 
 class DeploymentStandardBuildScriptDiagnosticsTest {
+    @Test
+    void selectsOfflineBuildForStandaloneCmakeAndStandardLibraryPythonWithNativeCompanion() {
+        var python = new DeploymentRuntimeDefinition.PythonService("3.12", "cli.main",
+            new DeploymentHealthCheck.Process(5, 1));
+        var original = python.workload();
+        var companion = new DeploymentCompanion("worker", "native", DeploymentCompanion.BuildType.CMAKE_SERVICE,
+            ".w2l/bin/scan-worker", "NATIVE_HELPER");
+        var bundle = python.withWorkload(new DeploymentWorkload(original.mode(), original.reviewed(), original.command(),
+            original.workingDirectory(), original.endpoints(), original.verification(), original.expectedOutput(),
+            original.client(), original.inputs(), List.of(companion), original.buildDirectory(), original.workers()));
+        assertEquals("ordinary-offline", DeploymentStandardBuildRunner.buildEngine(DeploymentBuildToolType.CMAKE, python));
+        assertEquals("ordinary-offline", DeploymentStandardBuildRunner.buildEngine(DeploymentBuildToolType.PYTHON_STDLIB, bundle));
+        assertEquals("ordinary", DeploymentStandardBuildRunner.buildEngine(DeploymentBuildToolType.PYTHON_STDLIB, python));
+        assertEquals("ordinary", DeploymentStandardBuildRunner.buildEngine(DeploymentBuildToolType.PIP_LOCKED, bundle));
+    }
+
     @Test
     void reportsSilentFailureLineAndPreservesExitWithoutDisclosingCommandOrEnvironment() throws Exception {
         String bash = System.getProperty("managed.test.bash", "/bin/bash");

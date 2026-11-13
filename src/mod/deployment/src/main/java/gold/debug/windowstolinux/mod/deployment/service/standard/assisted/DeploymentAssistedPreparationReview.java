@@ -87,13 +87,13 @@ public final class DeploymentAssistedPreparationReview {
             case KOTLIN ->
                 "JetBrains/kotlin official GitHub tags/releases select the compiler ZIP and unambiguous official SHA256 metadata; extract the checked archive. A supplied managed Java directory is ownership/marker/ecosystem checked before JAVA_HOME is set.";
             case RUST ->
-                "rust-lang/rust official releases select stable version; static.rust-lang.org supplies archive and SHA256 sidecar. Extract and run its checked install.sh with the managed prefix and --disable-ldconfig.";
+                "Official Rust metadata and archive SHA256 select exact stable bytes. The privileged helper creates or reuses owned toolchain roots, lock, task scratch and version markers. For managed install the checked upstream install.sh executes as root with the exact managed prefix and --disable-ldconfig. This is a requested toolchain preparation effect, but the prefix argument is not a filesystem sandbox. Review this actual privileged upstream execution, temporary mirror staging, cleanup and original workflow authority. Do not assume no host-wide effects or infer current authorization from the archive digest.";
             case PYTHON ->
                 "python.org official release listing/page supplies source version and SHA256, or the SHA256 message digest from its official Sigstore bundle (no signature-verification claim). Extract checked source; fixed apt/dnf build dependencies and configure/make -j2/make install use the managed prefix with ensurepip.";
             case PHP ->
                 "php.net official releases supply source version and SHA256. Extract checked source; fixed apt/dnf dependencies and the product CLI configure options, make -j2/make install use the managed prefix.";
             case RUBY ->
-                "ruby-lang.org release listing/announcement supplies source version and SHA256 for cache.ruby-lang.org. Extract checked source; fixed apt/dnf dependencies and configure/make -j2/make install use the managed prefix. Ruby 3.0 also downloads the product-pinned openssl-3.0.3.gem from rubygems.org, verifies SHA256 and installs it locally without dependencies.";
+                "Official Ruby release metadata and SHA256 select exact bytes. Fixed native package prerequisites are separately identifiable privileged effects in this preparation. The pinned Ruby source worker executes configure, make, install and any Ruby 3.0 OpenSSL gem build under a transient DynamicUser with restricted writable mounts and network disabled. The controller waits for unit/cgroup termination, copies validated bounded staged entries to the final prefix and checks the installed Ruby from a non-root probe. The live branch and successful isolation remain runtime results.";
             default -> throw new IllegalArgumentException("No preparation adapter");
         };
         String apt = switch (ecosystem) {

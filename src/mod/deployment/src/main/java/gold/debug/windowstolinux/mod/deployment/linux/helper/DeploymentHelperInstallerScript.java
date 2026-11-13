@@ -479,10 +479,11 @@ public final class DeploymentHelperInstallerScript {
 
     /** Admits only missing, current or explicitly pinned product bytes at the selected target. */
     private static String renderPriorExecutableAdmission(DeploymentRemoteLayout layout, boolean upgrade) {
-        // Exact original-layout release bytes from R24, R23, R19, R18, MAIN (7940a2e5d), and 8089f7fc7.
+        // Exact original-layout release bytes from R26, R24, R23, R19, R18, MAIN (7940a2e5d), and 8089f7fc7.
         // Keep the path binding even if a different layout happens to use an identical entry payload.
         String legacy = upgrade && DeploymentRemoteLayout.original().equals(layout) ? """
               case "$3:$installer_digest" in
+                helper:d1f49e69bc269aa49c74921389206ea46953c67de1aff356660d8269e3f2cc94 | \\
                 helper:bcb63c832f1dc89a19de021d3f7a0fed0cb2a028097a9c3f285a2d3336b69c15 | \\
                 helper:5269a09f9fc4e49209ef30c95d9d52fb5f92e67bfd024471f491014ee78c8bca | \\
                 helper:d10a316ac0078b4dabb286409e12845376d719578c9e2c029686deaf369cc3b4 | \\

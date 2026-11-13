@@ -40,7 +40,8 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "d1f49e69bc269aa49c74921389206ea46953c67de1aff356660d8269e3f2cc94";
+    public static final String EXPECTED_SHA256 = "11bd7bfd3e41ea21d8a46ef21b37c4eac1ce43059f7edf03fee4600f91a1d156";
+    private static final String RUBY_SOURCE_SHA256 = "6fbdb3681039221f55e38f214a4f60f9b127f5a31d6ce32a17bb13818f9bd206";
 
     /**
      * ROOT.
@@ -129,12 +130,21 @@ public final class DeploymentManagedHelperBundle {
 
     /** Renders the entry for an explicitly captured layout. */
     public static String renderBuildEntry(DeploymentRemoteLayout layout) {
+        return renderBuildEntry(layout, true);
+    }
+
+    private static String renderBuildEntry(DeploymentRemoteLayout layout, boolean current) {
         try (InputStream stream = DeploymentManagedHelperBundle.class
             .getResourceAsStream(ROOT + "workspace/24-build-entry.sh")) {
             if (stream == null)
                 throw new IllegalStateException("Build entry resource unavailable");
-            return DeploymentRemoteLayoutTemplate.render(
-                new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n"), layout);
+            String source = new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+            if (current) {
+                String ordinary = "if [ \"$engine\" = ordinary ]; then exec /usr/bin/setpriv --no-new-privs /bin/bash \"$candidate/.build-script\"; fi";
+                source = insertBefore(source, ordinary,
+                    "if [ \"$engine\" = ordinary-offline ]; then exec /usr/bin/setpriv --no-new-privs /bin/bash \"$candidate/.build-script\"; fi\n");
+            }
+            return DeploymentRemoteLayoutTemplate.render(source, layout);
         } catch (IOException failure) {
             throw new IllegalStateException("Build entry resource unreadable", failure);
         }
@@ -272,6 +282,34 @@ public final class DeploymentManagedHelperBundle {
         return sha256(renderScript(layout).getBytes(StandardCharsets.UTF_8));
     }
 
+    /** Supplies only the actual selected offline controls after verifying the full helper. */
+    public static Map<String, Object> offlineBuildIsolationFacts(DeploymentRemoteLayout layout) {
+        String helper = renderScript(layout);
+        String controls = exactRange(helper, "offline_build_properties=(", "\n)\n");
+        String preflight = exactRange(helper, "    if [ \"$1\" = ordinary-offline ]; then",
+            "|| reject workspace-network-unavailable\n    elif");
+        String use = exactRange(helper, "        if [ \"$engine\" = ordinary-offline ]; then",
+            "        fi\n");
+        return Map.of("helperSha256", helperSha256(layout), "buildEntrySha256", buildEntrySha256(layout),
+            "propertiesSource", controls, "preflightSource", preflight, "applicationSource", use,
+            "meaning", "The pinned ordinary-offline branch applies these exact systemd properties to the same non-root build unit. The fixed preflight checks a separate network namespace and socket denial. This is the selected enforced implementation, not a live probe result or authority.");
+    }
+
+    private static String exactRange(String source, String start, String end) {
+        int first = source.indexOf(start);
+        int last = first < 0 ? -1 : source.indexOf(end, first + start.length());
+        if (first < 0 || last < 0 || source.indexOf(start, first + 1) >= 0)
+            throw new IllegalStateException("Pinned helper source range changed");
+        return source.substring(first, last + end.length());
+    }
+
+    private static String insertBefore(String source, String anchor, String text) {
+        int position = source.indexOf(anchor);
+        if (position < 0 || source.indexOf(anchor, position + 1) >= 0)
+            throw new IllegalStateException("Pinned helper insertion point changed");
+        return source.substring(0, position) + text + source.substring(position);
+    }
+
     /** Supplies the actual fixed opaque-data receiver; protected payload bytes are never included. */
     public static Map<String, Object> configurationStagingImplementationFacts(DeploymentRemoteLayout layout) {
         String complete = renderScript(layout);
@@ -391,14 +429,23 @@ public final class DeploymentManagedHelperBundle {
                     if (fixedPublicationRecovery && fragment.endsWith("30-managed-installation.py"))
                         content = content.replace("'bin/python3', '-I', '-S', '-B', '--version'", "'bin/python3', '--version'")
                             .replace("str(directory / 'bin/python3'), '-I', '-S', '-B', '-c'", "str(directory / 'bin/python3'), '-c'");
+                    if (!fixedPublicationRecovery && fragment.endsWith("40-binding-protocol.py")) {
+                        try (InputStream ruby = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + "toolchain/ruby-source-build.py")) {
+                            if (ruby == null) throw new IllegalStateException("Ruby source build fragment unavailable");
+                            String isolated = new String(ruby.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+                            if (!RUBY_SOURCE_SHA256.equals(sha256(isolated.getBytes(StandardCharsets.UTF_8))))
+                                throw new IllegalStateException("Ruby source build fragment identity changed");
+                            content = insertBefore(content, "\n\ndef main(args):", "\n\n" + isolated);
+                        }
+                    }
                     output.write((content + "\n").getBytes(StandardCharsets.UTF_8));
                     if (fragment.endsWith("40-binding-protocol.py"))
                         output.write(toolchainClosing.getBytes(StandardCharsets.UTF_8));
                     continue;
                 }
                 if (fragment.endsWith("00-protocol-foundation.sh")) {
-                    content += "build_entry_sha256=" + buildEntrySha256(layout)
-                        + "\n";
+                    String entry = renderBuildEntry(layout, !fixedPublicationRecovery);
+                    content += "build_entry_sha256=" + sha256(entry.getBytes(StandardCharsets.UTF_8)) + "\n";
                 }
                 // Embedded Python is literal; packaged shell fragments use their declared backslash encoding. / 嵌入的 Python 保持字面内容，打包 Shell 片段按声明的反斜杠编码输出。
                 output.write(((fragment.endsWith("27-agent-workspace.sh") || fragment.endsWith("10-native-instances.sh")

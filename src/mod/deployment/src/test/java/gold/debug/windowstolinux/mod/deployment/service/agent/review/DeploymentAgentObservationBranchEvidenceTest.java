@@ -19,7 +19,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 class DeploymentAgentObservationBranchEvidenceTest {
     private static final int PINNED_PROTOCOL = 16;
 
-    private static final String PINNED_SHA256 = "d1f49e69bc269aa49c74921389206ea46953c67de1aff356660d8269e3f2cc94";
+    private static final String PINNED_SHA256 = "11bd7bfd3e41ea21d8a46ef21b37c4eac1ce43059f7edf03fee4600f91a1d156";
 
     @TempDir
     Path temporary;

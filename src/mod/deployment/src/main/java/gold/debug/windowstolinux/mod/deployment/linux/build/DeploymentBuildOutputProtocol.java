@@ -94,7 +94,7 @@ public final class DeploymentBuildOutputProtocol {
             def accept_line(data):
                 global conflict
                 for key, pattern in ((b'BUILD_UID', rb'[0-9]{1,10}'),
-                                     (b'BUILD_ENGINE', rb'(?:ordinary|docker|podman)'),
+                                     (b'BUILD_ENGINE', rb'(?:ordinary|ordinary-offline|docker|podman)'),
                                      (b'BUILD_TOOL', rb'[A-Z0-9_]{1,64}')):
                     if data.startswith(key + b'='):
                         value = data[len(key)+1:]
@@ -193,7 +193,7 @@ public final class DeploymentBuildOutputProtocol {
     public static java.util.Map<String, Object> reviewFacts(String script, byte[] input,
                                                             gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws java.io.IOException {
         var frame = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' build-run ")
-            + "'([a-z0-9][a-z0-9-]{0,62})' '([a-z0-9][a-z0-9-]{0,62}-[a-f0-9]{16})' ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) '(ordinary|docker|podman)' '([a-f0-9]{64})' '([A-Za-z0-9+/=]+|-)'\\z").matcher(script);
+            + "'([a-z0-9][a-z0-9-]{0,62})' '([a-z0-9][a-z0-9-]{0,62}-[a-f0-9]{16})' ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) '(ordinary|ordinary-offline|docker|podman)' '([a-f0-9]{64})' '([A-Za-z0-9+/=]+|-)'\\z").matcher(script);
         String prefix = "exec /usr/bin/python3 -I -c ";
         if (!frame.find() || !script.startsWith(prefix) || frame.start() <= prefix.length()
             || script.charAt(frame.start() - 1) != ' ' || !frame.group(2).startsWith(frame.group(1) + "-"))
@@ -261,7 +261,7 @@ public final class DeploymentBuildOutputProtocol {
             throw new IllegalArgumentException("Incomplete build report");
         if (!lines[1].matches("EXIT=-?[0-9]{1,4}") || !lines[2].matches("BYTES=[0-9]{1,12}")
             || !lines[3].matches("SHA256=[0-9a-f]{64}") || !lines[4].matches("UID=(?:-|[0-9]{1,10})")
-            || !lines[5].matches("ENGINE=(?:-|ordinary|docker|podman)")
+            || !lines[5].matches("ENGINE=(?:-|ordinary|ordinary-offline|docker|podman)")
             || !lines[6].matches("TOOL=(?:-|[A-Z0-9_]{1,64})") || !lines[7].matches("COMPAT=[01]")
             || !lines[8].matches("LIMIT=(?:-|output|workspace)") || !lines[9].matches("CONFLICT=[01]")
             || !lines[10].matches("HEAD=[A-Za-z0-9+/=]{0,3000}")

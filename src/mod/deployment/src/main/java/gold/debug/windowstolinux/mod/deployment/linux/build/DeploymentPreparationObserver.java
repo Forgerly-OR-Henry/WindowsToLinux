@@ -16,6 +16,11 @@ public interface DeploymentPreparationObserver {
     default void toolsPrepared(ServerId server, DeploymentResolvedToolchains tools, TaskContext task) throws ApiException {
     }
 
+    /** Reports the successful fixed platform probe before catalog preparation. */
+    default void hostObservedBeforePreparation(String revision, DeploymentLinuxCapabilityFacts host,
+                                               TaskContext task) throws ApiException {
+    }
+
     default void hostObserved(String revision, DeploymentLinuxCapabilityFacts host,
                               DeploymentResolvedToolchains tools, TaskContext task) throws ApiException {
     }

@@ -15,9 +15,18 @@ record BindingSourceRange(String section, int offset, int next, String text) {
         String python = helper.substring(start, end);
         return List.of(
             range(helper, 0, "bindDispatch", "\n    prepare-toolchains)\n", "\n    retain)"),
+            range(helper, 0, "helperDispatchAdmission", "\nrequire_root\n[ \"$#\" -ge 1 ]", "\ncase \"$verb\" in\n    publish-deployment"),
+            range(helper, 0, "rootAndDeployerChecks", "\nrequire_root() {\n", "\nrequire_app() {"),
+            range(helper, 0, "ownerAndModeChecks", "\nassert_not_writable_by_others() {\n", "\nassert_candidate_for_deployer() {"),
             range(python, start, "pythonEntry", PYTHON_OPEN.substring(1), "\nSHIPPED_CATALOG = "),
+            range(python, start, "versionComparison", "\ndef version_key(version):\n", "\ndef choose("),
+            range(python, start, "lockAndOwnership", "\ndef preparation_process_options():\n", "\ndef tracked_process_started("),
+            range(python, start, "processProbe", "\ndef run(command, cwd=None, environment=None):\n", "\nDEADLINE ="),
+            range(python, start, "ownedDirectory", "\ndef owned_directory(path):\n", "\ndef extract(archive, destination):"),
+            range(python, start, "rehashSystemBinaries", "\ndef verify_system(record):\n", "\ndef installation_key("),
             range(python, start, "installedToolProbes", "\ndef probe(ecosystem, directory, expected):\n", "\ndef admitted("),
             range(python, start, "validateAndSeal", "\ndef admitted(", "\ndef existing_installation("),
+            range(python, start, "sharedRootAndLock", "\ndef prepare_shared_directories():\n", "\nTRACKED_OPERATION ="),
             range(python, start, "mainAdmissionAndLock", "\ndef main(args):\n", "\n            binding = ROOT / 'bindings' / args[1]"),
             range(python, start, "literalBindBranch", "\n        if len(args) == 2 and args[0] == 'bind':\n",
                 "\n        if len(args) == 2 and args[0] == 'restore':\n")

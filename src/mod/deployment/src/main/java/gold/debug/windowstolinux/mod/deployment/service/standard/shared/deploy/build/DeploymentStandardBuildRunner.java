@@ -22,6 +22,8 @@ import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildOutpu
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigScopeType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentBuildEnvironment;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentCompanion;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
@@ -261,9 +263,7 @@ final class DeploymentStandardBuildRunner {
         if (task.cancelToken().requested() || Thread.currentThread().isInterrupted())
             return cancelledPrepared();
         String revision = rendered.value().orElseThrow().reviewedPlanSha256();
-        String engine = runtime instanceof DeploymentRuntimeDefinition.Container container
-            ? container.engine().name().toLowerCase(java.util.Locale.ROOT)
-            : "ordinary";
+        String engine = buildEngine(facts.buildTool(), runtime);
         Objects.requireNonNull(budget);
         var commands = new DeploymentBuildCommandChannel(session, interaction, request.server(), task, revision,
             budget, gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard.NONE,
@@ -416,6 +416,14 @@ final class DeploymentStandardBuildRunner {
         var result = new DeploymentVerifiedBuildResult(workspace.archiveSha256(), workspace.candidateId(), tools,
             DeploymentToolchainBindingCodec.identity(tools), workspace.operation());
         return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(result), Optional.empty());
+    }
+
+    static String buildEngine(DeploymentBuildToolType tool, DeploymentRuntimeDefinition runtime) {
+        if (runtime instanceof DeploymentRuntimeDefinition.Container container)
+            return container.engine().name().toLowerCase(java.util.Locale.ROOT);
+        boolean stdlibWithCmake = tool == DeploymentBuildToolType.PYTHON_STDLIB && runtime.workload().companions().stream()
+            .anyMatch(unit -> unit.projectType() == DeploymentCompanion.BuildType.CMAKE_SERVICE);
+        return tool == DeploymentBuildToolType.CMAKE || stdlibWithCmake ? "ordinary-offline" : "ordinary";
     }
 
     /** Reconstructs only the exact fixed script sent with a confirmed tool selection. / 仅重建随已确认工具选择发送的精确固定脚本。

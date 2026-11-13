@@ -53,7 +53,7 @@ run_restricted_build() {
     [[ "$processes" =~ ^[0-9]{1,4}$ ]] && [ "$processes" -ge 8 ] && [ "$processes" -le 4096 ] || reject build-processes
     [[ "$memory" =~ ^[0-9]{3,6}$ ]] && [ "$memory" -ge 256 ] && [ "$memory" -le 262144 ] || reject build-memory
     [[ "$output" =~ ^[0-9]{4,9}$ ]] && [ "$output" -ge 4096 ] && [ "$output" -le 134217728 ] || reject build-output
-    case "$engine" in ordinary | docker | podman) ;; *) reject build-engine ;; esac
+    case "$engine" in ordinary | ordinary-offline | docker | podman) ;; *) reject build-engine ;; esac
     require_digest "$script_digest"
     if [ "$tools" != - ]; then
         [ "${#tools}" -ge 8 ] && [ "${#tools}" -le 87384 ] && [[ "$tools" =~ ^[A-Za-z0-9+/=]+$ ]] || reject build-toolchain-encoding
@@ -87,7 +87,7 @@ run_restricted_build() {
     trap 'exit 130' HUP INT TERM
     mount -o remount,rw,nodev,nosuid -- "$mutable" || reject workspace-remount
     # No project configuration is read while creating the execution identity.
-    if [ "$engine" = ordinary ]; then
+    if [ "$engine" = ordinary ] || [ "$engine" = ordinary-offline ]; then
         ! getent passwd "$user" >/dev/null && ! getent group "$user" >/dev/null || reject build-identity-collision
     else
         rm -rf --one-file-system -- "$mutable/engine" "$mutable/home" "$mutable/tmp" "$mutable/run"
@@ -111,10 +111,13 @@ run_restricted_build() {
     local isolation_property
     while IFS= read -r isolation_property; do properties+=(--property="$isolation_property"); done \
         < <(render_systemd_manager_isolation "$applications_root" "$secrets_root" "$configurations_root" "$data_root")
-    if [ "$engine" = ordinary ]; then
+    if [ "$engine" = ordinary ] || [ "$engine" = ordinary-offline ]; then
         properties+=(--property=DynamicUser=yes --property=NoNewPrivileges=yes --property=CapabilityBoundingSet= --property=ProcSubset=pid
             --property=RestrictNamespaces=yes --property=RestrictSUIDSGID=yes --property=ProtectControlGroups=yes
             --property=PrivateDevices=yes --property=ProtectKernelTunables=yes --property=ProtectKernelModules=yes --property=ProtectKernelLogs=yes)
+        if [ "$engine" = ordinary-offline ]; then
+            properties+=("${offline_build_properties[@]}")
+        fi
     else
         # Setuid mapping helpers must access hidden proc entries and the target namespace; the user has no effective capabilities.
         properties+=(--property=Delegate=yes --property=ProtectControlGroups=no --property=NoNewPrivileges=no

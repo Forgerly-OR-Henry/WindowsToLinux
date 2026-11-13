@@ -627,7 +627,7 @@ public final class DeploymentBuildCommandChannel {
     /** Rejects an engine outside the fixed helper protocol. / 拒绝固定 helper 协议之外的引擎。
      * @param engine reviewed engine / 已审阅引擎 */
     private static void requireEngine(String engine) {
-        if (!"ordinary".equals(engine) && !"docker".equals(engine) && !"podman".equals(engine))
+        if (!List.of("ordinary", "ordinary-offline", "docker", "podman").contains(engine))
             throw new IllegalArgumentException("Unknown build engine");
     }
 }

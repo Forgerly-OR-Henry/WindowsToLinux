@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -42,14 +44,164 @@ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentRefFlow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.source.DeploymentStandardSetupActionLog;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /** Checks original-task helper installation evidence before default publication uses a new server. / 默认发布使用新服务器前核对原任务 helper 安装依据。 */
 class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
+    private enum ReceiptPath {
+        VERIFIED, RETRY_UNCONFIRMED, MISSING_ABSENCE_FACT, ORIGINAL_RECEIPT_UNKNOWN, ORIGINAL_CLOSE_UNCONFIRMED
+    }
+
+    @ParameterizedTest
+    @EnumSource(ReceiptPath.class)
+    void publicationRetriesOnlyTheProvenUnsentReceiptWithAFreshGrant(ReceiptPath path) throws Exception {
+        var server = new ServerId("synthetic-bootstrap-receipt");
+        var taskId = UUID.randomUUID();
+        TaskContext task = (TaskContext) Proxy.newProxyInstance(TaskContext.class.getClassLoader(),
+            new Class<?>[]{TaskContext.class}, (proxy, method, args) -> switch (method.getName()) {
+                case "id" -> taskId;
+                case "cancelToken" -> (CancelToken) () -> false;
+                default -> throw new AssertionError(method.getName());
+            });
+        var checkpoint = new AtomicReference<TaskCheckpoint>();
+        TaskService tasks = (TaskService) Proxy.newProxyInstance(TaskService.class.getClassLoader(),
+            new Class<?>[]{TaskService.class}, (proxy, method, args) -> {
+                assertSame(task, args[0]);
+                if (method.getName().equals("findCheckpoint"))
+                    return DeploymentProtocolBootstrapActionLog.KEY.equals(args[1])
+                        ? Optional.ofNullable(checkpoint.get()) : Optional.empty();
+                if (method.getName().equals("beginCheckpoint")) {
+                    assertEquals(DeploymentProtocolBootstrapActionLog.KEY, args[1]);
+                    var journal = new TaskCheckpoint() {
+                        private Snapshot current = new Snapshot(0, (String) args[2], false);
+                        public Snapshot snapshot() { return current; }
+                        public Snapshot advance(Snapshot expected, String next) {
+                            assertEquals(current, expected);
+                            return current = new Snapshot(current.revision() + 1, next, false);
+                        }
+                        public void close() { current = new Snapshot(current.revision() + 1, current.payload(), true); }
+                    };
+                    assertTrue(checkpoint.compareAndSet(null, journal));
+                    return journal;
+                }
+                throw new AssertionError(method.getName());
+            });
+        var reviewGrants = new HashMap<ApprovalGrant, ActionIntent>();
+        var statusReviews = new ArrayList<ActionIntent>();
+        InteractionService interaction = (InteractionService) Proxy.newProxyInstance(
+            DeploymentCommandReview.class.getClassLoader(), new Class<?>[]{DeploymentCommandReview.class}, (proxy, method, args) -> {
+                assertEquals("approveCommand", method.getName());
+                assertInstanceOf(CommandRequest.class, args[1]);
+                assertSame(task, args[2]);
+                var intent = (ActionIntent) args[0];
+                if ("deployment.helper.install.status.v1".equals(intent.semantics().orElseThrow().operation()))
+                    statusReviews.add(intent);
+                var grant = new ApprovalGrant(UUID.randomUUID());
+                reviewGrants.put(grant, intent);
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(grant), Optional.empty());
+            });
+        var firstDiagnostic = UUID.randomUUID();
+        var absence = new HashMap<>(Map.ofEntries(Map.entry("commandPhase", "CHANNEL_OPENING"),
+            Map.entry("commandOpenRequested", "true"), Map.entry("channelOpenConfirmed", "false"),
+            Map.entry("channelPeerAssigned", "false"), Map.entry("inputState", "NOT_STARTED"),
+            Map.entry("inputSenderCreated", "false"), Map.entry("authorPayloadState", "NOT_SENT"),
+            Map.entry("outputObserved", "false"), Map.entry("exitObserved", "false"),
+            Map.entry("channelOpenWriteState", "WRITTEN"), Map.entry("channelOpenReply", "NOT_OBSERVED"),
+            Map.entry("transportSocketReadPending", "true"), Map.entry("transportSocketReadCompletedDuringCommand", "0"),
+            Map.entry("privateCommandOutput", "excluded")));
+        if (path == ReceiptPath.MISSING_ABSENCE_FACT) absence.remove("inputSenderCreated");
+        var receiptProblem = new Problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT",
+            "Synthetic receipt read failure", absence, Optional.of(firstDiagnostic));
+        var firstReceipt = new OperationResult<>(path == ReceiptPath.ORIGINAL_RECEIPT_UNKNOWN ? TaskResult.UNKNOWN : TaskResult.FAILED,
+            Optional.of(new CommandResult(Optional.empty(), "", "", false)), Optional.of(receiptProblem));
+
+        var connections = new AtomicInteger();
+        var closes = new AtomicInteger();
+        var installs = new AtomicInteger();
+        var layout = DeploymentRemoteLayout.original();
+        LinuxService linux = new LinuxService() {
+            public RemoteSession connect(ServerId selected, TaskContext original) {
+                assertSame(task, original);
+                assertEquals(server, selected);
+                int connection = connections.incrementAndGet();
+                assertTrue(connection <= 2);
+                assertEquals(connection - 1, closes.get());
+                return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
+                    new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                        if (method.getName().equals("close")) {
+                            if (connection == 1 && path == ReceiptPath.ORIGINAL_CLOSE_UNCONFIRMED)
+                                throw new ApiException(problem(ProblemCode.IO_FAILURE, "TEST_CLOSE_UNCONFIRMED"));
+                            closes.incrementAndGet();
+                            return null;
+                        }
+                        assertEquals("execute", method.getName());
+                        var intent = reviewGrants.remove((ApprovalGrant) args[1]);
+                        assertNotNull(intent, "Each command needs a new grant");
+                        return switch (intent.semantics().orElseThrow().operation()) {
+                            case "deployment.helper.probe.v1" ->
+                                connection == 1 ? exited(64, "") : ok(probeOutput());
+                            case "deployment.helper.install.tracked.v1" -> {
+                                assertEquals(1, connection);
+                                assertEquals(1, installs.incrementAndGet());
+                                assertEquals("DISPATCHED", DeploymentProtocolBootstrapActionLog.find(tasks, task)
+                                    .orElseThrow().facts().phase());
+                                yield ok("installer process exit observed");
+                            }
+                            case "deployment.helper.install.status.v1" -> {
+                                var facts = DeploymentProtocolBootstrapActionLog.find(tasks, task).orElseThrow().facts();
+                                assertEquals("DISPATCHED", facts.phase());
+                                assertEquals(DeploymentHelperInstallerScript.renderStatus(facts.operationId(), layout),
+                                    new String(((CommandRequest) args[0]).stdin(), StandardCharsets.UTF_8));
+                                if (connection == 1 || path == ReceiptPath.RETRY_UNCONFIRMED) yield firstReceipt;
+                                yield ok(DeploymentHelperInstallerScript.receipt(taskId, facts.operationId(), facts.serverDigest(),
+                                    facts.bodyDigest(), "SUCCEEDED", layout));
+                            }
+                            default -> throw new AssertionError(intent.semantics());
+                        };
+                    });
+            }
+
+            public List<gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint> pendingTransfers(TaskContext original) {
+                throw new AssertionError("Receipt verification cannot transfer files");
+            }
+        };
+
+        var observed = DeploymentProtocolBootstrap.ensureForPublication(tasks, task, server, linux, interaction, layout);
+        boolean retried = path == ReceiptPath.VERIFIED || path == ReceiptPath.RETRY_UNCONFIRMED;
+        boolean verified = path == ReceiptPath.VERIFIED;
+        assertEquals(retried ? 2 : 1, connections.get());
+        assertEquals(path == ReceiptPath.ORIGINAL_CLOSE_UNCONFIRMED ? 0 : connections.get(), closes.get());
+        assertEquals(connections.get(), statusReviews.size());
+        if (retried) assertEquals(statusReviews.getFirst(), statusReviews.getLast());
+        assertTrue(reviewGrants.isEmpty());
+        assertEquals(1, installs.get());
+        assertEquals(verified ? TaskResult.SUCCEEDED : TaskResult.UNKNOWN, observed.outcome());
+        assertEquals(verified, checkpoint.get().snapshot().released());
+        assertEquals(verified ? "SUCCEEDED" : "DISPATCHED",
+            DeploymentProtocolBootstrapActionLog.find(tasks, task).orElseThrow().facts().phase());
+        if (!verified) {
+            var original = observed.problem().orElseThrow();
+            assertEquals(Optional.of(firstDiagnostic), original.diagnosticId());
+            assertEquals("0", original.context().get("installerObservedExitCode"));
+            assertEquals("SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT", original.context().get("statusProblemEvent"));
+            assertEquals("WRITTEN", original.context().get("channelOpenWriteState"));
+            assertFalse(original.context().containsKey("statusExitCode"));
+            assertFalse(original.context().containsKey("privateCommandOutput"));
+            if (retried)
+                assertEquals("DEPLOYMENT_HELPER_BOOTSTRAP_STATUS_UNCONFIRMED", original.context().get("receiptRetryEvent"));
+            if (path == ReceiptPath.ORIGINAL_CLOSE_UNCONFIRMED)
+                assertEquals("TEST_CLOSE_UNCONFIRMED", original.context().get("firstSessionCloseEvent"));
+        }
+    }
+
     @Test
     void probeEvidenceControlsInstallationAndPreservesOriginalFailure() throws Exception {
         var notSent = new Problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT", "Not sent",

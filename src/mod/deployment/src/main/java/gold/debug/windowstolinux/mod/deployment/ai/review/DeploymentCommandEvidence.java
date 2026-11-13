@@ -99,6 +99,8 @@ public final class DeploymentCommandEvidence {
                     new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-build", collector.get("candidateRoot").toString())))
                     throw new IllegalArgumentException("Build collector candidate target differs");
                 facts.put("buildCollector", collector);
+                if ("ordinary-offline".equals(collector.get("engine")))
+                    facts.put("offlineBuildIsolation", DeploymentManagedHelperBundle.offlineBuildIsolationFacts(layout));
             }
             if (installedHelper)
                 managedApplication(invocation, input, intent, layout).ifPresent(value -> facts.put("managedApplication", value));
@@ -195,16 +197,19 @@ public final class DeploymentCommandEvidence {
     private static Optional<Map<String, Object>> buildPreflight(ActionIntent intent, CommandRequest request, String invocation,
                                                                int stdinBytes, DeploymentRemoteLayout layout) {
         var engine = Pattern.compile(Pattern.quote("'" + layout.helperPath() + "' build-preflight '")
-            + "(ordinary|docker|podman)'").matcher(invocation);
+            + "(ordinary|ordinary-offline|docker|podman)'").matcher(invocation);
         if (stdinBytes != 0 || !engine.matches()
             || !request.script().equals(DeploymentManagedHelperBundle.verifiedCommand(invocation, layout))
             || intent.serverIds().size() != 1
             || !intent.semantics().orElseThrow().targets().equals(Set.of(
                 new ActionTarget(intent.serverIds().getFirst(), "deployment-build", layout.helperPath()))))
             return Optional.empty();
-        return Optional.of(Map.of("verb", "build-preflight", "argumentRoles", List.of("buildEngine"),
+        var facts = new LinkedHashMap<String, Object>(Map.of("verb", "build-preflight", "argumentRoles", List.of("buildEngine"),
             "buildEngine", engine.group(1), "stdinBytes", stdinBytes, "helperTarget", layout.helperPath(),
-            "meaning", "Checks host build prerequisites, including a transient systemd isolation probe. ordinary selects non-container build mode. Application and source identity come from the original workflow evidence."));
+            "meaning", "Checks host build prerequisites, including a transient systemd isolation probe. Application and source identity come from the original workflow evidence."));
+        if ("ordinary-offline".equals(engine.group(1)))
+            facts.put("offlineBuildIsolation", DeploymentManagedHelperBundle.offlineBuildIsolationFacts(layout));
+        return Optional.of(Map.copyOf(facts));
     }
 
     /** Common request identity and pinned source; mode-owned protocols interpret their own inputs. */
@@ -482,7 +487,7 @@ public final class DeploymentCommandEvidence {
      * @throws CharacterCodingException if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
     private static java.util.Optional<Map<String, Object>> buildBinding(String script, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws CharacterCodingException {
         var pattern = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' build-run ")
-            + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' [0-9]+ [0-9]+ [0-9]+ [0-9]+ '(?:ordinary|docker|podman)' '[0-9a-f]{64}' '([A-Za-z0-9+/=]+|-)'$");
+            + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' [0-9]+ [0-9]+ [0-9]+ [0-9]+ '(?:ordinary|ordinary-offline|docker|podman)' '[0-9a-f]{64}' '([A-Za-z0-9+/=]+|-)'$");
         var match = pattern.matcher(script);
         if (!match.find()) throw new IllegalArgumentException("Build command must use the exact bound input protocol");
         return match.group(1).equals("-") ? java.util.Optional.empty() : java.util.Optional.of(decodeBinding(match.group(1), layout));
