@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.assisted;
 
 import java.lang.reflect.*;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -8,12 +9,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.appapi.ai.AiService;
 import gold.debug.windowstolinux.appapi.ai.model.AiToolCall;
 import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot;
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.*;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
 import org.junit.jupiter.api.Test;
 
@@ -23,6 +28,7 @@ class DeploymentAssistedEffectEvidenceRegressionTest {
     @Test
     void fixedUploadCarriesActualWorkflowAndSourceButStillNeedsItsExactHostGrant() throws Exception {
         try (var h = new Harness()) {
+            h.beforeReview = () -> assertEquals(0, h.grants.get(), "Host authority must follow the independent review");
             h.reply("APPROVE", "Exact frozen upload", true);
             var result = h.approve();
             assertEquals(TaskResult.SUCCEEDED, result.outcome());
@@ -33,6 +39,15 @@ class DeploymentAssistedEffectEvidenceRegressionTest {
             assertEquals("selected source and deployment", facts.at("/currentCommandEvidence/workflowAuthorization/frozenWorkflowRequest").asText());
             assertEquals("a".repeat(64), facts.at("/currentCommandEvidence/sourceSelection/sourceRevision").asText());
             assertEquals(h.intent.exactAction(), facts.path("exactAction").asText());
+            assertTrue(facts.at("/currentCommandEvidence/currentSourceArchiveTransfer/canonicalTransferMatched").asBoolean());
+            assertEquals(h.remote, facts.at("/currentCommandEvidence/currentSourceArchiveTransfer/remoteArchivePath").asText());
+            assertEquals("INDEPENDENT_REVIEW_BEFORE_HOST_GRANT", facts.at("/effectAuthorizationStage/phase").asText());
+            assertTrue(facts.at("/effectAuthorizationStage/hostGrantRequestedOnlyAfterApprove").asBoolean());
+            assertFalse(facts.at("/effectAuthorizationStage/hostGrantIssuedByThisBoundary").asBoolean(true));
+            assertTrue(facts.at("/effectAuthorizationStage/exactHostGrantRequiredBeforeDispatch").asBoolean());
+            var system = h.fixture.requests.getFirst().messages().getFirst();
+            assertEquals(gold.debug.windowstolinux.appapi.ai.model.AiRole.SYSTEM, system.role());
+            assertTrue(system.text().contains("The later per-effect grant cannot be present during this independent review"));
         }
     }
 
@@ -97,9 +112,9 @@ class DeploymentAssistedEffectEvidenceRegressionTest {
 
         final ServerId server = new ServerId("fixture-server");
 
-        final ActionIntent intent = new ActionIntent("platform.transfer.upload", List.of(server.id()), "candidate", "b".repeat(64),
-            "Upload the frozen archive to the exact owned candidate", "Transfer source data only")
-            .withSemantics(new ActionSemantics("deployment.candidate.upload.v1", Set.of(new ActionTarget(server.id(), "deployment-candidate", "/fixture/candidate/mutable/source.tar.gz"))));
+        final String remote = DeploymentRemoteLayout.original().candidateRoot("fixture-" + "c".repeat(16)) + "/mutable/source.tar.gz";
+
+        final ActionIntent intent;
 
         final DeploymentAssistedScope scope;
 
@@ -111,6 +126,11 @@ class DeploymentAssistedEffectEvidenceRegressionTest {
         };
 
         Harness() throws Exception {
+            Path archiveDirectory = Path.of("fixture", "sealed-archive").toAbsolutePath();
+            var transfer = new TransferRequest(archiveDirectory.resolve("source.tar.gz"), remote, 14592);
+            intent = RemoteActions.transfer(server, "b".repeat(64), transfer, "d".repeat(64), true)
+                .withSemantics(new ActionSemantics("deployment.candidate.upload.v1",
+                    Set.of(new ActionTarget(server.id(), "deployment-candidate", remote))));
             host = proxy(InteractionService.class, (p, m, a) -> {
                 if (m.getName().equals("openReviewedWorkflow"))
                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of((WorkflowGrant) () -> {
@@ -140,7 +160,17 @@ class DeploymentAssistedEffectEvidenceRegressionTest {
                 case "sha256" -> "a".repeat(64);
                 default -> throw new AssertionError("No source reads expected");
             });
-            scope.sourceCaptured(server, new DeploymentSourceMaterial("fixture", snapshot, List.of("Cargo.toml"), List.of()), fixture.task);
+            var material = new DeploymentSourceMaterial("fixture", snapshot, List.of("Cargo.toml"), List.of());
+            scope.sourceCaptured(server, material, fixture.task);
+            var archiveId = UUID.randomUUID();
+            var archiveSnapshot = proxy(FileSnapshot.class, (p, m, a) -> switch (m.getName()) {
+                case "id" -> archiveId;
+                case "directory" -> archiveDirectory;
+                default -> throw new AssertionError(m.getName());
+            });
+            scope.archiveCaptured(material,
+                new DeploymentSourceArchive(archiveSnapshot, "d".repeat(64), 14592, 8264, id, "a".repeat(64), ""),
+                List.of(), fixture.task);
         }
 
         void reply(String decision, String reason, boolean confirmation) throws Exception {

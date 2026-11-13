@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
 
 /** Uses the original environment operation for helper receipts, including recovery without creating another checkpoint. / 使用原环境操作保存 helper 回执，包括不创建另一检查点的恢复。 */
 final class DeploymentEnvironmentHelper {
@@ -54,8 +55,10 @@ final class DeploymentEnvironmentHelper {
             if (!DeploymentManagedHelper.installationRequired(observed))
                 throw observed.problem().map(DeploymentEnvironmentPendingException::new)
                     .orElseGet(() -> new DeploymentEnvironmentPendingException("ENVIRONMENT_HELPER_PROBE_UNCONFIRMED"));
-            String script = installer(state);
-            var sent = state.next("HELPER_DISPATCHED", gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(script, task), state.observation().orElseThrow());
+            var point = DeploymentHelperInstallerScript.packagePoint(DeploymentMirrorTasks.policy(task));
+            String script = DeploymentHelperInstallerScript.renderTracked(task.id(), state.operation(), serverDigest(state),
+                DeploymentHelperInstallerScript.bodyDigest(state.layout(), point), state.layout(), point);
+            var sent = state.next("HELPER_DISPATCHED", DeploymentMirrorTasks.installerRequestDigest(script, task), state.observation().orElseThrow());
             var result = helper.installTracked(script.getBytes(StandardCharsets.UTF_8), () -> journal.advance(state, sent));
             if (result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()
                 || !result.value().orElseThrow().exitCode().equals(Optional.of(0)) || result.value().orElseThrow().truncated())
@@ -68,13 +71,20 @@ final class DeploymentEnvironmentHelper {
      * @throws ApiException if original connection, approval or CAS fails / 原连接、审核或 CAS 失败时
      * @throws DeploymentEnvironmentPendingException if exact original proof is unavailable / 精确原证明不可用时 */
     void reconcile(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPendingException {
-        if (!state.requestSha().equals(gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(installer(state), task)))
-            throw new DeploymentEnvironmentPendingException("ENVIRONMENT_HELPER_ORIGINAL_REQUEST_CHANGED");
+        var point = DeploymentHelperInstallerScript.packagePoint(DeploymentMirrorTasks.policy(task));
+        String bodyDigest = DeploymentHelperInstallerScript.bodyDigest(state.layout(), point);
+        if (!DeploymentHelperInstallerScript.matchesTrackedRequest(task, state.operation(), serverDigest(state),
+                bodyDigest, state.requestSha(), state.layout(), false)) {
+            bodyDigest = DeploymentHelperInstallerScript.bodyDigest(state.layout(), Optional.empty());
+            if (!DeploymentHelperInstallerScript.matchesTrackedRequest(task, state.operation(), serverDigest(state),
+                    bodyDigest, state.requestSha(), state.layout(), true))
+                throw new DeploymentEnvironmentPendingException("ENVIRONMENT_HELPER_ORIGINAL_REQUEST_CHANGED");
+        }
         try (var session = context.linux().connect(state.target(), task)) {
             var helper = helper(session, state);
             var observed = helper.installationStatus(state.operation());
             String receipt = DeploymentHelperInstallerScript.receipt(task.id(), state.operation(), serverDigest(state),
-                helperDigest(state), "SUCCEEDED", state.layout());
+                bodyDigest, "SUCCEEDED", state.layout());
             if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty()
                 || !observed.value().orElseThrow().exitCode().equals(Optional.of(0)) || observed.value().orElseThrow().truncated()
                 || !receipt.equals(observed.value().orElseThrow().stdout()) || helper.probe().outcome() != TaskResult.SUCCEEDED)
@@ -91,19 +101,6 @@ final class DeploymentEnvironmentHelper {
         return new DeploymentManagedHelper(session, context.interaction(), state.target().server(), task,
             state.operation() + ":" + state.bodySha(), DeploymentSendGuard.NONE,
             (intent, request, original) -> review.approve(state.target(), intent.revision(), request, original), state.layout());
-    }
-
-    /** Renders the exact original installer without creating an operation UUID. / 不创建操作 UUID 地渲染精确原安装程序。
-     * @param state original facts / 原事实
-     * @return fixed tracked installer / 固定留痕安装程序 */
-    private String installer(DeploymentEnvironmentState state) {
-        return DeploymentHelperInstallerScript.renderTracked(task.id(), state.operation(), serverDigest(state), helperDigest(state), state.layout());
-    }
-
-    /** Identifies the original helper body. / 标识原 helper 主体。
-     * @return exact body digest / 精确主体摘要 */
-    private static String helperDigest(DeploymentEnvironmentState state) {
-        return DeploymentEnvironmentScripts.digest(DeploymentHelperInstallerScript.render(state.layout()));
     }
 
     /** Preserves the existing installer server identity contract. / 保留既有安装程序服务器身份合同。

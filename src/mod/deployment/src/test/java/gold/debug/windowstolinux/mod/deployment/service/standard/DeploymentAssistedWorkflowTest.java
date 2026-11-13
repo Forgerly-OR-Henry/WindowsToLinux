@@ -675,7 +675,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
             var keys = new HashSet<String>();
             facts.fieldNames().forEachRemaining(keys::add);
             var expected = new HashSet<>(Set.of("operation", "serverTargets", "resourceTargets", "businessRevision", "exactAction"));
-            for (String field : List.of("authorizationPolicy", "businessRevisionMeaning"))
+            for (String field : List.of("authorizationPolicy", "businessRevisionMeaning", "effectAuthorizationStage"))
                 if (facts.has(field)) expected.add(field);
             if (facts.has("authorizationPolicy")) assertEquals(policy.get(), facts.path("authorizationPolicy").asText());
             if (facts.has("currentCommandEvidence")) {

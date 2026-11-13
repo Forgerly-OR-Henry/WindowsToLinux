@@ -65,9 +65,10 @@ public final class DeploymentCommandSourceEvidence {
     private static final String WORKER_ASSIGNMENT = "DEPENDENCY_WORKER_SOURCE = ";
     private static final int MAX_READS_PER_RESPONSE = 8;
     private static final int MAX_CORRECTABLE_BATCH = 16;
-    // Limits optional prior evidence only; valid ranges requested in the latest batch always stay visible.
+    // Valid ranges requested in the latest batch always stay visible.
     private static final int RETAINED_SOURCE_BYTES = 60 * 1024;
-    private static final int PREPARE_RETAINED_SOURCE_BYTES = 4 * 1024;
+    private static final int PREPARE_PRIOR_SOURCE_BYTES = 16 * 1024;
+    private static final int GO_PREPARE_RETAINED_SOURCE_BYTES = 4 * 1024;
     private static final int BIND_RETAINED_SOURCE_BYTES = 24 * 1024;
     private static final int MAX_RETAINED_READS = 16;
     private static final Set<String> OPERATIONS = Set.of(PREPARE, BIND,
@@ -103,8 +104,8 @@ public final class DeploymentCommandSourceEvidence {
 
     private static final String PREPARE_INSTRUCTION = """
         Review the exact current preparation and authority. The selectedPreparationRanges contain exact pinned helper and mirror excerpts. Follow the mirror runtime locations for any unresolved redirect, route, fallback, TLS or digest checks. The current mirrorTransport.frozenPolicy supplies the public endpoints for the metadata, checksum and artifact calls this preparation can reach. Evaluate the endpoints against the executable source. A configured route or digest does not establish that a transfer occurred.
-        The preparationSelection frame holds exact source excerpts. For each manifest entry, startCharacter is relative to headerCharacters; offset through next gives the original UTF-16 coordinates. Follow the reached branches, including locks, SYSTEM reuse, archive bounds, managed installation, probes, any source hooks and the signed APT or DNF transaction when applicable. The outer shell stages policy, runtime and bootstrap definitions; declaring a function does not invoke it. Restore exactAction in order using literal text or referenced source. SHELL_SINGLE_QUOTE surrounds the entire source with apostrophes and replaces each embedded apostrophe with '"'"'.
-        Request only the specific unresolved source ranges using the current snapshotSha256 and the exact sourcePointer, UTF-16 offset and limit from 1 through 8000. Use at most eight evidence calls per response, separate from the verdict. All original source, public policy and command facts remain readable. Exact page and retained frames carry a JSON header followed by original source in range order. The initial excerpts remain visible after a rebase. latestReads records the current requests. Omitted older ranges remain readable.
+        The preparationSelection frame holds exact source excerpts. For each manifest entry, startCharacter is relative to headerCharacters; offset through next gives the original UTF-16 coordinates. Follow the reached branches, including locks, SYSTEM reuse, archive bounds, managed installation, probes, any source hooks and the signed APT or DNF transaction when applicable. The product checks that exactAction segments reconstruct the complete original command. Review the actual setup, reached executable paths and cleanup. Staging function definitions does not call them. Use the supplied ordered endpoint records for the points reached by this invocation.
+        Request only a specific missing range that can change the decision, using the current snapshotSha256 and exact sourcePointer, UTF-16 offset and limit from 1 through 8000. Use at most eight evidence calls per response, separate from the verdict. All original source, public policy and command facts remain readable. Exact page and retained frames carry a JSON header followed by original source in range order. The initial excerpts and retained ranges are already available for review; use those bytes before asking for a page. latestReads records the current requests. Omitted older ranges remain readable.
         Decide independently. Deny unsafe effects or insufficient evidence. Submit a fresh native submit_result alone.
         """;
 
@@ -175,8 +176,11 @@ public final class DeploymentCommandSourceEvidence {
         var messages = new ArrayList<AiMessage>();
         var sourceBodies = new LinkedHashMap<String, String>();
         var initialRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
-        if (mirror.isPresent())
-            projectMirror(projected, manifest, messages, snapshot, exact, mirror.orElseThrow().policy(), dependency, sourceBodies);
+        if (mirror.isPresent()) {
+            var parts = projectMirror(projected, manifest, messages, snapshot, exact, mirror.orElseThrow().policy(), dependency, sourceBodies);
+            if (PREPARE.equals(operation) && !exact.equals(restoreSegments(parts, sourceBodies)))
+                throw new IOException("Mirrored preparation projection does not restore the original command");
+        }
         if (dependency) {
             projectDependency(current, projected, manifest, messages, snapshot, exact, script, request, sourceBodies);
         } else {
@@ -283,10 +287,22 @@ public final class DeploymentCommandSourceEvidence {
                                         String source, List<PreparationSourceRange> ranges) {
         var supplied = initialRanges.computeIfAbsent(pointer, ignored -> new TreeMap<>());
         for (var range : ranges) {
-            body.append("\n--- ").append(range.section()).append(" ---\n");
+            int start = -1;
+            for (var previous : selected) {
+                int offset = previous.path("offset").asInt();
+                if (pointer.equals(previous.path("sourcePointer").asText()) && offset <= range.offset()
+                    && range.next() <= previous.path("next").asInt()) {
+                    start = previous.path("startCharacter").asInt() + range.offset() - offset;
+                    break;
+                }
+            }
+            if (start < 0) {
+                body.append("\n--- ").append(range.section()).append(" ---\n");
+                start = body.length();
+                body.append(source, range.offset(), range.next());
+            }
             selected.addObject().put("section", range.section()).put("sourcePointer", pointer).put("offset", range.offset())
-                .put("next", range.next()).put("startCharacter", body.length());
-            body.append(source, range.offset(), range.next());
+                .put("next", range.next()).put("startCharacter", start);
             DeploymentEvidencePages.remember(supplied, range.offset(), range.next());
         }
     }
@@ -306,7 +322,7 @@ public final class DeploymentCommandSourceEvidence {
     }
 
     /** References exact staged and executed material from the already validated wrapper. */
-    private static void projectMirror(ObjectNode projected, ObjectNode manifest, List<AiMessage> messages, String snapshot,
+    private static List<Map<String, String>> projectMirror(ObjectNode projected, ObjectNode manifest, List<AiMessage> messages, String snapshot,
                                       String exact, String policy, boolean dependency, Map<String, String> sourceBodies) throws IOException {
         String runtime = DeploymentMirrorRuntime.runtimeSource();
         if (!dependency && !runtime.equals(projected.at(MIRROR_RUNTIME).textValue()))
@@ -332,6 +348,7 @@ public final class DeploymentCommandSourceEvidence {
         projectMirrorShell(exact, runtimeStart + quoted.length(), parts, manifest, sourceBodies,
             MIRROR_BOOTSTRAP_SHELL, "trap 'wtl_mirror_exit=");
         projected.set("exactAction", segments(exact, parts));
+        return parts;
     }
 
     private static int projectMirrorPolicy(String exact, String policy, int runtimeStart,
@@ -409,7 +426,7 @@ public final class DeploymentCommandSourceEvidence {
         sources.put(BUILD_POLICY, wrapper.policy());
         sources.put(MIRROR_RUNTIME, runtime);
         sources.put(BUILD_BODY, wrapper.original());
-        if (!input.equals(restoreBuild(parts, sources)))
+        if (!input.equals(restoreSegments(parts, sources)))
             throw new IOException("Mirrored build projection does not restore the original executable input");
         for (String pointer : List.of(BUILD_POLICY, MIRROR_RUNTIME, BUILD_SHELL, BUILD_BODY)) {
             var frame = sourceFrame(messages, snapshot, pointer, sources.get(pointer));
@@ -423,17 +440,23 @@ public final class DeploymentCommandSourceEvidence {
         return Optional.of(new DeploymentCommandSourceEvidence(current, original, snapshot, messages, sources, Map.of()));
     }
 
-    private static String restoreBuild(List<Map<String, String>> parts, Map<String, String> sources) {
+    private static String restoreSegments(List<Map<String, String>> parts, Map<String, String> sources) throws IOException {
         var result = new StringBuilder();
         for (var part : parts) {
             result.append(switch (part.get("kind")) {
                 case "LITERAL" -> part.get("text");
-                case "SOURCE_TEXT" -> sources.get(part.get("sourcePointer"));
-                case "SHELL_SINGLE_QUOTE" -> DeploymentHelperInstallerScript.quote(sources.get(part.get("sourcePointer")));
-                default -> throw new IllegalArgumentException("Unknown mirrored build segment");
+                case "SOURCE_TEXT" -> requiredSource(part, sources);
+                case "SHELL_SINGLE_QUOTE" -> DeploymentHelperInstallerScript.quote(requiredSource(part, sources));
+                default -> throw new IOException("Unknown command evidence segment");
             });
         }
         return result.toString();
+    }
+
+    private static String requiredSource(Map<String, String> part, Map<String, String> sources) throws IOException {
+        String source = sources.get(part.get("sourcePointer"));
+        if (source == null) throw new IOException("Original command evidence source unavailable");
+        return source;
     }
 
     private static void verifyBuild(ObjectNode current, String input, DeploymentMirrorTasks.Preparation wrapper,
@@ -615,7 +638,7 @@ public final class DeploymentCommandSourceEvidence {
         /** A Responses rebase starts a new request with exact current evidence and no partial native history. */
         public void continueReview(List<AiMessage> messages, AiResponse response, List<AiToolResult> results) throws IOException {
             boolean responses = isResponses(response);
-            if (rebased || responses && continuedResponses) {
+            if (rebased || responses && (preparationReview() || continuedResponses)) {
                 priorEvidence.ifPresent(messages::remove);
                 int factsIndex = messages.lastIndexOf(DeploymentCommandSourceEvidence.this.messages.getLast());
                 if (factsIndex < 0) throw new IOException("Current review facts unavailable");
@@ -657,13 +680,16 @@ public final class DeploymentCommandSourceEvidence {
                 if (read.rejected()) continue;
                 appendVisibleRange(read.pointer(), read.offset(), read.next(), visible, entries, body);
             }
-            int bytes = body.toString().getBytes(StandardCharsets.UTF_8).length;
+            int currentBytes = body.toString().getBytes(StandardCharsets.UTF_8).length;
             int omitted = 0;
             var retainedReads = new ArrayList<>(latestReads);
-            int limit = switch (current.path("operation").asText()) {
-                case BIND -> BIND_RETAINED_SOURCE_BYTES;
-                case PREPARE -> PREPARE_RETAINED_SOURCE_BYTES;
-                default -> RETAINED_SOURCE_BYTES;
+            int remainingPriorBytes = switch (current.path("operation").asText()) {
+                case BIND -> BIND_RETAINED_SOURCE_BYTES - currentBytes;
+                case PREPARE -> switch (preparationEcosystem((ObjectNode) current)) {
+                    case "GO" -> GO_PREPARE_RETAINED_SOURCE_BYTES - currentBytes;
+                    default -> Math.min(PREPARE_PRIOR_SOURCE_BYTES, RETAINED_SOURCE_BYTES - currentBytes);
+                };
+                default -> RETAINED_SOURCE_BYTES - currentBytes;
             };
             for (var read : priorReads) {
                 if (read.rejected()) continue;
@@ -673,13 +699,13 @@ public final class DeploymentCommandSourceEvidence {
                 var missing = DeploymentEvidencePages.missing(text, read.offset(), read.next(), ranges);
                 int size = missing.stream().mapToInt(part -> ((String) part.get("text")).getBytes(StandardCharsets.UTF_8).length).sum();
                 if (size == 0) continue;
-                if (size > limit - bytes || retainedReads.size() >= MAX_RETAINED_READS) {
+                if (size > remainingPriorBytes || retainedReads.size() >= MAX_RETAINED_READS) {
                     omitted++;
                     continue;
                 }
                 appendVisibleRange(pointer, read.offset(), read.next(), visible, entries, body);
                 retainedReads.add(read);
-                bytes += size;
+                remainingPriorBytes -= size;
             }
             header.put("omittedRanges", omitted);
             delivered.clear();

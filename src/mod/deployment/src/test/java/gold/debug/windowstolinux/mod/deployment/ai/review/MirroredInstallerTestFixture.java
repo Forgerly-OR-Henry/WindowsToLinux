@@ -35,6 +35,10 @@ public final class MirroredInstallerTestFixture implements AutoCloseable {
     private final Map<String, TaskCheckpoint> checkpoints = new HashMap<>();
 
     public MirroredInstallerTestFixture() throws Exception {
+        this(DownloadPoint.APT_UBUNTU);
+    }
+
+    MirroredInstallerTestFixture(DownloadPoint systemPoint) throws Exception {
         var fallback = NativeAiFixture.approvalCheckpoints(task);
         var tasks = (TaskService) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{TaskService.class}, (p,m,a) -> {
             if (a[0] != task) throw new AssertionError("Different task");
@@ -74,22 +78,25 @@ public final class MirroredInstallerTestFixture implements AutoCloseable {
         });
         var catalog = MirrorCatalog.load();
         var rows = new EnumMap<DownloadPoint,List<MirrorSettings.Row>>(DownloadPoint.class);
-        var providers = catalog.providersFor(DownloadPoint.APT_UBUNTU).stream().filter(MirrorCatalog.Provider::official).toList();
+        var providers = catalog.providersFor(systemPoint).stream().filter(MirrorCatalog.Provider::official).toList();
         if (providers.size() != 1) throw new AssertionError("Exact official provider required");
-        rows.put(DownloadPoint.APT_UBUNTU, List.of(new MirrorSettings.Row(providers.getFirst().id(), "", false, false, "")));
+        rows.put(systemPoint, List.of(new MirrorSettings.Row(providers.getFirst().id(), "", false, false, "")));
         var selected = MirrorSelector.resolve(catalog, new MirrorSettings(1, rows, Map.of()), server.id(), "").withTask(task.id().toString());
         new DeploymentMirrorTasks(context).inherit(task, server, selected.toJson());
     }
 
     public String installer(String kind, boolean mirrored) throws Exception {
+        String policy = mirrored ? DeploymentMirrorTasks.policy(task) : "";
+        var point = DeploymentHelperInstallerScript.packagePoint(policy);
         String body = switch(kind) {
             case "PLAIN" -> DeploymentHelperInstallerScript.render(layout);
             case "FILES" -> DeploymentHelperInstallerScript.renderFiles(layout);
-            case "TRACKED" -> DeploymentHelperInstallerScript.renderTracked(task.id(), operation, sha(server.id()), sha(DeploymentHelperInstallerScript.render(layout)), layout);
+            case "TRACKED" -> DeploymentHelperInstallerScript.renderTracked(task.id(), operation, sha(server.id()),
+                DeploymentHelperInstallerScript.bodyDigest(layout, point), layout, point);
             case "CUSTOM" -> DeploymentAgentHelperInstallerScript.render(customOperation, layout, server, task.id().toString());
             default -> throw new IllegalArgumentException(kind);
         };
-        return mirrored ? DeploymentHelperInstallerScript.withMirrors(body, DeploymentMirrorTasks.policy(task)) : body;
+        return DeploymentHelperInstallerScript.withMirrors(body, policy);
     }
 
     public CommandRequest request(String executable) {
@@ -98,7 +105,11 @@ public final class MirroredInstallerTestFixture implements AutoCloseable {
 
     public ActionIntent intent(String kind, CommandRequest request) {
         String name = switch(kind) { case "PLAIN" -> "deployment.helper.install.v1"; case "FILES" -> "deployment.helper.install.files.v1"; case "TRACKED" -> "deployment.helper.install.tracked.v1"; case "CUSTOM" -> DeploymentAgentHelperBootstrapEvidence.OPERATION; default -> throw new IllegalArgumentException(kind); };
-        Set<ActionTarget> targets = kind.equals("TRACKED") ? DeploymentManagedHelper.trackedInstallationTargets(server, layout, operation) : DeploymentManagedHelper.installationTargets(server, layout);
+        boolean mirrored = new String(request.stdin(), StandardCharsets.UTF_8).startsWith("# WTL_MIRROR_TASK=");
+        var point = DeploymentHelperInstallerScript.packagePoint(mirrored ? DeploymentMirrorTasks.policy(task) : "");
+        Set<ActionTarget> targets = kind.equals("TRACKED")
+            ? DeploymentManagedHelper.trackedInstallationTargets(server, layout, operation, point)
+            : DeploymentManagedHelper.installationTargets(server, layout);
         var original = RemoteActions.command(server, model.configurationRevision, request).withSemantics(new ActionSemantics(name, targets));
         return kind.equals("CUSTOM") ? DeploymentAgentHelperBootstrapEvidence.upgrade(original, request, server, model.configurationRevision, customOperation, layout) : original;
     }

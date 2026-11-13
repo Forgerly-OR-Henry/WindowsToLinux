@@ -417,12 +417,15 @@ class DeploymentToolchainReviewEvidenceTest {
             var continuations = new LinkedHashMap<UUID, String>();
             int callCount = 0;
             int continuationBytes = 0;
+            List<AiToolCall> latest = List.of();
             for (var batch : trace.batches()) {
                 var calls = new ArrayList<AiToolCall>();
                 for (var page : batch.pages()) {
                     calls.add(read("r23-page-" + callCount++, snapshot, page.helper() ? helper : mirror, page.offset(), page.limit()));
                 }
-                replyAtTotalBytes(fixture, continuations, batch.continuationBytes() - continuationBytes, calls.toArray(AiToolCall[]::new));
+                latest = List.copyOf(calls);
+                replyAtTotalBytes(fixture, continuations, batch.continuationBytes() - continuationBytes,
+                    dependencies ? null : "OPENAI_RESPONSES", calls.toArray(AiToolCall[]::new));
                 continuationBytes = batch.continuationBytes();
             }
             reply(fixture, verdict("r23-final-denial", "DENY"));
@@ -436,8 +439,18 @@ class DeploymentToolchainReviewEvidenceTest {
             }
             assertThrows(ModelRequestBudgetException.class, () -> wire(last, encoded.length - 1, continuations));
             assertEquals(65536, JSON.readTree(encoded).path("max_output_tokens").asInt());
-            assertR23Continuations(encoded, continuations, callCount);
-            assertR23Pages(last, snapshot, mirror, helper, fixture);
+            if (dependencies) {
+                assertR23Continuations(encoded, continuations, callCount);
+                assertR23Pages(last, snapshot, mirror, helper, fixture);
+            } else {
+                var sources = r24Sources(initial, facts, fixture);
+                var visible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+                seedInlineSourceRanges(facts, visible);
+                var asked = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+                collectRequestedCoverage(asked, latest, sources);
+                assertR24VisiblePages(encoded, snapshot, latest, true, visible, sources);
+                assertR24Coverage(asked, visible);
+            }
             assertEquals(0, assisted.hosts.get());
             System.out.printf("TOOLCHAIN_REVIEW_R23_SHAPE project=%s bytes=%d ceiling=%d calls=%d%n",
                 project, encoded.length, trace.ceiling(), callCount);
@@ -912,6 +925,116 @@ class DeploymentToolchainReviewEvidenceTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"asset-lending", "csv-inspector", "survey-scoring", "log-analyzer", "directory-diff"})
+    void r28PreparationReplaysObservedReadShapesWithOriginalWireCeilings(String project) throws Exception {
+        var review = switch (project) {
+            case "asset-lending" -> new R28Preparation("DOTNET", "10", 33656, 106547, "43/0/8000 45/13053/3000 46/192432/1892");
+            case "csv-inspector" -> new R28Preparation("PHP", "8.3", 36879, 133904, "30/3984/8000 30/11984/3000 45/0/8000 45/13590/1200");
+            case "survey-scoring" -> new R28Preparation("RUBY", "3.3", 37922, 177935,
+                "30/8737/8000 30/13643/8000 30/76140/8000 30/104547/8000 30/109746/8000 45/16190/8000 43/0/8000");
+            case "log-analyzer" -> new R28Preparation("RUST", "1.95", 33119, 95146,
+                "30/13643/4000 30/16170/8000 45/11924/3000 46/184918/5000 46/263775/3200 46/188436/3000");
+            case "directory-diff" -> new R28Preparation("PYTHON", "3.12", 35225, 149190,
+                "30/3984/8000 30/8737/4000 30/16170/8000 30/24170/8000 29/0/6000 43/0/6000 45/0/8000");
+            default -> throw new IllegalArgumentException(project);
+        };
+        try (var fixture = new MirroredInstallerTestFixture();
+             var command = diagnosedPreparation(fixture, review.ecosystem(), review.branch());
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
+            var intent = intent("prepare", fixture, command);
+            var protocol = new DeploymentFixedCommandProtocol(fixture.context);
+            var current = protocol.inspect(intent, command, fixture.layout, fixture.task);
+            var source = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(current, 1048576), intent, command,
+                fixture.layout).orElseThrow();
+            var facts = JSON.readTree(source.messages().getLast().text());
+            var selection = facts.at("/" + PHASE + "/preparationSelection");
+            String body = source.messages().get(selection.path("ordinal").asInt()).text()
+                .substring(selection.path("headerCharacters").asInt());
+            if (review.ecosystem().equals("RUBY")) {
+                var release = facts.at("/" + PHASE + "/selectedPreparationRanges").findParents("section").stream()
+                    .filter(range -> range.path("section").asText().equals("selectedRelease"))
+                    .findFirst().orElseThrow();
+                assertTrue(release.path("next").asInt() - release.path("offset").asInt() < 2048);
+            }
+            for (String marker : List.of("class MirrorRedirect(", "policy.validate_url(endpoint, policy.maps(endpoint, original))",
+                    "do_handshake()", "digest.hexdigest().lower() != expected.lower()", "os.replace(temporary, target)"))
+                assertTrue(body.contains(marker), marker);
+            Callable<OperationResult<ApprovalGrant>> approve = () -> DeploymentFixedCommandApproval.approveWithEvidence(
+                assisted.context, assisted.host, intent, command, fixture.task, fixture.model.configurationRevision,
+                "AUTOMATIC", false, assisted.scope);
+            reply(fixture, verdict("r28-no-host-grant", "DENY"));
+            assertReviewDenied(approve);
+            var actual = fixture.model.requests.getFirst();
+            var approvalFacts = JSON.readTree(actual.messages().getLast().text());
+            String snapshot = approvalFacts.at("/" + PHASE + "/snapshotSha256").asText();
+            var sources = r24Sources(actual, approvalFacts, fixture);
+            var batch = new R24Turn(0, 0, 0, 0, 0, review.lastReads()).calls(snapshot, sources, 1);
+            var continuations = new LinkedHashMap<UUID, String>();
+            // Read-request arguments in R28 expose widths and coordinates, not their complete pointer strings.
+            // Fixture pointers of unique known widths retain the old ranges; unknown widths are rejected by the same tool.
+            replyAtTotalBytes(fixture, continuations, 6000, "OPENAI_RESPONSES",
+                new AiToolCall("r28-prior-page", "evidence", batch.getFirst().arguments()));
+            replyAtTotalBytes(fixture, continuations, 6000, "OPENAI_RESPONSES", batch.toArray(AiToolCall[]::new));
+            reply(fixture, verdict("r28-late-deny", "DENY"));
+            assertReviewDenied(approve);
+            assertEquals(0, assisted.hosts.get());
+            byte[] encoded = wireWithR24FactsSize(actual, review.factsCharacters(), 1048576, Map.of());
+            var latest = fixture.model.requests.getLast();
+            var visible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            seedInlineSourceRanges(approvalFacts, visible);
+            var asked = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            collectRequestedCoverage(asked, batch, sources);
+            byte[] late = wireWithR24FactsSize(latest, review.factsCharacters(), 1048576, Map.of());
+            assertR24VisiblePages(late, snapshot, batch, true, visible, sources);
+            assertR24Coverage(asked, visible);
+            var firstReadRequest = fixture.model.requests.get(2);
+            byte[] firstRead = wireWithR24FactsSize(firstReadRequest, review.factsCharacters(), 1048576, Map.of());
+            var firstReadVisible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            seedInlineSourceRanges(approvalFacts, firstReadVisible);
+            var firstReadCalls = List.of(new AiToolCall("r28-prior-page", "evidence", batch.getFirst().arguments()));
+            assertR24VisiblePages(firstRead, snapshot, firstReadCalls, true, firstReadVisible, sources);
+            if (late.length <= review.cap())
+                assertEquals(late.length, wireWithR24FactsSize(latest, review.factsCharacters(), review.cap(), Map.of()).length);
+            else
+                assertEquals(late.length, assertThrows(ModelRequestBudgetException.class,
+                    () -> wireWithR24FactsSize(latest, review.factsCharacters(), review.cap(), Map.of())).encodedBytes());
+            System.out.printf("R28_REPREPARE_WIRE project=%s ecosystem=%s freshEncoded=%d lateEncoded=%d recordedLateCap=%d%n",
+                project, review.ecosystem(), encoded.length, late.length, review.cap());
+        }
+    }
+
+    private record R28Preparation(String ecosystem, String branch, int factsCharacters, int cap, String lastReads) { }
+
+    @Test
+    void preparationRebaseKeepsExactUsefulEarlierPagesAndAvoidsDuplicateResends() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture();
+             var request = diagnosedPreparation(fixture, "PHP", "8.3")) {
+            var intent = intent("prepare", fixture, request);
+            var facts = new DeploymentFixedCommandProtocol(fixture.context).inspect(intent, request, fixture.layout, fixture.task);
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), intent, request,
+                fixture.layout).orElseThrow();
+            var messages = new ArrayList<>(evidence.messages());
+            var current = JSON.readTree(messages.getLast().text());
+            String snapshot = current.at("/" + PHASE + "/snapshotSha256").asText();
+            String pointer = "/mirrorTransport/runtimeSource";
+            String runtime = DeploymentMirrorRuntime.runtimeSource();
+            var reader = evidence.reader(16);
+            for (int batch = 0; batch < 2; batch++) {
+                var response = mockResponses(read("r28-distinct-" + batch, snapshot, pointer, 40000 + batch * 8000, 8000));
+                reader.continueReview(messages, response, reader.read(response));
+            }
+            assertFalse(messages.stream().anyMatch(message -> message.continuation().isPresent() || message.toolResult().isPresent()));
+            String retained = messages.get(messages.size() - 2).text();
+            assertTrue(retained.contains(runtime.substring(40000, 48000)), "Rebase preserves a full earlier 8 KiB page");
+            assertTrue(retained.contains(runtime.substring(48000, 56000)), "Rebase preserves all exact current bytes");
+            var repeated = reader.read(mockResponses(read("r28-repeated", snapshot, pointer, 40000, 8000))).getFirst();
+            var value = pagePayload(repeated.text()).path("value");
+            assertTrue(value.path("newRanges").isArray());
+            assertTrue(value.path("newRanges").isEmpty(), "A currently visible range is not serialized again");
+        }
+    }
+
     @Test
     void r27AssetLendingPreparationSuppliesExactDotnetTransferAndRedirectBeforeAnyRead() throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var command = diagnosedPreparation(fixture, "DOTNET", "10");
@@ -953,37 +1076,43 @@ class DeploymentToolchainReviewEvidenceTest {
         }
     }
 
-    @Test
-    void rustPreparationShowsTheFixedReceiverAndCanPageItsManifestImplementation() throws Exception {
-        try (var fixture = new MirroredInstallerTestFixture(); var command = diagnosedPreparation(fixture, "RUST", "1.95")) {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void rustPreparationIncludesExactSystemReuseAndDistributionBoundaries(boolean diagnosed) throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var command = rustPreparation(fixture, diagnosed)) {
             var intent = intent("prepare", fixture, command);
             var facts = new DeploymentFixedCommandProtocol(fixture.context).inspect(intent, command, fixture.layout, fixture.task);
             var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), intent, command,
                 fixture.layout).orElseThrow();
-            var manifest = JSON.readTree(evidence.messages().getLast().text()).path(PHASE);
+            var projected = JSON.readTree(evidence.messages().getLast().text());
+            var manifest = projected.path(PHASE);
             var frame = manifest.path("preparationSelection");
-            String body = evidence.messages().get(frame.path("ordinal").asInt()).text().substring(frame.path("headerCharacters").asInt());
-            assertTrue(body.contains("def install_rust_distribution("));
-            assertTrue(body.contains("def probe_managed_rust("));
-            assertTrue(body.contains("return install_rust_distribution("));
-            assertFalse(body.contains("str(source / 'install.sh')"));
-            var source = manifest.path("installedHelperSource");
-            var sections = source.path("sections");
+            String body = evidence.messages().get(frame.path("ordinal").asInt()).text()
+                .substring(frame.path("headerCharacters").asInt());
             var helper = DeploymentManagedHelperBundle.renderScript(fixture.layout);
-            String snapshot = manifest.path("snapshotSha256").asText();
-            String pointer = source.path("sourcePointer").asText();
-            var reader = evidence.reader(4);
-            int call = 0;
-            for (String function : List.of("def rust_component_plan(", "def rust_component_copy(")) {
-                var section = sections.path(function);
-                assertTrue(section.isObject(), function);
-                int offset = section.path("offset").asInt(), next = section.path("next").asInt();
-                assertTrue(next > offset && next - offset <= 8000, function);
-                var result = reader.read(response(Optional.empty(), read("rust-source-" + call++, snapshot, pointer,
-                    offset, next - offset))).getFirst();
-                assertFalse(result.error());
-                assertEquals(helper.substring(offset, next), pagePayload(result.text()).at("/value/text").asText());
+            var mirror = DeploymentMirrorRuntime.runtimeSource();
+            var originals = Map.of("/toolchainReviewEvidence/installedHelperSource", helper, "/mirrorTransport/runtimeSource", mirror);
+            assertIdentity(manifest.path("installedHelperSource"), helper);
+            assertIdentity(projected.at("/mirrorTransport/runtimeSource"), mirror);
+            assertIdentity(frame, body);
+            assertIdentity(projected.path("exactAction"), intent.exactAction());
+            assertTrue(body.contains(diagnosed ? "prepare(request['arguments'])" : "        prepare(args)\n"));
+            for (var range : manifest.path("selectedPreparationRanges")) {
+                String source = originals.get(range.path("sourcePointer").asText());
+                assertNotNull(source);
+                int offset = range.path("offset").asInt(), next = range.path("next").asInt();
+                int start = range.path("startCharacter").asInt();
+                assertEquals(source.substring(offset, next), body.substring(start, start + next - offset));
             }
+            for (String boundary : List.of("def discover_system(", "def materialize_system(", "def verify_system(",
+                "def saved_installation_marker(", "'RUST': ['bin/rustc', '--version']", "def probe_output(",
+                "checksum_text(url + '.sha256')", "def checksum_text(", "digest.hexdigest().lower() != expected.lower()",
+                "def extract(archive, destination):", "archive entry has a link ancestor", "total > 8 * MAX_ARCHIVE",
+                "def rust_read_manifest(", "def rust_component_path(", "def rust_component_plan(", "def rust_component_copy(",
+                "target.open('xb')", "install = install_with_rust_distribution", "return install_rust_distribution(",
+                "def probe_managed_rust(", "'--clear-groups', '--no-new-privs'", "probe = probe_with_rust_distribution"))
+                assertTrue(body.contains(boundary), boundary);
+            assertFalse(body.contains("str(source / 'install.sh')"));
         }
     }
 
@@ -1092,7 +1221,7 @@ class DeploymentToolchainReviewEvidenceTest {
                 var latest = requests.get(index - 1);
                 var asked = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
                 collectRequestedCoverage(asked, latest, sources);
-                assertR24VisiblePages(encoded, snapshot, latest, index > 1, visible, sources);
+                assertR24VisiblePages(encoded, snapshot, latest, review.kind().equals("prepare") || index > 1, visible, sources);
                 assertR24Coverage(asked, visible);
             }
             if (index == turns.size() - 1 && terminalHeadroom > 0)
@@ -1407,6 +1536,14 @@ class DeploymentToolchainReviewEvidenceTest {
         String guarded = DeploymentManagedHelperBundle.verifiedCommand(invocation, fixture.layout);
         String wrapped = DeploymentMirrorTasks.preparationCommand(guarded, fixture.task, seconds);
         return new CommandRequest(wrapped, input.bytes(), Duration.ofSeconds(seconds), 65536);
+    }
+
+    private static CommandRequest rustPreparation(MirroredInstallerTestFixture fixture, boolean diagnosed) {
+        if (diagnosed) return diagnosedPreparation(fixture, "RUST", "1.95");
+        String invocation = "'" + fixture.layout.helperPath() + "' prepare-toolchains 'prepare' 'RUST' '1.95' '-' '120' '-'";
+        String guarded = DeploymentManagedHelperBundle.verifiedCommand(invocation, fixture.layout);
+        String wrapped = DeploymentMirrorTasks.preparationCommand(guarded, fixture.task, 135);
+        return new CommandRequest(wrapped, new byte[0], Duration.ofSeconds(135), 65536);
     }
 
     private static CommandRequest request(String kind, MirroredInstallerTestFixture fixture) {

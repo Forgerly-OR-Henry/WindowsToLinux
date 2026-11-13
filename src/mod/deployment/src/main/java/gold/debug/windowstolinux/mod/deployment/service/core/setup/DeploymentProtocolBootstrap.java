@@ -203,8 +203,10 @@ public final class DeploymentProtocolBootstrap {
             return observed;
         UUID operationId = UUID.randomUUID();
         String serverDigest = digest(server.id().getBytes(StandardCharsets.UTF_8));
-        String bodyDigest = digest(DeploymentHelperInstallerScript.render(layout).getBytes(StandardCharsets.UTF_8));
-        byte[] script = DeploymentHelperInstallerScript.renderTracked(task.id(), operationId, serverDigest, bodyDigest, layout)
+        var point = DeploymentHelperInstallerScript.packagePoint(
+            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task));
+        String bodyDigest = DeploymentHelperInstallerScript.bodyDigest(layout, point);
+        byte[] script = DeploymentHelperInstallerScript.renderTracked(task.id(), operationId, serverDigest, bodyDigest, layout, point)
             .getBytes(StandardCharsets.UTF_8);
         try {
             var journal = DeploymentProtocolBootstrapActionLog.begin(tasks, task, server, operationId, serverDigest,
@@ -224,17 +226,10 @@ public final class DeploymentProtocolBootstrap {
         var facts = journal.facts();
         if (!server.id().equals(facts.serverId()))
             return unknown("DEPLOYMENT_HELPER_BOOTSTRAP_SERVER_CHANGED");
-        String bodyDigest = digest(DeploymentHelperInstallerScript.render(layout).getBytes(StandardCharsets.UTF_8));
-        byte[] script = DeploymentHelperInstallerScript
-            .renderTracked(task.id(), facts.operationId(), facts.serverDigest(), facts.bodyDigest(), layout)
-            .getBytes(StandardCharsets.UTF_8);
-        try {
-            if (!bodyDigest.equals(facts.bodyDigest()) || !gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(new String(script, StandardCharsets.UTF_8), task).equals(facts.requestDigest())
-                || !digest(server.id().getBytes(StandardCharsets.UTF_8)).equals(facts.serverDigest()))
-                return unknown("DEPLOYMENT_HELPER_BOOTSTRAP_REQUEST_CONFLICT");
-        } finally {
-            Arrays.fill(script, (byte) 0);
-        }
+        if (!digest(server.id().getBytes(StandardCharsets.UTF_8)).equals(facts.serverDigest())
+            || !DeploymentHelperInstallerScript.matchesTrackedRequest(task, facts.operationId(), facts.serverDigest(),
+                facts.bodyDigest(), facts.requestDigest(), layout, true))
+            return unknown("DEPLOYMENT_HELPER_BOOTSTRAP_REQUEST_CONFLICT");
         if ("INTENT".equals(facts.phase())) {
             journal.close();
             return failed("DEPLOYMENT_HELPER_BOOTSTRAP_NOT_SENT");
@@ -260,13 +255,16 @@ public final class DeploymentProtocolBootstrap {
      * @throws ApiException if original persistence or approval fails / 原持久化或审批失败时 */
     public OperationResult<DeploymentManagedHelper.Identity> install(Journal journal) throws ApiException {
         var facts = journal.facts();
-        byte[] script = DeploymentHelperInstallerScript.renderTracked(task.id(), facts.operationId(), facts.serverDigest(), facts.bodyDigest(), layout)
+        var point = DeploymentHelperInstallerScript.packagePoint(
+            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task));
+        byte[] script = DeploymentHelperInstallerScript.renderTracked(task.id(), facts.operationId(), facts.serverDigest(),
+            facts.bodyDigest(), layout, point)
             .getBytes(StandardCharsets.UTF_8);
         try {
             if (!facts.phase().equals("INTENT") || !server.id().equals(facts.serverId())
                 || !digest(server.id().getBytes(StandardCharsets.UTF_8)).equals(facts.serverDigest())
-                || !digest(DeploymentHelperInstallerScript.render(layout).getBytes(StandardCharsets.UTF_8)).equals(facts.bodyDigest())
-                || !gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(new String(script, StandardCharsets.UTF_8), task).equals(facts.requestDigest()))
+                || !DeploymentHelperInstallerScript.matchesTrackedRequest(task, facts.operationId(), facts.serverDigest(),
+                    facts.bodyDigest(), facts.requestDigest(), layout, false))
                 return unknown("DEPLOYMENT_HELPER_REPAIR_REQUEST_CONFLICT");
             return send(journal, script);
         } finally {

@@ -87,6 +87,34 @@ class DeploymentHelperInstallerContractTest {
     }
 
     @Test
+    void scopedTrackedInstallerRejectsAnotherLivePlatformBeforeTheReceiptOrPackages() throws Exception {
+        var layout = DeploymentRemoteLayout.original();
+        var point = java.util.Optional.of(gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.APT_UBUNTU);
+        String tracked = DeploymentHelperInstallerScript.renderTracked(UUID.randomUUID(), UUID.randomUUID(), "a".repeat(64),
+            DeploymentHelperInstallerScript.bodyDigest(layout, point), layout, point);
+        int firstEffect = tracked.indexOf("installer_capture_prior\n");
+        assertTrue(firstEffect > tracked.indexOf("PREPARE_REJECT=platform-package-scope"));
+        assertTrue(tracked.indexOf("prepare_stage=installer-receipt") > firstEffect);
+        String prefix = tracked.substring(0, firstEffect);
+        int guardEnd = prefix.indexOf("\n", prefix.indexOf("PREPARE_REJECT=platform-package-scope"));
+        String stage = prefix.substring(0, guardEnd + 1) + "printf 'passed-platform-scope\\n'\n";
+        String fixture = """
+            id() { printf '0\\n'; }
+            systemctl() { return 0; }
+            wtl_system_point() { printf '%s\\n' "$fixture_live_platform"; }
+            """;
+        for (String live : java.util.List.of("DNF_FEDORA", "APT_DEBIAN", "")) {
+            var mismatch = execute("fixture_live_platform='" + live + "'\n" + fixture + stage);
+            assertEquals(64, mismatch.exit(), mismatch.output());
+            assertTrue(mismatch.output().contains("PREPARE_REJECT=platform-package-scope"));
+            assertFalse(mismatch.output().contains("passed-platform-scope"));
+        }
+        var matched = execute("fixture_live_platform=APT_UBUNTU\n" + fixture + stage);
+        assertEquals(0, matched.exit(), matched.output());
+        assertTrue(matched.output().contains("passed-platform-scope"));
+    }
+
+    @Test
     void trackedOperationAcceptsOnlyTheOriginalExactTaskBodyAndReceipt() throws Exception {
         var layout = DeploymentRemoteLayout.original();
         var task = UUID.randomUUID();

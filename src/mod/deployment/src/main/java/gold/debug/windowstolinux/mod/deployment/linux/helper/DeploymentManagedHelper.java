@@ -222,14 +222,15 @@ public final class DeploymentManagedHelper {
         gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.requireCaptured(task.id());
         Objects.requireNonNull(script);
         Objects.requireNonNull(beforeExecute);
-        UUID operationId = DeploymentHelperInstallerScript.trackedOperation(
-            new String(script, StandardCharsets.UTF_8), task.id(), layout);
-        byte[] executable = DeploymentHelperInstallerScript.withMirrors(new String(script, StandardCharsets.UTF_8),
-            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task)).getBytes(StandardCharsets.UTF_8);
+        String original = new String(script, StandardCharsets.UTF_8);
+        String policy = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task);
+        var point = DeploymentHelperInstallerScript.packagePoint(policy);
+        UUID operationId = DeploymentHelperInstallerScript.trackedOperation(original, task.id(), layout, point);
+        byte[] executable = DeploymentHelperInstallerScript.withMirrors(original, policy).getBytes(StandardCharsets.UTF_8);
         try (var request = new CommandRequest(DeploymentHelperInstallerScript.LAUNCHER, executable, Duration.ofHours(2),
             131072)) {
             var grant = approve("deployment.helper.install.tracked.v1", request,
-                trackedInstallationTargets(server, layout, operationId));
+                trackedInstallationTargets(server, layout, operationId, point));
             if (grant.outcome() != TaskResult.SUCCEEDED)
                 return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
             if (task.cancelToken().requested())
@@ -399,7 +400,22 @@ public final class DeploymentManagedHelper {
     /** Adds only the original receipt and its checked/createable root-owned directories. */
     public static Set<ActionTarget> trackedInstallationTargets(ServerId server,
             gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout, UUID operationId) {
+        return trackedInstallationTargets(server, layout, operationId, Optional.empty());
+    }
+
+    public static Set<ActionTarget> trackedInstallationTargets(ServerId server,
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout, UUID operationId,
+            Optional<gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint> point) {
         var targets = new java.util.HashSet<>(installationTargets(server, layout));
+        point.ifPresent(value -> {
+            String excluded = DeploymentHelperInstallerScript.usesApt(value) ? "dnf" : "apt-get";
+            targets.removeIf(target -> switch (target.kind()) {
+                case "package-manager" -> target.id().equals(excluded);
+                case "package-set", "system-package-index", "system-package-transaction" ->
+                    target.id().startsWith(excluded + ":");
+                default -> false;
+            });
+        });
         targets.addAll(installationStatusTargets(server, layout, operationId));
         return Set.copyOf(targets);
     }

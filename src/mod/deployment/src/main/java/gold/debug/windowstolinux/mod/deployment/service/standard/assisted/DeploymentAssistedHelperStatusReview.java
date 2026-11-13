@@ -35,10 +35,9 @@ final class DeploymentAssistedHelperStatusReview {
         if (!intent.serverIds().equals(List.of(original.serverId())) || !original.layout().equals(layout)
             || !original.phase().equals("DISPATCHED")
             || !original.serverDigest().equals(DeploymentModelCommandIdentity.digest(original.serverId()))
-            || !original.bodyDigest().equals(DeploymentModelCommandIdentity.digest(DeploymentHelperInstallerScript.render(layout)))
             || !original.helperDigest().equals(DeploymentManagedHelperBundle.helperSha256(layout))
-            || !original.requestDigest().equals(gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(DeploymentHelperInstallerScript.renderTracked(
-                task.id(), original.operationId(), original.serverDigest(), original.bodyDigest(), layout), task)))
+            || !DeploymentHelperInstallerScript.matchesTrackedRequest(task, original.operationId(), original.serverDigest(),
+                original.bodyDigest(), original.requestDigest(), layout, true))
             throw new IllegalArgumentException("Original helper installation task, server, phase, layout or digests differ");
         byte[] expected = DeploymentHelperInstallerScript.renderStatus(original.operationId(), layout).getBytes(StandardCharsets.UTF_8);
         byte[] actual = request.stdin();

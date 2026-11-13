@@ -14,6 +14,8 @@ import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
@@ -21,6 +23,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.EnumSource;
 
 class DeploymentNativeHelperPackageImpactTest {
     static final String WORKFLOW = "Deploy the selected fixture source, including required toolchains, build/runtime dependencies and managed helper prerequisites on the selected server";
@@ -71,8 +74,9 @@ class DeploymentNativeHelperPackageImpactTest {
     @ParameterizedTest
     @ValueSource(strings = {"PLAIN", "FILES", "TRACKED"})
     void nativePackageFactsRequireTheWholeInstallerAndActualWorkflow(String kind) throws Exception {
-        try (var fixture = new MirroredInstallerTestFixture(); var assisted = new Assisted(fixture)) {
-            for (boolean mirrored : List.of(false, true)) {
+        for (boolean mirrored : List.of(false, true)) {
+            try (var fixture = new MirroredInstallerTestFixture(); var assisted = new Assisted(fixture)) {
+                if (!mirrored) DeploymentMirrorTasks.forget(fixture.task);
                 try (var request = fixture.request(fixture.installer(kind, mirrored))) {
                     var intent = fixture.intent(kind, request);
                     var facts = new LinkedHashMap<String, Object>(fixture.facts(kind, request));
@@ -91,8 +95,11 @@ class DeploymentNativeHelperPackageImpactTest {
                     assertTrue(impact.path("sudoPackagePurpose").asText().contains("sudo-prefixed managed application usage"));
                     assertEquals(mirrored, impact.has("mirrorShellFunctions"));
                     assertTrue(impact.path("limits").asText().contains("service effects remain possible"));
-                    assertEquals(List.of("apt-get:configured-dependency-closure:managed-helper",
-                        "dnf:configured-dependency-closure:managed-helper"),
+                    boolean scoped = kind.equals("TRACKED") && mirrored;
+                    assertEquals(scoped, impact.has("platformPackageScope"));
+                    assertEquals(!scoped, impact.has("dnfEffects"));
+                    assertEquals(scoped ? List.of("apt-get:configured-dependency-closure:managed-helper")
+                        : List.of("apt-get:configured-dependency-closure:managed-helper", "dnf:configured-dependency-closure:managed-helper"),
                         new ObjectMapper().convertValue(impact.at("/nativeTransactions/targets"),
                             new com.fasterxml.jackson.core.type.TypeReference<List<String>>() { }));
                     assertTrue(impact.at("/nativeTransactions/effects").asText().contains("maintainer scripts"));
@@ -105,13 +112,15 @@ class DeploymentNativeHelperPackageImpactTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"SOURCE", "NO_UPGRADE", "WRAPPER", "TASK", "RECEIPT_SERVER", "SERVER", "TARGET", "TRANSACTION_TARGET", "LAUNCHER", "MODEL_ROUTE", "MISSING_WORKFLOW", "CLOSED"})
+    @ValueSource(strings = {"SOURCE", "NO_UPGRADE", "PLATFORM_GUARD", "WRAPPER", "MISSING_MIRROR", "TASK", "RECEIPT_SERVER", "SERVER", "TARGET", "TRANSACTION_TARGET", "LAUNCHER", "MODEL_ROUTE", "MISSING_WORKFLOW", "CLOSED"})
     void changedNativeMaterialOrOriginalAuthorityCannotProducePackageFacts(String mutation) throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var assisted = new Assisted(fixture)) {
             String executable = fixture.installer("TRACKED", true);
             if (mutation.equals("SOURCE")) executable += "printf changed\\n\n";
             if (mutation.equals("NO_UPGRADE")) executable = executable.replace("--no-upgrade ", "");
+            if (mutation.equals("PLATFORM_GUARD")) executable = executable.replace("= 'APT_UBUNTU' ]", "= 'DNF_FEDORA' ]");
             if (mutation.equals("WRAPPER")) executable = executable.replace("WTL_MIRROR_BUDGET_SECONDS=7200", "WTL_MIRROR_BUDGET_SECONDS=7199");
+            if (mutation.equals("MISSING_MIRROR")) executable = fixture.installer("TRACKED", false);
             if (mutation.equals("TASK")) executable = executable.replace("\nTASK=" + fixture.task.id(), "\nTASK=" + UUID.randomUUID());
             if (mutation.equals("RECEIPT_SERVER")) executable = executable.replace("SERVER_SHA256=" + MirroredInstallerTestFixture.sha(fixture.server.id()), "SERVER_SHA256=" + "0".repeat(64));
             try (var request = new CommandRequest(mutation.equals("LAUNCHER") ? "exec /bin/bash -s" : DeploymentHelperInstallerScript.LAUNCHER,
@@ -146,6 +155,43 @@ class DeploymentNativeHelperPackageImpactTest {
     }
 
     @ParameterizedTest
+    @EnumSource(value = DownloadPoint.class, names = {"APT_.*", "DNF_.*"}, mode = EnumSource.Mode.MATCH_ANY)
+    void frozenRepositoryPointBindsOnlyItsManagerAndTheReceiptBody(DownloadPoint point) throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(point); var assisted = new Assisted(fixture);
+             var request = fixture.request(fixture.installer("TRACKED", true))) {
+            String executable = new String(request.stdin(), StandardCharsets.UTF_8);
+            String original = DeploymentMirrorTasks.buildInput(executable).orElseThrow().original();
+            boolean apt = point.name().startsWith("APT_");
+            assertTrue(original.contains("[ \"$(wtl_system_point)\" = '" + point.name() + "' ]"));
+            assertTrue(original.indexOf("PREPARE_REJECT=platform-package-scope") < original.indexOf("prepare_stage=installer-receipt"));
+            assertEquals(apt, original.contains("wtl_apt -o DPkg::Lock::Timeout=300 install"));
+            assertEquals(!apt, original.contains("wtl_dnf install -y"));
+            var intent = fixture.intent("TRACKED", request);
+            var facts = new ObjectMapper().valueToTree(fixture.facts("TRACKED", request));
+            var impact = new ObjectMapper().valueToTree(assisted.scope.facts(intent, request, fixture.task)).path("helperPackageImpact");
+            assertEquals(point.name(), impact.at("/platformPackageScope/frozenRepositoryPoint").asText());
+            assertFalse(facts.at(impact.at("/platformPackageScope/policyPointer").asText()).isEmpty());
+            assertEquals(apt, impact.has("aptEffects"));
+            if (!apt) assertTrue(impact.path("dnfEffects").asText().contains("may upgrade or obsolete packages"));
+            String bodyDigest = DeploymentHelperInstallerScript.bodyDigest(fixture.layout, Optional.of(point));
+            String serverDigest = MirroredInstallerTestFixture.sha(fixture.server.id());
+            String requestDigest = MirroredInstallerTestFixture.sha(executable);
+            assertEquals(bodyDigest, facts.at("/completeExecutableInput/digestScopes/bodyDigest/value").asText());
+            assertTrue(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, fixture.operation,
+                serverDigest, bodyDigest, requestDigest, fixture.layout, false));
+            String priorBody = DeploymentHelperInstallerScript.bodyDigest(fixture.layout, Optional.empty());
+            String priorRequest = DeploymentMirrorTasks.installerRequestDigest(DeploymentHelperInstallerScript.renderTracked(
+                fixture.task.id(), fixture.operation, serverDigest, priorBody, fixture.layout), fixture.task);
+            assertTrue(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, fixture.operation,
+                serverDigest, priorBody, priorRequest, fixture.layout, true));
+            assertFalse(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, fixture.operation,
+                serverDigest, priorBody, priorRequest, fixture.layout, false));
+            assertFalse(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, fixture.operation,
+                serverDigest, priorBody, requestDigest, fixture.layout, true));
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"DENY", "APPROVE"})
     void independentDenyNeverDispatchesAndEveryApproveNeedsAFreshExactHostGrant(String decision) throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var assisted = new Assisted(fixture)) {
@@ -168,7 +214,8 @@ class DeploymentNativeHelperPackageImpactTest {
             for (int index = 0; index < count; index++) {
                 fixture.model.nativeReply(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("native-package-" + index, "submit_result",
                     "{\"decision\":\"" + decision + "\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled independent package verdict\"}"));
-                byte[] body = fixture.installer("TRACKED", false).getBytes(StandardCharsets.UTF_8);
+                byte[] body = DeploymentMirrorTasks.buildInput(fixture.installer("TRACKED", true)).orElseThrow()
+                    .original().getBytes(StandardCharsets.UTF_8);
                 try {
                     if (decision.equals("DENY")) {
                         var denied = assertThrows(ApiException.class, () -> helper.installTracked(body, transitions::incrementAndGet));

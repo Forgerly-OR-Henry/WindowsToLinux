@@ -293,9 +293,11 @@ public final class DeploymentPublishPolicyContext implements ModContext {
                 .filter(value -> value.code() == ProblemCode.INCOMPATIBLE && value.eventCode().equals("DEPLOYMENT_HELPER_IDENTITY")).isPresent()) {
                 var operation = UUID.randomUUID();
                 String serverDigest = digest(server.id());
-                String bodyDigest = digest(DeploymentHelperInstallerScript.render(layout));
+                var point = DeploymentHelperInstallerScript.packagePoint(
+                    gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task));
+                String bodyDigest = DeploymentHelperInstallerScript.bodyDigest(layout, point);
                 String requestDigest = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(
-                    DeploymentHelperInstallerScript.renderTracked(task.id(), operation, serverDigest, bodyDigest, layout), task);
+                    DeploymentHelperInstallerScript.renderTracked(task.id(), operation, serverDigest, bodyDigest, layout, point), task);
                 var repair = policy.beginRepair(new DeploymentProtocolBootstrapActionLog.Facts(server.id(), operation, serverDigest,
                     bodyDigest, requestDigest, DeploymentManagedHelperBundle.helperSha256(layout), "INTENT", layout));
                 result = bootstrap.install(repair);

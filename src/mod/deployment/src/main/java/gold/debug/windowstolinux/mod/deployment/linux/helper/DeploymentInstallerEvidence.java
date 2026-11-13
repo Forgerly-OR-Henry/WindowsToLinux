@@ -6,6 +6,8 @@ import java.util.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
 
 /** Lossless ordered installer evidence. No executable bytes are omitted or executed here. */
 public final class DeploymentInstallerEvidence {
@@ -37,8 +39,9 @@ public final class DeploymentInstallerEvidence {
                 .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
                 .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
                 .decode(java.nio.ByteBuffer.wrap(input)).toString();
-            var mirror = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.buildInput(executable);
-            String original = mirror.map(value -> value.original()).orElse(executable);
+            var mirror = DeploymentMirrorTasks.buildInput(executable);
+            String original = mirror.map(DeploymentMirrorTasks.Preparation::original).orElse(executable);
+            Optional<DownloadPoint> point = Optional.empty();
             String expected;
             Set<gold.debug.windowstolinux.appapi.task.action.ActionTarget> targets;
             switch (semantics.operation()) {
@@ -51,10 +54,14 @@ public final class DeploymentInstallerEvidence {
                     targets = DeploymentManagedHelper.installationTargets(server, layout);
                 }
                 case "deployment.helper.install.tracked.v1" -> {
-                    UUID operation = DeploymentHelperInstallerScript.trackedOperation(original, task, layout);
+                    String policy = DeploymentMirrorTasks.policy(task);
+                    if (!mirror.map(DeploymentMirrorTasks.Preparation::policy).orElse("").equals(policy))
+                        throw new IllegalArgumentException("Tracked installer differs from the frozen task mirror policy");
+                    point = DeploymentHelperInstallerScript.packagePoint(policy);
+                    UUID operation = DeploymentHelperInstallerScript.trackedOperation(original, task, layout, point);
                     expected = DeploymentHelperInstallerScript.renderTracked(task, operation, sha(server.id()),
-                        sha(DeploymentHelperInstallerScript.render(layout)), layout);
-                    targets = DeploymentManagedHelper.trackedInstallationTargets(server, layout, operation);
+                        DeploymentHelperInstallerScript.bodyDigest(layout, point), layout, point);
+                    targets = DeploymentManagedHelper.trackedInstallationTargets(server, layout, operation, point);
                 }
                 default -> throw new IllegalArgumentException("Not a native helper package installer");
             }
@@ -75,10 +82,21 @@ public final class DeploymentInstallerEvidence {
             facts.put("workflowRequestPointer", "/currentCommandEvidence/workflowAuthorization/frozenWorkflowRequest");
             facts.put("executableEvidencePointer", "/completeExecutableInput");
             facts.put("stdinSha256", sha(executable));
-            facts.put("aptRootPackages", List.of(DeploymentHelperInstallerScript.APT_PACKAGES.split(" ")));
-            facts.put("aptEffects", "Missing root packages may be installed. --no-upgrade retains already installed command-line packages; necessary dependencies may still be installed or upgraded. --no-remove aborts required removals; --no-install-recommends remains set.");
-            facts.put("dnfRootPackages", List.of(DeploymentHelperInstallerScript.DNF_PACKAGES.split(" ")));
-            facts.put("dnfEffects", "The alternative DNF branch remains install -y; APT's no-upgrade/no-remove guarantees do not apply to DNF.");
+            boolean apt = point.map(DeploymentHelperInstallerScript::usesApt).orElse(true);
+            boolean dnf = point.map(value -> !DeploymentHelperInstallerScript.usesApt(value)).orElse(true);
+            point.ifPresent(value -> facts.put("platformPackageScope", Map.of(
+                "frozenRepositoryPoint", value.name(), "packageManager", apt ? "apt-get" : "dnf",
+                "policyPointer", "/mirrorTransport/frozenPolicy/points/" + value.name(),
+                "runtimeGuard", "Before helper admission, receipt or package effects, wtl_system_point reads the live os-release ID as data and must equal this frozen point. A mismatch rejects with exit 64.",
+                "installerSource", "The fixed tracked body contains one native package stage for this point. The separately represented generic mirror source contains both reusable manager definitions.")));
+            if (apt) {
+                facts.put("aptRootPackages", List.of(DeploymentHelperInstallerScript.APT_PACKAGES.split(" ")));
+                facts.put("aptEffects", "Missing root packages may be installed. --no-upgrade retains already installed command-line packages; necessary dependencies may still be installed or upgraded. --no-remove aborts required removals; --no-install-recommends remains set.");
+            }
+            if (dnf) {
+                facts.put("dnfRootPackages", List.of(DeploymentHelperInstallerScript.DNF_PACKAGES.split(" ")));
+                facts.put("dnfEffects", "DNF requests install -y without --allowerasing. Dependency resolution may upgrade or obsolete packages; there is no install-only transaction guard or RPM scriptlet and trigger suppression.");
+            }
             facts.put("nativeTransactions", Map.of(
                 "targets", targets.stream().filter(target -> target.kind().equals("system-package-transaction"))
                     .map(gold.debug.windowstolinux.appapi.task.action.ActionTarget::id).sorted().toList(),
@@ -87,7 +105,7 @@ public final class DeploymentInstallerEvidence {
             facts.put("sudoPackagePurpose", "The product publishes sudo-prefixed managed application usage for authorized host operators. The fixed shell body does not invoke sudo or directly edit sudoers. Review sudo package and maintainer-script effects with the other listed root packages.");
             if (mirror.isPresent())
                 facts.put("mirrorShellFunctions", "The exact wrapper inlines wtl_apt and wtl_dnf definitions into the parent shell before the installer subshell inherits them. The written bootstrap file is not the only copy of those definitions.");
-            facts.put("aptDownloads", mirror.isPresent()
+            if (apt) facts.put("aptDownloads", mirror.isPresent()
                 ? "The task-local APT source copy checks every active URI against the frozen route before metadata update, including rejection of file: and cdrom:. The fixed apt-helper and ancestors are checked before downloads. The runtime freezes URI/name/size/SHA256, authenticates package sources and installs with --no-download. Package effects still require independent review."
                 : "Native configured APT sources; mirror object freezing is not asserted for this unwrapped request.");
             facts.put("limits", "Package maintainer scripts and service effects remain possible; NEEDRESTART_MODE=l is not a blanket service-change ban. Existing readiness checks still must pass; no retry without these protections is introduced. No live state, transaction outcome or permission is asserted. Compare complete source and effects against the referenced actual frozen workflow request.");
@@ -395,13 +413,15 @@ public final class DeploymentInstallerEvidence {
         scopes.put("requestDigest", requestDigest(executable));
         scopes.put("helperDigest", sourceDigest("managedHelper", helper));
         scopes.put("buildEntryDigest", sourceDigest("buildEntry", entry));
-        String body = DeploymentHelperInstallerScript.render(layout);
         var receipt = java.util.regex.Pattern.compile("FORMAT=1\\nTASK=([0-9a-f-]{36})\\nOPERATION=([0-9a-f-]{36})\\nSERVER_SHA256=([0-9a-f]{64})\\nBODY_SHA256=([0-9a-f]{64})\\nHELPER_SHA256=([0-9a-f]{64})\\nPHASE=STARTED\\n").matcher(executable);
         if (receipt.find()) {
+            var point = DeploymentMirrorTasks.executable(executable)
+                .flatMap(binding -> DeploymentHelperInstallerScript.packagePoint(binding.policy()));
+            String body = DeploymentHelperInstallerScript.render(layout, point);
             if (!receipt.group(4).equals(sha(body)) || !receipt.group(5).equals(sha(helper)))
                 throw new IllegalArgumentException("Installer receipt body/helper digest differs from its actual byte scope");
             String tracked = DeploymentHelperInstallerScript.renderTracked(UUID.fromString(receipt.group(1)),
-                UUID.fromString(receipt.group(2)), receipt.group(3), receipt.group(4), layout);
+                UUID.fromString(receipt.group(2)), receipt.group(3), receipt.group(4), layout, point);
             int start = executable.indexOf(tracked);
             if (start < 0 || executable.indexOf(tracked, start + tracked.length()) >= 0)
                 throw new IllegalArgumentException("Tracked installer receipt wrapper differs from the complete current implementation");
@@ -418,6 +438,7 @@ public final class DeploymentInstallerEvidence {
                 byteRange(executable, start + beginEnd, start + end),
                 byteRange(executable, start + endEnd, start + tracked.length()))));
         } else {
+            String body = DeploymentHelperInstallerScript.render(layout);
             int start = executable.indexOf(body);
             if (start >= 0)
                 scopes.put("bodyDigest", bodyDigest(body, List.of(byteRange(executable, start, start + body.length()))));

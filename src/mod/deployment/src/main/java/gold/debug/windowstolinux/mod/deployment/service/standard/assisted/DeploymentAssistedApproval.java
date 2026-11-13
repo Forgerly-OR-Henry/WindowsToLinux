@@ -79,6 +79,9 @@ final class DeploymentAssistedApproval {
             facts.put("businessRevisionMeaning", "Identity of the reviewed business state; not automatically the digest of every resource. Compare each digest to the expected value of that same object.");
             facts.put("exactAction", intent.exactAction());
             facts.put("authorizationPolicy", policy);
+            facts.put("effectAuthorizationStage", Map.of("phase", "INDEPENDENT_REVIEW_BEFORE_HOST_GRANT",
+                "hostGrantRequestedOnlyAfterApprove", true, "hostGrantIssuedByThisBoundary", false,
+                "exactHostGrantRequiredBeforeDispatch", true));
             var scope = context instanceof DeploymentAssistedScope value ? value : null;
             if (scope != null) facts.put("currentCommandEvidence", scope.effectFacts(intent, task));
             var response = new DeploymentAiJson(context,

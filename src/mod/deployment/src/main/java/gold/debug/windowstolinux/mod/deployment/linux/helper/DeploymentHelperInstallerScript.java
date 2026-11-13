@@ -2,6 +2,11 @@ package gold.debug.windowstolinux.mod.deployment.linux.helper;
 
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTemplate;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
+import java.util.UUID;
 
 /** Shared helper and isolation installation; no project language selection. / 共用 helper 及隔离安装，不选择项目语言。 */
 public final class DeploymentHelperInstallerScript {
@@ -52,6 +57,41 @@ public final class DeploymentHelperInstallerScript {
             """;
     }
 
+    /** Scoped captures admit a single system repository point. Unscoped policies retain host detection. */
+    public static Optional<DownloadPoint> packagePoint(String policy) {
+        if (policy == null || policy.isEmpty()) return Optional.empty();
+        try {
+            var points = new com.fasterxml.jackson.databind.ObjectMapper().readTree(policy).path("points");
+            var active = java.util.Arrays.stream(DownloadPoint.values()).filter(point ->
+                (point.name().startsWith("APT_") || point.name().startsWith("DNF_"))
+                    && points.path(point.name()).isArray() && !points.path(point.name()).isEmpty()).toList();
+            return active.size() == 1 ? Optional.of(active.getFirst()) : Optional.empty();
+        } catch (java.io.IOException invalid) {
+            throw new IllegalArgumentException("Invalid installer mirror policy", invalid);
+        }
+    }
+
+    static boolean usesApt(DownloadPoint point) {
+        return point.name().startsWith("APT_");
+    }
+
+    private static String guardPackagePoint(Optional<DownloadPoint> point) {
+        return point.map(value -> """
+            prepare_stage=platform-package-scope
+            [ "$(wtl_system_point)" = '%s' ] || { printf 'PREPARE_REJECT=platform-package-scope\\n'; exit 64; }
+            """.formatted(value.name())).orElse("");
+    }
+
+    /** Scoped stages contain only the admitted manager call. The mirror runtime checks actual sources. */
+    private static String scopedPackages(DownloadPoint point) {
+        if (usesApt(point)) return """
+            export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
+            wtl_apt -o DPkg::Lock::Timeout=300 update
+            wtl_apt -o DPkg::Lock::Timeout=300 install -y --no-upgrade --no-remove --no-install-recommends %s
+            """.formatted(APT_PACKAGES);
+        return "wtl_dnf install -y " + DNF_PACKAGES + "\n";
+    }
+
     /** Renders the bounded managed platform installation. / 渲染有界受管平台安装。
      * @return bounded implementation-owned script / 有界实现自有脚本
      */
@@ -60,7 +100,11 @@ public final class DeploymentHelperInstallerScript {
     }
 
     public static String render(DeploymentRemoteLayout layout) {
-        return render("", "", layout);
+        return render(layout, Optional.empty());
+    }
+
+    public static String render(DeploymentRemoteLayout layout, Optional<DownloadPoint> point) {
+        return render("", "", layout, point);
     }
 
     /** Installs missing fixed files or prerequisites without registering recovery. / 补齐固定文件或依赖，不注册恢复服务。
@@ -233,6 +277,11 @@ public final class DeploymentHelperInstallerScript {
 
     public static String renderTracked(java.util.UUID taskId, java.util.UUID operationId, String serverDigest,
                                        String bodyDigest, DeploymentRemoteLayout layout) {
+        return renderTracked(taskId, operationId, serverDigest, bodyDigest, layout, Optional.empty());
+    }
+
+    public static String renderTracked(UUID taskId, UUID operationId, String serverDigest,
+                                       String bodyDigest, DeploymentRemoteLayout layout, Optional<DownloadPoint> point) {
         java.util.Objects.requireNonNull(taskId);
         java.util.Objects.requireNonNull(operationId);
         if (serverDigest == null || !serverDigest.matches("[0-9a-f]{64}") || bodyDigest == null
@@ -282,28 +331,48 @@ public final class DeploymentHelperInstallerScript {
             /usr/bin/mv -fT -- "$bootstrap_terminal" "$bootstrap_receipt"
             /usr/bin/sync -f "$bootstrap_directory"
             """.formatted(operationId, quote(succeeded));
-        return render(begin, end, layout);
+        return render(begin, end, layout, point);
     }
 
     /** Resolves only the exact current fixed installer and its original receipt, before review or dispatch. */
     public static java.util.UUID trackedOperation(String executable, java.util.UUID expectedTask,
             DeploymentRemoteLayout layout) {
+        return trackedOperation(executable, expectedTask, layout, Optional.empty());
+    }
+
+    static UUID trackedOperation(String executable, UUID expectedTask,
+            DeploymentRemoteLayout layout, Optional<DownloadPoint> point) {
         java.util.Objects.requireNonNull(expectedTask);
         var receipt = java.util.regex.Pattern.compile("FORMAT=1\\nTASK=([0-9a-f-]{36})\\nOPERATION=([0-9a-f-]{36})\\nSERVER_SHA256=([0-9a-f]{64})\\nBODY_SHA256=([0-9a-f]{64})\\nHELPER_SHA256=([0-9a-f]{64})\\nPHASE=STARTED\\n").matcher(executable);
         if (!receipt.find() || !expectedTask.toString().equals(receipt.group(1)))
             throw new IllegalArgumentException("Tracked installer requires its original task receipt");
         java.util.UUID operation = java.util.UUID.fromString(receipt.group(2));
-        String bodyDigest;
+        String bodyDigest = bodyDigest(layout, point);
+        if (!bodyDigest.equals(receipt.group(4)) || !DeploymentManagedHelperBundle.helperSha256(layout).equals(receipt.group(5))
+            || !renderTracked(expectedTask, operation, receipt.group(3), bodyDigest, layout, point).equals(executable))
+            throw new IllegalArgumentException("Tracked installer differs from its exact body, helper or receipt envelope");
+        return operation;
+    }
+
+    public static String bodyDigest(DeploymentRemoteLayout layout, Optional<DownloadPoint> point) {
         try {
-            bodyDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
-                .digest(render(layout).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(render(layout, point).getBytes(StandardCharsets.UTF_8)));
         } catch (java.security.NoSuchAlgorithmException impossible) {
             throw new IllegalStateException(impossible);
         }
-        if (!bodyDigest.equals(receipt.group(4)) || !DeploymentManagedHelperBundle.helperSha256(layout).equals(receipt.group(5))
-            || !renderTracked(expectedTask, operation, receipt.group(3), bodyDigest, layout).equals(executable))
-            throw new IllegalArgumentException("Tracked installer differs from its exact body, helper or receipt envelope");
-        return operation;
+    }
+
+    /** Read-only reconciliation also accepts the exact pre-scope installer already sent by older releases. */
+    public static boolean matchesTrackedRequest(gold.debug.windowstolinux.appapi.task.run.TaskContext task,
+            UUID operation, String serverDigest, String bodyDigest, String requestDigest, DeploymentRemoteLayout layout,
+            boolean allowPreviouslySentUnscoped) {
+        var point = packagePoint(DeploymentMirrorTasks.policy(task));
+        if (allowPreviouslySentUnscoped && point.isPresent() && bodyDigest.equals(bodyDigest(layout, Optional.empty())))
+            point = Optional.empty();
+        return bodyDigest.equals(bodyDigest(layout, point))
+            && requestDigest.equals(DeploymentMirrorTasks.installerRequestDigest(
+                renderTracked(task.id(), operation, serverDigest, bodyDigest, layout, point), task));
     }
 
     /** Builds one exact non-secret original installer receipt. / 构造精确的非秘密原安装回执。
@@ -367,15 +436,17 @@ public final class DeploymentHelperInstallerScript {
      * @param begin operation receipt before effects / 副作用前操作回执
      * @param end terminal receipt before response / 回包前终态回执
      * @return complete installer script / 完整安装脚本 */
-    private static String render(String begin, String end, DeploymentRemoteLayout layout) {
+    private static String render(String begin, String end, DeploymentRemoteLayout layout, Optional<DownloadPoint> point) {
         return "set -euo pipefail\nexport LC_ALL=C\n" + renderStageDiagnostics() + renderSecurityObservationFunctions()
             + """
             [ "$(id -u)" -eq 0 ] || exit 64
             command -v systemctl >/dev/null
-            """ + renderPriorExecutableAdmission(layout, true) + renderInstallationLock(layout)
+            """ + guardPackagePoint(point) + renderPriorExecutableAdmission(layout, true) + renderInstallationLock(layout)
             + "installer_capture_prior\n" + begin + BODY_AFTER_RECEIPT
             + DeploymentRemoteLayoutAdmission.initialize(layout)
-            + packageCommands() + """
+            + (point.isPresent()
+            ? "prepare_stage=platform-packages\n" + scopedPackages(point.orElseThrow()) + "prepare_stage=helper-installation\n"
+            : packageCommands() + """
             prepare_stage=platform-packages
             if command -v apt-get >/dev/null; then
               export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
@@ -386,7 +457,7 @@ public final class DeploymentHelperInstallerScript {
             else printf 'PREPARE_REJECT=platform-package-manager\\n'; exit 64; fi
             prepare_stage=helper-installation
             """
-            .formatted(APT_PACKAGES, DNF_PACKAGES) + renderHelperInstallation(layout) + renderSecurityInvariant() + end + "printf 'HELPER_INSTALL=1\\nPROTOCOL="
+            .formatted(APT_PACKAGES, DNF_PACKAGES)) + renderHelperInstallation(layout) + renderSecurityInvariant() + end + "printf 'HELPER_INSTALL=1\\nPROTOCOL="
             + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\\nSHA256="
             + DeploymentManagedHelperBundle.helperSha256(layout) + "\\n'\n";
     }
