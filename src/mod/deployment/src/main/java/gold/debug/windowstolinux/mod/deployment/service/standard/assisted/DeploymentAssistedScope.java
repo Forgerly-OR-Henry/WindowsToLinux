@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.assisted;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.appapi.ai.*;
 import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
@@ -10,6 +11,7 @@ import gold.debug.windowstolinux.appapi.db.ModDatabase;
 import gold.debug.windowstolinux.appapi.file.FileService;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
 import gold.debug.windowstolinux.appapi.mod.*;
 import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode;
@@ -61,6 +63,10 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     private final LinkedHashMap<String, Map<String, Object>> reviewedApplicationSources = new LinkedHashMap<>();
 
     private final LinkedHashMap<String, Map<String, Object>> hostPrerequisites = new LinkedHashMap<>();
+
+    private record AuthenticatedTarget(RemoteTarget expected, String fingerprint) { }
+
+    private final AtomicReference<AuthenticatedTarget> authenticatedTarget = new AtomicReference<>();
 
     private record ToolchainPlan(String identity, String server,
                                  gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
@@ -447,6 +453,37 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                                 TaskContext supplied) throws ApiException {
         var facts = new LinkedHashMap<String, Object>(effectFacts(intent, supplied));
+        String operation = intent.semantics().map(value -> value.operation()).orElse("");
+        if (Set.of(DeploymentAssistedCandidateReview.QUERY, DeploymentAssistedCandidateReview.VERIFY).contains(operation)) {
+            if (!facts.containsKey("workflowAuthorization"))
+                throw new IllegalArgumentException("Candidate observation requires original workflow authority");
+            var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied);
+            var sources = Map.copyOf(reviewedApplicationSources);
+            try {
+                facts.put("candidateObservation", DeploymentAssistedCandidateReview.facts(intent, request, supplied, layout,
+                    sources, Set.of()));
+            } catch (DeploymentAssistedCandidateReview.AlternateCandidate required) {
+                var record = new gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore(original.db());
+                var attempts = new gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentPublishAttemptStore(original.db());
+                try {
+                    var execution = record.findForTask(supplied).orElseThrow();
+                    var reviewed = new HashSet<UUID>();
+                    reviewed.add(attempts.operation(execution));
+                    attempts.intent(execution).ifPresent(value -> reviewed.add(value.nextOperation()));
+                    facts.put("candidateObservation", DeploymentAssistedCandidateReview.facts(intent, request, supplied,
+                        layout, sources, reviewed));
+                } catch (java.sql.SQLException unavailable) {
+                    throw new ApiException(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_CANDIDATE_REVIEW_EVIDENCE_UNAVAILABLE",
+                        "Original candidate operation could not be read", Map.of(), Optional.empty()));
+                }
+            }
+            var authenticated = authenticatedTarget.get();
+            if (authenticated != null && intent.serverIds().equals(List.of(authenticated.expected().server().id())))
+                facts.put("candidateSshAuthentication", Map.of("server", authenticated.expected().server().id(),
+                    "task", supplied.id().toString(), "authenticatedHostFingerprint", authenticated.fingerprint(),
+                    "sshAccount", authenticated.expected().username(),
+                    "meaning", "The product connected using the original fixed task, endpoint and SSH account and observed this authenticated host key. The connection grants no privileges. The pinned helper verifies effective UID 0 at execution."));
+        }
         if (intent.semantics().filter(value -> Set.of("deployment.helper.install.v1", "deployment.helper.install.files.v1",
                 "deployment.helper.install.tracked.v1").contains(value.operation())).isPresent()) {
             if (!facts.containsKey("workflowAuthorization"))
@@ -857,8 +894,10 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             public RemoteSession connect(ServerId server, TaskContext supplied) throws ApiException {
                 sameTask(supplied);
                 verify();
-                return new DeploymentAssistedSession(original.linux().connect(server, supplied),
-                    DeploymentAssistedScope.this::verify);
+                var connected = original.linux().connect(server, supplied);
+                authenticatedTarget.set(null);
+                return new DeploymentAssistedSession(connected,
+                    DeploymentAssistedScope.this::verify, () -> { });
             }
 
             /** Enforces the original endpoint and wire before authenticated connection. / 认证连接前强制原端点及 wire。
@@ -866,10 +905,28 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
              * @param supplied original task / 原任务
              * @return actual guarded fixed-target connection / 实际受控固定目标连接
              * @throws ApiException if original route, endpoint or trust differs / 原路由、端点或信任不符时 */
-            public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected, TaskContext supplied) throws ApiException {
+            public RemoteSession connect(RemoteTarget expected, TaskContext supplied) throws ApiException {
                 sameTask(supplied);
                 verify();
-                return new DeploymentAssistedSession(original.linux().connect(expected, supplied), DeploymentAssistedScope.this::verify);
+                var connected = original.linux().connect(expected, supplied);
+                try {
+                    var fingerprint = connected.facts().fingerprint();
+                    if (!expected.taskId().equals(supplied.id())
+                        || expected.fingerprint().filter(value -> !value.equals(fingerprint)).isPresent())
+                        throw new IllegalArgumentException("Authenticated SSH target differs");
+                    var authenticated = fingerprint.matches("SHA256:[A-Za-z0-9+/]{43}=?")
+                        ? new AuthenticatedTarget(expected, fingerprint) : null;
+                    authenticatedTarget.set(authenticated);
+                    return new DeploymentAssistedSession(connected, DeploymentAssistedScope.this::verify,
+                        () -> authenticatedTarget.compareAndSet(authenticated, null));
+                } catch (RuntimeException invalid) {
+                    try {
+                        connected.close();
+                    } catch (ApiException cleanup) {
+                        invalid.addSuppressed(cleanup);
+                    }
+                    throw invalid;
+                }
             }
 
             /** Reads only original pending transfers. / 仅读取原待结传输。

@@ -96,7 +96,22 @@ public final class DeploymentAssistedPreparationReview {
                 "ruby-lang.org release listing/announcement supplies source version and SHA256 for cache.ruby-lang.org. Extract checked source; fixed apt/dnf dependencies and configure/make -j2/make install use the managed prefix. Ruby 3.0 also downloads the product-pinned openssl-3.0.3.gem from rubygems.org, verifies SHA256 and installs it locally without dependencies.";
             default -> throw new IllegalArgumentException("No preparation adapter");
         };
+        String apt = switch (ecosystem) {
+            case PYTHON, PHP, RUBY -> """
+                If source build selects the frozen mirror-backed APT branch, review its exact wtl_repository_copy,
+                wtl_prepare_system_credential, wtl_apt_configure_command, wtl_apt_resolve_frozen and wtl_apt_install_frozen
+                code. The private repository copy changes the selected URI mapping, retains the source signing fields,
+                and rejects source-level authentication bypass flags. Native apt-get update authenticates repository
+                metadata with the host trust configuration and rejects insecure, weak or expired metadata. Resolution
+                freezes package filenames, sizes and SHA-256 from that metadata. apt-helper downloads those exact
+                objects with their hashes, size is checked separately, and apt-get --no-download applies the same
+                resolution with native authentication. HTTPS alone proves none of this. The metadata selected on the
+                host, its signing key and the resolved objects are runtime results.
+                """;
+            default -> "";
+        };
         return "Current ASSISTED preparation (source-bound helper contract, selected ecosystem " + ecosystem + "): " + selected
-            + " Resolver URL, exact version, digest and MANAGED/SYSTEM origin are future results, not already verified facts. HTTPS host/redirect allowlists, byte/deadline bounds and official digest checks precede extraction; archive guards reject traversal, unsafe links, special types, duplicates and overflow. Under this layout's toolchains root, guarded directories/lock, scratch download/extraction and version/digest installations/markers are created. Exact-version SYSTEM reuse probes executables, pins/rehashes originals and creates protected wrappers/markers; it does not mean the existing host tool is already trusted. Successful installation probes and seals the result. Failures can leave initialized roots/locks, package-manager dependencies and other partial effects; failed destination cleanup is not transaction rollback. Review original goal authority, arguments, deadlines, Java selection and targets. This describes enforced product behavior if executed, not completed checks or an approval.";
+            + " Resolver URL, exact version, digest and MANAGED/SYSTEM origin are future results, not already verified facts. HTTPS host/redirect allowlists, byte/deadline bounds and official digest checks precede extraction; archive guards reject traversal, unsafe links, special types, duplicates and overflow. Under this layout's toolchains root, guarded directories/lock, scratch download/extraction and version/digest installations/markers are created. Exact-version SYSTEM reuse probes executables, pins/rehashes originals and creates protected wrappers/markers; it does not mean the existing host tool is already trusted. Successful installation probes and seals the result. Failures can leave initialized roots/locks, package-manager dependencies and other partial effects; failed destination cleanup is not transaction rollback. Review original goal authority, arguments, deadlines, Java selection and targets. This describes enforced product behavior if executed, not completed checks or an approval."
+            + "\n" + apt;
     }
 }

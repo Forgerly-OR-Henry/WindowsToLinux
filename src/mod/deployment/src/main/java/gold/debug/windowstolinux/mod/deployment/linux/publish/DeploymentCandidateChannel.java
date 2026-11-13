@@ -253,8 +253,7 @@ public final class DeploymentCandidateChannel {
             || !created.value().orElseThrow().stdout().equals("CANDIDATE=" + workspace.candidateRoot() + "\n"))
             return unknown("DEPLOYMENT_CANDIDATE_CREATE_UNCONFIRMED");
         var queried = commands.send("deployment.candidate.query.v1", "deployment-candidate", workspace.candidateRoot(),
-            helper + " candidate-query-task " + quoted(workspace.applicationId()) + " "
-                + quoted(workspace.candidateId()) + " " + quoted(original),
+            candidateQueryScript(layout, workspace.applicationId(), workspace.candidateId(), task.id()),
             new byte[0], Duration.ofSeconds(20), 4096);
         if (!complete(queried)
             || !queried.value().orElseThrow().stdout().equals("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n"))
@@ -315,18 +314,34 @@ public final class DeploymentCandidateChannel {
     public Verification verification(DeploymentRemoteWorkspace workspace, DeploymentSourceArchive archive) {
         requireWorkspace(workspace);
         Objects.requireNonNull(archive);
-        String root = workspace.candidateRoot();
-        String remote = root + "/mutable/source.tar.gz";
-        String helper = quoted(layout.helperPath());
-        String script = "set -euo pipefail\n" + helper + " candidate-query-task " + quoted(workspace.applicationId())
-            + " " + quoted(workspace.candidateId()) + " " + quoted(task.id().toString()) + "\n" + "test -f "
+        String script = archiveVerificationScript(layout, workspace.applicationId(), workspace.candidateId(), task.id());
+        String expected = archiveVerificationOutput(archive.byteCount(), archive.sha256());
+        return new Verification(session, server, task, revision, layout, workspace, archive, script, expected);
+    }
+
+    /** Exact original-task query used by dispatch and the independent reviewer. */
+    public static String candidateQueryScript(DeploymentRemoteLayout layout, String application, String candidate, UUID task) {
+        if (!application.matches("[a-z0-9][a-z0-9-]{0,62}") || !candidate.matches(application + "-[a-f0-9]{16}"))
+            throw new IllegalArgumentException("Invalid candidate ownership query");
+        return quoted(layout.helperPath()) + " candidate-query-task " + quoted(application) + " " + quoted(candidate)
+            + " " + quoted(task.toString());
+    }
+
+    /** Exact archive observation program; actual success also requires the client consumer below. */
+    public static String archiveVerificationScript(DeploymentRemoteLayout layout, String application, String candidate, UUID task) {
+        String remote = layout.candidateRoot(candidate) + "/mutable/source.tar.gz";
+        return "set -euo pipefail\n" + candidateQueryScript(layout, application, candidate, task) + "\ntest -f "
             + quoted(remote) + " && test ! -L " + quoted(remote) + "\n" + "test \"$(realpath -e -- "
             + quoted(remote) + ")\" = " + quoted(remote) + "\n" + "printf 'BYTES='; stat -c '%s' -- "
             + quoted(remote) + "\n" + "printf 'SHA256='; sha256sum -- " + quoted(remote) + " | cut -d ' ' -f1\n"
             + "printf 'OWNER='; stat -c '%u' -- " + quoted(remote) + "\n";
-        String expected = "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\nBYTES=" + archive.byteCount() + "\nSHA256="
-            + archive.sha256() + "\nOWNER=0\n";
-        return new Verification(session, server, task, revision, layout, workspace, archive, script, expected);
+    }
+
+    /** Complete stdout accepted by the original local consumer after zero exit and no truncation. */
+    public static String archiveVerificationOutput(long bytes, String sha256) {
+        if (bytes < 0 || !sha256.matches("[a-f0-9]{64}"))
+            throw new IllegalArgumentException("Invalid archive verification identity");
+        return "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\nBYTES=" + bytes + "\nSHA256=" + sha256 + "\nOWNER=0\n";
     }
 
     /** Uses only a specification captured from these same original capabilities. */

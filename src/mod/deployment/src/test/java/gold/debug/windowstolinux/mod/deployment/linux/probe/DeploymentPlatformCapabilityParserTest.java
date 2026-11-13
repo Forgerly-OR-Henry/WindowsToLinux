@@ -599,46 +599,75 @@ class DeploymentPlatformCapabilityParserTest {
     }
 
     @Test
-    void readsUfwRulesInsteadOfTheOneshotServiceState() throws Exception {
+    void readsOnlyTheUfwStatusHeaderAndPreservesChildFailure() throws Exception {
         String bash = System.getProperty("managed.test.bash", "/bin/bash");
-        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isExecutable(java.nio.file.Path.of(bash)));
-        for (String scenario : java.util.List.of("active", "inactive", "denied", "unexpected", "sudo")) {
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isRegularFile(Path.of(bash)));
+        for (String scenario : java.util.List.of("active", "inactive", "denied", "partial-failure", "unexpected", "sudo")) {
             String script = """
                 set -eu
                 export LC_ALL=C
                 probe_command() { [ "$1" = ufw ]; }
-                probe_tool() { probe_command "$1"; }
+                probe_tool() { [ "$1" = /usr/bin/wc ] || probe_command "$1"; }
                 probe_tool_run() { probe_tool "$1" && "$@"; }
                 systemctl() { return 0; }
                 ufw() {
                   case "$scenario" in
                     denied|sudo) return 1 ;;
+                    partial-failure) printf 'Status: active\\n'; return 1 ;;
+                    active) printf 'Status: active\\n\\n'; printf 'fixture rule %s\\n' {1..6000} ;;
                     unexpected) printf 'unrecognized output\\n' ;;
                     *) printf 'Status: %s\\n' "$scenario" ;;
                   esac
                 }
                 sudo() { [ "$scenario" = sudo ] && printf 'Status: inactive\\n'; }
                 """ + "scenario='" + scenario + "'\n" + DeploymentPlatformCapabilityProbe.firewallProbe();
-            Process process = new ProcessBuilder(bash, "-s").redirectErrorStream(true).start();
-            try {
-                try (var input = process.getOutputStream()) {
-                    input.write(script.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                }
-                assertTrue(process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS));
-                String output = new String(process.getInputStream().readAllBytes(),
-                    java.nio.charset.StandardCharsets.UTF_8);
-                assertEquals(0, process.exitValue(), output);
-                String expected = switch (scenario) {
-                    case "active" -> "active";
-                    case "inactive" -> "inactive";
-                    default -> "unknown";
-                };
-                assertTrue(output.contains("FIREWALL=ufw\n"), output);
-                assertTrue(output.contains("FIREWALL_STATE=" + expected + "\n"), output);
-            } finally {
-                if (process.isAlive())
-                    process.destroyForcibly().waitFor();
+            String expected = switch (scenario) {
+                case "active", "inactive" -> scenario;
+                default -> "unknown";
+            };
+            assertEquals("FIREWALL=ufw\nFIREWALL_STATE=" + expected + "\n", runProbeFixture(bash, script), scenario);
+        }
+    }
+
+    @Test
+    void observesNftablesTablePresenceWithoutRecordingNamesOrHidingFailures() throws Exception {
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isRegularFile(Path.of(bash)));
+        String firewallProbe = DeploymentPlatformCapabilityProbe.firewallProbe();
+        assertTrue(DeploymentPlatformCapabilityProbe.render().contains(firewallProbe));
+        String fixture = """
+            set -eu
+            export LC_ALL=C
+            probe_command() { [ "$1" = nft ]; }
+            probe_tool() {
+              if [ "$1" = /usr/bin/wc ]; then [ "$scenario" != untrusted-counter ]; else probe_command "$1"; fi
             }
+            probe_tool_run() { probe_tool "$1" && "$@"; }
+            ulimit() {
+              if [ "$scenario" = denied-limit ]; then return 1; fi
+              builtin ulimit "$@"
+            }
+            nft() {
+              [ "$*" = 'list tables' ] || return 91
+              [ "$(builtin ulimit -v)" = 131072 ] || return 92
+              case "$scenario" in
+                empty) : ;;
+                present) printf 'table inet fixture_%s\\n' {1..6000} ;;
+                partial-failure) printf 'table inet fixture\\n'; return 1 ;;
+                failed) printf 'fixture diagnostic\\n' >&2; return 1 ;;
+                *) printf 'UNEXPECTED_NFT_EXECUTION\\n' >&3; return 93 ;;
+              esac
+            }
+            exec 3>&1
+            """ + firewallProbe;
+        for (String scenario : java.util.List.of("empty", "present", "failed", "partial-failure", "denied-limit", "untrusted-counter")) {
+            String expected = switch (scenario) {
+                case "empty" -> "inactive";
+                case "present" -> "active";
+                default -> "unknown";
+            };
+            assertEquals("FIREWALL=nftables\nFIREWALL_STATE=" + expected + "\n",
+                runProbeFixture(bash, "scenario=" + scenario + "\n" + fixture), scenario);
         }
     }
 
@@ -698,7 +727,8 @@ class DeploymentPlatformCapabilityParserTest {
         assertTrue(!DeploymentPlatformCapabilityProbe.render().contains("printf(\"%%d.%%d\""));
         assertTrue(DeploymentPlatformCapabilityProbe.render().contains("SECURITY_MODULE"));
         assertTrue(DeploymentPlatformCapabilityProbe.render().contains("FIREWALL_STATE"));
-        assertTrue(DeploymentPlatformCapabilityProbe.render().contains("nft list ruleset"));
+        assertTrue(DeploymentPlatformCapabilityProbe.render().contains("nft list tables"));
+        assertFalse(DeploymentPlatformCapabilityProbe.render().contains("nft list ruleset"));
         assertFalse(DeploymentPlatformCapabilityProbe.render().contains("/windowstolinux/java-21"));
         assertTrue(DeploymentPlatformCapabilityProbe.render().contains("probe_tool java"));
         assertTrue(DeploymentPlatformCapabilityProbe.render().contains("PACKAGE_ARCH"));

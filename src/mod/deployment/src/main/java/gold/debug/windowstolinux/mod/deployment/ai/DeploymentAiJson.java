@@ -167,7 +167,7 @@ public final class DeploymentAiJson {
             policy += "\n" + (evidence.filter(DeploymentCommandSourceEvidence::toolchainReview).isPresent()
                 ? DeploymentHelperReviewContract.toolchainText(layout) : DeploymentHelperReviewContract.text(layout));
         }
-        if (evidence.isPresent()) policy += "\n" + DeploymentCommandSourceEvidence.INSTRUCTION;
+        if (evidence.isPresent()) policy += "\n" + evidence.orElseThrow().instructions();
         var conversation = purpose == AiPurpose.APPROVAL ? approvalConversation : null;
         try {
             if (conversation != null) facts = conversation.facts(policy, facts, revision, task);

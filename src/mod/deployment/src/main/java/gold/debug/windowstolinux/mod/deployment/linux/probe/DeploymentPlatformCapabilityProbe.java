@@ -289,7 +289,12 @@ public final class DeploymentPlatformCapabilityProbe {
               esac
             elif probe_command ufw >/dev/null 2>&1; then
               printf 'FIREWALL=ufw\\n'
-              if ufw_status="$(probe_tool_run ufw status 2>/dev/null)"; then
+              # Read only the status header and drain the remaining output without retaining it.
+              if probe_tool /usr/bin/wc >/dev/null 2>&1 && ufw_status="$(set -o pipefail
+                probe_tool_run ufw status 2>/dev/null | {
+                  /usr/bin/head -c 17 && /usr/bin/wc -c >/dev/null
+                }
+              )"; then
                 case "$ufw_status" in
                   'Status: active'*) printf 'FIREWALL_STATE=active\\n' ;;
                   'Status: inactive'*) printf 'FIREWALL_STATE=inactive\\n' ;;
@@ -300,8 +305,12 @@ public final class DeploymentPlatformCapabilityProbe {
               fi
             elif probe_command nft >/dev/null 2>&1; then
               printf 'FIREWALL=nftables\\n'
-              if nft_rules="$(probe_tool_run nft list ruleset 2>/dev/null)"; then
-                if [ -n "$nft_rules" ]; then printf 'FIREWALL_STATE=active\\n'; else printf 'FIREWALL_STATE=inactive\\n'; fi
+              # An existing table was sufficient for the previous ruleset-presence observation.
+              # Query only tables and bound nft's address space as well as the captured output.
+              if probe_tool /usr/bin/wc >/dev/null 2>&1 && nft_bytes="$(set -o pipefail
+                (ulimit -v 131072 && probe_tool_run nft list tables) 2>/dev/null | /usr/bin/wc -c
+              )" && [[ "$nft_bytes" =~ ^[[:blank:]]*[0-9]{1,20}[[:blank:]]*$ ]]; then
+                if [[ "$nft_bytes" =~ [1-9] ]]; then printf 'FIREWALL_STATE=active\\n'; else printf 'FIREWALL_STATE=inactive\\n'; fi
               else
                 printf 'FIREWALL_STATE=unknown\\n'
               fi

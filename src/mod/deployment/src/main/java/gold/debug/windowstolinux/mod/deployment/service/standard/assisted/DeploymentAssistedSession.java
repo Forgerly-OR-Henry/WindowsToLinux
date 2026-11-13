@@ -17,8 +17,10 @@ import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.Deploymen
 
 /** Rechecks the assisted binding immediately before every actual SSH dispatch. / 每次真实 SSH 发送前立即复核辅助绑定。
  * @param original task-owned session / 任务所属会话
- * @param guard frozen model and policy binding / 冻结模型与策略绑定 */
-record DeploymentAssistedSession(RemoteSession original, DeploymentSendGuard guard) implements RemoteSession {
+ * @param guard frozen model and policy binding / 冻结模型与策略绑定
+ * @param forgetAuthentication clears evidence held for this connection / 清除本连接持有的认证证据 */
+record DeploymentAssistedSession(RemoteSession original, DeploymentSendGuard guard, Runnable forgetAuthentication)
+    implements RemoteSession {
     /** Returns authenticated original facts. / 返回原认证事实。
      * @return actual facts / 实际事实 */
     @Override
@@ -111,6 +113,7 @@ record DeploymentAssistedSession(RemoteSession original, DeploymentSendGuard gua
      * @throws ApiException if actual release fails / 实际释放失败时 */
     @Override
     public void close() throws ApiException {
+        forgetAuthentication.run();
         original.close();
     }
 }
