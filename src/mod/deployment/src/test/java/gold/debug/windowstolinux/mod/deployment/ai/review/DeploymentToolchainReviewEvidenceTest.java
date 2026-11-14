@@ -1135,6 +1135,91 @@ class DeploymentToolchainReviewEvidenceTest {
         return fixture.model.requests.getFirst();
     }
 
+    @Test
+    void r32AptReviewIncludesRegisteredHookAndDpkgValidationAtObservedBudgets() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture();
+             var command = request("dependencies", fixture);
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
+            var intent = intent("dependencies", fixture, command);
+            var protocol = new DeploymentFixedCommandProtocol(fixture.context);
+            var original = new LinkedHashMap<String, Object>(protocol.inspect(intent, command, fixture.layout, fixture.task));
+            var facts = new LinkedHashMap<String, Object>(assisted.scope.effectFacts(intent, fixture.task));
+            facts.put("currentNativeBuildPrerequisites", Map.of(
+                "observedGap", Map.of("nativeBuildPrerequisitesMissing", true, "packageManager", "apt", "distro", "UBUNTU"),
+                "currentToolchainPlan", Map.of("runtimeKind", "RustService"), "fixedTransaction", original.get("toolchainDependencies")));
+            original.put("currentCommandEvidence", facts);
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(original, 1048576),
+                intent, command, fixture.layout).orElseThrow();
+            var initial = r31DeniedApproval(fixture, assisted, original, intent, command);
+            var projected = JSON.readTree(evidence.messages().getLast().text());
+            var manifest = projected.path(PHASE);
+            String snapshot = manifest.path("snapshotSha256").asText();
+            var workerDescriptor = manifest.path("dependencyWorker");
+            String worker = collect(evidence, workerDescriptor, PHASE);
+            assertIdentity(workerDescriptor, worker);
+            assertArrayEquals(command.stdin(), restoreValue(projected.path("completeExecutableInput"),
+                Map.of(workerDescriptor.path("sourcePointer").asText(), worker)).getBytes(StandardCharsets.UTF_8));
+            var aptFrame = manifest.path("dependencyAptSelection");
+            String selected = evidence.messages().get(aptFrame.path("ordinal").asInt()).text()
+                .substring(aptFrame.path("headerCharacters").asInt());
+            var coverage = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            String workerPointer = workerDescriptor.path("sourcePointer").asText();
+            for (var section : manifest.path("selectedAptRanges")) {
+                String pointer = section.path("sourcePointer").asText();
+                int offset = section.path("offset").asInt(), next = section.path("next").asInt();
+                int start = section.path("startCharacter").asInt();
+                if (workerPointer.equals(pointer))
+                    assertEquals(worker.substring(offset, next), selected.substring(start, start + next - offset));
+                addR24Range(coverage, pointer, offset, next);
+            }
+            for (String function : List.of("dependency_bytes", "dependency_registered", "dependency_apt_hook_owners",
+                "dependency_apt_binaries", "dependency_apt_options", "dependency_validate_dpkg", "dependency_validate_apt")) {
+                String anchor = "def " + function + "(";
+                var body = PreparationSourceRange.python(worker, anchor);
+                assertEquals(body.offset(), workerDescriptor.path("locations").path(anchor).asInt(-1));
+                var span = coverage.get(workerPointer).floorEntry(body.offset());
+                assertNotNull(span, function);
+                assertTrue(span.getValue() >= body.next(), function);
+            }
+            assertTrue(selected.contains("HOOK_OWNERS = frozenset("));
+            String owners = "\nHOOK_OWNERS = ";
+            int ownerOffset = worker.indexOf(owners);
+            assertTrue(ownerOffset >= 0);
+            assertEquals(ownerOffset, worker.lastIndexOf(owners));
+            assertEquals(ownerOffset, workerDescriptor.path("locations").path(owners).asInt(-1));
+            assertTrue(selected.contains("UBUNTU_COMMAND_NOT_FOUND_HOOK_OWNERS = "));
+            assertTrue(selected.contains("APT_BINARY_PATHS = "));
+            assertTrue(selected.contains("dependency_validate_dpkg()"));
+            var sources = r24Sources(initial, projected, fixture);
+            addReplaySource(sources, workerDescriptor, worker);
+            var systemShell = manifest.path("dependencySystemShell");
+            String shell = collect(evidence, systemShell, PHASE);
+            addReplaySource(sources, systemShell, shell);
+            // The R32 first response requested five decoded shell pages and three exact original worker pages.
+            var calls = new R24Turn(0, 0, 0, 0, 0,
+                "46/0/8000 46/8000/8000 46/16000/8000 46/24000/8000 46/32000/2019 41/53618/8000 41/59371/8000 41/68426/8000")
+                .calls(snapshot, sources, 0);
+            var messages = new ArrayList<>(initial.messages());
+            messages.set(messages.size() - 1, evidence.messages().getLast());
+            int fixed = wireWithR24FactsSize(copy(initial, messages, 1048576), 39876, 1048576, Map.of()).length;
+            var reader = evidence.reader(16);
+            Map<UUID, String> continuations = new LinkedHashMap<>();
+            var nativeCalls = calls.toArray(AiToolCall[]::new);
+            retainReply(fixture, continuations, nativeOutput("", nativeCalls), "OPENAI_RESPONSES", nativeCalls);
+            var reads = fixture.model.replies.remove().value().orElseThrow();
+            var results = reader.read(reads);
+            assertTrue(results.stream().noneMatch(AiToolResult::error));
+            reader.continueReview(messages, reads, results);
+            byte[] encoded = wireWithR24FactsSize(copy(initial, messages, 1048576), 39876, 1048576, continuations);
+            seedInlineSourceRanges(projected, coverage);
+            assertR24VisiblePages(encoded, snapshot, calls, false, coverage, sources);
+            var requested = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            collectRequestedCoverage(requested, calls, sources);
+            assertR24Coverage(requested, coverage);
+            System.out.printf("R32_APT_REPLAY fixedEncoded=%d continuationEncoded=%d cap=1048576%n", fixed, encoded.length);
+        }
+    }
+
     private static void assertR31Terminal(DeploymentCommandSourceEvidence evidence, AiRequest initial, JsonNode projected,
                                          String phase, Map<Integer, Map.Entry<String, String>> sources, String prior,
                                          String last, int originalFactsSize, int bound, String project) throws Exception {
@@ -1175,6 +1260,114 @@ class DeploymentToolchainReviewEvidenceTest {
     private static Problem exactBudgetProblem(int encoded, int bound) {
         return new Problem(ProblemCode.INVALID_INPUT, "AI_REQUEST_BUDGET", "Encoded request exceeds the local limit",
             Map.of("maximumRequestBytes", Integer.toString(bound), "encodedRequestBytes", Integer.toString(encoded)), Optional.empty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"mirrorBootstrapShell", "preparationSelection"})
+    void r32NodePrepareRealApprovalFitsTerminalBudgetAndRejectsUndeliveredRanges(String interpretation) throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture();
+             var command = diagnosedPreparation(fixture, "NODE", "24");
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
+            var intent = intent("prepare", fixture, command);
+            var sentBytes = new ArrayList<Integer>();
+            var refusedBytes = new ArrayList<Integer>();
+            var sources = new LinkedHashMap<Integer, Map.Entry<String, String>>();
+            var current = new DeploymentFixedCommandProtocol(fixture.context).inspect(intent, command, fixture.layout, fixture.task);
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(current, 1048576),
+                intent, command, fixture.layout).orElseThrow();
+            var paged = JSON.readTree(evidence.messages().getLast().text()).at("/" + PHASE + "/" + interpretation);
+            String width45Source = collect(evidence, paged, PHASE);
+            assertIdentity(paged, width45Source);
+            var service = (gold.debug.windowstolinux.appapi.ai.AiService) java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class<?>[] {gold.debug.windowstolinux.appapi.ai.AiService.class}, (proxy, method, args) -> {
+                    if (!method.getName().equals("call")) {
+                        try {
+                            return method.invoke(assisted.context.ai(), args);
+                        } catch (java.lang.reflect.InvocationTargetException failure) {
+                            throw failure.getCause();
+                        }
+                    }
+                    var received = (AiRequest) args[0];
+                    var projected = (ObjectNode) JSON.readTree(received.messages().getLast().text());
+                    var manifest = projected.path(PHASE);
+                    String snapshot = manifest.path("snapshotSha256").asText();
+                    var wireMessages = new ArrayList<>(received.messages());
+                    // The live log captures total facts size, not the original per-field metadata.
+                    int extra = 30034 - projected.toString().length() - 24;
+                    if (extra > 0) projected.put("replayFixturePadding", "x".repeat(extra));
+                    wireMessages.set(wireMessages.size() - 1, new AiMessage(AiRole.USER, projected.toString(), List.of()));
+                    int step = sentBytes.size();
+                    int maximum = switch (step) {
+                        case 0 -> 704212;
+                        case 1 -> 91407;
+                        default -> 69681;
+                    };
+                    byte[] encoded;
+                    try {
+                        encoded = wire(copy(received, wireMessages, maximum), maximum, Map.of());
+                    } catch (ModelRequestBudgetException exceeded) {
+                        refusedBytes.add(exceeded.encodedBytes());
+                        throw new ApiException(exactBudgetProblem(exceeded.encodedBytes(), maximum));
+                    }
+                    sentBytes.add(encoded.length);
+                    if (step == 0) {
+                        assertTrue(encoded.length < 69681, () -> "Fixed initial request: " + encoded.length);
+                        addReplaySource(sources, projected.at("/mirrorTransport/runtimeSource"), DeploymentMirrorRuntime.runtimeSource());
+                        addReplaySource(sources, manifest.path("mirrorPolicySource"), DeploymentMirrorTasks.policy(fixture.task));
+                        var width45 = manifest.path(interpretation);
+                        assertEquals(45, width45.path("sourcePointer").asText().length());
+                        addReplaySource(sources, width45, width45Source);
+                        var prior = new R24Turn(0, 0, 0, 0, 0, "30/20095/8000").calls(snapshot, sources, 0);
+                        return success(mockResponses(prior.toArray(AiToolCall[]::new)));
+                    }
+                    if (step == 1) {
+                        var last = new R24Turn(0, 0, 0, 0, 0, "30/20989/7106 43/0/8000 45/0/6400").calls(snapshot, sources, 1);
+                        return success(mockResponses(last.toArray(AiToolCall[]::new)));
+                    }
+                    String frame = received.messages().get(received.messages().size() - 2).text();
+                    int beginning = frame.indexOf('\n') + 1;
+                    var header = JSON.readTree(frame.substring(beginning, frame.indexOf('\n', beginning)));
+                    assertFalse(header.path("deferredRanges").isMissingNode());
+                    var asked = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+                    var latest = new R24Turn(0, 0, 0, 0, 0, "30/20989/7106 43/0/8000 45/0/6400").calls(snapshot, sources, 1);
+                    collectRequestedCoverage(asked, latest, sources);
+                    var visible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+                    seedInlineSourceRanges(projected, visible);
+                    assertR24VisiblePages(encoded, snapshot, latest, true, visible, sources);
+                    int pending = 0;
+                    for (var receipt : header.path("latestReads")) {
+                        if (!receipt.has("requestedNext")) continue;
+                        pending++;
+                        String pointer = receipt.path("pointer").asText();
+                        String original = sources.get(pointer.length()).getValue();
+                        assertEquals(MirroredInstallerTestFixture.sha(original), receipt.path("sourceSha256").asText());
+                        addR24Range(visible, pointer, receipt.path("next").asInt(), receipt.path("requestedNext").asInt());
+                    }
+                    assertTrue(pending > 0);
+                    assertR24Coverage(asked, visible);
+                    return success(response(Optional.empty(), verdict("r33-unjustified-approval", "APPROVE")));
+                });
+            var context = (gold.debug.windowstolinux.appapi.mod.ModContext) java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class<?>[] {gold.debug.windowstolinux.appapi.mod.ModContext.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("ai")) return service;
+                    try {
+                        return method.invoke(assisted.context, args);
+                    } catch (java.lang.reflect.InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
+            var rejected = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approveWithEvidence(
+                context, assisted.host, intent, command, fixture.task, fixture.model.configurationRevision, "AUTOMATIC", false, assisted.scope));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", rejected.problem().eventCode(), () -> String.valueOf(rejected.getCause()));
+            assertTrue(rejected.getCause().getMessage().contains("deferred source"));
+            assertEquals(0, assisted.hosts.get());
+            assertEquals(3, sentBytes.size());
+            assertEquals(1, refusedBytes.size());
+            assertTrue(refusedBytes.getFirst() > 69681);
+            assertTrue(sentBytes.getLast() <= 69681);
+            System.out.printf("R32_NODE_REPLAY width45=%s fixedEncoded=%d priorEncoded=%d fullEncoded=%d sentEncoded=%d cap=69681%n",
+                interpretation, sentBytes.getFirst(), sentBytes.get(1), refusedBytes.getFirst(), sentBytes.getLast());
+        }
     }
 
     @ParameterizedTest
@@ -1391,14 +1584,15 @@ class DeploymentToolchainReviewEvidenceTest {
             assertReviewDenied(approve);
             var initial = fixture.model.requests.getFirst();
             var facts = JSON.readTree(initial.messages().getLast().text());
-            var selection = facts.at("/" + PHASE + "/preparationSelection");
+            var selection = facts.at("/" + PHASE + "/nodePreparationSelection");
             String frame = initial.messages().get(1 + selection.path("ordinal").asInt()).text()
                 .substring(selection.path("headerCharacters").asInt());
             for (String marker : List.of("SHASUMS256.txt", "linux-x64.tar.gz", "def checksum_text(",
-                    "def extract(archive, destination):", "def discover_system(", "def verify_system(",
-                    "wtl_run_mirror_runtime() {", "class MirrorRedirect(", "do_handshake()",
+                    "archive traversal", "owned_directory(home)", "def verify_system(",
+                    "exec(compile(payload,", "class MirrorRedirect(", "do_handshake()",
                     "digest.hexdigest().lower() != expected.lower()", "os.replace(temporary, target)"))
-                assertTrue(frame.contains(marker), marker);
+                assertTrue(frame.contains(marker), marker + "\n" + frame);
+            assertFalse(frame.contains("wtl_run_mirror_runtime() {"));
             assertFalse(frame.contains("source_dependencies(layout)"), "Node's archive facts do not repeat the unrelated source-build branch");
             assertEquals("NODE", facts.at("/originalToolchainPreparation/ecosystem").asText());
             var points = new HashSet<String>();
@@ -1582,6 +1776,12 @@ class DeploymentToolchainReviewEvidenceTest {
             assertTrue(body.contains("--no-download"));
             assertTrue(body.contains("def mirror_system_command("));
             assertTrue(body.contains("if ecosystem == 'PYTHON':"));
+            for (String checked : List.of("RUBY_SCRATCH_BYTES = 1536 * 1024 * 1024",
+                "RUBY_SCRATCH_INODES = 96000", "RUBY_MEMORY_BYTES = 3 * 1024 * 1024 * 1024",
+                "MemorySwapMax=0", "require_ruby_resources(*resource_limits)",
+                "ruby_create_scratch(scratch, unit)", "ruby_remove_scratch(work / 'scratch', unit)")) {
+                assertTrue(body.contains(checked), checked);
+            }
         }
     }
 
@@ -2027,7 +2227,7 @@ class DeploymentToolchainReviewEvidenceTest {
         String selectionName = build ? "runtimeSelection" : apt ? "dependencyAptSelection"
             : dependency ? "dependencyRuntimeSelection" : "preparationSelection";
         String rangesName = build || dependency ? "selectedRuntimeRanges" : apt ? "selectedAptRanges" : "selectedPreparationRanges";
-        var selection = manifest.path(selectionName);
+        var selection = manifest.path(manifest.has("nodePreparationSelection") ? "nodePreparationSelection" : selectionName);
         if (selection.isObject()) {
             String text = evidence.messages().get(selection.path("ordinal").asInt()).text()
                 .substring(selection.path("headerCharacters").asInt());

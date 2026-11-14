@@ -40,9 +40,9 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "affc71dfe81ba0202d50cb411ae7236f104ee4eeaea451160c1ceb428468bbe0";
-    private static final String RUBY_SOURCE_SHA256 = "d49df25b00d10adca20d86e4b49089cde2408644772455c6e0b13a3dd4c39be0";
-    private static final String PYTHON_SOURCE_SHA256 = "217a3c1495dad0afbee402e41540cd12c5a455e1207999796451846819298c0b";
+    public static final String EXPECTED_SHA256 = "65686d1c5fe7dc22fdf4529bae7d14822477452826cbcbd52697570b89928d07";
+    private static final String RUBY_SOURCE_SHA256 = "fa20bea3aca95183d5e761ecdcddd84dd1309e4557b6a964a48e1868cc0167d9";
+    private static final String PYTHON_SOURCE_SHA256 = "2eff0d4e56d4e67e710f4186949b09b339824c6caebc4da80c39312e4427ee3b";
 
     /**
      * ROOT.
@@ -281,6 +281,26 @@ public final class DeploymentManagedHelperBundle {
 
     public static String helperSha256(DeploymentRemoteLayout layout) {
         return sha256(renderScript(layout).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Exact installed-helper ranges and entry for the standard build-run collector. */
+    public static Map<String, Object> standardBuildEntryFacts(DeploymentRemoteLayout layout) {
+        String helper = renderScript(layout);
+        String entry = renderBuildEntry(layout);
+        String entryDigest = sha256(entry.getBytes(StandardCharsets.UTF_8));
+        if (!helper.contains("\nbuild_entry_sha256=" + entryDigest + "\n"))
+            throw new IllegalStateException("Build entry differs from helper pin");
+        return Map.of(
+            "helperSha256", sha256(helper.getBytes(StandardCharsets.UTF_8)), "buildEntrySha256", entryDigest,
+            "entryAndStdinChecks", exactRange(helper, "    assert_root_owned_regular \"$helper_directory/build-entry\"",
+                "    chmod 400 -- \"$candidate/.build-script\"\n"),
+            "candidateSourceMounts", exactRange(helper,
+                "    if [ -e \"$candidate/.agent-mode\" ]; then\n        assert_root_owned_regular \"$candidate/.agent-mode\"\n        properties+=",
+                "    fi\n"),
+            "cleanEnvironmentLaunch", exactRange(helper, "    monitor_build_output \"$candidate\" \"$output\" systemd-run",
+                " || status=$?\n"),
+            "buildEntrySource", entry,
+            "meaning", "Exact installed controller ranges and complete build entry tied to the guarded helper and entry digests. The launcher clears inherited environment; entry exports Agent source paths only for its checked candidate mode. Review the actual executable stdin for configuration exports, the standard source-variable clear and bound archive extraction. These bytes are implementation evidence; live state and authority have their own checks.");
     }
 
     /** Supplies only the actual selected offline controls after verifying the full helper. */

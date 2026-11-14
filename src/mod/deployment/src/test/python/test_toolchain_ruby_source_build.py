@@ -286,6 +286,65 @@ class RubySourceBuildTest(unittest.TestCase):
                             validate(*args)
                         self.assertEqual(126, caught.exception.code)
 
+    def test_probe_requires_capped_readonly_private_tmpfs_and_cgroup(self):
+        source = ast.parse(self.ns['SOURCE_WORKER'])
+        scope = {}
+        exec(compile(source, '<source resource guard>', 'exec'), scope)
+        unit = self.ns['ruby_unit_name'](OPERATION_ID, 'probe')
+        mount = '32 20 0:9 / /tmp ro,nosuid,nodev,noexec - tmpfs tmpfs rw\n'
+        paths = {'cgroup': '0::/system.slice/' + unit + '\n',
+                 'memory.max': '268435456\n', 'memory.swap.max': '0\n', 'mountinfo': mount}
+        stat = types.SimpleNamespace(st_dev=9, st_ino=2)
+        args = (unit, '-', '-', '16777216', '256', '268435456')
+        for case, mountinfo, flags in (('valid', mount, 1), ('foreign-device', mount.replace('0:9', '0:8'), 1),
+                                       ('other-fs', mount.replace('- tmpfs', '- ext4'), 1), ('writable', mount, 0)):
+            with self.subTest(case=case), \
+                    mock.patch.object(pathlib.Path, 'read_text', autospec=True) as read, \
+                    mock.patch.object(os, 'stat', return_value=stat), \
+                    mock.patch.object(os, 'major', return_value=0, create=True), \
+                    mock.patch.object(os, 'minor', return_value=9, create=True), \
+                    mock.patch.object(os, 'ST_RDONLY', 1, create=True), \
+                    mock.patch.object(os, 'statvfs', create=True,
+                                      return_value=types.SimpleNamespace(f_blocks=4096, f_frsize=4096,
+                                                                         f_files=256, f_flag=flags)):
+                read.side_effect = lambda path, **_: mountinfo if path.name == 'mountinfo' else paths[path.name]
+                if case == 'valid':
+                    scope['require_ruby_resources'](*args)
+                else:
+                    with self.assertRaises(SystemExit) as caught:
+                        scope['require_ruby_resources'](*args)
+                    self.assertEqual(126, caught.exception.code)
+
+    def test_fixed_scratch_check_writes_and_links_in_source_and_staging_then_cleans(self):
+        scope = {}
+        exec(compile(self.ns['SOURCE_WORKER'], '<source scratch check>', 'exec'), scope)
+        release, stage = self.root / 'source-fixture', self.root / 'stage-fixture'
+        release.mkdir()
+        stage.mkdir()
+
+        def run(alias, cwd):
+            script = pathlib.Path(alias)
+            self.assertEqual(release, cwd)
+            self.assertEqual(b'#!/bin/sh\nexit 0\n', script.read_bytes())
+            self.assertTrue(os.path.samestat(script.stat(), script.with_name('check').stat()))
+
+        scope['command'] = mock.Mock(side_effect=run)
+        if os.name == 'nt':
+            def fixture_link(source, alias):
+                self.assertEqual(source.parent, alias.parent)
+                self.assertIn(source.parent.parent, (release, stage))
+                shutil.copyfile(source, alias)
+
+            with mock.patch.object(os, 'link', side_effect=fixture_link) as link, \
+                    mock.patch.object(os.path, 'samestat', return_value=True):
+                scope['verify_build_scratch'](release, stage)
+                self.assertEqual(2, link.call_count)
+        else:
+            scope['verify_build_scratch'](release, stage)
+        scope['command'].assert_called_once()
+        self.assertEqual([], list(release.iterdir()))
+        self.assertEqual([], list(stage.iterdir()))
+
     def test_worker_refuses_root_or_shared_namespace_before_starting_any_external_program(self):
         worker = compile(self.ns['RUBY_WORKER'], '<Ruby sandbox worker>', 'exec')
         arguments = ['', 'probe', 'net:[1]', 'mnt:[2]', '/protected/ruby', VERSION]
@@ -333,24 +392,36 @@ class RubySourceBuildTest(unittest.TestCase):
             (subprocess.CalledProcessError(77, 'private command'),
              b'configure: error: cannot run C compiled programs.', 110, 'compiled-program-cannot-run'),
             (subprocess.CalledProcessError(-9, 'private command'), b'', 111, 'configure-signalled'),
+            (subprocess.CalledProcessError(1, 'private command'), b'private path: Permission denied',
+             130, 'output-permission-denied'),
+            (subprocess.CalledProcessError(1, 'private command'), b'private path: Operation not permitted',
+             131, 'output-operation-not-permitted'),
+            (subprocess.CalledProcessError(1, 'private command'), b'private path: Read-only file system',
+             132, 'output-read-only-filesystem'),
+            (subprocess.CalledProcessError(1, 'private command'), b'private path: No space left on device',
+             133, 'output-storage-exhausted'),
+            (subprocess.CalledProcessError(1, 'private command'), b'private payload', 134, 'configure-nonzero'),
         )
-        original = tempfile.TemporaryFile
         for error, message, status, reason in cases:
             with self.subTest(status=status):
-                def run(argv, **options):
-                    self.assertEqual(options['stderr'], subprocess.STDOUT)
-                    options['stdout'].write(b'private payload\n' * 2000 + message + b'\n')
-                    options['stdout'].flush()
-                    raise error
-
-                with mock.patch.object(tempfile, 'TemporaryFile', lambda **kw: original(dir=self.root)), \
-                        mock.patch.object(subprocess, 'run', side_effect=run), self.assertRaises(SystemExit) as observed:
+                with mock.patch.object(subprocess, 'Popen') as start, self.assertRaises(SystemExit) as observed:
+                    if isinstance(error, OSError):
+                        start.side_effect = error
+                    else:
+                        start.return_value.stdout = io.BytesIO(message + b'\n' + b'private payload\n' * 2000)
+                        start.return_value.wait.return_value = error.returncode
                     worker['configure'](self.root, '/protected/ruby', [])
+                self.assertEqual(subprocess.STDOUT, start.call_args.kwargs['stderr'])
                 self.assertEqual(status, observed.exception.code)
                 diagnostic = self.ns['ruby_diagnostic'](self.launcher_observation(status), 'build')
                 self.assertEqual('ruby-build-source-configure', diagnostic['stage'])
                 self.assertIn('configure-failure=' + reason + '\n', diagnostic['stdout'])
                 self.assertNotIn('private', str(diagnostic))
+        process = mock.MagicMock()
+        process.stdout.readline.side_effect = OSError(errno.EIO, 'private pipe detail')
+        with mock.patch.object(subprocess, 'Popen', return_value=process), self.assertRaises(SystemExit) as observed:
+            worker['configure'](self.root, '/protected/ruby', [])
+        self.assertEqual(135, observed.exception.code)
 
     def test_missing_ambiguous_or_mismatching_manager_evidence_stays_at_launcher_stage(self):
         convert = self.ns['ruby_diagnostic']
@@ -372,8 +443,16 @@ class RubySourceBuildTest(unittest.TestCase):
         self.assertEqual('ruby-build-launcher', convert(cancelled, 'build')['stage'])
 
     def test_worker_reports_probe_child_failure_without_echoing_arguments(self):
-        worker = compile(self.ns['RUBY_WORKER'], '<Ruby sandbox worker>', 'exec')
-        arguments = ['', 'probe', 'net:[1]', 'mnt:[2]', '/protected/ruby', VERSION]
+        source = ast.parse(self.ns['RUBY_WORKER'])
+        index = next(i for i, node in enumerate(source.body) if isinstance(node, ast.Try)) - 1
+        declarations = ast.Module(body=source.body[:index], type_ignores=[])
+        state = {}
+        exec(compile(declarations, '<Ruby sandbox worker declarations>', 'exec'), state)
+        state['require_ruby_resources'] = mock.Mock()
+        source.body = source.body[index:]
+        worker = compile(source, '<Ruby sandbox worker>', 'exec')
+        arguments = ['', 'probe', 'net:[1]', 'mnt:[2]', '/protected/ruby', VERSION,
+                     'wtl-ruby-probe-fixture.service', '-', '-', '16777216', '256', '268435456']
         status = 'NoNewPrivs: 1\nSeccomp: 2\nCapEff: 0\nCapPrm: 0\nCapBnd: 0\n'
         child_failure = subprocess.CalledProcessError(2, ['sample-private-value'])
         with mock.patch.object(self.ns['sys'], 'argv', arguments), \
@@ -387,10 +466,11 @@ class RubySourceBuildTest(unittest.TestCase):
                 mock.patch('socket.socket', side_effect=PermissionError), \
                 mock.patch.object(subprocess, 'run', side_effect=child_failure) as run, \
                 self.assertRaises(SystemExit) as observed:
-            exec(worker, {})
+            exec(worker, state)
         self.assertEqual(103, observed.exception.code)
         self.assertNotIn('sample-private-value', str(observed.exception))
         self.assertEqual('/protected/ruby/bin/ruby', run.call_args.args[0][0])
+        state['require_ruby_resources'].assert_called_once_with(*arguments[-6:])
 
     def test_protected_diagnose_only_keeps_ruby_evidence_and_restores_previous_recorder(self):
         namespace = self.ns

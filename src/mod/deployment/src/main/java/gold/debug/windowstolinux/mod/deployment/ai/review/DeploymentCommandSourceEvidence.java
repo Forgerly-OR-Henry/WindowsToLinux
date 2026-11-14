@@ -49,10 +49,13 @@ public final class DeploymentCommandSourceEvidence {
     private static final String INSTALLED_HELPER_SOURCE = "/" + PROJECTION + "/installedHelperSource";
     private static final String BINDING_SELECTION = "/" + PROJECTION + "/bindingSelection";
     private static final String PREPARATION_SELECTION = "/" + PROJECTION + "/preparationSelection";
+    private static final String NODE_PREPARATION_SELECTION = "/" + PROJECTION + "/nodePreparationSelection";
     private static final String PUBLIC_MIRROR_POLICY = "/mirrorTransport/frozenPolicy";
     private static final String PREPARE = "deployment.toolchain.prepare.v1";
     private static final String NODE_PREPARE_INSTRUCTION = """
-        The confirmed NODE prepare contract uses NODE_METADATA and NODE_DISTRIBUTION. Review the guarded SYSTEM reuse or checked linux-x64 archive flow and the selected mirror route, TLS and digest checks. Use source pages for any unresolved reachable transport logic. This invocation selects no source build, dependency-repository or registry entrypoint.
+        Review the exact current NODE preparation and original authority. The helper loads the pinned mirror runtime for NODE_METADATA and NODE_DISTRIBUTION. Compare the ordered public routes to the actual resolver, TLS, redirect and SHA256 checks. The staged wrapper defines other entrypoints; only follow operations reachable from the literal prepare arguments. Check the guarded lock, SYSTEM reuse, bounded archive extraction, probes and diagnostics.
+        selectedPreparationRanges maps exact text in nodePreparationSelection to its original UTF-16 offsets. startCharacter is relative to the frame header end. The broader preparationSelection and complete original facts, helper, runtime, generated shell and staged policy remain readable. Use the current snapshotSha256, pointer and UTF-16 coordinates for missing reached source, up to eight evidence calls separately from the verdict. Retained source appears after its JSON header in range order.
+        Restore exactAction from ordered segments. LITERAL copies text; SOURCE_TEXT copies source; SHELL_SINGLE_QUOTE uses Bash single quoting. Independently verify arguments, limits, effects and authority. Deny unsafe effects or insufficient evidence and submit a fresh native submit_result alone.
         """;
     private static final String MIRROR_BOOTSTRAP_SHELL = "/" + PROJECTION + "/mirrorBootstrapShell";
     private static final String MIRROR_POLICY_SOURCE = "/" + PROJECTION + "/mirrorPolicySource";
@@ -126,7 +129,7 @@ public final class DeploymentCommandSourceEvidence {
 
     private static final String DEPENDENCY_APT_INSTRUCTION = """
         Restore exactAction and completeExecutableInput from ordered segments. LITERAL copies text; SOURCE_TEXT copies the reference; SHELL_SINGLE_QUOTE applies Bash single quoting; JSON_STRING encodes source as a JSON string with double quotes. Review exact arguments, resource limits, targets, original authority, and effects independently. Digests identify bytes and grant no permission.
-        The prior typed host probe observed APT. selectedAptRanges maps exact excerpts in dependencyAptSelection to the worker, runtime and decoded BOOTSTRAP_SHELL used by mirror_system_command. startCharacter is relative to the frame header end; offset through next gives coordinates in the referenced source. Inspect lifecycle, package admission, repository authentication, and frozen installation. The root worker selects the current OS again; the original APT/DNF effect targets still apply. Read necessary alternate paths and any missing ranges from the original sources.
+        The prior typed host probe observed APT. selectedAptRanges maps exact excerpts in dependencyAptSelection to the worker, runtime and decoded BOOTSTRAP_SHELL used by mirror_system_command. startCharacter is relative to the frame header end; offset through next gives coordinates in the referenced source. Inspect lifecycle, package admission, repository authentication, dpkg configuration and registered hook file checks, and frozen installation. The protected OS package database is a trust assumption. Authenticated packages can still run maintainer scripts and triggers within the root transaction. The worker selects the current OS again; the original APT/DNF effect targets still apply. Read necessary alternate paths and any missing ranges from the original sources.
         Request missing exact bytes with snapshotSha256, pointer, offset and limit from 1 through 8000. Read up to eight ranges in one response. Exact source pages and retained frames put the original text after the JSON header in range order. Submit a fresh native submit_result alone. Deny unsafe effects or insufficient evidence.
         """;
 
@@ -240,9 +243,18 @@ public final class DeploymentCommandSourceEvidence {
 
     private static List<String> helperLocations(ObjectNode current, boolean binding) throws IOException {
         if (binding) return BINDING_HELPER_LOCATIONS;
-        if (!preparationEcosystem(current).equals("RUST")) return HELPER_LOCATIONS;
+        return switch (preparationEcosystem(current)) {
+            case "RUST" -> combinedLocations(RUST_HELPER_LOCATIONS);
+            case "PYTHON" -> combinedLocations(List.of("def open_preparation_lock(",
+                "def require_ruby_resources(", "def ruby_scratch_mount(", "def ruby_mount_path(",
+                "def ruby_publish(", "def ruby_link_target(", "def verify_system(", "def materialize_system("));
+            default -> HELPER_LOCATIONS;
+        };
+    }
+
+    private static List<String> combinedLocations(List<String> extra) {
         var locations = new ArrayList<>(HELPER_LOCATIONS);
-        locations.addAll(RUST_HELPER_LOCATIONS);
+        locations.addAll(extra);
         return locations;
     }
 
@@ -251,8 +263,37 @@ public final class DeploymentCommandSourceEvidence {
                                                 Map<String, NavigableMap<Integer, Integer>> initialRanges) throws IOException {
         boolean diagnosed = current.has("originalToolchainPreparation");
         String ecosystem = preparationEcosystem(current);
+        if (ecosystem.equals("NODE")) {
+            // Preserve the broader view and its exact page coordinates while sending a smaller execution slice.
+            String broad = preparationSelection(current, sources, new LinkedHashMap<>(),
+                JSON.createArrayNode(), ecosystem, diagnosed);
+            sources.put(PREPARATION_SELECTION, broad);
+            manifest.set("preparationSelection", pagedSource(PREPARATION_SELECTION, broad, List.of()));
+            var body = new StringBuilder();
+            var selected = manifest.putArray("selectedPreparationRanges");
+            String helper = sources.get(INSTALLED_HELPER_SOURCE);
+            appendSelection(body, selected, initialRanges, INSTALLED_HELPER_SOURCE, helper,
+                PreparationSourceRange.nodeHelper(helper, diagnosed));
+            String runtime = sources.get(MIRROR_RUNTIME);
+            boolean credentials = current.at(PUBLIC_MIRROR_POLICY + "/points").findValues("credentialManaged").stream()
+                .anyMatch(JsonNode::asBoolean);
+            appendSelection(body, selected, initialRanges, MIRROR_RUNTIME, runtime, PreparationSourceRange.nodeTransfer(runtime, credentials));
+            putSelectionFrame(manifest, messages, snapshot, sources, NODE_PREPARATION_SELECTION, "nodePreparationSelection", body);
+            return;
+        }
+        String source = preparationSelection(current, sources, initialRanges,
+            manifest.putArray("selectedPreparationRanges"), ecosystem, diagnosed);
+        sources.put(PREPARATION_SELECTION, source);
+        var frame = sourceFrame(messages, snapshot, PREPARATION_SELECTION, source);
+        manifest.withArray("frames").add(frame);
+        manifest.set("preparationSelection", frame);
+    }
+
+    private static String preparationSelection(ObjectNode current, Map<String, String> sources,
+                                               Map<String, NavigableMap<Integer, Integer>> initialRanges,
+                                               com.fasterxml.jackson.databind.node.ArrayNode selected,
+                                               String ecosystem, boolean diagnosed) throws IOException {
         var body = new StringBuilder();
-        var selected = manifest.putArray("selectedPreparationRanges");
         String helper = sources.get(INSTALLED_HELPER_SOURCE);
         appendSelection(body, selected, initialRanges, INSTALLED_HELPER_SOURCE, helper,
             PreparationSourceRange.helper(helper, ecosystem, diagnosed));
@@ -271,11 +312,7 @@ public final class DeploymentCommandSourceEvidence {
             .anyMatch(JsonNode::asBoolean);
         appendSelection(body, selected, initialRanges, MIRROR_RUNTIME, runtime,
             PreparationSourceRange.transfer(runtime, ecosystem, credentials, packageManager));
-        String source = body.toString();
-        sources.put(PREPARATION_SELECTION, source);
-        var frame = sourceFrame(messages, snapshot, PREPARATION_SELECTION, source);
-        manifest.withArray("frames").add(frame);
-        manifest.set("preparationSelection", frame);
+        return body.toString();
     }
 
     private static void projectPreparationPolicy(ObjectNode original, ObjectNode projected) throws IOException {
@@ -603,6 +640,8 @@ public final class DeploymentCommandSourceEvidence {
         sourceBodies.put(DEPENDENCY_WORKER, worker);
         var workerDescriptor = apt ? pagedSource(DEPENDENCY_WORKER, worker, List.of("def dependency_worker(",
             "def dependency_supervise(", "def dependency_open_core_events(", "def dependency_profile(",
+            "\nHOOK_OWNERS = ", "def dependency_bytes(", "def dependency_registered(", "def dependency_apt_hook_owners(",
+            "def dependency_apt_binaries(", "def dependency_apt_options(", "def dependency_validate_dpkg(",
             "def dependency_validate_apt(", "def dependency_validate_dnf(", "def dependency_transaction("))
             : sourceFrame(messages, snapshot, DEPENDENCY_WORKER, worker);
         if (!apt) manifest.withArray("frames").add(workerDescriptor);
@@ -686,7 +725,7 @@ public final class DeploymentCommandSourceEvidence {
             }
             suppliedInline(DEPENDENCY_APT_SELECTION);
             suppliedInline(BINDING_SELECTION);
-            suppliedInline(PREPARATION_SELECTION);
+            suppliedInline(nodePreparation ? NODE_PREPARATION_SELECTION : PREPARATION_SELECTION);
             if (buildReview())
                 for (String pointer : List.of(BUILD_BODY, BUILD_RUNTIME_SELECTION)) suppliedInline(pointer);
             initialRanges.forEach((pointer, ranges) -> delivered.put(pointer, new TreeMap<>(ranges)));
@@ -995,7 +1034,7 @@ public final class DeploymentCommandSourceEvidence {
 
     public String instructions() {
         if (buildReview()) return BUILD_INSTRUCTION;
-        if (preparationReview()) return PREPARE_INSTRUCTION + (nodePreparationReview() ? NODE_PREPARE_INSTRUCTION : "");
+        if (preparationReview()) return nodePreparationReview() ? NODE_PREPARE_INSTRUCTION : PREPARE_INSTRUCTION;
         if (dependencyReview() && sourceBodies.containsKey(DEPENDENCY_APT_SELECTION)) return DEPENDENCY_APT_INSTRUCTION;
         if (dependencyReview()) return INSTRUCTION + DEPENDENCY_INSTRUCTION;
         return bindingReview() ? BIND_INSTRUCTION : INSTRUCTION;

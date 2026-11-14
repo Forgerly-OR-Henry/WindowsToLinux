@@ -36,7 +36,8 @@ class PythonSourceBuildTest(unittest.TestCase):
         self.seal = mock.Mock()
         self.ns.update(ROOT=self.root, owned_directory=mock.Mock(), tracked_sync_directory=mock.Mock(),
                        tracked_regular=lambda p, limit: p.read_bytes(), source_dependencies=mock.Mock(),
-                       ruby_require_settled=mock.Mock(), python_source_unit=self.unit, python_source_publish=self.seal)
+                       ruby_require_settled=mock.Mock(), ruby_create_scratch=mock.Mock(side_effect=lambda p, _: p.mkdir()),
+                       ruby_remove_scratch=mock.Mock(), python_source_unit=self.unit, python_source_publish=self.seal)
         self.ns['download'] = mock.Mock(side_effect=self.download)
         if os.name == 'nt':
             chmod = pathlib.Path.chmod
@@ -64,6 +65,7 @@ class PythonSourceBuildTest(unittest.TestCase):
                 stage, archive, gem = mounts
                 self.assertTrue(unit_id.startswith('wtl-python-build-'))
                 self.assertTrue(stage.is_dir())
+                self.assertEqual('scratch', stage.parent.name)
                 self.assertIsNone(gem)
                 self.assertEqual(b'fixture archive', archive.read_bytes())
                 self.seal.assert_not_called()
@@ -80,6 +82,8 @@ class PythonSourceBuildTest(unittest.TestCase):
         self.assertEqual(DIGEST, record['sha256'])
         self.assertEqual(2, self.unit.call_count)
         self.ns['source_dependencies'].assert_called_once_with('python')
+        self.ns['ruby_create_scratch'].assert_called_once()
+        self.ns['ruby_remove_scratch'].assert_called_once_with(*self.ns['ruby_create_scratch'].call_args.args)
         self.ns['run'].assert_not_called()
         self.assertEqual([], list((self.root / 'work').iterdir()))
 
@@ -109,6 +113,26 @@ class PythonSourceBuildTest(unittest.TestCase):
             self.ns['probe']('PYTHON', directory, VERSION)
             self.assertEqual((directory, VERSION), self.unit.call_args.args[1:])
 
+    def test_python_probe_launcher_has_its_own_lower_limits_without_writable_binds(self):
+        ns = self.ns
+        unit = ns['source_unit_name'](OPERATION, 'probe', 'python')
+        unallocated = mock.Mock(side_effect=KeyError)
+        ns.update(ruby_run=mock.Mock())
+        with mock.patch.dict('sys.modules', {'grp': types.SimpleNamespace(getgrnam=unallocated),
+                                            'pwd': types.SimpleNamespace(getpwnam=unallocated)}), \
+                mock.patch.object(os, 'readlink', side_effect=('net:[1]', 'mnt:[2]')):
+            ns['source_unit'](unit, '/usr', VERSION, 'python', ns['PYTHON_SOURCE_WORKER'], None)
+        command, role, ecosystem = ns['ruby_run'].call_args.args
+        self.assertEqual(('probe', 'python'), (role, ecosystem))
+        self.assertIn('--property=MemoryMax=268435456', command)
+        self.assertIn('--property=MemorySwapMax=0', command)
+        self.assertIn('--property=PrivateTmp=no', command)
+        self.assertFalse(any(arg.startswith('--property=BindPaths=') for arg in command))
+        mounted = next(arg for arg in command if arg.startswith('--property=TemporaryFileSystem=/tmp:'))
+        for path in ('/tmp', '/var/tmp', '/dev/shm'):
+            self.assertIn(path + ':ro,nosuid,nodev,noexec,size=16777216,nr_inodes=256', mounted)
+        self.assertEqual([unit, '-', '-', '16777216', '256', '268435456'], command[-6:])
+
     def test_python_unit_binds_the_exact_staging_prefix_and_selects_its_own_worker(self):
         ns = self.ns
         stage = self.root / 'stage'
@@ -126,23 +150,33 @@ class PythonSourceBuildTest(unittest.TestCase):
         self.assertEqual(('build', 'python'), (role, ecosystem))
         self.assertIn('--property=DynamicUser=yes', init)
         self.assertIn('--property=PrivateNetwork=yes', init)
-        self.assertIn('--property=BindReadOnlyPaths=' + str(archive) + ':/tmp/wtl-toolchain-release', init)
-        self.assertIn('--property=BindPaths=' + str(stage) + ':' + prefix, init)
-        self.assertIn('--property=ReadWritePaths=' + prefix, init)
+        self.assertIn('--property=MemoryMax=3221225472', init)
+        self.assertIn('--property=MemorySwapMax=0', init)
+        self.assertIn('--property=BindReadOnlyPaths=' + str(archive) + ':/tmp/wtl-toolchain-release '
+                      + str(stage.parent / 'readonly') + ':/var/tmp ' + str(stage.parent / 'readonly') + ':/dev/shm', init)
+        self.assertIn('--property=BindPaths=' + str(stage) + ':' + prefix + ' ' + str(stage.parent) + ':/tmp', init)
+        self.assertIn('--property=ReadWritePaths=' + prefix + ' /tmp', init)
         worker = init[init.index('--') + 1:]
         self.assertEqual(['/usr/bin/python3', '-I', '-S', '-B', '-c'], worker[:5])
         self.assertEqual(ns['PYTHON_SOURCE_WORKER'], worker[5])
+        scratch = stage.parent.stat()
         self.assertEqual(['build', 'net:[1]', 'mnt:[2]', prefix, VERSION, str(stage.stat().st_dev), str(stage.stat().st_ino),
-                          'standard'], worker[6:])
+                          'standard', 'wtl-python-build-01234567890123456789012345678901.service',
+                          str(scratch.st_dev), str(scratch.st_ino), '1610612736', '96000', '3221225472'], worker[6:])
 
     def test_worker_validates_isolation_before_configure_and_runs_fixed_commands(self):
-        worker = compile(self.ns['PYTHON_SOURCE_WORKER'], '<CPython source worker>', 'exec')
-        argv = ['', 'build', 'net:[1]', 'mnt:[2]', '/protected/python', VERSION, '42', '7', 'standard']
+        tree = ast.parse(self.ns['PYTHON_SOURCE_WORKER'])
+        definitions = self.make_worker_functions()
+        definitions.update(require_ruby_resources=mock.Mock(), verify_build_scratch=mock.Mock())
+        tree.body = tree.body[next(i for i, node in enumerate(tree.body) if isinstance(node, ast.Try)) - 1:]
+        worker = compile(tree, '<CPython source worker>', 'exec')
+        argv = ['', 'build', 'net:[1]', 'mnt:[2]', '/protected/python', VERSION, '42', '7', 'standard',
+                'wtl-python-build-test.service', '5', '6', '1610612736', '96000', '3221225472']
         with mock.patch.object(self.ns['sys'], 'argv', argv), \
                 mock.patch.object(os, 'geteuid', return_value=0, create=True), \
                 mock.patch.object(os, 'getegid', return_value=0, create=True), \
                 mock.patch.object(subprocess, 'run') as run, self.assertRaises(SystemExit) as error:
-            exec(worker, {})
+            exec(worker, definitions)
         self.assertEqual(90, error.exception.code)
         run.assert_not_called()
 
@@ -165,7 +199,9 @@ class PythonSourceBuildTest(unittest.TestCase):
                 mock.patch.object(pathlib.Path, 'is_dir', return_value=True), \
                 mock.patch.object(subprocess, 'Popen', return_value=process) as popen, \
                 mock.patch.object(subprocess, 'run') as run:
-            exec(worker, {})
+            exec(worker, definitions)
+        definitions['require_ruby_resources'].assert_called_once_with(*argv[-6:])
+        definitions['verify_build_scratch'].assert_called_once_with(release, '/protected/python')
         calls = [entry.args[0] for entry in run.call_args_list]
         self.assertEqual(['/usr/bin/tar', str(release / 'configure'), '/usr/bin/make',
                           '/protected/python/bin/python3', '/protected/python/bin/python3'], [entry[0] for entry in calls])
@@ -190,7 +226,14 @@ class PythonSourceBuildTest(unittest.TestCase):
             (b'as: warning: private prefix: No space left on device\n', 118),
             (b'make: File size limit exceeded (core dumped)\n', 119),
             (b'sh: fork: Resource temporarily unavailable\n', 120),
-            (b'cc: /tmp/private: Permission denied\n', 121),
+            (b'cc: /tmp/private: Permission denied\n', 136),
+            (b'shell: Operation not permitted\n', 137),
+            (b'cc: /tmp/private: Read-only file system\n', 138),
+            (b'/bin/sh: 1: ./Programs/_freeze_module: Permission denied\n', 139),
+            (b'/bin/sh: 1: ./_bootstrap_python: Permission denied\n', 140),
+            (b'/bin/sh: 1: ./python: Permission denied\n', 141),
+            (b'/usr/bin/ld: cannot open output file private-value: Permission denied\n', 142),
+            (b"as: Fatal error: can't create private-value: Permission denied\n", 143),
             (b'gcc: fatal error: Killed signal terminated program cc1\n', 122),
             (b'collect2: error: ld returned 1 exit status\n', 123),
             (b"make: *** No rule to make target 'private path'.  Stop.\n", 124),
@@ -202,6 +245,8 @@ class PythonSourceBuildTest(unittest.TestCase):
                 self.assertEqual(status, classify(io.BytesIO(line)))
         self.assertEqual(118, classify(io.BytesIO(b'cc: compiler.c:10: error: private value\n'
                                                   b'/tmp/private: No space left on device\n')))
+        self.assertEqual(121, classify(io.BytesIO(b'/bin/sh: 1: ./python: Permission denied\n'
+                                                  b'cc: /tmp/private: Read-only file system\n')))
 
     def test_make_launch_errors_and_child_signals_have_precedence_over_child_output(self):
         make = self.make_worker_functions()['make_python']
@@ -278,6 +323,21 @@ class PythonSourceBuildTest(unittest.TestCase):
         self.assertEqual([mock.call('wtl-python-build-' + OPERATION.replace('-', '') + '.service'),
                           mock.call('wtl-python-probe-' + probe_id.replace('-', '') + '.service')],
                          self.ns['ruby_require_settled'].call_args_list)
+
+    def test_python_tracked_cleanup_retains_work_if_mount_ownership_is_unproven(self):
+        directory = self.root / 'operation'
+        work = directory / 'work'
+        scratch = work / 'scratch'
+        scratch.mkdir(parents=True)
+        state = {'processes': [], 'selected': None}
+        operation = types.SimpleNamespace(directory=directory, state=state, save=mock.Mock(),
+                                          request={'kind': 'PREPARE', 'operationId': OPERATION, 'parameters': {'ecosystem': 'PYTHON'}})
+        self.ns['ruby_remove_scratch'].side_effect = self.ns['PreparationFailure']('ownership', 'foreign scratch')
+        with self.assertRaises(self.ns['PreparationFailure']):
+            self.ns['tracked_cleanup'](operation)
+        self.assertTrue(work.is_dir())
+        self.ns['ruby_remove_scratch'].assert_called_once_with(scratch, self.ns['source_unit_name'](OPERATION, 'build', 'python'))
+        operation.save.assert_not_called()
 
     @unittest.skipUnless(os.name == 'posix' and hasattr(os, 'O_NOFOLLOW'), 'requires POSIX no-follow descriptors')
     def test_promoted_python_alias_resolves_only_to_private_copied_executable(self):

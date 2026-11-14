@@ -99,6 +99,7 @@ public final class DeploymentCommandEvidence {
                     new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-build", collector.get("candidateRoot").toString())))
                     throw new IllegalArgumentException("Build collector candidate target differs");
                 facts.put("buildCollector", collector);
+                facts.put("standardBuildEntry", DeploymentManagedHelperBundle.standardBuildEntryFacts(layout));
                 if ("ordinary-offline".equals(collector.get("engine")))
                     facts.put("offlineBuildIsolation", DeploymentManagedHelperBundle.offlineBuildIsolationFacts(layout));
             }

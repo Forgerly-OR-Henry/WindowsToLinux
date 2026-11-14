@@ -30,6 +30,15 @@ class DeploymentBuildCollectorEvidenceRegressionTest {
         assertEquals("ordinary", facts.at("/buildCollector/engine").asText());
         assertFalse(facts.path("buildCollector").has("verifiedIsolation"));
         assertFalse(facts.path("buildCollector").has("commandGrant"));
+        var entry = facts.path("standardBuildEntry");
+        assertEquals(facts.path("installedHelperSha256").asText(), entry.path("helperSha256").asText());
+        assertEquals(facts.path("installedBuildEntrySha256").asText(), entry.path("buildEntrySha256").asText());
+        assertEquals(sha256(entry.path("buildEntrySource").asText()), entry.path("buildEntrySha256").asText());
+        assertTrue(entry.path("entryAndStdinChecks").asText().contains("reject build-entry-identity"));
+        assertTrue(entry.path("entryAndStdinChecks").asText().contains("reject build-script-identity"));
+        assertTrue(entry.path("cleanEnvironmentLaunch").asText().contains("/usr/bin/env -i PATH="));
+        assertTrue(entry.path("candidateSourceMounts").asText().contains("InaccessiblePaths=$mutable/source.tar.gz"));
+        assertTrue(entry.path("buildEntrySource").asText().contains("export WTL_SOURCE=\"$mutable/input-source\" WTL_OUTPUT=\"$mutable/source\""));
     }
 
     @ParameterizedTest
@@ -78,6 +87,11 @@ class DeploymentBuildCollectorEvidenceRegressionTest {
         var method = MavenBuildWriter.class.getDeclaredMethod("prepareMaven");
         method.setAccessible(true);
         return (String) method.invoke(null);
+    }
+
+    private static String sha256(String source) throws Exception {
+        return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+            .digest(source.getBytes(StandardCharsets.UTF_8)));
     }
 
     private JsonNode facts(String mutation, boolean custom) throws Exception {

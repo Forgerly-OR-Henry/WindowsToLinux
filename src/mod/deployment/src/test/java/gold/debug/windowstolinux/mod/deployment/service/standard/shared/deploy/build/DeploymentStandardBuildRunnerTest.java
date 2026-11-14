@@ -26,6 +26,7 @@ import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
@@ -148,8 +149,10 @@ class DeploymentStandardBuildRunnerTest extends DeploymentRuntimeFixture {
             var catalog = DeploymentToolchainCatalog.defaults();
             RemoteSession session = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
                 new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("facts"))
+                        return new RemoteFacts("linux", "amd64", "SHA256:" + "A".repeat(43));
                     if (!method.getName().equals("execute"))
-                        throw new AssertionError("Borrowed session must not be closed or inspected");
+                        throw new AssertionError("Unexpected borrowed session operation: " + method.getName());
                     calls.incrementAndGet();
                     CommandRequest command = (CommandRequest) args[0];
                     String script = command.script();
@@ -157,12 +160,16 @@ class DeploymentStandardBuildRunnerTest extends DeploymentRuntimeFixture {
                         script = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedBody(script);
                     if (script.contains("build-preflight"))
                         return reply("");
-                    if (script.contains("prepare-toolchains 'prepare'")) {
+                    if (script.contains("prepare-toolchains 'prepare-diagnosed'")) {
+                        var original = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics
+                            .decode(command.stdin()).arguments();
+                        assertEquals("prepare", original.get(0));
+                        assertEquals("GO", original.get(1));
                         if (scenario == ScenarioType.WRONG_BRANCH)
                             return reply("TOOLCHAIN=GO|9.99.1|/usr/local/lib/windowstolinux/toolchains/versions/go-"
                                 + "b".repeat(64) + "|MANAGED|https://official.example/go|" + "b".repeat(64)
                                 + "\n");
-                        String version = script.contains("'1.25'") ? "1.25.1" : alternative ? "1.24.9" : "1.24.1";
+                        String version = original.get(2).equals("1.25") ? "1.25.1" : alternative ? "1.24.9" : "1.24.1";
                         return reply("TOOLCHAIN=GO|" + version
                             + "|/usr/local/lib/windowstolinux/toolchains/versions/go-" + "b".repeat(64)
                             + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n");
@@ -177,9 +184,17 @@ class DeploymentStandardBuildRunnerTest extends DeploymentRuntimeFixture {
                     }
                     assertTrue(script.startsWith("exec /usr/bin/python3 -I -c "));
                     assertEquals(65536, command.outputLimitBytes());
-                    assertTrue(new String(command.stdin(), StandardCharsets.UTF_8).contains("WTL_GO_VERSION"));
-                    assertTrue(new String(command.stdin(), StandardCharsets.UTF_8).contains("BUILD_MARKER"));
-                    assertFalse(new String(command.stdin(), StandardCharsets.UTF_8).contains("RUNTIME_MARKER"));
+                    String body = new String(command.stdin(), StandardCharsets.UTF_8);
+                    assertTrue(body.contains("WTL_GO_VERSION"));
+                    assertTrue(body.contains("BUILD_MARKER"));
+                    assertFalse(body.contains("RUNTIME_MARKER"));
+                    int clear = body.indexOf("builtin unset -v WTL_AGENT_SOURCE WTL_SOURCE WTL_OUTPUT\n");
+                    assertTrue(clear > body.indexOf("export WTL_GO_VERSION="));
+                    assertTrue(clear < body.indexOf("if [ -n \"${WTL_AGENT_SOURCE:-}\" ]; then"));
+                    for (String name : List.of("WTL_AGENT_SOURCE", "WTL_SOURCE", "WTL_OUTPUT")) {
+                        int export = body.indexOf("export " + name + "='reviewed-build-value'");
+                        assertTrue(export >= 0 && export < clear, name);
+                    }
                     int buildNumber = builds.incrementAndGet();
                     if (scenario == ScenarioType.FIRST_BUILD_UNKNOWN)
                         return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
@@ -220,6 +235,12 @@ class DeploymentStandardBuildRunnerTest extends DeploymentRuntimeFixture {
                                     List.of(new DeploymentConfigEntry("BUILD_MARKER",
                                             DeploymentConfigScopeType.BUILD,
                                             new DeploymentConfigValue.Text("reviewed")),
+                                         new DeploymentConfigEntry("WTL_AGENT_SOURCE", DeploymentConfigScopeType.BUILD,
+                                             new DeploymentConfigValue.Text("reviewed-build-value")),
+                                         new DeploymentConfigEntry("WTL_SOURCE", DeploymentConfigScopeType.BUILD,
+                                             new DeploymentConfigValue.Text("reviewed-build-value")),
+                                         new DeploymentConfigEntry("WTL_OUTPUT", DeploymentConfigScopeType.BUILD,
+                                             new DeploymentConfigValue.Text("reviewed-build-value")),
                                         new DeploymentConfigEntry("RUNTIME_MARKER",
                                             DeploymentConfigScopeType.RUNTIME,
                                             new DeploymentConfigValue.Text(

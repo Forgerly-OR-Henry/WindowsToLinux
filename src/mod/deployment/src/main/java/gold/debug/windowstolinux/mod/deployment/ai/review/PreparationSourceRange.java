@@ -14,6 +14,7 @@ record PreparationSourceRange(String section, int offset, int next) {
         var ranges = new ArrayList<PreparationSourceRange>();
         boolean rust = ecosystem.equals("RUST");
         boolean node = ecosystem.equals("NODE");
+        boolean pythonSource = ecosystem.equals("PYTHON");
         ranges.add(between(helper, "shellStartup", "#!/bin/bash -p\n", "\nhelper_path="));
         ranges.add(between(helper, "startupOwnership", "require_root() {\n", "\nrequire_app() {"));
         ranges.add(between(helper, "prepareDispatch", "    prepare-toolchains)\n", "    retain)"));
@@ -22,8 +23,11 @@ record PreparationSourceRange(String section, int offset, int next) {
         ranges.add(between(helper, "releaseDownloadPoint", "def release(ecosystem, branch, exact):",
             "\n    if ecosystem == '", release));
         ranges.add(selectedRelease(helper, ecosystem, release));
-        for (String function : List.of("task_mirrors", "source_origin", "source_url", "toolchain_point", "fetch", "json_at", "download",
-            "open_preparation_lock", "prepare", "owned_directory")) {
+        var common = pythonSource
+            ? List.of("task_mirrors", "fetch", "download", "prepare")
+            : List.of("task_mirrors", "source_origin", "source_url", "toolchain_point", "fetch", "json_at", "download",
+                "open_preparation_lock", "prepare", "owned_directory");
+        for (String function : common) {
             ranges.add(python(helper, "def " + function + "("));
         }
         if (!rust) ranges.add(python(helper, "def reuse_system("));
@@ -45,7 +49,7 @@ record PreparationSourceRange(String section, int offset, int next) {
             if (java || node) ranges.add(python(helper, "def preparation_lock("));
         } else if (rust) {
             ranges.addAll(rustPreparation(helper, diagnosed));
-        } else if (ecosystem.equals("PYTHON")) {
+        } else if (pythonSource) {
             ranges.addAll(pythonSourcePreparation(helper));
         } else {
             ranges.add(python(helper, "def install(ecosystem, identity, url, algorithm, expected, layout):"));
@@ -56,6 +60,9 @@ record PreparationSourceRange(String section, int offset, int next) {
             if (archive) {
                 ranges.add(between(helper, "preparationDiagnosticRun", "def installation_diagnostic_main(args, raw=None):",
                     "\n    owned_directory(ROOT)\n"));
+            } else if (pythonSource) {
+                ranges.add(between(helper, "sourceDiagnosticInvocation", "def installation_diagnostic_main(args, raw=None):",
+                    "\n    owned_directory(ROOT)\n"));
             } else ranges.add(python(helper, "def installation_diagnostic_main("));
             ranges.add(between(helper, "diagnosticDispatch", "def main(args):\n",
                 "    if args and args[0] in ('prepare-tracked'"));
@@ -64,10 +71,12 @@ record PreparationSourceRange(String section, int offset, int next) {
             ranges.add(python(helper, "def source_dependencies("));
         if (ecosystem.equals("RUBY")) {
             ranges.addAll(sourceIsolation(helper));
+            ranges.add(python(helper, "def ruby_mount_path("));
+            ranges.add(python(helper, "def ruby_publish("));
+            ranges.add(python(helper, "def ruby_link_target("));
             ranges.add(between(helper, "rubySourceWorker", "RUBY_WORKER = SOURCE_WORKER + r'''\n",
                 "\n\ndef ruby_system_command("));
-            for (String function : List.of("ruby_unit", "ruby_probe", "ruby_source_install",
-                "ruby_scratch_mount", "ruby_create_scratch", "ruby_remove_scratch"))
+            for (String function : List.of("ruby_unit", "ruby_probe", "ruby_source_install"))
                 ranges.add(python(helper, "def " + function + "("));
         }
         return List.copyOf(ranges);
@@ -78,18 +87,21 @@ record PreparationSourceRange(String section, int offset, int next) {
         ranges.add(between(helper, "pythonSourceWorker", "PYTHON_SOURCE_RECIPE = ", "\n\ndef main(args):"));
         ranges.add(between(helper, "pythonLegacyReceiverGuard",
             "    if ecosystem == 'PYTHON' or layout == 'python':\n", "\n    MIRROR_POINT = toolchain_point(ecosystem)"));
-        for (String function : List.of("discover_system", "verify_system", "materialize_system"))
-            ranges.add(python(helper, "def " + function + "("));
+        ranges.add(between(helper, "pythonSystemProfile", "def discover_system(ecosystem, identity):", "\n    binaries = "));
+        ranges.add(python(helper, "def verify_system("));
+        ranges.add(between(helper, "sourcePublicationLimits", "def ruby_publish(stage, destination, executable='ruby'):",
+            "\n    def copy(source, target, parts):"));
         return ranges;
     }
 
     private static List<PreparationSourceRange> sourceIsolation(String helper) throws IOException {
         return List.of(
+            between(helper, "sourceResourceLimits", "\nRUBY_SCRATCH_BYTES = ", "\nRUBY_OPENSSL_DIGEST = "),
             between(helper, "sourceIsolationPreflight", "SOURCE_WORKER = r'''\n", "\nRUBY_WORKER = SOURCE_WORKER"),
             python(helper, "def source_install("), python(helper, "def source_unit("),
-            python(helper, "def source_probe("), python(helper, "def ruby_require_settled("),
-            python(helper, "def ruby_mount_path("), python(helper, "def ruby_publish("),
-            python(helper, "def ruby_link_target("));
+            python(helper, "def ruby_scratch_mount("), python(helper, "def ruby_create_scratch("),
+            python(helper, "def ruby_remove_scratch("),
+            python(helper, "def source_probe("), python(helper, "def ruby_require_settled("));
     }
 
     private static List<PreparationSourceRange> rustPreparation(String helper, boolean diagnosed) throws IOException {
@@ -143,6 +155,55 @@ record PreparationSourceRange(String section, int offset, int next) {
             throw new IOException("Fixed archive installation branch unavailable");
         return List.of(new PreparationSourceRange("archiveInstall", install.offset(), alternate),
             new PreparationSourceRange("archiveReceipt", finish, install.next()));
+    }
+
+    static List<PreparationSourceRange> nodeHelper(String helper, boolean diagnosed) throws IOException {
+        int release = offset(helper, "def release(ecosystem, branch, exact):");
+        var extract = python(helper, "def extract(archive, destination):");
+        var tar = between(helper, "archiveTarValidation", "        for m in members:\n            target = root / m.name",
+            "\n        data.extractall(root, members=members)", extract.offset());
+        var ranges = new ArrayList<>(List.of(
+            between(helper, "prepareDispatch", "    prepare-toolchains)\n", "    retain)"),
+            selectedRelease(helper, "NODE", release),
+            between(helper, "pinnedMirrorRuntime", "        for path in (runtime, policy_path):",
+                "\n    return MIRROR_MODULE, policy", offset(helper, "def task_mirrors(")),
+            python(helper, "def checksum_text("),
+            between(helper, "nodeMirroredMetadata", "def fetch(url,", "\n    request = urllib.request.Request("),
+            between(helper, "nodeMirroredArchive", "def download(url,", "\n    official = hashlib.new("),
+            new PreparationSourceRange(tar.section(), tar.offset(), extract.next()),
+            between(helper, "nodeSystemOwnership", "        owned_directory(home)", "\n    except (PreparationFailure,",
+                offset(helper, "def discover_system(")),
+            python(helper, "def verify_system(")));
+        int install = offset(helper, "def install(ecosystem, identity, url, algorithm, expected, layout):");
+        ranges.add(between(helper, "nodeArchiveDigest", "    if algorithm not in ('sha256', 'sha512') or not re.fullmatch(",
+            "\n    key = installation_key(",
+            install));
+        ranges.add(between(helper, "nodeManagedArchive", "        archive = work / 'release.archive'",
+            "\n            else:\n", install));
+        ranges.add(between(helper, "archiveVersionProbe", "    command = list(commands[ecosystem])",
+            "\n    if ecosystem == 'JAVA':\n        run(", offset(helper, "def probe(ecosystem, directory, expected):")));
+        ranges.add(between(helper, "nodePreparationLock", "def require_preparation_lock_file(",
+            "\ndef tracked_process_started("));
+        if (diagnosed) ranges.add(between(helper, "preparationDiagnosticRun", "        try:\n            with preparation_lock(verifying=False):",
+            "\n    owned_directory(ROOT)\n", offset(helper, "def installation_diagnostic_main(args, raw=None):")));
+        return ranges;
+    }
+
+    static List<PreparationSourceRange> nodeTransfer(String runtime, boolean credentials) throws IOException {
+        var ranges = new ArrayList<>(List.of(
+            between(runtime, "policyDigest", "    @classmethod\n    def from_environment(", "\n    def remaining("),
+            python(runtime, "class MirrorRedirect("),
+            between(runtime, "mirrorRouteAdmission", "            selected = policy.validate_url(endpoint, policy.maps(endpoint, original))",
+                "\n        while record['attempts']"),
+            between(runtime, "mirrorTLS", "                                self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host,",
+                "\n                            else:", offset(runtime, "def _mirror_transfer(")),
+            between(runtime, "mirrorDigest", "                handlers = [urllib.request.ProxyHandler({}), Http(), Https(), MirrorRedirect(endpoint, policy)]",
+                "\n                mirror_log(point, endpoint, 'complete', attempt)")));
+        if (credentials) {
+            ranges.add(python(runtime, "class MirrorCredentialMaterial:"));
+            ranges.add(python(runtime, "def install_mirror_credentials("));
+        }
+        return ranges;
     }
 
     static List<PreparationSourceRange> transfer(String runtime, String ecosystem, boolean credentials,
@@ -245,10 +306,12 @@ record PreparationSourceRange(String section, int offset, int next) {
         var ranges = new ArrayList<PreparationSourceRange>();
         for (String function : List.of("dependency_mirror_environment", "dependency_unit_identity",
             "dependency_open_core_events", "dependency_worker", "dependency_completion_proof", "dependency_protected",
-            "dependency_profile", "dependency_registered", "dependency_tool", "dependency_task_mirrors", "dependency_run",
+            "dependency_profile", "dependency_bytes", "dependency_registered", "dependency_tool", "dependency_task_mirrors", "dependency_run",
             "dependency_packages", "dependency_validate_apt", "dependency_transaction", "dependency_main"))
             ranges.add(python(worker, "def " + function + "("));
-        ranges.add(between(worker, "dependencyAptAuthentication", "def dependency_apt_source_authentication(",
+        ranges.add(between(worker, "dependencyAptHookOwners", "\nHOOK_OWNERS = frozenset(", "\n\n\nclass DependencyFailure("));
+        ranges.add(between(worker, "dependencyAptBinaryPaths", "APT_BINARY_PATHS = {", "\n\n\ndef dependency_"));
+        ranges.add(between(worker, "dependencyAptAuthentication", "def dependency_apt_hook_owners(",
             "\ndef dependency_validate_apt("));
         ranges.add(between(worker, "dependencyServiceLaunch", "    properties = ['Type=exec', 'ExitType=cgroup'",
             "\n    stopped, captured, startup = "));

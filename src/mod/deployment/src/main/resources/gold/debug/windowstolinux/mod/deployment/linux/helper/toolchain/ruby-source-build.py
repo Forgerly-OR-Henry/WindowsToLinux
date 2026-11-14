@@ -5,6 +5,9 @@ RUBY_BUILD_ENTRIES = 40000
 RUBY_SCRATCH_BYTES = 1536 * 1024 * 1024
 RUBY_SCRATCH_INODES = 96000
 RUBY_MEMORY_BYTES = 3 * 1024 * 1024 * 1024
+SOURCE_PROBE_BYTES = 16 * 1024 * 1024
+SOURCE_PROBE_INODES = 256
+SOURCE_PROBE_MEMORY = 256 * 1024 * 1024
 RUBY_OPENSSL_DIGEST = 'e24fcd69f6e0bac1e1c3cb8667d0ded5c1f6c59d010ecb5c857a771c9cb7565c'
 # These worker-owned exit statuses are below systemd's execution setup status range.
 RUBY_WORKER_FAILURES = {
@@ -23,6 +26,9 @@ RUBY_WORKER_FAILURES = {
     102: ('prefix-verification', 'ruby'),
     103: ('runtime-verification', 'ruby'),
     126: ('resource-boundary', 'python3'),
+    127: ('scratch-write', 'python3'),
+    128: ('scratch-link', 'python3'),
+    129: ('scratch-execute', 'sh'),
 }
 RUBY_CONFIGURE_FAILURES = {
     104: 'start-permission-denied',
@@ -33,6 +39,12 @@ RUBY_CONFIGURE_FAILURES = {
     109: 'c-compiler-cannot-link',
     110: 'compiled-program-cannot-run',
     111: 'configure-signalled',
+    130: 'output-permission-denied',
+    131: 'output-operation-not-permitted',
+    132: 'output-read-only-filesystem',
+    133: 'output-storage-exhausted',
+    134: 'configure-nonzero',
+    135: 'diagnostic-pipe-error',
 }
 RUBY_MANAGER_RESULTS = frozenset(('success', 'resources', 'protocol', 'timeout', 'exit-code', 'signal',
                                   'core-dump', 'watchdog', 'start-limit-hit', 'oom-kill', 'skip-condition'))
@@ -42,6 +54,7 @@ import pathlib
 import socket
 import subprocess
 import sys
+import tempfile
 
 environment = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "TMPDIR": "/tmp", "LC_ALL": "C"}
 
@@ -88,11 +101,6 @@ def extract_release(name):
     if list(source.iterdir()) != [release] or release.is_symlink() or not release.is_dir():
         sys.exit(96)
     return release
-'''
-
-RUBY_WORKER = SOURCE_WORKER + r'''
-import errno
-import tempfile
 
 def require_ruby_resources(unit, device, inode, maximum_bytes, maximum_inodes, maximum_memory):
     group = "/system.slice/" + unit
@@ -105,34 +113,82 @@ def require_ruby_resources(unit, device, inode, maximum_bytes, maximum_inodes, m
         sys.exit(126)
     scratch = os.stat("/tmp")
     space = os.statvfs("/tmp")
-    if ((str(scratch.st_dev), str(scratch.st_ino)) != (device, inode)
+    probe = device == "-"
+    if probe and not probe_uses_private_tmpfs(scratch.st_dev):
+        sys.exit(126)
+    if ((not probe and (str(scratch.st_dev), str(scratch.st_ino)) != (device, inode))
             or not 0 < space.f_blocks * space.f_frsize <= int(maximum_bytes)
             or not 0 < space.f_files <= int(maximum_inodes)
+            or (probe and not space.f_flag & os.ST_RDONLY)
             or any(not os.statvfs(path).f_flag & os.ST_RDONLY for path in ("/var/tmp", "/dev/shm"))):
         sys.exit(126)
 
+def probe_uses_private_tmpfs(device):
+    mount_device = str(os.major(device)) + ":" + str(os.minor(device))
+    for line in pathlib.Path("/proc/self/mountinfo").read_text().splitlines():
+        mount, _, filesystem = line.partition(" - ")
+        fields = mount.split()
+        if len(fields) >= 6 and fields[2:5] == [mount_device, "/", "/tmp"] and filesystem.startswith("tmpfs "):
+            return True
+    return False
+
+def verify_build_scratch(release, prefix):
+    global failure
+    for directory in (release, prefix):
+        failure = 127
+        with tempfile.TemporaryDirectory(prefix=".wtl-check-", dir=directory) as temporary:
+            executable = pathlib.Path(temporary) / "check"
+            executable.write_bytes(b"#!/bin/sh\nexit 0\n")
+            executable.chmod(0o700)
+            failure = 128
+            link = pathlib.Path(temporary) / "alias"
+            os.link(executable, link)
+            if not os.path.samestat(executable.stat(), link.stat()):
+                sys.exit(failure)
+            if directory == release:
+                failure = 129
+                command(str(link), cwd=directory)
+
+def diagnostic_output_lines(stream):
+    continued = False
+    for raw in iter(lambda: stream.readline(4097), b""):
+        if not continued and len(raw) <= 4096:
+            yield raw.rstrip(b"\r\n")
+        continued = not raw.endswith(b"\n")
+'''
+
+RUBY_WORKER = SOURCE_WORKER + r'''
+import errno
+
 def configure(release, prefix, options):
     # Classify failures inside the unprivileged unit. No configure or config.log text leaves it.
-    with tempfile.TemporaryFile(dir="/tmp") as output:
-        try:
-            subprocess.run((str(release / "configure"), "--prefix=" + prefix, "--disable-install-doc", *options),
-                           cwd=release, env=environment, stdin=subprocess.DEVNULL,
-                           stdout=output, stderr=subprocess.STDOUT, check=True)
-        except OSError as error:
-            sys.exit({errno.EACCES: 104, errno.EPERM: 104, errno.ENOENT: 105, errno.ENOEXEC: 106}.get(error.errno, 107))
-        except subprocess.CalledProcessError as error:
-            if error.returncode < 0:
-                sys.exit(111)
-            output.seek(max(0, os.fstat(output.fileno()).st_size - 16384))
-            messages = {
-                b"configure: error: no acceptable C compiler found in $PATH": 108,
-                b"configure: error: C compiler cannot create executables": 109,
-                b"configure: error: cannot run C compiled programs.": 110,
-            }
-            for line in reversed(output.read(16384).splitlines()):
-                if line in messages:
-                    sys.exit(messages[line])
-            raise
+    try:
+        process = subprocess.Popen((str(release / "configure"), "--prefix=" + prefix, "--disable-install-doc", *options),
+                                   cwd=release, env=environment, stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    except OSError as error:
+        sys.exit({errno.EACCES: 104, errno.EPERM: 104, errno.ENOENT: 105, errno.ENOEXEC: 106}.get(error.errno, 107))
+
+    messages = {
+        b"configure: error: no acceptable C compiler found in $PATH": 108,
+        b"configure: error: C compiler cannot create executables": 109,
+        b"configure: error: cannot run C compiled programs.": 110,
+    }
+    suffixes = {b"permission denied": 130, b"operation not permitted": 131, b"read-only file system": 132,
+                b"no space left on device": 133, b"disk quota exceeded": 133}
+    exact, hint = None, None
+    try:
+        with process:
+            for line in diagnostic_output_lines(process.stdout):
+                exact = messages.get(line, exact)
+                hint = suffixes.get(line.lower().rstrip(b".").rsplit(b": ", 1)[-1], hint)
+            code = process.wait()
+    except OSError:
+        sys.exit(135)
+    if code < 0:
+        sys.exit(111)
+    if code:
+        sys.exit(exact or hint or 134)
 
 failure = 90
 try:
@@ -147,6 +203,7 @@ try:
         require_ruby_resources(*resource_limits)
         failure = 97
         release = extract_release("ruby-" + version)
+        verify_build_scratch(release, prefix)
         options = ["--with-out-ext=openssl"] if legacy == "legacy" else []
         failure = 98
         configure(release, prefix, options)
@@ -161,6 +218,9 @@ try:
         failure = 102
         command(ruby, "-r", "rbconfig", "-e", "abort unless RbConfig::CONFIG.fetch('prefix') == ARGV.fetch(0)", prefix)
 
+    else:
+        failure = 126
+        require_ruby_resources(*arguments)
     failure = 103
     command(ruby, "-e", "abort unless RUBY_VERSION == ARGV.fetch(0); require 'openssl'; require 'zlib'; require 'yaml'", version)
 except (OSError, KeyError, ValueError, subprocess.CalledProcessError):
@@ -345,7 +405,7 @@ def source_unit(unit, directory, version, ecosystem, worker_source, build_mounts
         fail('ownership', 'Ruby sandbox identity is already allocated')
     properties = [
         'User=' + user, 'DynamicUser=yes', 'Type=exec',
-        'ProtectSystem=strict', 'ProtectHome=tmpfs', 'PrivateTmp=yes', 'PrivateDevices=yes', 'PrivateNetwork=yes',
+        'ProtectSystem=strict', 'ProtectHome=tmpfs', 'PrivateDevices=yes', 'PrivateNetwork=yes',
         'TemporaryFileSystem=/run:ro /var:ro', 'NoNewPrivileges=yes', 'CapabilityBoundingSet=',
         'AmbientCapabilities=', 'RestrictSUIDSGID=yes', 'RestrictNamespaces=yes', 'ProtectControlGroups=yes',
         'ProtectKernelTunables=yes', 'ProtectKernelModules=yes', 'ProtectKernelLogs=yes', 'ProtectClock=yes',
@@ -361,6 +421,7 @@ def source_unit(unit, directory, version, ecosystem, worker_source, build_mounts
     worker.extend(['build' if build_mounts else 'probe', os.readlink('/proc/self/ns/net'),
                    os.readlink('/proc/self/ns/mnt'), directory, version])
     if build_mounts:
+        properties.append('PrivateTmp=yes')
         stage, archive, gem = build_mounts
         staged = stage.lstat()
         sources = [ruby_mount_path(archive) + ':/tmp/wtl-toolchain-release']
@@ -369,22 +430,26 @@ def source_unit(unit, directory, version, ecosystem, worker_source, build_mounts
         mounts = [ruby_mount_path(stage) + ':' + directory]
         writable = [directory]
         worker.extend([str(staged.st_dev), str(staged.st_ino), 'legacy' if gem is not None else 'standard'])
-        if ecosystem == 'ruby':
-            scratch = stage.parent
-            info = scratch.lstat()
-            readonly = ruby_mount_path(scratch / 'readonly')
-            sources.extend([readonly + ':/var/tmp', readonly + ':/dev/shm'])
-            mounts.append(ruby_mount_path(scratch) + ':/tmp')
-            writable.append('/tmp')
-            properties.extend([
-                'MemoryMax=' + str(RUBY_MEMORY_BYTES), 'MemorySwapMax=0',
-            ])
-            worker.extend([unit, str(info.st_dev), str(info.st_ino), str(RUBY_SCRATCH_BYTES),
-                           str(RUBY_SCRATCH_INODES), str(RUBY_MEMORY_BYTES)])
+        scratch = stage.parent
+        info = scratch.lstat()
+        readonly = ruby_mount_path(scratch / 'readonly')
+        sources.extend([readonly + ':/var/tmp', readonly + ':/dev/shm'])
+        mounts.append(ruby_mount_path(scratch) + ':/tmp')
+        writable.append('/tmp')
+        properties.extend(['MemoryMax=' + str(RUBY_MEMORY_BYTES), 'MemorySwapMax=0'])
+        worker.extend([unit, str(info.st_dev), str(info.st_ino), str(RUBY_SCRATCH_BYTES),
+                       str(RUBY_SCRATCH_INODES), str(RUBY_MEMORY_BYTES)])
         properties.extend(['BindReadOnlyPaths=' + ' '.join(sources), 'BindPaths=' + ' '.join(mounts),
                            'ReadWritePaths=' + ' '.join(writable)])
-    elif directory.startswith(('/var/', '/home/', '/root/')):
-        properties.append('BindReadOnlyPaths=' + directory)
+    else:
+        # Explicit tmpfs mounts provide private storage without competing with PrivateTmp mounts.
+        properties.extend(['PrivateTmp=no', 'MemoryMax=' + str(SOURCE_PROBE_MEMORY), 'MemorySwapMax=0',
+                           'TemporaryFileSystem=' + ' '.join(path + ':ro,nosuid,nodev,noexec,size='
+                           + str(SOURCE_PROBE_BYTES) + ',nr_inodes=' + str(SOURCE_PROBE_INODES)
+                           for path in ('/tmp', '/var/tmp', '/dev/shm'))])
+        if directory.startswith(('/var/', '/home/', '/root/')):
+            properties.append('BindReadOnlyPaths=' + directory)
+        worker.extend([unit, '-', '-', str(SOURCE_PROBE_BYTES), str(SOURCE_PROBE_INODES), str(SOURCE_PROBE_MEMORY)])
     command = ruby_system_command('systemd-run', '--wait', '--collect', '--slice=system.slice', '--unit=' + unit)
     command.extend('--property=' + value for value in properties)
     try:
@@ -579,10 +644,9 @@ def source_install(ecosystem, recipe, identity, url, algorithm, expected, layout
             gem.chmod(0o444)
             dependencies['openssl'] = {'version': '3.0.3', 'source': gem_url, 'sha256': RUBY_OPENSSL_DIGEST}
         source_dependencies(layout)
-        scratch = work / 'scratch' if ecosystem == 'RUBY' else work
-        if ecosystem == 'RUBY':
-            ruby_create_scratch(scratch, unit)
-            (scratch / 'readonly').mkdir(mode=0o555)
+        scratch = work / 'scratch'
+        ruby_create_scratch(scratch, unit)
+        (scratch / 'readonly').mkdir(mode=0o555)
         stage = scratch / 'stage'
         stage.mkdir()
         # Only the unit can reach this write mount. Every host ancestor to the work directory is protected.
@@ -603,8 +667,7 @@ def source_install(ecosystem, recipe, identity, url, algorithm, expected, layout
     finally:
         if sandbox_started and not sandbox_settled:
             ruby_require_settled(unit)
-        if ecosystem == 'RUBY':
-            ruby_remove_scratch(work / 'scratch', unit)
+        ruby_remove_scratch(work / 'scratch', unit)
         shutil.rmtree(work)
         tracked_sync_directory(work.parent)
 
@@ -661,11 +724,12 @@ def tracked_owned_residue_with_ruby(operation):
 
 def tracked_cleanup_with_ruby(operation):
     tracked_require_quiescent(operation)
-    if operation.request['kind'] == 'PREPARE' and operation.request['parameters']['ecosystem'] == 'RUBY':
+    if operation.request['kind'] == 'PREPARE':
+        name = operation.request['parameters']['ecosystem'].lower()
         work = operation.directory / 'work'
-        if work.exists() or work.is_symlink():
+        if name in ('ruby', 'python') and (work.exists() or work.is_symlink()):
             owned_directory(work)
-            ruby_remove_scratch(work / 'scratch', ruby_unit_name(operation.request['operationId'], 'build'))
+            ruby_remove_scratch(work / 'scratch', source_unit_name(operation.request['operationId'], 'build', name))
     _previous_tracked_cleanup(operation)
     for _, marker in source_probe_markers(operation):
         if marker.exists():

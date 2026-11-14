@@ -14,6 +14,15 @@ PYTHON_MAKE_FAILURES = {
     123: 'output-linker-error',
     124: 'output-make-prerequisite',
     125: 'output-compiler-error',
+    136: 'output-permission-denied',
+    137: 'output-operation-not-permitted',
+    138: 'output-read-only-filesystem',
+    139: 'output-exec-freeze-module-permission-denied',
+    140: 'output-exec-bootstrap-python-permission-denied',
+    141: 'output-exec-built-python-permission-denied',
+    142: 'output-linker-output-permission-denied',
+    143: 'output-assembler-output-permission-denied',
+    144: 'diagnostic-pipe-error',
 }
 PYTHON_SOURCE_WORKER = SOURCE_WORKER + r'''
 import errno
@@ -25,23 +34,36 @@ MAKE_OUTPUT_RULES = (
     (118, rb"(?i)(?:^|: )(?:no space left on device|disk quota exceeded)\.?$"),
     (119, rb"(?i)(?:^|: )(?:file too large|file size limit exceeded)(?: \(core dumped\))?\.?$"),
     (120, rb"(?i)(?:^|: )resource temporarily unavailable\.?$"),
-    (121, rb"(?i)(?:^|: )(?:permission denied|operation not permitted|read-only file system)\.?$"),
+    (121, rb"(?i)(?:^|: )permission denied\.?$"),
     (122, rb"(?i)^(?:[^:]+: )?fatal error: killed signal terminated program cc1(?:plus)?(?:\s.*)?$"),
     (123, rb"(?i)(?:^collect2: error: ld returned [0-9]+ exit status$|: undefined reference to )"),
     (124, rb"^make(?:\[[0-9]+\])?: \*\*\* No rule to make target "),
     (125, rb"^.+:[0-9]+(?::[0-9]+)?: (?:fatal )?error: "),
 )
+MAKE_PERMISSION_RULES = (
+    (139, rb"^(?:/(?:usr/)?bin/)?(?:ba)?sh: (?:[0-9]+: )?\./Programs/_freeze_module: Permission denied$"),
+    (140, rb"^(?:/(?:usr/)?bin/)?(?:ba)?sh: (?:[0-9]+: )?\./_bootstrap_python: Permission denied$"),
+    (141, rb"^(?:/(?:usr/)?bin/)?(?:ba)?sh: (?:[0-9]+: )?\./python: Permission denied$"),
+    (142, rb"^(?:[^: ]*/)?ld: cannot open output file .+: Permission denied$"),
+    (143, rb"^(?:[^: ]*/)?as: (?:Fatal error: )?can't create .+: Permission denied$"),
+)
 
 def make_output_hint(stream):
-    hint, continued = 126, False
-    for raw in iter(lambda: stream.readline(4097), b""):
-        if not continued and len(raw) <= 4096:
-            line = raw.rstrip(b"\r\n")
-            for code, pattern in MAKE_OUTPUT_RULES:
-                if code < hint and re.search(pattern, line):
-                    hint = code
-        continued = not raw.endswith(b"\n")
-    return 99 if hint == 126 else hint
+    hint, permissions = 126, set()
+    for line in diagnostic_output_lines(stream):
+        for code, pattern in MAKE_OUTPUT_RULES:
+            if code < hint and re.search(pattern, line):
+                hint = code
+        for code, pattern in MAKE_PERMISSION_RULES:
+            if re.search(pattern, line):
+                permissions.add(code)
+        suffix = line.lower().rstrip(b".").rsplit(b": ", 1)[-1]
+        extra = {b"operation not permitted": 137, b"read-only file system": 138}.get(suffix)
+        if extra:
+            permissions.add(extra)
+    if hint >= 121 and permissions:
+        return next(iter(permissions)) if len(permissions) == 1 else 121
+    return 136 if hint == 121 else 99 if hint == 126 else hint
 
 def make_python(release):
     try:
@@ -49,9 +71,12 @@ def make_python(release):
                                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     except OSError as error:
         return {errno.EACCES: 112, errno.EPERM: 112, errno.ENOENT: 113}.get(error.errno, 114)
-    with process:
-        hint = make_output_hint(process.stdout)
-        code = process.wait()
+    try:
+        with process:
+            hint = make_output_hint(process.stdout)
+            code = process.wait()
+    except OSError:
+        return 144
     if code < 0:
         return {signal.SIGKILL: 115, signal.SIGXFSZ: 116}.get(-code, 117)
     return hint if code else 0
@@ -64,10 +89,13 @@ try:
     python_flags = (python, "-I", "-S", "-B", "-c")
     if mode == "build":
         failure = 95
-        device, inode, _ = arguments
+        device, inode, _, *resource_limits = arguments
         require_staging_mount(prefix, device, inode)
+        failure = 126
+        require_ruby_resources(*resource_limits)
         failure = 97
         release = extract_release("Python-" + version)
+        verify_build_scratch(release, prefix)
         failure = 98
         command(str(release / "configure"), "--prefix=" + prefix, "--with-ensurepip=install", cwd=release)
         failure = 99
@@ -79,6 +107,9 @@ try:
         failure = 102
         command(*python_flags, "import sys; sys.exit(sys.base_prefix != sys.argv[1])", prefix)
 
+    else:
+        failure = 126
+        require_ruby_resources(*arguments)
     failure = 103
     command(*python_flags, "import ssl, sqlite3, bz2, lzma, venv, zlib, sys; "
             "sys.exit('.'.join(map(str, sys.version_info[:3])) != sys.argv[1])", version)

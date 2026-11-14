@@ -441,7 +441,8 @@ final class DeploymentStandardBuildRunner {
             gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentRequest request,
             DeploymentBuildEnvironment environment) {
         return new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.ScriptRecipe(1, 1,
-            failureDiagnostics() + DeploymentBuildEnvironmentWriter.render(environment), base
+            failureDiagnostics() + DeploymentBuildEnvironmentWriter.render(environment),
+            "builtin unset -v WTL_AGENT_SOURCE WTL_SOURCE WTL_OUTPUT\n" + base
             + CompanionBuildScript.render(request.runtime().workload(), request.facts()) + (request.runtime().workload().companions().isEmpty()
             ? "" : "\ntest \"$(du -sb \"$mutable\" | cut -f1)\" -le " + request.limits().maxWorkspaceBytes() + "\n"));
     }
