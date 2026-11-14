@@ -9,6 +9,8 @@ import java.util.regex.Pattern;
 /** Navigation into the exact currently pinned receiver. Unselected source remains readable. */
 record PreparationSourceRange(String section, int offset, int next) {
     private static final Pattern PYTHON_SECTION = Pattern.compile("(?m)^(?:@|def |class |if __name__ == )");
+    private static final Set<String> NODE_HELPER_INITIAL = Set.of("selectedRelease", "pinnedMirrorRuntime", "def checksum_text(");
+    private static final Set<String> NODE_TRANSFER_INITIAL = Set.of("mirrorRouteAdmission", "mirrorTLS", "mirrorDigest");
 
     static List<PreparationSourceRange> helper(String helper, String ecosystem, boolean diagnosed) throws IOException {
         var ranges = new ArrayList<PreparationSourceRange>();
@@ -84,13 +86,14 @@ record PreparationSourceRange(String section, int offset, int next) {
 
     private static List<PreparationSourceRange> pythonSourcePreparation(String helper) throws IOException {
         var ranges = new ArrayList<>(sourceIsolation(helper));
-        ranges.add(between(helper, "pythonSourceWorker", "PYTHON_SOURCE_RECIPE = ", "\n\ndef main(args):"));
+        int worker = offset(helper, "PYTHON_SOURCE_WORKER = SOURCE_WORKER + r'''");
+        ranges.add(between(helper, "pythonMakeInvocation", "def make_python(release):",
+            "\n\nfailure = 90", worker));
+        ranges.add(between(helper, "pythonSourceWorker", "\nfailure = 90\n", "\n\ndef main(args):", worker));
         ranges.add(between(helper, "pythonLegacyReceiverGuard",
             "    if ecosystem == 'PYTHON' or layout == 'python':\n", "\n    MIRROR_POINT = toolchain_point(ecosystem)"));
         ranges.add(between(helper, "pythonSystemProfile", "def discover_system(ecosystem, identity):", "\n    binaries = "));
         ranges.add(python(helper, "def verify_system("));
-        ranges.add(between(helper, "sourcePublicationLimits", "def ruby_publish(stage, destination, executable='ruby'):",
-            "\n    def copy(source, target, parts):"));
         return ranges;
     }
 
@@ -189,6 +192,10 @@ record PreparationSourceRange(String section, int offset, int next) {
         return ranges;
     }
 
+    static List<PreparationSourceRange> nodeHelperInitial(List<PreparationSourceRange> ranges) {
+        return ranges.stream().filter(range -> NODE_HELPER_INITIAL.contains(range.section())).toList();
+    }
+
     static List<PreparationSourceRange> nodeTransfer(String runtime, boolean credentials) throws IOException {
         var ranges = new ArrayList<>(List.of(
             between(runtime, "policyDigest", "    @classmethod\n    def from_environment(", "\n    def remaining("),
@@ -197,13 +204,21 @@ record PreparationSourceRange(String section, int offset, int next) {
                 "\n        while record['attempts']"),
             between(runtime, "mirrorTLS", "                                self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host,",
                 "\n                            else:", offset(runtime, "def _mirror_transfer(")),
-            between(runtime, "mirrorDigest", "                handlers = [urllib.request.ProxyHandler({}), Http(), Https(), MirrorRedirect(endpoint, policy)]",
+            between(runtime, "mirrorDownload", "                handlers = [urllib.request.ProxyHandler({}), Http(), Https(), MirrorRedirect(endpoint, policy)]",
+                "\n                digest = hashlib.new(algorithm)", offset(runtime, "def _mirror_transfer(")),
+            between(runtime, "mirrorBoundedRead", "                digest = hashlib.new(algorithm) if algorithm else None",
+                "\n                    if content_length and total != int(content_length):", offset(runtime, "def _mirror_transfer(")),
+            between(runtime, "mirrorDigest", "                    if content_length and total != int(content_length):",
                 "\n                mirror_log(point, endpoint, 'complete', attempt)")));
         if (credentials) {
             ranges.add(python(runtime, "class MirrorCredentialMaterial:"));
             ranges.add(python(runtime, "def install_mirror_credentials("));
         }
         return ranges;
+    }
+
+    static List<PreparationSourceRange> nodeTransferInitial(List<PreparationSourceRange> ranges) {
+        return ranges.stream().filter(range -> NODE_TRANSFER_INITIAL.contains(range.section())).toList();
     }
 
     static List<PreparationSourceRange> transfer(String runtime, String ecosystem, boolean credentials,
@@ -304,8 +319,11 @@ record PreparationSourceRange(String section, int offset, int next) {
 
     static List<PreparationSourceRange> aptDependencyWorker(String worker) throws IOException {
         var ranges = new ArrayList<PreparationSourceRange>();
-        for (String function : List.of("dependency_mirror_environment", "dependency_unit_identity",
-            "dependency_open_core_events", "dependency_worker", "dependency_completion_proof", "dependency_protected",
+        for (String function : List.of("dependency_mirror_environment", "dependency_static_identity", "dependency_unit_identity",
+            "dependency_manifest", "dependency_observe_startup", "dependency_events_read", "dependency_open_core_events",
+            "dependency_validate_ownership", "dependency_retain_ownership", "dependency_ack_record", "dependency_validate_ack",
+            "dependency_worker", "dependency_result", "dependency_completion_proof", "dependency_stop_owned",
+            "dependency_supervise", "dependency_protected",
             "dependency_profile", "dependency_bytes", "dependency_registered", "dependency_tool", "dependency_task_mirrors", "dependency_run",
             "dependency_packages", "dependency_validate_apt", "dependency_transaction", "dependency_main"))
             ranges.add(python(worker, "def " + function + "("));
@@ -313,10 +331,6 @@ record PreparationSourceRange(String section, int offset, int next) {
         ranges.add(between(worker, "dependencyAptBinaryPaths", "APT_BINARY_PATHS = {", "\n\n\ndef dependency_"));
         ranges.add(between(worker, "dependencyAptAuthentication", "def dependency_apt_hook_owners(",
             "\ndef dependency_validate_apt("));
-        ranges.add(between(worker, "dependencyServiceLaunch", "    properties = ['Type=exec', 'ExitType=cgroup'",
-            "\n    stopped, captured, startup = "));
-        ranges.add(between(worker, "dependencyCompletionAndStop", "                    proof = dependency_completion_proof(",
-            "\n    except BaseException:"));
         return ranges;
     }
 

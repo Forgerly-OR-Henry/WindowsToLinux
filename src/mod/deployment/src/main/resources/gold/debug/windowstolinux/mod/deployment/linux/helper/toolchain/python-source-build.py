@@ -23,9 +23,21 @@ PYTHON_MAKE_FAILURES = {
     142: 'output-linker-output-permission-denied',
     143: 'output-assembler-output-permission-denied',
     144: 'diagnostic-pipe-error',
+    172: 'output-operation-not-permitted-reported-by-python',
+    173: 'output-operation-not-permitted-reported-by-archiver',
+    174: 'output-operation-not-permitted-reported-by-linker',
+    175: 'output-operation-not-permitted-reported-by-compiler',
+    176: 'output-operation-not-permitted-reported-by-shell',
+    177: 'output-operation-not-permitted-with-failed-checksharedmods-target',
+    178: 'output-operation-not-permitted-with-failed-sharedmods-target',
+    179: 'output-operation-not-permitted-with-failed-freeze-module-target',
+    180: 'output-operation-not-permitted-with-failed-bootstrap-python-target',
+    181: 'output-operation-not-permitted-with-failed-python-target',
+    182: 'output-operation-not-permitted-with-failed-static-archive-target',
+    183: 'output-operation-not-permitted-with-failed-configure-generated-target',
+    184: 'output-operation-not-permitted-ambiguous',
 }
 PYTHON_SOURCE_WORKER = SOURCE_WORKER + r'''
-import errno
 import re
 import signal
 
@@ -47,9 +59,31 @@ MAKE_PERMISSION_RULES = (
     (142, rb"^(?:[^: ]*/)?ld: cannot open output file .+: Permission denied$"),
     (143, rb"^(?:[^: ]*/)?as: (?:Fatal error: )?can't create .+: Permission denied$"),
 )
+MAKE_EPERM_REPORTERS = (
+    (172, rb"^PermissionError: \[Errno 1\] "),
+    (173, rb"^(?:[^: ]*/)?(?:(?:[a-z0-9_]+-)*ar|ranlib): "),
+    (174, rb"^(?:[^: ]*/)?(?:(?:[a-z0-9_]+-)*ld(?:\.bfd)?|collect2): "),
+    (175, rb"^(?:[^: ]*/)?(?:gcc(?:-[0-9]+)?|cc|cc1|as): "),
+    (176, rb"^(?:/(?:usr/)?bin/)?(?:ba)?sh: "),
+)
+MAKE_FAILED_TARGET = rb"^make(?:\[[0-9]+\])?: \*\*\* \[(?:[^\[\]]+:[0-9]+: )?([^\[\]]+)\] Error [0-9]+$"
+MAKE_TARGETS = {
+    b"checksharedmods": 177, b"sharedmods": 178, b"Programs/_freeze_module": 179,
+    b"_bootstrap_python": 180, b"python": 181, b"Makefile": 183, b"pyconfig.h": 183, b"config.status": 183,
+    b"pybuilddir.txt": 183,
+}
+
+def make_failed_target(line):
+    match = re.match(MAKE_FAILED_TARGET, line)
+    if not match:
+        return None
+    target = match[1]
+    if re.fullmatch(rb"(?:libpython3\.[0-9]+[a-z]*|Modules/(?:_decimal/libmpdec/libmpdec|expat/libexpat|_hacl/libHacl_Hash_SHA2))\.a", target):
+        return 182
+    return MAKE_TARGETS.get(target, 0)
 
 def make_output_hint(stream):
-    hint, permissions = 126, set()
+    hint, permissions, eperm_reporters, failed_targets = 126, set(), set(), set()
     for line in diagnostic_output_lines(stream):
         for code, pattern in MAKE_OUTPUT_RULES:
             if code < hint and re.search(pattern, line):
@@ -57,12 +91,29 @@ def make_output_hint(stream):
         for code, pattern in MAKE_PERMISSION_RULES:
             if re.search(pattern, line):
                 permissions.add(code)
-        suffix = line.lower().rstrip(b".").rsplit(b": ", 1)[-1]
-        extra = {b"operation not permitted": 137, b"read-only file system": 138}.get(suffix)
+        extra = {b"operation not permitted": 137, b"read-only file system": 138}.get(permission_text(line))
+        if re.match(rb"^PermissionError: \[Errno 1\] Operation not permitted(?::|$)", line):
+            extra = 137
         if extra:
             permissions.add(extra)
+        if extra == 137:
+            eperm_reporters.add(next((code for code, pattern in MAKE_EPERM_REPORTERS if re.match(pattern, line)), 0))
+        if hint == 121 and permission_text(line) == b"permission denied" and not any(
+                re.match(pattern, line) for _, pattern in MAKE_PERMISSION_RULES):
+            permissions.add(136)
+        target = make_failed_target(line)
+        if target is not None:
+            failed_targets.add(target)
     if hint >= 121 and permissions:
-        return next(iter(permissions)) if len(permissions) == 1 else 121
+        if len(permissions) != 1:
+            return 184 if 137 in permissions else 121
+        if 137 not in permissions:
+            return next(iter(permissions))
+        if len(eperm_reporters) > 1 or len(failed_targets) > 1:
+            return 184
+        # The reporter is observed on the EPERM line. A separately observed failed
+        # target is context only, and is used only when no reporter was identified.
+        return next(iter(eperm_reporters), 0) or next(iter(failed_targets), 0) or 137
     return 136 if hint == 121 else 99 if hint == 126 else hint
 
 def make_python(release):
@@ -96,6 +147,7 @@ try:
         failure = 97
         release = extract_release("Python-" + version)
         verify_build_scratch(release, prefix)
+        verify_native_build_chain(release)
         failure = 98
         command(str(release / "configure"), "--prefix=" + prefix, "--with-ensurepip=install", cwd=release)
         failure = 99

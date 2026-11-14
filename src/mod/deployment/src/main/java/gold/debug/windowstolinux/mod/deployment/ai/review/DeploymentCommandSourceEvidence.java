@@ -53,9 +53,9 @@ public final class DeploymentCommandSourceEvidence {
     private static final String PUBLIC_MIRROR_POLICY = "/mirrorTransport/frozenPolicy";
     private static final String PREPARE = "deployment.toolchain.prepare.v1";
     private static final String NODE_PREPARE_INSTRUCTION = """
-        Review the exact current NODE preparation and original authority. The helper loads the pinned mirror runtime for NODE_METADATA and NODE_DISTRIBUTION. Compare the ordered public routes to the actual resolver, TLS, redirect and SHA256 checks. The staged wrapper defines other entrypoints; only follow operations reachable from the literal prepare arguments. Check the guarded lock, SYSTEM reuse, bounded archive extraction, probes and diagnostics.
-        selectedPreparationRanges maps exact text in nodePreparationSelection to its original UTF-16 offsets. startCharacter is relative to the frame header end. The broader preparationSelection and complete original facts, helper, runtime, generated shell and staged policy remain readable. Use the current snapshotSha256, pointer and UTF-16 coordinates for missing reached source, up to eight evidence calls separately from the verdict. Retained source appears after its JSON header in range order.
-        Restore exactAction from ordered segments. LITERAL copies text; SOURCE_TEXT copies source; SHELL_SINGLE_QUOTE uses Bash single quoting. Independently verify arguments, limits, effects and authority. Deny unsafe effects or insufficient evidence and submit a fresh native submit_result alone.
+        Review this exact Node preparation. Match the original authority, arguments, effects and limits. Verify NODE_METADATA and NODE_DISTRIBUTION route, redirect, TLS and SHA256 checks, archive or SYSTEM reuse, locks, probes and diagnostics.
+        selectedPreparationRanges maps inline text to original UTF-16 coordinates. startCharacter counts from the frame header end. namedRanges locates other reached bytes by [offset,next]. Use snapshotSha256 and pointer to read only needed ranges, up to eight calls separately from the verdict. Read raw pages and retained text in header range order. The broader preparationSelection and original facts remain readable.
+        Restore exactAction in segment order: LITERAL copies text, SOURCE_TEXT copies source and SHELL_SINGLE_QUOTE applies Bash single quoting. Deny unsafe effects or insufficient evidence. Submit a fresh native submit_result alone.
         """;
     private static final String MIRROR_BOOTSTRAP_SHELL = "/" + PROJECTION + "/mirrorBootstrapShell";
     private static final String MIRROR_POLICY_SOURCE = "/" + PROJECTION + "/mirrorPolicySource";
@@ -129,7 +129,7 @@ public final class DeploymentCommandSourceEvidence {
 
     private static final String DEPENDENCY_APT_INSTRUCTION = """
         Restore exactAction and completeExecutableInput from ordered segments. LITERAL copies text; SOURCE_TEXT copies the reference; SHELL_SINGLE_QUOTE applies Bash single quoting; JSON_STRING encodes source as a JSON string with double quotes. Review exact arguments, resource limits, targets, original authority, and effects independently. Digests identify bytes and grant no permission.
-        The prior typed host probe observed APT. selectedAptRanges maps exact excerpts in dependencyAptSelection to the worker, runtime and decoded BOOTSTRAP_SHELL used by mirror_system_command. startCharacter is relative to the frame header end; offset through next gives coordinates in the referenced source. Inspect lifecycle, package admission, repository authentication, dpkg configuration and registered hook file checks, and frozen installation. The protected OS package database is a trust assumption. Authenticated packages can still run maintainer scripts and triggers within the root transaction. The worker selects the current OS again; the original APT/DNF effect targets still apply. Read necessary alternate paths and any missing ranges from the original sources.
+        A prior probe observed APT. selectedAptRanges maps exact text in dependencyAptSelection to original source. Follow the complete dependency_supervise implementation, its READY/ACK and ownership checks, held cgroup events and exact stop before the receipt. The decoded dependencySystemShell is the shell invoked by mirror_system_command. Review APT/dpkg admission, registered hooks and frozen installation. The protected OS package database is a trust assumption. Authenticated packages can still run maintainer scripts and triggers in this root transaction. The worker selects the current OS again. Read required alternate paths from the original sources.
         Request missing exact bytes with snapshotSha256, pointer, offset and limit from 1 through 8000. Read up to eight ranges in one response. Exact source pages and retained frames put the original text after the JSON header in range order. Submit a fresh native submit_result alone. Deny unsafe effects or insufficient evidence.
         """;
 
@@ -234,7 +234,7 @@ public final class DeploymentCommandSourceEvidence {
             sourceBodies.put(INSTALLED_HELPER_SOURCE, helper);
             if (PREPARE.equals(operation)) {
                 projectPreparationPolicy(current, projected);
-                addPreparationSelection(current, manifest, messages, snapshot, sourceBodies, initialRanges);
+                addPreparationSelection(current, projected, manifest, messages, snapshot, sourceBodies, initialRanges);
             }
         }
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
@@ -244,6 +244,9 @@ public final class DeploymentCommandSourceEvidence {
     private static List<String> helperLocations(ObjectNode current, boolean binding) throws IOException {
         if (binding) return BINDING_HELPER_LOCATIONS;
         return switch (preparationEcosystem(current)) {
+            case "NODE" -> List.of("prepare_official_toolchains() {", "def prepare(args):", "def installation_diagnostic_request(",
+                "def preparation_lock(", "def extract(", "def discover_system(", "def materialize_system(",
+                "def saved_installation_marker(");
             case "RUST" -> combinedLocations(RUST_HELPER_LOCATIONS);
             case "PYTHON" -> combinedLocations(List.of("def open_preparation_lock(",
                 "def require_ruby_resources(", "def ruby_scratch_mount(", "def ruby_mount_path(",
@@ -258,7 +261,7 @@ public final class DeploymentCommandSourceEvidence {
         return locations;
     }
 
-    private static void addPreparationSelection(ObjectNode current, ObjectNode manifest, List<AiMessage> messages,
+    private static void addPreparationSelection(ObjectNode current, ObjectNode projected, ObjectNode manifest, List<AiMessage> messages,
                                                 String snapshot, Map<String, String> sources,
                                                 Map<String, NavigableMap<Integer, Integer>> initialRanges) throws IOException {
         boolean diagnosed = current.has("originalToolchainPreparation");
@@ -272,12 +275,20 @@ public final class DeploymentCommandSourceEvidence {
             var body = new StringBuilder();
             var selected = manifest.putArray("selectedPreparationRanges");
             String helper = sources.get(INSTALLED_HELPER_SOURCE);
+            var helperRanges = PreparationSourceRange.nodeHelper(helper, diagnosed);
+            var initialHelper = PreparationSourceRange.nodeHelperInitial(helperRanges);
+            addNamedRanges((ObjectNode) manifest.path("installedHelperSource"), helperRanges, initialHelper);
             appendSelection(body, selected, initialRanges, INSTALLED_HELPER_SOURCE, helper,
-                PreparationSourceRange.nodeHelper(helper, diagnosed));
+                initialHelper);
             String runtime = sources.get(MIRROR_RUNTIME);
-            boolean credentials = current.at(PUBLIC_MIRROR_POLICY + "/points").findValues("credentialManaged").stream()
+            var points = current.at(PUBLIC_MIRROR_POLICY + "/points");
+            boolean credentials = List.of("NODE_METADATA", "NODE_DISTRIBUTION").stream()
+                .flatMap(point -> points.path(point).findValues("credentialManaged").stream())
                 .anyMatch(JsonNode::asBoolean);
-            appendSelection(body, selected, initialRanges, MIRROR_RUNTIME, runtime, PreparationSourceRange.nodeTransfer(runtime, credentials));
+            var runtimeRanges = PreparationSourceRange.nodeTransfer(runtime, credentials);
+            var initialRuntime = PreparationSourceRange.nodeTransferInitial(runtimeRanges);
+            addNamedRanges((ObjectNode) projected.at(MIRROR_RUNTIME), runtimeRanges, initialRuntime);
+            appendSelection(body, selected, initialRanges, MIRROR_RUNTIME, runtime, initialRuntime);
             putSelectionFrame(manifest, messages, snapshot, sources, NODE_PREPARATION_SELECTION, "nodePreparationSelection", body);
             return;
         }
@@ -287,6 +298,14 @@ public final class DeploymentCommandSourceEvidence {
         var frame = sourceFrame(messages, snapshot, PREPARATION_SELECTION, source);
         manifest.withArray("frames").add(frame);
         manifest.set("preparationSelection", frame);
+    }
+
+    private static void addNamedRanges(ObjectNode descriptor, List<PreparationSourceRange> all,
+                                       List<PreparationSourceRange> inline) {
+        var named = descriptor.putObject("namedRanges");
+        for (var range : all) {
+            if (!inline.contains(range)) named.putArray(range.section()).add(range.offset()).add(range.next());
+        }
     }
 
     private static String preparationSelection(ObjectNode current, Map<String, String> sources,
@@ -405,7 +424,10 @@ public final class DeploymentCommandSourceEvidence {
         if (!dependency && !runtime.equals(projected.at(MIRROR_RUNTIME).textValue()))
             throw new IOException("Original mirror runtime evidence changed");
         String source = dependency ? DEPENDENCY_RUNTIME : MIRROR_RUNTIME;
-        var descriptor = pagedSource(source, runtime, MIRROR_LOCATIONS);
+        boolean node = !dependency && PREPARE.equals(projected.path("operation").asText()) && preparationEcosystem(projected).equals("NODE");
+        var descriptor = pagedSource(source, runtime, node
+            ? List.of("def validate_url(", "def validate_redirect(", "def maps(", "def mirror_transfer(", "def _mirror_transfer(", "def mirror_bytes(")
+            : MIRROR_LOCATIONS);
         sourceBodies.put(source, runtime);
         if (dependency) manifest.set("mirrorRuntime", descriptor);
         else ((ObjectNode) projected.get("mirrorTransport")).set("runtimeSource", descriptor);
@@ -639,7 +661,10 @@ public final class DeploymentCommandSourceEvidence {
         }
         sourceBodies.put(DEPENDENCY_WORKER, worker);
         var workerDescriptor = apt ? pagedSource(DEPENDENCY_WORKER, worker, List.of("def dependency_worker(",
-            "def dependency_supervise(", "def dependency_open_core_events(", "def dependency_profile(",
+            "def dependency_supervise(", "def dependency_static_identity(", "def dependency_stop_owned(",
+            "def dependency_manifest(", "def dependency_observe_startup(", "def dependency_events_read(",
+            "def dependency_open_core_events(", "def dependency_validate_ownership(", "def dependency_retain_ownership(",
+            "def dependency_ack_record(", "def dependency_validate_ack(", "def dependency_result(", "def dependency_profile(",
             "\nHOOK_OWNERS = ", "def dependency_bytes(", "def dependency_registered(", "def dependency_apt_hook_owners(",
             "def dependency_apt_binaries(", "def dependency_apt_options(", "def dependency_validate_dpkg(",
             "def dependency_validate_apt(", "def dependency_validate_dnf(", "def dependency_transaction("))
@@ -709,6 +734,7 @@ public final class DeploymentCommandSourceEvidence {
         private List<ReadReceipt> latestReads = List.of();
         private List<ReadReceipt> priorReads = List.of();
         private List<ReadReceipt> pendingDelivery = List.of();
+        private Map<String, NavigableMap<Integer, Integer>> pendingVisible = Map.of();
         private boolean continuedResponses;
         private boolean rebased;
         private boolean batchCorrectionUsed;
@@ -826,11 +852,13 @@ public final class DeploymentCommandSourceEvidence {
                 priorEvidence = Optional.of(evidence);
                 rebased = true;
                 pendingDelivery = List.copyOf(latestReads);
+                pendingVisible = frame.visible();
                 return;
             }
             messages.add(AiMessage.assistant(response));
             results.forEach(result -> messages.add(AiMessage.result(result)));
             pendingDelivery = List.copyOf(latestReads);
+            pendingVisible = Map.of();
             if (responses) {
                 priorReads = List.copyOf(latestReads);
                 continuedResponses = true;
@@ -845,6 +873,11 @@ public final class DeploymentCommandSourceEvidence {
                 if (deferredRanges.containsKey(read.pointer()))
                     rememberRange(deferredDelivered, read.pointer(), read.offset(), read.next());
             }
+            pendingVisible.forEach((pointer, ranges) -> {
+                if (deferredRanges.containsKey(pointer))
+                    ranges.forEach((start, end) -> rememberRange(deferredDelivered, pointer, start, end));
+            });
+            pendingVisible = Map.of();
             pendingDelivery = List.of();
         }
 
@@ -894,10 +927,7 @@ public final class DeploymentCommandSourceEvidence {
                 if (!read.rejected() && read.next() < requested)
                     rememberRange(deferredRanges, read.pointer(), read.next(), requested);
             }
-            frame.visible().forEach((pointer, ranges) -> {
-                if (deferredRanges.containsKey(pointer))
-                    ranges.forEach((start, end) -> rememberRange(deferredDelivered, pointer, start, end));
-            });
+            pendingVisible = frame.visible();
             pendingDelivery = List.copyOf(offered);
             messages.set(position, frame.message());
             priorEvidence = Optional.of(frame.message());
@@ -943,8 +973,15 @@ public final class DeploymentCommandSourceEvidence {
                 var read = reads.addObject().put("callId", receipt.callId()).put("rejected", receipt.rejected());
                 if (!receipt.rejected()) {
                     read.put("pointer", receipt.pointer()).put("offset", receipt.offset()).put("next", receipt.next());
-                    if (compacted) read.put("sourceSha256", sha256(sourceText(receipt.pointer())));
+                    if (compacted && !nodePreparation) read.put("sourceSha256", sha256(sourceText(receipt.pointer())));
                     if (receipt.next() < latestReads.get(index).next()) read.put("requestedNext", latestReads.get(index).next());
+                }
+            }
+            if (compacted && nodePreparation) {
+                var identities = header.putObject("sourceSha256ByPointer");
+                for (var read : offered) {
+                    if (!read.rejected() && !identities.has(read.pointer()))
+                        identities.put(read.pointer(), sha256(sourceText(read.pointer())));
                 }
             }
             if (compacted) header.put("deferredRanges", "Read next through requestedNext for any necessary deferred source; those bytes were not delivered in this frame.");

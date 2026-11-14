@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.appapi.ai.model.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader;
 
 /** Bounded native read/submit conversation for independent source comparison. */
 public final class DeploymentNativeSelection {
@@ -28,12 +29,12 @@ public final class DeploymentNativeSelection {
     private int cursor;
 
     public DeploymentNativeSelection(ModContext context) {
-        ai = new DeploymentAiJson(context);
+        ai = new DeploymentAiJson(context, DeploymentConfigLoader.current().ai().requests().generationRecoveryAttempts());
     }
 
     public AiToolCall select(String policy, Map<String, ?> facts, String revision, TaskContext task, boolean calibration) throws Exception {
         if (pending != null && cursor > results.size()) {
-            String feedback = DeploymentAiJson.facts(facts, gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().history().characters());
+            String feedback = DeploymentAiJson.facts(facts, DeploymentConfigLoader.current().ai().history().characters());
             results.add(new AiToolResult(pending.toolCalls().get(cursor - 1).id(),
                 "CURRENT_VERIFIED_STATE\n" + feedback.substring(0, Math.min(6000, feedback.length())), false));
         }
@@ -82,7 +83,7 @@ public final class DeploymentNativeSelection {
             submission.toString()));
         if (!calibration)
             tools.add(new AiToolDefinition("unable", "Report inability to identify", DeploymentToolSchemas.object("reason").toString()));
-        input = DeploymentAiJson.facts(facts, gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().history().characters());
+        input = DeploymentAiJson.facts(facts, DeploymentConfigLoader.current().ai().history().characters());
         pending = ai.call(AiPurpose.LANGUAGE, history.messages(policy + "\nReturn at most four native calls per response, and fewer than remaining when remaining > 1. remaining counts individual tools, including queued calls. Reserve the final turn for identify/unable or conclude. Rejected batches read no source and consume an original turn.", input), tools, revision, task, false);
         cursor = 0;
         if (!pending.finishReason().equals("tool_calls") || pending.toolCalls().isEmpty())

@@ -345,6 +345,61 @@ class RubySourceBuildTest(unittest.TestCase):
         self.assertEqual([], list(release.iterdir()))
         self.assertEqual([], list(stage.iterdir()))
 
+    def test_fixed_native_chain_runs_only_its_own_probe_and_cleans_on_each_outcome(self):
+        scope = {}
+        exec(compile(self.ns['SOURCE_WORKER'], '<native build chain>', 'exec'), scope)
+        sequence = (('/usr/bin/cc', '-c', 'probe.c', '-o', 'probe.o'),
+                    ('/usr/bin/ar', 'crs', 'probe.a', 'probe.o'),
+                    ('/usr/bin/cc', 'probe.a', '-o', 'probe'),
+                    ('./probe',))
+        cases = ((None, None), (PermissionError(errno.EPERM, 'private'), 145),
+                 (FileNotFoundError(errno.ENOENT, 'private'), 146),
+                 (OSError(errno.EROFS, 'private'), 147),
+                 (subprocess.CalledProcessError(2, 'private'), 148),
+                 (subprocess.CalledProcessError(-9, 'private'), 149))
+        for error, expected in cases:
+            for index in range(4) if error else (3,):
+                with self.subTest(expected=expected, index=index):
+                    calls = []
+
+                    def run(argv, *, cwd, env, stdin, stdout, stderr, check):
+                        calls.append(argv)
+                        self.assertEqual(self.root, pathlib.Path(cwd).parent)
+                        self.assertEqual(b'int main(void) { return 0; }\n', (pathlib.Path(cwd) / 'probe.c').read_bytes())
+                        self.assertEqual((subprocess.DEVNULL,) * 3, (stdin, stdout, stderr))
+                        self.assertEqual('/usr/bin:/bin', env['PATH'])
+                        self.assertTrue(check)
+                        if error and len(calls) == index + 1:
+                            raise error
+
+                    before = list(self.root.iterdir())
+                    with mock.patch.object(subprocess, 'run', side_effect=run):
+                        if error:
+                            with self.assertRaises(SystemExit) as observed:
+                                scope['verify_native_build_chain'](self.root)
+                            self.assertEqual(expected + 5 * index, observed.exception.code)
+                        else:
+                            scope['verify_native_build_chain'](self.root)
+                    self.assertEqual(sequence[:index + 1], tuple(calls))
+                    self.assertEqual(before, list(self.root.iterdir()))
+
+    def test_native_diagnostic_requires_manager_agreement_and_uses_fixed_fields(self):
+        diagnose = self.ns['ruby_diagnostic']
+        for index, (phase, child) in enumerate(self.ns['SOURCE_BUILD_PROBE_STAGES']):
+            for offset, failure in enumerate(self.ns['SOURCE_BUILD_PROBE_FAILURES']):
+                code = 145 + index * 5 + offset
+                for ecosystem in ('ruby', 'python'):
+                    with self.subTest(code=code, ecosystem=ecosystem):
+                        base = self.launcher_observation(code)
+                        result = diagnose(base, 'build', ecosystem)
+                        self.assertEqual(ecosystem + '-build-native-check-' + phase, result['stage'])
+                        self.assertIn('native-check-failure=' + failure + '\n', result['stdout'])
+                        self.assertIn('worker-executable=' + child + '\n', result['stdout'])
+                        self.assertNotIn('sample-private-value', str(result))
+                        for other, role in ((dict(base, actualExitCode=95), 'build'), (base, 'probe')):
+                            unconfirmed = diagnose(other, role, ecosystem)
+                            self.assertNotIn('native-check-failure=', unconfirmed['stdout'])
+
     def test_worker_refuses_root_or_shared_namespace_before_starting_any_external_program(self):
         worker = compile(self.ns['RUBY_WORKER'], '<Ruby sandbox worker>', 'exec')
         arguments = ['', 'probe', 'net:[1]', 'mnt:[2]', '/protected/ruby', VERSION]
@@ -401,6 +456,15 @@ class RubySourceBuildTest(unittest.TestCase):
             (subprocess.CalledProcessError(1, 'private command'), b'private path: No space left on device',
              133, 'output-storage-exhausted'),
             (subprocess.CalledProcessError(1, 'private command'), b'private payload', 134, 'configure-nonzero'),
+            (subprocess.CalledProcessError(1, 'private command'),
+             b'./configure: line 921: ./conftest: Operation not permitted',
+             165, 'output-operation-not-permitted-conftest'),
+            (subprocess.CalledProcessError(1, 'private command'),
+             b'config.status: private-value: Operation not permitted',
+             166, 'output-operation-not-permitted-config-status'),
+            (subprocess.CalledProcessError(1, 'private command'),
+             b'cp: private-value: Operation not permitted\nmv: private-value: Operation not permitted',
+             171, 'output-permission-hints-ambiguous'),
         )
         for error, message, status, reason in cases:
             with self.subTest(status=status):

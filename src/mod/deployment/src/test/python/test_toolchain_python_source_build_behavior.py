@@ -167,7 +167,8 @@ class PythonSourceBuildTest(unittest.TestCase):
     def test_worker_validates_isolation_before_configure_and_runs_fixed_commands(self):
         tree = ast.parse(self.ns['PYTHON_SOURCE_WORKER'])
         definitions = self.make_worker_functions()
-        definitions.update(require_ruby_resources=mock.Mock(), verify_build_scratch=mock.Mock())
+        definitions.update(require_ruby_resources=mock.Mock(), verify_build_scratch=mock.Mock(),
+                           verify_native_build_chain=mock.Mock())
         tree.body = tree.body[next(i for i, node in enumerate(tree.body) if isinstance(node, ast.Try)) - 1:]
         worker = compile(tree, '<CPython source worker>', 'exec')
         argv = ['', 'build', 'net:[1]', 'mnt:[2]', '/protected/python', VERSION, '42', '7', 'standard',
@@ -202,6 +203,7 @@ class PythonSourceBuildTest(unittest.TestCase):
             exec(worker, definitions)
         definitions['require_ruby_resources'].assert_called_once_with(*argv[-6:])
         definitions['verify_build_scratch'].assert_called_once_with(release, '/protected/python')
+        definitions['verify_native_build_chain'].assert_called_once_with(release)
         calls = [entry.args[0] for entry in run.call_args_list]
         self.assertEqual(['/usr/bin/tar', str(release / 'configure'), '/usr/bin/make',
                           '/protected/python/bin/python3', '/protected/python/bin/python3'], [entry[0] for entry in calls])
@@ -234,6 +236,11 @@ class PythonSourceBuildTest(unittest.TestCase):
             (b'/bin/sh: 1: ./python: Permission denied\n', 141),
             (b'/usr/bin/ld: cannot open output file private-value: Permission denied\n', 142),
             (b"as: Fatal error: can't create private-value: Permission denied\n", 143),
+            (b"PermissionError: [Errno 1] Operation not permitted: 'private-value'\n", 172),
+            (b"/usr/bin/x86_64-linux-gnu-ar: private-value: Operation not permitted\n", 173),
+            (b"/usr/bin/ld: private-value: Operation not permitted\n", 174),
+            (b"gcc: private-value: Operation not permitted\n", 175),
+            (b"/bin/sh: private-value: Operation not permitted\n", 176),
             (b'gcc: fatal error: Killed signal terminated program cc1\n', 122),
             (b'collect2: error: ld returned 1 exit status\n', 123),
             (b"make: *** No rule to make target 'private path'.  Stop.\n", 124),
@@ -247,6 +254,17 @@ class PythonSourceBuildTest(unittest.TestCase):
                                                   b'/tmp/private: No space left on device\n')))
         self.assertEqual(121, classify(io.BytesIO(b'/bin/sh: 1: ./python: Permission denied\n'
                                                   b'cc: /tmp/private: Read-only file system\n')))
+        self.assertEqual(177, classify(io.BytesIO(b'unknown: Operation not permitted\n'
+                                                  b'make: *** [Makefile:922: checksharedmods] Error 1\n')))
+        self.assertEqual(182, classify(io.BytesIO(b'unknown: Operation not permitted\n'
+                                                  b'make: *** [Makefile:882: Modules/expat/libexpat.a] Error 1\n')))
+        self.assertEqual(137, classify(io.BytesIO(b'unknown: Operation not permitted\n'
+                                                  b'make: *** [Makefile:922: private-target] Error 1\n')))
+        self.assertEqual(184, classify(io.BytesIO(b'ar: private: Operation not permitted\n'
+                                                  b'make: *** [Makefile:922: checksharedmods] Error 1\n'
+                                                  b'make: *** [Makefile:760: libpython3.12.a] Error 1\n')))
+        self.assertEqual(184, classify(io.BytesIO(b'ar: private: Operation not permitted\n'
+                                                  b'as: private: Permission denied\n')))
 
     def test_make_launch_errors_and_child_signals_have_precedence_over_child_output(self):
         make = self.make_worker_functions()['make_python']

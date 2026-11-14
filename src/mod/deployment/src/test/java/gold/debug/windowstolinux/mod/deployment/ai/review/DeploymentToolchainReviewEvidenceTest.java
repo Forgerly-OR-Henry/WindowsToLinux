@@ -1102,7 +1102,7 @@ class DeploymentToolchainReviewEvidenceTest {
                 assertTrue(shell.contains("wtl_apt_install_frozen() {"));
                 var selected = manifest.path("selectedAptRanges");
                 assertTrue(selected.findValuesAsText("section").contains("dependencyAptAuthentication"));
-                assertTrue(selected.findValuesAsText("section").contains("dependencyServiceLaunch"));
+                assertTrue(selected.findValuesAsText("section").contains("def dependency_supervise("));
                 assertTrue(selected.findValuesAsText("section").contains("aptSignedUpdateToFrozenInstall"));
                 assertTrue(selected.findValuesAsText("section").contains("aptSecurityAndFrozenTransaction"));
                 assertTrue(projected.at("/dependencyPublicPolicy/points/APT_DEBIAN").isArray());
@@ -1135,8 +1135,10 @@ class DeploymentToolchainReviewEvidenceTest {
         return fixture.model.requests.getFirst();
     }
 
-    @Test
-    void r32AptReviewIncludesRegisteredHookAndDpkgValidationAtObservedBudgets() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"R32", "R33"})
+    void aptReviewIncludesCompleteSupervisorAtObservedBudgets(String round) throws Exception {
+        boolean r33 = round.equals("R33");
         try (var fixture = new MirroredInstallerTestFixture();
              var command = request("dependencies", fixture);
              var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
@@ -1173,7 +1175,10 @@ class DeploymentToolchainReviewEvidenceTest {
                 addR24Range(coverage, pointer, offset, next);
             }
             for (String function : List.of("dependency_bytes", "dependency_registered", "dependency_apt_hook_owners",
-                "dependency_apt_binaries", "dependency_apt_options", "dependency_validate_dpkg", "dependency_validate_apt")) {
+                "dependency_apt_binaries", "dependency_apt_options", "dependency_validate_dpkg", "dependency_validate_apt",
+                "dependency_supervise", "dependency_static_identity", "dependency_stop_owned", "dependency_manifest",
+                "dependency_observe_startup", "dependency_events_read", "dependency_open_core_events", "dependency_validate_ownership",
+                "dependency_retain_ownership", "dependency_ack_record", "dependency_validate_ack", "dependency_result")) {
                 String anchor = "def " + function + "(";
                 var body = PreparationSourceRange.python(worker, anchor);
                 assertEquals(body.offset(), workerDescriptor.path("locations").path(anchor).asInt(-1));
@@ -1181,6 +1186,9 @@ class DeploymentToolchainReviewEvidenceTest {
                 assertNotNull(span, function);
                 assertTrue(span.getValue() >= body.next(), function);
             }
+            for (String marker : List.of("PRE_ACK_RUNNING_IDENTITY", "proof = dependency_completion_proof(",
+                "failureCleanup", "process.wait(timeout=1)", "dependency_write(base / 'receipt.json'"))
+                assertTrue(selected.contains(marker), marker);
             assertTrue(selected.contains("HOOK_OWNERS = frozenset("));
             String owners = "\nHOOK_OWNERS = ";
             int ownerOffset = worker.indexOf(owners);
@@ -1195,28 +1203,30 @@ class DeploymentToolchainReviewEvidenceTest {
             var systemShell = manifest.path("dependencySystemShell");
             String shell = collect(evidence, systemShell, PHASE);
             addReplaySource(sources, systemShell, shell);
-            // The R32 first response requested five decoded shell pages and three exact original worker pages.
-            var calls = new R24Turn(0, 0, 0, 0, 0,
-                "46/0/8000 46/8000/8000 46/16000/8000 46/24000/8000 46/32000/2019 41/53618/8000 41/59371/8000 41/68426/8000")
-                .calls(snapshot, sources, 0);
+            String coordinates = r33
+                ? "46/0/8000 46/8000/8000 46/16000/8000 46/24000/8000 45/11000/8000 45/19000/8000 45/27000/8000 45/34000/4159"
+                : "46/0/8000 46/8000/8000 46/16000/8000 46/24000/8000 46/32000/2019 41/53618/8000 41/59371/8000 41/68426/8000";
+            int factsSize = r33 ? 40923 : 39876, initialCap = r33 ? 1031205 : 1048576, cap = r33 ? 999301 : 1048576;
+            var calls = new R24Turn(0, 0, 0, 0, 0, coordinates).calls(snapshot, sources, 0);
             var messages = new ArrayList<>(initial.messages());
             messages.set(messages.size() - 1, evidence.messages().getLast());
-            int fixed = wireWithR24FactsSize(copy(initial, messages, 1048576), 39876, 1048576, Map.of()).length;
+            int fixed = wireWithR24FactsSize(copy(initial, messages, initialCap), factsSize, initialCap, Map.of()).length;
             var reader = evidence.reader(16);
             Map<UUID, String> continuations = new LinkedHashMap<>();
             var nativeCalls = calls.toArray(AiToolCall[]::new);
-            retainReply(fixture, continuations, nativeOutput("", nativeCalls), "OPENAI_RESPONSES", nativeCalls);
+            if (r33) replyAtTotalBytes(fixture, continuations, 11319, "OPENAI_RESPONSES", nativeCalls);
+            else retainReply(fixture, continuations, nativeOutput("", nativeCalls), "OPENAI_RESPONSES", nativeCalls);
             var reads = fixture.model.replies.remove().value().orElseThrow();
             var results = reader.read(reads);
             assertTrue(results.stream().noneMatch(AiToolResult::error));
             reader.continueReview(messages, reads, results);
-            byte[] encoded = wireWithR24FactsSize(copy(initial, messages, 1048576), 39876, 1048576, continuations);
+            byte[] encoded = wireWithR24FactsSize(copy(initial, messages, cap), factsSize, cap, continuations);
             seedInlineSourceRanges(projected, coverage);
             assertR24VisiblePages(encoded, snapshot, calls, false, coverage, sources);
             var requested = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
             collectRequestedCoverage(requested, calls, sources);
             assertR24Coverage(requested, coverage);
-            System.out.printf("R32_APT_REPLAY fixedEncoded=%d continuationEncoded=%d cap=1048576%n", fixed, encoded.length);
+            System.out.printf("%s_APT_REPLAY fixedEncoded=%d continuationEncoded=%d cap=%d%n", round, fixed, encoded.length, cap);
         }
     }
 
@@ -1263,8 +1273,22 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"mirrorBootstrapShell", "preparationSelection"})
-    void r32NodePrepareRealApprovalFitsTerminalBudgetAndRejectsUndeliveredRanges(String interpretation) throws Exception {
+    @ValueSource(strings = {"asset-lending:mirrorBootstrapShell", "asset-lending:preparationSelection",
+        "task-board:mirrorBootstrapShell", "task-board:preparationSelection",
+        "file-transfer:mirrorBootstrapShell", "file-transfer:preparationSelection"})
+    void nodePrepareRealApprovalFitsRecordedTerminalBudgetAndRejectsUndeliveredRanges(String scenario) throws Exception {
+        var fields = scenario.split(":");
+        String project = fields[0], interpretation = fields[1];
+        var replay = switch (project) {
+            case "asset-lending" -> new NodeReplay(30034, 704212, 91407, 69681,
+                "30/20095/8000", "30/20989/7106 43/0/8000 45/0/6400");
+            case "task-board" -> new NodeReplay(28527, 585744, 78228, 59294,
+                "46/170800/3500 46/190000/3900 46/181000/1800 30/7000/6000 30/16000/4800",
+                "46/215449/4848 46/295847/2600 46/207073/1772 46/188436/1573 45/13709/2300 45/0/2800 43/0/7000 46/146023/6000");
+            case "file-transfer" -> new NodeReplay(28016, 276077, 78020, 60018,
+                "43/0/8000", "46/295847/1800 46/146023/3000 30/7163/1800 45/12711/3200");
+            default -> throw new AssertionError(project);
+        };
         try (var fixture = new MirroredInstallerTestFixture();
              var command = diagnosedPreparation(fixture, "NODE", "24");
              var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
@@ -1293,14 +1317,14 @@ class DeploymentToolchainReviewEvidenceTest {
                     String snapshot = manifest.path("snapshotSha256").asText();
                     var wireMessages = new ArrayList<>(received.messages());
                     // The live log captures total facts size, not the original per-field metadata.
-                    int extra = 30034 - projected.toString().length() - 24;
+                    int extra = replay.factsCharacters() - projected.toString().length() - 24;
                     if (extra > 0) projected.put("replayFixturePadding", "x".repeat(extra));
                     wireMessages.set(wireMessages.size() - 1, new AiMessage(AiRole.USER, projected.toString(), List.of()));
                     int step = sentBytes.size();
                     int maximum = switch (step) {
-                        case 0 -> 704212;
-                        case 1 -> 91407;
-                        default -> 69681;
+                        case 0 -> replay.initialCap();
+                        case 1 -> replay.priorCap();
+                        default -> replay.lastCap();
                     };
                     byte[] encoded;
                     try {
@@ -1311,17 +1335,18 @@ class DeploymentToolchainReviewEvidenceTest {
                     }
                     sentBytes.add(encoded.length);
                     if (step == 0) {
-                        assertTrue(encoded.length < 69681, () -> "Fixed initial request: " + encoded.length);
+                        assertTrue(encoded.length < replay.lastCap(), () -> "Fixed initial request: " + encoded.length);
                         addReplaySource(sources, projected.at("/mirrorTransport/runtimeSource"), DeploymentMirrorRuntime.runtimeSource());
                         addReplaySource(sources, manifest.path("mirrorPolicySource"), DeploymentMirrorTasks.policy(fixture.task));
+                        addReplaySource(sources, manifest.path("installedHelperSource"), DeploymentManagedHelperBundle.renderScript(fixture.layout));
                         var width45 = manifest.path(interpretation);
                         assertEquals(45, width45.path("sourcePointer").asText().length());
                         addReplaySource(sources, width45, width45Source);
-                        var prior = new R24Turn(0, 0, 0, 0, 0, "30/20095/8000").calls(snapshot, sources, 0);
+                        var prior = new R24Turn(0, 0, 0, 0, 0, replay.prior()).calls(snapshot, sources, 0);
                         return success(mockResponses(prior.toArray(AiToolCall[]::new)));
                     }
                     if (step == 1) {
-                        var last = new R24Turn(0, 0, 0, 0, 0, "30/20989/7106 43/0/8000 45/0/6400").calls(snapshot, sources, 1);
+                        var last = new R24Turn(0, 0, 0, 0, 0, replay.last()).calls(snapshot, sources, 1);
                         return success(mockResponses(last.toArray(AiToolCall[]::new)));
                     }
                     String frame = received.messages().get(received.messages().size() - 2).text();
@@ -1329,7 +1354,7 @@ class DeploymentToolchainReviewEvidenceTest {
                     var header = JSON.readTree(frame.substring(beginning, frame.indexOf('\n', beginning)));
                     assertFalse(header.path("deferredRanges").isMissingNode());
                     var asked = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
-                    var latest = new R24Turn(0, 0, 0, 0, 0, "30/20989/7106 43/0/8000 45/0/6400").calls(snapshot, sources, 1);
+                    var latest = new R24Turn(0, 0, 0, 0, 0, replay.last()).calls(snapshot, sources, 1);
                     collectRequestedCoverage(asked, latest, sources);
                     var visible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
                     seedInlineSourceRanges(projected, visible);
@@ -1340,7 +1365,7 @@ class DeploymentToolchainReviewEvidenceTest {
                         pending++;
                         String pointer = receipt.path("pointer").asText();
                         String original = sources.get(pointer.length()).getValue();
-                        assertEquals(MirroredInstallerTestFixture.sha(original), receipt.path("sourceSha256").asText());
+                        assertEquals(MirroredInstallerTestFixture.sha(original), sourceHash(header, receipt));
                         addR24Range(visible, pointer, receipt.path("next").asInt(), receipt.path("requestedNext").asInt());
                     }
                     assertTrue(pending > 0);
@@ -1358,16 +1383,26 @@ class DeploymentToolchainReviewEvidenceTest {
                 });
             var rejected = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approveWithEvidence(
                 context, assisted.host, intent, command, fixture.task, fixture.model.configurationRevision, "AUTOMATIC", false, assisted.scope));
-            assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", rejected.problem().eventCode(), () -> String.valueOf(rejected.getCause()));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", rejected.problem().eventCode(),
+                () -> "sent=" + sentBytes + " refused=" + refusedBytes + " context=" + rejected.problem().context()
+                    + " cause=" + rejected.getCause());
             assertTrue(rejected.getCause().getMessage().contains("deferred source"));
             assertEquals(0, assisted.hosts.get());
             assertEquals(3, sentBytes.size());
-            assertEquals(1, refusedBytes.size());
-            assertTrue(refusedBytes.getFirst() > 69681);
-            assertTrue(sentBytes.getLast() <= 69681);
-            System.out.printf("R32_NODE_REPLAY width45=%s fixedEncoded=%d priorEncoded=%d fullEncoded=%d sentEncoded=%d cap=69681%n",
-                interpretation, sentBytes.getFirst(), sentBytes.get(1), refusedBytes.getFirst(), sentBytes.getLast());
+            assertFalse(refusedBytes.isEmpty());
+            assertTrue(refusedBytes.size() <= 2);
+            assertTrue(refusedBytes.getLast() > replay.lastCap());
+            assertTrue(sentBytes.getLast() <= replay.lastCap());
+            System.out.printf("NODE_TERMINAL_REPLAY project=%s width45=%s fixedEncoded=%d priorEncoded=%d fullEncoded=%d sentEncoded=%d cap=%d%n",
+                project, interpretation, sentBytes.getFirst(), sentBytes.get(1), refusedBytes.getLast(), sentBytes.getLast(), replay.lastCap());
         }
+    }
+
+    private record NodeReplay(int factsCharacters, int initialCap, int priorCap, int lastCap, String prior, String last) { }
+
+    private static String sourceHash(JsonNode header, JsonNode receipt) {
+        return receipt.has("sourceSha256") ? receipt.path("sourceSha256").asText()
+            : header.path("sourceSha256ByPointer").path(receipt.path("pointer").asText()).asText();
     }
 
     @ParameterizedTest
@@ -1446,7 +1481,7 @@ class DeploymentToolchainReviewEvidenceTest {
             String pointer = receipt.path("pointer").asText();
             int start = receipt.path("next").asInt(), end = receipt.path("requestedNext").asInt();
             String source = sources.get(pointer.length()).getValue();
-            assertEquals(MirroredInstallerTestFixture.sha(source), receipt.path("sourceSha256").asText());
+            assertEquals(MirroredInstallerTestFixture.sha(source), sourceHash(header, receipt));
             var later = read("r31-deferred-" + deferred++, snapshot, pointer, start, end - start);
             var value = pagePayload(reader.read(mockResponses(later)).getFirst().text()).path("value");
             assertEquals(start, value.path("offset").asInt());
@@ -1588,10 +1623,14 @@ class DeploymentToolchainReviewEvidenceTest {
             String frame = initial.messages().get(1 + selection.path("ordinal").asInt()).text()
                 .substring(selection.path("headerCharacters").asInt());
             for (String marker : List.of("SHASUMS256.txt", "linux-x64.tar.gz", "def checksum_text(",
-                    "archive traversal", "owned_directory(home)", "def verify_system(",
-                    "exec(compile(payload,", "class MirrorRedirect(", "do_handshake()",
+                    "exec(compile(payload,", "do_handshake()",
                     "digest.hexdigest().lower() != expected.lower()", "os.replace(temporary, target)"))
                 assertTrue(frame.contains(marker), marker + "\n" + frame);
+            var helperRanges = facts.at("/" + PHASE + "/installedHelperSource/namedRanges");
+            assertTrue(helperRanges.path("archiveTarValidation").isArray());
+            assertTrue(helperRanges.path("nodeSystemOwnership").isArray());
+            assertTrue(helperRanges.path("def verify_system(").isArray());
+            assertTrue(facts.at("/mirrorTransport/runtimeSource/namedRanges/class MirrorRedirect(").isArray());
             assertFalse(frame.contains("wtl_run_mirror_runtime() {"));
             assertFalse(frame.contains("source_dependencies(layout)"), "Node's archive facts do not repeat the unrelated source-build branch");
             assertEquals("NODE", facts.at("/originalToolchainPreparation/ecosystem").asText());
@@ -1779,9 +1818,26 @@ class DeploymentToolchainReviewEvidenceTest {
             for (String checked : List.of("RUBY_SCRATCH_BYTES = 1536 * 1024 * 1024",
                 "RUBY_SCRATCH_INODES = 96000", "RUBY_MEMORY_BYTES = 3 * 1024 * 1024 * 1024",
                 "MemorySwapMax=0", "require_ruby_resources(*resource_limits)",
-                "ruby_create_scratch(scratch, unit)", "ruby_remove_scratch(work / 'scratch', unit)")) {
+                "ruby_create_scratch(scratch, unit)", "ruby_remove_scratch(work / 'scratch', unit)",
+                "def verify_native_build_chain(release):", "verify_native_build_chain(release)",
+                "(\"/usr/bin/ar\", \"crs\", \"probe.a\", \"probe.o\")",
+                "def make_python(release):", "make_failure = make_python(release)",
+                "sha256 = download(url, archive, algorithm, expected)",
+                "digest.hexdigest().lower() != expected.lower()")) {
                 assertTrue(body.contains(checked), checked);
             }
+            var helper = projected.path("installedHelperSource");
+            String source = originals.get(helper.path("sourcePointer").asText());
+            String snapshot = projected.path("snapshotSha256").asText();
+            int diagnostics = source.indexOf("PYTHON_MAKE_FAILURES = {");
+            int make = source.indexOf("def make_python(release):", diagnostics);
+            assertTrue(diagnostics >= 0 && make > diagnostics && make - diagnostics <= 8000);
+            assertFalse(body.contains("PYTHON_MAKE_FAILURES = {"));
+            var diagnosticCall = read("read-python-diagnostic-grammar", snapshot, helper.path("sourcePointer").asText(),
+                diagnostics, make - diagnostics);
+            var page = evidence.reader(1).read(mockResponses(diagnosticCall)).getFirst();
+            assertFalse(page.error());
+            assertEquals(source.substring(diagnostics, make), pagePayload(page.text()).at("/value/text").asText());
         }
     }
 

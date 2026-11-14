@@ -270,6 +270,9 @@ class DeploymentSourceComparisonTest {
             var request = (AiRequest) a[0];
             assertFalse(request.jsonObjectResponse());
             assertTrue(request.tools().stream().anyMatch(tool->tool.name().equals("read")));
+            assertEquals(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current()
+                .ai().requests().generationRecoveryAttempts(), request.generationRecoveryAttempts(),
+                "Identification and calibration delegate transport recovery to the original model call");
             var facts = new ObjectMapper().readTree(request.messages().getLast().text());
             observedFacts.add(facts);
             int call = calls.getAndIncrement();

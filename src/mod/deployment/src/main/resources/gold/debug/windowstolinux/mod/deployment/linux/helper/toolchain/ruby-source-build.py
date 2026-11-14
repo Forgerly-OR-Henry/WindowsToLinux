@@ -45,10 +45,20 @@ RUBY_CONFIGURE_FAILURES = {
     133: 'output-storage-exhausted',
     134: 'configure-nonzero',
     135: 'diagnostic-pipe-error',
+    165: 'output-operation-not-permitted-conftest',
+    166: 'output-operation-not-permitted-config-status',
+    167: 'output-operation-not-permitted-compiler',
+    168: 'output-operation-not-permitted-linker',
+    169: 'output-operation-not-permitted-copy',
+    170: 'output-operation-not-permitted-rename',
+    171: 'output-permission-hints-ambiguous',
 }
+SOURCE_BUILD_PROBE_STAGES = (('c-compile', 'cc'), ('static-archive', 'ar'), ('c-link', 'cc'), ('native-execute', 'probe'))
+SOURCE_BUILD_PROBE_FAILURES = ('start-permission-denied', 'start-not-found', 'start-os-error', 'child-nonzero', 'child-signal')
 RUBY_MANAGER_RESULTS = frozenset(('success', 'resources', 'protocol', 'timeout', 'exit-code', 'signal',
                                   'core-dump', 'watchdog', 'start-limit-hit', 'oom-kill', 'skip-condition'))
 SOURCE_WORKER = r'''
+import errno
 import os
 import pathlib
 import socket
@@ -149,6 +159,32 @@ def verify_build_scratch(release, prefix):
                 failure = 129
                 command(str(link), cwd=directory)
 
+def verify_native_build_chain(release):
+    # All inputs, paths below scratch, and commands are constant. The unit's existing
+    # resource and runtime bounds also apply to these short compiler and binutils calls.
+    global failure
+    failure = 127
+    with tempfile.TemporaryDirectory(prefix=".wtl-native-check-", dir=release) as temporary:
+        with (pathlib.Path(temporary) / "probe.c").open("xb") as source:
+            source.write(b"int main(void) { return 0; }\n")
+        commands = (("/usr/bin/cc", "-c", "probe.c", "-o", "probe.o"),
+                    ("/usr/bin/ar", "crs", "probe.a", "probe.o"),
+                    ("/usr/bin/cc", "probe.a", "-o", "probe"),
+                    ("./probe",))
+        for index, argv in enumerate(commands):
+            start_error = 145 + 5 * index
+            try:
+                subprocess.run(argv, cwd=temporary, env=environment, stdin=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            except OSError as error:
+                detail = {errno.EACCES: 0, errno.EPERM: 0, errno.ENOENT: 1}.get(error.errno, 2)
+                sys.exit(start_error + detail)
+            except subprocess.CalledProcessError as error:
+                sys.exit(start_error + (4 if error.returncode < 0 else 3))
+
+def permission_text(line):
+    return line.lower().rstrip(b".").rsplit(b": ", 1)[-1]
+
 def diagnostic_output_lines(stream):
     continued = False
     for raw in iter(lambda: stream.readline(4097), b""):
@@ -158,7 +194,16 @@ def diagnostic_output_lines(stream):
 '''
 
 RUBY_WORKER = SOURCE_WORKER + r'''
-import errno
+import re
+
+RUBY_EPERM_REPORTERS = (
+    (165, rb"^(?:(?:\./)?configure|(?:/(?:usr/)?bin/)?(?:ba)?sh): (?:line )?[0-9]+: (?:\.\./|\./)?conftest(?:\.exe)?: "),
+    (166, rb"^(?:\./)?config\.status: "),
+    (167, rb"^(?:[^: ]*/)?(?:gcc(?:-[0-9]+)?|cc|cc1|g\+\+|c\+\+): "),
+    (168, rb"^(?:[^: ]*/)?(?:(?:[a-z0-9_]+-)*ld(?:\.bfd)?|collect2): "),
+    (169, rb"^(?:[^: ]*/)?cp: "),
+    (170, rb"^(?:[^: ]*/)?mv: "),
+)
 
 def configure(release, prefix, options):
     # Classify failures inside the unprivileged unit. No configure or config.log text leaves it.
@@ -176,19 +221,28 @@ def configure(release, prefix, options):
     }
     suffixes = {b"permission denied": 130, b"operation not permitted": 131, b"read-only file system": 132,
                 b"no space left on device": 133, b"disk quota exceeded": 133}
-    exact, hint = None, None
+    exact, hints, eperm_reporters = None, set(), set()
     try:
         with process:
             for line in diagnostic_output_lines(process.stdout):
                 exact = messages.get(line, exact)
-                hint = suffixes.get(line.lower().rstrip(b".").rsplit(b": ", 1)[-1], hint)
+                hint = suffixes.get(permission_text(line))
+                if hint:
+                    hints.add(hint)
+                if hint == 131:
+                    eperm_reporters.add(next((code for code, pattern in RUBY_EPERM_REPORTERS
+                                              if re.match(pattern, line)), 131))
             code = process.wait()
     except OSError:
         sys.exit(135)
     if code < 0:
         sys.exit(111)
     if code:
-        sys.exit(exact or hint or 134)
+        if exact:
+            sys.exit(exact)
+        if len(hints) > 1 or len(eperm_reporters) > 1:
+            sys.exit(171)
+        sys.exit(next(iter(eperm_reporters or hints), 134))
 
 failure = 90
 try:
@@ -204,6 +258,7 @@ try:
         failure = 97
         release = extract_release("ruby-" + version)
         verify_build_scratch(release, prefix)
+        verify_native_build_chain(release)
         options = ["--with-out-ext=openssl"] if legacy == "legacy" else []
         failure = 98
         configure(release, prefix, options)
@@ -347,6 +402,12 @@ def ruby_diagnostic(command, role, ecosystem='ruby'):
     configure_failure = RUBY_CONFIGURE_FAILURES.get(exit_code) if ecosystem == 'ruby' and role == 'build' else None
     make_failure = (globals().get('PYTHON_MAKE_FAILURES', {}).get(exit_code)
                     if ecosystem == 'python' and role == 'build' else None)
+    build_probe_failure = None
+    if role == 'build' and exit_code is not None and 145 <= exit_code <= 164:
+        index, detail = divmod(exit_code - 145, len(SOURCE_BUILD_PROBE_FAILURES))
+        phase, child = SOURCE_BUILD_PROBE_STAGES[index]
+        failure = 'native-check-' + phase, child
+        build_probe_failure = SOURCE_BUILD_PROBE_FAILURES[detail]
     if configure_failure is not None:
         failure = RUBY_WORKER_FAILURES[98]
     if make_failure is not None:
@@ -365,6 +426,8 @@ def ruby_diagnostic(command, role, ecosystem='ruby'):
             details.append('configure-failure=' + configure_failure)
         if make_failure is not None:
             details.append('make-failure=' + make_failure)
+        if build_probe_failure is not None:
+            details.append('native-check-failure=' + build_probe_failure)
     return {**command, 'stage': stage, 'executable': 'systemd-run',
             'stdout': '\n'.join(details) + '\n', 'stderr': ''}
 
