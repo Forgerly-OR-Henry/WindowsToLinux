@@ -43,6 +43,8 @@ record PreparationSourceRange(String section, int offset, int next) {
             }
         } else if (rust) {
             ranges.addAll(rustPreparation(helper, diagnosed));
+        } else if (ecosystem.equals("PYTHON")) {
+            ranges.addAll(pythonSourcePreparation(helper));
         } else {
             ranges.add(python(helper, "def install(ecosystem, identity, url, algorithm, expected, layout):"));
             ranges.add(python(helper, "def probe(ecosystem, directory, expected):"));
@@ -59,10 +61,32 @@ record PreparationSourceRange(String section, int offset, int next) {
         if (buildsFromSource(ecosystem))
             ranges.add(python(helper, "def source_dependencies("));
         if (ecosystem.equals("RUBY")) {
-            for (String function : List.of("ruby_unit", "ruby_probe", "ruby_publish", "ruby_source_install"))
+            ranges.addAll(sourceIsolation(helper));
+            ranges.add(between(helper, "rubySourceWorker", "RUBY_WORKER = SOURCE_WORKER + r'''\n",
+                "\n\ndef ruby_system_command("));
+            for (String function : List.of("ruby_unit", "ruby_probe", "ruby_source_install"))
                 ranges.add(python(helper, "def " + function + "("));
         }
         return List.copyOf(ranges);
+    }
+
+    private static List<PreparationSourceRange> pythonSourcePreparation(String helper) throws IOException {
+        var ranges = new ArrayList<>(sourceIsolation(helper));
+        ranges.add(between(helper, "pythonSourceWorker", "PYTHON_SOURCE_RECIPE = ", "\n\ndef main(args):"));
+        ranges.add(between(helper, "pythonLegacyReceiverGuard",
+            "    if ecosystem == 'PYTHON' or layout == 'python':\n", "\n    MIRROR_POINT = toolchain_point(ecosystem)"));
+        for (String function : List.of("discover_system", "verify_system", "materialize_system"))
+            ranges.add(python(helper, "def " + function + "("));
+        return ranges;
+    }
+
+    private static List<PreparationSourceRange> sourceIsolation(String helper) throws IOException {
+        return List.of(
+            between(helper, "sourceIsolationPreflight", "SOURCE_WORKER = r'''\n", "\nRUBY_WORKER = SOURCE_WORKER"),
+            python(helper, "def source_install("), python(helper, "def source_unit("),
+            python(helper, "def source_probe("), python(helper, "def ruby_require_settled("),
+            python(helper, "def ruby_mount_path("), python(helper, "def ruby_publish("),
+            python(helper, "def ruby_link_target("));
     }
 
     private static List<PreparationSourceRange> rustPreparation(String helper, boolean diagnosed) throws IOException {
@@ -82,7 +106,7 @@ record PreparationSourceRange(String section, int offset, int next) {
             between(helper, "rustMarkerPersistence", "def tracked_regular(path, limit):", "\ndef installation_diagnostic_request("),
             between(helper, "rustPredecessorDispatch", "_previous_installation_key = installation_key", "\ndef tracked_require_quiescent_with_ruby("),
             between(helper, "rustDispatchPredecessors", "\ninstallation_key = install_key_with_ruby_recipe\n", "\nRUST_DISTRIBUTION_RECIPE = "),
-            between(helper, "rustComponentReceiver", "RUST_DISTRIBUTION_RECIPE = ", "\ndef main(args):\n"),
+            between(helper, "rustComponentReceiver", "RUST_DISTRIBUTION_RECIPE = ", "\nPYTHON_SOURCE_RECIPE = "),
             between(helper, "rustPythonEntry", "\nif __name__ == '__main__':\n", "\nWTL_OFFICIAL_TOOLCHAINS\n",
                 offset(helper, "def prepare(args):"))
         ));
@@ -175,6 +199,18 @@ record PreparationSourceRange(String section, int offset, int next) {
 
     static PreparationSourceRange runtimeLauncher(String shell) throws IOException {
         return between(shell, "mirrorRuntimeLauncher", "wtl_run_mirror_runtime() {\n", "\nwtl_system_package() {");
+    }
+
+    static List<PreparationSourceRange> buildRuntime(String runtime) throws IOException {
+        return List.of(python(runtime, "class MirrorPolicy:"),
+            python(runtime, "class MirrorRedirect("),
+            python(runtime, "def mirror_wrapper("),
+            python(runtime, "def mirror_dependency("));
+    }
+
+    static List<PreparationSourceRange> dependencyRuntime(String runtime) throws IOException {
+        return List.of(python(runtime, "def mirror_system_command("),
+            python(runtime, "def mirror_dnf("));
     }
 
     static boolean buildsFromSource(String ecosystem) {

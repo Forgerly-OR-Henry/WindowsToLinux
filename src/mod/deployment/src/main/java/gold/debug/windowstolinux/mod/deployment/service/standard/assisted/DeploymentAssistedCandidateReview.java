@@ -27,6 +27,15 @@ final class DeploymentAssistedCandidateReview {
     private DeploymentAssistedCandidateReview() {
     }
 
+    static String verificationInstructions() {
+        return """
+            For the guarded archive verification, candidate-query-task is the first step of the outer command.
+            Its CANDIDATE_STATE and BUILD_ACTIVE lines form helperStdoutPrefix. The outer command checks the exact archive path and appends BYTES, SHA256 and OWNER in that order.
+            Compare candidateObservation.expectedStdout against the complete outer command stdout. The standalone candidate query's two-line contract applies only to the nested helper here.
+            These are acceptance conditions for the upcoming read. Verify the guard, target, original task and archive association independently for this command.
+            """;
+    }
+
     static final class AlternateCandidate extends IllegalArgumentException {
         AlternateCandidate() {
             super("Candidate differs from the original archive and reviewed operations");
@@ -65,7 +74,7 @@ final class DeploymentAssistedCandidateReview {
         }
         if (!archive)
             return Map.of("task", task.id().toString(), "application", application, "candidate", candidate,
-                "expectedStdout", "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n",
+                "expectedStdout", DeploymentCandidateChannel.OWNED_IDLE_STDOUT,
                 "meaning", "The pinned read-only helper checks original task ownership and queries systemd ActiveState. The helper requires root and rejects mismatched ownership. The local consumer requires a successful complete zero-exit result and exact stdout before continuing; this is not a live ownership result.");
 
         var source = sources.get(application);
@@ -79,6 +88,7 @@ final class DeploymentAssistedCandidateReview {
             new DeploymentRemoteWorkspace(application, hash, Optional.of(id), layout).candidateId().equals(candidate)))
             throw new AlternateCandidate();
         return Map.of("task", task.id().toString(), "application", application, "candidate", candidate,
+            "helperStdoutPrefix", DeploymentCandidateChannel.OWNED_IDLE_STDOUT,
             "expectedStdout", DeploymentCandidateChannel.archiveVerificationOutput(bytes, hash),
             "archiveBytes", bytes, "archiveSha256", hash, "sourceManifestSha256", source.get("sourceManifestSha256"),
             "meaning", "The guarded remote command observes ownership, size and SHA-256. The original product consumer enforces full stdout equality (including root owner and inactive build), successful zero exit and no truncation before building. Any mismatch retains UNKNOWN. The expected values come from the captured compressed archive. This is the comparison contract; no remote bytes or ownership have yet been verified by this command.");

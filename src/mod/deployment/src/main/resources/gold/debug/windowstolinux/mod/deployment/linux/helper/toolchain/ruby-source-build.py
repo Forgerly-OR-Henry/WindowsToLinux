@@ -32,16 +32,63 @@ RUBY_CONFIGURE_FAILURES = {
 }
 RUBY_MANAGER_RESULTS = frozenset(('success', 'resources', 'protocol', 'timeout', 'exit-code', 'signal',
                                   'core-dump', 'watchdog', 'start-limit-hit', 'oom-kill', 'skip-condition'))
-RUBY_WORKER = r'''
-import errno
+SOURCE_WORKER = r'''
 import os
 import pathlib
 import socket
 import subprocess
 import sys
-import tempfile
 
 environment = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "TMPDIR": "/tmp", "LC_ALL": "C"}
+
+def require_isolated(network, mount):
+    global failure
+    failure = 90
+    if not all(61184 <= identity <= 65519 for identity in (os.geteuid(), os.getegid())):
+        sys.exit(failure)
+    failure = 91
+    if os.readlink("/proc/self/ns/net") == network or os.readlink("/proc/self/ns/mnt") == mount:
+        sys.exit(failure)
+    failure = 92
+    with open("/proc/self/status") as status:
+        properties = dict(line.split(":", 1) for line in status if ":" in line)
+    if (properties["NoNewPrivs"].strip() != "1" or properties["Seccomp"].strip() != "2" or
+            any(int(properties[key].strip(), 16) for key in ("CapEff", "CapPrm", "CapBnd"))):
+        sys.exit(failure)
+    failure = 93
+    if any(not os.statvfs(path).f_flag & os.ST_RDONLY for path in ("/usr", "/etc", "/run")):
+        sys.exit(failure)
+    failure = 94
+    try:
+        local_socket = socket.socket(socket.AF_UNIX)
+    except OSError:
+        pass
+    else:
+        local_socket.close()
+        sys.exit(failure)
+
+def command(*argv, cwd=None):
+    subprocess.run(argv, cwd=cwd, env=environment, stdin=subprocess.DEVNULL, check=True)
+
+def require_staging_mount(prefix, device, inode):
+    mounted = os.stat(prefix)
+    if (str(mounted.st_dev), str(mounted.st_ino)) != (device, inode):
+        sys.exit(95)
+
+def extract_release(name):
+    source = pathlib.Path("/tmp/wtl-toolchain-source")
+    source.mkdir(mode=0o700)
+    command("/usr/bin/tar", "--extract", "--no-same-owner", "--no-same-permissions",
+            "--file", "/tmp/wtl-toolchain-release", "--directory", str(source))
+    release = source / name
+    if list(source.iterdir()) != [release] or release.is_symlink() or not release.is_dir():
+        sys.exit(96)
+    return release
+'''
+
+RUBY_WORKER = SOURCE_WORKER + r'''
+import errno
+import tempfile
 
 def configure(release, prefix, options):
     # Classify failures inside the unprivileged unit. No configure or config.log text leaves it.
@@ -69,48 +116,14 @@ def configure(release, prefix, options):
 failure = 90
 try:
     mode, network, mount, prefix, version, *arguments = sys.argv[1:]
-    if not all(61184 <= identity <= 65519 for identity in (os.geteuid(), os.getegid())):
-        sys.exit(failure)
-    failure = 91
-    if os.readlink("/proc/self/ns/net") == network or os.readlink("/proc/self/ns/mnt") == mount:
-        sys.exit(failure)
-    failure = 92
-    with open("/proc/self/status") as status:
-        properties = dict(line.split(":", 1) for line in status if ":" in line)
-    if (properties["NoNewPrivs"].strip() != "1" or properties["Seccomp"].strip() != "2" or
-            any(int(properties[key].strip(), 16) for key in ("CapEff", "CapPrm", "CapBnd"))):
-        sys.exit(failure)
-    failure = 93
-    if any(not os.statvfs(path).f_flag & os.ST_RDONLY for path in ("/usr", "/etc", "/run")):
-        sys.exit(failure)
-    failure = 94
-    try:
-        local_socket = socket.socket(socket.AF_UNIX)
-    except OSError:
-        pass
-    else:
-        local_socket.close()
-        sys.exit(failure)
-
-    def command(*argv, cwd=None):
-        subprocess.run(argv, cwd=cwd, env=environment, stdin=subprocess.DEVNULL, check=True)
-
+    require_isolated(network, mount)
     ruby = prefix + "/bin/ruby"
     if mode == "build":
         failure = 95
         device, inode, legacy = arguments
-        mounted = os.stat(prefix)
-        if (str(mounted.st_dev), str(mounted.st_ino)) != (device, inode):
-            sys.exit(failure)
-        source = pathlib.Path("/tmp/wtl-ruby-source")
-        source.mkdir(mode=0o700)
+        require_staging_mount(prefix, device, inode)
         failure = 97
-        command("/usr/bin/tar", "--extract", "--no-same-owner", "--no-same-permissions",
-                "--file", "/tmp/wtl-ruby-release", "--directory", str(source))
-        failure = 96
-        release = source / ("ruby-" + version)
-        if list(source.iterdir()) != [release] or release.is_symlink() or not release.is_dir():
-            sys.exit(failure)
+        release = extract_release("ruby-" + version)
         options = ["--with-out-ext=openssl"] if legacy == "legacy" else []
         failure = 98
         configure(release, prefix, options)
@@ -137,7 +150,11 @@ def ruby_system_command(executable, *arguments):
 
 
 def ruby_unit_name(operation_id, role):
-    return 'wtl-ruby-' + role + '-' + uuid.UUID(operation_id).hex + '.service'
+    return source_unit_name(operation_id, role, 'ruby')
+
+
+def source_unit_name(operation_id, role, ecosystem):
+    return 'wtl-' + ecosystem + '-' + role + '-' + uuid.UUID(operation_id).hex + '.service'
 
 
 def ruby_require_settled(unit):
@@ -187,20 +204,22 @@ def ruby_manager_terminal(command):
     return result, code, value
 
 
-def ruby_diagnostic(command, role):
+def ruby_diagnostic(command, role, ecosystem='ruby'):
     result, code, value = ruby_manager_terminal(command)
     exit_code = command['actualExitCode']
     failure = RUBY_WORKER_FAILURES.get(exit_code)
-    configure_failure = RUBY_CONFIGURE_FAILURES.get(exit_code) if role == 'build' else None
+    configure_failure = RUBY_CONFIGURE_FAILURES.get(exit_code) if ecosystem == 'ruby' and role == 'build' else None
     if configure_failure is not None:
         failure = RUBY_WORKER_FAILURES[98]
     worker = (result == 'exit-code' and code == 'exited' and value == str(exit_code) and failure is not None
               and not (command['timedOut'] or command['cancelled']))
-    stage = 'ruby-' + role + '-launcher'
+    stage = ecosystem + '-' + role + '-launcher'
     details = ['unit-role=' + role, 'manager-result=' + result, 'manager-main-code=' + code, 'manager-main-status=' + value]
     if worker:
         phase, child = failure
-        stage = 'ruby-' + role + '-' + phase
+        if ecosystem == 'python' and exit_code in (102, 103):
+            child = 'python3'
+        stage = ecosystem + '-' + role + '-' + phase
         details.extend(('worker-stage=' + phase, 'worker-executable=' + child))
         if configure_failure is not None:
             details.append('configure-failure=' + configure_failure)
@@ -208,13 +227,13 @@ def ruby_diagnostic(command, role):
             'stdout': '\n'.join(details) + '\n', 'stderr': ''}
 
 
-def ruby_run(command, role):
+def ruby_run(command, role, ecosystem='ruby'):
     # The synchronous shared runner captures the launcher's streams. The worker's streams stay separate.
     global record_installation_diagnostic
     recorder = record_installation_diagnostic
 
     def record_ruby_observation(observation):
-        recorder(ruby_diagnostic(observation, role))
+        recorder(ruby_diagnostic(observation, role, ecosystem))
 
     record_installation_diagnostic = record_ruby_observation
     try:
@@ -224,6 +243,10 @@ def ruby_run(command, role):
 
 
 def ruby_unit(unit, directory, version, build_mounts=None):
+    source_unit(unit, directory, version, 'ruby', RUBY_WORKER, build_mounts)
+
+
+def source_unit(unit, directory, version, ecosystem, worker_source, build_mounts):
     import grp
     import pwd
 
@@ -252,13 +275,13 @@ def ruby_unit(unit, directory, version, build_mounts=None):
         'TasksMax=128', 'LimitFSIZE=268435456', 'LimitCORE=0', 'UMask=0022',
         'StandardOutput=null', 'StandardError=null',
     ]
-    worker = ['/usr/bin/python3', '-I', '-S', '-B', '-c', RUBY_WORKER]
+    worker = ['/usr/bin/python3', '-I', '-S', '-B', '-c', worker_source]
     worker.extend(['build' if build_mounts else 'probe', os.readlink('/proc/self/ns/net'),
                    os.readlink('/proc/self/ns/mnt'), directory, version])
     if build_mounts:
         stage, archive, gem = build_mounts
         staged = stage.lstat()
-        sources = [ruby_mount_path(archive) + ':/tmp/wtl-ruby-release']
+        sources = [ruby_mount_path(archive) + ':/tmp/wtl-toolchain-release']
         if gem is not None:
             sources.append(ruby_mount_path(gem) + ':/tmp/openssl-3.0.3.gem')
         properties.extend([
@@ -271,7 +294,7 @@ def ruby_unit(unit, directory, version, build_mounts=None):
     command = ruby_system_command('systemd-run', '--wait', '--collect', '--slice=system.slice', '--unit=' + unit)
     command.extend('--property=' + value for value in properties)
     try:
-        ruby_run(command + ['--'] + worker, 'build' if build_mounts else 'probe')
+        ruby_run(command + ['--'] + worker, 'build' if build_mounts else 'probe', ecosystem)
     except (PreparationFailure, subprocess.TimeoutExpired, OSError):
         subprocess.run(
             ruby_system_command('systemctl', 'stop', '--no-pager', unit), stdin=subprocess.DEVNULL,
@@ -283,18 +306,22 @@ def ruby_unit(unit, directory, version, build_mounts=None):
 
 
 def ruby_probe(directory, version):
+    source_probe(directory, version, 'ruby', ruby_unit)
+
+
+def source_probe(directory, version, ecosystem, run_unit):
     operation = globals().get('TRACKED_OPERATION')
     if operation is None:
-        ruby_unit(ruby_unit_name(str(uuid.uuid4()), 'probe'), directory, version)
+        run_unit(source_unit_name(str(uuid.uuid4()), 'probe', ecosystem), directory, version)
         return
-    marker = operation.directory / 'ruby-probe'
+    marker = operation.directory / (ecosystem + '-probe')
     if marker.exists() or marker.is_symlink():
         fail('interrupted', 'an earlier Ruby probe still requires observation')
     identity = str(uuid.uuid4())
-    unit = ruby_unit_name(identity, 'probe')
+    unit = source_unit_name(identity, 'probe', ecosystem)
     tracked_atomic_bytes(marker, identity.encode('ascii'))
     try:
-        ruby_unit(unit, directory, version)
+        run_unit(unit, directory, version)
     finally:
         ruby_require_settled(unit)
         marker.unlink()
@@ -323,7 +350,7 @@ def ruby_link_target(path, links):
     return tuple(resolved)
 
 
-def ruby_publish(stage, destination):
+def ruby_publish(stage, destination, executable='ruby'):
     # The unit is quiescent. No worker-controlled file is opened through a symlink or as a device.
     links, entries = {}, set()
     total = 0
@@ -398,32 +425,42 @@ def ruby_publish(stage, destination):
         destination.joinpath(*path).symlink_to(link)
     for directory, _, _ in os.walk(destination, topdown=False, followlinks=False):
         tracked_sync_directory(pathlib.Path(directory))
-    ruby = destination / 'bin/ruby'
-    if ruby.is_symlink() or not ruby.is_file() or not ruby.stat().st_mode & 0o111:
-        fail('probe', 'Ruby staging did not produce its executable')
+    launcher = ('bin', executable)
+    if executable == 'ruby' and launcher in links:
+        fail('probe', 'Ruby staging did not produce its regular executable')
+    target = destination.joinpath(*ruby_link_target(launcher, links))
+    if not target.is_file() or not target.stat().st_mode & 0o111:
+        fail('probe', 'source build staging did not produce its executable')
 
 
 def ruby_source_install(identity, url, algorithm, expected, layout):
+    return source_install('RUBY', RUBY_RECIPE, identity, url, algorithm, expected, layout,
+                          ruby_unit, ruby_publish, ruby_probe)
+
+
+def source_install(ecosystem, recipe, identity, url, algorithm, expected, layout, run_unit, publish, probe_release):
     global MIRROR_POINT
-    if (layout != 'ruby' or algorithm != 'sha256' or not re.fullmatch('[a-f0-9]{64}', expected) or
+    name = ecosystem.lower()
+    if (layout != name or algorithm != 'sha256' or not re.fullmatch('[a-f0-9]{64}', expected) or
             not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', identity)):
-        fail('metadata', 'invalid official Ruby source metadata')
-    MIRROR_POINT = toolchain_point('RUBY')
-    destination = ROOT / 'versions' / ('ruby-' + installation_key('RUBY', identity, expected))
+        fail('metadata', 'invalid official source release metadata')
+    MIRROR_POINT = toolchain_point(ecosystem)
+    destination = ROOT / 'versions' / (name + '-' + installation_key(ecosystem, identity, expected))
     marker = saved_installation_marker(destination)
     if marker is not None:
         record = json.loads(tracked_regular(marker, 65536))
         if (not isinstance(record, dict) or any(record.get(key) != value for key, value in (
-                ('ecosystem', 'RUBY'), ('origin', 'MANAGED'), ('recipe', RUBY_RECIPE), ('version', identity),
+                ('ecosystem', ecosystem), ('origin', 'MANAGED'), ('version', identity),
                 ('directory', str(destination)), ('source', url), ('sha256', expected),
-                ('official_algorithm', algorithm), ('official_digest', expected)))):
-            fail('integrity', 'existing Ruby installation does not match its source recipe')
-        ruby_probe(destination, identity)
+                ('official_algorithm', algorithm), ('official_digest', expected)))
+                or record.get('recipe', recipe if ecosystem == 'PYTHON' else None) != recipe):
+            fail('integrity', 'existing installation does not match its source recipe')
+        probe_release(destination, identity)
         return record
 
     tracked = globals().get('TRACKED_OPERATION')
     operation_id = tracked.request['operationId'] if tracked is not None else str(uuid.uuid4())
-    unit = ruby_unit_name(operation_id, 'build')
+    unit = source_unit_name(operation_id, 'build', name)
     if tracked is not None:
         work = tracked.directory / 'work'
         work.mkdir(mode=0o700)
@@ -432,7 +469,7 @@ def ruby_source_install(identity, url, algorithm, expected, layout):
         work_parent = ROOT / 'work'
         owned_directory(work_parent)
         work_parent.mkdir(mode=0o700, exist_ok=True)
-        work = pathlib.Path(tempfile.mkdtemp(prefix='ruby-', dir=work_parent))
+        work = pathlib.Path(tempfile.mkdtemp(prefix=name + '-', dir=work_parent))
     sandbox_started, sandbox_settled = False, False
     try:
         archive = work / 'release.archive'
@@ -441,27 +478,27 @@ def ruby_source_install(identity, url, algorithm, expected, layout):
         if tracked is not None:
             tracked.archive_downloaded(sha256)
         gem, dependencies = None, {}
-        if version_key(identity)[:2] == (3, 0):
+        if ecosystem == 'RUBY' and version_key(identity)[:2] == (3, 0):
             gem = work / 'openssl-3.0.3.gem'
             gem_url = source_url('RUBYGEMS', 'downloads/' + gem.name)
             download(gem_url, gem, 'sha256', RUBY_OPENSSL_DIGEST)
             gem.chmod(0o444)
             dependencies['openssl'] = {'version': '3.0.3', 'source': gem_url, 'sha256': RUBY_OPENSSL_DIGEST}
-        source_dependencies('ruby')
+        source_dependencies(layout)
         stage = work / 'stage'
         stage.mkdir()
         # Only the unit can reach this write mount. Every host ancestor to the work directory is protected.
         stage.chmod(0o777)
         with create_installation_directory(destination, tracked):
             sandbox_started = True
-            ruby_unit(unit, destination, identity, (stage, archive, gem))
+            run_unit(unit, destination, identity, (stage, archive, gem))
             sandbox_settled = True
-            ruby_publish(stage, destination)
-            ruby_probe(destination, identity)
+            publish(stage, destination)
+            probe_release(destination, identity)
             record = {
-                'ecosystem': 'RUBY', 'version': identity, 'directory': str(destination), 'origin': 'MANAGED',
+                'ecosystem': ecosystem, 'version': identity, 'directory': str(destination), 'origin': 'MANAGED',
                 'source': url, 'sha256': sha256, 'official_algorithm': algorithm, 'official_digest': expected,
-                'dependencies': dependencies, 'recipe': RUBY_RECIPE,
+                'dependencies': dependencies, 'recipe': recipe,
             }
             tracked_atomic_json(destination / '.w2l-toolchain.json', record, 0o444)
             return record
@@ -500,28 +537,33 @@ def probe_with_ruby_isolation(ecosystem, directory, expected):
 
 def tracked_require_quiescent_with_ruby(operation):
     _previous_tracked_require_quiescent(operation)
-    if (operation.request['kind'] == 'PREPARE' and operation.request['parameters']['ecosystem'] == 'RUBY' and
-            (operation.directory / 'work' / 'stage').is_dir()):
-        ruby_require_settled(ruby_unit_name(operation.request['operationId'], 'build'))
-    marker = operation.directory / 'ruby-probe'
-    if marker.exists() or marker.is_symlink():
-        identity = tracked_regular(marker, 36).decode('ascii')
-        if not tracked_uuid(identity):
-            fail('integrity', 'invalid tracked Ruby probe identity')
-        ruby_require_settled(ruby_unit_name(identity, 'probe'))
+    if operation.request['kind'] == 'PREPARE':
+        name = operation.request['parameters']['ecosystem'].lower()
+        if name in ('ruby', 'python') and (operation.directory / 'work' / 'stage').is_dir():
+            ruby_require_settled(source_unit_name(operation.request['operationId'], 'build', name))
+    for name, marker in source_probe_markers(operation):
+        if marker.exists() or marker.is_symlink():
+            identity = tracked_regular(marker, 36).decode('ascii')
+            if not tracked_uuid(identity):
+                fail('integrity', 'invalid tracked source toolchain probe identity')
+            ruby_require_settled(source_unit_name(identity, 'probe', name))
+
+
+def source_probe_markers(operation):
+    return [(name, operation.directory / (name + '-probe')) for name in ('ruby', 'python')]
 
 
 def tracked_owned_residue_with_ruby(operation):
-    marker = operation.directory / 'ruby-probe'
-    return marker.exists() or marker.is_symlink() or _previous_tracked_owned_residue(operation)
+    return (any(marker.exists() or marker.is_symlink() for _, marker in source_probe_markers(operation))
+            or _previous_tracked_owned_residue(operation))
 
 
 def tracked_cleanup_with_ruby(operation):
     _previous_tracked_cleanup(operation)
-    marker = operation.directory / 'ruby-probe'
-    if marker.exists():
-        marker.unlink()
-        tracked_sync_directory(operation.directory)
+    for _, marker in source_probe_markers(operation):
+        if marker.exists():
+            marker.unlink()
+            tracked_sync_directory(operation.directory)
 
 
 installation_key = install_key_with_ruby_recipe

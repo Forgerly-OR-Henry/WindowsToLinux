@@ -230,6 +230,9 @@ public final class DeploymentAiJson {
             } catch (IllegalArgumentException rejected) {
                 invalid = rejected.getMessage();
             }
+            if (invalid == null && result.path("decision").asText().equals("APPROVE")
+                && evidenceReader.filter(DeploymentCommandSourceEvidence.Reader::hasUndeliveredDeferredRanges).isPresent())
+                throw new IOException("Independent approval arrived before the requested deferred source was delivered");
             var receipt = new AiToolResult(call.id(), invalid == null
                 ? "REVIEW_RECORDED: model verdict only; no execution grant. The next command requires a new complete independent review."
                 : "SUBMISSION_REJECTED: " + invalid.substring(0, Math.min(512, invalid.length())), invalid != null);
@@ -264,7 +267,14 @@ public final class DeploymentAiJson {
                                          Optional<DeploymentCommandSourceEvidence.Reader> evidenceReader)
         throws ApiException, CapabilityOutcomeException, IOException {
         while (true) {
-            var response = call(purpose, messages, definitions, revision, task, extended, Optional.empty());
+            AiResponse response;
+            try {
+                response = call(purpose, messages, definitions, revision, task, extended, Optional.empty());
+            } catch (ApiException refused) {
+                if (Thread.currentThread().isInterrupted() || task.cancelToken().requested() || evidenceReader.isEmpty()
+                    || !evidenceReader.orElseThrow().repackBeforeSend(messages, refused.problem())) throw refused;
+                response = call(purpose, messages, definitions, revision, task, extended, Optional.empty());
+            }
             if (evidenceReader.isEmpty()) return response;
             var reader = evidenceReader.orElseThrow();
             var results = reader.read(response);

@@ -23,6 +23,7 @@ import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget;
+import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildCommandChannel;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
@@ -238,9 +239,11 @@ class DeploymentCandidateChannelTest {
         assertEquals(TaskResult.FAILED, result.outcome());
         assertEquals("DEPLOYMENT_CAPACITY_INVALID", result.problem().orElseThrow().eventCode());
         assertEquals(1, script.size());
-        assertTrue(script.getFirst().contains("test -d '/var/lib' && test ! -L '/var/lib'"));
-        assertTrue(script.getFirst().contains("stat -f -c '%a %S' -- '/var/lib'"));
-        assertFalse(script.getFirst().contains("stat -f -c '%a %S' -- '/var/lib/windowstolinux'"));
+        String body = "set -euo pipefail\ntest -d '/var/lib' && test ! -L '/var/lib'\n"
+            + "/usr/bin/stat -f -c '%a %S' -- '/var/lib'\n";
+        assertEquals("exec /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C HOME=/dev/null "
+            + "/bin/bash --noprofile --norc -p -c " + DeploymentBuildCommandChannel.shellQuote(body) + "\n",
+            script.getFirst());
     }
 
     /** Refuses a successful transport envelope without a capacity payload. / 拒绝缺容量载荷的成功传输封套。 */

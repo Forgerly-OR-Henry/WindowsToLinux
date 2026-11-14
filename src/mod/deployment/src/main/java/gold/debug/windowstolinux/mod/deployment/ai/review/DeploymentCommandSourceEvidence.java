@@ -27,6 +27,8 @@ import gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition;
 import gold.debug.windowstolinux.appapi.ai.model.AiToolResult;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 import gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolSchemas;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
@@ -55,12 +57,15 @@ public final class DeploymentCommandSourceEvidence {
     private static final String MIRROR_BOOTSTRAP_SHELL = "/" + PROJECTION + "/mirrorBootstrapShell";
     private static final String MIRROR_POLICY_SOURCE = "/" + PROJECTION + "/mirrorPolicySource";
     private static final String DEPENDENCY_WORKER = "/" + PROJECTION + "/dependencyWorker";
+    private static final String DEPENDENCY_RUNTIME = "/" + PROJECTION + "/mirrorRuntime";
+    private static final String DEPENDENCY_RUNTIME_SELECTION = "/" + PROJECTION + "/dependencyRuntimeSelection";
     private static final String BIND = "deployment.toolchain.bind.v1";
     private static final String BUILD = "deployment.build.run.v1";
     private static final String BUILD_PROJECTION = "buildReviewEvidence";
     private static final String BUILD_POLICY = "/" + BUILD_PROJECTION + "/stagedMirrorPolicy";
     private static final String BUILD_SHELL = "/" + BUILD_PROJECTION + "/mirrorBootstrapShell";
     private static final String BUILD_BODY = "/" + BUILD_PROJECTION + "/buildBody";
+    private static final String BUILD_RUNTIME_SELECTION = "/" + BUILD_PROJECTION + "/runtimeSelection";
     private static final String RAW_PAGE = "WTL-COMMAND-EVIDENCE-PAGE-1\n";
     private static final String RETAINED_SOURCE = "WTL-COMMAND-RETAINED-SOURCE-1\n";
     private static final String RESPONSES = "OPENAI_RESPONSES";
@@ -71,6 +76,7 @@ public final class DeploymentCommandSourceEvidence {
     // Valid ranges requested in the latest batch always stay visible.
     private static final int RETAINED_SOURCE_BYTES = 60 * 1024;
     private static final int PREPARE_PRIOR_SOURCE_BYTES = 16 * 1024;
+    private static final int DEPENDENCY_PRIOR_SOURCE_BYTES = 8 * 1024;
     private static final int GO_PREPARE_RETAINED_SOURCE_BYTES = 4 * 1024;
     private static final int BIND_RETAINED_SOURCE_BYTES = 24 * 1024;
     private static final int MAX_RETAINED_READS = 16;
@@ -112,9 +118,13 @@ public final class DeploymentCommandSourceEvidence {
         Decide independently. Deny unsafe effects or insufficient evidence. Submit a fresh native submit_result alone.
         """;
 
+    private static final String DEPENDENCY_INSTRUCTION = """
+        The executable stdin contains the complete inline dependencyWorker and its exact JSON-encoded copy. When mirrored, dependencyRuntimeSelection supplies exact package-manager entrypoints, and selectedRuntimeRanges identifies their source coordinates. Inspect dependencyWorker for protected authentication, source and package choices, bounded worker ownership and receipts. Follow reached package-manager and mirror behavior using those excerpts and read any needed missing ranges. Shared package repository, dependency and registry code outside this transaction does not establish safety or change the original effects.
+        """;
+
     private static final String BUILD_INSTRUCTION = """
-        The buildReviewEvidence manifest contains exact, complete current executable stdin and mirror source by ordered segments. The USER source frames carry their untrusted exact text immediately after each headerCharacters boundary. SOURCE_TEXT copies those bytes unchanged. SHELL_SINGLE_QUOTE quotes the entire referenced source with apostrophes and escapes each apostrophe as '"'"'. Concatenate the segments in order. The complete original stdin and its original fields remain readable with evidence using snapshotSha256, pointer (such as /completeExecutableInput), offset and limit. A WTL-COMMAND-EVIDENCE-PAGE-1 result has a JSON header line followed by exact text in offset/next order. When newRanges is present, other requested bytes are already in the visible frames or results. All offsets are UTF-16 code units.
-        Review the fixed collector, stdin digest/limits, candidate/authority, non-root isolation, bootstrap setup, execution and cleanup, actual mirror routes and invoked runtime branches, and every application build byte. The buildBody frame contains the complete application build program, including project hooks, package managers and any nested input. Each frame and every literal segment contributes to the exact approved stdin. Digests and projection checks grant no trust or execution permission. Submit a fresh independent verdict; deny missing necessary evidence or unsafe effects.
+        The buildReviewEvidence manifest describes lossless ordered segments of the current executable stdin. The product reconstructs them and compares every byte to this request's original stdin before review. The complete buildBody, staged mirror policy and bootstrap shell are inline. The large shared mirror runtime is available as exact UTF-16 pages. runtimeSelection contains exact initial runtime excerpts, with startCharacter relative to the frame's headerCharacters and offset/next giving original source coordinates. SOURCE_TEXT copies raw referenced text; SHELL_SINGLE_QUOTE surrounds it with apostrophes and escapes each apostrophe as '"'"'.
+        Review the fixed collector, stdin digest/limits, candidate/authority, non-root isolation, bootstrap setup and cleanup, actual mirror routes and invoked branches, plus the complete application program and any project hooks or nested inputs. Read necessary missing source with the current snapshotSha256, pointer, offset and limit; every original field including the full stdin remains readable. Raw pages and retained source frames carry exact text in the header range order; newRanges excludes already visible text. Only reached paths apply to this action. Digests and projection checks grant no trust or permission. Submit a fresh verdict independently; deny if required source or a safety boundary is missing.
         """;
 
     private static final String BIND_INSTRUCTION = """
@@ -181,11 +191,15 @@ public final class DeploymentCommandSourceEvidence {
         var initialRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
         if (mirror.isPresent()) {
             var parts = projectMirror(projected, manifest, messages, snapshot, exact, mirror.orElseThrow().policy(), dependency, sourceBodies);
-            if (PREPARE.equals(operation) && !exact.equals(restoreSegments(parts, sourceBodies)))
-                throw new IOException("Mirrored preparation projection does not restore the original command");
+            if (!exact.equals(restoreSegments(parts, sourceBodies)))
+                throw new IOException("Mirrored projection does not restore the original command");
         }
         if (dependency) {
             projectDependency(current, projected, manifest, messages, snapshot, exact, script, request, sourceBodies);
+            if (mirror.isPresent())
+                addRuntimeSelection(manifest, messages, snapshot, sourceBodies, initialRanges,
+                    DEPENDENCY_RUNTIME, DEPENDENCY_RUNTIME_SELECTION, "dependencyRuntimeSelection",
+                    PreparationSourceRange.dependencyRuntime(sourceBodies.get(DEPENDENCY_RUNTIME)));
         } else {
             String helper = DeploymentManagedHelperBundle.renderScript(layout);
             boolean binding = BIND.equals(operation);
@@ -340,7 +354,7 @@ public final class DeploymentCommandSourceEvidence {
         String runtime = DeploymentMirrorRuntime.runtimeSource();
         if (!dependency && !runtime.equals(projected.at(MIRROR_RUNTIME).textValue()))
             throw new IOException("Original mirror runtime evidence changed");
-        String source = dependency ? "/" + PROJECTION + "/mirrorRuntime" : MIRROR_RUNTIME;
+        String source = dependency ? DEPENDENCY_RUNTIME : MIRROR_RUNTIME;
         var descriptor = pagedSource(source, runtime, MIRROR_LOCATIONS);
         sourceBodies.put(source, runtime);
         if (dependency) manifest.set("mirrorRuntime", descriptor);
@@ -441,16 +455,32 @@ public final class DeploymentCommandSourceEvidence {
         sources.put(BUILD_BODY, wrapper.original());
         if (!input.equals(restoreSegments(parts, sources)))
             throw new IOException("Mirrored build projection does not restore the original executable input");
-        for (String pointer : List.of(BUILD_POLICY, MIRROR_RUNTIME, BUILD_SHELL, BUILD_BODY)) {
+        for (String pointer : List.of(BUILD_POLICY, BUILD_SHELL, BUILD_BODY)) {
             var frame = sourceFrame(messages, snapshot, pointer, sources.get(pointer));
             frames.add(frame);
-            if (MIRROR_RUNTIME.equals(pointer))
-                ((ObjectNode) projected.path("mirrorTransport")).set("runtimeSource", frame);
-            else manifest.set(pointer.substring(pointer.lastIndexOf('/') + 1), frame);
+            manifest.set(pointer.substring(pointer.lastIndexOf('/') + 1), frame);
         }
+        ((ObjectNode) projected.path("mirrorTransport")).set("runtimeSource", pagedSource(MIRROR_RUNTIME, runtime, MIRROR_LOCATIONS));
+        var initialRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
+        addRuntimeSelection(manifest, messages, snapshot, sources, initialRanges,
+            MIRROR_RUNTIME, BUILD_RUNTIME_SELECTION, "runtimeSelection", PreparationSourceRange.buildRuntime(runtime));
         projected.set("completeExecutableInput", segments(input, parts));
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
-        return Optional.of(new DeploymentCommandSourceEvidence(current, original, snapshot, messages, sources, Map.of()));
+        return Optional.of(new DeploymentCommandSourceEvidence(current, original, snapshot, messages, sources, initialRanges));
+    }
+
+    private static void addRuntimeSelection(ObjectNode manifest, List<AiMessage> messages, String snapshot,
+                                            Map<String, String> sources, Map<String, NavigableMap<Integer, Integer>> initialRanges,
+                                            String runtimePointer, String framePointer, String member,
+                                            List<PreparationSourceRange> ranges) throws IOException {
+        var selection = new StringBuilder();
+        appendSelection(selection, manifest.putArray("selectedRuntimeRanges"), initialRanges, runtimePointer,
+            sources.get(runtimePointer), ranges);
+        String text = selection.toString();
+        sources.put(framePointer, text);
+        var frame = sourceFrame(messages, snapshot, framePointer, text);
+        manifest.withArray("frames").add(frame);
+        manifest.set(member, frame);
     }
 
     private static String restoreSegments(List<Map<String, String>> parts, Map<String, String> sources) throws IOException {
@@ -563,10 +593,13 @@ public final class DeploymentCommandSourceEvidence {
         private final Map<String, NavigableMap<Integer, Integer>> delivered = new LinkedHashMap<>();
         private final Map<String, NavigableMap<Integer, Integer>> inline = new LinkedHashMap<>();
         private final Map<String, NavigableMap<Integer, Integer>> nodeDeliveredRanges = new LinkedHashMap<>();
+        private final Map<String, NavigableMap<Integer, Integer>> deferredRanges = new LinkedHashMap<>();
+        private final Map<String, NavigableMap<Integer, Integer>> deferredDelivered = new LinkedHashMap<>();
         private final boolean nodePreparation = nodePreparationReview();
         private Optional<AiMessage> priorEvidence = Optional.empty();
         private List<ReadReceipt> latestReads = List.of();
         private List<ReadReceipt> priorReads = List.of();
+        private List<ReadReceipt> pendingDelivery = List.of();
         private boolean continuedResponses;
         private boolean rebased;
         private boolean batchCorrectionUsed;
@@ -579,11 +612,12 @@ public final class DeploymentCommandSourceEvidence {
             if (sourceBodies.containsKey(DEPENDENCY_WORKER)) {
                 suppliedInline(DEPENDENCY_WORKER);
                 suppliedInline(MIRROR_POLICY_SOURCE);
+                suppliedInline(DEPENDENCY_RUNTIME_SELECTION);
             }
             suppliedInline(BINDING_SELECTION);
             suppliedInline(PREPARATION_SELECTION);
             if (buildReview())
-                for (String pointer : List.of(BUILD_POLICY, MIRROR_RUNTIME, BUILD_SHELL, BUILD_BODY)) suppliedInline(pointer);
+                for (String pointer : List.of(BUILD_POLICY, BUILD_SHELL, BUILD_BODY, BUILD_RUNTIME_SELECTION)) suppliedInline(pointer);
             initialRanges.forEach((pointer, ranges) -> delivered.put(pointer, new TreeMap<>(ranges)));
             delivered.forEach((pointer, ranges) -> inline.put(pointer, new TreeMap<>(ranges)));
             if (nodePreparation) inline.forEach((pointer, ranges) -> nodeDeliveredRanges.put(pointer, new TreeMap<>(ranges)));
@@ -598,6 +632,7 @@ public final class DeploymentCommandSourceEvidence {
         }
 
         public List<AiToolResult> read(AiResponse response) throws IOException {
+            rememberDeliveredRanges();
             if (!response.finishReason().equals("tool_calls")) return List.of();
             var calls = response.toolCalls();
             for (var call : calls) {
@@ -668,71 +703,162 @@ public final class DeploymentCommandSourceEvidence {
         /** A Responses rebase starts a new request with exact current evidence and no partial native history. */
         public void continueReview(List<AiMessage> messages, AiResponse response, List<AiToolResult> results) throws IOException {
             boolean responses = isResponses(response);
-            if (rebased || responses && (preparationReview() || continuedResponses)) {
+            if (rebased || responses && (buildReview() || preparationReview() || continuedResponses)) {
                 priorEvidence.ifPresent(messages::remove);
                 int factsIndex = messages.lastIndexOf(DeploymentCommandSourceEvidence.this.messages.getLast());
                 if (factsIndex < 0) throw new IOException("Current review facts unavailable");
                 // A previous result-format correction can also leave a native batch after the current facts.
                 messages.subList(factsIndex + 1, messages.size()).clear();
-                var evidence = retainedSource();
+                var frame = retainedSource(latestReads, priorReads, false);
+                var evidence = frame.message();
+                adoptRetainedFrame(frame);
                 messages.add(factsIndex, evidence);
                 priorEvidence = Optional.of(evidence);
                 rebased = true;
-                rememberNodeRanges();
+                pendingDelivery = List.copyOf(latestReads);
                 return;
             }
             messages.add(AiMessage.assistant(response));
             results.forEach(result -> messages.add(AiMessage.result(result)));
-            rememberNodeRanges();
+            pendingDelivery = List.copyOf(latestReads);
             if (responses) {
                 priorReads = List.copyOf(latestReads);
                 continuedResponses = true;
             }
         }
 
-        private void rememberNodeRanges() {
-            if (!nodePreparation) return;
-            for (var read : latestReads)
-                if (!read.rejected() && read.next() > read.offset())
-                    DeploymentEvidencePages.remember(nodeDeliveredRanges.computeIfAbsent(read.pointer(), ignored -> new TreeMap<>()),
-                        read.offset(), read.next());
+        private void rememberDeliveredRanges() {
+            for (var read : pendingDelivery) {
+                if (read.rejected() || read.next() <= read.offset()) continue;
+                if (nodePreparation)
+                    rememberRange(nodeDeliveredRanges, read.pointer(), read.offset(), read.next());
+                if (deferredRanges.containsKey(read.pointer()))
+                    rememberRange(deferredDelivered, read.pointer(), read.offset(), read.next());
+            }
+            pendingDelivery = List.of();
+        }
+
+        public boolean hasUndeliveredDeferredRanges() {
+            return deferredRanges.entrySet().stream().anyMatch(entry -> {
+                var delivered = deferredDelivered.get(entry.getKey());
+                return delivered == null || entry.getValue().entrySet().stream().anyMatch(range -> {
+                    var span = delivered.floorEntry(range.getKey());
+                    return span == null || span.getValue() < range.getValue();
+                });
+            });
+        }
+
+        private void rememberRange(Map<String, NavigableMap<Integer, Integer>> ranges, String pointer, int start, int end) {
+            DeploymentEvidencePages.remember(ranges.computeIfAbsent(pointer, ignored -> new TreeMap<>()), start, end);
+        }
+
+        /** Repacks one unsent Responses continuation under the owning encoder's measured ceiling. */
+        public boolean repackBeforeSend(List<AiMessage> messages, Problem problem) throws IOException {
+            if (!rebased || priorEvidence.isEmpty() || !exactBudgetRefusal(problem)) return false;
+            var original = priorEvidence.orElseThrow();
+            int position = messages.indexOf(original);
+            if (position < 0) return false;
+            int available = quotedBytes(original) + Integer.parseInt(problem.context().get("maximumRequestBytes"))
+                - Integer.parseInt(problem.context().get("encodedRequestBytes"));
+            if (available <= 0) return false;
+            var frame = retainedSource(latestReads, List.of(), false);
+            List<ReadReceipt> offered = latestReads;
+            if (quotedBytes(frame.message()) > available) {
+                var smallest = retainedSource(boundedLatestReads(2), List.of(), true);
+                if (quotedBytes(smallest.message()) > available) return false;
+                int low = 2, high = 8000;
+                while (high - low > 1) {
+                    int middle = (high + low) / 2;
+                    var probe = retainedSource(boundedLatestReads(middle), List.of(), true);
+                    if (quotedBytes(probe.message()) <= available) low = middle;
+                    else high = middle;
+                }
+                offered = boundedLatestReads(low);
+                frame = retainedSource(offered, List.of(), true);
+            }
+            if (frame.message().equals(original)) return false;
+            adoptRetainedFrame(frame);
+            for (int index = 0; index < offered.size(); index++) {
+                var read = offered.get(index);
+                int requested = latestReads.get(index).next();
+                if (!read.rejected() && read.next() < requested)
+                    rememberRange(deferredRanges, read.pointer(), read.next(), requested);
+            }
+            frame.visible().forEach((pointer, ranges) -> {
+                if (deferredRanges.containsKey(pointer))
+                    ranges.forEach((start, end) -> rememberRange(deferredDelivered, pointer, start, end));
+            });
+            pendingDelivery = List.copyOf(offered);
+            messages.set(position, frame.message());
+            priorEvidence = Optional.of(frame.message());
+            return true;
+        }
+
+        private boolean exactBudgetRefusal(Problem problem) {
+            if (problem.code() != ProblemCode.INVALID_INPUT || !problem.eventCode().equals("AI_REQUEST_BUDGET")
+                || problem.context().containsKey("generationAttemptCount")) return false;
+            String limit = problem.context().getOrDefault("maximumRequestBytes", "");
+            String encoded = problem.context().getOrDefault("encodedRequestBytes", "");
+            return limit.matches("[1-9][0-9]{0,7}") && encoded.matches("[1-9][0-9]{0,7}")
+                && Integer.parseInt(encoded) > Integer.parseInt(limit);
+        }
+
+        private int quotedBytes(AiMessage message) throws IOException {
+            return JSON.writeValueAsBytes(message.text()).length;
+        }
+
+        private List<ReadReceipt> boundedLatestReads(int characters) throws IOException {
+            var results = new ArrayList<ReadReceipt>(latestReads.size());
+            for (var read : latestReads) {
+                int next = Math.min(read.next(), read.offset() + characters);
+                if (next > read.offset() && next < read.next() && Character.isLowSurrogate(sourceText(read.pointer()).charAt(next)))
+                    next--;
+                results.add(new ReadReceipt(read.callId(), read.pointer(), read.offset(), next, read.rejected()));
+            }
+            return results;
         }
 
         private boolean isResponses(AiResponse response) {
-            return toolchainReview() && response.continuation().isPresent() && !response.generationAttempts().isEmpty()
+            return (toolchainReview() || buildReview()) && response.continuation().isPresent() && !response.generationAttempts().isEmpty()
                 && RESPONSES.equals(response.generationAttempts().getLast().protocol());
         }
 
-        private AiMessage retainedSource() throws IOException {
+        private RetainedFrame retainedSource(List<ReadReceipt> offered, List<ReadReceipt> older, boolean compacted) throws IOException {
             var header = JSON.createObjectNode().put("snapshotSha256", snapshot).put("trust", "UNTRUSTED_DATA");
             if (latestBatchRejected) header.put("latestBatchRejected", "NO_PAGES_READ_MAX_EIGHT_PER_RESPONSE");
-            if (latestNodeReadRepeated) header.put("latestBatchRepeat", "All returned ranges were already delivered during this review. The current retained frame reproduces them. Submit a verdict, or read a concretely missing range.");
+            if (latestNodeReadRepeated) header.put("latestBatchRepeat", "These ranges were delivered earlier in this review. Use the bytes visible in the current request and retrieve any necessary missing range before a verdict.");
             var reads = header.putArray("latestReads");
-            for (var receipt : latestReads) {
+            for (int index = 0; index < offered.size(); index++) {
+                var receipt = offered.get(index);
                 var read = reads.addObject().put("callId", receipt.callId()).put("rejected", receipt.rejected());
-                if (!receipt.rejected())
+                if (!receipt.rejected()) {
                     read.put("pointer", receipt.pointer()).put("offset", receipt.offset()).put("next", receipt.next());
+                    if (compacted) read.put("sourceSha256", sha256(sourceText(receipt.pointer())));
+                    if (receipt.next() < latestReads.get(index).next()) read.put("requestedNext", latestReads.get(index).next());
+                }
             }
+            if (compacted) header.put("deferredRanges", "Read next through requestedNext for any necessary deferred source; those bytes were not delivered in this frame.");
             var entries = header.putArray("ranges");
             var body = new StringBuilder();
             var visible = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
             inline.forEach((pointer, ranges) -> visible.put(pointer, new TreeMap<>(ranges)));
-            for (var read : latestReads) {
+            for (var read : offered) {
                 if (read.rejected()) continue;
                 appendVisibleRange(read.pointer(), read.offset(), read.next(), visible, entries, body);
             }
             int currentBytes = body.toString().getBytes(StandardCharsets.UTF_8).length;
             int omitted = 0;
-            var retainedReads = new ArrayList<>(latestReads);
+            var retainedReads = new ArrayList<>(offered);
             int remainingPriorBytes = switch (current.path("operation").asText()) {
                 case BIND -> BIND_RETAINED_SOURCE_BYTES - currentBytes;
                 case PREPARE -> switch (preparationEcosystem((ObjectNode) current)) {
                     case "GO" -> GO_PREPARE_RETAINED_SOURCE_BYTES - currentBytes;
                     default -> Math.min(PREPARE_PRIOR_SOURCE_BYTES, RETAINED_SOURCE_BYTES - currentBytes);
                 };
+                case DeploymentToolchainDependencies.OPERATION -> Math.min(DEPENDENCY_PRIOR_SOURCE_BYTES, RETAINED_SOURCE_BYTES - currentBytes);
                 default -> RETAINED_SOURCE_BYTES - currentBytes;
             };
-            for (var read : priorReads) {
+            for (var read : older) {
                 if (read.rejected()) continue;
                 String pointer = read.pointer();
                 String text = sourceText(pointer);
@@ -749,10 +875,14 @@ public final class DeploymentCommandSourceEvidence {
                 remainingPriorBytes -= size;
             }
             header.put("omittedRanges", omitted);
+            var message = new AiMessage(AiRole.USER, RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n" + body, List.of());
+            return new RetainedFrame(message, visible, List.copyOf(retainedReads));
+        }
+
+        private void adoptRetainedFrame(RetainedFrame frame) {
             delivered.clear();
-            delivered.putAll(visible);
-            priorReads = List.copyOf(retainedReads);
-            return new AiMessage(AiRole.USER, RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n" + body, List.of());
+            delivered.putAll(frame.visible());
+            priorReads = frame.reads();
         }
 
         private void appendVisibleRange(String pointer, int offset, int next,
@@ -768,6 +898,9 @@ public final class DeploymentCommandSourceEvidence {
     }
 
     private record ReadReceipt(String callId, String pointer, int offset, int next, boolean rejected) { }
+
+    private record RetainedFrame(AiMessage message, Map<String, NavigableMap<Integer, Integer>> visible,
+                                 List<ReadReceipt> reads) { }
 
     public boolean toolchainReview() {
         return OPERATIONS.contains(current.path("operation").asText());
@@ -785,9 +918,14 @@ public final class DeploymentCommandSourceEvidence {
         return PREPARE.equals(current.path("operation").asText());
     }
 
+    private boolean dependencyReview() {
+        return DeploymentToolchainDependencies.OPERATION.equals(current.path("operation").asText());
+    }
+
     public String instructions() {
         if (buildReview()) return BUILD_INSTRUCTION;
         if (preparationReview()) return PREPARE_INSTRUCTION + (nodePreparationReview() ? NODE_PREPARE_INSTRUCTION : "");
+        if (dependencyReview()) return INSTRUCTION + DEPENDENCY_INSTRUCTION;
         return bindingReview() ? BIND_INSTRUCTION : INSTRUCTION;
     }
 

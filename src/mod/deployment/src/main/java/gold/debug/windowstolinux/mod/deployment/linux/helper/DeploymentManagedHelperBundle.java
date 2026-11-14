@@ -40,8 +40,9 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "2fa73a43dcd9ec923f5598975524119c75b112fcbb2258ee7aeb64e068540cce";
-    private static final String RUBY_SOURCE_SHA256 = "beddcbb6ffe19f894b5ffbcaae21267f2144cea9b408f3236f9021d99b3d016d";
+    public static final String EXPECTED_SHA256 = "465dfa7284068239e65f34ad8d927a2b67209fa9ab7a0535038304f75dc37466";
+    private static final String RUBY_SOURCE_SHA256 = "be4ff8f660ebdbe0f15fb364ceb2d4c2874df7bf504d9d39611ca1d72993a619";
+    private static final String PYTHON_SOURCE_SHA256 = "2ed28d5a04449fe749e83e3fc33ba04217d65168d7a86943489452c37a6e2153";
 
     /**
      * ROOT.
@@ -439,6 +440,9 @@ public final class DeploymentManagedHelperBundle {
                         content = content.replace("'bin/python3', '-I', '-S', '-B', '--version'", "'bin/python3', '--version'")
                             .replace("str(directory / 'bin/python3'), '-I', '-S', '-B', '-c'", "str(directory / 'bin/python3'), '-c'");
                     if (!fixedPublicationRecovery && fragment.endsWith("30-managed-installation.py")) {
+                        content = insertBefore(content, "    MIRROR_POINT = toolchain_point(ecosystem)\n",
+                            "    if ecosystem == 'PYTHON' or layout == 'python':\n"
+                            + "        fail('request', 'Python source installation requires the isolated worker')\n");
                         String previousRust = exactRange(content, "                if layout == 'rust':\n",
                             "\n                else:\n");
                         content = content.replace(previousRust, "                if layout == 'rust':\n"
@@ -457,6 +461,13 @@ public final class DeploymentManagedHelperBundle {
                             if (rust == null) throw new IllegalStateException("Rust distribution fragment unavailable");
                             String installer = new String(rust.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
                             content = insertBefore(content, "\n\ndef main(args):", "\n\n" + installer);
+                        }
+                        try (var python = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + "toolchain/python-source-build.py")) {
+                            if (python == null) throw new IllegalStateException("Python source build fragment unavailable");
+                            String isolated = new String(python.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+                            if (!PYTHON_SOURCE_SHA256.equals(sha256(isolated.getBytes(StandardCharsets.UTF_8))))
+                                throw new IllegalStateException("Python source build fragment identity changed");
+                            content = insertBefore(content, "\n\ndef main(args):", "\n\n" + isolated);
                         }
                     }
                     output.write((content + "\n").getBytes(StandardCharsets.UTF_8));

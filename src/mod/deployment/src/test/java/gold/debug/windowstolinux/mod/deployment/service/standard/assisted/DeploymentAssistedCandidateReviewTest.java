@@ -41,7 +41,11 @@ class DeploymentAssistedCandidateReviewTest {
         String candidate = new DeploymentRemoteWorkspace("demo", sha256, layout).candidateId();
         String script = DeploymentCandidateChannel.archiveVerificationScript(layout, "demo", candidate, originalTask);
         var facts = review(candidate, script, DeploymentAssistedCandidateReview.VERIFY, Set.of());
+        assertEquals("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n", facts.get("helperStdoutPrefix"));
         assertEquals("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\nBYTES=14592\nSHA256=" + sha256 + "\nOWNER=0\n", facts.get("expectedStdout"));
+        var instructions = DeploymentAssistedCandidateReview.verificationInstructions();
+        assertTrue(instructions.contains("helperStdoutPrefix"));
+        assertTrue(instructions.contains("candidateObservation.expectedStdout against the complete outer command stdout"));
         assertEquals(sha256, facts.get("archiveSha256"));
         assertFalse(facts.containsKey("commandGrant"));
         assertThrows(IllegalArgumentException.class, () -> review(candidate, script + ":\n",
@@ -66,6 +70,7 @@ class DeploymentAssistedCandidateReviewTest {
         String script = DeploymentCandidateChannel.candidateQueryScript(layout, "demo", candidate, originalTask);
         var facts = review(candidate, script, DeploymentAssistedCandidateReview.QUERY, Set.of());
         assertEquals("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n", facts.get("expectedStdout"));
+        assertFalse(facts.containsKey("helperStdoutPrefix"));
         assertFalse(facts.containsKey("archiveSha256"));
         assertThrows(IllegalArgumentException.class, () -> review(candidate, script.replace("candidate-query-task", "candidate-cleanup-task"),
             DeploymentAssistedCandidateReview.QUERY, Set.of()));

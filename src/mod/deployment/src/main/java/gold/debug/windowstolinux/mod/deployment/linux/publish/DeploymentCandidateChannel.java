@@ -35,6 +35,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.Deplo
 
 /** Sends fixed pre-upload probes, task-owned candidate creation and one exact archive transfer. / 发送固定上传前探测、任务所属候选创建及一次精确归档传输。 */
 public final class DeploymentCandidateChannel {
+    public static final String OWNED_IDLE_STDOUT = "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n";
     /** Original borrowed connection. / 原借用连接。 */
     private final RemoteSession session;
 
@@ -256,7 +257,7 @@ public final class DeploymentCandidateChannel {
             candidateQueryScript(layout, workspace.applicationId(), workspace.candidateId(), task.id()),
             new byte[0], Duration.ofSeconds(20), 4096);
         if (!complete(queried)
-            || !queried.value().orElseThrow().stdout().equals("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n"))
+            || !queried.value().orElseThrow().stdout().equals(OWNED_IDLE_STDOUT))
             return unknown("DEPLOYMENT_CANDIDATE_OWNER_UNCONFIRMED");
         return success(workspace);
     }
@@ -341,7 +342,7 @@ public final class DeploymentCandidateChannel {
     public static String archiveVerificationOutput(long bytes, String sha256) {
         if (bytes < 0 || !sha256.matches("[a-f0-9]{64}"))
             throw new IllegalArgumentException("Invalid archive verification identity");
-        return "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\nBYTES=" + bytes + "\nSHA256=" + sha256 + "\nOWNER=0\n";
+        return OWNED_IDLE_STDOUT + "BYTES=" + bytes + "\nSHA256=" + sha256 + "\nOWNER=0\n";
     }
 
     /** Uses only a specification captured from these same original capabilities. */

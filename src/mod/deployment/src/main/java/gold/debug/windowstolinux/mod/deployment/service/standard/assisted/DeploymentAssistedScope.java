@@ -633,6 +633,8 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         String instructions = gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources.text(
             DeploymentAssistedApproval.class, "fixed-effect-review.md");
         String operation = intent.semantics().map(value -> value.operation()).orElse("");
+        if (operation.equals(DeploymentAssistedCandidateReview.VERIFY) && facts.containsKey("candidateObservation"))
+            instructions += "\n" + DeploymentAssistedCandidateReview.verificationInstructions();
         if (Set.of("deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1",
             gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION).contains(operation))
             instructions = toolchainReviewInstructions(instructions, operation);
