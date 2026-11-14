@@ -223,12 +223,9 @@ public final class DeploymentCommandSourceEvidence {
                 throw new IOException("Review helper source differs from original pin");
             if (binding) {
                 var bindingRanges = BindingSourceRange.select(helper);
-                String selected = bindingSelection(descriptor, bindingRanges);
+                String selected = bindingSelection(descriptor, helper, bindingRanges, initialRanges);
                 sourceBodies.put(BINDING_SELECTION, selected);
                 frames.add(sourceFrame(messages, snapshot, BINDING_SELECTION, selected));
-                var supplied = new TreeMap<Integer, Integer>();
-                for (var range : bindingRanges) DeploymentEvidencePages.remember(supplied, range.offset(), range.next());
-                initialRanges.put(INSTALLED_HELPER_SOURCE, supplied);
             }
             manifest.set("installedHelperSource", descriptor);
             sourceBodies.put(INSTALLED_HELPER_SOURCE, helper);
@@ -381,38 +378,30 @@ public final class DeploymentCommandSourceEvidence {
                                         Map<String, NavigableMap<Integer, Integer>> initialRanges, String pointer,
                                         String source, List<PreparationSourceRange> ranges) {
         var supplied = initialRanges.computeIfAbsent(pointer, ignored -> new TreeMap<>());
+        var selectedRanges = new TreeMap<Integer, Integer>();
+        var offsets = new TreeMap<Integer, Integer>();
+        for (var range : ranges) DeploymentEvidencePages.remember(selectedRanges, range.offset(), range.next());
+        selectedRanges.forEach((offset, next) -> {
+            if (!body.isEmpty()) body.append('\n');
+            offsets.put(offset, body.length());
+            body.append(source, offset, next);
+            DeploymentEvidencePages.remember(supplied, offset, next);
+        });
         for (var range : ranges) {
-            int start = -1;
-            for (var previous : selected) {
-                int offset = previous.path("offset").asInt();
-                if (pointer.equals(previous.path("sourcePointer").asText()) && offset <= range.offset()
-                    && range.next() <= previous.path("next").asInt()) {
-                    start = previous.path("startCharacter").asInt() + range.offset() - offset;
-                    break;
-                }
-            }
-            if (start < 0) {
-                body.append("\n--- ").append(range.section()).append(" ---\n");
-                start = body.length();
-                body.append(source, range.offset(), range.next());
-            }
+            var offset = offsets.floorEntry(range.offset());
+            int start = offset.getValue() + range.offset() - offset.getKey();
             selected.addObject().put("section", range.section()).put("sourcePointer", pointer).put("offset", range.offset())
                 .put("next", range.next()).put("startCharacter", start);
-            DeploymentEvidencePages.remember(supplied, range.offset(), range.next());
         }
     }
 
-    private static String bindingSelection(ObjectNode descriptor, List<BindingSourceRange> ranges) {
+    private static String bindingSelection(ObjectNode descriptor, String helper, List<BindingSourceRange> ranges,
+                                           Map<String, NavigableMap<Integer, Integer>> initialRanges) {
         descriptor.put("selectedRangeFrame", BINDING_SELECTION);
         var locations = descriptor.putArray("selectedRanges");
         var body = new StringBuilder();
-        for (var range : ranges) {
-            body.append("\nWTL-BINDING-HELPER-RANGE ").append(range.section()).append(' ')
-                .append(range.offset()).append(' ').append(range.next()).append('\n');
-            locations.addObject().put("section", range.section()).put("offset", range.offset()).put("next", range.next())
-                .put("startCharacter", body.length());
-            body.append(range.text());
-        }
+        appendSelection(body, locations, initialRanges, INSTALLED_HELPER_SOURCE, helper,
+            ranges.stream().map(range -> new PreparationSourceRange(range.section(), range.offset(), range.next())).toList());
         return body.toString();
     }
 
@@ -726,20 +715,20 @@ public final class DeploymentCommandSourceEvidence {
         private final Set<String> seen = new HashSet<>();
         private final Map<String, NavigableMap<Integer, Integer>> delivered = new LinkedHashMap<>();
         private final Map<String, NavigableMap<Integer, Integer>> inline = new LinkedHashMap<>();
-        private final Map<String, NavigableMap<Integer, Integer>> nodeDeliveredRanges = new LinkedHashMap<>();
-        private final Map<String, NavigableMap<Integer, Integer>> deferredRanges = new LinkedHashMap<>();
-        private final Map<String, NavigableMap<Integer, Integer>> deferredDelivered = new LinkedHashMap<>();
+        private final Map<String, NavigableMap<Integer, Integer>> requested = new LinkedHashMap<>();
+        private final Map<String, NavigableMap<Integer, Integer>> confirmed = new LinkedHashMap<>();
         private final boolean nodePreparation = nodePreparationReview();
         private Optional<AiMessage> priorEvidence = Optional.empty();
         private List<ReadReceipt> latestReads = List.of();
         private List<ReadReceipt> priorReads = List.of();
-        private List<ReadReceipt> pendingDelivery = List.of();
         private Map<String, NavigableMap<Integer, Integer>> pendingVisible = Map.of();
         private boolean continuedResponses;
         private boolean rebased;
         private boolean batchCorrectionUsed;
         private boolean latestBatchRejected;
-        private boolean latestNodeReadRepeated;
+        private boolean latestReadRepeated;
+        private boolean correctionRequired;
+        private int repeatedBatches;
         private int remaining;
 
         private Reader(int attempts) {
@@ -756,7 +745,7 @@ public final class DeploymentCommandSourceEvidence {
                 for (String pointer : List.of(BUILD_BODY, BUILD_RUNTIME_SELECTION)) suppliedInline(pointer);
             initialRanges.forEach((pointer, ranges) -> delivered.put(pointer, new TreeMap<>(ranges)));
             delivered.forEach((pointer, ranges) -> inline.put(pointer, new TreeMap<>(ranges)));
-            if (nodePreparation) inline.forEach((pointer, ranges) -> nodeDeliveredRanges.put(pointer, new TreeMap<>(ranges)));
+            pendingVisible = inline;
         }
 
         private void suppliedInline(String pointer) {
@@ -784,23 +773,27 @@ public final class DeploymentCommandSourceEvidence {
             remaining -= calls.size();
             latestReads = new ArrayList<>();
             latestBatchRejected = false;
-            if (calls.size() > MAX_READS_PER_RESPONSE) return correctReadBatch(calls);
+            latestReadRepeated = false;
+            if (calls.size() > MAX_READS_PER_RESPONSE) {
+                correctionRequired = true;
+                return correctReadBatch(calls);
+            }
             var results = new ArrayList<AiToolResult>(calls.size());
             for (var call : calls) results.add(read(call));
-            if (nodePreparation) latestNodeReadRepeated = allNodeRangesPreviouslyDelivered();
+            correctionRequired = latestReads.stream().anyMatch(ReadReceipt::rejected);
+            latestReadRepeated = !correctionRequired && latestReads.stream()
+                .noneMatch(read -> read.next() > read.offset() && !covers(confirmed.get(read.pointer()), read.offset(), read.next()));
+            if (rebased && !correctionRequired) {
+                repeatedBatches = latestReadRepeated ? repeatedBatches + 1 : 0;
+                if (repeatedBatches > 1)
+                    throw new IOException("Independent review repeated evidence without progressing to a new source range or verdict");
+            }
             return results;
         }
 
-        private boolean allNodeRangesPreviouslyDelivered() {
-            boolean anyRead = false;
-            for (var read : latestReads) {
-                if (read.rejected() || read.next() == read.offset()) continue;
-                anyRead = true;
-                var known = nodeDeliveredRanges.computeIfAbsent(read.pointer(), ignored -> new TreeMap<>());
-                var floor = known.floorEntry(read.offset());
-                if (floor == null || floor.getValue() < read.next()) return false;
-            }
-            return anyRead;
+        private boolean covers(NavigableMap<Integer, Integer> ranges, int offset, int next) {
+            var span = ranges == null ? null : ranges.floorEntry(offset);
+            return span != null && span.getValue() >= next;
         }
 
         private List<AiToolResult> correctReadBatch(List<AiToolCall> calls) throws IOException {
@@ -824,6 +817,7 @@ public final class DeploymentCommandSourceEvidence {
                 var page = DeploymentEvidencePages.page(text, arguments.path("offset").intValue(), arguments.path("limit").intValue());
                 var ranges = delivered.computeIfAbsent(pointer, ignored -> new TreeMap<>());
                 int offset = (int) page.get("offset"), next = (int) page.get("next");
+                if (next > offset) rememberRange(requested, pointer, offset, next);
                 var contents = DeploymentEvidencePages.retainAndDescribe(text, page, ranges);
                 var result = JSON.createObjectNode().put("trust", "UNTRUSTED_DATA").put("snapshotSha256", snapshot).put("pointer", pointer);
                 String body = toolchainReview() || buildReview() ? rawSourcePage(result, JSON.valueToTree(contents))
@@ -851,14 +845,12 @@ public final class DeploymentCommandSourceEvidence {
                 messages.add(factsIndex, evidence);
                 priorEvidence = Optional.of(evidence);
                 rebased = true;
-                pendingDelivery = List.copyOf(latestReads);
                 pendingVisible = frame.visible();
                 return;
             }
             messages.add(AiMessage.assistant(response));
             results.forEach(result -> messages.add(AiMessage.result(result)));
-            pendingDelivery = List.copyOf(latestReads);
-            pendingVisible = Map.of();
+            pendingVisible = delivered;
             if (responses) {
                 priorReads = List.copyOf(latestReads);
                 continuedResponses = true;
@@ -866,29 +858,15 @@ public final class DeploymentCommandSourceEvidence {
         }
 
         private void rememberDeliveredRanges() {
-            for (var read : pendingDelivery) {
-                if (read.rejected() || read.next() <= read.offset()) continue;
-                if (nodePreparation)
-                    rememberRange(nodeDeliveredRanges, read.pointer(), read.offset(), read.next());
-                if (deferredRanges.containsKey(read.pointer()))
-                    rememberRange(deferredDelivered, read.pointer(), read.offset(), read.next());
-            }
-            pendingVisible.forEach((pointer, ranges) -> {
-                if (deferredRanges.containsKey(pointer))
-                    ranges.forEach((start, end) -> rememberRange(deferredDelivered, pointer, start, end));
-            });
+            pendingVisible.forEach((pointer, ranges) ->
+                ranges.forEach((start, end) -> rememberRange(confirmed, pointer, start, end)));
             pendingVisible = Map.of();
-            pendingDelivery = List.of();
         }
 
-        public boolean hasUndeliveredDeferredRanges() {
-            return deferredRanges.entrySet().stream().anyMatch(entry -> {
-                var delivered = deferredDelivered.get(entry.getKey());
-                return delivered == null || entry.getValue().entrySet().stream().anyMatch(range -> {
-                    var span = delivered.floorEntry(range.getKey());
-                    return span == null || span.getValue() < range.getValue();
-                });
-            });
+        public boolean hasUnfulfilledApprovalEvidence() {
+            return correctionRequired || requested.entrySet().stream().anyMatch(entry ->
+                entry.getValue().entrySet().stream().anyMatch(range ->
+                    !covers(confirmed.get(entry.getKey()), range.getKey(), range.getValue())));
         }
 
         private void rememberRange(Map<String, NavigableMap<Integer, Integer>> ranges, String pointer, int start, int end) {
@@ -905,7 +883,6 @@ public final class DeploymentCommandSourceEvidence {
                 - Integer.parseInt(problem.context().get("encodedRequestBytes"));
             if (available <= 0) return false;
             var frame = retainedSource(latestReads, List.of(), false);
-            List<ReadReceipt> offered = latestReads;
             if (quotedBytes(frame.message()) > available) {
                 var smallest = retainedSource(boundedLatestReads(2), List.of(), true);
                 if (quotedBytes(smallest.message()) > available) return false;
@@ -916,19 +893,11 @@ public final class DeploymentCommandSourceEvidence {
                     if (quotedBytes(probe.message()) <= available) low = middle;
                     else high = middle;
                 }
-                offered = boundedLatestReads(low);
-                frame = retainedSource(offered, List.of(), true);
+                frame = retainedSource(boundedLatestReads(low), List.of(), true);
             }
             if (frame.message().equals(original)) return false;
             adoptRetainedFrame(frame);
-            for (int index = 0; index < offered.size(); index++) {
-                var read = offered.get(index);
-                int requested = latestReads.get(index).next();
-                if (!read.rejected() && read.next() < requested)
-                    rememberRange(deferredRanges, read.pointer(), read.next(), requested);
-            }
             pendingVisible = frame.visible();
-            pendingDelivery = List.copyOf(offered);
             messages.set(position, frame.message());
             priorEvidence = Optional.of(frame.message());
             return true;
@@ -966,7 +935,8 @@ public final class DeploymentCommandSourceEvidence {
         private RetainedFrame retainedSource(List<ReadReceipt> offered, List<ReadReceipt> older, boolean compacted) throws IOException {
             var header = JSON.createObjectNode().put("snapshotSha256", snapshot).put("trust", "UNTRUSTED_DATA");
             if (latestBatchRejected) header.put("latestBatchRejected", "NO_PAGES_READ_MAX_EIGHT_PER_RESPONSE");
-            if (latestNodeReadRepeated) header.put("latestBatchRepeat", "These ranges were delivered earlier in this review. Use the bytes visible in the current request and retrieve any necessary missing range before a verdict.");
+            if (latestReadRepeated) header.put("latestBatchRepeat",
+                "These ranges were delivered earlier. Use the current exact bytes and any deferred cursors below. Ask for new necessary evidence or submit an adequately supported verdict.");
             var reads = header.putArray("latestReads");
             for (int index = 0; index < offered.size(); index++) {
                 var receipt = offered.get(index);
@@ -1020,6 +990,27 @@ public final class DeploymentCommandSourceEvidence {
                 appendVisibleRange(pointer, read.offset(), read.next(), visible, entries, body);
                 retainedReads.add(read);
                 remainingPriorBytes -= size;
+            }
+            if (!compacted) {
+                var deferred = header.putArray("previouslyDeferred");
+                requested.forEach((pointer, ranges) -> {
+                    var accounted = new TreeMap<>(confirmed.getOrDefault(pointer, java.util.Collections.emptyNavigableMap()));
+                    visible.getOrDefault(pointer, java.util.Collections.emptyNavigableMap())
+                        .forEach((start, end) -> DeploymentEvidencePages.remember(accounted, start, end));
+                    ranges.forEach((start, end) -> {
+                        int next = start;
+                        for (var span : accounted.headMap(end, false).entrySet()) {
+                            if (span.getValue() <= next) continue;
+                            if (span.getKey() > next && deferred.size() < MAX_READS_PER_RESPONSE) {
+                                deferred.addObject().put("pointer", pointer).put("offset", next).put("next", span.getKey());
+                            }
+                            next = Math.min(end, span.getValue());
+                        }
+                        if (next < end && deferred.size() < MAX_READS_PER_RESPONSE)
+                            deferred.addObject().put("pointer", pointer).put("offset", next).put("next", end);
+                    });
+                });
+                if (deferred.isEmpty()) header.remove("previouslyDeferred");
             }
             header.put("omittedRanges", omitted);
             var message = new AiMessage(AiRole.USER, RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n" + body, List.of());

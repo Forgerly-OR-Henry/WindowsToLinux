@@ -169,7 +169,8 @@ class DeploymentToolchainReviewEvidenceTest {
             assertEquals("EVIDENCE_PAGES", mirror.path("retrieval").asText());
             String mirrorSource = collect(evidence, mirror, PHASE);
             assertIdentity(mirror, mirrorSource);
-            assertTrue(mirrorSource.startsWith("class MirrorPolicy:", mirror.at("/locations/class MirrorPolicy:").intValue()));
+            String mirrorAnchor = kind.equals("prepare") ? "def validate_url(" : "class MirrorPolicy:";
+            assertTrue(mirrorSource.startsWith(mirrorAnchor, mirror.path("locations").path(mirrorAnchor).asInt(-1)));
             var sources = new LinkedHashMap<>(Map.of(mirrorPointer, mirrorSource));
             var shell = projected.at("/" + PHASE + "/mirrorBootstrapShell");
             assertEquals("EVIDENCE_PAGES", shell.path("retrieval").asText());
@@ -1273,6 +1274,118 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"task-board", "file-transfer", "asset-lending", "log-analyzer", "binary-inspector"})
+    void r34TerminalWindowHypothesesPreserveOriginalEvidenceOrFailClosed(String project) throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture();
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = switch (project) {
+                 case "task-board", "file-transfer" -> diagnosedPreparation(fixture, "NODE", "24");
+                 case "asset-lending" -> r26Binding(fixture, "NODE", "24.22.3");
+                 case "log-analyzer" -> request("dependencies", fixture);
+                 case "binary-inspector" -> r35BinaryBuildFixture(fixture);
+                 default -> throw new AssertionError(project);
+             }) {
+            var action = switch (project) {
+                case "task-board", "file-transfer" -> intent("prepare", fixture, command);
+                case "asset-lending" -> intent("bind", fixture, command);
+                case "log-analyzer" -> intent("dependencies", fixture, command);
+                default -> RemoteActions.command(fixture.server, fixture.model.configurationRevision, command)
+                    .withSemantics(new ActionSemantics("deployment.build.run.v1", Set.of(new ActionTarget(
+                        fixture.server.id(), "deployment-build", new DeploymentRemoteWorkspace(
+                            "binary-inspector", "a".repeat(64), fixture.layout).candidateRoot()))));
+            };
+            var protocol = new DeploymentFixedCommandProtocol(fixture.context);
+            var original = new LinkedHashMap<String, Object>(protocol.inspect(action, command, fixture.layout, fixture.task));
+            var effects = new LinkedHashMap<String, Object>(assisted.scope.effectFacts(action, fixture.task));
+            if (project.equals("log-analyzer")) effects.put("currentNativeBuildPrerequisites", Map.of(
+                "observedGap", Map.of("nativeBuildPrerequisitesMissing", true, "packageManager", "apt", "distro", "UBUNTU"),
+                "currentToolchainPlan", Map.of("runtimeKind", "RustService"), "fixedTransaction", original.get("toolchainDependencies")));
+            original.put("currentCommandEvidence", effects);
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(original, 1048576),
+                action, command, fixture.layout).orElseThrow();
+            var initial = r31DeniedApproval(fixture, assisted, original, action, command);
+            var current = (ObjectNode) JSON.readTree(evidence.messages().getLast().text());
+            String phase = project.equals("binary-inspector") ? "buildReviewEvidence" : PHASE;
+            String snapshot = current.at("/" + phase + "/snapshotSha256").asText();
+            var file = current.path(phase);
+            var sources = new LinkedHashMap<Integer, Map.Entry<String, String>>();
+            if (!project.equals("log-analyzer"))
+                addReplaySource(sources, current.at("/mirrorTransport/runtimeSource"), DeploymentMirrorRuntime.runtimeSource());
+            if (!project.equals("binary-inspector")) {
+                var shell = file.path("mirrorBootstrapShell");
+                addReplaySource(sources, shell, r24Shell(fixture));
+            }
+            if (file.has("installedHelperSource"))
+                addReplaySource(sources, file.path("installedHelperSource"), DeploymentManagedHelperBundle.renderScript(fixture.layout));
+            if (project.equals("log-analyzer")) {
+                addReplaySource(sources, file.path("dependencySystemShell"), collect(evidence, file.path("dependencySystemShell"), phase));
+                addReplaySource(sources, file.path("mirrorRuntime"), DeploymentMirrorRuntime.runtimeSource());
+            }
+            // R34 retained only pointer widths. The matching public pointers here are fixture hypotheses.
+            String coordinates = switch (project) {
+                case "task-board" -> "46/157345/1500 46/158829/1500 46/174357/1500 46/180844/1200 46/192754/2200 46/302144/2000 30/20095/2800 30/32625/1000";
+                case "file-transfer" -> "45/0/8000 46/302144/8000 46/218801/8000 46/157345/8000 46/174357/8000 45/0/8000";
+                case "asset-lending" -> "45/0/8000 45/8000/8000 45/16000/8000 45/24000/8000 45/34677/4611";
+                case "log-analyzer" -> "46/0/8000 46/12689/8000 46/18678/8000 38/3984/8000 38/76140/8000 38/104547/5000";
+                default -> "30/60000/8000";
+            };
+            int bound = switch (project) {
+                case "task-board" -> 40941;
+                case "file-transfer" -> 44277;
+                case "asset-lending" -> 52403;
+                case "log-analyzer" -> 116007;
+                default -> 151770;
+            };
+            var reader = evidence.reader(24);
+            var messages = new ArrayList<>(initial.messages());
+            messages.set(messages.size() - 1, evidence.messages().getLast());
+            var start = mockResponses(read("r35-prior", snapshot, sources.values().iterator().next().getKey(), 0, 120));
+            reader.continueReview(messages, start, reader.read(start));
+            var calls = new R24Turn(0, 0, 0, 0, 0, coordinates).calls(snapshot, sources, 1);
+            var requested = mockResponses(calls.toArray(AiToolCall[]::new));
+            var results = reader.read(requested);
+            assertTrue(results.stream().noneMatch(AiToolResult::error), project);
+            reader.continueReview(messages, requested, results);
+            int full = wire(copy(initial, messages, 1048576), 1048576, Map.of()).length;
+            boolean packed = full <= bound || reader.repackBeforeSend(messages, exactBudgetProblem(full, bound));
+            if (packed) {
+                byte[] encoded = wire(copy(initial, messages, bound), bound, Map.of());
+                var confirmed = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+                seedInlineSourceRanges(current, confirmed);
+                var frame = current.at("/" + phase + "/frames");
+                for (var inline : frame)
+                    addR24Range(confirmed, inline.path("sourcePointer").asText(), 0, inline.path("characters").asInt());
+                for (String name : List.of("selectedRuntimeRanges", "selectedAptRanges"))
+                    for (var range : file.path(name))
+                        addR24Range(confirmed, range.path("sourcePointer").asText(), range.path("offset").asInt(), range.path("next").asInt());
+                assertR24VisiblePages(encoded, snapshot, calls, true, confirmed, sources);
+                reader.read(response(Optional.empty(), verdict("r35-terminal-approval", "APPROVE")));
+                assertEquals(messages.get(messages.size() - 2).text().contains("\"requestedNext\""),
+                    reader.hasUnfulfilledApprovalEvidence(), project);
+                System.out.printf("R35_TERMINAL_SHAPE project=%s full=%d packed=%d cap=%d deferred=%s%n",
+                    project, full, encoded.length, bound, reader.hasUnfulfilledApprovalEvidence());
+            } else {
+                assertTrue(reader.hasUnfulfilledApprovalEvidence());
+                assertThrows(ModelRequestBudgetException.class, () -> wire(copy(initial, messages, bound), bound, Map.of()));
+                System.out.printf("R35_TERMINAL_SHAPE project=%s full=%d cap=%d fit=false%n", project, full, bound);
+            }
+            assertEquals(0, assisted.hosts.get());
+        }
+    }
+
+    private static CommandRequest r35BinaryBuildFixture(MirroredInstallerTestFixture fixture) throws Exception {
+        String body = "set -eu\nwtl_dependency CARGO_REGISTRY cargo fetch --locked\ncargo build --locked --release\n";
+        int seconds = 120;
+        String policy = DeploymentMirrorTasks.policy(fixture.task);
+        String input = DeploymentMirrorTasks.withMaterials(DeploymentMirrorRuntime.wrapBuild(body, policy, seconds), fixture.task.id());
+        var workspace = new DeploymentRemoteWorkspace("binary-inspector", "a".repeat(64), fixture.layout);
+        String collector = DeploymentBuildOutputProtocol.script(workspace, seconds, 16, 512, 8192, "ordinary",
+            MirroredInstallerTestFixture.sha(input), "-", List.of(List.of("BUILD_OK")));
+        return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(collector, fixture.layout),
+            input.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(seconds + 15), 65536);
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"asset-lending:mirrorBootstrapShell", "asset-lending:preparationSelection",
         "task-board:mirrorBootstrapShell", "task-board:preparationSelection",
         "file-transfer:mirrorBootstrapShell", "file-transfer:preparationSelection"})
@@ -1491,6 +1604,35 @@ class DeploymentToolchainReviewEvidenceTest {
         }
         if (header.has("deferredRanges")) assertTrue(deferred > 0);
         assertR24Coverage(asked, visible);
+    }
+
+    @Test
+    void responsesStopsAnEvidenceCycleAfterAnExactReread() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var command = request("bind", fixture)) {
+            var intent = intent("bind", fixture, command);
+            var facts = new DeploymentFixedCommandProtocol(fixture.context).inspect(intent, command, fixture.layout, fixture.task);
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), intent, command,
+                fixture.layout).orElseThrow();
+            String pointer = "/mirrorTransport/runtimeSource";
+            String source = DeploymentMirrorRuntime.runtimeSource();
+            var messages = new ArrayList<>(evidence.messages());
+            String snapshot = JSON.readTree(messages.getLast().text()).at("/" + PHASE + "/snapshotSha256").asText();
+            var reader = evidence.reader(32);
+            for (int round = 0; round < 3; round++) {
+                var response = mockResponses(read("page-" + round, snapshot, pointer, round * 8000, 8000));
+                reader.continueReview(messages, response, reader.read(response));
+            }
+            var next = mockResponses(read("page-3", snapshot, pointer, 24000, 8000));
+            reader.continueReview(messages, next, reader.read(next));
+            var reread = mockResponses(read("first-reread", snapshot, pointer, 0, 8000));
+            reader.continueReview(messages, reread, reader.read(reread));
+            String frame = messages.get(messages.size() - 2).text();
+            assertTrue(frame.contains("\"latestBatchRepeat\""));
+            assertTrue(frame.contains(source.substring(0, 8000)), "One exact reread remains available");
+            var cycle = assertThrows(IOException.class, () ->
+                reader.read(mockResponses(read("cycle", snapshot, pointer, 8000, 8000))));
+            assertTrue(cycle.getMessage().contains("without progressing"));
+        }
     }
 
     @Test
@@ -1890,11 +2032,22 @@ class DeploymentToolchainReviewEvidenceTest {
         }
         reply(fixture, verdict("r24-result", "DENY"));
         int first = fixture.model.requests.size();
-        assertReviewDenied(approve);
-        assertEquals(turns.size(), fixture.model.requests.size() - first);
+        var stopped = assertThrows(ApiException.class, approve::call);
+        int sent = fixture.model.requests.size() - first;
+        boolean cycle = stopped.getCause() instanceof IOException failure
+            && failure.getMessage().contains("repeated evidence without progressing");
+        if (cycle) {
+            assertTrue(round.equals("R27") || round.equals("R24") && project.equals("survey-scoring"), project);
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", stopped.problem().eventCode());
+            assertTrue(sent < turns.size() && sent >= 3, "Only a repeated evidence sequence may end before the historical verdict");
+            fixture.model.replies.clear();
+        } else {
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", stopped.problem().eventCode());
+            assertEquals(turns.size(), sent);
+        }
 
         long observed = turns.getFirst().observed();
-        for (int index = 0; index < turns.size(); index++) {
+        for (int index = 0; index < sent; index++) {
             var turn = turns.get(index);
             var actual = fixture.model.requests.get(first + index);
             assertEquals(turn.observed(), observed);
@@ -1916,7 +2069,7 @@ class DeploymentToolchainReviewEvidenceTest {
                 assertR24VisiblePages(encoded, snapshot, latest, review.kind().equals("prepare") || index > 1, visible, sources);
                 assertR24Coverage(asked, visible);
             }
-            if (index == turns.size() - 1 && terminalHeadroom > 0)
+            if (index == sent - 1 && terminalHeadroom > 0)
                 assertTrue(bound - encoded.length >= terminalHeadroom, "Late PREPARE headroom " + (bound - encoded.length));
             observed += turn.usage();
             System.out.printf("%s_REPLAY project=%s action=%s ecosystem=%s turn=%d observed=%d originalBytes=%d encoded=%d bound=%d%n",

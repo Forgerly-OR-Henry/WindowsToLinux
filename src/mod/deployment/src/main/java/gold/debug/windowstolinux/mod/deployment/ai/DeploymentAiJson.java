@@ -231,8 +231,8 @@ public final class DeploymentAiJson {
                 invalid = rejected.getMessage();
             }
             if (invalid == null && result.path("decision").asText().equals("APPROVE")
-                && evidenceReader.filter(DeploymentCommandSourceEvidence.Reader::hasUndeliveredDeferredRanges).isPresent())
-                throw new IOException("Independent approval arrived before the requested deferred source was delivered");
+                && evidenceReader.filter(DeploymentCommandSourceEvidence.Reader::hasUnfulfilledApprovalEvidence).isPresent())
+                throw new IOException("Independent approval arrived before the requested deferred source was delivered or its request was corrected");
             var receipt = new AiToolResult(call.id(), invalid == null
                 ? "REVIEW_RECORDED: model verdict only; no execution grant. The next command requires a new complete independent review."
                 : "SUBMISSION_REJECTED: " + invalid.substring(0, Math.min(512, invalid.length())), invalid != null);

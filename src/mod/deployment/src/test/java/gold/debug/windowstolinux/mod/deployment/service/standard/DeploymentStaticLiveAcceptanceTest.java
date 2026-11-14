@@ -7080,7 +7080,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                     if (Set.of("script", "stdin").contains(part)) fields.put("part", part);
                 } else if (original.path("pointer").isTextual()) {
                     String pointer = original.path("pointer").textValue();
-                    if (pointer.matches("/completeExecutableInput(?:/segments/[0-9]+/(?:text|source)|/sources/(?:managedHelper|buildEntry))?"))
+                    if (isPublicReviewPointer(pointer))
                         fields.put("pointer", pointer);
                     else fields.put("pointerCharacters", pointer.length());
                 }
@@ -7105,6 +7105,19 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         return fields.toString();
     }
 
+    private static boolean isPublicReviewPointer(String pointer) {
+        if (pointer.matches("/completeExecutableInput(?:/segments/[0-9]{1,4}/(?:text|source)|/sources/(?:managedHelper|buildEntry))?"))
+            return true;
+        return Set.of("/mirrorTransport/runtimeSource", "/mirrorTransport/frozenPolicy",
+            "/toolchainReviewEvidence/installedHelperSource", "/toolchainReviewEvidence/bindingSelection",
+            "/toolchainReviewEvidence/preparationSelection", "/toolchainReviewEvidence/nodePreparationSelection",
+            "/toolchainReviewEvidence/mirrorBootstrapShell", "/toolchainReviewEvidence/mirrorPolicySource",
+            "/toolchainReviewEvidence/dependencyWorker", "/toolchainReviewEvidence/mirrorRuntime",
+            "/toolchainReviewEvidence/dependencyRuntimeSelection", "/toolchainReviewEvidence/dependencyAptSelection",
+            "/toolchainReviewEvidence/dependencySystemShell", "/buildReviewEvidence/stagedMirrorPolicy",
+            "/buildReviewEvidence/mirrorBootstrapShell", "/buildReviewEvidence/buildBody", "/buildReviewEvidence/runtimeSelection")
+            .contains(pointer);
+    }
     /** Records bounded public review arguments without validating or changing the actual decision. */
     private static void reviewSubmissionMetadata(gold.debug.windowstolinux.appapi.ai.model.AiToolCall call) {
         var metadata = JSON.createObjectNode().put("id", call.id());

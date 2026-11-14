@@ -141,10 +141,19 @@ class DeploymentLiveMonitoringRequestTest {
         assertEquals("/completeExecutableInput/segments/0/text", metadata.path("pointer").asText());
         assertEquals(16000, metadata.path("offset").asInt());
         assertEquals(8000, metadata.path("limit").asInt());
+        for (String pointer : List.of("/toolchainReviewEvidence/installedHelperSource",
+                "/toolchainReviewEvidence/mirrorBootstrapShell", "/buildReviewEvidence/runtimeSelection")) {
+            var call = new AiToolCall("fixed", "evidence", json.createObjectNode()
+                .put("pointer", pointer).put("offset", 32000).put("limit", 8000).toString());
+            var fixedMetadata = json.readTree((String) browse.invoke(null, call));
+            assertEquals(pointer, fixedMetadata.path("pointer").asText());
+            assertEquals(32000, fixedMetadata.path("offset").asInt());
+        }
         var request = new AiToolCall("request", "request", "{\"part\":\"stdin\",\"offset\":0,\"limit\":8000}");
         assertEquals("stdin", json.readTree((String) browse.invoke(null, request)).path("part").asText());
         for (var call : List.of(
             new AiToolCall("foreign", "evidence", "{\"pointer\":\"/FAKE_SECRET_MARKER\",\"offset\":\"FAKE_SECRET_MARKER\",\"limit\":8000}"),
+            new AiToolCall("foreign-nested", "evidence", "{\"pointer\":\"/toolchainReviewEvidence/FAKE_SECRET_MARKER\",\"offset\":0}"),
             new AiToolCall("foreign-part", "request", "{\"part\":\"FAKE_SECRET_MARKER\",\"offset\":0,\"limit\":8000}"),
             new AiToolCall("notes", "save_review_notes", "{\"text\":\"FAKE_SECRET_MARKER\"}"),
             new AiToolCall("invalid", "evidence", "{FAKE_SECRET_MARKER"))) {
