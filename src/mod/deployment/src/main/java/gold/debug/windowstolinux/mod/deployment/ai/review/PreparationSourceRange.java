@@ -28,11 +28,12 @@ record PreparationSourceRange(String section, int offset, int next) {
         }
         if (!rust) ranges.add(python(helper, "def reuse_system("));
         ranges.add(python(helper, "def official_url("));
-        boolean archive = ecosystem.equals("GO") || ecosystem.equals("DOTNET") || node;
+        boolean java = ecosystem.equals("JAVA");
+        boolean archive = java || ecosystem.equals("GO") || ecosystem.equals("DOTNET") || node;
         if (archive) {
             ranges.addAll(archiveInstallation(helper));
             ranges.add(between(helper, "archiveVersionProbe", "def probe(ecosystem, directory, expected):",
-                "\n    if ecosystem == 'JAVA':\n        run("));
+                java ? "\n    if ecosystem == 'PYTHON':\n        run(" : "\n    if ecosystem == 'JAVA':\n        run("));
             ranges.add(python(helper, "def extract(archive, destination):"));
             if (ecosystem.equals("DOTNET")) ranges.add(between(helper, "dotnetSystemReuse",
                 "def discover_system(ecosystem, identity):", "\n    binaries = "));
@@ -41,6 +42,7 @@ record PreparationSourceRange(String section, int offset, int next) {
                 for (String function : List.of("checksum_text", "saved_installation_marker", "verify_system"))
                     ranges.add(python(helper, "def " + function + "("));
             }
+            if (java || node) ranges.add(python(helper, "def preparation_lock("));
         } else if (rust) {
             ranges.addAll(rustPreparation(helper, diagnosed));
         } else if (ecosystem.equals("PYTHON")) {
@@ -64,7 +66,8 @@ record PreparationSourceRange(String section, int offset, int next) {
             ranges.addAll(sourceIsolation(helper));
             ranges.add(between(helper, "rubySourceWorker", "RUBY_WORKER = SOURCE_WORKER + r'''\n",
                 "\n\ndef ruby_system_command("));
-            for (String function : List.of("ruby_unit", "ruby_probe", "ruby_source_install"))
+            for (String function : List.of("ruby_unit", "ruby_probe", "ruby_source_install",
+                "ruby_scratch_mount", "ruby_create_scratch", "ruby_remove_scratch"))
                 ranges.add(python(helper, "def " + function + "("));
         }
         return List.copyOf(ranges);
@@ -171,7 +174,7 @@ record PreparationSourceRange(String section, int offset, int next) {
                     "\ndef mirror_bytes(", transfer));
             ranges.add(python(runtime, "def mirror_bytes("));
         }
-        if (ecosystem.equals("NODE")) {
+        if (ecosystem.equals("NODE") || ecosystem.equals("JAVA")) {
             ranges.add(between(runtime, "nodeMirrorRouteAdmission",
                 "            selected = policy.validate_url(endpoint, policy.maps(endpoint, original))",
                 "\n        while record['attempts']"));
@@ -208,9 +211,66 @@ record PreparationSourceRange(String section, int offset, int next) {
             python(runtime, "def mirror_dependency("));
     }
 
+    static List<PreparationSourceRange> goBuildRuntime(String runtime) throws IOException {
+        var ranges = new ArrayList<>(List.of(
+            python(runtime, "class MirrorPolicy:"),
+            between(runtime, "goDependencyDispatch", "    if args.operation == 'dependency':",
+                "\n    if args.operation == 'system-dnf':"),
+            python(runtime, "def mirror_dependency("),
+            between(runtime, "goLoopbackAdmission", "def mirror_loopback_peer_uid(", "\ndef mirror_log("),
+            between(runtime, "goRepositoryRequests", "class RepositoryGateway:", "\n    @staticmethod\n    def python_filename("),
+            between(runtime, "goRepositoryLifecycle", "    def __enter__(self):\n        self.thread.start()",
+                "\ndef reject_unmapped_lock_urls(", offset(runtime, "class RepositoryGateway:")),
+            between(runtime, "goRepositoryLockSelection", "def reject_unmapped_lock_urls(", "\n    for name in names:"),
+            between(runtime, "goDependencyEnvironment", "    elif point == 'GO_MODULE':", "\n    elif point == 'MAVEN_REPOSITORY':"),
+            between(runtime, "goUnsupportedLockedFallback", "def locked_dependency(", "\n    with LockedRepositoryTransport("),
+            python(runtime, "class MirrorTransferLedger:"), python(runtime, "def mirror_transfer(")));
+        ranges.addAll(transfer(runtime, "GO", false, false).stream()
+            .filter(range -> !range.section().equals("mirrorRouteAndRedirectPolicy")).toList());
+        return ranges;
+    }
+
     static List<PreparationSourceRange> dependencyRuntime(String runtime) throws IOException {
         return List.of(python(runtime, "def mirror_system_command("),
             python(runtime, "def mirror_dnf("));
+    }
+
+    static List<PreparationSourceRange> aptDependencyRuntime(String runtime) throws IOException {
+        return List.of(python(runtime, "def mirror_system_command("),
+            between(runtime, "aptFrozenPolicyAdmission", "    @classmethod\n    def from_environment(",
+                "\n    def transport_options("));
+    }
+
+    static List<PreparationSourceRange> aptDependencyWorker(String worker) throws IOException {
+        var ranges = new ArrayList<PreparationSourceRange>();
+        for (String function : List.of("dependency_mirror_environment", "dependency_unit_identity",
+            "dependency_open_core_events", "dependency_worker", "dependency_completion_proof", "dependency_protected",
+            "dependency_profile", "dependency_registered", "dependency_tool", "dependency_task_mirrors", "dependency_run",
+            "dependency_packages", "dependency_validate_apt", "dependency_transaction", "dependency_main"))
+            ranges.add(python(worker, "def " + function + "("));
+        ranges.add(between(worker, "dependencyAptAuthentication", "def dependency_apt_source_authentication(",
+            "\ndef dependency_validate_apt("));
+        ranges.add(between(worker, "dependencyServiceLaunch", "    properties = ['Type=exec', 'ExitType=cgroup'",
+            "\n    stopped, captured, startup = "));
+        ranges.add(between(worker, "dependencyCompletionAndStop", "                    proof = dependency_completion_proof(",
+            "\n    except BaseException:"));
+        return ranges;
+    }
+
+    static List<PreparationSourceRange> aptDependencyShell(String shell, boolean credentials) throws IOException {
+        return List.of(
+            between(shell, "aptRepositorySelection", "wtl_system_point() {\n", "\nwtl_dnf_repository_copy() {"),
+            between(shell, "aptGuardedRepositoryAdmission", "wtl_system_package() {\n",
+                "\n    else\n      for file in /etc/yum.repos.d/"),
+            between(shell, "aptSignedUpdateToFrozenInstall", "    for ((attempt=1; attempt<=wtl_mirror_attempts; attempt++)); do",
+                "\n      else\n        printf '[main]\\nplugins=0", offset(shell, "wtl_system_package() {\n")),
+            between(shell, "aptCredentialAndTransportPolicy", "wtl_prepare_system_credential() {\n",
+                credentials ? "\nwtl_package_log() {" : "\n  [[ \"$wtl_credential_scope\" = https://* ]]"),
+            between(shell, "aptDispatch", "wtl_apt() (\n", "\nwtl_dnf() {"),
+            between(shell, "aptRootDownloadSandbox", "wtl_apt_sandbox_identity() {\n", "\nwtl_apt_update() {"),
+            between(shell, "aptUpdateAndAuthentication", "wtl_apt_update() {\n", "\nwtl_apt_resolution_missing() {"),
+            between(shell, "aptResolveFrozen", "wtl_apt_resolve_frozen() {\n", "\nwtl_apt_configure_query() {"),
+            new PreparationSourceRange("aptSecurityAndFrozenTransaction", offset(shell, "wtl_apt_trusted_path() {\n"), shell.length()));
     }
 
     static boolean buildsFromSource(String ecosystem) {

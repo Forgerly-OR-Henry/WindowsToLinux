@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -35,6 +36,15 @@ import gold.debug.windowstolinux.mod.deployment.linux.command.contract.Deploymen
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence;
 import gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime;
+import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildOutputProtocol;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentBuildLimits;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem.GoBuildWriter;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
 import org.junit.jupiter.api.Test;
@@ -887,7 +897,12 @@ class DeploymentToolchainReviewEvidenceTest {
                 var sharedRuntime = projected.at("/mirrorTransport/runtimeSource");
                 assertEquals("EVIDENCE_PAGES", sharedRuntime.path("retrieval").asText());
                 assertFalse(sources.containsKey(sharedRuntime.path("sourcePointer").asText()));
-                sources.put(sharedRuntime.path("sourcePointer").asText(), collect(source, sharedRuntime, "buildReviewEvidence"));
+                for (var descriptor : List.of(sharedRuntime, manifest.path("mirrorBootstrapShell"), manifest.path("stagedMirrorPolicy"))) {
+                    assertEquals("EVIDENCE_PAGES", descriptor.path("retrieval").asText());
+                    String full = collect(source, descriptor, "buildReviewEvidence");
+                    assertIdentity(descriptor, full);
+                    assertNull(sources.put(descriptor.path("sourcePointer").asText(), full));
+                }
                 assertEquals(input, restoreValue(projected.path("completeExecutableInput"), sources));
                 assertEquals(body, sources.get("/buildReviewEvidence/buildBody"));
                 assertEquals(intent.exactAction(), projected.path("exactAction").asText());
@@ -992,6 +1007,169 @@ class DeploymentToolchainReviewEvidenceTest {
             System.out.printf("R30_TOOLCHAIN_REPLAY project=%s fullEncoded=%d packedEncoded=%d originalCap=%d%n",
                 project, full, encoded.length, bound);
         }
+    }
+
+    @Test
+    void r31GoBuildUsesExactWriterAndTerminalReadBudget() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
+            var workspace = new DeploymentRemoteWorkspace("file-transfer-backend", "a".repeat(64), fixture.layout);
+            var facts = new DeploymentProjectFacts(Path.of("."), workspace.applicationId(), DeploymentProjectKind.GO_SERVICE,
+                DeploymentBuildToolType.GO_MODULE, List.of(), List.of(), List.of());
+            var runtime = new DeploymentRuntimeDefinition.GoService("1.24.0", "file-transfer", "main.go",
+                new DeploymentHealthCheck.Tcp(8080, 10, 2));
+            var limits = new DeploymentBuildLimits(120, 32, 512, 65536, 128L * 1024 * 1024, false);
+            String body = new GoBuildWriter().render(facts, runtime, workspace, limits);
+            String policy = DeploymentMirrorTasks.policy(fixture.task);
+            String input = DeploymentMirrorTasks.withMaterials(DeploymentMirrorRuntime.wrapBuild(body, policy, 120), fixture.task.id());
+            String collector = DeploymentBuildOutputProtocol.script(workspace, 120, 32, 512, 65536, "ordinary",
+                MirroredInstallerTestFixture.sha(input), "-", List.of(List.of("BUILD_OK")));
+            try (var command = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(collector, fixture.layout),
+                input.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(135), 65536)) {
+                var intent = RemoteActions.command(fixture.server, fixture.model.configurationRevision, command)
+                    .withSemantics(new ActionSemantics("deployment.build.run.v1",
+                        Set.of(new ActionTarget(fixture.server.id(), "deployment-build", workspace.candidateRoot()))));
+                var original = new LinkedHashMap<String, Object>(
+                    new DeploymentFixedCommandProtocol(fixture.context).inspect(intent, command, fixture.layout, fixture.task));
+                original.put("currentCommandEvidence", assisted.scope.effectFacts(intent, fixture.task));
+                var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(original, 1048576),
+                    intent, command, fixture.layout).orElseThrow();
+                var initial = r31DeniedApproval(fixture, assisted, original, intent, command);
+                var projected = JSON.readTree(evidence.messages().getLast().text());
+                var manifest = projected.path("buildReviewEvidence");
+                var sources = new LinkedHashMap<String, String>();
+                var runtimeSource = projected.at("/mirrorTransport/runtimeSource");
+                for (var descriptor : List.of(runtimeSource, manifest.path("mirrorBootstrapShell"), manifest.path("stagedMirrorPolicy"))) {
+                    String full = collect(evidence, descriptor, "buildReviewEvidence");
+                    assertIdentity(descriptor, full);
+                    sources.put(descriptor.path("sourcePointer").asText(), full);
+                }
+                var bodyFrame = manifest.path("buildBody");
+                String inlineBody = evidence.messages().get(bodyFrame.path("ordinal").asInt()).text()
+                    .substring(bodyFrame.path("headerCharacters").asInt());
+                assertEquals(body, inlineBody);
+                sources.put(bodyFrame.path("sourcePointer").asText(), inlineBody);
+                var selected = manifest.path("selectedRuntimeRanges");
+                assertTrue(selected.findValuesAsText("section").contains("goDependencyEnvironment"));
+                assertTrue(selected.findValuesAsText("section").contains("goUnsupportedLockedFallback"));
+                assertTrue(selected.findValuesAsText("section").contains("goRepositoryLifecycle"));
+                assertTrue(selected.findValuesAsText("section").contains("class MirrorTransferLedger:"));
+                assertTrue(selected.findValuesAsText("section").contains("mirrorRuntimeLauncher"));
+                assertEquals(input, restoreValue(projected.path("completeExecutableInput"), sources));
+                assertEquals(policy, sources.get(manifest.path("stagedMirrorPolicy").path("sourcePointer").asText()));
+                var pointers = Map.of(30, Map.entry(runtimeSource.path("sourcePointer").asText(), DeploymentMirrorRuntime.runtimeSource()));
+                assertR31Terminal(evidence, initial, projected, "buildReviewEvidence", pointers,
+                    "30/64000/8000 30/68000/8000 30/16000/8000 30/24000/8000",
+                    "30/32000/8000 30/56000/8000 30/68000/8000 30/76000/8000 30/196000/5000", 42221, 185460, "file-transfer");
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"task-board", "asset-lending", "log-analyzer", "binary-inspector"})
+    void r31ToolchainTerminalReadsFitHistoricalPhysicalSendCeilings(String project) throws Exception {
+        boolean nativeDependencies = project.equals("log-analyzer") || project.equals("binary-inspector");
+        boolean java = project.equals("task-board");
+        String phase = nativeDependencies ? "dependencies" : "prepare";
+        try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = nativeDependencies ? request(phase, fixture) : diagnosedPreparation(fixture, java ? "JAVA" : "NODE", java ? "21" : "24")) {
+            var intent = intent(phase, fixture, command);
+            var original = new LinkedHashMap<String, Object>(
+                new DeploymentFixedCommandProtocol(fixture.context).inspect(intent, command, fixture.layout, fixture.task));
+            var commandEvidence = new LinkedHashMap<String, Object>(assisted.scope.effectFacts(intent, fixture.task));
+            if (nativeDependencies) commandEvidence.put("currentNativeBuildPrerequisites", Map.of(
+                "observedGap", Map.of("nativeBuildPrerequisitesMissing", true, "packageManager", "apt", "distro", "DEBIAN"),
+                "currentToolchainPlan", Map.of("runtimeKind", "RustService"), "fixedTransaction", original.get("toolchainDependencies")));
+            original.put("currentCommandEvidence", commandEvidence);
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(original, 1048576),
+                intent, command, fixture.layout).orElseThrow();
+            var initial = r31DeniedApproval(fixture, assisted, original, intent, command);
+            var projected = JSON.readTree(evidence.messages().getLast().text());
+            var sources = r24Sources(initial, projected, fixture);
+            if (nativeDependencies) {
+                var manifest = projected.path(PHASE);
+                var descriptor = manifest.path("dependencyWorker");
+                String worker = collect(evidence, descriptor, PHASE);
+                assertIdentity(descriptor, worker);
+                addReplaySource(sources, descriptor, worker);
+                var workerSources = Map.of(descriptor.path("sourcePointer").asText(), worker);
+                assertArrayEquals(command.stdin(), restoreValue(projected.path("completeExecutableInput"), workerSources)
+                    .getBytes(StandardCharsets.UTF_8));
+                var actualShell = manifest.path("dependencySystemShell");
+                String shell = collect(evidence, actualShell, PHASE);
+                String runtime = DeploymentMirrorRuntime.runtimeSource();
+                assertEquals(shell, JSON.readTree(runtime.substring(actualShell.path("literalOffset").asInt(),
+                    actualShell.path("literalNext").asInt())).textValue());
+                assertTrue(shell.contains("wtl_apt_install_frozen() {"));
+                var selected = manifest.path("selectedAptRanges");
+                assertTrue(selected.findValuesAsText("section").contains("dependencyAptAuthentication"));
+                assertTrue(selected.findValuesAsText("section").contains("dependencyServiceLaunch"));
+                assertTrue(selected.findValuesAsText("section").contains("aptSignedUpdateToFrozenInstall"));
+                assertTrue(selected.findValuesAsText("section").contains("aptSecurityAndFrozenTransaction"));
+                assertTrue(projected.at("/dependencyPublicPolicy/points/APT_DEBIAN").isArray());
+                assertTrue(projected.at("/dependencyPublicPolicy/points/DNF_CENTOS_STREAM").isArray());
+            }
+            switch (project) {
+                case "task-board" -> assertR31Terminal(evidence, initial, projected, PHASE, sources,
+                    "46/180000/8000 46/172000/8000 30/13643/2527 30/24170/8000 30/32170/8000 30/0/3984 43/8000/1272 46/185000/8000",
+                    "30/3984/8000", 28435, 75544, project);
+                case "asset-lending" -> assertR31Terminal(evidence, initial, projected, PHASE, sources,
+                    "30/19984/4000", "30/3984/8000", 29880, 81438, project);
+                case "log-analyzer" -> assertR31Terminal(evidence, initial, projected, PHASE, sources,
+                    "45/8000/8000 45/28000/8000 45/36000/2159",
+                    "45/16000/8000 45/20000/8000 45/24000/8000 38/200716/5000 38/76140/8000 38/108000/6000",
+                    32341, 141310, project);
+                case "binary-inspector" -> assertR31Terminal(evidence, initial, projected, PHASE, sources,
+                    "45/30000/8000", "45/0/8000", 32311, 144865, project);
+                default -> throw new AssertionError(project);
+            }
+        }
+    }
+
+    private static AiRequest r31DeniedApproval(MirroredInstallerTestFixture fixture, DeploymentNativeHelperPackageImpactTest.Assisted assisted,
+                                               Map<String, Object> original, ActionIntent intent, CommandRequest command) throws Exception {
+        reply(fixture, verdict("r31-independent-denial", "DENY"));
+        var model = new DeploymentAiJson(assisted.context);
+        assertEquals("DENY", model.askCommand("Inspect exact current request", original, fixture.model.configurationRevision,
+            fixture.task, DeploymentReviewDecision::malformed, intent, command).path("decision").asText());
+        assertEquals(0, assisted.hosts.get());
+        return fixture.model.requests.getFirst();
+    }
+
+    private static void assertR31Terminal(DeploymentCommandSourceEvidence evidence, AiRequest initial, JsonNode projected,
+                                         String phase, Map<Integer, Map.Entry<String, String>> sources, String prior,
+                                         String last, int originalFactsSize, int bound, String project) throws Exception {
+        String snapshot = projected.at("/" + phase + "/snapshotSha256").asText();
+        var messages = new ArrayList<>(initial.messages());
+        messages.set(messages.size() - 1, evidence.messages().getLast());
+        var budgetedFacts = (ObjectNode) projected.deepCopy();
+        int extra = originalFactsSize - budgetedFacts.toString().length() - 24;
+        if (extra > 0) budgetedFacts.put("replayFixturePadding", "x".repeat(extra));
+        var fixedMessages = new ArrayList<>(messages);
+        fixedMessages.set(fixedMessages.size() - 1, new AiMessage(AiRole.USER, budgetedFacts.toString(), List.of()));
+        int fixed = wire(copy(initial, fixedMessages, 1048576), bound, Map.of()).length;
+        var reader = evidence.reader(24);
+        var priorRead = mockResponses(new R24Turn(0, 0, 0, 0, 0, prior).calls(snapshot, sources, 0).toArray(AiToolCall[]::new));
+        reader.continueReview(messages, priorRead, reader.read(priorRead));
+        var calls = new R24Turn(0, 0, 0, 0, 0, last).calls(snapshot, sources, 1);
+        var finalRead = mockResponses(calls.toArray(AiToolCall[]::new));
+        reader.continueReview(messages, finalRead, reader.read(finalRead));
+        messages.set(messages.size() - 1, fixedMessages.getLast());
+        int full = wire(copy(initial, messages, 1048576), 1048576, Map.of()).length;
+        if (full > bound) {
+            assertTrue(reader.repackBeforeSend(messages, exactBudgetProblem(full, bound)),
+                () -> "Cannot repack " + project + ": " + full + " > " + bound);
+        }
+        byte[] encoded = wire(copy(initial, messages, 1048576), bound, Map.of());
+        var visible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+        seedInlineSourceRanges(projected, visible);
+        for (String sections : List.of("selectedRuntimeRanges", "selectedAptRanges")) {
+            for (var range : projected.path(phase).path(sections))
+                addR24Range(visible, range.path("sourcePointer").asText(), range.path("offset").asInt(), range.path("next").asInt());
+        }
+        assertR24VisiblePages(encoded, snapshot, calls, true, visible, sources);
+        assertR30DeferredPages(reader, messages, snapshot, calls, sources, visible);
+        System.out.printf("R31_TERMINAL_REPLAY project=%s fixedEncoded=%d fullEncoded=%d packedEncoded=%d originalCap=%d%n",
+            project, fixed, full, encoded.length, bound);
     }
 
     private static Problem exactBudgetProblem(int encoded, int bound) {
@@ -1844,14 +2022,20 @@ class DeploymentToolchainReviewEvidenceTest {
         var manifest = JSON.readTree(evidence.messages().getLast().text()).path(phase);
         var inline = new TreeMap<Integer, String>();
         boolean build = phase.equals("buildReviewEvidence");
-        var selection = manifest.path(build ? "runtimeSelection" : "preparationSelection");
+        boolean apt = manifest.has("dependencyAptSelection");
+        boolean dependency = manifest.has("dependencyRuntimeSelection");
+        String selectionName = build ? "runtimeSelection" : apt ? "dependencyAptSelection"
+            : dependency ? "dependencyRuntimeSelection" : "preparationSelection";
+        String rangesName = build || dependency ? "selectedRuntimeRanges" : apt ? "selectedAptRanges" : "selectedPreparationRanges";
+        var selection = manifest.path(selectionName);
         if (selection.isObject()) {
             String text = evidence.messages().get(selection.path("ordinal").asInt()).text()
                 .substring(selection.path("headerCharacters").asInt());
-            for (var range : manifest.path(build ? "selectedRuntimeRanges" : "selectedPreparationRanges"))
+            for (var range : manifest.path(rangesName))
                 if (range.path("sourcePointer").equals(descriptor.path("sourcePointer")))
-                    inline.put(range.path("offset").asInt(), text.substring(range.path("startCharacter").asInt(),
-                        range.path("startCharacter").asInt() + range.path("next").asInt() - range.path("offset").asInt()));
+                    inline.merge(range.path("offset").asInt(), text.substring(range.path("startCharacter").asInt(),
+                        range.path("startCharacter").asInt() + range.path("next").asInt() - range.path("offset").asInt()),
+                        (left, right) -> left.length() >= right.length() ? left : right);
         }
         while (body.length() < total) {
             var call = read("restore-" + body.length(), snapshot, descriptor.path("sourcePointer").asText(), body.length(), 8000);
@@ -1868,6 +2052,8 @@ class DeploymentToolchainReviewEvidenceTest {
                 int end = page.path("next").asInt();
                 while (body.length() < end) {
                     var part = supplied.floorEntry(body.length());
+                    while (part != null && part.getKey() + part.getValue().length() <= body.length())
+                        part = supplied.lowerEntry(part.getKey());
                     assertNotNull(part);
                     int first = body.length() - part.getKey();
                     int next = Math.min(part.getValue().length(), end - part.getKey());

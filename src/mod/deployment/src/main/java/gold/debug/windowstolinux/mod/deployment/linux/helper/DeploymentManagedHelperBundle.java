@@ -40,9 +40,9 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "465dfa7284068239e65f34ad8d927a2b67209fa9ab7a0535038304f75dc37466";
-    private static final String RUBY_SOURCE_SHA256 = "be4ff8f660ebdbe0f15fb364ceb2d4c2874df7bf504d9d39611ca1d72993a619";
-    private static final String PYTHON_SOURCE_SHA256 = "2ed28d5a04449fe749e83e3fc33ba04217d65168d7a86943489452c37a6e2153";
+    public static final String EXPECTED_SHA256 = "affc71dfe81ba0202d50cb411ae7236f104ee4eeaea451160c1ceb428468bbe0";
+    private static final String RUBY_SOURCE_SHA256 = "d49df25b00d10adca20d86e4b49089cde2408644772455c6e0b13a3dd4c39be0";
+    private static final String PYTHON_SOURCE_SHA256 = "217a3c1495dad0afbee402e41540cd12c5a455e1207999796451846819298c0b";
 
     /**
      * ROOT.

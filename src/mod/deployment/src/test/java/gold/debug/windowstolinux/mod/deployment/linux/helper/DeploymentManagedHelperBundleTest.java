@@ -18,7 +18,7 @@ class DeploymentManagedHelperBundleTest {
         String original = DeploymentManagedHelperBundle.renderScript();
         String recovery = DeploymentManagedHelperBundle.renderPublicationRecovery(layout);
         assertEquals(16, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
-        assertEquals("465dfa7284068239e65f34ad8d927a2b67209fa9ab7a0535038304f75dc37466",
+        assertEquals("affc71dfe81ba0202d50cb411ae7236f104ee4eeaea451160c1ceb428468bbe0",
             HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(original.getBytes(StandardCharsets.UTF_8))));
         assertEquals(original, DeploymentManagedHelperBundle.renderScript());
         assertTrue(original.contains("def ruby_source_install("));

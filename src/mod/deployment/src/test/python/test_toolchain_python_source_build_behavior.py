@@ -1,8 +1,13 @@
 """Exercise guarded CPython preparation without network, a compiler, root or systemd."""
+import ast
+import errno
+import io
 import json
 import os
 import pathlib
+import signal
 import subprocess
+import sys
 import tempfile
 import types
 import unittest
@@ -144,6 +149,7 @@ class PythonSourceBuildTest(unittest.TestCase):
         status = 'NoNewPrivs: 1\nSeccomp: 2\nCapEff: 0\nCapPrm: 0\nCapBnd: 0\n'
         source = pathlib.Path('/tmp/wtl-toolchain-source')
         release = source / ('Python-' + VERSION)
+        process = mock.MagicMock(stdout=io.BytesIO(), wait=mock.Mock(return_value=0))
         with mock.patch.object(self.ns['sys'], 'argv', argv), \
                 mock.patch.object(os, 'geteuid', return_value=61200, create=True), \
                 mock.patch.object(os, 'getegid', return_value=61200, create=True), \
@@ -157,16 +163,109 @@ class PythonSourceBuildTest(unittest.TestCase):
                 mock.patch.object(pathlib.Path, 'mkdir'), mock.patch.object(pathlib.Path, 'iterdir', return_value=[release]), \
                 mock.patch.object(pathlib.Path, 'is_symlink', return_value=False), \
                 mock.patch.object(pathlib.Path, 'is_dir', return_value=True), \
+                mock.patch.object(subprocess, 'Popen', return_value=process) as popen, \
                 mock.patch.object(subprocess, 'run') as run:
             exec(worker, {})
         calls = [entry.args[0] for entry in run.call_args_list]
-        self.assertEqual(['/usr/bin/tar', str(release / 'configure'), '/usr/bin/make', '/usr/bin/make',
+        self.assertEqual(['/usr/bin/tar', str(release / 'configure'), '/usr/bin/make',
                           '/protected/python/bin/python3', '/protected/python/bin/python3'], [entry[0] for entry in calls])
         self.assertEqual(('--prefix=/protected/python', '--with-ensurepip=install'), calls[1][1:])
-        self.assertEqual(('-I', '-S', '-B', '-c'), calls[4][1:5])
-        self.assertIn('sys.base_prefix', calls[4][5])
-        self.assertIn('import ssl, sqlite3, bz2, lzma, venv, zlib', calls[5][5])
-        self.assertEqual(VERSION, calls[5][-1])
+        self.assertEqual(('/usr/bin/make', '-j2'), popen.call_args.args[0])
+        self.assertEqual(release, popen.call_args.kwargs['cwd'])
+        self.assertEqual(('-I', '-S', '-B', '-c'), calls[3][1:5])
+        self.assertIn('sys.base_prefix', calls[3][5])
+        self.assertIn('import ssl, sqlite3, bz2, lzma, venv, zlib', calls[4][5])
+        self.assertEqual(VERSION, calls[4][-1])
+
+    def make_worker_functions(self):
+        tree = ast.parse(self.ns['PYTHON_SOURCE_WORKER'])
+        tree.body = tree.body[:next(i for i, node in enumerate(tree.body) if isinstance(node, ast.Try))]
+        worker = {}
+        exec(compile(tree, '<CPython make fixture>', 'exec'), worker)
+        return worker
+
+    def test_make_hints_are_fixed_and_require_complete_bounded_lines(self):
+        classify = self.make_worker_functions()['make_output_hint']
+        for line, status in (
+            (b'as: warning: private prefix: No space left on device\n', 118),
+            (b'make: File size limit exceeded (core dumped)\n', 119),
+            (b'sh: fork: Resource temporarily unavailable\n', 120),
+            (b'cc: /tmp/private: Permission denied\n', 121),
+            (b'gcc: fatal error: Killed signal terminated program cc1\n', 122),
+            (b'collect2: error: ld returned 1 exit status\n', 123),
+            (b"make: *** No rule to make target 'private path'.  Stop.\n", 124),
+            (b'/tmp/private/compile.c:10:5: fatal error: header is missing\n', 125),
+            (b"make: warning: Clock skew detected. Your build may be incomplete.\n", 99),
+            (b'x' * 4097 + b'collect2: error: ld returned 1 exit status\n', 99),
+        ):
+            with self.subTest(status=status):
+                self.assertEqual(status, classify(io.BytesIO(line)))
+        self.assertEqual(118, classify(io.BytesIO(b'cc: compiler.c:10: error: private value\n'
+                                                  b'/tmp/private: No space left on device\n')))
+
+    def test_make_launch_errors_and_child_signals_have_precedence_over_child_output(self):
+        make = self.make_worker_functions()['make_python']
+        for errno_value, status in ((errno.EPERM, 112), (errno.ENOENT, 113), (errno.EIO, 114)):
+            with self.subTest(status=status), mock.patch.object(subprocess, 'Popen', side_effect=OSError(errno_value, 'secret')):
+                self.assertEqual(status, make(self.root))
+        with mock.patch.object(signal, 'SIGKILL', 9, create=True), mock.patch.object(signal, 'SIGXFSZ', 25, create=True):
+            for returncode, status in ((-signal.SIGKILL, 115), (-signal.SIGXFSZ, 116), (-signal.SIGTERM, 117), (0, 0)):
+                process = mock.MagicMock(stdout=io.BytesIO(b'/tmp/private: No space left on device\n'),
+                                         wait=mock.Mock(return_value=returncode))
+                with self.subTest(status=status), mock.patch.object(subprocess, 'Popen', return_value=process):
+                    self.assertEqual(status, make(self.root))
+                    process.wait.assert_called_once()
+
+    def test_make_drains_a_real_owned_process_before_reporting_the_error_hint(self):
+        make = self.make_worker_functions()['make_python']
+        real_popen = subprocess.Popen
+        children = []
+
+        def start(argv, **kwargs):
+            self.assertEqual(('/usr/bin/make', '-j2'), argv)
+            child = real_popen([sys.executable, '-I', '-S', '-B', '-c',
+                                "import sys; sys.stdout.buffer.write(b'x' * 200000 + b'\\n'); "
+                                "sys.stderr.write('collect2: error: ld returned 1 exit status\\n'); sys.exit(2)"],
+                               cwd=kwargs['cwd'], stdin=kwargs['stdin'], stdout=kwargs['stdout'], stderr=kwargs['stderr'])
+            children.append(child)
+            return child
+
+        try:
+            with mock.patch.object(subprocess, 'Popen', side_effect=start):
+                self.assertEqual(123, make(self.root))
+            self.assertEqual([2], [child.poll() for child in children])
+        finally:
+            for child in children:
+                if child.poll() is None:
+                    child.kill()
+                    child.wait(timeout=5)
+
+    def test_receipt_accepts_make_hint_only_with_matching_manager_exit(self):
+        diagnose = self.ns['ruby_diagnostic']
+        for code, reason in self.ns['PYTHON_MAKE_FAILURES'].items():
+            observation = {'actualExitCode': code, 'timedOut': False, 'cancelled': False,
+                           'stdout': 'Finished with result: exit-code\n'
+                                     f'Main processes terminated with: code=exited/status={code}\n',
+                           'stderr': 'private fixture output'}
+            with self.subTest(code=code):
+                result = diagnose(observation, 'build', 'python')
+                self.assertEqual('python-build-source-build', result['stage'])
+                self.assertEqual(code, result['actualExitCode'])
+                self.assertIn('worker-executable=make\n', result['stdout'])
+                self.assertIn('make-failure=' + reason + '\n', result['stdout'])
+                self.assertEqual('', result['stderr'])
+                self.assertNotIn('private fixture output', str(result))
+                observations = (
+                    (dict(observation, actualExitCode=99), 'build', 'python'),
+                    (dict(observation, cancelled=True), 'build', 'python'),
+                    (dict(observation, timedOut=True), 'build', 'python'),
+                    (observation, 'probe', 'python'),
+                    (observation, 'build', 'ruby'),
+                )
+                for other, role, ecosystem in observations:
+                    result = diagnose(other, role, ecosystem)
+                    self.assertEqual(ecosystem + '-' + role + '-launcher', result['stage'])
+                    self.assertNotIn('make-failure=', result['stdout'])
 
     def test_tracked_cleanup_checks_python_build_and_probe_units_before_mutation(self):
         directory = self.root / 'operation'

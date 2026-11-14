@@ -23,6 +23,8 @@ class DeploymentPythonPreparationSourceTest {
                 "DynamicUser=yes", "PrivateNetwork=yes", "NoNewPrivileges=yes", "BindReadOnlyPaths=",
                 "require_isolated(network, mount)", "require_staging_mount(prefix, device, inode)",
                 "--with-ensurepip=install", "command(\"/usr/bin/make\", \"install\"", "sys.base_prefix",
+                "subprocess.Popen((\"/usr/bin/make\", \"-j2\")", "stream.readline(4097)",
+                "PYTHON_MAKE_FAILURES = {", "output-linker-error",
                 "ruby_require_settled(unit)", "ruby_publish(stage, destination, executable='python3')",
                 "tracked_atomic_json(destination / '.w2l-toolchain.json', record, 0o444)"})
             assertTrue(selected.contains(marker), marker);

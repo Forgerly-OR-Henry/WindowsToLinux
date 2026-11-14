@@ -35,6 +35,8 @@ class RubySourceBuildTest(unittest.TestCase):
         self.ns.update(ROOT=self.root, owned_directory=mock.Mock(), tracked_sync_directory=mock.Mock(),
                        source_dependencies=mock.Mock(), ruby_require_settled=mock.Mock(), ruby_probe=mock.Mock(),
                        ruby_unit=mock.Mock(side_effect=self.stage_installation),
+                       ruby_create_scratch=mock.Mock(side_effect=lambda path, unit: path.mkdir()),
+                       ruby_remove_scratch=mock.Mock(),
                        ruby_publish=mock.Mock(side_effect=self.publish_installation))
         self.ns['download'] = mock.Mock(side_effect=self.download)
         self.ns['source_url'] = mock.Mock(return_value='https://example.invalid/openssl-3.0.3.gem')
@@ -113,10 +115,11 @@ class RubySourceBuildTest(unittest.TestCase):
         self.ns['ruby_require_settled'].side_effect = failure
         with self.assertRaises(self.ns['PreparationFailure']):
             self.install()
-        self.assertTrue((operation_dir / 'work/stage').is_dir())
+        self.assertTrue((operation_dir / 'work/scratch/stage').is_dir())
         self.assertTrue((self.destination() / '.w2l-operation-owner').is_file())
         self.assertFalse((self.destination() / '.w2l-toolchain.json').exists())
         self.ns['ruby_publish'].assert_not_called()
+        self.ns['ruby_remove_scratch'].assert_not_called()
         with self.assertRaises(self.ns['PreparationFailure']):
             self.ns['tracked_require_quiescent'](operation)
         self.ns['ruby_require_settled'].assert_called_with(self.ns['ruby_unit_name'](OPERATION_ID, 'build'))
@@ -213,6 +216,11 @@ class RubySourceBuildTest(unittest.TestCase):
         self.assertIn('--property=NoNewPrivileges=yes', argv)
         self.assertIn('--property=PrivateNetwork=yes', argv)
         self.assertIn('--property=ProtectSystem=strict', argv)
+        self.assertIn('--property=MemoryMax=3221225472', argv)
+        self.assertIn('--property=MemorySwapMax=0', argv)
+        self.assertTrue(any(item.startswith('--property=BindPaths=') and item.endswith(':/tmp') for item in argv))
+        self.assertTrue(any(item.startswith('--property=BindReadOnlyPaths=')
+                            and ':/var/tmp ' in item and item.endswith(':/dev/shm') for item in argv))
         self.assertIn('--property=StandardOutput=null', argv)
         self.assertIn('--property=StandardError=null', argv)
         self.assertIn('--property=RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK', argv)
@@ -220,9 +228,63 @@ class RubySourceBuildTest(unittest.TestCase):
         worker_args = argv[argv.index('--') + 1:]
         self.assertEqual(['/usr/bin/python3', '-I', '-S', '-B', '-c'], worker_args[:5])
         compile(worker_args[5], '<Ruby sandbox worker>', 'exec')
+        scratch = stage.parent.stat()
         self.assertEqual(['build', 'net:[11]', 'mnt:[12]', '/usr/local/lib/windowstolinux/toolchains/versions/ruby-selected',
-                          VERSION, str(stage.stat().st_dev), str(stage.stat().st_ino), 'legacy'], worker_args[6:])
+                          VERSION, str(stage.stat().st_dev), str(stage.stat().st_ino), 'legacy', command,
+                          str(scratch.st_dev), str(scratch.st_ino), '1610612736', '96000', '3221225472'], worker_args[6:])
         raw['ruby_require_settled'].assert_called_once_with(command)
+
+    def test_owned_scratch_refuses_foreign_or_nested_mount_before_unmounting(self):
+        check = self.raw_function('ruby_scratch_mount')
+        raw = check.__globals__
+        path = pathlib.PurePosixPath('/usr/local/lib/windowstolinux/toolchains/work/owned/scratch')
+        scratch = mock.Mock()
+        scratch.__str__ = mock.Mock(return_value=str(path))
+        scratch.parent = path.parent
+        scratch.is_symlink.return_value = False
+        scratch.stat.return_value = types.SimpleNamespace(st_uid=0, st_mode=0o41777)
+        unit = self.ns['ruby_unit_name'](OPERATION_ID, 'build')
+        shape = types.SimpleNamespace(f_blocks=393216, f_frsize=4096, f_files=96000)
+        row = f'32 20 0:15 / {path} rw,nosuid,nodev - tmpfs {unit} rw\n'
+        raw['owned_directory'] = mock.Mock()
+        with mock.patch.object(raw['os'], 'statvfs', return_value=shape, create=True):
+            for mountinfo, expected in ((row, True), ('', False)):
+                with self.subTest(mountinfo=mountinfo), mock.patch('builtins.open', mock.mock_open(read_data=mountinfo)):
+                    self.assertEqual(expected, check(scratch, unit))
+            for mountinfo in (row.replace(unit, 'foreign'), row + row.replace('scratch ', 'scratch/extra ')):
+                with self.subTest(mountinfo=mountinfo), mock.patch('builtins.open', mock.mock_open(read_data=mountinfo)):
+                    with self.assertRaises(raw['PreparationFailure']):
+                        check(scratch, unit)
+
+    def test_worker_requires_effective_scratch_and_cgroup_bounds_before_build(self):
+        worker = ast.parse(self.ns['RUBY_WORKER'])
+        worker.body = [definition for definition in worker.body if isinstance(definition, (ast.Import, ast.FunctionDef, ast.Assign))
+                       and not (isinstance(definition, ast.Assign) and definition.targets[0].id == 'failure')]
+        scope = {}
+        exec(compile(worker, '<Ruby resource guard>', 'exec'), scope)
+        unit = self.ns['ruby_unit_name'](OPERATION_ID, 'build')
+        paths = {'/proc/self/cgroup': '0::/system.slice/' + unit + '\n',
+                 'memory.max': '3221225472\n', 'memory.swap.max': '0\n'}
+        scratch = types.SimpleNamespace(st_dev=2, st_ino=3)
+        validate = scope['require_ruby_resources']
+        for reason in ('valid', 'oversize', 'inodes', 'swap', 'alternate-tmp'):
+            with self.subTest(reason=reason):
+                values = {**paths, 'memory.swap.max': 'max\n' if reason == 'swap' else '0\n'}
+                filesystem = types.SimpleNamespace(f_blocks=393217 if reason == 'oversize' else 393216,
+                                                   f_frsize=4096, f_files=96001 if reason == 'inodes' else 96000,
+                                                   f_flag=0 if reason == 'alternate-tmp' else 1)
+                with mock.patch.object(pathlib.Path, 'read_text', autospec=True) as read, \
+                        mock.patch.object(os, 'stat', return_value=scratch), \
+                        mock.patch.object(os, 'ST_RDONLY', 1, create=True), \
+                        mock.patch.object(os, 'statvfs', return_value=filesystem, create=True):
+                    read.side_effect = lambda path, **_: values.get(path.name, values['/proc/self/cgroup'])
+                    args = (unit, '2', '3', '1610612736', '96000', '3221225472')
+                    if reason == 'valid':
+                        validate(*args)
+                    else:
+                        with self.assertRaises(SystemExit) as caught:
+                            validate(*args)
+                        self.assertEqual(126, caught.exception.code)
 
     def test_worker_refuses_root_or_shared_namespace_before_starting_any_external_program(self):
         worker = compile(self.ns['RUBY_WORKER'], '<Ruby sandbox worker>', 'exec')

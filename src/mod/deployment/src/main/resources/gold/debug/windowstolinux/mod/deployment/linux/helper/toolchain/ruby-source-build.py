@@ -2,6 +2,9 @@ RUBY_RECIPE = 'ruby-dynamic-user-build-v1'
 RUBY_DYNAMIC_MIN, RUBY_DYNAMIC_MAX = 61184, 65519
 RUBY_BUILD_BYTES = 1024 * 1024 * 1024
 RUBY_BUILD_ENTRIES = 40000
+RUBY_SCRATCH_BYTES = 1536 * 1024 * 1024
+RUBY_SCRATCH_INODES = 96000
+RUBY_MEMORY_BYTES = 3 * 1024 * 1024 * 1024
 RUBY_OPENSSL_DIGEST = 'e24fcd69f6e0bac1e1c3cb8667d0ded5c1f6c59d010ecb5c857a771c9cb7565c'
 # These worker-owned exit statuses are below systemd's execution setup status range.
 RUBY_WORKER_FAILURES = {
@@ -19,6 +22,7 @@ RUBY_WORKER_FAILURES = {
     101: ('legacy-gem-install', 'ruby'),
     102: ('prefix-verification', 'ruby'),
     103: ('runtime-verification', 'ruby'),
+    126: ('resource-boundary', 'python3'),
 }
 RUBY_CONFIGURE_FAILURES = {
     104: 'start-permission-denied',
@@ -90,6 +94,23 @@ RUBY_WORKER = SOURCE_WORKER + r'''
 import errno
 import tempfile
 
+def require_ruby_resources(unit, device, inode, maximum_bytes, maximum_inodes, maximum_memory):
+    group = "/system.slice/" + unit
+    if pathlib.Path("/proc/self/cgroup").read_text(encoding="ascii").splitlines() != ["0::" + group]:
+        sys.exit(126)
+    control = pathlib.Path("/sys/fs/cgroup" + group)
+    memory = (control / "memory.max").read_text(encoding="ascii").strip()
+    swap = (control / "memory.swap.max").read_text(encoding="ascii").strip()
+    if memory != maximum_memory or swap != "0":
+        sys.exit(126)
+    scratch = os.stat("/tmp")
+    space = os.statvfs("/tmp")
+    if ((str(scratch.st_dev), str(scratch.st_ino)) != (device, inode)
+            or not 0 < space.f_blocks * space.f_frsize <= int(maximum_bytes)
+            or not 0 < space.f_files <= int(maximum_inodes)
+            or any(not os.statvfs(path).f_flag & os.ST_RDONLY for path in ("/var/tmp", "/dev/shm"))):
+        sys.exit(126)
+
 def configure(release, prefix, options):
     # Classify failures inside the unprivileged unit. No configure or config.log text leaves it.
     with tempfile.TemporaryFile(dir="/tmp") as output:
@@ -120,8 +141,10 @@ try:
     ruby = prefix + "/bin/ruby"
     if mode == "build":
         failure = 95
-        device, inode, legacy = arguments
+        device, inode, legacy, *resource_limits = arguments
         require_staging_mount(prefix, device, inode)
+        failure = 126
+        require_ruby_resources(*resource_limits)
         failure = 97
         release = extract_release("ruby-" + version)
         options = ["--with-out-ext=openssl"] if legacy == "legacy" else []
@@ -188,6 +211,59 @@ def ruby_mount_path(path):
     return str(path)
 
 
+def ruby_scratch_mount(path, unit, check_limits=True):
+    name = ruby_mount_path(path)
+    owned_directory(path.parent)
+    if path.is_symlink():
+        fail('ownership', 'Ruby scratch directory is a symbolic link')
+    matches = []
+    with open('/proc/self/mountinfo', encoding='ascii', errors='surrogateescape') as stream:
+        for row in stream:
+            mount, filesystem = row.rstrip('\n').split(' - ', 1)
+            fields = mount.split()
+            target = fields[4]
+            if target.startswith(name + '/'):
+                fail('ownership', 'unexpected nested Ruby scratch mount')
+            if target == name:
+                matches.append((fields, filesystem.split()))
+    if not matches:
+        return False
+    if len(matches) != 1:
+        fail('ownership', 'multiple Ruby scratch mounts')
+    mount, filesystem = matches[0]
+    volume = path.stat()
+    space = os.statvfs(path)
+    if (mount[3] != '/' or not {'rw', 'nosuid', 'nodev'} <= set(mount[5].split(','))
+            or filesystem[:2] != ['tmpfs', unit]
+            or volume.st_uid != 0 or not stat.S_ISDIR(volume.st_mode)):
+        fail('ownership', 'Ruby scratch mount identity differs')
+    if check_limits and (not 0 < space.f_blocks * space.f_frsize <= RUBY_SCRATCH_BYTES
+                         or not 0 < space.f_files <= RUBY_SCRATCH_INODES):
+        fail('installation', 'Ruby scratch mount bounds differ')
+    return True
+
+
+def ruby_create_scratch(path, unit):
+    ruby_mount_path(path)
+    path.mkdir(mode=0o700)
+    options = f'rw,nosuid,nodev,mode=1777,size={RUBY_SCRATCH_BYTES},nr_inodes={RUBY_SCRATCH_INODES}'
+    run(ruby_system_command('mount', '--types', 'tmpfs', '--options', options, '--', unit, str(path)))
+    if not ruby_scratch_mount(path, unit):
+        fail('installation', 'Ruby scratch mount could not be verified')
+
+
+def ruby_remove_scratch(path, unit):
+    if not ruby_scratch_mount(path, unit, check_limits=False):
+        return
+    try:
+        subprocess.run(ruby_system_command('umount', '--', str(path)), stdin=subprocess.DEVNULL,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        fail('interrupted', 'the original Ruby scratch mount could not be released')
+    if ruby_scratch_mount(path, unit, check_limits=False):
+        fail('interrupted', 'the original Ruby scratch mount remains attached')
+
+
 def ruby_manager_terminal(command):
     results, exits = [], []
     for line in (command['stdout'] + '\n' + command['stderr']).splitlines():
@@ -209,8 +285,12 @@ def ruby_diagnostic(command, role, ecosystem='ruby'):
     exit_code = command['actualExitCode']
     failure = RUBY_WORKER_FAILURES.get(exit_code)
     configure_failure = RUBY_CONFIGURE_FAILURES.get(exit_code) if ecosystem == 'ruby' and role == 'build' else None
+    make_failure = (globals().get('PYTHON_MAKE_FAILURES', {}).get(exit_code)
+                    if ecosystem == 'python' and role == 'build' else None)
     if configure_failure is not None:
         failure = RUBY_WORKER_FAILURES[98]
+    if make_failure is not None:
+        failure = RUBY_WORKER_FAILURES[99]
     worker = (result == 'exit-code' and code == 'exited' and value == str(exit_code) and failure is not None
               and not (command['timedOut'] or command['cancelled']))
     stage = ecosystem + '-' + role + '-launcher'
@@ -223,6 +303,8 @@ def ruby_diagnostic(command, role, ecosystem='ruby'):
         details.extend(('worker-stage=' + phase, 'worker-executable=' + child))
         if configure_failure is not None:
             details.append('configure-failure=' + configure_failure)
+        if make_failure is not None:
+            details.append('make-failure=' + make_failure)
     return {**command, 'stage': stage, 'executable': 'systemd-run',
             'stdout': '\n'.join(details) + '\n', 'stderr': ''}
 
@@ -284,11 +366,23 @@ def source_unit(unit, directory, version, ecosystem, worker_source, build_mounts
         sources = [ruby_mount_path(archive) + ':/tmp/wtl-toolchain-release']
         if gem is not None:
             sources.append(ruby_mount_path(gem) + ':/tmp/openssl-3.0.3.gem')
-        properties.extend([
-            'BindReadOnlyPaths=' + ' '.join(sources), 'BindPaths=' + ruby_mount_path(stage) + ':' + directory,
-            'ReadWritePaths=' + directory,
-        ])
+        mounts = [ruby_mount_path(stage) + ':' + directory]
+        writable = [directory]
         worker.extend([str(staged.st_dev), str(staged.st_ino), 'legacy' if gem is not None else 'standard'])
+        if ecosystem == 'ruby':
+            scratch = stage.parent
+            info = scratch.lstat()
+            readonly = ruby_mount_path(scratch / 'readonly')
+            sources.extend([readonly + ':/var/tmp', readonly + ':/dev/shm'])
+            mounts.append(ruby_mount_path(scratch) + ':/tmp')
+            writable.append('/tmp')
+            properties.extend([
+                'MemoryMax=' + str(RUBY_MEMORY_BYTES), 'MemorySwapMax=0',
+            ])
+            worker.extend([unit, str(info.st_dev), str(info.st_ino), str(RUBY_SCRATCH_BYTES),
+                           str(RUBY_SCRATCH_INODES), str(RUBY_MEMORY_BYTES)])
+        properties.extend(['BindReadOnlyPaths=' + ' '.join(sources), 'BindPaths=' + ' '.join(mounts),
+                           'ReadWritePaths=' + ' '.join(writable)])
     elif directory.startswith(('/var/', '/home/', '/root/')):
         properties.append('BindReadOnlyPaths=' + directory)
     command = ruby_system_command('systemd-run', '--wait', '--collect', '--slice=system.slice', '--unit=' + unit)
@@ -485,7 +579,11 @@ def source_install(ecosystem, recipe, identity, url, algorithm, expected, layout
             gem.chmod(0o444)
             dependencies['openssl'] = {'version': '3.0.3', 'source': gem_url, 'sha256': RUBY_OPENSSL_DIGEST}
         source_dependencies(layout)
-        stage = work / 'stage'
+        scratch = work / 'scratch' if ecosystem == 'RUBY' else work
+        if ecosystem == 'RUBY':
+            ruby_create_scratch(scratch, unit)
+            (scratch / 'readonly').mkdir(mode=0o555)
+        stage = scratch / 'stage'
         stage.mkdir()
         # Only the unit can reach this write mount. Every host ancestor to the work directory is protected.
         stage.chmod(0o777)
@@ -505,6 +603,8 @@ def source_install(ecosystem, recipe, identity, url, algorithm, expected, layout
     finally:
         if sandbox_started and not sandbox_settled:
             ruby_require_settled(unit)
+        if ecosystem == 'RUBY':
+            ruby_remove_scratch(work / 'scratch', unit)
         shutil.rmtree(work)
         tracked_sync_directory(work.parent)
 
@@ -539,7 +639,8 @@ def tracked_require_quiescent_with_ruby(operation):
     _previous_tracked_require_quiescent(operation)
     if operation.request['kind'] == 'PREPARE':
         name = operation.request['parameters']['ecosystem'].lower()
-        if name in ('ruby', 'python') and (operation.directory / 'work' / 'stage').is_dir():
+        work = operation.directory / 'work'
+        if name in ('ruby', 'python') and ((work / 'stage').is_dir() or (work / 'scratch').is_dir()):
             ruby_require_settled(source_unit_name(operation.request['operationId'], 'build', name))
     for name, marker in source_probe_markers(operation):
         if marker.exists() or marker.is_symlink():
@@ -559,6 +660,12 @@ def tracked_owned_residue_with_ruby(operation):
 
 
 def tracked_cleanup_with_ruby(operation):
+    tracked_require_quiescent(operation)
+    if operation.request['kind'] == 'PREPARE' and operation.request['parameters']['ecosystem'] == 'RUBY':
+        work = operation.directory / 'work'
+        if work.exists() or work.is_symlink():
+            owned_directory(work)
+            ruby_remove_scratch(work / 'scratch', ruby_unit_name(operation.request['operationId'], 'build'))
     _previous_tracked_cleanup(operation)
     for _, marker in source_probe_markers(operation):
         if marker.exists():

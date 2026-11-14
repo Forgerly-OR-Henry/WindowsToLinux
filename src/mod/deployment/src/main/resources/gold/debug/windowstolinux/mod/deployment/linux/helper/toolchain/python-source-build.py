@@ -1,5 +1,61 @@
 PYTHON_SOURCE_RECIPE = 'python-dynamic-user-build-v1'
+PYTHON_MAKE_FAILURES = {
+    112: 'start-permission-denied',
+    113: 'start-path-missing',
+    114: 'start-os-error',
+    115: 'child-sigkill',
+    116: 'child-sigxfsz',
+    117: 'child-other-signal',
+    118: 'output-storage-exhausted',
+    119: 'output-file-too-large',
+    120: 'output-resource-unavailable',
+    121: 'output-permission-denied',
+    122: 'output-compiler-killed',
+    123: 'output-linker-error',
+    124: 'output-make-prerequisite',
+    125: 'output-compiler-error',
+}
 PYTHON_SOURCE_WORKER = SOURCE_WORKER + r'''
+import errno
+import re
+import signal
+
+# Child output is untrusted. Retain only the highest-priority matching fixed hint in the unit.
+MAKE_OUTPUT_RULES = (
+    (118, rb"(?i)(?:^|: )(?:no space left on device|disk quota exceeded)\.?$"),
+    (119, rb"(?i)(?:^|: )(?:file too large|file size limit exceeded)(?: \(core dumped\))?\.?$"),
+    (120, rb"(?i)(?:^|: )resource temporarily unavailable\.?$"),
+    (121, rb"(?i)(?:^|: )(?:permission denied|operation not permitted|read-only file system)\.?$"),
+    (122, rb"(?i)^(?:[^:]+: )?fatal error: killed signal terminated program cc1(?:plus)?(?:\s.*)?$"),
+    (123, rb"(?i)(?:^collect2: error: ld returned [0-9]+ exit status$|: undefined reference to )"),
+    (124, rb"^make(?:\[[0-9]+\])?: \*\*\* No rule to make target "),
+    (125, rb"^.+:[0-9]+(?::[0-9]+)?: (?:fatal )?error: "),
+)
+
+def make_output_hint(stream):
+    hint, continued = 126, False
+    for raw in iter(lambda: stream.readline(4097), b""):
+        if not continued and len(raw) <= 4096:
+            line = raw.rstrip(b"\r\n")
+            for code, pattern in MAKE_OUTPUT_RULES:
+                if code < hint and re.search(pattern, line):
+                    hint = code
+        continued = not raw.endswith(b"\n")
+    return 99 if hint == 126 else hint
+
+def make_python(release):
+    try:
+        process = subprocess.Popen(("/usr/bin/make", "-j2"), cwd=release, env=environment,
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    except OSError as error:
+        return {errno.EACCES: 112, errno.EPERM: 112, errno.ENOENT: 113}.get(error.errno, 114)
+    with process:
+        hint = make_output_hint(process.stdout)
+        code = process.wait()
+    if code < 0:
+        return {signal.SIGKILL: 115, signal.SIGXFSZ: 116}.get(-code, 117)
+    return hint if code else 0
+
 failure = 90
 try:
     mode, network, mount, prefix, version, *arguments = sys.argv[1:]
@@ -15,7 +71,9 @@ try:
         failure = 98
         command(str(release / "configure"), "--prefix=" + prefix, "--with-ensurepip=install", cwd=release)
         failure = 99
-        command("/usr/bin/make", "-j2", cwd=release)
+        make_failure = make_python(release)
+        if make_failure:
+            sys.exit(make_failure)
         failure = 100
         command("/usr/bin/make", "install", cwd=release)
         failure = 102

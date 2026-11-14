@@ -59,6 +59,8 @@ public final class DeploymentCommandSourceEvidence {
     private static final String DEPENDENCY_WORKER = "/" + PROJECTION + "/dependencyWorker";
     private static final String DEPENDENCY_RUNTIME = "/" + PROJECTION + "/mirrorRuntime";
     private static final String DEPENDENCY_RUNTIME_SELECTION = "/" + PROJECTION + "/dependencyRuntimeSelection";
+    private static final String DEPENDENCY_APT_SELECTION = "/" + PROJECTION + "/dependencyAptSelection";
+    private static final String DEPENDENCY_SYSTEM_SHELL = "/" + PROJECTION + "/dependencySystemShell";
     private static final String BIND = "deployment.toolchain.bind.v1";
     private static final String BUILD = "deployment.build.run.v1";
     private static final String BUILD_PROJECTION = "buildReviewEvidence";
@@ -122,8 +124,14 @@ public final class DeploymentCommandSourceEvidence {
         The executable stdin contains the complete inline dependencyWorker and its exact JSON-encoded copy. When mirrored, dependencyRuntimeSelection supplies exact package-manager entrypoints, and selectedRuntimeRanges identifies their source coordinates. Inspect dependencyWorker for protected authentication, source and package choices, bounded worker ownership and receipts. Follow reached package-manager and mirror behavior using those excerpts and read any needed missing ranges. Shared package repository, dependency and registry code outside this transaction does not establish safety or change the original effects.
         """;
 
+    private static final String DEPENDENCY_APT_INSTRUCTION = """
+        Restore exactAction and completeExecutableInput from ordered segments. LITERAL copies text; SOURCE_TEXT copies the reference; SHELL_SINGLE_QUOTE applies Bash single quoting; JSON_STRING encodes source as a JSON string with double quotes. Review exact arguments, resource limits, targets, original authority, and effects independently. Digests identify bytes and grant no permission.
+        The prior typed host probe observed APT. selectedAptRanges maps exact excerpts in dependencyAptSelection to the worker, runtime and decoded BOOTSTRAP_SHELL used by mirror_system_command. startCharacter is relative to the frame header end; offset through next gives coordinates in the referenced source. Inspect lifecycle, package admission, repository authentication, and frozen installation. The root worker selects the current OS again; the original APT/DNF effect targets still apply. Read necessary alternate paths and any missing ranges from the original sources.
+        Request missing exact bytes with snapshotSha256, pointer, offset and limit from 1 through 8000. Read up to eight ranges in one response. Exact source pages and retained frames put the original text after the JSON header in range order. Submit a fresh native submit_result alone. Deny unsafe effects or insufficient evidence.
+        """;
+
     private static final String BUILD_INSTRUCTION = """
-        The buildReviewEvidence manifest describes lossless ordered segments of the current executable stdin. The product reconstructs them and compares every byte to this request's original stdin before review. The complete buildBody, staged mirror policy and bootstrap shell are inline. The large shared mirror runtime is available as exact UTF-16 pages. runtimeSelection contains exact initial runtime excerpts, with startCharacter relative to the frame's headerCharacters and offset/next giving original source coordinates. SOURCE_TEXT copies raw referenced text; SHELL_SINGLE_QUOTE surrounds it with apostrophes and escapes each apostrophe as '"'"'.
+        The buildReviewEvidence manifest describes lossless ordered segments of the current executable stdin. The product reconstructs them and compares every byte to this request's original stdin before review. The complete buildBody and frozen public routing policy are inline. The original staged policy, generated bootstrap shell and shared runtime are available as exact UTF-16 pages. selectedRuntimeRanges maps the launcher and mirror excerpts in runtimeSelection to original source coordinates. startCharacter is relative to the frame's headerCharacters. SOURCE_TEXT copies raw referenced text; SHELL_SINGLE_QUOTE surrounds it with apostrophes and escapes each apostrophe as '"'"'.
         Review the fixed collector, stdin digest/limits, candidate/authority, non-root isolation, bootstrap setup and cleanup, actual mirror routes and invoked branches, plus the complete application program and any project hooks or nested inputs. Read necessary missing source with the current snapshotSha256, pointer, offset and limit; every original field including the full stdin remains readable. Raw pages and retained source frames carry exact text in the header range order; newRanges excludes already visible text. Only reached paths apply to this action. Digests and projection checks grant no trust or permission. Submit a fresh verdict independently; deny if required source or a safety boundary is missing.
         """;
 
@@ -190,13 +198,17 @@ public final class DeploymentCommandSourceEvidence {
         var sourceBodies = new LinkedHashMap<String, String>();
         var initialRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
         if (mirror.isPresent()) {
-            var parts = projectMirror(projected, manifest, messages, snapshot, exact, mirror.orElseThrow().policy(), dependency, sourceBodies);
+            var parts = projectMirror(projected, manifest, messages, snapshot, exact, mirror.orElseThrow().policy(),
+                dependency, !aptDependency(current), sourceBodies);
             if (!exact.equals(restoreSegments(parts, sourceBodies)))
                 throw new IOException("Mirrored projection does not restore the original command");
         }
         if (dependency) {
-            projectDependency(current, projected, manifest, messages, snapshot, exact, script, request, sourceBodies);
-            if (mirror.isPresent())
+            boolean apt = mirror.isPresent() && aptDependency(current);
+            projectDependency(current, projected, manifest, messages, snapshot, exact, script, request, sourceBodies, apt);
+            if (apt) {
+                projectAptDependency(projected, manifest, messages, snapshot, sourceBodies, initialRanges, mirror.orElseThrow().policy());
+            } else if (mirror.isPresent())
                 addRuntimeSelection(manifest, messages, snapshot, sourceBodies, initialRanges,
                     DEPENDENCY_RUNTIME, DEPENDENCY_RUNTIME_SELECTION, "dependencyRuntimeSelection",
                     PreparationSourceRange.dependencyRuntime(sourceBodies.get(DEPENDENCY_RUNTIME)));
@@ -244,7 +256,7 @@ public final class DeploymentCommandSourceEvidence {
         String helper = sources.get(INSTALLED_HELPER_SOURCE);
         appendSelection(body, selected, initialRanges, INSTALLED_HELPER_SOURCE, helper,
             PreparationSourceRange.helper(helper, ecosystem, diagnosed));
-        if (ecosystem.equals("NODE")) {
+        if (ecosystem.equals("NODE") || ecosystem.equals("JAVA")) {
             String shell = sources.get(MIRROR_BOOTSTRAP_SHELL);
             appendSelection(body, selected, initialRanges, MIRROR_BOOTSTRAP_SHELL, shell,
                 List.of(PreparationSourceRange.runtimeLauncher(shell)));
@@ -350,7 +362,8 @@ public final class DeploymentCommandSourceEvidence {
 
     /** References exact staged and executed material from the already validated wrapper. */
     private static List<Map<String, String>> projectMirror(ObjectNode projected, ObjectNode manifest, List<AiMessage> messages, String snapshot,
-                                      String exact, String policy, boolean dependency, Map<String, String> sourceBodies) throws IOException {
+                                      String exact, String policy, boolean dependency, boolean inlinePolicy,
+                                      Map<String, String> sourceBodies) throws IOException {
         String runtime = DeploymentMirrorRuntime.runtimeSource();
         if (!dependency && !runtime.equals(projected.at(MIRROR_RUNTIME).textValue()))
             throw new IOException("Original mirror runtime evidence changed");
@@ -365,9 +378,9 @@ public final class DeploymentCommandSourceEvidence {
         int runtimeStart = uniqueIndex(exact, prefix + quoted + " >\"$WTL_MIRROR_RUNTIME\"\n") + prefix.length();
         var parts = new ArrayList<Map<String, String>>();
         int policyEnd = projectMirrorPolicy(exact, policy, runtimeStart, parts, MIRROR_POLICY_SOURCE);
-        var policyDescriptor = dependency ? sourceFrame(messages, snapshot, MIRROR_POLICY_SOURCE, policy)
+        var policyDescriptor = dependency && inlinePolicy ? sourceFrame(messages, snapshot, MIRROR_POLICY_SOURCE, policy)
             : pagedSource(MIRROR_POLICY_SOURCE, policy, List.of());
-        if (dependency) manifest.withArray("frames").add(policyDescriptor);
+        if (dependency && inlinePolicy) manifest.withArray("frames").add(policyDescriptor);
         manifest.set("mirrorPolicySource", policyDescriptor);
         sourceBodies.put(MIRROR_POLICY_SOURCE, policy);
         parts.add(literal(exact.substring(policyEnd, runtimeStart)));
@@ -455,15 +468,24 @@ public final class DeploymentCommandSourceEvidence {
         sources.put(BUILD_BODY, wrapper.original());
         if (!input.equals(restoreSegments(parts, sources)))
             throw new IOException("Mirrored build projection does not restore the original executable input");
-        for (String pointer : List.of(BUILD_POLICY, BUILD_SHELL, BUILD_BODY)) {
-            var frame = sourceFrame(messages, snapshot, pointer, sources.get(pointer));
-            frames.add(frame);
-            manifest.set(pointer.substring(pointer.lastIndexOf('/') + 1), frame);
-        }
+        manifest.set("stagedMirrorPolicy", pagedSource(BUILD_POLICY, wrapper.policy(), List.of()));
+        var bodyFrame = sourceFrame(messages, snapshot, BUILD_BODY, wrapper.original());
+        frames.add(bodyFrame);
+        manifest.set("buildBody", bodyFrame);
         ((ObjectNode) projected.path("mirrorTransport")).set("runtimeSource", pagedSource(MIRROR_RUNTIME, runtime, MIRROR_LOCATIONS));
+        ((ObjectNode) projected.path("mirrorTransport")).put("meaning",
+            "Exact public routing policy for this task and original mirror runtime available via the source manifest. Secret values remain opaque.");
         var initialRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
-        addRuntimeSelection(manifest, messages, snapshot, sources, initialRanges,
-            MIRROR_RUNTIME, BUILD_RUNTIME_SELECTION, "runtimeSelection", PreparationSourceRange.buildRuntime(runtime));
+        var selection = new StringBuilder();
+        var selected = manifest.putArray("selectedRuntimeRanges");
+        String shell = sources.get(BUILD_SHELL);
+        appendSelection(selection, selected, initialRanges, BUILD_SHELL, shell, List.of(PreparationSourceRange.runtimeLauncher(shell)));
+        // The whole build body remains visible. The literal call site only selects review navigation.
+        boolean go = wrapper.original().contains("\n  wtl_dependency GO_MODULE go mod download\n"
+            + "  CGO_ENABLED=0 GOPROXY=off run go build -mod=readonly -trimpath ");
+        appendSelection(selection, selected, initialRanges, MIRROR_RUNTIME, runtime,
+            go ? PreparationSourceRange.goBuildRuntime(runtime) : PreparationSourceRange.buildRuntime(runtime));
+        putSelectionFrame(manifest, messages, snapshot, sources, BUILD_RUNTIME_SELECTION, "runtimeSelection", selection);
         projected.set("completeExecutableInput", segments(input, parts));
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
         return Optional.of(new DeploymentCommandSourceEvidence(current, original, snapshot, messages, sources, initialRanges));
@@ -476,6 +498,12 @@ public final class DeploymentCommandSourceEvidence {
         var selection = new StringBuilder();
         appendSelection(selection, manifest.putArray("selectedRuntimeRanges"), initialRanges, runtimePointer,
             sources.get(runtimePointer), ranges);
+        putSelectionFrame(manifest, messages, snapshot, sources, framePointer, member, selection);
+    }
+
+    private static void putSelectionFrame(ObjectNode manifest, List<AiMessage> messages, String snapshot,
+                                          Map<String, String> sources, String framePointer, String member,
+                                          StringBuilder selection) throws IOException {
         String text = selection.toString();
         sources.put(framePointer, text);
         var frame = sourceFrame(messages, snapshot, framePointer, text);
@@ -558,7 +586,7 @@ public final class DeploymentCommandSourceEvidence {
 
     private static void projectDependency(ObjectNode current, ObjectNode projected, ObjectNode manifest, List<AiMessage> messages,
                                           String snapshot, String exact, String script, CommandRequest request,
-                                          Map<String, String> sourceBodies) throws IOException {
+                                          Map<String, String> sourceBodies, boolean apt) throws IOException {
         String input = requiredText(current, "completeExecutableInput");
         int newline = input.indexOf('\n');
         if (newline < 0 || !script.equals(requiredText(current, "commandScript")))
@@ -572,16 +600,58 @@ public final class DeploymentCommandSourceEvidence {
         } finally {
             Arrays.fill(bytes, (byte) 0);
         }
-        var frame = sourceFrame(messages, snapshot, DEPENDENCY_WORKER, worker);
         sourceBodies.put(DEPENDENCY_WORKER, worker);
-        manifest.withArray("frames").add(frame);
-        manifest.set("dependencyWorker", frame);
+        var workerDescriptor = apt ? pagedSource(DEPENDENCY_WORKER, worker, List.of("def dependency_worker(",
+            "def dependency_supervise(", "def dependency_open_core_events(", "def dependency_profile(",
+            "def dependency_validate_apt(", "def dependency_validate_dnf(", "def dependency_transaction("))
+            : sourceFrame(messages, snapshot, DEPENDENCY_WORKER, worker);
+        if (!apt) manifest.withArray("frames").add(workerDescriptor);
+        manifest.set("dependencyWorker", workerDescriptor);
         projected.set("completeExecutableInput", segments(input, List.of(literal(WORKER_ASSIGNMENT),
             reference("JSON_STRING", DEPENDENCY_WORKER), literal("\n"), reference("SOURCE_TEXT", DEPENDENCY_WORKER))));
         projected.set("commandScript", identity(script).put("sourcePointer", "/exactAction").put("startCharacter", exact.length() - script.length()));
         var transaction = projected.at("/currentCommandEvidence/currentNativeBuildPrerequisites");
         if (transaction instanceof ObjectNode prerequisites && current.path("toolchainDependencies").equals(prerequisites.path("fixedTransaction")))
             prerequisites.set("fixedTransaction", JSON.createObjectNode().put("sourcePointer", "/toolchainDependencies"));
+    }
+
+    private static boolean aptDependency(JsonNode current) {
+        var observation = current.at("/currentCommandEvidence/currentNativeBuildPrerequisites/observedGap");
+        return "NATIVE_BUILD".equals(current.at("/toolchainDependencies/profile").asText())
+            && observation.path("nativeBuildPrerequisitesMissing").asBoolean()
+            && "apt".equals(observation.path("packageManager").asText());
+    }
+
+    private static void projectAptDependency(ObjectNode projected, ObjectNode manifest, List<AiMessage> messages,
+                                              String snapshot, Map<String, String> sources,
+                                              Map<String, NavigableMap<Integer, Integer>> initialRanges, String policy) throws IOException {
+        var publicPolicy = JSON.valueToTree(DeploymentMirrorTasks.reviewMaterial(policy)).path("frozenPolicy");
+        var points = (ObjectNode) publicPolicy.path("points");
+        var names = new ArrayList<String>();
+        points.fieldNames().forEachRemaining(names::add);
+        for (String name : names) {
+            if (!name.startsWith("APT_") && !name.startsWith("DNF_")) points.remove(name);
+        }
+        projected.set("dependencyPublicPolicy", publicPolicy);
+        boolean credentials = names.stream().filter(name -> name.startsWith("APT_"))
+            .map(points::path).flatMap(endpoints -> endpoints.findValues("credentialManaged").stream()).anyMatch(JsonNode::asBoolean);
+        var selection = new StringBuilder();
+        var selected = manifest.putArray("selectedAptRanges");
+        String worker = sources.get(DEPENDENCY_WORKER);
+        appendSelection(selection, selected, initialRanges, DEPENDENCY_WORKER, worker, PreparationSourceRange.aptDependencyWorker(worker));
+        String runtime = sources.get(DEPENDENCY_RUNTIME);
+        String shellAssignment = "\nBOOTSTRAP_SHELL = ";
+        int shellStart = uniqueIndex(runtime, shellAssignment) + shellAssignment.length();
+        int shellEnd = runtime.indexOf('\n', shellStart);
+        if (shellEnd < 0) throw new IOException("Invoked dependency bootstrap shell literal unavailable");
+        String shell = JSON.readTree(runtime.substring(shellStart, shellEnd)).textValue();
+        if (shell == null) throw new IOException("Invoked dependency bootstrap shell literal is not text");
+        sources.put(DEPENDENCY_SYSTEM_SHELL, shell);
+        manifest.set("dependencySystemShell", pagedSource(DEPENDENCY_SYSTEM_SHELL, shell, List.of("wtl_apt() (", "wtl_apt_install_frozen() {"))
+            .put("literalSourcePointer", DEPENDENCY_RUNTIME).put("literalOffset", shellStart).put("literalNext", shellEnd));
+        appendSelection(selection, selected, initialRanges, DEPENDENCY_SYSTEM_SHELL, shell, PreparationSourceRange.aptDependencyShell(shell, credentials));
+        appendSelection(selection, selected, initialRanges, DEPENDENCY_RUNTIME, runtime, PreparationSourceRange.aptDependencyRuntime(runtime));
+        putSelectionFrame(manifest, messages, snapshot, sources, DEPENDENCY_APT_SELECTION, "dependencyAptSelection", selection);
     }
 
     public Reader reader(int attempts) {
@@ -609,15 +679,16 @@ public final class DeploymentCommandSourceEvidence {
 
         private Reader(int attempts) {
             remaining = attempts;
-            if (sourceBodies.containsKey(DEPENDENCY_WORKER)) {
+            if (sourceBodies.containsKey(DEPENDENCY_WORKER) && !sourceBodies.containsKey(DEPENDENCY_APT_SELECTION)) {
                 suppliedInline(DEPENDENCY_WORKER);
                 suppliedInline(MIRROR_POLICY_SOURCE);
                 suppliedInline(DEPENDENCY_RUNTIME_SELECTION);
             }
+            suppliedInline(DEPENDENCY_APT_SELECTION);
             suppliedInline(BINDING_SELECTION);
             suppliedInline(PREPARATION_SELECTION);
             if (buildReview())
-                for (String pointer : List.of(BUILD_POLICY, BUILD_SHELL, BUILD_BODY, BUILD_RUNTIME_SELECTION)) suppliedInline(pointer);
+                for (String pointer : List.of(BUILD_BODY, BUILD_RUNTIME_SELECTION)) suppliedInline(pointer);
             initialRanges.forEach((pointer, ranges) -> delivered.put(pointer, new TreeMap<>(ranges)));
             delivered.forEach((pointer, ranges) -> inline.put(pointer, new TreeMap<>(ranges)));
             if (nodePreparation) inline.forEach((pointer, ranges) -> nodeDeliveredRanges.put(pointer, new TreeMap<>(ranges)));
@@ -925,6 +996,7 @@ public final class DeploymentCommandSourceEvidence {
     public String instructions() {
         if (buildReview()) return BUILD_INSTRUCTION;
         if (preparationReview()) return PREPARE_INSTRUCTION + (nodePreparationReview() ? NODE_PREPARE_INSTRUCTION : "");
+        if (dependencyReview() && sourceBodies.containsKey(DEPENDENCY_APT_SELECTION)) return DEPENDENCY_APT_INSTRUCTION;
         if (dependencyReview()) return INSTRUCTION + DEPENDENCY_INSTRUCTION;
         return bindingReview() ? BIND_INSTRUCTION : INSTRUCTION;
     }
