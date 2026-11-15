@@ -435,6 +435,9 @@ class RubySourceBuildTest(unittest.TestCase):
         source.body = source.body[:next(i for i, node in enumerate(source.body) if isinstance(node, ast.Try))]
         worker = {}
         exec(compile(source, '<Ruby sandbox worker>', 'exec'), worker)
+        release = pathlib.PurePosixPath('/tmp/wtl-toolchain-source') / ('ruby-' + VERSION)
+        configure = str(release / 'configure').encode('ascii')
+        conftest = b': line 921: ./conftest: Operation not permitted'
         cases = (
             (OSError(errno.EACCES, 'private path'), b'', 104, 'start-permission-denied'),
             (OSError(errno.ENOENT, 'private path'), b'', 105, 'start-path-or-interpreter-missing'),
@@ -459,12 +462,38 @@ class RubySourceBuildTest(unittest.TestCase):
             (subprocess.CalledProcessError(1, 'private command'),
              b'./configure: line 921: ./conftest: Operation not permitted',
              165, 'output-operation-not-permitted-conftest'),
+            (subprocess.CalledProcessError(1, 'private command'), configure + conftest,
+             165, 'output-operation-not-permitted-conftest'),
+            (subprocess.CalledProcessError(1, 'private command'), configure + b'.extra' + conftest,
+             131, 'output-operation-not-permitted'),
+            (subprocess.CalledProcessError(1, 'private command'), b'/tmp/other/configure' + conftest,
+             131, 'output-operation-not-permitted'),
             (subprocess.CalledProcessError(1, 'private command'),
              b'config.status: private-value: Operation not permitted',
              166, 'output-operation-not-permitted-config-status'),
             (subprocess.CalledProcessError(1, 'private command'),
+             b'/usr/bin/ln: failed to create symbolic link private-value: Operation not permitted',
+             193, 'output-operation-not-permitted-reported-by-ln'),
+            (subprocess.CalledProcessError(1, 'private command'),
+             b'mkdir: cannot create directory private-value: Operation not permitted',
+             194, 'output-operation-not-permitted-reported-by-mkdir'),
+            (subprocess.CalledProcessError(1, 'private command'),
+             b'rm: cannot remove private-value: Operation not permitted',
+             195, 'output-operation-not-permitted-reported-by-rm'),
+            (subprocess.CalledProcessError(1, 'private command'),
+             b'chmod: changing permissions of private-value: Operation not permitted',
+             196, 'output-operation-not-permitted-reported-by-chmod'),
+            (subprocess.CalledProcessError(1, 'private command'),
+             b'install: cannot create regular file private-value: Operation not permitted',
+             197, 'output-operation-not-permitted-reported-by-install'),
+            (subprocess.CalledProcessError(1, 'private command'),
              b'cp: private-value: Operation not permitted\nmv: private-value: Operation not permitted',
              171, 'output-permission-hints-ambiguous'),
+            (subprocess.CalledProcessError(1, 'private command'),
+             configure + conftest + b'\nmkdir: private-value: Operation not permitted',
+             171, 'output-permission-hints-ambiguous'),
+            (subprocess.CalledProcessError(1, 'private command'), b'x' * 4097 + configure + conftest,
+             134, 'configure-nonzero'),
         )
         for error, message, status, reason in cases:
             with self.subTest(status=status):
@@ -474,17 +503,24 @@ class RubySourceBuildTest(unittest.TestCase):
                     else:
                         start.return_value.stdout = io.BytesIO(message + b'\n' + b'private payload\n' * 2000)
                         start.return_value.wait.return_value = error.returncode
-                    worker['configure'](self.root, '/protected/ruby', [])
+                    worker['configure'](release, '/protected/ruby', [])
+                self.assertEqual((str(release / 'configure'), '--prefix=/protected/ruby', '--disable-install-doc'),
+                                 start.call_args.args[0])
+                self.assertEqual(release, start.call_args.kwargs['cwd'])
                 self.assertEqual(subprocess.STDOUT, start.call_args.kwargs['stderr'])
                 self.assertEqual(status, observed.exception.code)
                 diagnostic = self.ns['ruby_diagnostic'](self.launcher_observation(status), 'build')
                 self.assertEqual('ruby-build-source-configure', diagnostic['stage'])
                 self.assertIn('configure-failure=' + reason + '\n', diagnostic['stdout'])
                 self.assertNotIn('private', str(diagnostic))
+        process = mock.MagicMock(stdout=io.BytesIO(configure + conftest), wait=mock.Mock(return_value=1))
+        with mock.patch.object(subprocess, 'Popen', return_value=process), self.assertRaises(SystemExit) as observed:
+            worker['configure'](release, '/protected/ruby', [])
+        self.assertEqual(134, observed.exception.code)
         process = mock.MagicMock()
         process.stdout.readline.side_effect = OSError(errno.EIO, 'private pipe detail')
         with mock.patch.object(subprocess, 'Popen', return_value=process), self.assertRaises(SystemExit) as observed:
-            worker['configure'](self.root, '/protected/ruby', [])
+            worker['configure'](release, '/protected/ruby', [])
         self.assertEqual(135, observed.exception.code)
 
     def test_missing_ambiguous_or_mismatching_manager_evidence_stays_at_launcher_stage(self):

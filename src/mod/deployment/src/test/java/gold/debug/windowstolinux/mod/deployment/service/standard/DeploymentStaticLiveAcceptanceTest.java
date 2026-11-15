@@ -6725,7 +6725,9 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
 
     private static final java.util.regex.Pattern LIVE_OPERATION_DIAGNOSTIC = java.util.regex.Pattern.compile(
         "exceptionType=(" + LIVE_DIAGNOSTIC_TYPE + ")(?: causeType=(" + LIVE_DIAGNOSTIC_TYPE + "))?"
-            + "(?: problemCode=([A-Z_]{1,40})(?: problemEvent=((?:SFTP|SSH|DEPLOYMENT|TASK|FILE)_[A-Z0-9_]{1,96}))?)?");
+            + "(?: problemCode=([A-Z_]{1,40})(?: problemEvent=((?:SFTP|SSH|DEPLOYMENT|TASK|FILE)_[A-Z0-9_]{1,96}))?)?"
+            + "( reviewStage=[A-Z_]{1,32} reviewCode=[A-Z_]{1,40}(?: reviewPageCount=[0-9]{1,7})?"
+            + "(?: reviewNewCharacters=[0-9]{1,7})?(?: reviewRepeatedBatches=[0-9]{1,7})?)?");
 
     static String liveDiagnosticProjection(gold.debug.windowstolinux.appapi.task.log.LogEvent event)
         throws com.fasterxml.jackson.core.JsonProcessingException {
@@ -6746,10 +6748,25 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             try { ProblemCode.valueOf(metadata.group(3)); }
             catch (IllegalArgumentException unavailable) { return "diagnosticMetadata=UNAVAILABLE"; }
         }
+        String evidence = metadata.group(5);
+        if (evidence != null && (!"INVALID_INPUT".equals(metadata.group(3))
+            || !"DEPLOYMENT_COMMAND_REVIEW_INVALID".equals(metadata.group(4)) || !validEvidenceFailureMetadata(evidence)))
+            return "diagnosticMetadata=UNAVAILABLE";
         return "diagnosticMetadata=AVAILABLE exceptionType=" + metadata.group(1)
             + (metadata.group(2) == null ? "" : " causeType=" + metadata.group(2))
             + (metadata.group(3) == null ? "" : " problemCode=" + metadata.group(3))
-            + (metadata.group(4) == null ? "" : " problemEvent=" + metadata.group(4));
+            + (metadata.group(4) == null ? "" : " problemEvent=" + metadata.group(4))
+            + (evidence == null ? "" : evidence);
+    }
+
+    private static boolean validEvidenceFailureMetadata(String evidence) {
+        var details = new LinkedHashMap<String, String>();
+        for (String field : evidence.substring(1).split(" ")) {
+            int separator = field.indexOf('=');
+            details.put(field.substring(0, separator), field.substring(separator + 1));
+        }
+        return gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel
+            .evidenceFailureMetadata(details).equals(evidence);
     }
 
     static final class LiveBoundaryObserver {

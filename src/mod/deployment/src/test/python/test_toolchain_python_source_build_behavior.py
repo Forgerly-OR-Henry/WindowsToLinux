@@ -241,6 +241,17 @@ class PythonSourceBuildTest(unittest.TestCase):
             (b"/usr/bin/ld: private-value: Operation not permitted\n", 174),
             (b"gcc: private-value: Operation not permitted\n", 175),
             (b"/bin/sh: private-value: Operation not permitted\n", 176),
+            (b"/usr/bin/cp: cannot create regular file 'private-value': Operation not permitted\n", 185),
+            (b"/bin/mv: cannot move 'private-source' to 'private-value': Operation not permitted\n", 186),
+            (b"ln: failed to create symbolic link 'private-value': Operation not permitted\n", 187),
+            (b"mkdir: cannot create directory 'private-value': Operation not permitted\n", 188),
+            (b"rm: cannot remove 'private-value': Operation not permitted\n", 189),
+            (b"chmod: changing permissions of 'private-value': Operation not permitted\n", 190),
+            (b"install: cannot create regular file 'private-value': Operation not permitted\n", 191),
+            (b"make[2]: stat: private-value: Operation not permitted\n", 192),
+            (b"/tmp/private/cp: private-value: Operation not permitted\n", 137),
+            (b"cp: private-value: Operation not permitted", 99),
+            (b"x" * 4097 + b"cp: private-value: Operation not permitted\n", 99),
             (b'gcc: fatal error: Killed signal terminated program cc1\n', 122),
             (b'collect2: error: ld returned 1 exit status\n', 123),
             (b"make: *** No rule to make target 'private path'.  Stop.\n", 124),
@@ -265,6 +276,8 @@ class PythonSourceBuildTest(unittest.TestCase):
                                                   b'make: *** [Makefile:760: libpython3.12.a] Error 1\n')))
         self.assertEqual(184, classify(io.BytesIO(b'ar: private: Operation not permitted\n'
                                                   b'as: private: Permission denied\n')))
+        self.assertEqual(184, classify(io.BytesIO(b'ln: private: Operation not permitted\n'
+                                                  b'make: private: Operation not permitted\n')))
 
     def test_make_launch_errors_and_child_signals_have_precedence_over_child_output(self):
         make = self.make_worker_functions()['make_python']

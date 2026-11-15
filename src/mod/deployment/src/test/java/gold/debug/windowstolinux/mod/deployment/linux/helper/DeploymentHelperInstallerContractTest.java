@@ -27,9 +27,11 @@ class DeploymentHelperInstallerContractTest {
     private static final String LEGACY_HELPER = "#!/bin/sh\n# fixture managed helper from a known version\n";
     private static final String LEGACY_ENTRY = "#!/bin/sh\n# fixture build entry from a known version\n";
     private static final String R33_HELPER = "#!/bin/sh\n# fixture for the R33 helper release\n";
+    private static final String R35_HELPER = "#!/bin/sh\n# fixture for the R35 helper release\n";
     private static final String LEGACY_HELPER_DIGEST = "1a5970444c392ca120874bb39c8e6c0542e088b1d9a186d15affb67b05654836";
     private static final String LEGACY_ENTRY_DIGEST = "6eb9b24576e51e318044f67b1c77fc34b41c4c979cadfec1a5eb799c5122a91a";
     private static final String R33_HELPER_DIGEST = "65686d1c5fe7dc22fdf4529bae7d14822477452826cbcbd52697570b89928d07";
+    private static final String R35_HELPER_DIGEST = "7a61bae1181f600a3a5df9675a878e6359cd3cc3f9823981df7e0db467dee8a9";
     private Path temporary;
 
     @BeforeEach
@@ -297,12 +299,13 @@ class DeploymentHelperInstallerContractTest {
         }
     }
 
-    @Test
-    void r33HelperIsTrustedOnlyForTheOriginalLayoutUpgrade() {
+    @ParameterizedTest
+    @ValueSource(strings = {R33_HELPER_DIGEST, R35_HELPER_DIGEST})
+    void previousHelperIsTrustedOnlyForTheOriginalLayoutUpgrade(String digest) {
         var original = DeploymentRemoteLayout.original();
         var custom = new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths(
             "/fixture/lib", "/fixture/apps", "/fixture/state", "/fixture/config", "/fixture/data"));
-        String prior = "helper:" + R33_HELPER_DIGEST;
+        String prior = "helper:" + digest;
         var ubuntu = java.util.Optional.of(gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.APT_UBUNTU);
         assertTrue(DeploymentHelperInstallerScript.renderTracked(UUID.randomUUID(), UUID.randomUUID(), "a".repeat(64),
             DeploymentHelperInstallerScript.bodyDigest(original, ubuntu), original, ubuntu).contains(prior));
@@ -310,12 +313,13 @@ class DeploymentHelperInstallerContractTest {
         assertFalse(DeploymentHelperInstallerScript.renderFiles(original).contains(prior));
         assertFalse(DeploymentHelperInstallerScript.render(custom, ubuntu).contains(prior));
         assertFalse(DeploymentHelperInstallerScript.renderHelperInstallation(custom).contains(prior));
-        assertFalse(DeploymentHelperInstallerScript.render(original, ubuntu).contains("build-entry:" + R33_HELPER_DIGEST));
+        assertFalse(DeploymentHelperInstallerScript.render(original, ubuntu).contains("build-entry:" + digest));
     }
 
-    @Test
-    void originalLayoutUpgradeReplacesR33HelperAndKeepsCurrentBuildEntry() throws Exception {
-        var fixture = fixture(false, "none", "r33", "none");
+    @ParameterizedTest
+    @ValueSource(strings = {"r33", "r35"})
+    void originalLayoutUpgradeReplacesPreviousHelperAndKeepsCurrentBuildEntry(String prior) throws Exception {
+        var fixture = fixture(false, "none", prior, "none");
         var result = execute(fixture.script());
         assertEquals(0, result.exit(), result.output());
         assertEquals(DeploymentManagedHelperBundle.renderScript(), Files.readString(temporary.resolve("helper/managed-helper")));
@@ -384,6 +388,7 @@ class DeploymentHelperInstallerContractTest {
                     .replace("helper_probe=\"$('" + base + "/helper/managed-helper' probe)\"", "helper_probe=\"$(fixture_probe)\"")
                     .replace("helper:" + LEGACY_HELPER_DIGEST, "helper:" + sha(LEGACY_HELPER))
                     .replace("helper:" + R33_HELPER_DIGEST, "helper:" + sha(R33_HELPER))
+                    .replace("helper:" + R35_HELPER_DIGEST, "helper:" + sha(R35_HELPER))
                     .replace("build-entry:" + LEGACY_ENTRY_DIGEST, "build-entry:" + sha(LEGACY_ENTRY))
                     .replace(DeploymentHelperInstallerScript.renderSecurityObservationFunctions(), "")
                     .replace(DeploymentHelperInstallerScript.renderSecurityInvariant(), "");
@@ -395,6 +400,7 @@ class DeploymentHelperInstallerContractTest {
             Files.writeString(temporary.resolve("helper/managed-helper"), switch (prior) {
                 case "helper" -> UNTRUSTED_PRIOR;
                 case "r33" -> R33_HELPER;
+                case "r35" -> R35_HELPER;
                 case "legacy" -> LEGACY_HELPER;
                 case "wrong-target" -> LEGACY_ENTRY;
                 default -> DeploymentManagedHelperBundle.renderScript();

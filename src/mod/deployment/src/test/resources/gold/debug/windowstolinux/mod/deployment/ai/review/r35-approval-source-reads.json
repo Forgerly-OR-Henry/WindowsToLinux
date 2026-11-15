@@ -1,0 +1,99 @@
+{
+  "schema": "R35_APPROVAL_BROWSE_TRACE_V1",
+  "head": "44529cbcaa1e0d1d45bdcdd264a9ac62635b79fd",
+  "matrixSha256": "de492acd48ae6c73ce40840d4472dcaaf99aaeae8496108d4b07bdfe4fd991ba",
+  "projects": [
+    {
+      "project": "task-board",
+      "firstFactsCharacters": 29500,
+      "firstConversationCharacters": 80635,
+      "operation": "deployment.toolchain.prepare.v1",
+      "stdoutSha256": "5c3f7322af5a145ca667d24cc2853062a188aaa6cf660cd91930f933c67637f2",
+      "frames": [
+        {"line":718,"bound":1048576,"sent":85219,"reads":[["/toolchainReviewEvidence/mirrorPolicySource",0,8000]]},
+        {"line":732,"bound":1033030,"sent":94653,"reads":[["/mirrorTransport/runtimeSource",3984,8000],["/mirrorTransport/runtimeSource",16170,8000],["/mirrorTransport/runtimeSource",24170,8000],["/toolchainReviewEvidence/installedHelperSource",187189,8000]]},
+        {"line":749,"bound":1009601,"sent":122676,"reads":[["/toolchainReviewEvidence/installedHelperSource",215449,1775],["/toolchainReviewEvidence/installedHelperSource",298623,900],["/toolchainReviewEvidence/installedHelperSource",171289,3803],["/mirrorTransport/runtimeSource",11984,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",0,6500]]},
+        {"line":767,"bound":981191,"sent":115350,"reads":[["/mirrorTransport/runtimeSource",24170,8000]]},
+        {"line":781,"bound":953773,"sent":107601,"reads":[["/mirrorTransport/runtimeSource",3984,8000],["/mirrorTransport/runtimeSource",20095,8000],["/mirrorTransport/runtimeSource",14607,5377],["/toolchainReviewEvidence/installedHelperSource",171612,3500]]},
+        {"line":798,"bound":928218,"sent":120224,"reads":[["/toolchainReviewEvidence/installedHelperSource",192432,6000]]},
+        {"line":812,"bound":900938,"sent":104027,"reads":[["/toolchainReviewEvidence/installedHelperSource",192432,8000],["/toolchainReviewEvidence/installedHelperSource",170800,1800],["/toolchainReviewEvidence/installedHelperSource",171289,6000],["/toolchainReviewEvidence/installedHelperSource",194000,5000]]},
+        {"line":829,"bound":876193,"sent":109429,"reads":[["/toolchainReviewEvidence/mirrorBootstrapShell",0,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",8000,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",16000,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",24000,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",32000,8000],["/toolchainReviewEvidence/mirrorPolicySource",0,8000]]},
+        {"line":848,"bound":850734,"sent":152099,"reads":[["/mirrorTransport/runtimeSource",7163,6480],["/mirrorTransport/runtimeSource",21217,2700],["/mirrorTransport/runtimeSource",26040,4371]]},
+        {"line":864,"bound":812348,"sent":113760,"reads":[["/toolchainReviewEvidence/mirrorPolicySource",0,8000],["/mirrorTransport/runtimeSource",3984,3179],["/mirrorTransport/runtimeSource",32625,3800]]},
+        {"line":880,"bound":784131,"sent":113991,"reads":[["/toolchainReviewEvidence/mirrorBootstrapShell",0,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",8000,8000],["/mirrorTransport/runtimeSource",16170,8000],["/mirrorTransport/runtimeSource",24000,8000]]},
+        {"line":897,"bound":757297,"sent":132682,"reads":[["/toolchainReviewEvidence/installedHelperSource",187000,5000],["/toolchainReviewEvidence/installedHelperSource",192000,4000],["/mirrorTransport/runtimeSource",7163,4000]]}
+      ]
+    },
+    {
+      "project": "file-transfer",
+      "firstFactsCharacters": 25111,
+      "firstConversationCharacters": 48421,
+      "operation": "deployment.toolchain.prepare.v1",
+      "stdoutSha256": "1c41d43a4ea8e5f20b70a084f8c940644485e48c7723f4f997a8a3ab9f3441a4",
+      "frames": [
+        {"line":786,"bound":1048576,"sent":51893,"reads":[["/toolchainReviewEvidence/installedHelperSource",302144,1800],["/toolchainReviewEvidence/installedHelperSource",157345,1500],["/toolchainReviewEvidence/installedHelperSource",174357,900],["/toolchainReviewEvidence/installedHelperSource",180844,900],["/toolchainReviewEvidence/installedHelperSource",184918,2000],["/toolchainReviewEvidence/installedHelperSource",192754,1700],["/mirrorTransport/runtimeSource",20095,6000],["/toolchainReviewEvidence/mirrorBootstrapShell",12711,2100]]},
+        {"line":807,"bound":1048576,"sent":71345,"reads":[["/toolchainReviewEvidence/installedHelperSource",155324,1175],["/toolchainReviewEvidence/installedHelperSource",161695,718],["/toolchainReviewEvidence/installedHelperSource",164351,1116],["/mirrorTransport/runtimeSource",21217,281],["/mirrorTransport/runtimeSource",26336,420],["/mirrorTransport/runtimeSource",29801,610]]},
+        {"line":826,"bound":1048576,"sent":68881,"reads":[["/toolchainReviewEvidence/installedHelperSource",146023,5000],["/toolchainReviewEvidence/installedHelperSource",157345,3500],["/toolchainReviewEvidence/installedHelperSource",164351,2500],["/toolchainReviewEvidence/installedHelperSource",190008,8000],["/toolchainReviewEvidence/installedHelperSource",192754,2200],["/toolchainReviewEvidence/mirrorBootstrapShell",12711,4000],["/mirrorTransport/runtimeSource",21217,1800],["/mirrorTransport/runtimeSource",26336,4600]]},
+        {"line":847,"bound":1048576,"sent":92594,"reads":[["/toolchainReviewEvidence/installedHelperSource",164351,5000],["/toolchainReviewEvidence/installedHelperSource",174357,2200],["/toolchainReviewEvidence/installedHelperSource",180844,1100],["/toolchainReviewEvidence/installedHelperSource",302144,2200],["/mirrorTransport/runtimeSource",21217,1500],["/mirrorTransport/runtimeSource",26336,2500],["/toolchainReviewEvidence/installedHelperSource",215449,2700],["/toolchainReviewEvidence/installedHelperSource",157345,2400]]},
+        {"line":868,"bound":1048576,"sent":89310,"reads":[["/toolchainReviewEvidence/mirrorPolicySource",0,6756],["/toolchainReviewEvidence/mirrorBootstrapShell",0,5000],["/toolchainReviewEvidence/mirrorBootstrapShell",12500,2600],["/toolchainReviewEvidence/installedHelperSource",155324,1300],["/toolchainReviewEvidence/installedHelperSource",157345,700],["/toolchainReviewEvidence/installedHelperSource",174357,1000],["/toolchainReviewEvidence/installedHelperSource",180844,1000],["/toolchainReviewEvidence/installedHelperSource",192500,2000]]},
+        {"line":889,"bound":1048576,"sent":90751,"reads":[["/toolchainReviewEvidence/installedHelperSource",164351,1200],["/toolchainReviewEvidence/installedHelperSource",155324,1175],["/toolchainReviewEvidence/installedHelperSource",161695,800],["/mirrorTransport/runtimeSource",21217,500],["/mirrorTransport/runtimeSource",26336,500],["/mirrorTransport/runtimeSource",29801,650],["/toolchainReviewEvidence/installedHelperSource",192500,2000],["/toolchainReviewEvidence/installedHelperSource",180844,1100]]},
+        {"line":910,"bound":1035790,"sent":75622,"reads":[["/toolchainReviewEvidence/installedHelperSource",164351,1116],["/toolchainReviewEvidence/installedHelperSource",155324,1175],["/toolchainReviewEvidence/installedHelperSource",161695,718],["/mirrorTransport/runtimeSource",21217,281],["/mirrorTransport/runtimeSource",26336,420],["/mirrorTransport/runtimeSource",29801,610]]},
+        {"line":929,"bound":1017220,"sent":70708,"reads":[["/toolchainReviewEvidence/installedHelperSource",632000,1000],["/toolchainReviewEvidence/installedHelperSource",215300,2600],["/toolchainReviewEvidence/installedHelperSource",302000,2000],["/toolchainReviewEvidence/installedHelperSource",157200,3000],["/toolchainReviewEvidence/installedHelperSource",158700,1800],["/toolchainReviewEvidence/installedHelperSource",192500,2000],["/toolchainReviewEvidence/installedHelperSource",180844,1100],["/mirrorTransport/runtimeSource",20095,2500]]},
+        {"line":950,"bound":999536,"sent":68776,"reads":[["/toolchainReviewEvidence/installedHelperSource",164351,1300],["/toolchainReviewEvidence/installedHelperSource",157345,700],["/toolchainReviewEvidence/installedHelperSource",161695,850],["/toolchainReviewEvidence/installedHelperSource",192754,2200],["/toolchainReviewEvidence/installedHelperSource",185755,950],["/toolchainReviewEvidence/installedHelperSource",180844,900],["/mirrorTransport/runtimeSource",21217,650],["/mirrorTransport/runtimeSource",26336,760]]},
+        {"line":971,"bound":982639,"sent":72437,"reads":[["/toolchainReviewEvidence/installedHelperSource",157345,2100],["/toolchainReviewEvidence/installedHelperSource",192754,2200],["/toolchainReviewEvidence/installedHelperSource",174357,1200],["/toolchainReviewEvidence/installedHelperSource",180844,1100],["/toolchainReviewEvidence/installedHelperSource",184918,5200],["/toolchainReviewEvidence/installedHelperSource",215449,4100],["/toolchainReviewEvidence/mirrorPolicySource",0,6756],["/toolchainReviewEvidence/mirrorBootstrapShell",12711,1118]]},
+        {"line":992,"bound":962783,"sent":82552,"reads":[["/toolchainReviewEvidence/installedHelperSource",155324,6000],["/toolchainReviewEvidence/installedHelperSource",164351,5000],["/mirrorTransport/runtimeSource",20095,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",12711,6000],["/toolchainReviewEvidence/mirrorPolicySource",0,7000],["/toolchainReviewEvidence/installedHelperSource",180844,4000],["/toolchainReviewEvidence/installedHelperSource",192754,4000],["/mirrorTransport/runtimeSource",32625,5000]]},
+        {"line":1013,"bound":942583,"sent":111050,"reads":[["/toolchainReviewEvidence/installedHelperSource",164351,1116],["/toolchainReviewEvidence/installedHelperSource",161695,718],["/toolchainReviewEvidence/installedHelperSource",192754,213],["/toolchainReviewEvidence/installedHelperSource",193652,807],["/mirrorTransport/runtimeSource",21217,281],["/mirrorTransport/runtimeSource",26336,420],["/mirrorTransport/runtimeSource",29801,610]]},
+        {"line":1033,"bound":915612,"sent":71840,"reads":[["/toolchainReviewEvidence/installedHelperSource",157345,1200],["/toolchainReviewEvidence/installedHelperSource",192754,1100],["/toolchainReviewEvidence/installedHelperSource",193652,1000],["/toolchainReviewEvidence/installedHelperSource",197608,850],["/mirrorTransport/runtimeSource",21217,800],["/mirrorTransport/runtimeSource",26336,800],["/mirrorTransport/runtimeSource",29801,850],["/toolchainReviewEvidence/installedHelperSource",180844,900]]},
+        {"line":1054,"bound":898365,"sent":75261,"reads":[["/toolchainReviewEvidence/nodePreparationSelection",0,5000]]},
+        {"line":1068,"bound":881150,"sent":67608,"reads":[["/toolchainReviewEvidence/installedHelperSource",155324,2200],["/toolchainReviewEvidence/installedHelperSource",157345,2300],["/toolchainReviewEvidence/installedHelperSource",164351,2300],["/toolchainReviewEvidence/installedHelperSource",180844,2300],["/toolchainReviewEvidence/installedHelperSource",192754,2500],["/toolchainReviewEvidence/installedHelperSource",302144,2200],["/toolchainReviewEvidence/installedHelperSource",632118,1500],["/mirrorTransport/runtimeSource",21217,1800]]},
+        {"line":1089,"bound":864354,"sent":75068,"reads":[["/mirrorTransport/runtimeSource",21217,5539],["/mirrorTransport/runtimeSource",26756,3895],["/toolchainReviewEvidence/installedHelperSource",164351,1116],["/toolchainReviewEvidence/installedHelperSource",157345,2300],["/toolchainReviewEvidence/installedHelperSource",174357,735],["/toolchainReviewEvidence/installedHelperSource",184918,5753],["/toolchainReviewEvidence/installedHelperSource",192754,1705],["/toolchainReviewEvidence/installedHelperSource",180844,2300]]},
+        {"line":1110,"bound":845009,"sent":88056,"reads":[["/toolchainReviewEvidence/mirrorPolicySource",0,8000],["/mirrorTransport/runtimeSource",7163,1800],["/mirrorTransport/runtimeSource",8737,1800],["/mirrorTransport/runtimeSource",12578,1800],["/mirrorTransport/runtimeSource",16170,2200],["/toolchainReviewEvidence/installedHelperSource",164351,1800],["/toolchainReviewEvidence/installedHelperSource",302144,1800],["/toolchainReviewEvidence/installedHelperSource",184918,1800]]},
+        {"line":1131,"bound":823216,"sent":91011,"reads":[["/mirrorTransport/runtimeSource",5660,800],["/toolchainReviewEvidence/mirrorBootstrapShell",12711,1200],["/toolchainReviewEvidence/installedHelperSource",174357,1200],["/toolchainReviewEvidence/installedHelperSource",164351,1400]]},
+        {"line":1148,"bound":799853,"sent":74723,"reads":[["/toolchainReviewEvidence/installedHelperSource",164351,1116],["/toolchainReviewEvidence/installedHelperSource",155324,1175],["/toolchainReviewEvidence/installedHelperSource",180844,771],["/toolchainReviewEvidence/installedHelperSource",174357,735],["/toolchainReviewEvidence/installedHelperSource",302144,1463],["/toolchainReviewEvidence/preparationSelection",0,8000]]},
+        {"line":1167,"bound":782059,"sent":82115,"reads":[["/toolchainReviewEvidence/nodePreparationSelection",0,6000]]},
+        {"line":1181,"bound":762618,"sent":70243,"reads":[["/toolchainReviewEvidence/installedHelperSource",157345,8000],["/toolchainReviewEvidence/installedHelperSource",158829,8000],["/toolchainReviewEvidence/installedHelperSource",185755,8000],["/toolchainReviewEvidence/installedHelperSource",193652,8000],["/toolchainReviewEvidence/installedHelperSource",164351,8000],["/toolchainReviewEvidence/installedHelperSource",155324,8000],["/toolchainReviewEvidence/preparationSelection",0,8000]]},
+        {"line":1201,"bound":745159,"sent":101479,"reads":[["/toolchainReviewEvidence/nodePreparationSelection",0,5000]]},
+        {"line":1215,"bound":720819,"sent":68969,"reads":[["/toolchainReviewEvidence/installedHelperSource",155324,1175],["/toolchainReviewEvidence/installedHelperSource",161695,718],["/toolchainReviewEvidence/installedHelperSource",164351,1116],["/mirrorTransport/runtimeSource",21217,281],["/mirrorTransport/runtimeSource",26336,420],["/mirrorTransport/runtimeSource",29801,610]]}
+      ]
+    },
+    {
+      "project": "asset-lending",
+      "firstFactsCharacters": 34846,
+      "firstConversationCharacters": 64970,
+      "operation": "deployment.toolchain.bind.v1",
+      "stdoutSha256": "b49dd80d555bdc4c4ab0b62be95e7a1a00125a6b43ba04de1a4dec13028585d5",
+      "frames": [
+        {"line":555,"bound":1048576,"sent":69556,"reads":[["/toolchainReviewEvidence/mirrorBootstrapShell",0,8000]]},
+        {"line":570,"bound":1048576,"sent":90996,"reads":[["/toolchainReviewEvidence/mirrorBootstrapShell",36000,3288],["/mirrorTransport/runtimeSource",198271,2445],["/mirrorTransport/runtimeSource",109746,6000],["/toolchainReviewEvidence/mirrorPolicySource",0,7699]]},
+        {"line":588,"bound":1048576,"sent":91640,"reads":[["/toolchainReviewEvidence/mirrorBootstrapShell",0,5000]]},
+        {"line":603,"bound":1048576,"sent":96559,"reads":[["/toolchainReviewEvidence/mirrorBootstrapShell",36000,3288]]}
+      ]
+    },
+    {
+      "project": "log-analyzer",
+      "firstFactsCharacters": 32559,
+      "firstConversationCharacters": 138204,
+      "operation": "deployment.toolchain.prepare.v1",
+      "stdoutSha256": "9e871f29fac0f75bd892d607270a35eb001aff07d6415621465bac66c90459da",
+      "frames": [
+        {"line":495,"bound":1048576,"sent":144499,"reads":[["/toolchainReviewEvidence/mirrorPolicySource",0,6000],["/toolchainReviewEvidence/mirrorBootstrapShell",0,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",8000,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",15000,8000]]},
+        {"line":512,"bound":1048576,"sent":176180,"reads":[["/toolchainReviewEvidence/mirrorBootstrapShell",23000,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",31000,7159]]},
+        {"line":527,"bound":1048576,"sent":176162,"reads":[["/toolchainReviewEvidence/mirrorBootstrapShell",11924,4000]]},
+        {"line":541,"bound":1048576,"sent":165825,"reads":[["/toolchainReviewEvidence/mirrorPolicySource",0,8000]]}
+      ]
+    },
+    {
+      "project": "binary-inspector",
+      "firstFactsCharacters": 32833,
+      "firstConversationCharacters": 62957,
+      "operation": "deployment.toolchain.bind.v1",
+      "stdoutSha256": "1b05299f5d549c7c2d72336c3ec845993991cb0792db7c7a9b65b4639c75c900",
+      "frames": [
+        {"line":535,"bound":1048576,"sent":67383,"reads":[["/toolchainReviewEvidence/mirrorBootstrapShell",0,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",30000,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",35000,3159],["/toolchainReviewEvidence/mirrorPolicySource",0,5533]]},
+        {"line":553,"bound":1048576,"sent":117239,"reads":[["/toolchainReviewEvidence/mirrorBootstrapShell",8000,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",16000,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",24000,6000]]},
+        {"line":570,"bound":1048576,"sent":91795,"reads":[["/toolchainReviewEvidence/mirrorBootstrapShell",0,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",30000,8000]]},
+        {"line":586,"bound":1048576,"sent":93818,"reads":[["/toolchainReviewEvidence/mirrorBootstrapShell",16000,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",24000,8000],["/toolchainReviewEvidence/mirrorBootstrapShell",38000,159]]}
+      ]
+    }
+  ]
+}

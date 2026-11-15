@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.ai.review;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.LinkedHashMap;
@@ -27,15 +28,27 @@ public interface DeploymentCommandReviewModel {
 
         private final String code;
 
+        private final Map<String, String> counts;
+
         public Failure(FailureStage stage, String tool, Throwable cause) {
             this(stage, tool, "REVIEW_EXCEPTION", cause);
         }
 
         public Failure(FailureStage stage, String tool, String code, Throwable cause) {
+            this(stage, tool, code, cause, -1, -1, -1);
+        }
+
+        public Failure(FailureStage stage, String tool, String code, Throwable cause,
+                       int pageCount, int newlyVisibleCharacters, int repeatedBatches) {
             super("Independent command review failed at a protected boundary", cause);
             this.stage = Objects.requireNonNull(stage);
             this.tool = safeTools().contains(tool == null ? "" : tool) ? tool : "";
             this.code = safeCodes().contains(code == null ? "" : code) ? code : "REVIEW_EXCEPTION";
+            var observed = new LinkedHashMap<String, String>();
+            retainCount(observed, "reviewPageCount", Integer.toString(pageCount));
+            retainCount(observed, "reviewNewCharacters", Integer.toString(newlyVisibleCharacters));
+            retainCount(observed, "reviewRepeatedBatches", Integer.toString(repeatedBatches));
+            this.counts = Map.copyOf(observed);
         }
     }
 
@@ -55,6 +68,7 @@ public interface DeploymentCommandReviewModel {
             : cause instanceof InterruptedException ? "InterruptedException" : "OtherException";
         values.put("reviewFailureType", type);
         if (boundary != null && !boundary.tool.isEmpty()) values.put("reviewTool", boundary.tool);
+        if (boundary != null) values.putAll(boundary.counts);
         return Map.copyOf(values);
     }
 
@@ -70,7 +84,30 @@ public interface DeploymentCommandReviewModel {
         if (Set.of("CharacterCodingException", "JsonProcessingException", "SecurityException", "IOException", "IllegalArgumentException",
             "IllegalStateException", "NullPointerException", "InterruptedException", "OtherException").contains(type == null ? "" : type))
             safe.put("reviewFailureType", type);
+        if ("EVIDENCE_READ".equals(stage) && "EVIDENCE_NO_PROGRESS".equals(code)) {
+            for (String field : List.of("reviewPageCount", "reviewNewCharacters", "reviewRepeatedBatches"))
+                retainCount(safe, field, details.get(field));
+        }
         return Map.copyOf(safe);
+    }
+
+    private static void retainCount(Map<String, String> safe, String field, String value) {
+        if (value != null && value.matches("(?:0|[1-9][0-9]{0,6})") && Integer.parseInt(value) <= 1048576)
+            safe.put(field, value);
+    }
+
+    /** Canonical projection of paginator failures for the protected operation receipt. */
+    static String evidenceFailureMetadata(Map<String, String> details) {
+        var safe = safeFailureDiagnostics(details);
+        String stage = safe.getOrDefault("reviewStage", "");
+        String code = safe.getOrDefault("reviewCode", "");
+        if (!(stage.equals("EVIDENCE_READ") && Set.of("EVIDENCE_NO_PROGRESS", "EVIDENCE_TOOL_BUDGET_EXHAUSTED").contains(code))
+            && !(stage.equals("VERDICT") && code.equals("EVIDENCE_INCOMPLETE_VERDICT")))
+            return "";
+        var result = new StringBuilder(" reviewStage=").append(stage).append(" reviewCode=").append(code);
+        for (String field : List.of("reviewPageCount", "reviewNewCharacters", "reviewRepeatedBatches"))
+            if (safe.containsKey(field)) result.append(' ').append(field).append('=').append(safe.get(field));
+        return result.toString();
     }
 
     private static Set<String> safeTools() {
@@ -78,7 +115,9 @@ public interface DeploymentCommandReviewModel {
     }
 
     private static Set<String> safeCodes() {
-        return Set.of("REVIEW_EXCEPTION", "NATIVE_BATCH_INCOMPLETE", "NATIVE_CALL_ID_REPEATED", "VERDICT_BATCH_MIXED", "VERDICT_SCHEMA_INVALID", "TASK_TOOL_BUDGET_EXHAUSTED");
+        return Set.of("REVIEW_EXCEPTION", "NATIVE_BATCH_INCOMPLETE", "NATIVE_CALL_ID_REPEATED", "VERDICT_BATCH_MIXED",
+            "VERDICT_SCHEMA_INVALID", "TASK_TOOL_BUDGET_EXHAUSTED", "EVIDENCE_NO_PROGRESS",
+            "EVIDENCE_TOOL_BUDGET_EXHAUSTED", "EVIDENCE_INCOMPLETE_VERDICT");
     }
 
     default String responseInstructions() {

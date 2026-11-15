@@ -52,6 +52,11 @@ RUBY_CONFIGURE_FAILURES = {
     169: 'output-operation-not-permitted-copy',
     170: 'output-operation-not-permitted-rename',
     171: 'output-permission-hints-ambiguous',
+    193: 'output-operation-not-permitted-reported-by-ln',
+    194: 'output-operation-not-permitted-reported-by-mkdir',
+    195: 'output-operation-not-permitted-reported-by-rm',
+    196: 'output-operation-not-permitted-reported-by-chmod',
+    197: 'output-operation-not-permitted-reported-by-install',
 }
 SOURCE_BUILD_PROBE_STAGES = (('c-compile', 'cc'), ('static-archive', 'ar'), ('c-link', 'cc'), ('native-execute', 'probe'))
 SOURCE_BUILD_PROBE_FAILURES = ('start-permission-denied', 'start-not-found', 'start-os-error', 'child-nonzero', 'child-signal')
@@ -188,9 +193,10 @@ def permission_text(line):
 def diagnostic_output_lines(stream):
     continued = False
     for raw in iter(lambda: stream.readline(4097), b""):
-        if not continued and len(raw) <= 4096:
+        complete = raw.endswith(b"\n")
+        if not continued and complete and len(raw) <= 4096:
             yield raw.rstrip(b"\r\n")
-        continued = not raw.endswith(b"\n")
+        continued = not complete
 '''
 
 RUBY_WORKER = SOURCE_WORKER + r'''
@@ -203,12 +209,19 @@ RUBY_EPERM_REPORTERS = (
     (168, rb"^(?:[^: ]*/)?(?:(?:[a-z0-9_]+-)*ld(?:\.bfd)?|collect2): "),
     (169, rb"^(?:[^: ]*/)?cp: "),
     (170, rb"^(?:[^: ]*/)?mv: "),
+    (193, rb"^(?:/(?:usr/)?bin/)?ln: "),
+    (194, rb"^(?:/(?:usr/)?bin/)?mkdir: "),
+    (195, rb"^(?:/(?:usr/)?bin/)?rm: "),
+    (196, rb"^(?:/(?:usr/)?bin/)?chmod: "),
+    (197, rb"^(?:/(?:usr/)?bin/)?install: "),
 )
 
 def configure(release, prefix, options):
     # Classify failures inside the unprivileged unit. No configure or config.log text leaves it.
+    configure_path = str(release / "configure")
+    configure_reporter = os.fsencode(configure_path) + b": "
     try:
-        process = subprocess.Popen((str(release / "configure"), "--prefix=" + prefix, "--disable-install-doc", *options),
+        process = subprocess.Popen((configure_path, "--prefix=" + prefix, "--disable-install-doc", *options),
                                    cwd=release, env=environment, stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     except OSError as error:
@@ -230,6 +243,8 @@ def configure(release, prefix, options):
                 if hint:
                     hints.add(hint)
                 if hint == 131:
+                    if line.startswith(configure_reporter):
+                        line = b"configure: " + line[len(configure_reporter):]
                     eperm_reporters.add(next((code for code, pattern in RUBY_EPERM_REPORTERS
                                               if re.match(pattern, line)), 131))
             code = process.wait()

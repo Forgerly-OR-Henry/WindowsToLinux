@@ -440,7 +440,13 @@ class DeploymentToolchainReviewEvidenceTest {
                 continuationBytes = batch.continuationBytes();
             }
             reply(fixture, verdict("r23-final-denial", "DENY"));
-            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", assertThrows(ApiException.class, review::call).problem().eventCode());
+            int first = fixture.model.requests.size();
+            var bounded = wireBudgetContext(assisted.context, continuations, 0, () -> fixture.model.requests.size() - first == trace.batches().size()
+                ? trace.ceiling() : 1048576);
+            var result = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approveWithEvidence(
+                bounded, assisted.host, intent, request, fixture.task, fixture.model.configurationRevision, "AUTOMATIC", false,
+                dependencies ? (action, command, task) -> assisted.scope.effectFacts(action, task) : assisted.scope));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", result.problem().eventCode());
             var last = fixture.model.requests.getLast();
             byte[] encoded;
             try {
@@ -1291,6 +1297,179 @@ class DeploymentToolchainReviewEvidenceTest {
             Map.of("maximumRequestBytes", Integer.toString(bound), "encodedRequestBytes", Integer.toString(encoded)), Optional.empty());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"task-board", "file-transfer", "asset-lending", "log-analyzer", "binary-inspector"})
+    void r35ObservedApprovalCursorsRetainExactEvidenceWithinTheRecordedWireBounds(String project) throws Exception {
+        JsonNode trace;
+        try (var input = getClass().getResourceAsStream("r35-approval-source-reads.json")) {
+            assertNotNull(input);
+            trace = JSON.readTree(input);
+        }
+        var rows = trace.path("projects").findValuesAsText("project");
+        var original = trace.path("projects").get(rows.indexOf(project));
+        boolean binding = original.path("operation").asText().contains(".bind.");
+        String phase = binding ? "bind" : "prepare";
+        try (var fixture = new MirroredInstallerTestFixture();
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = switch (project) {
+                 case "task-board" -> diagnosedPreparation(fixture, "JAVA", "21");
+                 case "file-transfer" -> diagnosedPreparation(fixture, "NODE", "24");
+                 case "asset-lending" -> r26Binding(fixture, "DOTNET", "10.0.300");
+                 case "log-analyzer" -> diagnosedPreparation(fixture, "RUST", "1.95");
+                 case "binary-inspector" -> r26Binding(fixture, "RUST", "1.95.0");
+                 default -> throw new AssertionError(project);
+             }) {
+            var action = intent(phase, fixture, command);
+            var facts = new DeploymentFixedCommandProtocol(fixture.context).inspect(action, command, fixture.layout, fixture.task);
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), action, command,
+                fixture.layout).orElseThrow();
+            var initial = r31DeniedApproval(fixture, assisted, facts, action, command);
+            var messages = new ArrayList<>(initial.messages());
+            messages.set(messages.size() - 1, evidence.messages().getLast());
+            var projected = JSON.readTree(messages.getLast().text());
+            var manifest = projected.path(PHASE);
+            String snapshot = manifest.path("snapshotSha256").asText();
+            var sources = replaySources(fixture, evidence, projected);
+            var reader = evidence.reader(256);
+            var continuations = new LinkedHashMap<UUID, String>();
+            var pending = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            int physicalReads = 0, peak = 0, retainedFrames = 0, rejectedRequests = 0;
+            boolean repeatLimit = false;
+            boolean finalBatchRejectedCursor = false;
+            int minimum = original.path("firstFactsCharacters").asInt();
+            int bound = 0;
+            for (var frame : original.path("frames")) {
+                bound = frame.path("bound").asInt();
+                byte[] encoded = wireWithR24FactsSize(copy(initial, messages, bound), minimum, bound, continuations);
+                peak = Math.max(peak, encoded.length);
+                var visible = replayRetainedRanges(encoded, snapshot, sources);
+                if (visible.isPresent()) {
+                    retainedFrames++;
+                    assertReplayRangesPresent(pending, visible.orElseThrow(), projected);
+                }
+                var calls = new ArrayList<AiToolCall>();
+                for (var range : frame.path("reads")) {
+                    String pointer = range.get(0).asText();
+                    calls.add(read("r35-" + physicalReads++, snapshot, pointer, range.get(1).asInt(), range.get(2).asInt()));
+                }
+                var batch = calls.toArray(AiToolCall[]::new);
+                retainReply(fixture, continuations, nativeOutput("", batch), "OPENAI_RESPONSES", batch);
+                var request = fixture.model.replies.remove().value().orElseThrow();
+                try {
+                    var results = reader.read(request);
+                    finalBatchRejectedCursor = results.stream().anyMatch(AiToolResult::error);
+                    for (int index = 0; index < results.size(); index++) {
+                        if (results.get(index).error()) {
+                            rejectedRequests++;
+                            continue;
+                        }
+                        var page = pagePayload(results.get(index).text());
+                        String pointer = page.path("pointer").asText();
+                        String body = sources.get(pointer);
+                        var value = page.path("value");
+                        assertNotNull(body, pointer);
+                        assertPageRanges(body, value);
+                        if (value.path("offset").asInt() < value.path("next").asInt())
+                            addR24Range(pending, pointer, value.path("offset").asInt(), value.path("next").asInt());
+                    }
+                    reader.continueReview(messages, request, results);
+                } catch (DeploymentCommandReviewModel.Failure stopped) {
+                    var diagnostic = DeploymentCommandReviewModel.failureDiagnostics(stopped);
+                    assertEquals("EVIDENCE_NO_PROGRESS", diagnostic.get("reviewCode"), project);
+                    assertEquals("0", diagnostic.get("reviewNewCharacters"), project);
+                    assertEquals("2", diagnostic.get("reviewRepeatedBatches"), project);
+                    assertFalse(reader.hasUnfulfilledApprovalEvidence(), "The rejected fixed replay had already received its requested bytes");
+                    repeatLimit = true;
+                    break;
+                }
+            }
+            if (!repeatLimit) {
+                byte[] encoded = wireWithR24FactsSize(copy(initial, messages, bound), minimum, bound, continuations);
+                var finalVisible = replayRetainedRanges(encoded, snapshot, sources).orElseThrow();
+                assertReplayRangesPresent(pending, finalVisible, projected);
+                reader.read(response(Optional.empty(), verdict("r36-candidate-verdict", "APPROVE")));
+                assertEquals(finalBatchRejectedCursor, reader.hasUnfulfilledApprovalEvidence(),
+                    "A cursor outside the current fixture still requires correction after all valid ranges are visible");
+            }
+            assertTrue(retainedFrames > 0);
+            assertEquals(0, assisted.hosts.get());
+            System.out.printf("R36_OBSERVED_BROWSE project=%s cursors=%d rejectedCursors=%d retainedFrames=%d peak=%d repeatLimit=%b%n",
+                project, physicalReads, rejectedRequests, retainedFrames, peak, repeatLimit);
+        }
+    }
+
+    private static Map<String, String> replaySources(MirroredInstallerTestFixture fixture,
+                                                     DeploymentCommandSourceEvidence evidence, JsonNode projected) throws Exception {
+        var sources = new LinkedHashMap<String, String>();
+        var manifest = projected.path(PHASE);
+        for (String name : List.of("mirrorBootstrapShell", "mirrorPolicySource", "installedHelperSource",
+            "preparationSelection", "nodePreparationSelection")) {
+            var descriptor = manifest.path(name);
+            if (!descriptor.isObject()) continue;
+            String source = switch (name) {
+                case "mirrorBootstrapShell" -> r24Shell(fixture);
+                case "mirrorPolicySource" -> DeploymentMirrorTasks.policy(fixture.task);
+                case "installedHelperSource" -> DeploymentManagedHelperBundle.renderScript(fixture.layout);
+                default -> descriptor.has("ordinal") ? evidence.messages().get(descriptor.path("ordinal").asInt()).text()
+                    .substring(descriptor.path("headerCharacters").asInt()) : collect(evidence, descriptor, PHASE);
+            };
+            assertIdentity(descriptor, source);
+            sources.put(descriptor.path("sourcePointer").asText(), source);
+        }
+        var runtime = manifest.has("mirrorRuntime") ? manifest.path("mirrorRuntime") : projected.at("/mirrorTransport/runtimeSource");
+        String body = DeploymentMirrorRuntime.runtimeSource();
+        assertIdentity(runtime, body);
+        sources.put(runtime.path("sourcePointer").asText(), body);
+        return sources;
+    }
+
+    private static Optional<Map<String, TreeMap<Integer, Integer>>> replayRetainedRanges(byte[] encoded, String snapshot,
+        Map<String, String> sources) throws Exception {
+        String marker = "WTL-COMMAND-RETAINED-SOURCE-1\n";
+        for (var item : JSON.readTree(encoded).path("input")) {
+            String text = item.at("/content/0/text").asText();
+            if (!text.startsWith(marker)) continue;
+            int last = text.indexOf('\n', marker.length());
+            var header = JSON.readTree(text.substring(marker.length(), last));
+            assertEquals(snapshot, header.path("snapshotSha256").asText());
+            var ranges = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            int start = last + 1;
+            for (var row : header.path("ranges")) {
+                String pointer = row.path("pointer").asText();
+                int offset = row.path("offset").asInt(), next = row.path("next").asInt();
+                assertNotNull(sources.get(pointer), pointer);
+                int end = start + next - offset;
+                String actual = text.substring(start, end);
+                assertEquals(sources.get(pointer).substring(offset, next), actual, pointer);
+                var prior = ranges.getOrDefault(pointer, new TreeMap<Integer, Integer>());
+                var uncovered = DeploymentEvidencePages.missing(sources.get(pointer), offset, next, prior);
+                assertTrue(uncovered.size() == 1 && uncovered.getFirst().get("text").equals(actual),
+                    "Retained ranges must not repeat raw source bytes");
+                addR24Range(ranges, pointer, offset, next);
+                start = end;
+            }
+            assertEquals(text.length(), start);
+            return Optional.of(ranges);
+        }
+        return Optional.empty();
+    }
+
+    private static void assertReplayRangesPresent(Map<String, TreeMap<Integer, Integer>> requested,
+                                                  Map<String, TreeMap<Integer, Integer>> visible, JsonNode projected) {
+        seedInlineSourceRanges(projected, visible);
+        var node = projected.path(PHASE);
+        for (String descriptor : List.of("preparationSelection", "nodePreparationSelection", "bindingSelection")) {
+            var frame = node.path(descriptor);
+            if (frame.has("ordinal"))
+                addR24Range(visible, frame.path("sourcePointer").asText(), 0, frame.path("characters").asInt());
+        }
+        for (String name : List.of("selectedNodeRanges", "selectedBindingRanges")) {
+            for (var range : node.path(name))
+                addR24Range(visible, range.path("sourcePointer").asText(), range.path("offset").asInt(), range.path("next").asInt());
+        }
+        assertR24Coverage(requested, visible);
+    }
+
     @Test
     void aptRequiredEvidenceMustReachTheIndependentReviewerBeforeApproval() throws Exception {
         try (var fixture = new MirroredInstallerTestFixture();
@@ -1306,8 +1485,9 @@ class DeploymentToolchainReviewEvidenceTest {
             facts.put("currentCommandEvidence", effects);
             var model = new DeploymentAiJson(assisted.context);
             reply(fixture, verdict("apt-early-approval", "APPROVE"));
-            assertThrows(IOException.class, () -> model.askCommand("Inspect exact current request", facts,
+            var early = assertThrows(DeploymentCommandReviewModel.Failure.class, () -> model.askCommand("Inspect exact current request", facts,
                 fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed, action, command));
+            assertEquals("EVIDENCE_INCOMPLETE_VERDICT", DeploymentCommandReviewModel.failureDiagnostics(early).get("reviewCode"));
             assertEquals(0, assisted.hosts.get());
 
             var initial = fixture.model.requests.getFirst();
@@ -1324,9 +1504,9 @@ class DeploymentToolchainReviewEvidenceTest {
             var missing = manifest.path("requiredAptRanges");
             assertTrue(missing.isArray() && !missing.isEmpty());
             String snapshot = manifest.path("snapshotSha256").asText();
-            int originalCap = 116007;
+            int approvalFixtureCap = 180000;
             int recordedFactsCharacters = 43294;
-            int fixed = wireWithR24FactsSize(initial, recordedFactsCharacters, originalCap, Map.of()).length;
+            int fixed = wireWithR24FactsSize(initial, recordedFactsCharacters, approvalFixtureCap, Map.of()).length;
             var visible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
             int largest = fixed;
             int pages = 0;
@@ -1343,7 +1523,7 @@ class DeploymentToolchainReviewEvidenceTest {
                 fixture.task, DeploymentReviewDecision::malformed, action, command).path("decision").asText());
             assertEquals(pages + 2, fixture.model.requests.size());
             for (var request : fixture.model.requests.subList(2, fixture.model.requests.size())) {
-                byte[] encoded = wireWithR24FactsSize(request, recordedFactsCharacters, originalCap, Map.of());
+                byte[] encoded = wireWithR24FactsSize(request, recordedFactsCharacters, approvalFixtureCap, Map.of());
                 largest = Math.max(largest, encoded.length);
                 String frame = request.messages().get(request.messages().size() - 2).text();
                 int separator = frame.indexOf('\n', frame.indexOf('\n') + 1);
@@ -1362,7 +1542,16 @@ class DeploymentToolchainReviewEvidenceTest {
                 assertTrue(observed.getValue() >= required.path("next").asInt(), required::toString);
             }
             assertEquals(0, assisted.hosts.get());
-            System.out.printf("R35_APT_REQUIRED_EVIDENCE fixed=%d largest=%d originalCap=%d pages=%d%n", fixed, largest, originalCap, pages);
+            var finalRequest = fixture.model.requests.getLast();
+            var finalBytes = wireWithR24FactsSize(finalRequest, recordedFactsCharacters, approvalFixtureCap, Map.of());
+            var exactSources = new LinkedHashMap<String, String>();
+            sources.values().forEach(source -> exactSources.put(source.getKey(), source.getValue()));
+            var finalVisible = replayRetainedRanges(finalBytes, snapshot, exactSources).orElseThrow();
+            var allRequired = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            for (var range : missing)
+                addR24Range(allRequired, range.path("pointer").asText(), range.path("offset").asInt(), range.path("next").asInt());
+            assertR24Coverage(allRequired, finalVisible);
+            System.out.printf("R36_APT_REQUIRED_EVIDENCE fixed=%d largest=%d fixtureCap=%d pages=%d%n", fixed, largest, approvalFixtureCap, pages);
         }
     }
 
@@ -1588,7 +1777,7 @@ class DeploymentToolchainReviewEvidenceTest {
             assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", rejected.problem().eventCode(),
                 () -> "sent=" + sentBytes + " refused=" + refusedBytes + " context=" + rejected.problem().context()
                     + " cause=" + rejected.getCause());
-            assertTrue(rejected.getCause().getMessage().contains("deferred source"));
+            assertEquals("EVIDENCE_INCOMPLETE_VERDICT", rejected.problem().context().get("reviewCode"));
             assertEquals(0, assisted.hosts.get());
             assertEquals(3, sentBytes.size());
             assertFalse(refusedBytes.isEmpty());
@@ -1652,15 +1841,17 @@ class DeploymentToolchainReviewEvidenceTest {
             var model = new DeploymentAiJson(context);
             Callable<JsonNode> ask = () -> model.askCommand("Inspect original request", facts, fixture.model.configurationRevision,
                 fixture.task, DeploymentReviewDecision::malformed, intent, request);
-            if (decision.equals("APPROVE"))
-                assertTrue(assertThrows(IOException.class, ask::call).getMessage().contains("deferred source"));
-            else assertEquals(decision.equals("DENY") ? "DENY" : "APPROVE", ask.call().path("decision").asText());
+            if (decision.equals("DENY")) assertEquals("DENY", ask.call().path("decision").asText());
+            else assertEquals("EVIDENCE_INCOMPLETE_VERDICT", DeploymentCommandReviewModel.failureDiagnostics(
+                assertThrows(DeploymentCommandReviewModel.Failure.class, ask::call)).get("reviewCode"));
             assertEquals(decision.equals("APPROVE_AFTER_READ") ? 5 : 3, calls.size());
             assertEquals(decision.equals("APPROVE_AFTER_READ") ? List.of(calls.getFirst(), calls.get(2), calls.getLast())
                 : List.of(calls.getFirst(), calls.getLast()), sent);
             assertEquals(calls.get(1).tools(), calls.get(2).tools());
             assertEquals(calls.get(1).messages().getLast(), calls.get(2).messages().getLast());
             assertTrue(calls.get(2).messages().stream().anyMatch(message -> message.text().contains("\"requestedNext\":")));
+            if (decision.equals("APPROVE_AFTER_READ"))
+                assertTrue(calls.getLast().messages().stream().anyMatch(message -> message.text().contains("\"previouslyDeferred\":")));
         }
     }
 
@@ -1718,9 +1909,12 @@ class DeploymentToolchainReviewEvidenceTest {
             String frame = messages.get(messages.size() - 2).text();
             assertTrue(frame.contains("\"latestBatchRepeat\""));
             assertTrue(frame.contains(source.substring(0, 8000)), "One exact reread remains available");
-            var cycle = assertThrows(IOException.class, () ->
+            var cycle = assertThrows(DeploymentCommandReviewModel.Failure.class, () ->
                 reader.read(mockResponses(read("cycle", snapshot, pointer, 8000, 8000))));
-            assertTrue(cycle.getMessage().contains("without progressing"));
+            var diagnostic = DeploymentCommandReviewModel.failureDiagnostics(cycle);
+            assertEquals("EVIDENCE_NO_PROGRESS", diagnostic.get("reviewCode"));
+            assertEquals("0", diagnostic.get("reviewNewCharacters"));
+            assertEquals("2", diagnostic.get("reviewRepeatedBatches"));
         }
     }
 
@@ -1744,14 +1938,20 @@ class DeploymentToolchainReviewEvidenceTest {
                 var reply = mockResponses(calls);
                 reader.continueReview(messages, reply, reader.read(reply));
             }
+            int oldFrameBytes = JSON.writeValueAsBytes(messages.get(messages.size() - 2).text()).length;
+            assertTrue(reader.repackBeforeSend(messages, exactBudgetProblem(oldFrameBytes + 90000, oldFrameBytes - 7000)));
             String retained = messages.get(messages.size() - 2).text();
             int start = retained.indexOf('\n') + 1;
             var header = JSON.readTree(retained.substring(start, retained.indexOf('\n', start)));
             assertTrue(header.path("omittedRanges").asInt() > 0);
             assertFalse(messages.stream().anyMatch(message -> message.continuation().isPresent() || message.toolResult().isPresent()));
-            var fresh = read("age-reread", snapshot, pointer, 0, 8000);
+            var missing = header.path("previouslyDeferred").get(0);
+            assertNotNull(missing, "Older requests must receive exact continuation cursors after compaction");
+            int offset = missing.path("offset").asInt(), next = missing.path("next").asInt();
+            var fresh = read("age-reread", snapshot, pointer, offset, next - offset);
             var results = reader.read(mockResponses(fresh));
-            assertEquals(runtime.substring(0, 8000), pagePayload(results.getFirst().text()).at("/value/text").textValue());
+            assertEquals(runtime.substring(offset, next), pagePayload(results.getFirst().text()).at("/value/text").textValue());
+            assertTrue(reader.hasUnfulfilledApprovalEvidence(), "Previously sent but currently omitted source blocks approval");
             assertThrows(IOException.class, () -> reader.read(mockResponses(fresh)), "Rebasing cannot erase native call identity history");
         }
     }
@@ -2121,10 +2321,12 @@ class DeploymentToolchainReviewEvidenceTest {
         }
         reply(fixture, verdict("r24-result", "DENY"));
         int first = fixture.model.requests.size();
-        var stopped = assertThrows(ApiException.class, approve::call);
+        var bounded = wireBudgetContext(assisted.context, continuations, expectedFacts,
+            () -> turns.get(fixture.model.requests.size() - first).cap());
+        var stopped = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approveWithEvidence(
+            bounded, assisted.host, intent, request, fixture.task, fixture.model.configurationRevision, "AUTOMATIC", false, evidence));
         int sent = fixture.model.requests.size() - first;
-        boolean cycle = stopped.getCause() instanceof IOException failure
-            && failure.getMessage().contains("repeated evidence without progressing");
+        boolean cycle = "EVIDENCE_NO_PROGRESS".equals(stopped.problem().context().get("reviewCode"));
         if (cycle) {
             assertTrue(round.equals("R27") || round.equals("R24") && project.equals("survey-scoring"), project);
             assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", stopped.problem().eventCode());
@@ -2193,6 +2395,37 @@ class DeploymentToolchainReviewEvidenceTest {
         var failure = assertThrows(ApiException.class, review::call);
         assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", failure.problem().eventCode(),
             () -> failure.getCause() == null ? failure.problem().eventCode() : failure.getCause().toString());
+    }
+
+    private static gold.debug.windowstolinux.appapi.mod.ModContext wireBudgetContext(
+            gold.debug.windowstolinux.appapi.mod.ModContext original, Map<UUID, String> continuations, int factsCharacters,
+            java.util.function.IntSupplier nextBound) {
+        var loader = DeploymentToolchainReviewEvidenceTest.class.getClassLoader();
+        var aiType = gold.debug.windowstolinux.appapi.ai.AiService.class;
+        var service = java.lang.reflect.Proxy.newProxyInstance(loader, new Class<?>[] {aiType}, (proxy, method, args) -> {
+            if (method.getName().equals("call")) {
+                int limit = nextBound.getAsInt();
+                try {
+                    wireWithR24FactsSize((AiRequest) args[0], factsCharacters, limit, continuations);
+                } catch (ModelRequestBudgetException exceeded) {
+                    throw new ApiException(exactBudgetProblem(exceeded.encodedBytes(), limit));
+                }
+            }
+            try {
+                return method.invoke(original.ai(), args);
+            } catch (java.lang.reflect.InvocationTargetException rejected) {
+                throw rejected.getCause();
+            }
+        });
+        var contextType = gold.debug.windowstolinux.appapi.mod.ModContext.class;
+        return contextType.cast(java.lang.reflect.Proxy.newProxyInstance(loader, new Class<?>[] {contextType}, (proxy, method, args) -> {
+            if (method.getName().equals("ai")) return service;
+            try {
+                return method.invoke(original, args);
+            } catch (java.lang.reflect.InvocationTargetException rejected) {
+                throw rejected.getCause();
+            }
+        }));
     }
 
     private static byte[] wireWithR24FactsSize(AiRequest actual, int minimumCharacters, int bound,

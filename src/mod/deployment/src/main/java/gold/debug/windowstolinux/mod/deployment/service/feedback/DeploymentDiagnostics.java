@@ -223,6 +223,9 @@ public final class DeploymentDiagnostics {
                 String event = api.problem().eventCode();
                 if (event.matches("(?:SFTP|SSH|DEPLOYMENT|TASK|FILE)_[A-Z0-9_]{1,96}"))
                     reason.append(" problemEvent=").append(event);
+                if (event.equals("DEPLOYMENT_COMMAND_REVIEW_INVALID"))
+                    reason.append(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel
+                        .evidenceFailureMetadata(api.problem().context()));
             }
             new DeploymentDiagnostics(context).event(task.id(), LogLevel.ERROR, "DEPLOYMENT_OPERATION_FAILURE",
                 reason.toString(), Optional.empty());

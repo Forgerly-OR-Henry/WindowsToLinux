@@ -99,6 +99,26 @@ class DeploymentActiveDiagnosticsProjectionTest {
     }
 
     @Test
+    void activeOperationMetadataProjectsOnlyFiniteSourceReviewDiagnostics() {
+        var lines = new ArrayList<String>();
+        var writes = new AtomicInteger();
+        var context = context(logs(lines::add, writes, new ArrayList<>(), null));
+        var details = Map.of("reviewStage", "EVIDENCE_READ", "reviewCode", "EVIDENCE_NO_PROGRESS",
+            "reviewPageCount", "3", "reviewNewCharacters", "0", "reviewRepeatedBatches", "2", "stdin", "private-stdin");
+        var problem = new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_COMMAND_REVIEW_INVALID",
+            "private-message", details, Optional.empty());
+        DeploymentDiagnostics.operationFailureMetadata(context, task(), new BodyRejectingApiException(problem));
+        assertEquals(1, writes.get());
+        assertTrue(lines.stream().anyMatch(line -> line.contains("reviewStage=EVIDENCE_READ reviewCode=EVIDENCE_NO_PROGRESS"
+            + " reviewPageCount=3 reviewNewCharacters=0 reviewRepeatedBatches=2")));
+        assertTrue(lines.stream().noneMatch(line -> line.contains("private-")));
+        String injected = "exceptionType=java.io.IOException problemCode=INVALID_INPUT problemEvent=DEPLOYMENT_COMMAND_REVIEW_INVALID"
+            + " reviewStage=EVIDENCE_READ reviewCode=EVIDENCE_NO_PROGRESS reviewPageCount=9999999";
+        assertEquals("diagnosticMetadata=UNAVAILABLE", assertDoesNotThrow(() ->
+            DeploymentStaticLiveAcceptanceTest.liveDiagnosticProjection(event("DEPLOYMENT_OPERATION_FAILURE", injected, Optional.empty()))));
+    }
+
+    @Test
     void activeDiagnosticProjectionRejectsUnexpectedSchemasAndFreeformBodies() throws Exception {
         var lines = new ArrayList<String>();
         var writes = new AtomicInteger();

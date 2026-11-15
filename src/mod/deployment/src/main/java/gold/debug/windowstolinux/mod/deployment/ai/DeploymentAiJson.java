@@ -14,6 +14,7 @@ import gold.debug.windowstolinux.appapi.task.log.*;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandEvidence;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandSourceEvidence;
 import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig;
@@ -232,7 +233,8 @@ public final class DeploymentAiJson {
             }
             if (invalid == null && result.path("decision").asText().equals("APPROVE")
                 && evidenceReader.filter(DeploymentCommandSourceEvidence.Reader::hasUnfulfilledApprovalEvidence).isPresent())
-                throw new IOException("Independent approval arrived before the requested deferred source was delivered or its request was corrected");
+                throw new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.VERDICT, "submit_result",
+                    "EVIDENCE_INCOMPLETE_VERDICT", new IOException("Current review source is incomplete"));
             var receipt = new AiToolResult(call.id(), invalid == null
                 ? "REVIEW_RECORDED: model verdict only; no execution grant. The next command requires a new complete independent review."
                 : "SUBMISSION_REJECTED: " + invalid.substring(0, Math.min(512, invalid.length())), invalid != null);

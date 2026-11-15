@@ -81,13 +81,8 @@ public final class DeploymentCommandSourceEvidence {
     private static final int MAX_READS_PER_RESPONSE = 8;
     private static final int MAX_READ_CHARACTERS = 8000;
     private static final int MAX_CORRECTABLE_BATCH = 16;
-    // Valid ranges requested in the latest batch always stay visible.
-    private static final int RETAINED_SOURCE_BYTES = 60 * 1024;
-    private static final int PREPARE_PRIOR_SOURCE_BYTES = 16 * 1024;
-    private static final int DEPENDENCY_PRIOR_SOURCE_BYTES = 8 * 1024;
-    private static final int GO_PREPARE_RETAINED_SOURCE_BYTES = 4 * 1024;
-    private static final int BIND_RETAINED_SOURCE_BYTES = 24 * 1024;
-    private static final int MAX_RETAINED_READS = 16;
+    private static final int NATIVE_REQUEST_TEXT_BYTES = 1024 * 1024;
+    private static final int NATIVE_TOOL_ENVELOPE_BYTES = 4096;
     private static final Set<String> OPERATIONS = Set.of(PREPARE, BIND,
         DeploymentToolchainDependencies.OPERATION);
     private static final Set<String> INSTALLERS = Set.of("deployment.helper.install.v1", "deployment.helper.install.files.v1",
@@ -150,7 +145,9 @@ public final class DeploymentCommandSourceEvidence {
         """;
 
     public static final AiToolDefinition TOOL = new AiToolDefinition("evidence",
-        "Read an original fact from this exact snapshot. At most eight evidence calls per response, separate from the verdict. An empty pointer selects all original facts. No execution or protected stdin access.",
+        "Read an original fact from this exact snapshot. At most eight evidence calls per response, separate from the verdict. "
+            + "An empty pointer selects all original facts. Review exact source already visible before requesting more. In retained frames, "
+            + "previouslyDeferred and pendingRequired identify absent source that must be visible together before APPROVE. No execution or protected stdin access.",
         SCHEMA.toString());
 
     private final JsonNode current;
@@ -764,8 +761,8 @@ public final class DeploymentCommandSourceEvidence {
         private final boolean nodePreparation = nodePreparationReview();
         private Optional<AiMessage> priorEvidence = Optional.empty();
         private List<ReadReceipt> latestReads = List.of();
-        private List<ReadReceipt> priorReads = List.of();
         private Map<String, NavigableMap<Integer, Integer>> pendingVisible = Map.of();
+        private Map<String, NavigableMap<Integer, Integer>> lastVisible = Map.of();
         private boolean continuedResponses;
         private boolean rebased;
         private boolean batchCorrectionUsed;
@@ -813,24 +810,27 @@ public final class DeploymentCommandSourceEvidence {
             if (reads != calls.size())
                 throw new IOException("An evidence batch cannot include a verdict or another tool");
             if (calls.size() > remaining)
-                throw new IOException("Current command evidence read budget exhausted");
+                throw evidenceToolBudgetExhausted();
             remaining -= calls.size();
             latestReads = new ArrayList<>();
             latestBatchRejected = false;
             latestReadRepeated = false;
             if (calls.size() > MAX_READS_PER_RESPONSE) {
                 correctionRequired = true;
+                repeatedBatches = 0;
                 return correctReadBatch(calls);
             }
             var results = new ArrayList<AiToolResult>(calls.size());
             for (var call : calls) results.add(read(call));
             correctionRequired = latestReads.stream().anyMatch(ReadReceipt::rejected);
             latestReadRepeated = !correctionRequired && latestReads.stream()
-                .noneMatch(read -> read.next() > read.offset() && !covers(confirmed.get(read.pointer()), read.offset(), read.next()));
-            if (rebased && !correctionRequired) {
+                .noneMatch(read -> read.next() > read.offset() && !covers(lastVisible.get(read.pointer()), read.offset(), read.next()));
+            if (rebased) {
                 repeatedBatches = latestReadRepeated ? repeatedBatches + 1 : 0;
                 if (repeatedBatches > 1)
-                    throw new IOException("Independent review repeated evidence without progressing to a new source range or verdict");
+                    throw new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.EVIDENCE_READ, TOOL.name(),
+                        "EVIDENCE_NO_PROGRESS", new IOException("Independent review repeated evidence without progressing to a new source range or verdict"),
+                        latestReads.size(), 0, repeatedBatches);
             }
             return results;
         }
@@ -840,9 +840,14 @@ public final class DeploymentCommandSourceEvidence {
             return span != null && span.getValue() >= next;
         }
 
+        private IOException evidenceToolBudgetExhausted() {
+            return new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.EVIDENCE_READ, TOOL.name(),
+                "EVIDENCE_TOOL_BUDGET_EXHAUSTED", new IOException("Current command evidence read budget exhausted"));
+        }
+
         private List<AiToolResult> correctReadBatch(List<AiToolCall> calls) throws IOException {
             if (!bindingReview() || batchCorrectionUsed || calls.size() > MAX_CORRECTABLE_BATCH)
-                throw new IOException("Current command evidence read budget exhausted");
+                throw evidenceToolBudgetExhausted();
             batchCorrectionUsed = true;
             latestBatchRejected = true;
             for (var call : calls) latestReads.add(new ReadReceipt(call.id(), "", 0, 0, true));
@@ -883,7 +888,11 @@ public final class DeploymentCommandSourceEvidence {
                 if (factsIndex < 0) throw new IOException("Current review facts unavailable");
                 // A previous result-format correction can also leave a native batch after the current facts.
                 messages.subList(factsIndex + 1, messages.size()).clear();
-                var frame = retainedSource(latestReads, priorReads, false);
+                // The native codec checks aggregate raw text and schemas before the exact wire-size check.
+                int available = NATIVE_REQUEST_TEXT_BYTES - NATIVE_TOOL_ENVELOPE_BYTES
+                    - messages.stream().mapToInt(message -> message.text().getBytes(StandardCharsets.UTF_8).length).sum();
+                var frame = fittedSource(available).orElseThrow(
+                    () -> new IOException("Current command evidence frame cannot fit the native request bound"));
                 var evidence = frame.message();
                 adoptRetainedFrame(frame);
                 messages.add(factsIndex, evidence);
@@ -894,27 +903,34 @@ public final class DeploymentCommandSourceEvidence {
             }
             messages.add(AiMessage.assistant(response));
             results.forEach(result -> messages.add(AiMessage.result(result)));
-            pendingVisible = delivered;
-            if (responses) {
-                priorReads = List.copyOf(latestReads);
-                continuedResponses = true;
-            }
+            pendingVisible = copyRanges(delivered);
+            if (responses) continuedResponses = true;
         }
 
         private void rememberDeliveredRanges() {
+            if (pendingVisible.isEmpty()) return;
+            lastVisible = pendingVisible;
             pendingVisible.forEach((pointer, ranges) ->
                 ranges.forEach((start, end) -> rememberRange(confirmed, pointer, start, end)));
             pendingVisible = Map.of();
         }
 
         public boolean hasUnfulfilledApprovalEvidence() {
-            return correctionRequired || unconfirmed(requiredRanges) || unconfirmed(requested);
+            var reviewContext = rebased ? lastVisible : confirmed;
+            return correctionRequired || unconfirmed(requiredRanges, reviewContext) || unconfirmed(requested, reviewContext);
         }
 
-        private boolean unconfirmed(Map<String, NavigableMap<Integer, Integer>> ranges) {
+        private boolean unconfirmed(Map<String, NavigableMap<Integer, Integer>> ranges,
+                                    Map<String, NavigableMap<Integer, Integer>> reviewContext) {
             return ranges.entrySet().stream().anyMatch(entry ->
                 entry.getValue().entrySet().stream().anyMatch(range ->
-                    !covers(confirmed.get(entry.getKey()), range.getKey(), range.getValue())));
+                    !covers(reviewContext.get(entry.getKey()), range.getKey(), range.getValue())));
+        }
+
+        private Map<String, NavigableMap<Integer, Integer>> copyRanges(Map<String, NavigableMap<Integer, Integer>> source) {
+            var copy = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
+            source.forEach((pointer, ranges) -> copy.put(pointer, new TreeMap<>(ranges)));
+            return copy;
         }
 
         private void rememberRange(Map<String, NavigableMap<Integer, Integer>> ranges, String pointer, int start, int end) {
@@ -929,26 +945,39 @@ public final class DeploymentCommandSourceEvidence {
             if (position < 0) return false;
             int available = quotedBytes(original) + Integer.parseInt(problem.context().get("maximumRequestBytes"))
                 - Integer.parseInt(problem.context().get("encodedRequestBytes"));
-            if (available <= 0) return false;
-            var frame = retainedSource(latestReads, List.of(), false);
-            if (quotedBytes(frame.message()) > available) {
-                var smallest = retainedSource(boundedLatestReads(2), List.of(), true);
-                if (quotedBytes(smallest.message()) > available) return false;
-                int low = 2, high = 8000;
-                while (high - low > 1) {
-                    int middle = (high + low) / 2;
-                    var probe = retainedSource(boundedLatestReads(middle), List.of(), true);
-                    if (quotedBytes(probe.message()) <= available) low = middle;
-                    else high = middle;
-                }
-                frame = retainedSource(boundedLatestReads(low), List.of(), true);
-            }
+            var fitted = fittedSource(available);
+            if (fitted.isEmpty()) return false;
+            var frame = fitted.orElseThrow();
             if (frame.message().equals(original)) return false;
             adoptRetainedFrame(frame);
             pendingVisible = frame.visible();
             messages.set(position, frame.message());
             priorEvidence = Optional.of(frame.message());
             return true;
+        }
+
+        private Optional<RetainedFrame> fittedSource(int available) throws IOException {
+            if (available <= 0) return Optional.empty();
+            var latest = retainedSource(latestReads, false, 0);
+            int spare = available - quotedBytes(latest.message());
+            if (spare >= 0) {
+                var cumulative = retainedSource(latestReads, false, spare);
+                int exceeded = quotedBytes(cumulative.message()) - available;
+                if (exceeded <= 0) return Optional.of(cumulative);
+                // Coverage changes the bounded cursor metadata in addition to appending the exact source.
+                cumulative = retainedSource(latestReads, false, Math.max(0, spare - exceeded));
+                return Optional.of(quotedBytes(cumulative.message()) <= available ? cumulative : latest);
+            }
+            var smallest = retainedSource(boundedLatestReads(2), true, 0);
+            if (quotedBytes(smallest.message()) > available) return Optional.empty();
+            int low = 2, high = MAX_READ_CHARACTERS + 1;
+            while (high - low > 1) {
+                int candidate = (high + low) / 2;
+                var probe = retainedSource(boundedLatestReads(candidate), true, 0);
+                if (quotedBytes(probe.message()) <= available) low = candidate;
+                else high = candidate;
+            }
+            return Optional.of(retainedSource(boundedLatestReads(low), true, 0));
         }
 
         private boolean exactBudgetRefusal(Problem problem) {
@@ -961,7 +990,11 @@ public final class DeploymentCommandSourceEvidence {
         }
 
         private int quotedBytes(AiMessage message) throws IOException {
-            return JSON.writeValueAsBytes(message.text()).length;
+            return quotedBytes(message.text());
+        }
+
+        private int quotedBytes(String text) throws IOException {
+            return JSON.writeValueAsBytes(text).length;
         }
 
         private List<ReadReceipt> boundedLatestReads(int characters) throws IOException {
@@ -980,11 +1013,11 @@ public final class DeploymentCommandSourceEvidence {
                 && RESPONSES.equals(response.generationAttempts().getLast().protocol());
         }
 
-        private RetainedFrame retainedSource(List<ReadReceipt> offered, List<ReadReceipt> older, boolean compacted) throws IOException {
+        private RetainedFrame retainedSource(List<ReadReceipt> offered, boolean compacted, int historyBytes) throws IOException {
             var header = JSON.createObjectNode().put("snapshotSha256", snapshot).put("trust", "UNTRUSTED_DATA");
             if (latestBatchRejected) header.put("latestBatchRejected", "NO_PAGES_READ_MAX_EIGHT_PER_RESPONSE");
             if (latestReadRepeated) header.put("latestBatchRepeat",
-                "These ranges were delivered earlier. Use the current exact bytes and any deferred cursors below. Ask for new necessary evidence or submit an adequately supported verdict.");
+                "These ranges were already visible in the preceding request. Use the exact source in this request. Ask for absent necessary ranges or submit an adequately supported verdict.");
             var reads = header.putArray("latestReads");
             for (int index = 0; index < offered.size(); index++) {
                 var receipt = offered.get(index);
@@ -1005,76 +1038,92 @@ public final class DeploymentCommandSourceEvidence {
             if (compacted) header.put("deferredRanges", "Read next through requestedNext for any necessary deferred source; those bytes were not delivered in this frame.");
             var entries = header.putArray("ranges");
             var body = new StringBuilder();
-            var visible = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
-            inline.forEach((pointer, ranges) -> visible.put(pointer, new TreeMap<>(ranges)));
+            var visible = copyRanges(inline);
             for (var read : offered) {
                 if (read.rejected()) continue;
                 appendVisibleRange(read.pointer(), read.offset(), read.next(), visible, entries, body);
             }
-            int currentBytes = body.toString().getBytes(StandardCharsets.UTF_8).length;
-            int omitted = 0;
-            var retainedReads = new ArrayList<>(offered);
-            int remainingPriorBytes = switch (current.path("operation").asText()) {
-                case BIND -> BIND_RETAINED_SOURCE_BYTES - currentBytes;
-                case PREPARE -> switch (preparationEcosystem((ObjectNode) current)) {
-                    case "GO" -> GO_PREPARE_RETAINED_SOURCE_BYTES - currentBytes;
-                    default -> Math.min(PREPARE_PRIOR_SOURCE_BYTES, RETAINED_SOURCE_BYTES - currentBytes);
-                };
-                case DeploymentToolchainDependencies.OPERATION -> Math.min(DEPENDENCY_PRIOR_SOURCE_BYTES, RETAINED_SOURCE_BYTES - currentBytes);
-                default -> RETAINED_SOURCE_BYTES - currentBytes;
-            };
-            for (var read : older) {
-                if (read.rejected()) continue;
-                String pointer = read.pointer();
-                String text = sourceText(pointer);
-                var ranges = visible.computeIfAbsent(pointer, ignored -> new TreeMap<>());
-                var missing = DeploymentEvidencePages.missing(text, read.offset(), read.next(), ranges);
-                int size = missing.stream().mapToInt(part -> ((String) part.get("text")).getBytes(StandardCharsets.UTF_8).length).sum();
-                if (size == 0) continue;
-                if (size > remainingPriorBytes || retainedReads.size() >= MAX_RETAINED_READS) {
-                    omitted++;
-                    continue;
+            int remaining = retainHistory(lastVisible, visible, entries, body, historyBytes);
+            retainHistory(confirmed, visible, entries, body, remaining);
+            var described = visible;
+            if (compacted) {
+                // The latest read receipts already identify source omitted from those reads.
+                described = copyRanges(visible);
+                for (var read : latestReads) {
+                    if (!read.rejected() && read.offset() < read.next())
+                        rememberRange(described, read.pointer(), read.offset(), read.next());
                 }
-                appendVisibleRange(pointer, read.offset(), read.next(), visible, entries, body);
-                retainedReads.add(read);
-                remainingPriorBytes -= size;
             }
-            if (!compacted) appendUnconfirmed(header, "previouslyDeferred", requested, visible);
+            int omitted = appendUnconfirmed(header, "previouslyDeferred", requested, described);
             if (!requiredRanges.isEmpty()) appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
             header.put("omittedRanges", omitted);
             var message = new AiMessage(AiRole.USER, RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n" + body, List.of());
-            return new RetainedFrame(message, visible, List.copyOf(retainedReads));
+            return new RetainedFrame(message, visible);
         }
 
-        private void appendUnconfirmed(ObjectNode header, String name,
+        private int retainHistory(Map<String, NavigableMap<Integer, Integer>> history,
+                                  Map<String, NavigableMap<Integer, Integer>> visible,
+                                  ArrayNode entries, StringBuilder body, int byteBudget) throws IOException {
+            for (var entry : history.entrySet()) {
+                if (byteBudget <= 0) break;
+                String pointer = entry.getKey();
+                String source = sourceText(pointer);
+                var known = visible.computeIfAbsent(pointer, ignored -> new TreeMap<>());
+                for (var range : entry.getValue().entrySet()) {
+                    for (var gap : DeploymentEvidencePages.missing(source, range.getKey(), range.getValue(), known)) {
+                        int offset = (int) gap.get("offset"), end = (int) gap.get("next");
+                        while (offset < end) {
+                            int next = Math.min(end, offset + MAX_READ_CHARACTERS);
+                            if (next < end && Character.isSurrogatePair(source.charAt(next - 1), source.charAt(next))) next--;
+                            var location = JSON.createObjectNode().put("pointer", pointer).put("offset", offset).put("next", next);
+                            String text = source.substring(offset, next);
+                            // A body substring and an escaped JSON range in the frame header, plus the array comma.
+                            int bytes = quotedBytes(text) + quotedBytes(JSON.writeValueAsString(location)) - 3;
+                            if (bytes > byteBudget) break;
+                            entries.add(location);
+                            body.append(text);
+                            DeploymentEvidencePages.remember(known, offset, next);
+                            byteBudget -= bytes;
+                            offset = next;
+                        }
+                    }
+                }
+            }
+            return byteBudget;
+        }
+
+        private int appendUnconfirmed(ObjectNode header, String name,
                                        Map<String, NavigableMap<Integer, Integer>> ranges,
                                        Map<String, NavigableMap<Integer, Integer>> visible) throws IOException {
             var deferred = header.putArray(name);
+            int omitted = 0;
             for (var entry : ranges.entrySet()) {
-                if (deferred.size() >= MAX_READS_PER_RESPONSE) break;
                 String pointer = entry.getKey();
                 String source = sourceText(pointer);
-                var accounted = new TreeMap<>(confirmed.getOrDefault(pointer, Collections.emptyNavigableMap()));
-                visible.getOrDefault(pointer, Collections.emptyNavigableMap())
-                    .forEach((start, end) -> DeploymentEvidencePages.remember(accounted, start, end));
+                var accounted = visible.getOrDefault(pointer, Collections.emptyNavigableMap());
                 for (var requirement : entry.getValue().entrySet()) {
-                    if (deferred.size() >= MAX_READS_PER_RESPONSE) break;
                     int next = requirement.getKey(), end = requirement.getValue();
                     for (var span : accounted.headMap(end, false).entrySet()) {
                         if (span.getValue() <= next) continue;
-                        appendReadCursors(deferred, pointer, source, next, span.getKey(), MAX_READS_PER_RESPONSE);
+                        if (next < span.getKey()) {
+                            omitted++;
+                            appendReadCursors(deferred, pointer, source, next, span.getKey(), MAX_READS_PER_RESPONSE);
+                        }
                         next = Math.min(end, span.getValue());
                     }
-                    appendReadCursors(deferred, pointer, source, next, end, MAX_READS_PER_RESPONSE);
+                    if (next < end) {
+                        omitted++;
+                        appendReadCursors(deferred, pointer, source, next, end, MAX_READS_PER_RESPONSE);
+                    }
                 }
             }
             if (deferred.isEmpty()) header.remove(name);
+            return omitted;
         }
 
         private void adoptRetainedFrame(RetainedFrame frame) {
             delivered.clear();
-            delivered.putAll(frame.visible());
-            priorReads = frame.reads();
+            delivered.putAll(copyRanges(frame.visible()));
         }
 
         private void appendVisibleRange(String pointer, int offset, int next,
@@ -1091,8 +1140,7 @@ public final class DeploymentCommandSourceEvidence {
 
     private record ReadReceipt(String callId, String pointer, int offset, int next, boolean rejected) { }
 
-    private record RetainedFrame(AiMessage message, Map<String, NavigableMap<Integer, Integer>> visible,
-                                 List<ReadReceipt> reads) { }
+    private record RetainedFrame(AiMessage message, Map<String, NavigableMap<Integer, Integer>> visible) { }
 
     public boolean toolchainReview() {
         return OPERATIONS.contains(current.path("operation").asText());

@@ -36,6 +36,14 @@ PYTHON_MAKE_FAILURES = {
     182: 'output-operation-not-permitted-with-failed-static-archive-target',
     183: 'output-operation-not-permitted-with-failed-configure-generated-target',
     184: 'output-operation-not-permitted-ambiguous',
+    185: 'output-operation-not-permitted-reported-by-cp',
+    186: 'output-operation-not-permitted-reported-by-mv',
+    187: 'output-operation-not-permitted-reported-by-ln',
+    188: 'output-operation-not-permitted-reported-by-mkdir',
+    189: 'output-operation-not-permitted-reported-by-rm',
+    190: 'output-operation-not-permitted-reported-by-chmod',
+    191: 'output-operation-not-permitted-reported-by-install',
+    192: 'output-operation-not-permitted-reported-by-make',
 }
 PYTHON_SOURCE_WORKER = SOURCE_WORKER + r'''
 import re
@@ -65,6 +73,14 @@ MAKE_EPERM_REPORTERS = (
     (174, rb"^(?:[^: ]*/)?(?:(?:[a-z0-9_]+-)*ld(?:\.bfd)?|collect2): "),
     (175, rb"^(?:[^: ]*/)?(?:gcc(?:-[0-9]+)?|cc|cc1|as): "),
     (176, rb"^(?:/(?:usr/)?bin/)?(?:ba)?sh: "),
+    (185, rb"^(?:/(?:usr/)?bin/)?cp: "),
+    (186, rb"^(?:/(?:usr/)?bin/)?mv: "),
+    (187, rb"^(?:/(?:usr/)?bin/)?ln: "),
+    (188, rb"^(?:/(?:usr/)?bin/)?mkdir: "),
+    (189, rb"^(?:/(?:usr/)?bin/)?rm: "),
+    (190, rb"^(?:/(?:usr/)?bin/)?chmod: "),
+    (191, rb"^(?:/(?:usr/)?bin/)?install: "),
+    (192, rb"^(?:/(?:usr/)?bin/)?make(?:\[[0-9]+\])?: "),
 )
 MAKE_FAILED_TARGET = rb"^make(?:\[[0-9]+\])?: \*\*\* \[(?:[^\[\]]+:[0-9]+: )?([^\[\]]+)\] Error [0-9]+$"
 MAKE_TARGETS = {
