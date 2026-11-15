@@ -49,6 +49,9 @@ public final class DeploymentCommandSourceEvidence {
     private static final String INSTALLER = "installerReviewEvidence";
     private static final String INSTALLER_SELECTION = "/" + INSTALLER + "/installerSelection";
     private static final String INSTALLER_SOURCES = "/completeExecutableInput/sources/";
+    private static final String INSTALLER_RUNTIME = INSTALLER_SOURCES + "mirrorRuntime";
+    private static final String INSTALLER_SHELL = INSTALLER_SOURCES + "mirrorBootstrapShell";
+    private static final String INSTALLER_RUNTIME_SHELL_ASSIGNMENT = "\nBOOTSTRAP_SHELL = ";
     private static final String INSTALLER_HELPER = INSTALLER_SOURCES + "managedHelper";
     private static final String INSTALLER_BUILD_ENTRY = INSTALLER_SOURCES + "buildEntry";
     private static final String INSTALLER_PROBE = "    probe)\n        [ \"$#\" -eq 0 ] || reject probe-arguments\n";
@@ -142,8 +145,14 @@ public final class DeploymentCommandSourceEvidence {
     private static final String INSTALLER_INSTRUCTION = """
         Review the exact installer, original authority, targets, package transaction and actual reached effects. completeExecutableInput preserves the full stdin in ordered segments. LITERAL copies text; SHELL_SINGLE_QUOTE surrounds the named complete source with apostrophes and escapes embedded apostrophes. The product compares the reconstructed UTF-8 bytes with the actual request stdin.
         installerSelection contains original helper startup, ownership checks and shell probe dispatch that the installer invokes after publication. It also includes the exact embedded build-entry payload. selectedInstallerRanges maps that text to original source: startCharacter counts from the frame header end, and offset through next are UTF-16 coordinates.
-        All original sources remain pageable from completeExecutableInput.sources. For unresolved source, copy installerReviewEvidence.readExample.snapshotSha256 exactly and set pointer to the source descriptor's sourcePointer, with a UTF-16 offset and limit from 1 through 8000. The example locates the inline shell probe. The executable and source SHA256 values identify their bytes. Read up to eight ranges per response and use the JSON header and exact text in range order.
+        All original sources remain pageable. For unresolved source, copy installerReviewEvidence.readExample.snapshotSha256 exactly and set pointer to the source descriptor's sourcePointer, with a UTF-16 offset and limit from 1 through 8000. The example shows a valid cursor. The executable and source SHA256 values identify their bytes. Read up to eight ranges per response and use the JSON header and exact text in range order.
         Submit a fresh native submit_result alone. Deny unsafe effects or insufficient evidence.
+        """;
+
+    private static final String COMPLETE_INSTALLER_INSTRUCTION = """
+        For this mirrored installation, completeSourceRequired identifies the executable leaves whose original bytes must be visible together for APPROVE. Follow selectedInstallerRanges and the exact retained-source frame; source offsets and next are UTF-16, and frame text follows the ranges in order. A LITERAL text descriptor identifies the exact literal bytes, and SOURCE_TEXT copies its referenced source unchanged. The packaged mirrorRuntime and the task's mirrorBootstrapShell are different inputs. Follow the scoped package calls into the exact shell, including repository selection, transport, signature, download identity and final installation. A staged program may have other entrypoints; determine which are reached from the actual installer.
+        pendingRequired lists missing ranges. Use readExample's snapshotSha256 with the missing pointer and offset and a limit of at most 8000. At most eight evidence calls per response, separate from the verdict. Compare all required source with the original stdin order and digest. Deny unsafe effects or insufficient evidence independently.
+        If runtimeShellReconstruction is present and the current frame reports runtimeShellReconstructible, replace the indicated runtime UTF-16 interval with the JSON string encoding of the indicated shell interval. JSON_STRING includes the surrounding double quotes. This restores the original runtime UTF-8 bytes, length and SHA-256. The original runtime bytes remain directly pageable.
         """;
 
     private static final String DEPENDENCY_APT_INSTRUCTION = """
@@ -183,6 +192,7 @@ public final class DeploymentCommandSourceEvidence {
     private final Map<String, NavigableMap<Integer, Integer>> initialRanges;
     private final Map<String, NavigableMap<Integer, Integer>> requiredRanges;
     private final Map<String, NavigableMap<Integer, Integer>> initialSourceRanges;
+    private final Optional<RuntimeShellReference> runtimeShellReference;
 
     private DeploymentCommandSourceEvidence(JsonNode current, String originalFacts, String snapshot, List<AiMessage> messages,
                                               Map<String, String> sourceBodies, Map<String, NavigableMap<Integer, Integer>> initialRanges) {
@@ -193,6 +203,13 @@ public final class DeploymentCommandSourceEvidence {
             Map<String, String> sourceBodies, Map<String, NavigableMap<Integer, Integer>> initialRanges,
             Map<String, NavigableMap<Integer, Integer>> requiredRanges,
             Map<String, NavigableMap<Integer, Integer>> initialSourceRanges) {
+        this(current, originalFacts, snapshot, messages, sourceBodies, initialRanges, requiredRanges, initialSourceRanges, Optional.empty());
+    }
+
+    private DeploymentCommandSourceEvidence(JsonNode current, String originalFacts, String snapshot, List<AiMessage> messages,
+            Map<String, String> sourceBodies, Map<String, NavigableMap<Integer, Integer>> initialRanges,
+            Map<String, NavigableMap<Integer, Integer>> requiredRanges,
+            Map<String, NavigableMap<Integer, Integer>> initialSourceRanges, Optional<RuntimeShellReference> runtimeShellReference) {
         this.current = current;
         this.originalFacts = originalFacts;
         this.snapshot = snapshot;
@@ -201,6 +218,7 @@ public final class DeploymentCommandSourceEvidence {
         this.initialRanges = Map.copyOf(initialRanges);
         this.requiredRanges = Collections.unmodifiableMap(new LinkedHashMap<>(requiredRanges));
         this.initialSourceRanges = Collections.unmodifiableMap(new LinkedHashMap<>(initialSourceRanges));
+        this.runtimeShellReference = runtimeShellReference;
     }
 
     public List<AiMessage> messages() {
@@ -769,12 +787,16 @@ public final class DeploymentCommandSourceEvidence {
         String snapshot = sha256(original);
         var manifest = projected.putObject(INSTALLER).put("snapshotSha256", snapshot);
         var bodies = new LinkedHashMap<String, String>();
+        boolean complete = current.path("operation").asText().equals("deployment.helper.install.tracked.v1")
+            && DeploymentInstallerEvidence.usesSharedMirrorBootstrap(executable);
         var sources = (ObjectNode) projected.at("/completeExecutableInput/sources");
         executable.path("sources").fields().forEachRemaining(entry -> {
             String pointer = INSTALLER_SOURCES + entry.getKey();
             String text = entry.getValue().textValue();
             var locations = switch (entry.getKey()) {
                 case "mirrorRuntime" -> MIRROR_LOCATIONS;
+                case "mirrorBootstrapShell" -> complete ? List.of("wtl_apt() (", "wtl_system_package() {",
+                    "wtl_apt_install_frozen() {") : List.<String>of();
                 case "managedHelper" -> combinedLocations(List.of(INSTALLER_PROBE));
                 default -> List.<String>of();
             };
@@ -791,8 +813,9 @@ public final class DeploymentCommandSourceEvidence {
             uniqueIndex(helper, "assert_candidate_for_deployer() {\n"));
         var dispatch = new PreparationSourceRange("helperProbeDispatch",
             uniqueIndex(helper, "\nrequire_root\n[ \"$#\" -ge 1 ] || reject verb\n") + 1, probeNext);
-        manifest.putObject("readExample").put("snapshotSha256", snapshot).put("pointer", INSTALLER_HELPER)
-            .put("offset", probe).put("limit", probeNext - probe);
+        manifest.putObject("readExample").put("snapshotSha256", snapshot)
+            .put("pointer", complete ? INSTALLER_RUNTIME : INSTALLER_HELPER)
+            .put("offset", complete ? 0 : probe).put("limit", complete ? MAX_READ_CHARACTERS : probeNext - probe);
         var selection = new StringBuilder();
         var selected = manifest.putArray("selectedInstallerRanges");
         var initialRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
@@ -801,8 +824,75 @@ public final class DeploymentCommandSourceEvidence {
             List.of(new PreparationSourceRange("buildEntry", 0, buildEntry.length())));
         var messages = new ArrayList<AiMessage>();
         putSelectionFrame(manifest, messages, snapshot, bodies, INSTALLER_SELECTION, "installerSelection", selection);
+        var required = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
+        var runtimeReference = complete ? runtimeShellReference(executable, bodies) : Optional.<RuntimeShellReference>empty();
+        if (complete) {
+            // The staged shell can supply the runtime literal only once its exact source interval is present.
+            if (runtimeReference.isPresent()) requireInstallerSource(required, bodies, INSTALLER_SHELL);
+            requireInstallerSource(required, bodies, INSTALLER_RUNTIME);
+            if (runtimeReference.isEmpty()) requireInstallerSource(required, bodies, INSTALLER_SHELL);
+            var projectedExecutable = projected.path("completeExecutableInput");
+            for (String leaf : DeploymentInstallerEvidence.readableBodies(executable)) {
+                if (!leaf.startsWith("/segments/")) continue;
+                String pointer = "/completeExecutableInput" + leaf;
+                var segment = (ObjectNode) projectedExecutable.at(leaf.substring(0, leaf.lastIndexOf('/')));
+                String literal = segment.path("text").textValue();
+                bodies.put(pointer, literal);
+                segment.set("text", pagedSource(pointer, literal, List.of()));
+                requireInstallerSource(required, bodies, pointer);
+            }
+            requireInstallerSource(required, bodies, INSTALLER_BUILD_ENTRY);
+            requireInstallerSource(required, bodies, INSTALLER_HELPER);
+            var mandatory = manifest.putArray("completeSourceRequired");
+            required.forEach((pointer, ranges) -> mandatory.addObject().put("pointer", pointer)
+                .put("offset", 0).put("next", ranges.firstEntry().getValue()));
+            runtimeReference.ifPresent(reference -> manifest.set("runtimeShellReconstruction", reference.descriptor()));
+        }
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
-        return new DeploymentCommandSourceEvidence(current, original, snapshot, messages, bodies, initialRanges);
+        return new DeploymentCommandSourceEvidence(current, original, snapshot, messages, bodies, initialRanges, required, required,
+            runtimeReference);
+    }
+
+    private static void requireInstallerSource(Map<String, NavigableMap<Integer, Integer>> required,
+                                               Map<String, String> bodies, String pointer) {
+        String source = bodies.get(pointer);
+        if (!source.isEmpty()) required.put(pointer, new TreeMap<>(Map.of(0, source.length())));
+    }
+
+    private static Optional<RuntimeShellReference> runtimeShellReference(JsonNode executable, Map<String, String> bodies) throws IOException {
+        String runtime = bodies.get(INSTALLER_RUNTIME);
+        String shell = bodies.get(INSTALLER_SHELL);
+        int assignment = runtime.indexOf(INSTALLER_RUNTIME_SHELL_ASSIGNMENT);
+        if (assignment < 0 || runtime.indexOf(INSTALLER_RUNTIME_SHELL_ASSIGNMENT, assignment + 1) >= 0) return Optional.empty();
+        int runtimeOffset = assignment + INSTALLER_RUNTIME_SHELL_ASSIGNMENT.length();
+        int runtimeNext = runtime.indexOf('\n', runtimeOffset);
+        if (runtimeNext <= runtimeOffset) return Optional.empty();
+        String serialized = runtime.substring(runtimeOffset, runtimeNext);
+        var decoded = JSON.readTree(serialized);
+        if (decoded == null || !decoded.isTextual() || decoded.textValue().isEmpty()
+            || !shell.endsWith(decoded.textValue() + "\n")) return Optional.empty();
+        int shellNext = shell.length() - 1;
+        int shellOffset = shellNext - decoded.textValue().length();
+        String encoded = JSON.writeValueAsString(shell.substring(shellOffset, shellNext));
+        if (!encoded.equals(serialized)) return Optional.empty();
+        String original = runtime.substring(0, runtimeOffset) + encoded + runtime.substring(runtimeNext);
+        var digest = executable.at("/digestScopes/mirrorRuntimeDigest");
+        if (!runtime.equals(original) || digest.path("utf8Bytes").asInt(-1) != original.getBytes(StandardCharsets.UTF_8).length
+            || !digest.path("value").asText().equals(sha256(original)))
+            throw new IOException("Installer reconstruction differs from its original mirror runtime bytes");
+        return Optional.of(new RuntimeShellReference(runtimeOffset, runtimeNext, shellOffset, shellNext, sha256(encoded),
+            encoded.getBytes(StandardCharsets.UTF_8).length));
+    }
+
+    private record RuntimeShellReference(int runtimeOffset, int runtimeNext, int shellOffset, int shellNext,
+                                         String sha256, int utf8Bytes) {
+        ObjectNode descriptor() {
+            var result = JSON.createObjectNode().put("encoding", "JSON_STRING");
+            result.putObject("source").put("pointer", INSTALLER_SHELL).put("offset", shellOffset).put("next", shellNext);
+            result.putObject("target").put("pointer", INSTALLER_RUNTIME).put("offset", runtimeOffset).put("next", runtimeNext)
+                .put("sha256", sha256).put("utf8Bytes", utf8Bytes);
+            return result;
+        }
     }
 
     private static void projectDependency(ObjectNode current, ObjectNode projected, ObjectNode manifest, List<AiMessage> messages,
@@ -986,12 +1076,15 @@ public final class DeploymentCommandSourceEvidence {
             var header = JSON.createObjectNode().put("snapshotSha256", snapshot).put("trust", "UNTRUSTED_DATA")
                 .put("initialSupplement", true);
             var entries = header.putArray("ranges");
+            var visible = copyRanges(inline);
+            if (completeInstallerReview()) appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
             int bodyBudget = available - quotedBytes(RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n");
             if (bodyBudget <= 0) return Optional.empty();
             var body = new StringBuilder();
-            var visible = copyRanges(inline);
             retainHistory(initialSourceRanges, visible, entries, body, bodyBudget);
             if (entries.isEmpty()) return Optional.empty();
+            if (reconstructRuntimeShell(visible)) header.put("runtimeShellReconstructible", true);
+            if (completeInstallerReview()) appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
             var message = new AiMessage(AiRole.USER, RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n" + body, List.of());
             return quotedBytes(message) <= available ? Optional.of(new RetainedFrame(message, visible)) : Optional.empty();
         }
@@ -1087,7 +1180,14 @@ public final class DeploymentCommandSourceEvidence {
             var ranges = delivered.computeIfAbsent(pointer, ignored -> new TreeMap<>());
             int offset = (int) page.get("offset"), next = (int) page.get("next");
             if (next > offset) rememberRange(requested, pointer, offset, next);
-            var contents = DeploymentEvidencePages.retainAndDescribe(text, page, ranges);
+            Map<String, Object> contents;
+            var reference = runtimeShellReference.orElse(null);
+            if (reference != null && INSTALLER_RUNTIME.equals(pointer) && offset < reference.runtimeNext() && next > reference.runtimeOffset()
+                && next > offset) {
+                // A reviewer asking for the literal explicitly can inspect its original serialized bytes directly.
+                rememberRange(delivered, pointer, offset, next);
+                contents = page;
+            } else contents = DeploymentEvidencePages.retainAndDescribe(text, page, ranges);
             var result = JSON.createObjectNode().put("trust", "UNTRUSTED_DATA").put("snapshotSha256", snapshot).put("pointer", pointer);
             String body = toolchainReview() || buildReview() || installerReview() ? rawSourcePage(result, JSON.valueToTree(contents))
                 : JSON.writeValueAsString(result.set("value", JSON.valueToTree(contents)));
@@ -1302,6 +1402,7 @@ public final class DeploymentCommandSourceEvidence {
                 remaining = retainHistory(requested, visible, entries, body, remaining);
             remaining = retainHistory(lastVisible, visible, entries, body, remaining);
             retainHistory(confirmed, visible, entries, body, remaining);
+            if (reconstructRuntimeShell(visible)) header.put("runtimeShellReconstructible", true);
             var described = visible;
             if (compacted) {
                 // The latest read receipts already identify source omitted from those reads.
@@ -1336,15 +1437,18 @@ public final class DeploymentCommandSourceEvidence {
             for (var entry : history.entrySet()) {
                 if (byteBudget <= 0) break;
                 String pointer = entry.getKey();
+                if (INSTALLER_RUNTIME.equals(pointer)) reconstructRuntimeShell(visible);
                 String source = sourceText(pointer);
                 var known = visible.computeIfAbsent(pointer, ignored -> new TreeMap<>());
                 for (var range : entry.getValue().entrySet()) {
                     for (var gap : DeploymentEvidencePages.missing(source, range.getKey(), range.getValue(), known)) {
                         int offset = (int) gap.get("offset"), end = (int) gap.get("next");
                         while (offset < end) {
-                            int next = Math.min(end, offset + MAX_READ_CHARACTERS);
+                            int next = completeInstallerReview() ? installerHistoryEnd(pointer, source, offset, end, byteBudget)
+                                : Math.min(end, offset + MAX_READ_CHARACTERS);
+                            if (next <= offset) break;
                             if (next < end && Character.isSurrogatePair(source.charAt(next - 1), source.charAt(next))) next--;
-                            var location = JSON.createObjectNode().put("pointer", pointer).put("offset", offset).put("next", next);
+                            var location = retainedLocation(pointer, offset, next);
                             String text = source.substring(offset, next);
                             // A body substring and an escaped JSON range in the frame header, plus the array comma.
                             int bytes = quotedBytes(text) + quotedBytes(JSON.writeValueAsString(location)) - 3;
@@ -1361,11 +1465,46 @@ public final class DeploymentCommandSourceEvidence {
             return byteBudget;
         }
 
+        private boolean reconstructRuntimeShell(Map<String, NavigableMap<Integer, Integer>> visible) {
+            var reference = runtimeShellReference.orElse(null);
+            if (reference == null || !covers(visible.get(INSTALLER_SHELL), reference.shellOffset(), reference.shellNext()))
+                return false;
+            // These shell bytes are represented in this request. Prior requests cannot satisfy this dependency.
+            rememberRange(visible, INSTALLER_RUNTIME, reference.runtimeOffset(), reference.runtimeNext());
+            return true;
+        }
+
+        private int installerHistoryEnd(String pointer, String source, int offset, int end, int byteBudget) throws IOException {
+            int low = offset, high = Math.min(end, offset + byteBudget) + 1;
+            if (end < high && retainedBytes(pointer, source, offset, end) <= byteBudget) return end;
+            while (high - low > 1) {
+                int middle = low + (high - low) / 2;
+                int next = completeCharacterEnd(source, middle);
+                if (retainedBytes(pointer, source, offset, next) <= byteBudget) low = middle;
+                else high = middle;
+            }
+            return completeCharacterEnd(source, low);
+        }
+
+        private int completeCharacterEnd(String source, int end) {
+            return end < source.length() && Character.isLowSurrogate(source.charAt(end)) ? end - 1 : end;
+        }
+
+        private int retainedBytes(String pointer, String source, int offset, int next) throws IOException {
+            return quotedBytes(source.substring(offset, next))
+                + quotedBytes(JSON.writeValueAsString(retainedLocation(pointer, offset, next))) - 3;
+        }
+
+        private ObjectNode retainedLocation(String pointer, int offset, int next) {
+            return JSON.createObjectNode().put("pointer", pointer).put("offset", offset).put("next", next);
+        }
+
         private int appendUnconfirmed(ObjectNode header, String name,
                                        Map<String, NavigableMap<Integer, Integer>> ranges,
                                        Map<String, NavigableMap<Integer, Integer>> visible) throws IOException {
             var deferred = header.putArray(name);
             int omitted = 0;
+            boolean completeInstallerRanges = completeInstallerReview() && "pendingRequired".equals(name);
             for (var entry : ranges.entrySet()) {
                 String pointer = entry.getKey();
                 String source = sourceText(pointer);
@@ -1376,13 +1515,15 @@ public final class DeploymentCommandSourceEvidence {
                         if (span.getValue() <= next) continue;
                         if (next < span.getKey()) {
                             omitted++;
-                            appendReadCursors(deferred, pointer, source, next, span.getKey(), MAX_READS_PER_RESPONSE);
+                            if (completeInstallerRanges) deferred.add(retainedLocation(pointer, next, span.getKey()));
+                            else appendReadCursors(deferred, pointer, source, next, span.getKey(), MAX_READS_PER_RESPONSE);
                         }
                         next = Math.min(end, span.getValue());
                     }
                     if (next < end) {
                         omitted++;
-                        appendReadCursors(deferred, pointer, source, next, end, MAX_READS_PER_RESPONSE);
+                        if (completeInstallerRanges) deferred.add(retainedLocation(pointer, next, end));
+                        else appendReadCursors(deferred, pointer, source, next, end, MAX_READS_PER_RESPONSE);
                     }
                 }
             }
@@ -1429,6 +1570,10 @@ public final class DeploymentCommandSourceEvidence {
         return INSTALLERS.contains(current.path("operation").asText());
     }
 
+    private boolean completeInstallerReview() {
+        return installerReview() && !requiredRanges.isEmpty();
+    }
+
     public boolean bindingReview() {
         return BIND.equals(current.path("operation").asText());
     }
@@ -1459,7 +1604,7 @@ public final class DeploymentCommandSourceEvidence {
 
     public String instructions() {
         if (buildReview()) return BUILD_INSTRUCTION;
-        if (installerReview()) return INSTALLER_INSTRUCTION;
+        if (installerReview()) return INSTALLER_INSTRUCTION + (completeInstallerReview() ? COMPLETE_INSTALLER_INSTRUCTION : "");
         if (preparationReview()) {
             if (nodePreparationReview()) return NODE_PREPARE_INSTRUCTION;
             return pythonPreparationReview() ? PYTHON_PREPARE_INSTRUCTION : PREPARE_INSTRUCTION;

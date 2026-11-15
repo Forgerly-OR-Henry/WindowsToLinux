@@ -55,6 +55,11 @@ import org.junit.jupiter.params.provider.ValueSource;
 class DeploymentToolchainReviewEvidenceTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final int R20_SMALLEST_REMAINING_BYTES = 365119;
+    private static final int R41_LOCAL_TRACKED_FIRST_BYTES = 104843;
+    private static final int R41_TASK_BOARD_TRACKED_FIRST_BYTES = 124690;
+    private static final int R41_FILE_TRANSFER_TRACKED_FIRST_BYTES = 118009;
+    private static final int R41_TASK_BOARD_TRACKED_PRESSURE = 1048576 - (R41_TASK_BOARD_TRACKED_FIRST_BYTES - R41_LOCAL_TRACKED_FIRST_BYTES);
+    private static final int R41_FILE_TRANSFER_TRACKED_PRESSURE = 1048576 - (R41_FILE_TRANSFER_TRACKED_FIRST_BYTES - R41_LOCAL_TRACKED_FIRST_BYTES);
     private static final String PHASE = "toolchainReviewEvidence";
     private static final String RAW_PAGE = "WTL-COMMAND-EVIDENCE-PAGE-1\n";
 
@@ -63,9 +68,28 @@ class DeploymentToolchainReviewEvidenceTest {
         try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
              var request = fixture.request(fixture.installer("TRACKED", true))) {
             var intent = fixture.intent("TRACKED", request);
-            reply(fixture, verdict("denied-installer", "DENY"));
-            var denied = assertThrows(ApiException.class,
-                () -> ((DeploymentCommandReview) assisted.scope.interaction()).approveCommand(intent, request, fixture.task));
+            var continuations = new LinkedHashMap<UUID, String>();
+            var bounded = wireBudgetContext(assisted.context, continuations, 0, () -> R20_SMALLEST_REMAINING_BYTES,
+                delivered -> {
+                    try {
+                        if (!fixture.model.requests.isEmpty()) {
+                            reply(fixture, verdict("denied-installer", "DENY"));
+                            return;
+                        }
+                        String frame = delivered.messages().stream().filter(DeploymentToolchainReviewEvidenceTest::nodeInitialSupplement)
+                            .findFirst().orElseThrow().text();
+                        var header = installerRetainedHeader(frame);
+                        var firstMissing = header.path("pendingRequired").get(0);
+                        var read = read("tight-installer-helper-page", header.path("snapshotSha256").asText(),
+                            firstMissing.path("pointer").asText(), firstMissing.path("offset").asInt(), 8000);
+                        replyAtTotalBytes(fixture, continuations, 2000, "OPENAI_RESPONSES", read);
+                    } catch (Exception failure) {
+                        throw new AssertionError(failure);
+                    }
+                });
+            var denied = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approveWithEvidence(
+                bounded, assisted.host, intent, request, fixture.task, fixture.model.configurationRevision,
+                "AUTOMATIC", false, assisted.scope));
             assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
             assertEquals(0, assisted.hosts.get());
             var initial = fixture.model.requests.getFirst();
@@ -90,6 +114,15 @@ class DeploymentToolchainReviewEvidenceTest {
                 exactSources.put(descriptor.path("sourcePointer").asText(), source);
                 sources.put(name, source);
             }
+            var segments = facts.at("/completeExecutableInput/segments");
+            for (int index = 0; index < segments.size(); index += 2) {
+                var segment = (ObjectNode) segments.get(index);
+                var literal = segment.path("text");
+                String source = collect(evidence, literal, "installerReviewEvidence");
+                assertIdentity(literal, source);
+                exactSources.put(literal.path("sourcePointer").asText(), source);
+                segment.put("text", source);
+            }
             assertArrayEquals(request.stdin(), DeploymentInstallerEvidence.reconstruct(facts.path("completeExecutableInput"))
                 .getBytes(StandardCharsets.UTF_8));
             var installer = facts.path("installerReviewEvidence");
@@ -107,10 +140,182 @@ class DeploymentToolchainReviewEvidenceTest {
                 assertEquals(source.substring(offset, next), excerpt.substring(start, start + next - offset));
             }
             assertTrue(excerpt.endsWith(exactSources.get("/completeExecutableInput/sources/buildEntry")));
+            var coverage = assertInstallerVisibleRanges(initial, installer, exactSources);
+            String runtime = "/completeExecutableInput/sources/mirrorRuntime";
+            assertEquals(Map.of(0, exactSources.get(runtime).length()), coverage.get(runtime));
+            String helper = "/completeExecutableInput/sources/managedHelper";
+            assertNotEquals(Map.of(0, exactSources.get(helper).length()), coverage.get(helper));
+            var omitted = DeploymentEvidencePages.missing(exactSources.get(helper), 0, exactSources.get(helper).length(),
+                coverage.get(helper)).getFirst();
+            int offset = (int) omitted.get("offset");
+            assertEquals(2, fixture.model.requests.size());
+            var continuation = fixture.model.requests.getLast();
+            assertTrue(wire(continuation, R20_SMALLEST_REMAINING_BYTES, continuations).length <= R20_SMALLEST_REMAINING_BYTES);
+            assertInstallerReturnedPage(continuation, installer.path("snapshotSha256").asText(), helper, offset,
+                exactSources.get(helper).substring(offset, offset + 8000));
             assertInstallerReadReceipts(evidence, JSON.readTree(evidence.messages().getLast().text()).path("installerReviewEvidence"),
                 exactSources);
             System.out.printf("INSTALLER_REVIEW_WIRE bytes=%d ceiling=%d%n", encoded.length, 365119);
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {365119, 1048576, R41_TASK_BOARD_TRACKED_PRESSURE, R41_FILE_TRANSFER_TRACKED_PRESSURE})
+    void nativeTrackedInstallerApprovalRequiresCompleteOriginalSourceAtPhysicalCeiling(int ceiling) throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var request = fixture.request(fixture.installer("TRACKED", true))) {
+            int r41EarlyAllowance = Math.min(1048576, 1_500_000 - 65_536 - 70_657);
+            boolean complete = ceiling == r41EarlyAllowance || ceiling == R41_TASK_BOARD_TRACKED_PRESSURE
+                || ceiling == R41_FILE_TRANSFER_TRACKED_PRESSURE;
+            var intent = fixture.intent("TRACKED", request);
+            var context = wireBudgetContext(assisted.context, Map.of(), 0, () -> ceiling);
+            Callable<OperationResult<ApprovalGrant>> approve = () -> DeploymentFixedCommandApproval.approveWithEvidence(
+                context, assisted.host, intent, request, fixture.task, fixture.model.configurationRevision,
+                "AUTOMATIC", false, assisted.scope);
+            reply(fixture, verdict("candidate-installer-approve", "APPROVE"));
+            if (complete) {
+                assertEquals(TaskResult.SUCCEEDED, approve.call().outcome());
+                assertEquals(List.of(intent), assisted.grantedIntents);
+            } else {
+                var blocked = assertThrows(ApiException.class, approve::call);
+                assertEquals("EVIDENCE_INCOMPLETE_VERDICT", blocked.problem().context().get("reviewCode"));
+                assertEquals("REQUIRED_SOURCE_MISSING", blocked.problem().context().get("reviewEvidenceBlock"));
+                assertEquals(0, assisted.hosts.get());
+            }
+            assertEquals(1, fixture.model.requests.size(), "Only encoded requests under the physical ceiling reach the fixture model");
+            var initial = fixture.model.requests.getFirst();
+            var installer = JSON.readTree(initial.messages().getLast().text()).path("installerReviewEvidence");
+            var exact = new LinkedHashMap<String, String>();
+            var executable = JSON.valueToTree(fixture.facts("TRACKED", request)).path("completeExecutableInput");
+            for (var leaf : DeploymentInstallerEvidence.readableBodies(executable))
+                exact.put("/completeExecutableInput" + leaf, executable.at(leaf).textValue());
+            var coverage = assertInstallerVisibleRanges(initial, installer, exact);
+            var missing = exact.entrySet().stream().filter(entry -> !entry.getValue().isEmpty())
+                .filter(entry -> !Map.of(0, entry.getValue().length()).equals(coverage.get(entry.getKey())))
+                .map(Map.Entry::getKey).toList();
+            assertEquals(complete ? List.of() : List.of("/completeExecutableInput/sources/managedHelper"), missing);
+            int encoded = wire(initial, ceiling, Map.of()).length;
+            System.out.printf("R42_INSTALLER_COVERAGE encoded=%d ceiling=%d complete=%b helperCharacters=%d runtimeCharacters=%d%n",
+                encoded, ceiling, complete, exact.get("/completeExecutableInput/sources/managedHelper").length(),
+                exact.get("/completeExecutableInput/sources/mirrorRuntime").length());
+            if (ceiling == R41_TASK_BOARD_TRACKED_PRESSURE || ceiling == R41_FILE_TRANSFER_TRACKED_PRESSURE)
+                System.out.printf("R42_INSTALLER_SYNTHETIC_PRESSURE reservedEncodedBytes=%d finalPhysicalCeiling=%d%n",
+                    1048576 - ceiling, 1048576);
+            if (complete) {
+                String runtime = exact.get("/completeExecutableInput/sources/mirrorRuntime");
+                String shell = exact.get("/completeExecutableInput/sources/mirrorBootstrapShell");
+                String assignment = "BOOTSTRAP_SHELL = ";
+                String embedded = runtime.lines().filter(line -> line.startsWith(assignment)).findFirst().orElseThrow();
+                String decoded = JSON.readTree(embedded.substring(assignment.length())).textValue();
+                assertTrue(shell.endsWith(decoded + "\n"));
+                System.out.printf("R42_INSTALLER_FIXED_TRANSFORM sharedDecodedShellBytes=%d embeddedRuntimeJsonBytes=%d shellBytes=%d factsCharacters=%d%n",
+                    decoded.getBytes(StandardCharsets.UTF_8).length, embedded.substring(assignment.length()).getBytes(StandardCharsets.UTF_8).length,
+                    shell.getBytes(StandardCharsets.UTF_8).length, initial.messages().getLast().text().length());
+            }
+        }
+    }
+
+    private static Map<String, TreeMap<Integer, Integer>> assertInstallerVisibleRanges(
+            AiRequest request, JsonNode installer, Map<String, String> exactSources) throws Exception {
+        var bySource = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+        var supplied = new LinkedHashMap<String, char[]>();
+        exactSources.forEach((pointer, source) -> supplied.put(pointer, new char[source.length()]));
+        var selection = installer.path("installerSelection");
+        String excerpts = request.messages().get(1 + selection.path("ordinal").asInt()).text()
+            .substring(selection.path("headerCharacters").asInt());
+        for (var range : installer.path("selectedInstallerRanges"))
+            assertInstallerRange(exactSources, bySource, supplied, range.path("sourcePointer").asText(), range, excerpts,
+                range.path("startCharacter").asInt());
+        String frame = request.messages().stream().filter(DeploymentToolchainReviewEvidenceTest::nodeInitialSupplement)
+            .findFirst().orElseThrow().text();
+        int end = frame.indexOf('\n', frame.indexOf('\n') + 1);
+        var header = installerRetainedHeader(frame);
+        assertEquals(installer.path("snapshotSha256"), header.path("snapshotSha256"));
+        String source = frame.substring(end + 1);
+        int position = 0;
+        for (var range : header.path("ranges"))
+            position += assertInstallerRange(exactSources, bySource, supplied, range.path("pointer").asText(), range, source, position);
+        assertEquals(source.length(), position);
+        assertTrue(header.path("runtimeShellReconstructible").asBoolean());
+        var reconstruction = installer.path("runtimeShellReconstruction");
+        assertEquals("JSON_STRING", reconstruction.path("encoding").asText());
+        var from = reconstruction.path("source");
+        var target = reconstruction.path("target");
+        String shell = from.path("pointer").asText(), runtime = target.path("pointer").asText();
+        int shellOffset = from.path("offset").asInt(), shellNext = from.path("next").asInt();
+        var shellCoverage = bySource.get(shell).floorEntry(shellOffset);
+        assertNotNull(shellCoverage);
+        assertTrue(shellCoverage.getValue() >= shellNext, "Runtime reconstruction requires the actual shell text in this request");
+        String serialized = JSON.writeValueAsString(new String(supplied.get(shell), shellOffset, shellNext - shellOffset));
+        assertEquals(target.path("sha256").asText(), DeploymentEvidencePages.sha256(serialized));
+        assertEquals(target.path("utf8Bytes").asInt(), serialized.getBytes(StandardCharsets.UTF_8).length);
+        assertEquals(serialized.length(), assertInstallerRange(exactSources, bySource, supplied, runtime, target, serialized, 0));
+        var pending = JSON.createArrayNode();
+        for (var obligation : installer.path("completeSourceRequired")) {
+            String pointer = obligation.path("pointer").asText();
+            String exact = exactSources.get(pointer);
+            assertEquals(0, obligation.path("offset").asInt());
+            assertEquals(exact.length(), obligation.path("next").asInt());
+            for (var missing : DeploymentEvidencePages.missing(exact, 0, exact.length(),
+                    bySource.getOrDefault(pointer, new TreeMap<>()))) {
+                pending.addObject().put("pointer", pointer).put("offset", (int) missing.get("offset"))
+                    .put("next", (int) missing.get("next"));
+            }
+        }
+        if (pending.isEmpty()) {
+            assertFalse(header.has("pendingRequired"));
+            var facts = JSON.readTree(request.messages().getLast().text());
+            var executable = facts.path("completeExecutableInput");
+            for (var leaf : supplied.entrySet()) {
+                String pointer = leaf.getKey();
+                int slash = pointer.lastIndexOf('/');
+                ((ObjectNode) facts.at(pointer.substring(0, slash))).put(pointer.substring(slash + 1), new String(leaf.getValue()));
+            }
+            String stdin = DeploymentInstallerEvidence.reconstruct(executable);
+            DeploymentInstallerEvidence.verify(executable, stdin);
+            assertTrue(facts.path("exactAction").asText().contains("stdinSha256=" + DeploymentEvidencePages.sha256(stdin)));
+        } else assertEquals(pending, header.path("pendingRequired"));
+        return bySource;
+    }
+
+    private static JsonNode installerRetainedHeader(String frame) throws IOException {
+        int start = frame.indexOf('\n') + 1;
+        return JSON.readTree(frame.substring(start, frame.indexOf('\n', start)));
+    }
+
+    private static void assertInstallerReturnedPage(AiRequest request, String snapshot, String pointer, int offset,
+                                                     String expected) throws IOException {
+        String frame = request.messages().stream().map(AiMessage::text)
+            .filter(text -> text.startsWith("WTL-COMMAND-RETAINED-SOURCE-1\n")).findFirst().orElseThrow();
+        var header = installerRetainedHeader(frame);
+        assertEquals(snapshot, header.path("snapshotSha256").asText());
+        var receipt = header.path("latestReads").get(0);
+        assertFalse(receipt.path("rejected").asBoolean());
+        assertEquals(pointer, receipt.path("pointer").asText());
+        assertEquals(offset, receipt.path("offset").asInt());
+        assertEquals(offset + expected.length(), receipt.path("next").asInt());
+        int position = frame.indexOf('\n', frame.indexOf('\n') + 1) + 1;
+        for (var range : header.path("ranges")) {
+            int begin = range.path("offset").asInt(), end = range.path("next").asInt();
+            if (pointer.equals(range.path("pointer").asText()) && begin <= offset && end >= offset + expected.length()) {
+                assertEquals(expected, frame.substring(position + offset - begin, position + offset - begin + expected.length()));
+                return;
+            }
+            position += end - begin;
+        }
+        fail("The original requested installer page is absent from the bounded response");
+    }
+
+    private static int assertInstallerRange(Map<String, String> exactSources, Map<String, TreeMap<Integer, Integer>> bySource,
+            Map<String, char[]> supplied, String pointer, JsonNode range, String text, int position) {
+        int offset = range.path("offset").asInt(), next = range.path("next").asInt();
+        assertEquals(exactSources.get(pointer).substring(offset, next), text.substring(position, position + next - offset));
+        var visible = bySource.computeIfAbsent(pointer, ignored -> new TreeMap<>());
+        assertEquals(List.of(Map.of("offset", offset, "next", next, "text", exactSources.get(pointer).substring(offset, next))),
+            DeploymentEvidencePages.missing(exactSources.get(pointer), offset, next, visible), "Source bytes must appear once");
+        DeploymentEvidencePages.remember(visible, offset, next);
+        text.getChars(position, position + next - offset, supplied.get(pointer), offset);
+        return next - offset;
     }
 
     private static void assertInstallerReadReceipts(DeploymentCommandSourceEvidence evidence, JsonNode installer,
@@ -118,15 +323,16 @@ class DeploymentToolchainReviewEvidenceTest {
         String snapshot = installer.path("snapshotSha256").asText();
         var example = installer.path("readExample");
         String pointer = example.path("pointer").asText();
-        String helper = exactSources.get(pointer);
-        assertNotNull(helper);
+        String source = exactSources.get(pointer);
+        assertNotNull(source);
         assertEquals(snapshot, example.path("snapshotSha256").asText());
-        assertTrue(helper.substring(example.path("offset").asInt()).startsWith("    probe)\n"));
+        assertEquals("/completeExecutableInput/sources/mirrorRuntime", pointer);
+        assertEquals(0, example.path("offset").asInt());
         var reader = evidence.reader(8);
         var reply = mockResponses(new AiToolCall("canonical-read", "evidence", example.toString()),
             read("other-snapshot", "0".repeat(64), pointer, 0, 12),
             read("unknown-pointer", snapshot, "/private-placeholder", 0, 12),
-            read("invalid-cursor", snapshot, pointer, helper.length() + 1, 12),
+            read("invalid-cursor", snapshot, pointer, source.length() + 1, 12),
             read("invalid-parameters", snapshot, pointer, 0, 8001));
         var results = reader.read(reply);
         assertFalse(results.getFirst().error(), results.getFirst().text());
@@ -139,11 +345,25 @@ class DeploymentToolchainReviewEvidenceTest {
         reader.continueReview(messages, reply, results);
         String retained = messages.get(messages.size() - 2).text();
         assertFalse(retained.contains("private-placeholder"));
-        int start = retained.indexOf('\n') + 1;
-        var receipts = JSON.readTree(retained.substring(start, retained.indexOf('\n', start))).path("latestReads");
+        var header = installerRetainedHeader(retained);
+        var receipts = header.path("latestReads");
         assertEquals(expected, receipts.findValuesAsText("rejectionCode"));
+        assertFalse(header.has("runtimeShellReconstructible"), "A staged recipe without its shell bytes cannot cover the runtime");
+        var target = installer.path("runtimeShellReconstruction").path("target");
+        int targetOffset = target.path("offset").asInt();
+        assertTrue(header.path("pendingRequired").findValuesAsText("pointer").contains(pointer));
         reader.read(response(Optional.empty(), verdict("reject-incomplete-reads", "APPROVE")));
         assertEquals(Optional.of("READ_REJECTED"), reader.approvalEvidenceBlock());
+
+        var explicitReader = evidence.reader(1);
+        var initial = new ArrayList<>(evidence.messages());
+        explicitReader.offerInitialSource(initial);
+        assertTrue(installerRetainedHeader(initial.get(initial.size() - 2).text()).path("runtimeShellReconstructible").asBoolean());
+        var direct = explicitReader.read(mockResponses(read("explicit-runtime-literal", snapshot, pointer, targetOffset, 8000))).getFirst();
+        assertFalse(direct.error());
+        String page = direct.text();
+        assertTrue(page.startsWith(RAW_PAGE));
+        assertEquals(source.substring(targetOffset, targetOffset + 8000), page.substring(page.indexOf('\n', RAW_PAGE.length()) + 1));
     }
 
     @Test

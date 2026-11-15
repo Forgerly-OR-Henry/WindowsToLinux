@@ -26,6 +26,8 @@ def validated_binding(encoded, restoring=False):
         if marker.is_symlink() or marker.stat().st_uid != 0 or marker.stat().st_mode & 0o022:
             fail('ownership', 'binding marker must be root-owned')
         record = load_managed_dotnet_marker(directory) if f[0] == 'DOTNET' else json.loads(marker.read_text())
+        if record.get('origin') != f[8]:
+            fail('integrity', 'prepared binding has the wrong origin')
         if f[0] != 'DOTNET':
             verify_system(record)
         if [record[k] for k in ('ecosystem', 'version', 'directory', 'sha256')] != [f[0], f[6], f[7], f[10]]:
