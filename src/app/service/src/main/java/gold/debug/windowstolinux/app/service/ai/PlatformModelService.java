@@ -21,6 +21,7 @@ import gold.debug.windowstolinux.app.service.ai.AiModelListAccess;
 import gold.debug.windowstolinux.app.service.ai.AiModelProfile;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
+import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
 import gold.debug.windowstolinux.appapi.ai.voice.VoiceOptions;
 import gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest;
 import gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse;
@@ -369,8 +370,11 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
                     var result = ai.probe(observed.profile(), key, request, task);
                     if (result.outcome() != TaskResult.SUCCEEDED)
                         return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
-                    if (!challenge.accepts(result.value().orElseThrow()))
-                        return failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_PROBE_ANSWER", "The model did not answer the generated capability challenge");
+                    var response = result.value().orElseThrow();
+                    if (!challenge.accepts(response))
+                        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
+                            ProblemCode.CONTRACT_VIOLATION, "MODEL_PROBE_ANSWER", "The model did not answer the generated capability challenge",
+                            capability == AiCapabilityType.TEXT ? textProbeMismatchDetails(response) : Map.of(), Optional.empty())));
                 }
             } else {
                 OperationResult<VoiceResponse> result;
@@ -399,6 +403,25 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
         } catch (java.io.IOException failure) {
             return failed(ProblemCode.IO_FAILURE, "MODEL_PROBE_INPUT", "The local capability challenge could not be generated");
         }
+    }
+
+    private static Map<String, String> textProbeMismatchDetails(AiResponse response) {
+        var details = new LinkedHashMap<String, String>();
+        details.put("finishCategory", switch (response.finishReason()) {
+            case "stop" -> "STOP";
+            case "length" -> "OUTPUT_LIMIT";
+            case "content_filter" -> "CONTENT_FILTER";
+            case "refusal" -> "REFUSAL";
+            case "tool_calls" -> "TOOL_CALLS";
+            case "incomplete" -> "INCOMPLETE";
+            default -> "OTHER";
+        });
+        String text = response.text().strip();
+        details.put("answerShape", text.isEmpty() ? "EMPTY_TEXT" : text.matches("[0-9A-Fa-f]{8}") ? "EIGHT_HEX_TEXT" : "OTHER_TEXT");
+        response.usage().outputTokens().ifPresent(tokens -> details.put("outputTokens", tokens.toString()));
+        response.usage().reasoningOutputTokens().ifPresent(tokens -> details.put("reasoningOutputTokens", tokens.toString()));
+        response.effectiveMaxOutputTokens().ifPresent(tokens -> details.put("effectiveMaxOutputTokens", tokens.toString()));
+        return details;
     }
 
     /** Tests each distinct configured language/approval setting once. / 每组不同语言或审批设置分别验证一次。

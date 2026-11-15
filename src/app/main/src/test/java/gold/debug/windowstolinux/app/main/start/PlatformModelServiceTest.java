@@ -14,6 +14,9 @@ import gold.debug.windowstolinux.app.ai.model.AiCapabilityStatus;
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
+import gold.debug.windowstolinux.app.ai.model.ModelProtocol;
+import gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel;
+import gold.debug.windowstolinux.app.ai.provider.ModelProviderType;
 import gold.debug.windowstolinux.app.db.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
@@ -110,6 +113,91 @@ class PlatformModelServiceTest {
                                           char[] key, AiCapabilityType capability, int outputLimit) throws Exception {
         service.save(profile, name, key, outputLimit);
         return service.verify(profile.id(), capability);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"EXACT", "WRONG_CODE", "WRAPPED_CODE", "EMPTY", "OUTPUT_LIMIT", "REFUSAL"})
+    void responsesTextProbeRetainsStrictAnswerAndOnlySafeMismatchDetails(String scenario) throws Exception {
+        try (var fixture = new PlatformAiServiceTest.Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            var service = setup(runtime);
+            fixture.handler.set(exchange -> {
+                try {
+                    var wire = fixture.requests.remove().body();
+                    assertEquals("gpt-6-luna", wire.path("model").asText());
+                    assertEquals("high", wire.at("/reasoning/effort").asText());
+                    assertEquals(8192, wire.path("max_output_tokens").asInt());
+                    String prompt = wire.at("/input/0/content/0/text").asText();
+                    String challenge = prompt.substring(prompt.lastIndexOf('\n') + 1);
+                    assertTrue(challenge.matches("[0-9A-F]{8}"));
+                    var response = PlatformAiServiceTest.JSON.createObjectNode().put("status", "completed");
+                    var output = response.putArray("output");
+                    switch (scenario) {
+                        case "EMPTY" -> output.addObject().put("type", "reasoning");
+                        case "OUTPUT_LIMIT" -> {
+                            response.put("status", "incomplete").putObject("incomplete_details").put("reason", "max_output_tokens");
+                            response.putObject("usage").put("output_tokens", 8192)
+                                .putObject("output_tokens_details").put("reasoning_tokens", 8191);
+                            output.addObject().put("type", "reasoning");
+                        }
+                        case "REFUSAL" -> output.addObject().put("type", "message").put("role", "assistant").putArray("content")
+                            .addObject().put("type", "refusal").put("refusal", "fixture-only refusal text");
+                        default -> {
+                            String returned = switch (scenario) {
+                                case "EXACT" -> " " + challenge.toLowerCase(Locale.ROOT) + "\n";
+                                case "WRONG_CODE" -> (challenge.startsWith("0") ? "1" : "0") + challenge.substring(1);
+                                case "WRAPPED_CODE" -> "`" + challenge + "`";
+                                default -> throw new AssertionError("Unknown probe fixture scenario");
+                            };
+                            if (scenario.equals("WRONG_CODE")) response.putObject("usage").put("input_tokens", 41).put("output_tokens", 33);
+                            output.addObject().put("type", "message").put("role", "assistant").putArray("content")
+                                .addObject().put("type", "output_text").put("text", returned);
+                        }
+                    }
+                    PlatformAiServiceTest.Fixture.reply(exchange, 200, response.toString());
+                } catch (AssertionError failure) {
+                    PlatformAiServiceTest.Fixture.reply(exchange, 500, "{}");
+                    throw failure;
+                }
+            });
+            var effort = ModelReasoningLevel.HIGH;
+            var profile = new AiModelProfile("live-approval", fixture.uri("/v1/responses"), "gpt-6-luna", "ai/provider/probe/key",
+                effort, ModelProtocol.OPENAI_RESPONSES, ModelProviderType.OPENAI, effort.defaults());
+            var result = done(saveAndVerify(service, profile, "Approval fixture", "fixture-only-key".toCharArray(),
+                AiCapabilityType.TEXT, 65536));
+            var saved = service.listAiConfigurations().getFirst();
+            assertEquals(1, fixture.calls.get());
+            assertTrue(fixture.requests.isEmpty());
+            if (scenario.equals("EXACT")) {
+                assertEquals(TaskResult.SUCCEEDED, result.outcome());
+                assertTrue(result.problem().isEmpty());
+                assertTrue(saved.verified(AiCapabilityType.TEXT));
+                return;
+            }
+            assertEquals(TaskResult.FAILED, result.outcome());
+            var problem = result.problem().orElseThrow();
+            assertEquals(ProblemCode.CONTRACT_VIOLATION, problem.code());
+            assertEquals("MODEL_PROBE_ANSWER", problem.eventCode());
+            var expected = new LinkedHashMap<>(Map.of("effectiveMaxOutputTokens", "8192"));
+            expected.put("finishCategory", switch (scenario) {
+                case "OUTPUT_LIMIT" -> "OUTPUT_LIMIT";
+                case "REFUSAL" -> "REFUSAL";
+                default -> "STOP";
+            });
+            expected.put("answerShape", switch (scenario) {
+                case "WRONG_CODE" -> "EIGHT_HEX_TEXT";
+                case "WRAPPED_CODE" -> "OTHER_TEXT";
+                default -> "EMPTY_TEXT";
+            });
+            if (scenario.equals("WRONG_CODE")) expected.put("outputTokens", "33");
+            if (scenario.equals("OUTPUT_LIMIT")) {
+                expected.put("outputTokens", "8192");
+                expected.put("reasoningOutputTokens", "8191");
+            }
+            assertEquals(expected, problem.context());
+            assertEquals(AiCapabilityStatus.FAILED, saved.checks().get(AiCapabilityType.TEXT).state());
+            assertEquals("MODEL_PROBE_ANSWER", saved.checks().get(AiCapabilityType.TEXT).reason());
+            assertFalse(saved.verified(AiCapabilityType.TEXT));
+        }
     }
 
     static void reconcile(PlatformModelService service, TaskHandle<?> handle) throws Exception {
