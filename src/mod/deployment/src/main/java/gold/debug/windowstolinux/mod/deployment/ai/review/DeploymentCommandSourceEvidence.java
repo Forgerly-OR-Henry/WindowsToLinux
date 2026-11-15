@@ -5,6 +5,7 @@ import static gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentEvide
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -18,6 +19,7 @@ import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.ai.model.AiMessage;
 import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
@@ -77,6 +79,7 @@ public final class DeploymentCommandSourceEvidence {
     private static final Pattern NEXT_PYTHON_SECTION = Pattern.compile("(?m)^(?:def |class |if __name__ == )");
     private static final String WORKER_ASSIGNMENT = "DEPENDENCY_WORKER_SOURCE = ";
     private static final int MAX_READS_PER_RESPONSE = 8;
+    private static final int MAX_READ_CHARACTERS = 8000;
     private static final int MAX_CORRECTABLE_BATCH = 16;
     // Valid ranges requested in the latest batch always stay visible.
     private static final int RETAINED_SOURCE_BYTES = 60 * 1024;
@@ -130,7 +133,7 @@ public final class DeploymentCommandSourceEvidence {
     private static final String DEPENDENCY_APT_INSTRUCTION = """
         Restore exactAction and completeExecutableInput from ordered segments. LITERAL copies text; SOURCE_TEXT copies the reference; SHELL_SINGLE_QUOTE applies Bash single quoting; JSON_STRING encodes source as a JSON string with double quotes. Review exact arguments, resource limits, targets, original authority, and effects independently. Digests identify bytes and grant no permission.
         A prior probe observed APT. selectedAptRanges maps exact text in dependencyAptSelection to original source. Follow the complete dependency_supervise implementation, its READY/ACK and ownership checks, held cgroup events and exact stop before the receipt. The decoded dependencySystemShell is the shell invoked by mirror_system_command. Review APT/dpkg admission, registered hooks and frozen installation. The protected OS package database is a trust assumption. Authenticated packages can still run maintainer scripts and triggers in this root transaction. The worker selects the current OS again. Read required alternate paths from the original sources.
-        Request missing exact bytes with snapshotSha256, pointer, offset and limit from 1 through 8000. Read up to eight ranges in one response. Exact source pages and retained frames put the original text after the JSON header in range order. Submit a fresh native submit_result alone. Deny unsafe effects or insufficient evidence.
+        requiredAptRanges identifies other exact source that must be delivered before APPROVE. Request those ranges first with snapshotSha256, pointer, offset and a limit from 1 through 8000, up to eight ranges per response. The retained frame's pendingRequired lists remaining ranges. Exact source follows the JSON header in range order. Request additional source when needed. Submit a fresh native submit_result alone. Deny unsafe effects or insufficient evidence.
         """;
 
     private static final String BUILD_INSTRUCTION = """
@@ -156,15 +159,23 @@ public final class DeploymentCommandSourceEvidence {
     private final List<AiMessage> messages;
     private final Map<String, String> sourceBodies;
     private final Map<String, NavigableMap<Integer, Integer>> initialRanges;
+    private final Map<String, NavigableMap<Integer, Integer>> requiredRanges;
 
     private DeploymentCommandSourceEvidence(JsonNode current, String originalFacts, String snapshot, List<AiMessage> messages,
                                               Map<String, String> sourceBodies, Map<String, NavigableMap<Integer, Integer>> initialRanges) {
+        this(current, originalFacts, snapshot, messages, sourceBodies, initialRanges, Map.of());
+    }
+
+    private DeploymentCommandSourceEvidence(JsonNode current, String originalFacts, String snapshot, List<AiMessage> messages,
+            Map<String, String> sourceBodies, Map<String, NavigableMap<Integer, Integer>> initialRanges,
+            Map<String, NavigableMap<Integer, Integer>> requiredRanges) {
         this.current = current;
         this.originalFacts = originalFacts;
         this.snapshot = snapshot;
         this.messages = List.copyOf(messages);
         this.sourceBodies = Map.copyOf(sourceBodies);
         this.initialRanges = Map.copyOf(initialRanges);
+        this.requiredRanges = Collections.unmodifiableMap(new LinkedHashMap<>(requiredRanges));
     }
 
     public List<AiMessage> messages() {
@@ -200,6 +211,7 @@ public final class DeploymentCommandSourceEvidence {
         var messages = new ArrayList<AiMessage>();
         var sourceBodies = new LinkedHashMap<String, String>();
         var initialRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
+        var requiredRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
         if (mirror.isPresent()) {
             var parts = projectMirror(projected, manifest, messages, snapshot, exact, mirror.orElseThrow().policy(),
                 dependency, !aptDependency(current), sourceBodies);
@@ -210,7 +222,8 @@ public final class DeploymentCommandSourceEvidence {
             boolean apt = mirror.isPresent() && aptDependency(current);
             projectDependency(current, projected, manifest, messages, snapshot, exact, script, request, sourceBodies, apt);
             if (apt) {
-                projectAptDependency(projected, manifest, messages, snapshot, sourceBodies, initialRanges, mirror.orElseThrow().policy());
+                projectAptDependency(projected, manifest, messages, snapshot, sourceBodies, initialRanges, requiredRanges,
+                    mirror.orElseThrow().policy());
             } else if (mirror.isPresent())
                 addRuntimeSelection(manifest, messages, snapshot, sourceBodies, initialRanges,
                     DEPENDENCY_RUNTIME, DEPENDENCY_RUNTIME_SELECTION, "dependencyRuntimeSelection",
@@ -235,7 +248,8 @@ public final class DeploymentCommandSourceEvidence {
             }
         }
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
-        return Optional.of(new DeploymentCommandSourceEvidence(current, original, snapshot, messages, sourceBodies, initialRanges));
+        return Optional.of(new DeploymentCommandSourceEvidence(current, original, snapshot, messages, sourceBodies, initialRanges,
+            requiredRanges));
     }
 
     private static List<String> helperLocations(ObjectNode current, boolean binding) throws IOException {
@@ -677,7 +691,9 @@ public final class DeploymentCommandSourceEvidence {
 
     private static void projectAptDependency(ObjectNode projected, ObjectNode manifest, List<AiMessage> messages,
                                               String snapshot, Map<String, String> sources,
-                                              Map<String, NavigableMap<Integer, Integer>> initialRanges, String policy) throws IOException {
+                                              Map<String, NavigableMap<Integer, Integer>> initialRanges,
+                                              Map<String, NavigableMap<Integer, Integer>> requiredRanges,
+                                              String policy) throws IOException {
         var publicPolicy = JSON.valueToTree(DeploymentMirrorTasks.reviewMaterial(policy)).path("frozenPolicy");
         var points = (ObjectNode) publicPolicy.path("points");
         var names = new ArrayList<String>();
@@ -690,8 +706,10 @@ public final class DeploymentCommandSourceEvidence {
             .map(points::path).flatMap(endpoints -> endpoints.findValues("credentialManaged").stream()).anyMatch(JsonNode::asBoolean);
         var selection = new StringBuilder();
         var selected = manifest.putArray("selectedAptRanges");
+        var required = manifest.putArray("requiredAptRanges");
         String worker = sources.get(DEPENDENCY_WORKER);
-        appendSelection(selection, selected, initialRanges, DEPENDENCY_WORKER, worker, PreparationSourceRange.aptDependencyWorker(worker));
+        selectAptSource(selection, selected, required, initialRanges, requiredRanges, DEPENDENCY_WORKER, worker,
+            PreparationSourceRange.aptDependencyWorker(worker));
         String runtime = sources.get(DEPENDENCY_RUNTIME);
         String shellAssignment = "\nBOOTSTRAP_SHELL = ";
         int shellStart = uniqueIndex(runtime, shellAssignment) + shellAssignment.length();
@@ -702,9 +720,35 @@ public final class DeploymentCommandSourceEvidence {
         sources.put(DEPENDENCY_SYSTEM_SHELL, shell);
         manifest.set("dependencySystemShell", pagedSource(DEPENDENCY_SYSTEM_SHELL, shell, List.of("wtl_apt() (", "wtl_apt_install_frozen() {"))
             .put("literalSourcePointer", DEPENDENCY_RUNTIME).put("literalOffset", shellStart).put("literalNext", shellEnd));
-        appendSelection(selection, selected, initialRanges, DEPENDENCY_SYSTEM_SHELL, shell, PreparationSourceRange.aptDependencyShell(shell, credentials));
+        selectAptSource(selection, selected, required, initialRanges, requiredRanges, DEPENDENCY_SYSTEM_SHELL, shell,
+            PreparationSourceRange.aptDependencyShell(shell, credentials));
         appendSelection(selection, selected, initialRanges, DEPENDENCY_RUNTIME, runtime, PreparationSourceRange.aptDependencyRuntime(runtime));
         putSelectionFrame(manifest, messages, snapshot, sources, DEPENDENCY_APT_SELECTION, "dependencyAptSelection", selection);
+    }
+
+    private static void selectAptSource(StringBuilder selection, ArrayNode selected, ArrayNode required,
+                                        Map<String, NavigableMap<Integer, Integer>> initialRanges,
+                                        Map<String, NavigableMap<Integer, Integer>> requiredRanges, String pointer,
+                                        String source, List<PreparationSourceRange> ranges) {
+        var inline = ranges.stream().filter(PreparationSourceRange::aptDependencyInitial).toList();
+        appendSelection(selection, selected, initialRanges, pointer, source, inline);
+        var missing = new TreeMap<Integer, Integer>();
+        for (var range : ranges)
+            for (var uncovered : DeploymentEvidencePages.missing(source, range.offset(), range.next(), initialRanges.get(pointer)))
+                DeploymentEvidencePages.remember(missing, (int) uncovered.get("offset"), (int) uncovered.get("next"));
+        if (!missing.isEmpty()) {
+            requiredRanges.put(pointer, missing);
+            missing.forEach((offset, next) -> appendReadCursors(required, pointer, source, offset, next, Integer.MAX_VALUE));
+        }
+    }
+
+    private static void appendReadCursors(ArrayNode output, String pointer, String source, int start, int end, int maximum) {
+        while (start < end && output.size() < maximum) {
+            int next = Math.min(end, start + MAX_READ_CHARACTERS);
+            if (next < end && Character.isSurrogatePair(source.charAt(next - 1), source.charAt(next))) next--;
+            output.addObject().put("pointer", pointer).put("offset", start).put("next", next);
+            start = next;
+        }
     }
 
     public Reader reader(int attempts) {
@@ -833,7 +877,7 @@ public final class DeploymentCommandSourceEvidence {
         /** A Responses rebase starts a new request with exact current evidence and no partial native history. */
         public void continueReview(List<AiMessage> messages, AiResponse response, List<AiToolResult> results) throws IOException {
             boolean responses = isResponses(response);
-            if (rebased || responses && (buildReview() || preparationReview() || continuedResponses)) {
+            if (rebased || responses && (buildReview() || preparationReview() || !requiredRanges.isEmpty() || continuedResponses)) {
                 priorEvidence.ifPresent(messages::remove);
                 int factsIndex = messages.lastIndexOf(DeploymentCommandSourceEvidence.this.messages.getLast());
                 if (factsIndex < 0) throw new IOException("Current review facts unavailable");
@@ -864,7 +908,11 @@ public final class DeploymentCommandSourceEvidence {
         }
 
         public boolean hasUnfulfilledApprovalEvidence() {
-            return correctionRequired || requested.entrySet().stream().anyMatch(entry ->
+            return correctionRequired || unconfirmed(requiredRanges) || unconfirmed(requested);
+        }
+
+        private boolean unconfirmed(Map<String, NavigableMap<Integer, Integer>> ranges) {
+            return ranges.entrySet().stream().anyMatch(entry ->
                 entry.getValue().entrySet().stream().anyMatch(range ->
                     !covers(confirmed.get(entry.getKey()), range.getKey(), range.getValue())));
         }
@@ -991,30 +1039,36 @@ public final class DeploymentCommandSourceEvidence {
                 retainedReads.add(read);
                 remainingPriorBytes -= size;
             }
-            if (!compacted) {
-                var deferred = header.putArray("previouslyDeferred");
-                requested.forEach((pointer, ranges) -> {
-                    var accounted = new TreeMap<>(confirmed.getOrDefault(pointer, java.util.Collections.emptyNavigableMap()));
-                    visible.getOrDefault(pointer, java.util.Collections.emptyNavigableMap())
-                        .forEach((start, end) -> DeploymentEvidencePages.remember(accounted, start, end));
-                    ranges.forEach((start, end) -> {
-                        int next = start;
-                        for (var span : accounted.headMap(end, false).entrySet()) {
-                            if (span.getValue() <= next) continue;
-                            if (span.getKey() > next && deferred.size() < MAX_READS_PER_RESPONSE) {
-                                deferred.addObject().put("pointer", pointer).put("offset", next).put("next", span.getKey());
-                            }
-                            next = Math.min(end, span.getValue());
-                        }
-                        if (next < end && deferred.size() < MAX_READS_PER_RESPONSE)
-                            deferred.addObject().put("pointer", pointer).put("offset", next).put("next", end);
-                    });
-                });
-                if (deferred.isEmpty()) header.remove("previouslyDeferred");
-            }
+            if (!compacted) appendUnconfirmed(header, "previouslyDeferred", requested, visible);
+            if (!requiredRanges.isEmpty()) appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
             header.put("omittedRanges", omitted);
             var message = new AiMessage(AiRole.USER, RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n" + body, List.of());
             return new RetainedFrame(message, visible, List.copyOf(retainedReads));
+        }
+
+        private void appendUnconfirmed(ObjectNode header, String name,
+                                       Map<String, NavigableMap<Integer, Integer>> ranges,
+                                       Map<String, NavigableMap<Integer, Integer>> visible) throws IOException {
+            var deferred = header.putArray(name);
+            for (var entry : ranges.entrySet()) {
+                if (deferred.size() >= MAX_READS_PER_RESPONSE) break;
+                String pointer = entry.getKey();
+                String source = sourceText(pointer);
+                var accounted = new TreeMap<>(confirmed.getOrDefault(pointer, Collections.emptyNavigableMap()));
+                visible.getOrDefault(pointer, Collections.emptyNavigableMap())
+                    .forEach((start, end) -> DeploymentEvidencePages.remember(accounted, start, end));
+                for (var requirement : entry.getValue().entrySet()) {
+                    if (deferred.size() >= MAX_READS_PER_RESPONSE) break;
+                    int next = requirement.getKey(), end = requirement.getValue();
+                    for (var span : accounted.headMap(end, false).entrySet()) {
+                        if (span.getValue() <= next) continue;
+                        appendReadCursors(deferred, pointer, source, next, span.getKey(), MAX_READS_PER_RESPONSE);
+                        next = Math.min(end, span.getValue());
+                    }
+                    appendReadCursors(deferred, pointer, source, next, end, MAX_READS_PER_RESPONSE);
+                }
+            }
+            if (deferred.isEmpty()) header.remove(name);
         }
 
         private void adoptRetainedFrame(RetainedFrame frame) {
@@ -1093,7 +1147,7 @@ public final class DeploymentCommandSourceEvidence {
         ((ObjectNode) schema.at("/properties/snapshotSha256")).put("minLength", 64).put("maxLength", 64);
         ((ObjectNode) schema.at("/properties/pointer")).put("minLength", 0).put("maxLength", 512);
         ((ObjectNode) schema.at("/properties/offset")).put("maximum", 1048576);
-        ((ObjectNode) schema.at("/properties/limit")).put("maximum", 8000);
+        ((ObjectNode) schema.at("/properties/limit")).put("maximum", MAX_READ_CHARACTERS);
         return schema;
     }
 

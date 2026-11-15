@@ -11,6 +11,13 @@ record PreparationSourceRange(String section, int offset, int next) {
     private static final Pattern PYTHON_SECTION = Pattern.compile("(?m)^(?:@|def |class |if __name__ == )");
     private static final Set<String> NODE_HELPER_INITIAL = Set.of("selectedRelease", "pinnedMirrorRuntime", "def checksum_text(");
     private static final Set<String> NODE_TRANSFER_INITIAL = Set.of("mirrorRouteAdmission", "mirrorTLS", "mirrorDigest");
+    private static final Set<String> APT_DEPENDENCY_WORKER_INITIAL = Set.of(
+        "def dependency_manifest(", "def dependency_open_core_events(", "def dependency_worker(",
+        "def dependency_supervise(", "def dependency_stop_owned(", "def dependency_validate_apt(",
+        "def dependency_transaction(", "def dependency_main(");
+    private static final Set<String> APT_DEPENDENCY_SHELL_INITIAL = Set.of(
+        "aptGuardedRepositoryAdmission", "aptSignedUpdateToFrozenInstall", "aptDispatch",
+        "aptSecurityAndFrozenTransaction");
 
     static List<PreparationSourceRange> helper(String helper, String ecosystem, boolean diagnosed) throws IOException {
         var ranges = new ArrayList<PreparationSourceRange>();
@@ -348,6 +355,11 @@ record PreparationSourceRange(String section, int offset, int next) {
             between(shell, "aptUpdateAndAuthentication", "wtl_apt_update() {\n", "\nwtl_apt_resolution_missing() {"),
             between(shell, "aptResolveFrozen", "wtl_apt_resolve_frozen() {\n", "\nwtl_apt_configure_query() {"),
             new PreparationSourceRange("aptSecurityAndFrozenTransaction", offset(shell, "wtl_apt_trusted_path() {\n"), shell.length()));
+    }
+
+    static boolean aptDependencyInitial(PreparationSourceRange range) {
+        return APT_DEPENDENCY_WORKER_INITIAL.contains(range.section())
+            || APT_DEPENDENCY_SHELL_INITIAL.contains(range.section());
     }
 
     static boolean buildsFromSource(String ecosystem) {

@@ -1102,7 +1102,15 @@ class DeploymentToolchainReviewEvidenceTest {
                     actualShell.path("literalNext").asInt())).textValue());
                 assertTrue(shell.contains("wtl_apt_install_frozen() {"));
                 var selected = manifest.path("selectedAptRanges");
-                assertTrue(selected.findValuesAsText("section").contains("dependencyAptAuthentication"));
+                var authentication = PreparationSourceRange.aptDependencyWorker(worker).stream()
+                    .filter(range -> range.section().equals("dependencyAptAuthentication")).findFirst().orElseThrow();
+                var requiredCoverage = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+                for (var range : manifest.path("requiredAptRanges"))
+                    if (range.path("pointer").equals(descriptor.path("sourcePointer")))
+                        addR24Range(requiredCoverage, range.path("pointer").asText(), range.path("offset").asInt(), range.path("next").asInt());
+                var requiredAuthentication = requiredCoverage.get(descriptor.path("sourcePointer").asText()).floorEntry(authentication.offset());
+                assertNotNull(requiredAuthentication);
+                assertTrue(requiredAuthentication.getValue() >= authentication.next());
                 assertTrue(selected.findValuesAsText("section").contains("def dependency_supervise("));
                 assertTrue(selected.findValuesAsText("section").contains("aptSignedUpdateToFrozenInstall"));
                 assertTrue(selected.findValuesAsText("section").contains("aptSecurityAndFrozenTransaction"));
@@ -1175,6 +1183,14 @@ class DeploymentToolchainReviewEvidenceTest {
                     assertEquals(worker.substring(offset, next), selected.substring(start, start + next - offset));
                 addR24Range(coverage, pointer, offset, next);
             }
+            var required = manifest.path("requiredAptRanges");
+            assertTrue(required.isArray() && !required.isEmpty());
+            var allAptEvidence = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            coverage.forEach((pointer, spans) -> allAptEvidence.put(pointer, new TreeMap<>(spans)));
+            for (var section : required)
+                addR24Range(allAptEvidence, section.path("pointer").asText(), section.path("offset").asInt(), section.path("next").asInt());
+            var supervisor = PreparationSourceRange.python(worker, "def dependency_supervise(");
+            assertTrue(coverage.get(workerPointer).floorEntry(supervisor.offset()).getValue() >= supervisor.next());
             for (String function : List.of("dependency_bytes", "dependency_registered", "dependency_apt_hook_owners",
                 "dependency_apt_binaries", "dependency_apt_options", "dependency_validate_dpkg", "dependency_validate_apt",
                 "dependency_supervise", "dependency_static_identity", "dependency_stop_owned", "dependency_manifest",
@@ -1183,22 +1199,24 @@ class DeploymentToolchainReviewEvidenceTest {
                 String anchor = "def " + function + "(";
                 var body = PreparationSourceRange.python(worker, anchor);
                 assertEquals(body.offset(), workerDescriptor.path("locations").path(anchor).asInt(-1));
-                var span = coverage.get(workerPointer).floorEntry(body.offset());
+                var span = allAptEvidence.get(workerPointer).floorEntry(body.offset());
                 assertNotNull(span, function);
                 assertTrue(span.getValue() >= body.next(), function);
             }
             for (String marker : List.of("PRE_ACK_RUNNING_IDENTITY", "proof = dependency_completion_proof(",
                 "failureCleanup", "process.wait(timeout=1)", "dependency_write(base / 'receipt.json'"))
                 assertTrue(selected.contains(marker), marker);
-            assertTrue(selected.contains("HOOK_OWNERS = frozenset("));
             String owners = "\nHOOK_OWNERS = ";
             int ownerOffset = worker.indexOf(owners);
             assertTrue(ownerOffset >= 0);
             assertEquals(ownerOffset, worker.lastIndexOf(owners));
             assertEquals(ownerOffset, workerDescriptor.path("locations").path(owners).asInt(-1));
-            assertTrue(selected.contains("UBUNTU_COMMAND_NOT_FOUND_HOOK_OWNERS = "));
-            assertTrue(selected.contains("APT_BINARY_PATHS = "));
-            assertTrue(selected.contains("dependency_validate_dpkg()"));
+            for (String anchor : List.of("HOOK_OWNERS = frozenset(", "UBUNTU_COMMAND_NOT_FOUND_HOOK_OWNERS = ",
+                    "APT_BINARY_PATHS = ", "def dependency_validate_dpkg()")) {
+                int offset = worker.indexOf(anchor);
+                assertTrue(offset >= 0, anchor);
+                assertTrue(allAptEvidence.get(workerPointer).floorEntry(offset).getValue() >= offset + anchor.length(), anchor);
+            }
             var sources = r24Sources(initial, projected, fixture);
             addReplaySource(sources, workerDescriptor, worker);
             var systemShell = manifest.path("dependencySystemShell");
@@ -1223,7 +1241,7 @@ class DeploymentToolchainReviewEvidenceTest {
             reader.continueReview(messages, reads, results);
             byte[] encoded = wireWithR24FactsSize(copy(initial, messages, cap), factsSize, cap, continuations);
             seedInlineSourceRanges(projected, coverage);
-            assertR24VisiblePages(encoded, snapshot, calls, false, coverage, sources);
+            assertR24VisiblePages(encoded, snapshot, calls, true, coverage, sources);
             var requested = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
             collectRequestedCoverage(requested, calls, sources);
             assertR24Coverage(requested, coverage);
@@ -1273,9 +1291,84 @@ class DeploymentToolchainReviewEvidenceTest {
             Map.of("maximumRequestBytes", Integer.toString(bound), "encodedRequestBytes", Integer.toString(encoded)), Optional.empty());
     }
 
+    @Test
+    void aptRequiredEvidenceMustReachTheIndependentReviewerBeforeApproval() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture();
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = request("dependencies", fixture)) {
+            var action = intent("dependencies", fixture, command);
+            var facts = new LinkedHashMap<String, Object>(
+                new DeploymentFixedCommandProtocol(fixture.context).inspect(action, command, fixture.layout, fixture.task));
+            var effects = new LinkedHashMap<String, Object>(assisted.scope.effectFacts(action, fixture.task));
+            effects.put("currentNativeBuildPrerequisites", Map.of(
+                "observedGap", Map.of("nativeBuildPrerequisitesMissing", true, "packageManager", "apt", "distro", "UBUNTU"),
+                "currentToolchainPlan", Map.of("runtimeKind", "RustService"), "fixedTransaction", facts.get("toolchainDependencies")));
+            facts.put("currentCommandEvidence", effects);
+            var model = new DeploymentAiJson(assisted.context);
+            reply(fixture, verdict("apt-early-approval", "APPROVE"));
+            assertThrows(IOException.class, () -> model.askCommand("Inspect exact current request", facts,
+                fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed, action, command));
+            assertEquals(0, assisted.hosts.get());
+
+            var initial = fixture.model.requests.getFirst();
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), action, command,
+                fixture.layout).orElseThrow();
+            var manifest = JSON.readTree(initial.messages().getLast().text()).path(PHASE);
+            var sources = new LinkedHashMap<Integer, Map.Entry<String, String>>();
+            for (String source : List.of("dependencyWorker", "dependencySystemShell")) {
+                var descriptor = manifest.path(source);
+                String text = collect(evidence, descriptor, PHASE);
+                assertIdentity(descriptor, text);
+                addReplaySource(sources, descriptor, text);
+            }
+            var missing = manifest.path("requiredAptRanges");
+            assertTrue(missing.isArray() && !missing.isEmpty());
+            String snapshot = manifest.path("snapshotSha256").asText();
+            int originalCap = 116007;
+            int recordedFactsCharacters = 43294;
+            int fixed = wireWithR24FactsSize(initial, recordedFactsCharacters, originalCap, Map.of()).length;
+            var visible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            int largest = fixed;
+            int pages = 0;
+            for (var required : missing) {
+                String pointer = required.path("pointer").asText();
+                int next = required.path("next").asInt();
+                for (int offset = required.path("offset").asInt(); offset < next; offset += 4000) {
+                    var call = read("apt-required-" + pages++, snapshot, pointer, offset, Math.min(4000, next - offset));
+                    fixture.model.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(mockResponses(call)), Optional.empty()));
+                }
+            }
+            reply(fixture, verdict("apt-all-required-delivered", "APPROVE"));
+            assertEquals("APPROVE", model.askCommand("Inspect exact current request", facts, fixture.model.configurationRevision,
+                fixture.task, DeploymentReviewDecision::malformed, action, command).path("decision").asText());
+            assertEquals(pages + 2, fixture.model.requests.size());
+            for (var request : fixture.model.requests.subList(2, fixture.model.requests.size())) {
+                byte[] encoded = wireWithR24FactsSize(request, recordedFactsCharacters, originalCap, Map.of());
+                largest = Math.max(largest, encoded.length);
+                String frame = request.messages().get(request.messages().size() - 2).text();
+                int separator = frame.indexOf('\n', frame.indexOf('\n') + 1);
+                var header = JSON.readTree(frame.substring(frame.indexOf('\n') + 1, separator));
+                int start = separator + 1;
+                for (var range : header.path("ranges")) {
+                    int end = start + range.path("next").asInt() - range.path("offset").asInt();
+                    assertR24SourceRange(visible, sources, range.path("pointer").asText(), range, frame.substring(start, end));
+                    start = end;
+                }
+                assertEquals(frame.length(), start);
+            }
+            for (var required : missing) {
+                var observed = visible.get(required.path("pointer").asText()).floorEntry(required.path("offset").asInt());
+                assertNotNull(observed);
+                assertTrue(observed.getValue() >= required.path("next").asInt(), required::toString);
+            }
+            assertEquals(0, assisted.hosts.get());
+            System.out.printf("R35_APT_REQUIRED_EVIDENCE fixed=%d largest=%d originalCap=%d pages=%d%n", fixed, largest, originalCap, pages);
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"task-board", "file-transfer", "asset-lending", "log-analyzer", "binary-inspector"})
-    void r34TerminalWindowHypothesesPreserveOriginalEvidenceOrFailClosed(String project) throws Exception {
+    void r34TerminalWindowHypothesesFitOriginalCeilingsAndGateDeferredSource(String project) throws Exception {
         try (var fixture = new MirroredInstallerTestFixture();
              var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
              var command = switch (project) {
@@ -1348,27 +1441,23 @@ class DeploymentToolchainReviewEvidenceTest {
             reader.continueReview(messages, requested, results);
             int full = wire(copy(initial, messages, 1048576), 1048576, Map.of()).length;
             boolean packed = full <= bound || reader.repackBeforeSend(messages, exactBudgetProblem(full, bound));
-            if (packed) {
-                byte[] encoded = wire(copy(initial, messages, bound), bound, Map.of());
-                var confirmed = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
-                seedInlineSourceRanges(current, confirmed);
-                var frame = current.at("/" + phase + "/frames");
-                for (var inline : frame)
-                    addR24Range(confirmed, inline.path("sourcePointer").asText(), 0, inline.path("characters").asInt());
-                for (String name : List.of("selectedRuntimeRanges", "selectedAptRanges"))
-                    for (var range : file.path(name))
-                        addR24Range(confirmed, range.path("sourcePointer").asText(), range.path("offset").asInt(), range.path("next").asInt());
-                assertR24VisiblePages(encoded, snapshot, calls, true, confirmed, sources);
-                reader.read(response(Optional.empty(), verdict("r35-terminal-approval", "APPROVE")));
-                assertEquals(messages.get(messages.size() - 2).text().contains("\"requestedNext\""),
-                    reader.hasUnfulfilledApprovalEvidence(), project);
-                System.out.printf("R35_TERMINAL_SHAPE project=%s full=%d packed=%d cap=%d deferred=%s%n",
-                    project, full, encoded.length, bound, reader.hasUnfulfilledApprovalEvidence());
-            } else {
-                assertTrue(reader.hasUnfulfilledApprovalEvidence());
-                assertThrows(ModelRequestBudgetException.class, () -> wire(copy(initial, messages, bound), bound, Map.of()));
-                System.out.printf("R35_TERMINAL_SHAPE project=%s full=%d cap=%d fit=false%n", project, full, bound);
-            }
+            assertTrue(packed, () -> project + " cannot fit its observed pre-send ceiling: " + full + " > " + bound);
+            byte[] encoded = wire(copy(initial, messages, bound), bound, Map.of());
+            var confirmed = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            seedInlineSourceRanges(current, confirmed);
+            var frame = current.at("/" + phase + "/frames");
+            for (var inline : frame)
+                addR24Range(confirmed, inline.path("sourcePointer").asText(), 0, inline.path("characters").asInt());
+            for (String name : List.of("selectedRuntimeRanges", "selectedAptRanges"))
+                for (var range : file.path(name))
+                    addR24Range(confirmed, range.path("sourcePointer").asText(), range.path("offset").asInt(), range.path("next").asInt());
+            assertR24VisiblePages(encoded, snapshot, calls, true, confirmed, sources);
+            reader.read(response(Optional.empty(), verdict("r35-terminal-approval", "APPROVE")));
+            String retained = messages.get(messages.size() - 2).text();
+            assertEquals(retained.contains("\"requestedNext\"") || retained.contains("\"pendingRequired\""),
+                reader.hasUnfulfilledApprovalEvidence(), project);
+            System.out.printf("R35_TERMINAL_SHAPE project=%s full=%d packed=%d cap=%d deferred=%s%n",
+                project, full, encoded.length, bound, reader.hasUnfulfilledApprovalEvidence());
             assertEquals(0, assisted.hosts.get());
         }
     }
