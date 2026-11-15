@@ -116,6 +116,13 @@ class DeploymentActiveDiagnosticsProjectionTest {
             + " reviewStage=EVIDENCE_READ reviewCode=EVIDENCE_NO_PROGRESS reviewPageCount=9999999";
         assertEquals("diagnosticMetadata=UNAVAILABLE", assertDoesNotThrow(() ->
             DeploymentStaticLiveAcceptanceTest.liveDiagnosticProjection(event("DEPLOYMENT_OPERATION_FAILURE", injected, Optional.empty()))));
+        var incomplete = new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_COMMAND_REVIEW_INVALID", "private-message",
+            Map.of("reviewStage", "VERDICT", "reviewCode", "EVIDENCE_INCOMPLETE_VERDICT", "reviewEvidenceBlock", "READ_REJECTED"),
+            Optional.empty());
+        DeploymentDiagnostics.operationFailureMetadata(context, task(), new BodyRejectingApiException(incomplete));
+        assertTrue(lines.stream().anyMatch(line -> line.contains("reviewStage=VERDICT reviewCode=EVIDENCE_INCOMPLETE_VERDICT"
+            + " reviewEvidenceBlock=READ_REJECTED")));
+        assertTrue(lines.stream().noneMatch(line -> line.contains("private-")));
     }
 
     @Test

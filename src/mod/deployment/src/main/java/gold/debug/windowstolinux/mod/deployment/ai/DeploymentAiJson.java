@@ -32,6 +32,11 @@ public final class DeploymentAiJson {
         + "Text alone is not a decision or execution permission; no action was authorized or executed by that response. "
         + "This is the final submission opportunity for this request.";
 
+    private static final String REVIEW_VERDICT_ONLY = "Evidence reads repeated. Independently assess these exact visible facts. "
+        + "Submit APPROVE or DENY once. Deny when evidence is insufficient or effects are unsafe.";
+
+    private enum SubmissionCorrection { MISSING_NATIVE_CALL, EVIDENCE_NO_PROGRESS }
+
     private final ModContext context;
 
     private final DeploymentConfig.Ai output;
@@ -187,7 +192,7 @@ public final class DeploymentAiJson {
         if (evidence.isPresent()) messages.addAll(evidence.orElseThrow().messages());
         else messages.add(new AiMessage(AiRole.USER, current, List.of()));
         var evidenceReader = evidence.map(value -> value.reader(output.execution().standaloneToolAttempts()));
-        boolean missingNativeSubmission = false;
+        SubmissionCorrection correction = null;
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
                 if (conversation != null) messages = new ArrayList<>(conversation.messages(current, revision, task));
@@ -197,15 +202,26 @@ public final class DeploymentAiJson {
                 throw new IOException("Approval conversation history rejected", rejected);
             }
             // Rebuilt conversation history must receive this request-local correction without retaining it for another command.
-            if (missingNativeSubmission) {
+            if (correction == SubmissionCorrection.MISSING_NATIVE_CALL) {
                 int position = evidence.isPresent() ? 1 : messages.size() - 1;
                 messages.add(position, new AiMessage(AiRole.USER, MISSING_NATIVE_SUBMISSION, List.of()));
-                missingNativeSubmission = false;
             }
-            var response = requestSubmission(purpose, messages, definitions, revision, task, bound > 48000, evidenceReader);
+            AiResponse response;
+            try {
+                response = correction == SubmissionCorrection.EVIDENCE_NO_PROGRESS
+                    ? requestFinalVerdict(messages, definition, revision, task, evidenceReader.orElseThrow())
+                    : requestSubmission(purpose, messages, definitions, revision, task, bound > 48000, evidenceReader);
+            } catch (DeploymentCommandReviewModel.Failure stalled) {
+                if (purpose != AiPurpose.APPROVAL || attempt != 0 || !stalled.evidenceReadMadeNoProgress()
+                    || evidenceReader.isEmpty() || evidenceReader.orElseThrow().hasUnfulfilledApprovalEvidence()
+                    || Thread.currentThread().isInterrupted() || task.cancelToken().requested()) throw stalled;
+                correction = SubmissionCorrection.EVIDENCE_NO_PROGRESS;
+                recordSubmissionCorrection(task, correction);
+                continue;
+            }
             if (purpose == AiPurpose.APPROVAL && attempt == 0 && response.finishReason().equals("stop") && response.toolCalls().isEmpty()) {
-                recordMissingSubmissionCorrection(task);
-                missingNativeSubmission = true;
+                correction = SubmissionCorrection.MISSING_NATIVE_CALL;
+                recordSubmissionCorrection(task, correction);
                 continue;
             }
             if (!response.finishReason().equals("tool_calls") || response.toolCalls().isEmpty())
@@ -231,10 +247,12 @@ public final class DeploymentAiJson {
             } catch (IllegalArgumentException rejected) {
                 invalid = rejected.getMessage();
             }
-            if (invalid == null && result.path("decision").asText().equals("APPROVE")
-                && evidenceReader.filter(DeploymentCommandSourceEvidence.Reader::hasUnfulfilledApprovalEvidence).isPresent())
-                throw new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.VERDICT, "submit_result",
-                    "EVIDENCE_INCOMPLETE_VERDICT", new IOException("Current review source is incomplete"));
+            if (invalid == null && result.path("decision").asText().equals("APPROVE")) {
+                var blocker = evidenceReader.flatMap(DeploymentCommandSourceEvidence.Reader::approvalEvidenceBlock);
+                if (blocker.isPresent())
+                    throw new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.VERDICT, "submit_result",
+                        "EVIDENCE_INCOMPLETE_VERDICT", new IOException("Current review source is incomplete"), blocker.orElseThrow());
+            }
             var receipt = new AiToolResult(call.id(), invalid == null
                 ? "REVIEW_RECORDED: model verdict only; no execution grant. The next command requires a new complete independent review."
                 : "SUBMISSION_REJECTED: " + invalid.substring(0, Math.min(512, invalid.length())), invalid != null);
@@ -285,11 +303,24 @@ public final class DeploymentAiJson {
         }
     }
 
-    private void recordMissingSubmissionCorrection(TaskContext task) {
+    private AiResponse requestFinalVerdict(List<AiMessage> accepted, AiToolDefinition definition, String revision,
+                                           TaskContext task, DeploymentCommandSourceEvidence.Reader reader)
+        throws ApiException, CapabilityOutcomeException, IOException {
+        var messages = new ArrayList<>(accepted);
+        var originalPolicy = messages.getFirst();
+        messages.set(0, new AiMessage(AiRole.SYSTEM, originalPolicy.text() + "\n" + REVIEW_VERDICT_ONLY, List.of()));
+        var response = call(AiPurpose.APPROVAL, messages, List.of(definition), revision, task, true, Optional.of(definition.name()), 0);
+        if (response.finishReason().equals("tool_calls") && response.toolCalls().size() == 1
+            && response.toolCalls().getFirst().name().equals(definition.name())) reader.read(response);
+        return response;
+    }
+
+    private void recordSubmissionCorrection(TaskContext task, SubmissionCorrection correction) {
         try {
             var target = context.logs().register(new LogCategory("deployment", "Deployment", Optional.of("deployment_log")));
             context.logs().write(target, new LogEvent(LogLevel.WARN, "DEPLOYMENT_AI_SUBMISSION_CORRECTION", "DEPLOYMENT_AI_SUBMISSION_CORRECTION",
-                Optional.of("{\"purpose\":\"APPROVAL\",\"reason\":\"MISSING_NATIVE_CALL\",\"rejectedSubmission\":\"1\",\"nextSubmission\":\"2\",\"maximumSubmissions\":\"2\"}"),
+                Optional.of("{\"purpose\":\"APPROVAL\",\"reason\":\"" + correction.name()
+                    + "\",\"rejectedSubmission\":\"1\",\"nextSubmission\":\"2\",\"maximumSubmissions\":\"2\"}"),
                 Optional.of(task.id()), Optional.of(UUID.randomUUID()), Optional.empty()));
         } catch (ApiException unavailable) {
             // Logging failure cannot convert a format correction into authorization or change the original model result.
@@ -305,12 +336,18 @@ public final class DeploymentAiJson {
     private AiResponse call(AiPurpose purpose, List<AiMessage> messages, List<AiToolDefinition> tools,
                             String revision, TaskContext task, boolean extended, Optional<String> requiredTool)
         throws ApiException, CapabilityOutcomeException {
+        return call(purpose, messages, tools, revision, task, extended, requiredTool, generationRecoveryAttempts);
+    }
+
+    private AiResponse call(AiPurpose purpose, List<AiMessage> messages, List<AiToolDefinition> tools,
+                            String revision, TaskContext task, boolean extended, Optional<String> requiredTool, int recoveryAttempts)
+        throws ApiException, CapabilityOutcomeException {
         int tokens = purpose == AiPurpose.APPROVAL ? output.approvalMaxOutputTokens()
             : extended ? output.extendedDeploymentMaxOutputTokens() : output.deploymentMaxOutputTokens();
         int seconds = purpose == AiPurpose.APPROVAL ? output.requests().approvalTimeoutSeconds()
             : extended ? output.requests().extendedTimeoutSeconds() : output.requests().deploymentTimeoutSeconds();
         var request = new AiRequest(purpose, messages, tokens, Duration.ofSeconds(seconds), false, tools)
-            .withGenerationRecovery(generationRecoveryAttempts);
+            .withGenerationRecovery(recoveryAttempts);
         if (requiredTool.isPresent()) request = request.withRequiredTool(requiredTool.orElseThrow());
         var metrics = new DeploymentAiCallMetrics(context, task, "native_tools");
         var result = metrics.call(request, revision);

@@ -6727,7 +6727,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         "exceptionType=(" + LIVE_DIAGNOSTIC_TYPE + ")(?: causeType=(" + LIVE_DIAGNOSTIC_TYPE + "))?"
             + "(?: problemCode=([A-Z_]{1,40})(?: problemEvent=((?:SFTP|SSH|DEPLOYMENT|TASK|FILE)_[A-Z0-9_]{1,96}))?)?"
             + "( reviewStage=[A-Z_]{1,32} reviewCode=[A-Z_]{1,40}(?: reviewPageCount=[0-9]{1,7})?"
-            + "(?: reviewNewCharacters=[0-9]{1,7})?(?: reviewRepeatedBatches=[0-9]{1,7})?)?");
+            + "(?: reviewNewCharacters=[0-9]{1,7})?(?: reviewRepeatedBatches=[0-9]{1,7})?"
+            + "(?: reviewEvidenceBlock=[A-Z_]{1,32})?)?");
 
     static String liveDiagnosticProjection(gold.debug.windowstolinux.appapi.task.log.LogEvent event)
         throws com.fasterxml.jackson.core.JsonProcessingException {

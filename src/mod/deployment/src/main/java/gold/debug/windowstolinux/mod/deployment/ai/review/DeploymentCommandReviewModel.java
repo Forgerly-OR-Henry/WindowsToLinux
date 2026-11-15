@@ -30,6 +30,8 @@ public interface DeploymentCommandReviewModel {
 
         private final Map<String, String> counts;
 
+        private final String evidenceBlock;
+
         public Failure(FailureStage stage, String tool, Throwable cause) {
             this(stage, tool, "REVIEW_EXCEPTION", cause);
         }
@@ -38,8 +40,17 @@ public interface DeploymentCommandReviewModel {
             this(stage, tool, code, cause, -1, -1, -1);
         }
 
+        public Failure(FailureStage stage, String tool, String code, Throwable cause, String evidenceBlock) {
+            this(stage, tool, code, cause, -1, -1, -1, evidenceBlock);
+        }
+
         public Failure(FailureStage stage, String tool, String code, Throwable cause,
                        int pageCount, int newlyVisibleCharacters, int repeatedBatches) {
+            this(stage, tool, code, cause, pageCount, newlyVisibleCharacters, repeatedBatches, "");
+        }
+
+        private Failure(FailureStage stage, String tool, String code, Throwable cause,
+                       int pageCount, int newlyVisibleCharacters, int repeatedBatches, String evidenceBlock) {
             super("Independent command review failed at a protected boundary", cause);
             this.stage = Objects.requireNonNull(stage);
             this.tool = safeTools().contains(tool == null ? "" : tool) ? tool : "";
@@ -49,6 +60,11 @@ public interface DeploymentCommandReviewModel {
             retainCount(observed, "reviewNewCharacters", Integer.toString(newlyVisibleCharacters));
             retainCount(observed, "reviewRepeatedBatches", Integer.toString(repeatedBatches));
             this.counts = Map.copyOf(observed);
+            this.evidenceBlock = safeEvidenceBlock(evidenceBlock) ? evidenceBlock : "";
+        }
+
+        public boolean evidenceReadMadeNoProgress() {
+            return stage == FailureStage.EVIDENCE_READ && tool.equals("evidence") && code.equals("EVIDENCE_NO_PROGRESS");
         }
     }
 
@@ -69,6 +85,7 @@ public interface DeploymentCommandReviewModel {
         values.put("reviewFailureType", type);
         if (boundary != null && !boundary.tool.isEmpty()) values.put("reviewTool", boundary.tool);
         if (boundary != null) values.putAll(boundary.counts);
+        if (boundary != null && !boundary.evidenceBlock.isEmpty()) values.put("reviewEvidenceBlock", boundary.evidenceBlock);
         return Map.copyOf(values);
     }
 
@@ -88,7 +105,14 @@ public interface DeploymentCommandReviewModel {
             for (String field : List.of("reviewPageCount", "reviewNewCharacters", "reviewRepeatedBatches"))
                 retainCount(safe, field, details.get(field));
         }
+        String evidenceBlock = details.get("reviewEvidenceBlock");
+        if ("VERDICT".equals(stage) && "EVIDENCE_INCOMPLETE_VERDICT".equals(code) && safeEvidenceBlock(evidenceBlock))
+            safe.put("reviewEvidenceBlock", evidenceBlock);
         return Map.copyOf(safe);
+    }
+
+    private static boolean safeEvidenceBlock(String value) {
+        return value != null && Set.of("READ_REJECTED", "REQUIRED_SOURCE_MISSING", "REQUESTED_SOURCE_MISSING").contains(value);
     }
 
     private static void retainCount(Map<String, String> safe, String field, String value) {
@@ -105,7 +129,7 @@ public interface DeploymentCommandReviewModel {
             && !(stage.equals("VERDICT") && code.equals("EVIDENCE_INCOMPLETE_VERDICT")))
             return "";
         var result = new StringBuilder(" reviewStage=").append(stage).append(" reviewCode=").append(code);
-        for (String field : List.of("reviewPageCount", "reviewNewCharacters", "reviewRepeatedBatches"))
+        for (String field : List.of("reviewPageCount", "reviewNewCharacters", "reviewRepeatedBatches", "reviewEvidenceBlock"))
             if (safe.containsKey(field)) result.append(' ').append(field).append('=').append(safe.get(field));
         return result.toString();
     }

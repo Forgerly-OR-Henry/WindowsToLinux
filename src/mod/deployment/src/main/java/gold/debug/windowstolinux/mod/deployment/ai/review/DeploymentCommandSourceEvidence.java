@@ -47,6 +47,11 @@ public final class DeploymentCommandSourceEvidence {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String PROJECTION = "toolchainReviewEvidence";
     private static final String INSTALLER = "installerReviewEvidence";
+    private static final String INSTALLER_SELECTION = "/" + INSTALLER + "/installerSelection";
+    private static final String INSTALLER_SOURCES = "/completeExecutableInput/sources/";
+    private static final String INSTALLER_HELPER = INSTALLER_SOURCES + "managedHelper";
+    private static final String INSTALLER_BUILD_ENTRY = INSTALLER_SOURCES + "buildEntry";
+    private static final String INSTALLER_PROBE = "    probe)\n        [ \"$#\" -eq 0 ] || reject probe-arguments\n";
     private static final String MIRROR_RUNTIME = "/mirrorTransport/runtimeSource";
     private static final String INSTALLED_HELPER_SOURCE = "/" + PROJECTION + "/installedHelperSource";
     private static final String BINDING_SELECTION = "/" + PROJECTION + "/bindingSelection";
@@ -125,6 +130,13 @@ public final class DeploymentCommandSourceEvidence {
         The executable stdin contains the complete inline dependencyWorker and its exact JSON-encoded copy. When mirrored, dependencyRuntimeSelection supplies exact package-manager entrypoints, and selectedRuntimeRanges identifies their source coordinates. Inspect dependencyWorker for protected authentication, source and package choices, bounded worker ownership and receipts. Follow reached package-manager and mirror behavior using those excerpts and read any needed missing ranges. Shared package repository, dependency and registry code outside this transaction does not establish safety or change the original effects.
         """;
 
+    private static final String INSTALLER_INSTRUCTION = """
+        Review the exact installer, original authority, targets, package transaction and actual reached effects. completeExecutableInput preserves the full stdin in ordered segments. LITERAL copies text; SHELL_SINGLE_QUOTE surrounds the named complete source with apostrophes and escapes embedded apostrophes. The product compares the reconstructed UTF-8 bytes with the actual request stdin.
+        installerSelection contains original helper startup, ownership checks and shell probe dispatch that the installer invokes after publication. It also includes the exact embedded build-entry payload. selectedInstallerRanges maps that text to original source: startCharacter counts from the frame header end, and offset through next are UTF-16 coordinates.
+        All original sources remain pageable from completeExecutableInput.sources. For unresolved source, copy installerReviewEvidence.readExample.snapshotSha256 exactly and set pointer to the source descriptor's sourcePointer, with a UTF-16 offset and limit from 1 through 8000. The example locates the inline shell probe. The executable and source SHA256 values identify their bytes. Read up to eight ranges per response and use the JSON header and exact text in range order.
+        Submit a fresh native submit_result alone. Deny unsafe effects or insufficient evidence.
+        """;
+
     private static final String DEPENDENCY_APT_INSTRUCTION = """
         Restore exactAction and completeExecutableInput from ordered segments. LITERAL copies text; SOURCE_TEXT copies the reference; SHELL_SINGLE_QUOTE applies Bash single quoting; JSON_STRING encodes source as a JSON string with double quotes. Review exact arguments, resource limits, targets, original authority, and effects independently. Digests identify bytes and grant no permission.
         A prior probe observed APT. selectedAptRanges maps exact text in dependencyAptSelection to original source. Follow the complete dependency_supervise implementation, its READY/ACK and ownership checks, held cgroup events and exact stop before the receipt. The decoded dependencySystemShell is the shell invoked by mirror_system_command. Review APT/dpkg admission, registered hooks and frozen installation. The protected OS package database is a trust assumption. Authenticated packages can still run maintainer scripts and triggers in this root transaction. The worker selects the current OS again. Read required alternate paths from the original sources.
@@ -187,7 +199,7 @@ public final class DeploymentCommandSourceEvidence {
     public static Optional<DeploymentCommandSourceEvidence> project(String original, ActionIntent intent, CommandRequest request,
                                                                       DeploymentRemoteLayout layout) throws IOException {
         String operation = intent.semantics().orElseThrow().operation();
-        if (INSTALLERS.contains(operation)) return Optional.of(installer(original, intent, request));
+        if (INSTALLERS.contains(operation)) return Optional.of(installer(original, intent, request, layout));
         if (BUILD.equals(operation)) return build(original, intent, request);
         if (!OPERATIONS.contains(operation)) return Optional.empty();
         var mirror = DeploymentMirrorTasks.preparation(request.script());
@@ -604,15 +616,20 @@ public final class DeploymentCommandSourceEvidence {
         }
     }
 
-    private static DeploymentCommandSourceEvidence installer(String original, ActionIntent intent, CommandRequest request) throws IOException {
+    private static DeploymentCommandSourceEvidence installer(String original, ActionIntent intent, CommandRequest request,
+                                                              DeploymentRemoteLayout layout) throws IOException {
         var current = (ObjectNode) JSON.readTree(original);
         var executable = current.path("completeExecutableInput");
         String reconstructed = DeploymentInstallerEvidence.reconstruct(executable);
+        String helper = requiredText(executable.path("sources"), "managedHelper");
+        String buildEntry = requiredText(executable.path("sources"), "buildEntry");
         byte[] stdin = request.stdin();
         try {
             if (!intent.exactAction().equals(requiredText(current, "exactAction"))
                 || !intent.semantics().orElseThrow().operation().equals(requiredText(current, "operation"))
-                || current.has(INSTALLER) || !Arrays.equals(stdin, reconstructed.getBytes(StandardCharsets.UTF_8)))
+                || current.has(INSTALLER) || !Arrays.equals(stdin, reconstructed.getBytes(StandardCharsets.UTF_8))
+                || !helper.equals(DeploymentManagedHelperBundle.renderScript(layout))
+                || !buildEntry.equals(DeploymentManagedHelperBundle.renderBuildEntry(layout)))
                 throw new IOException("Original installer evidence changed before projection");
             DeploymentInstallerEvidence.verify(executable, reconstructed);
         } finally {
@@ -625,22 +642,42 @@ public final class DeploymentCommandSourceEvidence {
         });
         projected.set("completeExecutableInput", executable.deepCopy());
         String snapshot = sha256(original);
-        projected.putObject(INSTALLER).put("snapshotSha256", snapshot);
+        var manifest = projected.putObject(INSTALLER).put("snapshotSha256", snapshot);
         var bodies = new LinkedHashMap<String, String>();
         var sources = (ObjectNode) projected.at("/completeExecutableInput/sources");
         executable.path("sources").fields().forEachRemaining(entry -> {
-            String pointer = "/completeExecutableInput/sources/" + entry.getKey();
+            String pointer = INSTALLER_SOURCES + entry.getKey();
             String text = entry.getValue().textValue();
             var locations = switch (entry.getKey()) {
                 case "mirrorRuntime" -> MIRROR_LOCATIONS;
-                case "managedHelper" -> HELPER_LOCATIONS;
+                case "managedHelper" -> combinedLocations(List.of(INSTALLER_PROBE));
                 default -> List.<String>of();
             };
             bodies.put(pointer, text);
             sources.set(entry.getKey(), pagedSource(pointer, text, locations));
         });
-        return new DeploymentCommandSourceEvidence(current, original, snapshot,
-            List.of(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of())), bodies, Map.of());
+
+        int probe = uniqueIndex(helper, INSTALLER_PROBE);
+        int probeNext = uniqueIndex(helper, "    workspace-recover) recover_workspaces \"$@\" ;;\n");
+        var startup = new PreparationSourceRange("helperStartup", 0, uniqueIndex(helper, "systemd_observation_unavailable() {\n"));
+        var rootAndDeployer = new PreparationSourceRange("helperRootAndDeployer", uniqueIndex(helper, "require_root() {\n"),
+            uniqueIndex(helper, "require_app() {\n"));
+        var ownership = new PreparationSourceRange("helperOwnership", uniqueIndex(helper, "assert_not_writable_by_others() {\n"),
+            uniqueIndex(helper, "assert_candidate_for_deployer() {\n"));
+        var dispatch = new PreparationSourceRange("helperProbeDispatch",
+            uniqueIndex(helper, "\nrequire_root\n[ \"$#\" -ge 1 ] || reject verb\n") + 1, probeNext);
+        manifest.putObject("readExample").put("snapshotSha256", snapshot).put("pointer", INSTALLER_HELPER)
+            .put("offset", probe).put("limit", probeNext - probe);
+        var selection = new StringBuilder();
+        var selected = manifest.putArray("selectedInstallerRanges");
+        var initialRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
+        appendSelection(selection, selected, initialRanges, INSTALLER_HELPER, helper, List.of(startup, rootAndDeployer, ownership, dispatch));
+        appendSelection(selection, selected, initialRanges, INSTALLER_BUILD_ENTRY, buildEntry,
+            List.of(new PreparationSourceRange("buildEntry", 0, buildEntry.length())));
+        var messages = new ArrayList<AiMessage>();
+        putSelectionFrame(manifest, messages, snapshot, bodies, INSTALLER_SELECTION, "installerSelection", selection);
+        messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
+        return new DeploymentCommandSourceEvidence(current, original, snapshot, messages, bodies, initialRanges);
     }
 
     private static void projectDependency(ObjectNode current, ObjectNode projected, ObjectNode manifest, List<AiMessage> messages,
@@ -781,6 +818,7 @@ public final class DeploymentCommandSourceEvidence {
             }
             suppliedInline(DEPENDENCY_APT_SELECTION);
             suppliedInline(BINDING_SELECTION);
+            suppliedInline(INSTALLER_SELECTION);
             suppliedInline(nodePreparation ? NODE_PREPARATION_SELECTION : PREPARATION_SELECTION);
             if (buildReview())
                 for (String pointer : List.of(BUILD_BODY, BUILD_RUNTIME_SELECTION)) suppliedInline(pointer);
@@ -850,39 +888,55 @@ public final class DeploymentCommandSourceEvidence {
                 throw evidenceToolBudgetExhausted();
             batchCorrectionUsed = true;
             latestBatchRejected = true;
-            for (var call : calls) latestReads.add(new ReadReceipt(call.id(), "", 0, 0, true));
+            for (var call : calls) latestReads.add(new ReadReceipt(call.id(), "", 0, 0, ReadRejection.BATCH_TOO_LARGE));
             return calls.stream().map(call -> new AiToolResult(call.id(),
                 "EVIDENCE_BATCH_REJECTED: no pages were read. Request at most eight evidence calls in one response, separate from the verdict.", true)).toList();
         }
 
         private AiToolResult read(AiToolCall call) throws IOException {
+            JsonNode arguments;
             try {
-                var arguments = DeploymentAiJson.arguments(call);
+                arguments = DeploymentAiJson.arguments(call);
                 DeploymentToolSchemas.validate(SCHEMA, arguments);
-                if (!snapshot.equals(arguments.path("snapshotSha256").textValue()))
-                    throw new IllegalArgumentException("Original review evidence snapshot differs");
-                String pointer = arguments.path("pointer").textValue();
-                String text = sourceText(pointer);
-                var page = DeploymentEvidencePages.page(text, arguments.path("offset").intValue(), arguments.path("limit").intValue());
-                var ranges = delivered.computeIfAbsent(pointer, ignored -> new TreeMap<>());
-                int offset = (int) page.get("offset"), next = (int) page.get("next");
-                if (next > offset) rememberRange(requested, pointer, offset, next);
-                var contents = DeploymentEvidencePages.retainAndDescribe(text, page, ranges);
-                var result = JSON.createObjectNode().put("trust", "UNTRUSTED_DATA").put("snapshotSha256", snapshot).put("pointer", pointer);
-                String body = toolchainReview() || buildReview() ? rawSourcePage(result, JSON.valueToTree(contents))
-                    : JSON.writeValueAsString(result.set("value", JSON.valueToTree(contents)));
-                latestReads.add(new ReadReceipt(call.id(), pointer, offset, next, false));
-                return new AiToolResult(call.id(), body, false);
             } catch (IllegalArgumentException invalid) {
-                latestReads.add(new ReadReceipt(call.id(), "", 0, 0, true));
-                return new AiToolResult(call.id(), "EVIDENCE_REQUEST_REJECTED: use the current snapshot, original pointer and a valid UTF-16 cursor. Limit is 1 through 8000. No action was authorized or executed.", true);
+                return rejectRead(call, ReadRejection.ARGUMENTS_INVALID);
             }
+            if (!snapshot.equals(arguments.path("snapshotSha256").textValue()))
+                return rejectRead(call, ReadRejection.SNAPSHOT_MISMATCH);
+            String pointer = arguments.path("pointer").textValue();
+            String text;
+            try {
+                text = sourceText(pointer);
+            } catch (IllegalArgumentException invalid) {
+                return rejectRead(call, ReadRejection.POINTER_UNAVAILABLE);
+            }
+            Map<String, Object> page;
+            try {
+                page = DeploymentEvidencePages.page(text, arguments.path("offset").intValue(), arguments.path("limit").intValue());
+            } catch (IllegalArgumentException invalid) {
+                return rejectRead(call, ReadRejection.CURSOR_INVALID);
+            }
+            var ranges = delivered.computeIfAbsent(pointer, ignored -> new TreeMap<>());
+            int offset = (int) page.get("offset"), next = (int) page.get("next");
+            if (next > offset) rememberRange(requested, pointer, offset, next);
+            var contents = DeploymentEvidencePages.retainAndDescribe(text, page, ranges);
+            var result = JSON.createObjectNode().put("trust", "UNTRUSTED_DATA").put("snapshotSha256", snapshot).put("pointer", pointer);
+            String body = toolchainReview() || buildReview() || installerReview() ? rawSourcePage(result, JSON.valueToTree(contents))
+                : JSON.writeValueAsString(result.set("value", JSON.valueToTree(contents)));
+            latestReads.add(new ReadReceipt(call.id(), pointer, offset, next, ReadRejection.NONE));
+            return new AiToolResult(call.id(), body, false);
+        }
+
+        private AiToolResult rejectRead(AiToolCall call, ReadRejection rejection) {
+            latestReads.add(new ReadReceipt(call.id(), "", 0, 0, rejection));
+            return new AiToolResult(call.id(), "EVIDENCE_REQUEST_REJECTED: " + rejection.name()
+                + ". Use the exact current snapshot, original pointer and a valid UTF-16 cursor. Limit is 1 through 8000. No source was returned.", true);
         }
 
         /** A Responses rebase starts a new request with exact current evidence and no partial native history. */
         public void continueReview(List<AiMessage> messages, AiResponse response, List<AiToolResult> results) throws IOException {
             boolean responses = isResponses(response);
-            if (rebased || responses && (buildReview() || preparationReview() || !requiredRanges.isEmpty() || continuedResponses)) {
+            if (rebased || responses && (buildReview() || preparationReview() || installerReview() || !requiredRanges.isEmpty() || continuedResponses)) {
                 priorEvidence.ifPresent(messages::remove);
                 int factsIndex = messages.lastIndexOf(DeploymentCommandSourceEvidence.this.messages.getLast());
                 if (factsIndex < 0) throw new IOException("Current review facts unavailable");
@@ -916,8 +970,15 @@ public final class DeploymentCommandSourceEvidence {
         }
 
         public boolean hasUnfulfilledApprovalEvidence() {
+            return approvalEvidenceBlock().isPresent();
+        }
+
+        public Optional<String> approvalEvidenceBlock() {
+            if (correctionRequired) return Optional.of("READ_REJECTED");
             var reviewContext = rebased ? lastVisible : confirmed;
-            return correctionRequired || unconfirmed(requiredRanges, reviewContext) || unconfirmed(requested, reviewContext);
+            if (unconfirmed(requiredRanges, reviewContext)) return Optional.of("REQUIRED_SOURCE_MISSING");
+            if (unconfirmed(requested, reviewContext)) return Optional.of("REQUESTED_SOURCE_MISSING");
+            return Optional.empty();
         }
 
         private boolean unconfirmed(Map<String, NavigableMap<Integer, Integer>> ranges,
@@ -1003,13 +1064,13 @@ public final class DeploymentCommandSourceEvidence {
                 int next = Math.min(read.next(), read.offset() + characters);
                 if (next > read.offset() && next < read.next() && Character.isLowSurrogate(sourceText(read.pointer()).charAt(next)))
                     next--;
-                results.add(new ReadReceipt(read.callId(), read.pointer(), read.offset(), next, read.rejected()));
+                results.add(new ReadReceipt(read.callId(), read.pointer(), read.offset(), next, read.rejection()));
             }
             return results;
         }
 
         private boolean isResponses(AiResponse response) {
-            return (toolchainReview() || buildReview()) && response.continuation().isPresent() && !response.generationAttempts().isEmpty()
+            return (toolchainReview() || buildReview() || installerReview()) && response.continuation().isPresent() && !response.generationAttempts().isEmpty()
                 && RESPONSES.equals(response.generationAttempts().getLast().protocol());
         }
 
@@ -1018,11 +1079,15 @@ public final class DeploymentCommandSourceEvidence {
             if (latestBatchRejected) header.put("latestBatchRejected", "NO_PAGES_READ_MAX_EIGHT_PER_RESPONSE");
             if (latestReadRepeated) header.put("latestBatchRepeat",
                 "These ranges were already visible in the preceding request. Use the exact source in this request. Ask for absent necessary ranges or submit an adequately supported verdict.");
+            if (correctionRequired && !latestBatchRejected)
+                header.put("readCorrection", "Correct rejected evidence using the current snapshotSha256, exact sourcePointer and a valid UTF-16 cursor.");
             var reads = header.putArray("latestReads");
             for (int index = 0; index < offered.size(); index++) {
                 var receipt = offered.get(index);
                 var read = reads.addObject().put("callId", receipt.callId()).put("rejected", receipt.rejected());
-                if (!receipt.rejected()) {
+                if (receipt.rejected()) {
+                    read.put("rejectionCode", receipt.rejection().name());
+                } else {
                     read.put("pointer", receipt.pointer()).put("offset", receipt.offset()).put("next", receipt.next());
                     if (compacted && !nodePreparation) read.put("sourceSha256", sha256(sourceText(receipt.pointer())));
                     if (receipt.next() < latestReads.get(index).next()) read.put("requestedNext", latestReads.get(index).next());
@@ -1138,7 +1203,13 @@ public final class DeploymentCommandSourceEvidence {
         }
     }
 
-    private record ReadReceipt(String callId, String pointer, int offset, int next, boolean rejected) { }
+    private enum ReadRejection {
+        NONE, ARGUMENTS_INVALID, SNAPSHOT_MISMATCH, POINTER_UNAVAILABLE, CURSOR_INVALID, BATCH_TOO_LARGE
+    }
+
+    private record ReadReceipt(String callId, String pointer, int offset, int next, ReadRejection rejection) {
+        boolean rejected() { return rejection != ReadRejection.NONE; }
+    }
 
     private record RetainedFrame(AiMessage message, Map<String, NavigableMap<Integer, Integer>> visible) { }
 
@@ -1148,6 +1219,10 @@ public final class DeploymentCommandSourceEvidence {
 
     private boolean buildReview() {
         return BUILD.equals(current.path("operation").asText());
+    }
+
+    private boolean installerReview() {
+        return INSTALLERS.contains(current.path("operation").asText());
     }
 
     public boolean bindingReview() {
@@ -1164,6 +1239,7 @@ public final class DeploymentCommandSourceEvidence {
 
     public String instructions() {
         if (buildReview()) return BUILD_INSTRUCTION;
+        if (installerReview()) return INSTALLER_INSTRUCTION;
         if (preparationReview()) return nodePreparationReview() ? NODE_PREPARE_INSTRUCTION : PREPARE_INSTRUCTION;
         if (dependencyReview() && sourceBodies.containsKey(DEPENDENCY_APT_SELECTION)) return DEPENDENCY_APT_INSTRUCTION;
         if (dependencyReview()) return INSTRUCTION + DEPENDENCY_INSTRUCTION;
