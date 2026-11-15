@@ -185,6 +185,24 @@ public final class MirroredInstallerTestFixture implements AutoCloseable {
             int firstBody = row.path("headerCharacters").intValue();
             if (row.path("ordinal").intValue() != index || prefix.length() != firstBody || !text.startsWith(prefix)) throw new AssertionError("Exact frame header and order");
             String body = text.substring(firstBody);
+            var insertion = row.path("jsonStringInsertion");
+            if (insertion.isObject()) {
+                int sourceFrame = -1;
+                for (var source : frames) {
+                    if (source.path("pointer").textValue().equals(insertion.path("sourcePointer").textValue()))
+                        sourceFrame = source.path("ordinal").intValue();
+                }
+                if (sourceFrame < 0 || frames.get(sourceFrame).has("jsonStringInsertion"))
+                    throw new AssertionError("Exact original source frame required for runtime string");
+                int sourceHeader = frames.get(sourceFrame).path("headerCharacters").intValue();
+                String source = frameTexts.get(sourceFrame).substring(sourceHeader);
+                String encoded = json.writeValueAsString(source.substring(insertion.path("sourceOffset").intValue(),
+                    insertion.path("sourceNext").intValue()));
+                int offset = insertion.path("bodyOffset").intValue();
+                if (encoded.length() != insertion.path("encodedCharacters").intValue())
+                    throw new AssertionError("Exact encoded source characters");
+                body = body.substring(0, offset) + encoded + body.substring(offset);
+            }
             if (body.length() != row.path("characters").intValue() || body.getBytes(StandardCharsets.UTF_8).length != row.path("utf8Bytes").intValue() || !sha(body).equals(row.path("sha256").asText())) throw new AssertionError("Exact raw frame body");
             String pointer = row.path("pointer").asText();
             int slash = pointer.lastIndexOf('/');

@@ -64,7 +64,8 @@ public final class DeploymentCommandSourceEvidence {
     private static final String PREPARE = "deployment.toolchain.prepare.v1";
     private static final String NODE_PREPARE_INSTRUCTION = """
         Review this exact Node preparation. Match the original authority, arguments, effects and limits. Verify NODE_METADATA and NODE_DISTRIBUTION route, redirect, TLS and SHA256 checks, archive or SYSTEM reuse, locks, probes and diagnostics.
-        selectedPreparationRanges maps inline text to original UTF-16 coordinates. startCharacter counts from the frame header end. namedRanges locates other reached bytes by [offset,next]. Read optional initialSupplement, raw pages and retained text in header range order. Use snapshotSha256 and pointer to read only needed absent ranges, up to eight calls separately from the verdict. The broader preparationSelection and original facts remain readable.
+        selectedPreparationRanges maps inline text to original UTF-16 offsets; startCharacter counts from the header end. namedRanges gives [offset,next]. Read the initial supplement and retained text in header order. For absent ranges use snapshotSha256, pointer, offset and limit 1–8000, at most eight reads separately from the verdict.
+        preparationSelection.sourceMap uses UTF-16 offsets. SOURCE_TEXT takes sourcePointers[source] from sourceOffset; LINE_FEED supplies one LF. Retained pages may use original pointers for this view. Original sources and the view remain pageable. Hashes are in the original source descriptors or the receipt. previouslyDeferred groups [offset,next] under each pointer.
         Restore exactAction in segment order: LITERAL copies text, SOURCE_TEXT copies source and SHELL_SINGLE_QUOTE applies Bash single quoting. Deny unsafe effects or insufficient evidence. Submit a fresh native submit_result alone.
         """;
     private static final String MIRROR_BOOTSTRAP_SHELL = "/" + PROJECTION + "/mirrorBootstrapShell";
@@ -193,6 +194,7 @@ public final class DeploymentCommandSourceEvidence {
     private final Map<String, NavigableMap<Integer, Integer>> requiredRanges;
     private final Map<String, NavigableMap<Integer, Integer>> initialSourceRanges;
     private final Optional<RuntimeShellReference> runtimeShellReference;
+    private final Optional<NodePreparationView> nodePreparationView;
 
     private DeploymentCommandSourceEvidence(JsonNode current, String originalFacts, String snapshot, List<AiMessage> messages,
                                               Map<String, String> sourceBodies, Map<String, NavigableMap<Integer, Integer>> initialRanges) {
@@ -203,13 +205,15 @@ public final class DeploymentCommandSourceEvidence {
             Map<String, String> sourceBodies, Map<String, NavigableMap<Integer, Integer>> initialRanges,
             Map<String, NavigableMap<Integer, Integer>> requiredRanges,
             Map<String, NavigableMap<Integer, Integer>> initialSourceRanges) {
-        this(current, originalFacts, snapshot, messages, sourceBodies, initialRanges, requiredRanges, initialSourceRanges, Optional.empty());
+        this(current, originalFacts, snapshot, messages, sourceBodies, initialRanges, requiredRanges, initialSourceRanges,
+            Optional.empty(), Optional.empty());
     }
 
     private DeploymentCommandSourceEvidence(JsonNode current, String originalFacts, String snapshot, List<AiMessage> messages,
             Map<String, String> sourceBodies, Map<String, NavigableMap<Integer, Integer>> initialRanges,
             Map<String, NavigableMap<Integer, Integer>> requiredRanges,
-            Map<String, NavigableMap<Integer, Integer>> initialSourceRanges, Optional<RuntimeShellReference> runtimeShellReference) {
+            Map<String, NavigableMap<Integer, Integer>> initialSourceRanges, Optional<RuntimeShellReference> runtimeShellReference,
+            Optional<NodePreparationView> nodePreparationView) {
         this.current = current;
         this.originalFacts = originalFacts;
         this.snapshot = snapshot;
@@ -219,6 +223,7 @@ public final class DeploymentCommandSourceEvidence {
         this.requiredRanges = Collections.unmodifiableMap(new LinkedHashMap<>(requiredRanges));
         this.initialSourceRanges = Collections.unmodifiableMap(new LinkedHashMap<>(initialSourceRanges));
         this.runtimeShellReference = runtimeShellReference;
+        this.nodePreparationView = nodePreparationView;
     }
 
     public List<AiMessage> messages() {
@@ -261,6 +266,7 @@ public final class DeploymentCommandSourceEvidence {
         var initialRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
         var requiredRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
         var initialSourceRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
+        Optional<NodePreparationView> nodeView = Optional.empty();
         if (mirror.isPresent()) {
             var parts = projectMirror(projected, manifest, messages, snapshot, exact, mirror.orElseThrow().policy(),
                 dependency, !aptDependency(current), sourceBodies);
@@ -298,13 +304,13 @@ public final class DeploymentCommandSourceEvidence {
             sourceBodies.put(INSTALLED_HELPER_SOURCE, helper);
             if (PREPARE.equals(operation)) {
                 projectPreparationPolicy(current, projected);
-                addPreparationSelection(current, projected, manifest, messages, snapshot, sourceBodies, initialRanges,
+                nodeView = addPreparationSelection(current, projected, manifest, messages, snapshot, sourceBodies, initialRanges,
                     initialSourceRanges);
             }
         }
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
         return Optional.of(new DeploymentCommandSourceEvidence(current, original, snapshot, messages, sourceBodies, initialRanges,
-            requiredRanges, initialSourceRanges));
+            requiredRanges, initialSourceRanges, Optional.empty(), nodeView));
     }
 
     private static List<String> helperLocations(ObjectNode current, boolean binding) throws IOException {
@@ -327,7 +333,7 @@ public final class DeploymentCommandSourceEvidence {
         return locations;
     }
 
-    private static void addPreparationSelection(ObjectNode current, ObjectNode projected, ObjectNode manifest, List<AiMessage> messages,
+    private static Optional<NodePreparationView> addPreparationSelection(ObjectNode current, ObjectNode projected, ObjectNode manifest, List<AiMessage> messages,
                                                 String snapshot, Map<String, String> sources,
                                                 Map<String, NavigableMap<Integer, Integer>> initialRanges,
                                                 Map<String, NavigableMap<Integer, Integer>> initialSourceRanges) throws IOException {
@@ -335,10 +341,14 @@ public final class DeploymentCommandSourceEvidence {
         String ecosystem = preparationEcosystem(current);
         if (ecosystem.equals("NODE")) {
             // Preserve the broader view and its exact page coordinates while sending a smaller execution slice.
+            var parts = new ArrayList<ViewPart>();
             String broad = preparationSelection(current, sources, new LinkedHashMap<>(),
-                JSON.createArrayNode(), ecosystem, diagnosed);
+                JSON.createArrayNode(), ecosystem, diagnosed, Optional.of(parts));
+            var view = NodePreparationView.exact(broad, parts, sources);
             sources.put(PREPARATION_SELECTION, broad);
-            manifest.set("preparationSelection", pagedSource(PREPARATION_SELECTION, broad, List.of()));
+            var descriptor = pagedSource(PREPARATION_SELECTION, broad, List.of());
+            view.describe(descriptor);
+            manifest.set("preparationSelection", descriptor);
             var body = new StringBuilder();
             var selected = manifest.putArray("selectedPreparationRanges");
             String helper = sources.get(INSTALLED_HELPER_SOURCE);
@@ -359,19 +369,20 @@ public final class DeploymentCommandSourceEvidence {
             appendSelection(body, selected, initialRanges, MIRROR_RUNTIME, runtime, initialRuntime);
             initialSourceRanges.put(MIRROR_RUNTIME, mergeRanges(PreparationSourceRange.nodeTransferSupplement(runtimeRanges)));
             putSelectionFrame(manifest, messages, snapshot, sources, NODE_PREPARATION_SELECTION, "nodePreparationSelection", body);
-            return;
+            return Optional.of(view);
         }
         if (ecosystem.equals("PYTHON")) {
             addPythonPreparationSelection(current, projected, manifest, messages, snapshot, sources, initialRanges,
                 initialSourceRanges, diagnosed);
-            return;
+            return Optional.empty();
         }
         String source = preparationSelection(current, sources, initialRanges,
-            manifest.putArray("selectedPreparationRanges"), ecosystem, diagnosed);
+            manifest.putArray("selectedPreparationRanges"), ecosystem, diagnosed, Optional.empty());
         sources.put(PREPARATION_SELECTION, source);
         var frame = sourceFrame(messages, snapshot, PREPARATION_SELECTION, source);
         manifest.withArray("frames").add(frame);
         manifest.set("preparationSelection", frame);
+        return Optional.empty();
     }
 
     private static void addPythonPreparationSelection(ObjectNode current, ObjectNode projected, ObjectNode manifest,
@@ -426,26 +437,26 @@ public final class DeploymentCommandSourceEvidence {
     private static String preparationSelection(ObjectNode current, Map<String, String> sources,
                                                Map<String, NavigableMap<Integer, Integer>> initialRanges,
                                                com.fasterxml.jackson.databind.node.ArrayNode selected,
-                                               String ecosystem, boolean diagnosed) throws IOException {
+                                               String ecosystem, boolean diagnosed, Optional<List<ViewPart>> view) throws IOException {
         var body = new StringBuilder();
         String helper = sources.get(INSTALLED_HELPER_SOURCE);
         appendSelection(body, selected, initialRanges, INSTALLED_HELPER_SOURCE, helper,
-            PreparationSourceRange.helper(helper, ecosystem, diagnosed));
+            PreparationSourceRange.helper(helper, ecosystem, diagnosed), view);
         if (ecosystem.equals("NODE") || ecosystem.equals("JAVA")) {
             String shell = sources.get(MIRROR_BOOTSTRAP_SHELL);
             appendSelection(body, selected, initialRanges, MIRROR_BOOTSTRAP_SHELL, shell,
-                List.of(PreparationSourceRange.runtimeLauncher(shell)));
+                List.of(PreparationSourceRange.runtimeLauncher(shell)), view);
         }
         boolean packageManager = PreparationSourceRange.buildsFromSource(ecosystem);
         if (packageManager) {
             String shell = sources.get(MIRROR_BOOTSTRAP_SHELL);
-            appendSelection(body, selected, initialRanges, MIRROR_BOOTSTRAP_SHELL, shell, PreparationSourceRange.apt(shell));
+            appendSelection(body, selected, initialRanges, MIRROR_BOOTSTRAP_SHELL, shell, PreparationSourceRange.apt(shell), view);
         }
         String runtime = sources.get(MIRROR_RUNTIME);
         boolean credentials = current.at(PUBLIC_MIRROR_POLICY + "/points").findValues("credentialManaged").stream()
             .anyMatch(JsonNode::asBoolean);
         appendSelection(body, selected, initialRanges, MIRROR_RUNTIME, runtime,
-            PreparationSourceRange.transfer(runtime, ecosystem, credentials, packageManager));
+            PreparationSourceRange.transfer(runtime, ecosystem, credentials, packageManager), view);
         return body.toString();
     }
 
@@ -496,11 +507,23 @@ public final class DeploymentCommandSourceEvidence {
     private static void appendSelection(StringBuilder body, com.fasterxml.jackson.databind.node.ArrayNode selected,
                                         Map<String, NavigableMap<Integer, Integer>> initialRanges, String pointer,
                                         String source, List<PreparationSourceRange> ranges) {
+        appendSelection(body, selected, initialRanges, pointer, source, ranges, Optional.empty());
+    }
+
+    private static void appendSelection(StringBuilder body, com.fasterxml.jackson.databind.node.ArrayNode selected,
+                                        Map<String, NavigableMap<Integer, Integer>> initialRanges, String pointer,
+                                        String source, List<PreparationSourceRange> ranges, Optional<List<ViewPart>> view) {
         var supplied = initialRanges.computeIfAbsent(pointer, ignored -> new TreeMap<>());
         var offsets = new TreeMap<Integer, Integer>();
         mergeRanges(ranges).forEach((offset, next) -> {
-            if (!body.isEmpty()) body.append('\n');
-            offsets.put(offset, body.length());
+            if (!body.isEmpty()) {
+                int delimiter = body.length();
+                view.ifPresent(parts -> parts.add(new ViewPart(delimiter, delimiter + 1, "", 0)));
+                body.append('\n');
+            }
+            int start = body.length();
+            offsets.put(offset, start);
+            view.ifPresent(parts -> parts.add(new ViewPart(start, start + next - offset, pointer, offset)));
             body.append(source, offset, next);
             DeploymentEvidencePages.remember(supplied, offset, next);
         });
@@ -509,6 +532,53 @@ public final class DeploymentCommandSourceEvidence {
             int start = offset.getValue() + range.offset() - offset.getKey();
             selected.addObject().put("section", range.section()).put("sourcePointer", pointer).put("offset", range.offset())
                 .put("next", range.next()).put("startCharacter", start);
+        }
+    }
+
+    private record ViewPart(int offset, int next, String pointer, int sourceOffset) {}
+
+    private record SourceSpan(String pointer, int offset, int next) {}
+
+    private record NodePreparationView(List<ViewPart> parts) {
+        static NodePreparationView exact(String view, List<ViewPart> parts, Map<String, String> sources) throws IOException {
+            var restored = new StringBuilder();
+            for (var part : parts) {
+                if (part.offset() != restored.length()) throw new IOException("Node preparation view positions changed");
+                if (part.pointer().isEmpty()) restored.append('\n');
+                else restored.append(sources.get(part.pointer()), part.sourceOffset(),
+                    part.sourceOffset() + part.next() - part.offset());
+                if (part.next() != restored.length()) throw new IOException("Node preparation view length changed");
+            }
+            if (!view.contentEquals(restored)) throw new IOException("Node preparation view source changed");
+            return new NodePreparationView(List.copyOf(parts));
+        }
+
+        void describe(ObjectNode descriptor) {
+            var pointers = descriptor.putArray("sourcePointers");
+            var indexes = new LinkedHashMap<String, Integer>();
+            var map = descriptor.putArray("sourceMap");
+            for (var part : parts) {
+                var row = map.addObject().put("offset", part.offset()).put("next", part.next());
+                if (part.pointer().isEmpty()) row.put("kind", "LINE_FEED");
+                else {
+                    int index = indexes.computeIfAbsent(part.pointer(), pointer -> {
+                        pointers.add(pointer);
+                        return pointers.size() - 1;
+                    });
+                    row.put("kind", "SOURCE_TEXT").put("source", index).put("sourceOffset", part.sourceOffset());
+                }
+            }
+        }
+
+        List<SourceSpan> spans(int offset, int next) {
+            var result = new ArrayList<SourceSpan>();
+            for (var part : parts) {
+                int start = Math.max(offset, part.offset()), end = Math.min(next, part.next());
+                if (start >= end || part.pointer().isEmpty()) continue;
+                result.add(new SourceSpan(part.pointer(), part.sourceOffset() + start - part.offset(),
+                    part.sourceOffset() + end - part.offset()));
+            }
+            return result;
         }
     }
 
@@ -850,7 +920,7 @@ public final class DeploymentCommandSourceEvidence {
         }
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
         return new DeploymentCommandSourceEvidence(current, original, snapshot, messages, bodies, initialRanges, required, required,
-            runtimeReference);
+            runtimeReference, Optional.empty());
     }
 
     private static void requireInstallerSource(Map<String, NavigableMap<Integer, Integer>> required,
@@ -1025,6 +1095,7 @@ public final class DeploymentCommandSourceEvidence {
         private boolean correctionRequired;
         private int repeatedBatches;
         private int remaining;
+        private int nodeFrameBudget = Integer.MAX_VALUE;
 
         private Reader(int attempts) {
             remaining = attempts;
@@ -1123,7 +1194,7 @@ public final class DeploymentCommandSourceEvidence {
             for (var call : calls) results.add(read(call));
             correctionRequired = latestReads.stream().anyMatch(ReadReceipt::rejected);
             latestReadRepeated = !correctionRequired && latestReads.stream()
-                .noneMatch(read -> read.next() > read.offset() && !covers(lastVisible.get(read.pointer()), read.offset(), read.next()));
+                .noneMatch(read -> read.next() > read.offset() && !coversPage(lastVisible, read));
             if (rebased) {
                 repeatedBatches = latestReadRepeated ? repeatedBatches + 1 : 0;
                 if (repeatedBatches > 1)
@@ -1137,6 +1208,25 @@ public final class DeploymentCommandSourceEvidence {
         private boolean covers(NavigableMap<Integer, Integer> ranges, int offset, int next) {
             var span = ranges == null ? null : ranges.floorEntry(offset);
             return span != null && span.getValue() >= next;
+        }
+
+        private boolean coversPage(Map<String, NavigableMap<Integer, Integer>> ranges, ReadReceipt read) {
+            if (nodeViewPointer(read.pointer()))
+                return nodePreparationView.orElseThrow().spans(read.offset(), read.next()).stream()
+                    .allMatch(span -> covers(ranges.get(span.pointer()), span.offset(), span.next()));
+            return covers(ranges.get(read.pointer()), read.offset(), read.next());
+        }
+
+        private boolean nodeViewPointer(String pointer) {
+            return nodePreparationView.isPresent() && PREPARATION_SELECTION.equals(pointer);
+        }
+
+        private void rememberPage(Map<String, NavigableMap<Integer, Integer>> ranges,
+                                  String pointer, int offset, int next) {
+            if (nodeViewPointer(pointer)) {
+                for (var span : nodePreparationView.orElseThrow().spans(offset, next))
+                    rememberRange(ranges, span.pointer(), span.offset(), span.next());
+            } else rememberRange(ranges, pointer, offset, next);
         }
 
         private IOException evidenceToolBudgetExhausted() {
@@ -1177,17 +1267,21 @@ public final class DeploymentCommandSourceEvidence {
             } catch (IllegalArgumentException invalid) {
                 return rejectRead(call, ReadRejection.CURSOR_INVALID);
             }
-            var ranges = delivered.computeIfAbsent(pointer, ignored -> new TreeMap<>());
             int offset = (int) page.get("offset"), next = (int) page.get("next");
-            if (next > offset) rememberRange(requested, pointer, offset, next);
+            if (next > offset) rememberPage(requested, pointer, offset, next);
             Map<String, Object> contents;
             var reference = runtimeShellReference.orElse(null);
-            if (reference != null && INSTALLER_RUNTIME.equals(pointer) && offset < reference.runtimeNext() && next > reference.runtimeOffset()
+            if (nodeViewPointer(pointer)) {
+                // The direct read preserves the old exact page. Stateless Responses retain its original spans instead.
+                rememberPage(delivered, pointer, offset, next);
+                contents = page;
+            } else if (reference != null && INSTALLER_RUNTIME.equals(pointer) && offset < reference.runtimeNext() && next > reference.runtimeOffset()
                 && next > offset) {
                 // A reviewer asking for the literal explicitly can inspect its original serialized bytes directly.
                 rememberRange(delivered, pointer, offset, next);
                 contents = page;
-            } else contents = DeploymentEvidencePages.retainAndDescribe(text, page, ranges);
+            } else contents = DeploymentEvidencePages.retainAndDescribe(text, page,
+                delivered.computeIfAbsent(pointer, ignored -> new TreeMap<>()));
             var result = JSON.createObjectNode().put("trust", "UNTRUSTED_DATA").put("snapshotSha256", snapshot).put("pointer", pointer);
             String body = toolchainReview() || buildReview() || installerReview() ? rawSourcePage(result, JSON.valueToTree(contents))
                 : JSON.writeValueAsString(result.set("value", JSON.valueToTree(contents)));
@@ -1213,7 +1307,7 @@ public final class DeploymentCommandSourceEvidence {
                 // A previous result-format correction can also leave a native batch after the current facts.
                 messages.subList(factsIndex + 1, messages.size()).clear();
                 // The native codec checks aggregate raw text and schemas before the exact wire-size check.
-                var frame = fittedSource(nativeFrameBudget(messages)).orElseThrow(
+                var frame = fittedSource(Math.min(nativeFrameBudget(messages), nodeFrameBudget)).orElseThrow(
                     () -> new IOException("Current command evidence frame cannot fit the native request bound"));
                 var evidence = frame.message();
                 adoptRetainedFrame(frame);
@@ -1279,7 +1373,12 @@ public final class DeploymentCommandSourceEvidence {
             var original = priorEvidence.orElseThrow();
             int position = messages.indexOf(original);
             if (position < 0) return false;
-            var fitted = fittedSource(frameBudget(original, problem));
+            int available = frameBudget(original, problem);
+            if (nodePreparation) {
+                nodeFrameBudget = Math.min(nodeFrameBudget, available);
+                available = nodeFrameBudget;
+            }
+            var fitted = fittedSource(available);
             if (fitted.isEmpty()) return false;
             var frame = fitted.orElseThrow();
             if (frame.message().equals(original)) return false;
@@ -1385,9 +1484,10 @@ public final class DeploymentCommandSourceEvidence {
             if (compacted && nodePreparation) {
                 var identities = header.putObject("sourceSha256ByPointer");
                 for (var read : offered) {
-                    if (!read.rejected() && !identities.has(read.pointer()))
+                    if (!read.rejected() && !nodeSourceHasDescriptor(read.pointer()) && !identities.has(read.pointer()))
                         identities.put(read.pointer(), sha256(sourceText(read.pointer())));
                 }
+                if (identities.isEmpty()) header.remove("sourceSha256ByPointer");
             }
             if (compacted) header.put("deferredRanges", "Read next through requestedNext for any necessary deferred source; those bytes were not delivered in this frame.");
             var entries = header.putArray("ranges");
@@ -1398,7 +1498,7 @@ public final class DeploymentCommandSourceEvidence {
                 appendVisibleRange(read.pointer(), read.offset(), read.next(), visible, entries, body);
             }
             int remaining = retainHistory(confirmedRequired(), visible, entries, body, historyBytes);
-            if (pythonPreparationReview() || sourceBodies.containsKey(DEPENDENCY_APT_SELECTION))
+            if (nodePreparation || pythonPreparationReview() || sourceBodies.containsKey(DEPENDENCY_APT_SELECTION))
                 remaining = retainHistory(requested, visible, entries, body, remaining);
             remaining = retainHistory(lastVisible, visible, entries, body, remaining);
             retainHistory(confirmed, visible, entries, body, remaining);
@@ -1409,14 +1509,36 @@ public final class DeploymentCommandSourceEvidence {
                 described = copyRanges(visible);
                 for (var read : latestReads) {
                     if (!read.rejected() && read.offset() < read.next())
-                        rememberRange(described, read.pointer(), read.offset(), read.next());
+                        rememberPage(described, read.pointer(), read.offset(), read.next());
                 }
             }
             int omitted = appendUnconfirmed(header, "previouslyDeferred", requested, described);
+            if (nodePreparation) groupNodeDeferred(header);
             if (!requiredRanges.isEmpty()) appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
             header.put("omittedRanges", omitted);
             var message = new AiMessage(AiRole.USER, RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n" + body, List.of());
             return new RetainedFrame(message, visible);
+        }
+
+        private boolean nodeSourceHasDescriptor(String pointer) {
+            return switch (pointer) {
+                case INSTALLED_HELPER_SOURCE, MIRROR_BOOTSTRAP_SHELL, MIRROR_POLICY_SOURCE, MIRROR_RUNTIME,
+                    PREPARATION_SELECTION, NODE_PREPARATION_SELECTION -> true;
+                default -> false;
+            };
+        }
+
+        private void groupNodeDeferred(ObjectNode header) {
+            var previous = header.path("previouslyDeferred");
+            if (!previous.isArray()) return;
+            var rows = new LinkedHashMap<String, ArrayNode>();
+            var grouped = JSON.createArrayNode();
+            for (var range : previous) {
+                String pointer = range.path("pointer").asText();
+                rows.computeIfAbsent(pointer, value -> grouped.addObject().put("pointer", value).putArray("ranges"))
+                    .addArray().add(range.path("offset").intValue()).add(range.path("next").intValue());
+            }
+            header.set("previouslyDeferred", grouped);
         }
 
         private Map<String, NavigableMap<Integer, Integer>> confirmedRequired() {
@@ -1539,6 +1661,11 @@ public final class DeploymentCommandSourceEvidence {
         private void appendVisibleRange(String pointer, int offset, int next,
                                         Map<String, NavigableMap<Integer, Integer>> visible,
                                         com.fasterxml.jackson.databind.node.ArrayNode entries, StringBuilder body) throws IOException {
+            if (nodeViewPointer(pointer)) {
+                for (var span : nodePreparationView.orElseThrow().spans(offset, next))
+                    appendVisibleRange(span.pointer(), span.offset(), span.next(), visible, entries, body);
+                return;
+            }
             var ranges = visible.computeIfAbsent(pointer, ignored -> new TreeMap<>());
             for (var part : DeploymentEvidencePages.missing(sourceText(pointer), offset, next, ranges)) {
                 entries.addObject().put("pointer", pointer).put("offset", (int) part.get("offset")).put("next", (int) part.get("next"));

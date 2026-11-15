@@ -43,6 +43,9 @@ class PythonSourceBuildTest(unittest.TestCase):
                        tracked_regular=lambda p, limit: p.read_bytes(), source_dependencies=mock.Mock(),
                        ruby_require_settled=mock.Mock(), ruby_create_scratch=mock.Mock(side_effect=lambda p, _: p.mkdir()),
                        ruby_remove_scratch=mock.Mock(), python_source_unit=self.unit, python_source_publish=self.seal)
+        self.ns['source_run_probe_work'] = mock.Mock(
+            side_effect=lambda scope, unit, directory, version, run_unit:
+            run_unit(unit, directory, version, probe_mount=(scope / 'tmpfs', 22, 7)))
         self.ns['download'] = mock.Mock(side_effect=self.download)
         if os.name == 'nt':
             chmod = pathlib.Path.chmod
@@ -68,7 +71,7 @@ class PythonSourceBuildTest(unittest.TestCase):
     def test_known_archive_is_built_and_probed_only_in_source_unit_then_marker_is_written(self):
         marker = self.destination / '.w2l-toolchain.json'
 
-        def unit(unit_id, destination, version, mounts=None):
+        def unit(unit_id, destination, version, mounts=None, probe_mount=None):
             self.assertFalse(marker.exists())
             self.assertEqual((self.destination, VERSION), (destination, version))
             if mounts is not None:
@@ -82,6 +85,7 @@ class PythonSourceBuildTest(unittest.TestCase):
                 self.seal.assert_not_called()
             else:
                 self.assertTrue(unit_id.startswith('wtl-python-probe-'))
+                self.assertEqual((self.root / 'work' / 'source-probes' / unit_id / 'tmpfs', 22, 7), probe_mount)
                 self.seal.assert_called_once()
 
         self.unit.side_effect = unit
@@ -98,7 +102,7 @@ class PythonSourceBuildTest(unittest.TestCase):
         self.ns['ruby_create_scratch'].assert_called_once()
         self.ns['ruby_remove_scratch'].assert_called_once_with(*self.ns['ruby_create_scratch'].call_args.args)
         self.ns['run'].assert_not_called()
-        self.assertEqual([], list((self.root / 'work').iterdir()))
+        self.assertEqual([], list((self.root / 'work' / 'source-probes').iterdir()))
 
     def test_legacy_protected_marker_keeps_original_identity_and_selected_probe(self):
         self.destination.mkdir()
@@ -166,22 +170,28 @@ class PythonSourceBuildTest(unittest.TestCase):
     def test_python_probe_launcher_has_its_own_lower_limits_without_writable_binds(self):
         ns = self.ns
         unit = ns['source_unit_name'](OPERATION, 'probe', 'python')
+        scratch = '/usr/local/lib/windowstolinux/toolchains/work/source-probes/' + unit + '/tmpfs'
         unallocated = mock.Mock(side_effect=KeyError)
         ns.update(ruby_run=mock.Mock())
         with mock.patch.dict('sys.modules', {'grp': types.SimpleNamespace(getgrnam=unallocated),
                                             'pwd': types.SimpleNamespace(getpwnam=unallocated)}), \
-                mock.patch.object(os, 'readlink', side_effect=('net:[1]', 'mnt:[2]')):
-            ns['source_unit'](unit, '/usr', VERSION, 'python', ns['PYTHON_SOURCE_WORKER'], None)
-        command, role, ecosystem = ns['ruby_run'].call_args.args
+                mock.patch.object(os, 'readlink', side_effect=('net:[1]', 'mnt:[2]') * 2):
+            ns['source_unit'](unit, '/usr', VERSION, 'python', ns['PYTHON_SOURCE_WORKER'], None, (scratch, 22, 7))
+            ns['source_unit'](unit, '/var/lib/managed-python', VERSION, 'python', ns['PYTHON_SOURCE_WORKER'],
+                              None, (scratch, 22, 7))
+        command, role, ecosystem = ns['ruby_run'].call_args_list[0].args
+        custom_directory, _, _ = ns['ruby_run'].call_args_list[1].args
         self.assertEqual(('probe', 'python'), (role, ecosystem))
         self.assertIn('--property=MemoryMax=268435456', command)
         self.assertIn('--property=MemorySwapMax=0', command)
         self.assertIn('--property=PrivateTmp=no', command)
         self.assertFalse(any(arg.startswith('--property=BindPaths=') for arg in command))
-        mounted = next(arg for arg in command if arg.startswith('--property=TemporaryFileSystem=/tmp:'))
-        for path in ('/tmp', '/var/tmp', '/dev/shm'):
-            self.assertIn(path + ':ro,nosuid,nodev,noexec,size=16777216,nr_inodes=256', mounted)
-        self.assertEqual([unit, '-', '-', '16777216', '256', '268435456'], command[-6:])
+        self.assertFalse(any(arg.startswith('--property=TemporaryFileSystem=/tmp:') for arg in command))
+        read_binds = '--property=BindReadOnlyPaths=' + ' '.join(scratch + ':' + path for path in
+                                                              ('/tmp', '/var/tmp', '/dev/shm'))
+        self.assertIn(read_binds, command)
+        self.assertIn(read_binds + ' /var/lib/managed-python', custom_directory)
+        self.assertEqual([unit, '-', '-', '16777216', '256', '268435456', '22', '7'], command[-8:])
 
     def test_python_unit_binds_the_exact_staging_prefix_and_selects_its_own_worker(self):
         ns = self.ns

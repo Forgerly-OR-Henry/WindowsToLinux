@@ -348,8 +348,8 @@ def python_source_marker_recipe_matches(record):
             and dependencies.get('gnu_make') == python_make_dependency())
 
 
-def python_source_unit(unit, directory, version, build_mounts=None):
-    source_unit(unit, directory, version, 'python', PYTHON_SOURCE_WORKER, build_mounts)
+def python_source_unit(unit, directory, version, build_mounts=None, probe_mount=None):
+    source_unit(unit, directory, version, 'python', PYTHON_SOURCE_WORKER, build_mounts, probe_mount)
 
 
 def python_source_probe(directory, version):

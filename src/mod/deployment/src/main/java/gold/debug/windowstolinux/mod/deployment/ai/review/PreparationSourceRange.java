@@ -16,8 +16,7 @@ record PreparationSourceRange(String section, int offset, int next) {
         "nodeManagedArchive", "archiveVersionProbe", "nodePreparationLock");
     private static final Set<String> NODE_TRANSFER_SUPPLEMENT = Set.of("class MirrorRedirect(", "mirrorDownload");
     private static final Set<String> PYTHON_PREPARATION_INITIAL = Set.of(
-        "shellStartup", "startupOwnership", "prepareDispatch", "pythonLauncher", "releaseDownloadPoint", "selectedRelease",
-        "def official_url(",
+        "shellStartup", "startupOwnership", "prepareDispatch", "pythonLauncher", "selectedRelease",
         "sourceResourceLimits", "sourceIsolationPreflight", "def source_install(", "def source_unit(", "pythonSourceWorker",
         "pythonMakeSourceIdentity", "pythonMakeBootstrapExecution",
         "def source_dependencies(", "pythonLegacyReceiverGuard",
@@ -136,7 +135,11 @@ record PreparationSourceRange(String section, int offset, int next) {
             python(helper, "def source_install("), python(helper, "def source_unit("),
             python(helper, "def ruby_scratch_mount("), python(helper, "def ruby_create_scratch("),
             python(helper, "def ruby_remove_scratch("),
-            python(helper, "def source_probe("), python(helper, "def ruby_require_settled("));
+            python(helper, "def source_probe("), python(helper, "def ruby_require_settled("),
+            python(helper, "def source_scratch_mount_entry("),
+            between(helper, "sourceProbeTmpfs", "def source_probe_mount_identity(", "\ndef ruby_manager_terminal("),
+            between(helper, "sourceProbeRecovery", "def tracked_require_quiescent_with_ruby(",
+                "\ninstallation_key = install_key_with_ruby_recipe"));
     }
 
     private static List<PreparationSourceRange> rustPreparation(String helper, boolean diagnosed) throws IOException {
@@ -425,6 +428,8 @@ record PreparationSourceRange(String section, int offset, int next) {
     static List<PreparationSourceRange> pythonPreparationTransport(String runtime, boolean credentials) throws IOException {
         var ranges = new ArrayList<>(nodeTransfer(runtime, credentials));
         ranges.add(between(runtime, "mirrorPolicyValidation", "    @staticmethod\n    def validate_url(endpoint, url):",
+            "\n    @staticmethod\n    def validate_redirect("));
+        ranges.add(between(runtime, "mirrorRedirectValidation", "    @staticmethod\n    def validate_redirect(endpoint, original, url):",
             "\n    @staticmethod\n    def redirect_path("));
         ranges.addAll(transfer(runtime, "PYTHON", credentials, true));
         return ranges.stream().distinct().toList();

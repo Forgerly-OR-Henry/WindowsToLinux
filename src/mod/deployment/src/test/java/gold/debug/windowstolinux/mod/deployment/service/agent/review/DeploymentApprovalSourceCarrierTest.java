@@ -41,15 +41,30 @@ class DeploymentApprovalSourceCarrierTest {
             assertEquals(JSON.readTree(complete), restored);
             assertArrayEquals(command.stdin(), DeploymentInstallerEvidence.reconstruct(restored.path("completeExecutableInput")).getBytes(StandardCharsets.UTF_8));
             var manifest = JSON.readTree(messages.getLast().text()).path(DeploymentApprovalSourceCarrier.FIELD);
-            assertEquals(7, manifest.path("frames").size());
+            assertEquals(DeploymentInstallerEvidence.readableBodies(restored.path("completeExecutableInput")).size(),
+                manifest.path("frames").size());
             assertEquals(MirroredInstallerTestFixture.sha(complete), manifest.path("currentSha256").asText());
+            int runtimeInsertions = 0;
             for (var row : manifest.path("frames")) {
                 String raw = restored.at(row.path("pointer").asText()).textValue();
                 var message = messages.get(row.path("messageIndex").intValue());
                 assertEquals(AiRole.USER, message.role());
-                assertEquals(raw, message.text().substring(row.path("headerCharacters").intValue()));
+                var insertion = row.path("jsonStringInsertion");
+                String expected = raw;
+                if (insertion.isObject()) {
+                    assertEquals(DeploymentInstallerEvidence.MIRROR_SOURCE_POINTER, row.path("pointer").asText());
+                    runtimeInsertions++;
+                    int offset = insertion.path("bodyOffset").intValue();
+                    String shell = restored.at(insertion.path("sourcePointer").textValue()).textValue();
+                    String repeated = JSON.writeValueAsString(shell.substring(insertion.path("sourceOffset").intValue(),
+                        insertion.path("sourceNext").intValue()));
+                    assertEquals(repeated, raw.substring(offset, offset + insertion.path("encodedCharacters").intValue()));
+                    expected = raw.substring(0, offset) + raw.substring(offset + repeated.length());
+                }
+                assertEquals(expected, message.text().substring(row.path("headerCharacters").intValue()));
                 if (raw.length() > 100) assertFalse(messages.getFirst().text().contains(raw), "No complete executable body belongs in SYSTEM");
             }
+            assertEquals(1, runtimeInsertions);
         }
     }
 

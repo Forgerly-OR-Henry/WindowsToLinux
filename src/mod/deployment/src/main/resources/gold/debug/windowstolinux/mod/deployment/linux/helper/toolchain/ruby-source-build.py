@@ -125,7 +125,7 @@ def extract_release(name):
         sys.exit(96)
     return release
 
-def require_ruby_resources(unit, device, inode, maximum_bytes, maximum_inodes, maximum_memory):
+def require_ruby_resources(unit, device, inode, maximum_bytes, maximum_inodes, maximum_memory, *probe_identity):
     group = "/system.slice/" + unit
     if pathlib.Path("/proc/self/cgroup").read_text(encoding="ascii").splitlines() != ["0::" + group]:
         sys.exit(126)
@@ -145,6 +145,13 @@ def require_ruby_resources(unit, device, inode, maximum_bytes, maximum_inodes, m
             or (probe and not space.f_flag & os.ST_RDONLY)
             or any(not os.statvfs(path).f_flag & os.ST_RDONLY for path in ("/var/tmp", "/dev/shm"))):
         sys.exit(126)
+    if probe:
+        flags = os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV | os.ST_NOEXEC
+        for path in ("/tmp", "/var/tmp", "/dev/shm"):
+            mounted = os.stat(path)
+            if ((str(mounted.st_dev), str(mounted.st_ino)) != probe_identity
+                    or os.statvfs(path).f_flag & flags != flags):
+                sys.exit(126)
 
 def probe_uses_private_tmpfs(device):
     mount_device = str(os.major(device)) + ":" + str(os.minor(device))
@@ -445,7 +452,7 @@ def ruby_mount_path(path):
     return str(path)
 
 
-def ruby_scratch_mount(path, unit, check_limits=True):
+def source_scratch_mount_entry(path):
     name = ruby_mount_path(path)
     owned_directory(path.parent)
     if path.is_symlink():
@@ -461,10 +468,17 @@ def ruby_scratch_mount(path, unit, check_limits=True):
             if target == name:
                 matches.append((fields, filesystem.split()))
     if not matches:
-        return False
+        return None
     if len(matches) != 1:
         fail('ownership', 'multiple Ruby scratch mounts')
-    mount, filesystem = matches[0]
+    return matches[0]
+
+
+def ruby_scratch_mount(path, unit, check_limits=True):
+    entry = source_scratch_mount_entry(path)
+    if entry is None:
+        return False
+    mount, filesystem = entry
     volume = path.stat()
     space = os.statvfs(path)
     if (mount[3] != '/' or not {'rw', 'nosuid', 'nodev'} <= set(mount[5].split(','))
@@ -496,6 +510,151 @@ def ruby_remove_scratch(path, unit):
         fail('interrupted', 'the original Ruby scratch mount could not be released')
     if ruby_scratch_mount(path, unit, check_limits=False):
         fail('interrupted', 'the original Ruby scratch mount remains attached')
+
+
+def source_probe_mount_identity(path, unit, descriptor=None):
+    entry = source_scratch_mount_entry(path)
+    if entry is None:
+        return None
+    mount, filesystem = entry
+    volume = path.lstat()
+    space = os.statvfs(path)
+    flags = os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV | os.ST_NOEXEC
+    if (mount[3] != '/' or filesystem[:2] != ['tmpfs', unit]
+            or mount[2] != f'{os.major(volume.st_dev)}:{os.minor(volume.st_dev)}'
+            or not {'ro', 'nosuid', 'nodev', 'noexec'} <= set(mount[5].split(','))
+            or volume.st_uid != 0 or not stat.S_ISDIR(volume.st_mode) or stat.S_IMODE(volume.st_mode) != 0o555
+            or space.f_flag & flags != flags or not 0 < space.f_blocks * space.f_frsize <= SOURCE_PROBE_BYTES
+            or not 0 < space.f_files <= SOURCE_PROBE_INODES):
+        fail('ownership', 'source probe tmpfs identity or limits differ')
+    if descriptor is not None:
+        with open(f'/proc/self/fdinfo/{descriptor}', 'rb') as info:
+            metadata = info.read(1025)
+        ids = [row.split()[1:] for row in metadata.splitlines() if row.startswith(b'mnt_id:')]
+        if (len(metadata) > 1024 or not metadata.endswith(b'\n') or ids != [[mount[0].encode('ascii')]]
+                or not os.path.samestat(volume, os.fstat(descriptor))):
+            fail('ownership', 'source probe mount differs from its held descriptor')
+    return [int(mount[0]), volume.st_dev, volume.st_ino]
+
+
+@contextlib.contextmanager
+def source_probe_scope_lock(scope):
+    import fcntl
+
+    owned_directory(scope)
+    descriptor = os.open(scope, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        held = os.fstat(descriptor)
+        if held.st_uid != 0 or stat.S_IMODE(held.st_mode) != 0o700 or not os.path.samestat(held, scope.lstat()):
+            fail('ownership', 'source probe scope differs from its held directory')
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def source_probe_boot():
+    boot = pathlib.Path('/proc/sys/kernel/random/boot_id').read_text(encoding='ascii').strip()
+    if not tracked_uuid(boot):
+        fail('integrity', 'invalid source probe boot identity')
+    return boot
+
+
+def source_probe_record(scope, unit):
+    record = tracked_json(tracked_regular(scope / 'identity', 512))
+    if (not isinstance(record, dict) or set(record) != {'unit', 'boot', 'mount'}
+            or record['unit'] != unit or not tracked_uuid(record['boot'])):
+        fail('ownership', 'source probe work record differs from the original unit')
+    identity = record['mount']
+    if identity is not None and (not isinstance(identity, list) or len(identity) != 3
+                                 or any(type(value) is not int or value < 0 for value in identity)
+                                 or identity[0] == 0 or identity[2] == 0):
+        fail('ownership', 'invalid source probe mount record')
+    return record
+
+
+def source_release_probe_work(scope, unit):
+    with os.scandir(scope) as contents:
+        if any(entry.name not in ('tmpfs', 'identity') for entry in contents):
+            fail('ownership', 'unexpected files in source probe work')
+    record = source_probe_record(scope, unit)
+    ruby_require_settled(unit)
+    scratch = scope / 'tmpfs'
+    mounted = source_probe_mount_identity(scratch, unit)
+    if mounted is not None:
+        if record['mount'] != mounted or record['boot'] != source_probe_boot():
+            fail('ownership', 'source probe mount ownership is unconfirmed')
+        descriptor = os.open(scratch, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            if source_probe_mount_identity(scratch, unit, descriptor) != mounted:
+                fail('ownership', 'source probe mount changed before cleanup')
+        finally:
+            os.close(descriptor)
+        try:
+            subprocess.run(ruby_system_command('umount', '--', str(scratch)), stdin=subprocess.DEVNULL,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=15)
+        except (OSError, subprocess.SubprocessError):
+            fail('interrupted', 'source probe mount could not be released')
+        if source_probe_mount_identity(scratch, unit) is not None:
+            fail('interrupted', 'source probe mount remains attached')
+    if scratch.exists():
+        scratch.rmdir()
+    (scope / 'identity').unlink()
+    scope.rmdir()
+    tracked_sync_directory(scope.parent)
+
+
+def source_reap_probe_work(parent):
+    # A live probe owns its directory lock. Unconfirmed work stays in its original scope.
+    with os.scandir(parent) as entries:
+        for index, entry in enumerate(entries):
+            if index >= 64:
+                break
+            unit = entry.name
+            if not re.fullmatch(r'wtl-(?:ruby|python)-probe-[a-f0-9]{32}\.service', unit):
+                continue
+            scope = parent / unit
+            try:
+                with source_probe_scope_lock(scope):
+                    try:
+                        source_release_probe_work(scope, unit)
+                    except (OSError, PreparationFailure, ValueError, subprocess.SubprocessError):
+                        pass
+                    return
+            except (OSError, PreparationFailure):
+                continue
+
+
+def source_run_probe_work(scope, unit, directory, version, run_unit):
+    result = subprocess.run(
+        ruby_system_command('systemctl', 'show', '--all', '--no-pager', '--property=LoadState', '--value', unit),
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10,
+    )
+    if result.returncode or result.stdout != b'not-found\n':
+        fail('ownership', 'source probe unit already exists or cannot be confirmed absent')
+    ruby_require_settled(unit)
+    scope.mkdir(mode=0o700)
+    with source_probe_scope_lock(scope):
+        record = {'unit': unit, 'boot': source_probe_boot(), 'mount': None}
+        tracked_atomic_json(scope / 'identity', record, 0o400)
+        tracked_sync_directory(scope.parent)
+        scratch = scope / 'tmpfs'
+        try:
+            scratch.mkdir(mode=0o700)
+            options = f'ro,nosuid,nodev,noexec,mode=0555,size={SOURCE_PROBE_BYTES},nr_inodes={SOURCE_PROBE_INODES}'
+            run(ruby_system_command('mount', '--types', 'tmpfs', '--options', options, '--', unit, ruby_mount_path(scratch)))
+            descriptor = os.open(scratch, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                mounted = source_probe_mount_identity(scratch, unit, descriptor)
+                if mounted is None:
+                    fail('ownership', 'source probe tmpfs could not be verified')
+                record['mount'] = mounted
+                tracked_atomic_json(scope / 'identity', record, 0o400)
+                run_unit(unit, directory, version, probe_mount=(scratch, mounted[1], mounted[2]))
+            finally:
+                os.close(descriptor)
+        finally:
+            source_release_probe_work(scope, unit)
 
 
 def ruby_manager_terminal(command):
@@ -570,16 +729,18 @@ def ruby_run(command, role, ecosystem='ruby'):
         record_installation_diagnostic = recorder
 
 
-def ruby_unit(unit, directory, version, build_mounts=None):
-    source_unit(unit, directory, version, 'ruby', RUBY_WORKER, build_mounts)
+def ruby_unit(unit, directory, version, build_mounts=None, probe_mount=None):
+    source_unit(unit, directory, version, 'ruby', RUBY_WORKER, build_mounts, probe_mount)
 
 
-def source_unit(unit, directory, version, ecosystem, worker_source, build_mounts):
+def source_unit(unit, directory, version, ecosystem, worker_source, build_mounts, probe_mount=None):
     import grp
     import pwd
 
     if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
         fail('metadata', 'invalid exact Ruby release')
+    if bool(build_mounts) == (probe_mount is not None):
+        fail('ownership', 'source unit requires its exact build or probe mount')
     directory = ruby_mount_path(directory)
     launch_start = time.monotonic_ns()
     seconds = remaining() if build_mounts else min(60, remaining())
@@ -640,14 +801,16 @@ def source_unit(unit, directory, version, ecosystem, worker_source, build_mounts
         properties.extend(['BindReadOnlyPaths=' + ' '.join(sources), 'BindPaths=' + ' '.join(mounts),
                            'ReadWritePaths=' + ' '.join(writable)])
     else:
-        # Explicit tmpfs mounts provide private storage without competing with PrivateTmp mounts.
-        properties.extend(['PrivateTmp=no', 'MemoryMax=' + str(SOURCE_PROBE_MEMORY), 'MemorySwapMax=0',
-                           'TemporaryFileSystem=' + ' '.join(path + ':ro,nosuid,nodev,noexec,size='
-                           + str(SOURCE_PROBE_BYTES) + ',nr_inodes=' + str(SOURCE_PROBE_INODES)
-                           for path in ('/tmp', '/var/tmp', '/dev/shm'))])
+        # DynamicUser can imply PrivateTmp. Read-only binds outrank those generated mounts.
+        scratch, device, inode = probe_mount
+        source = ruby_mount_path(scratch)
+        sources = [source + ':' + path for path in ('/tmp', '/var/tmp', '/dev/shm')]
         if directory.startswith(('/var/', '/home/', '/root/')):
-            properties.append('BindReadOnlyPaths=' + directory)
-        worker.extend([unit, '-', '-', str(SOURCE_PROBE_BYTES), str(SOURCE_PROBE_INODES), str(SOURCE_PROBE_MEMORY)])
+            sources.append(directory)
+        properties.extend(['PrivateTmp=no', 'MemoryMax=' + str(SOURCE_PROBE_MEMORY), 'MemorySwapMax=0',
+                           'BindReadOnlyPaths=' + ' '.join(sources)])
+        worker.extend([unit, '-', '-', str(SOURCE_PROBE_BYTES), str(SOURCE_PROBE_INODES), str(SOURCE_PROBE_MEMORY),
+                       str(device), str(inode)])
     command = ruby_system_command('systemd-run', '--wait', '--collect', '--slice=system.slice', '--unit=' + unit)
     command.extend('--property=' + value for value in properties)
     try:
@@ -668,21 +831,28 @@ def ruby_probe(directory, version):
 
 def source_probe(directory, version, ecosystem, run_unit):
     operation = globals().get('TRACKED_OPERATION')
+    identity = str(uuid.uuid4())
+    unit = source_unit_name(identity, 'probe', ecosystem)
     if operation is None:
-        run_unit(source_unit_name(str(uuid.uuid4()), 'probe', ecosystem), directory, version)
+        parent = ROOT / 'work' / 'source-probes'
+        owned_directory(parent)
+        parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if INSTALLATION_DIAGNOSTIC is not None:
+            source_reap_probe_work(parent)
+        source_run_probe_work(parent / unit, unit, directory, version, run_unit)
         return
     marker = operation.directory / (ecosystem + '-probe')
     if marker.exists() or marker.is_symlink():
         fail('interrupted', 'an earlier Ruby probe still requires observation')
-    identity = str(uuid.uuid4())
-    unit = source_unit_name(identity, 'probe', ecosystem)
+    scope = operation.directory / unit
     tracked_atomic_bytes(marker, identity.encode('ascii'))
     try:
-        run_unit(unit, directory, version)
+        source_run_probe_work(scope, unit, directory, version, run_unit)
     finally:
-        ruby_require_settled(unit)
-        marker.unlink()
-        tracked_sync_directory(operation.directory)
+        if not scope.exists() and not scope.is_symlink():
+            ruby_require_settled(unit)
+            marker.unlink()
+            tracked_sync_directory(operation.directory)
 
 
 def ruby_link_target(path, links):
@@ -909,15 +1079,22 @@ def tracked_require_quiescent_with_ruby(operation):
         if name in ('ruby', 'python') and ((work / 'stage').is_dir() or (work / 'scratch').is_dir()):
             ruby_require_settled(source_unit_name(operation.request['operationId'], 'build', name))
     for name, marker in source_probe_markers(operation):
-        if marker.exists() or marker.is_symlink():
-            identity = tracked_regular(marker, 36).decode('ascii')
-            if not tracked_uuid(identity):
-                fail('integrity', 'invalid tracked source toolchain probe identity')
-            ruby_require_settled(source_unit_name(identity, 'probe', name))
+        unit = source_probe_marker_unit(name, marker)
+        if unit is not None:
+            ruby_require_settled(unit)
 
 
 def source_probe_markers(operation):
     return [(name, operation.directory / (name + '-probe')) for name in ('ruby', 'python')]
+
+
+def source_probe_marker_unit(ecosystem, marker):
+    if not marker.exists() and not marker.is_symlink():
+        return None
+    identity = tracked_regular(marker, 36).decode('ascii')
+    if not tracked_uuid(identity):
+        fail('integrity', 'invalid tracked source toolchain probe identity')
+    return source_unit_name(identity, 'probe', ecosystem)
 
 
 def tracked_owned_residue_with_ruby(operation):
@@ -927,6 +1104,16 @@ def tracked_owned_residue_with_ruby(operation):
 
 def tracked_cleanup_with_ruby(operation):
     tracked_require_quiescent(operation)
+    markers = []
+    for name, marker in source_probe_markers(operation):
+        unit = source_probe_marker_unit(name, marker)
+        if unit is None:
+            continue
+        scope = operation.directory / unit
+        if scope.exists() or scope.is_symlink():
+            with source_probe_scope_lock(scope):
+                source_release_probe_work(scope, unit)
+        markers.append(marker)
     if operation.request['kind'] == 'PREPARE':
         name = operation.request['parameters']['ecosystem'].lower()
         work = operation.directory / 'work'
@@ -934,10 +1121,9 @@ def tracked_cleanup_with_ruby(operation):
             owned_directory(work)
             ruby_remove_scratch(work / 'scratch', source_unit_name(operation.request['operationId'], 'build', name))
     _previous_tracked_cleanup(operation)
-    for _, marker in source_probe_markers(operation):
-        if marker.exists():
-            marker.unlink()
-            tracked_sync_directory(operation.directory)
+    for marker in markers:
+        marker.unlink()
+        tracked_sync_directory(operation.directory)
 
 
 installation_key = install_key_with_ruby_recipe

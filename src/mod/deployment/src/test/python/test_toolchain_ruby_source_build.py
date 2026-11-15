@@ -263,6 +263,162 @@ class RubySourceBuildTest(unittest.TestCase):
                     with self.assertRaises(raw['PreparationFailure']):
                         check(scratch, unit)
 
+    def test_probe_mount_requires_held_identity_and_exact_readonly_flags(self):
+        verify = self.raw_function('source_probe_mount_identity')
+        unit = self.ns['ruby_unit_name'](OPERATION_ID, 'probe')
+        mount = ['31', '20', '0:42', '/', '/owned/probe/tmpfs', 'ro,nosuid,nodev,noexec']
+        scratch = mock.Mock()
+        info = types.SimpleNamespace(st_dev=42, st_ino=5, st_uid=0, st_mode=0o40555)
+        scratch.lstat.return_value = info
+        verify.__globals__['source_scratch_mount_entry'] = mock.Mock(return_value=(mount, ['tmpfs', unit]))
+        for row, fdinfo, expected in ((mount, b'mnt_id:\t31\n', True),
+                                      (mount, b'mnt_id:\t32\n', False),
+                                      (mount[:-1] + ['ro,nosuid,nodev'], b'mnt_id:\t31\n', False)):
+            with self.subTest(expected=expected, flags=row[-1]), \
+                    mock.patch.dict(verify.__globals__, source_scratch_mount_entry=lambda path: (row, ['tmpfs', unit])), \
+                    mock.patch.object(os, 'statvfs', return_value=types.SimpleNamespace(
+                        f_flag=15, f_blocks=4096, f_frsize=4096, f_files=256), create=True), \
+                    mock.patch.object(os, 'ST_RDONLY', 1, create=True), \
+                    mock.patch.object(os, 'ST_NOSUID', 2, create=True), \
+                    mock.patch.object(os, 'ST_NODEV', 4, create=True), \
+                    mock.patch.object(os, 'ST_NOEXEC', 8, create=True), \
+                    mock.patch.object(os, 'major', return_value=0, create=True), \
+                    mock.patch.object(os, 'minor', return_value=42, create=True), \
+                    mock.patch.object(os, 'fstat', return_value=info), \
+                    mock.patch('builtins.open', mock.mock_open(read_data=fdinfo)):
+                if expected:
+                    self.assertEqual([31, 42, 5], verify(scratch, unit, 17))
+                else:
+                    with self.assertRaises(self.ns['PreparationFailure']):
+                        verify(scratch, unit, 17)
+
+    def test_probe_scratch_is_journaled_and_held_until_the_unit_returns(self):
+        setup = self.raw_function('source_run_probe_work')
+        unit = self.ns['ruby_unit_name'](OPERATION_ID, 'probe')
+        scope = self.root / unit
+        mounted = [31, 42, 5]
+        records = []
+        authority = {'unit': unit, 'boot': OPERATION_ID, 'mount': None}
+        ready = dict(authority, mount=mounted)
+        cleanup = mock.Mock()
+        options = 'ro,nosuid,nodev,noexec,mode=0555,size=16777216,nr_inodes=256'
+        mount = mock.Mock()
+        setup.__globals__.update(source_probe_scope_lock=lambda path: nullcontext(), ruby_mount_path=str,
+                                 source_probe_mount_identity=mock.Mock(return_value=mounted),
+                                 source_probe_boot=mock.Mock(return_value=OPERATION_ID),
+                                 tracked_atomic_json=lambda path, record, mode: records.append(dict(record)),
+                                 ruby_require_settled=mock.Mock(), run=mount, source_release_probe_work=cleanup)
+
+        def launch(*args, **kwargs):
+            self.assertEqual((unit, self.destination(), VERSION), args)
+            self.assertEqual((scope / 'tmpfs', 42, 5), kwargs['probe_mount'])
+            self.assertEqual([authority, ready], records)
+            opened.assert_called_once()
+            closed.assert_not_called()
+            raise self.ns['PreparationFailure']('installation', 'fixture probe failure')
+
+        with mock.patch.object(subprocess, 'run', return_value=types.SimpleNamespace(returncode=0, stdout=b'not-found\n')), \
+                mock.patch.object(os, 'O_PATH', 1, create=True), \
+                mock.patch.object(os, 'O_DIRECTORY', 2, create=True), \
+                mock.patch.object(os, 'O_NOFOLLOW', 4, create=True), \
+                mock.patch.object(os, 'open', return_value=17) as opened, \
+                mock.patch.object(os, 'close') as closed, self.assertRaises(self.ns['PreparationFailure']):
+            setup(scope, unit, self.destination(), VERSION, launch)
+        mount.assert_called_once_with(setup.__globals__['ruby_system_command'](
+            'mount', '--types', 'tmpfs', '--options', options, '--', unit, str(scope / 'tmpfs')))
+        closed.assert_called_once_with(17)
+        cleanup.assert_called_once_with(scope, unit)
+
+    def test_probe_cleanup_never_unmounts_unrecorded_or_changed_mount(self):
+        release = self.raw_function('source_release_probe_work')
+        unit = self.ns['ruby_unit_name'](OPERATION_ID, 'probe')
+        scope = self.root / unit
+        scratch = scope / 'tmpfs'
+        scratch.mkdir(parents=True)
+        (scope / 'identity').write_text('fixture')
+        mounted = [31, 42, 5]
+        namespace = release.__globals__
+        namespace['ruby_require_settled'] = mock.Mock()
+        for recorded, boot in ((None, OPERATION_ID), ([32, 42, 5], OPERATION_ID),
+                               (mounted, '42132567-1234-4321-ace3-123456789abc')):
+            namespace.update(source_probe_record=mock.Mock(return_value={'unit': unit, 'boot': boot, 'mount': recorded}),
+                             source_probe_mount_identity=mock.Mock(return_value=mounted),
+                             source_probe_boot=mock.Mock(return_value=OPERATION_ID))
+            with self.subTest(recorded=recorded, boot=boot), mock.patch.object(subprocess, 'run') as call, \
+                    self.assertRaises(self.ns['PreparationFailure']):
+                release(scope, unit)
+            call.assert_not_called()
+            self.assertTrue(scratch.is_dir())
+        namespace.update(source_probe_record=mock.Mock(return_value={'unit': unit, 'boot': OPERATION_ID, 'mount': mounted}),
+                         source_probe_mount_identity=mock.Mock(side_effect=(mounted, mounted, None)))
+        with mock.patch.object(os, 'O_PATH', 1, create=True), \
+                mock.patch.object(os, 'O_DIRECTORY', 2, create=True), \
+                mock.patch.object(os, 'O_NOFOLLOW', 4, create=True), mock.patch.object(os, 'open', return_value=17), \
+                mock.patch.object(os, 'close') as closed, mock.patch.object(subprocess, 'run') as call:
+            release(scope, unit)
+        closed.assert_called_once_with(17)
+        call.assert_called_once_with(namespace['ruby_system_command']('umount', '--', str(scratch)),
+                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     check=True, timeout=15)
+        self.assertFalse(scope.exists())
+
+    def test_tracked_probe_marker_cleans_only_the_exact_original_work(self):
+        directory = self.root / 'tracked'
+        unit = self.ns['ruby_unit_name'](OPERATION_ID, 'probe')
+        scope = directory / unit
+        scope.mkdir(parents=True)
+        marker = directory / 'ruby-probe'
+        marker.write_text(OPERATION_ID, encoding='ascii')
+        unrelated = directory / 'wtl-ruby-probe-4213256712344321ace3123456789abc.service'
+        unrelated.mkdir()
+        tracked = types.SimpleNamespace(directory=directory, request={'kind': 'BIND'}, state={'processes': []})
+        self.ns.update(tracked_regular=lambda path, maximum: path.read_bytes(),
+                       source_probe_scope_lock=lambda path: nullcontext(),
+                       _previous_tracked_cleanup=mock.Mock(), source_release_probe_work=mock.Mock())
+        release = self.ns['source_release_probe_work']
+        release.side_effect = self.ns['PreparationFailure']('ownership', 'fixture unknown mount')
+        with self.assertRaises(self.ns['PreparationFailure']):
+            self.ns['tracked_cleanup'](tracked)
+        self.assertTrue(marker.exists())
+        self.ns['_previous_tracked_cleanup'].assert_not_called()
+        release.reset_mock()
+        release.side_effect = lambda path, name: path.rmdir()
+        self.ns['tracked_cleanup'](tracked)
+        release.assert_called_once_with(scope, unit)
+        self.assertFalse(marker.exists())
+        self.assertTrue(unrelated.is_dir())
+
+    def test_untracked_recovery_skips_locked_work_and_does_not_reap_on_observation(self):
+        parent = self.root / 'work' / 'source-probes'
+        parent.mkdir(parents=True)
+        active = self.ns['ruby_unit_name'](OPERATION_ID, 'probe')
+        retained = self.ns['ruby_unit_name']('42132567-1234-4321-ace3-123456789abc', 'probe')
+        later = self.ns['ruby_unit_name']('a2132567-1234-4321-ace3-123456789abc', 'probe')
+        reaper = self.ns['source_reap_probe_work']
+        scoped_release = mock.Mock()
+
+        def lock(scope):
+            if scope.name == active:
+                raise BlockingIOError()
+            return nullcontext()
+
+        listed = [types.SimpleNamespace(name=name) for name in ('unrelated', active, retained, later)]
+        self.ns.update(source_probe_scope_lock=mock.Mock(side_effect=lock), source_release_probe_work=scoped_release)
+        with mock.patch.object(os, 'scandir', return_value=nullcontext(iter(listed))):
+            reaper(parent)
+        scoped_release.assert_called_once_with(parent / retained, retained)
+        self.assertEqual([mock.call(parent / active), mock.call(parent / retained)],
+                         self.ns['source_probe_scope_lock'].call_args_list)
+
+        recover = mock.Mock()
+        worker = mock.Mock()
+        self.ns.update(source_reap_probe_work=recover, source_run_probe_work=mock.Mock())
+        self.ns['source_probe'](pathlib.Path('/usr'), VERSION, 'ruby', worker)
+        recover.assert_not_called()
+        self.ns['INSTALLATION_DIAGNOSTIC'] = (self.root, {})
+        self.ns['source_probe'](pathlib.Path('/usr'), VERSION, 'ruby', worker)
+        recover.assert_called_once_with(parent)
+
     def test_worker_requires_effective_scratch_and_cgroup_bounds_before_build(self):
         scope = self.configure_worker()
         unit = self.ns['ruby_unit_name'](OPERATION_ID, 'build')
@@ -298,24 +454,33 @@ class RubySourceBuildTest(unittest.TestCase):
         paths = {'cgroup': '0::/system.slice/' + unit + '\n',
                  'memory.max': '268435456\n', 'memory.swap.max': '0\n', 'mountinfo': mount}
         stat = types.SimpleNamespace(st_dev=9, st_ino=2)
-        args = (unit, '-', '-', '16777216', '256', '268435456')
-        for case, mountinfo, flags in (('valid', mount, 1), ('foreign-device', mount.replace('0:9', '0:8'), 1),
-                                       ('other-fs', mount.replace('- tmpfs', '- ext4'), 1), ('writable', mount, 0)):
+        args = (unit, '-', '-', '16777216', '256', '268435456', '9', '2')
+        for case, mountinfo, flags in (('valid', mount, 15), ('foreign-device', mount.replace('0:9', '0:8'), 15),
+                                       ('other-fs', mount.replace('- tmpfs', '- ext4'), 15), ('writable', mount, 0),
+                                       ('wrong-bind', mount, 15), ('executable-shm', mount, 15), ('missing-bind', mount, 15)):
+            def stat_path(path):
+                return types.SimpleNamespace(st_dev=9, st_ino=3) if case == 'wrong-bind' and path == '/var/tmp' else stat
+
+            def statvfs(path):
+                return types.SimpleNamespace(f_blocks=4096, f_frsize=4096, f_files=256,
+                                             f_flag=7 if case == 'executable-shm' and path == '/dev/shm' else flags)
+
             with self.subTest(case=case), \
                     mock.patch.object(pathlib.Path, 'read_text', autospec=True) as read, \
-                    mock.patch.object(os, 'stat', return_value=stat), \
+                    mock.patch.object(os, 'stat', side_effect=stat_path), \
                     mock.patch.object(os, 'major', return_value=0, create=True), \
                     mock.patch.object(os, 'minor', return_value=9, create=True), \
                     mock.patch.object(os, 'ST_RDONLY', 1, create=True), \
-                    mock.patch.object(os, 'statvfs', create=True,
-                                      return_value=types.SimpleNamespace(f_blocks=4096, f_frsize=4096,
-                                                                         f_files=256, f_flag=flags)):
+                    mock.patch.object(os, 'ST_NOSUID', 2, create=True), \
+                    mock.patch.object(os, 'ST_NODEV', 4, create=True), \
+                    mock.patch.object(os, 'ST_NOEXEC', 8, create=True), \
+                    mock.patch.object(os, 'statvfs', side_effect=statvfs, create=True):
                 read.side_effect = lambda path, **_: mountinfo if path.name == 'mountinfo' else paths[path.name]
                 if case == 'valid':
                     scope['require_ruby_resources'](*args)
                 else:
                     with self.assertRaises(SystemExit) as caught:
-                        scope['require_ruby_resources'](*args)
+                        scope['require_ruby_resources'](*(args[:-2] if case == 'missing-bind' else args))
                     self.assertEqual(126, caught.exception.code)
 
     def test_fixed_scratch_check_writes_and_links_in_source_and_staging_then_cleans(self):
@@ -706,7 +871,7 @@ class RubySourceBuildTest(unittest.TestCase):
         source.body = source.body[index:]
         worker = compile(source, '<Ruby sandbox worker>', 'exec')
         arguments = ['', 'probe', 'net:[1]', 'mnt:[2]', '/protected/ruby', VERSION,
-                     'wtl-ruby-probe-fixture.service', '-', '-', '16777216', '256', '268435456']
+                     'wtl-ruby-probe-fixture.service', '-', '-', '16777216', '256', '268435456', '22', '7']
         status = 'NoNewPrivs: 1\nSeccomp: 2\nCapEff: 0\nCapPrm: 0\nCapBnd: 0\n'
         child_failure = subprocess.CalledProcessError(2, ['sample-private-value'])
         with mock.patch.object(self.ns['sys'], 'argv', arguments), \
@@ -724,7 +889,7 @@ class RubySourceBuildTest(unittest.TestCase):
         self.assertEqual(103, observed.exception.code)
         self.assertNotIn('sample-private-value', str(observed.exception))
         self.assertEqual('/protected/ruby/bin/ruby', run.call_args.args[0][0])
-        state['require_ruby_resources'].assert_called_once_with(*arguments[-6:])
+        state['require_ruby_resources'].assert_called_once_with(*arguments[-8:])
 
     def test_protected_diagnose_only_keeps_ruby_evidence_and_restores_previous_recorder(self):
         namespace = self.ns
