@@ -34,6 +34,31 @@ class DeploymentSourceComparisonTest {
 
     private final List<String> progress = new ArrayList<>();
 
+    @Test
+    void emptyRootListContinuesToSourceBackedIdentification() throws Exception {
+        String rootList = """
+            {"tool":"list","arguments":{"path":"","offset":0,"limit":100}}
+            """;
+        assertEquals(recognized(), compare(List.of(rootList, identify("GO_SERVICE"), read(), identify("GO_SERVICE")),
+            recognized(), "AI"));
+        assertEquals(4, calls.get());
+        assertEquals("README.md", observedFacts.get(1).path("observations").get(0).path("output").get(0).asText());
+        assertTrue(observedFacts.get(1).path("readPaths").isEmpty(), "LIST never supplies source citations");
+        assertTrue(observedFacts.get(2).path("observations").toString().contains("UNREAD_EVIDENCE"));
+    }
+
+    @Test
+    void emptyRootListAlsoWorksDuringCalibration() throws Exception {
+        String rootList = """
+            {"tool":"list","arguments":{"path":"","offset":0,"limit":100}}
+            """;
+        assertEquals(recognized(), compare(List.of(read(), identify("NODE_SERVICE"), rootList, conclude("STATIC")),
+            recognized(), "AI"));
+        assertEquals(4, calls.get());
+        assertEquals(0, questions.get());
+        assertTrue(observedFacts.getLast().path("observations").toString().contains("\"path\":\"\""));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"STATIC", "AI"})
     void ownershipDeclarationMustBeReadBeforeDeterminingEitherResult(String decision) throws Exception {

@@ -87,19 +87,15 @@ final class DeploymentSourceTar {
     static long write(DeploymentSourceMaterial material, String relativeRoot, OutputStream output, TaskContext task)
         throws IOException, ApiException {
         Path root = material.snapshot().directory();
-        var names = new TreeSet<>(material.includedFiles());
-        if (names.size() != material.includedFiles().size())
-            throw new IllegalArgumentException("Duplicate archive member");
         String prefix = relativeRoot.isEmpty() ? "" : relativeRoot + "/";
         if (!DeploymentSourceArchive.validRelativeRoot(relativeRoot)
             || !relativeRoot.isEmpty() && !Files.isDirectory(root.resolve(relativeRoot), LinkOption.NOFOLLOW_LINKS))
             throw new IOException("Component archive root is unavailable");
+        var names = memberNames(material, relativeRoot);
         long total = 0;
         int written = 0;
         try (var gzip = new GZIPOutputStream(output)) {
             for (String name : names) {
-                if (!name.startsWith(prefix))
-                    continue;
                 DeploymentSourceArchiver.cancelled(task);
                 Path file = root.resolve(name).normalize();
                 if (name.isBlank() || name.indexOf('\\') >= 0 || name.chars().anyMatch(c -> c < 32)
@@ -129,6 +125,15 @@ final class DeploymentSourceTar {
         material.snapshot().directory();
         DeploymentSourceArchiver.cancelled(task);
         return total;
+    }
+
+    /** Returns the original snapshot-relative names selected by the deterministic archiver. */
+    static List<String> memberNames(DeploymentSourceMaterial material, String relativeRoot) {
+        var names = new TreeSet<>(material.includedFiles());
+        if (names.size() != material.includedFiles().size())
+            throw new IllegalArgumentException("Duplicate archive member");
+        String prefix = relativeRoot.isEmpty() ? "" : relativeRoot + "/";
+        return names.stream().filter(name -> name.startsWith(prefix)).toList();
     }
 
     /** Copies the observed exact length in cancellable chunks. / 使用可取消分块复制观测到的精确长度。

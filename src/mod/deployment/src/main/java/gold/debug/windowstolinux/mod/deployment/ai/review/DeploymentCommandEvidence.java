@@ -6,6 +6,7 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -129,8 +130,14 @@ public final class DeploymentCommandEvidence {
                     : operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
                     ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describe(executable, layout) : executable;
                 facts.put("completeExecutableInput", described);
-                if (operation.equals("deployment.mirror.compatibility.v1"))
-                    facts.put("mirrorCompatibilityInput", DeploymentMirrorTasks.compatibilityEvidence(request.script(), executable, input));
+                if (operation.equals("deployment.mirror.compatibility.v1")) {
+                    var binding = new LinkedHashMap<>(DeploymentMirrorTasks.compatibilityEvidence(request.script(), executable, input));
+                    binding.put("stdinHex", HexFormat.of().formatHex(input));
+                    binding.put("sourceRepresentation", "The product compared the decoded UTF-8 script byte for byte with actual stdin. "
+                        + "stdinHex encodes these same bytes as two hex digits per byte from byte 0, including the final LF. "
+                        + "Each line count includes its leading ASCII spaces and terminating LF. JSON framing and escapes are excluded.");
+                    facts.put("mirrorCompatibilityInput", binding);
+                }
                 mirrorInput.ifPresent(value -> facts.put("mirrorInputTask", value.task().toString()));
                 if (mirrorInput.isPresent() && described instanceof Map<?, ?> represented
                     && gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.MIRROR_FORMAT.equals(represented.get("format")))

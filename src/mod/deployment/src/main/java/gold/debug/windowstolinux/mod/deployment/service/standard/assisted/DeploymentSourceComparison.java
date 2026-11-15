@@ -91,7 +91,7 @@ public final class DeploymentSourceComparison {
             if (!Set.of("list", "read", "search").contains(tool))
                 throw new SecurityException("Unsupported identification tool");
             if (!validQueryArguments(args, tool, observations)) continue;
-            String path = DeploymentJsonFields.text(args, tool.equals("search") ? "query" : "path", 500);
+            String path = queryTarget(args, tool);
             int offset;
             int limit;
             try {
@@ -186,7 +186,7 @@ public final class DeploymentSourceComparison {
             if (!Set.of("list", "read", "search").contains(tool))
                 throw new SecurityException("Unsupported calibration tool");
             if (!validQueryArguments(args, tool, history)) continue;
-            String path = DeploymentJsonFields.text(args, tool.equals("search") ? "query" : "path", 500);
+            String path = queryTarget(args, tool);
             int offset;
             int limit;
             try {
@@ -207,6 +207,13 @@ public final class DeploymentSourceComparison {
         source.verify();
         task.progress("AI_SOURCE_CALIBRATION UNRESOLVED budget exhausted", Optional.empty());
         return Optional.empty();
+    }
+
+    /** An empty path names the root only for a directory listing. / 空路径仅在列目录时表示根目录。 */
+    private static String queryTarget(com.fasterxml.jackson.databind.JsonNode args, String tool) {
+        if (tool.equals("list") && "".equals(args.path("path").textValue()))
+            return "";
+        return DeploymentJsonFields.text(args, tool.equals("search") ? "query" : "path", 500);
     }
 
     /** Reads bounded protocol evidence for the original operation. / 读取原操作的有界协议依据。

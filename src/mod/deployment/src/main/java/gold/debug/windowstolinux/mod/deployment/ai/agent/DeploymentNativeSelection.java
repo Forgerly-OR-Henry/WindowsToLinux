@@ -48,6 +48,9 @@ public final class DeploymentNativeSelection {
         var tools = new ArrayList<AiToolDefinition>();
         for (String name : List.of("list", "read", "search")) {
             var schema = DeploymentToolSchemas.object(name.equals("search") ? "query" : "path", "offset:integer", "limit:integer");
+            if (name.equals("list"))
+                ((com.fasterxml.jackson.databind.node.ObjectNode) schema.at("/properties/path"))
+                    .put("description", "Source-relative directory. Use the empty string or . for the frozen root.");
             ((com.fasterxml.jackson.databind.node.ObjectNode) schema.at("/properties/offset")).put("minimum", 0).put("maximum", 1000000);
             ((com.fasterxml.jackson.databind.node.ObjectNode) schema.at("/properties/limit")).put("minimum", 1).put("maximum", 100);
             tools.add(new AiToolDefinition(name, "Read bounded frozen source evidence",

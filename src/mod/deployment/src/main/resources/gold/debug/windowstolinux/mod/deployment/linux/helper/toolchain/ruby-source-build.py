@@ -31,6 +31,12 @@ RUBY_WORKER_FAILURES = {
     129: ('scratch-execute', 'sh'),
 }
 RUBY_CONFIGURE_FAILURES = {
+    70: 'config-log-operation-not-permitted-reported-by-conftest',
+    71: 'config-log-operation-not-permitted-reported-by-compiler',
+    72: 'config-log-operation-not-permitted-reported-by-linker',
+    73: 'config-log-operation-not-permitted-reported-by-make',
+    74: 'config-log-operation-not-permitted-reported-by-configure-shell',
+    75: 'config-log-operation-not-permitted-reported-by-config-status',
     89: 'output-operation-not-permitted-reported-by-configure-shell',
     104: 'start-permission-denied',
     105: 'start-path-or-interpreter-missing',
@@ -199,10 +205,18 @@ def diagnostic_output_lines(stream):
         if not continued and complete and len(raw) <= 4096:
             yield raw.rstrip(b"\r\n")
         continued = not complete
+
+def only_source_worker_in_cgroup(unit):
+    with open("/sys/fs/cgroup/system.slice/" + unit + "/cgroup.procs", "rb") as processes:
+        return processes.read(64) == (str(os.getpid()) + "\n").encode("ascii")
 '''
 
 RUBY_WORKER = SOURCE_WORKER + r'''
+from contextlib import contextmanager
+import io
 import re
+import stat
+import time
 
 RUBY_EPERM_REPORTERS = (
     (165, rb"^(?:(?:\./)?configure|(?:/(?:usr/)?bin/)?(?:ba|da)?sh): (?:line )?[0-9]+: (?:\.\./|\./)?conftest(?:\.exe)?: "),
@@ -220,8 +234,87 @@ RUBY_EPERM_REPORTERS = (
     (89, rb"^(?:(?:\./)?configure|(?:/(?:usr/)?bin/)?(?:ba|da)?sh): "),
 )
 
-def configure(release, prefix, options):
-    # Classify failures inside the unprivileged unit. No configure or config.log text leaves it.
+CONFIG_LOG_MAX_BYTES = 64 * 1024
+CONFIG_LOG_REPORTERS = {165: 70, 167: 71, 168: 72, 199: 73, 89: 74, 166: 75}
+
+def configure_eperm_reporter(line, configure_reporter):
+    if line.startswith(configure_reporter):
+        line = b"configure: " + line[len(configure_reporter):]
+    return next((code for code, pattern in RUBY_EPERM_REPORTERS if re.match(pattern, line)), 131)
+
+@contextmanager
+def fresh_config_log_directory(release):
+    descriptor = None
+    fresh = None
+    try:
+        descriptor = os.open(release, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.stat("config.log", dir_fd=descriptor, follow_symlinks=False)
+        except FileNotFoundError:
+            fresh = descriptor
+    except OSError:
+        pass
+    try:
+        yield fresh
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+def config_log_tail(directory):
+    descriptor = os.open("config.log", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    with os.fdopen(descriptor, "rb") as stream:
+        before = os.fstat(descriptor)
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid()
+                or before.st_nlink != 1 or before.st_mode & 0o022):
+            return b""
+        offset = max(0, before.st_size - CONFIG_LOG_MAX_BYTES)
+        stream.seek(offset)
+        tail = stream.read(CONFIG_LOG_MAX_BYTES + 1)
+        after = os.fstat(descriptor)
+        current = os.stat("config.log", dir_fd=directory, follow_symlinks=False)
+        identity = lambda info: (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_nlink,
+                                 info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        if len(tail) != before.st_size - offset or identity(before) != identity(after) or identity(before) != identity(current):
+            return b""
+        return tail.partition(b"\n")[2] if offset else tail
+
+def terminal_config_log_reporter(tail, child_exit, configure_reporter):
+    expected_exit = b"configure: exit " + str(child_exit).encode("ascii")
+    if not tail.endswith(b"\n") or tail.rsplit(b"\n", 2)[-2] != expected_exit:
+        return 131
+    if any(len(line) > 4096 for line in io.BytesIO(tail)):
+        return 131
+    reporters = set()
+    checking = False
+    terminal = False
+    for line in diagnostic_output_lines(io.BytesIO(tail)):
+        if re.match(rb"^configure:[0-9]{1,8}: checking ", line):
+            reporters.clear()
+            checking, terminal = True, False
+        elif re.match(rb"^configure:[0-9]{1,8}: error: ", line):
+            terminal, checking = checking, False
+        elif checking and permission_text(line) == b"operation not permitted":
+            reporters.add(configure_eperm_reporter(line, configure_reporter))
+    if terminal and len(reporters) == 1:
+        return CONFIG_LOG_REPORTERS.get(next(iter(reporters)), 131)
+    return 131
+
+def config_log_hint(directory, child_exit, configure_reporter, unit, unit_deadline, clock_namespace):
+    # The bounded observation is optional and retains the original failure on unavailable evidence.
+    try:
+        if (directory is None or not clock_namespace or os.readlink("/proc/self/ns/time") != clock_namespace
+                or int(unit_deadline) - time.monotonic_ns() <= 1_000_000_000 or not only_source_worker_in_cgroup(unit)):
+            return 131
+        hint = terminal_config_log_reporter(config_log_tail(directory), child_exit, configure_reporter)
+        return hint if int(unit_deadline) - time.monotonic_ns() > 1_000_000_000 else 131
+    except (OSError, ValueError):
+        return 131
+
+def configure_status(release, prefix, options, directory, unit, unit_deadline, clock_namespace):
+    # Only a fixed worker status leaves the unprivileged unit.
     configure_path = str(release / "configure")
     configure_reporter = os.fsencode(configure_path) + b": "
     try:
@@ -229,7 +322,7 @@ def configure(release, prefix, options):
                                    cwd=release, env=environment, stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     except OSError as error:
-        sys.exit({errno.EACCES: 104, errno.EPERM: 104, errno.ENOENT: 105, errno.ENOEXEC: 106}.get(error.errno, 107))
+        return {errno.EACCES: 104, errno.EPERM: 104, errno.ENOENT: 105, errno.ENOEXEC: 106}.get(error.errno, 107)
 
     messages = {
         b"configure: error: no acceptable C compiler found in $PATH": 108,
@@ -247,21 +340,28 @@ def configure(release, prefix, options):
                 if hint:
                     hints.add(hint)
                 if hint == 131:
-                    if line.startswith(configure_reporter):
-                        line = b"configure: " + line[len(configure_reporter):]
-                    eperm_reporters.add(next((code for code, pattern in RUBY_EPERM_REPORTERS
-                                              if re.match(pattern, line)), 131))
+                    eperm_reporters.add(configure_eperm_reporter(line, configure_reporter))
             code = process.wait()
     except OSError:
-        sys.exit(135)
+        return 135
     if code < 0:
-        sys.exit(111)
+        return 111
     if code:
         if exact:
-            sys.exit(exact)
+            return exact
         if len(hints) > 1 or len(eperm_reporters) > 1:
-            sys.exit(171)
-        sys.exit(next(iter(eperm_reporters or hints), 134))
+            return 171
+        hint = next(iter(eperm_reporters or hints), 134)
+        if hint == 131:
+            return config_log_hint(directory, code, configure_reporter, unit, unit_deadline, clock_namespace)
+        return hint
+    return 0
+
+def configure(release, prefix, options, unit, unit_deadline, clock_namespace):
+    with fresh_config_log_directory(release) as directory:
+        status = configure_status(release, prefix, options, directory, unit, unit_deadline, clock_namespace)
+    if status:
+        sys.exit(status)
 
 failure = 90
 try:
@@ -270,7 +370,7 @@ try:
     ruby = prefix + "/bin/ruby"
     if mode == "build":
         failure = 95
-        device, inode, legacy, *resource_limits = arguments
+        device, inode, legacy, *resource_limits, unit_deadline, clock_namespace = arguments
         require_staging_mount(prefix, device, inode)
         failure = 126
         require_ruby_resources(*resource_limits)
@@ -280,7 +380,7 @@ try:
         verify_native_build_chain(release)
         options = ["--with-out-ext=openssl"] if legacy == "legacy" else []
         failure = 98
-        configure(release, prefix, options)
+        configure(release, prefix, options, resource_limits[0], unit_deadline, clock_namespace)
         failure = 99
         command("/usr/bin/make", "-j2", cwd=release)
         failure = 100
@@ -522,12 +622,11 @@ def source_unit(unit, directory, version, ecosystem, worker_source, build_mounts
         properties.extend(['MemoryMax=' + str(RUBY_MEMORY_BYTES), 'MemorySwapMax=0'])
         worker.extend([unit, str(info.st_dev), str(info.st_ino), str(RUBY_SCRATCH_BYTES),
                        str(RUBY_SCRATCH_INODES), str(RUBY_MEMORY_BYTES)])
-        if ecosystem == 'python':
-            try:
-                clock_namespace = os.readlink('/proc/self/ns/time')
-            except OSError:
-                clock_namespace = ''
-            worker.extend([str(launch_start + seconds * 1_000_000_000), clock_namespace])
+        try:
+            clock_namespace = os.readlink('/proc/self/ns/time')
+        except OSError:
+            clock_namespace = ''
+        worker.extend([str(launch_start + seconds * 1_000_000_000), clock_namespace])
         properties.extend(['BindReadOnlyPaths=' + ' '.join(sources), 'BindPaths=' + ' '.join(mounts),
                            'ReadWritePaths=' + ' '.join(writable)])
     else:

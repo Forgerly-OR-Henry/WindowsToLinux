@@ -47,6 +47,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.Deplo
 import gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem.GoBuildWriter;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -1663,7 +1664,7 @@ class DeploymentToolchainReviewEvidenceTest {
                 fixture.layout).orElseThrow();
             var manifest = JSON.readTree(initial.messages().getLast().text()).path(PHASE);
             var sources = new LinkedHashMap<Integer, Map.Entry<String, String>>();
-            for (String source : List.of("dependencyWorker", "dependencySystemShell")) {
+            for (String source : List.of("dependencyWorker", "dependencySystemShell", "mirrorRuntime")) {
                 var descriptor = manifest.path(source);
                 String text = collect(evidence, descriptor, PHASE);
                 assertIdentity(descriptor, text);
@@ -1671,6 +1672,14 @@ class DeploymentToolchainReviewEvidenceTest {
             }
             var missing = manifest.path("requiredAptRanges");
             assertTrue(missing.isArray() && !missing.isEmpty());
+            var initialWorkingSet = initial.messages().stream()
+                .filter(DeploymentToolchainReviewEvidenceTest::nodeInitialSupplement).findFirst().orElseThrow().text();
+            assertTrue(initialWorkingSet.contains("def validate_url("));
+            assertTrue(initialWorkingSet.contains("wtl_apt_update() {"));
+            var present = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            String initialHeader = initialWorkingSet.lines().skip(1).findFirst().orElseThrow();
+            for (var range : JSON.readTree(initialHeader).path("ranges"))
+                addR24Range(present, range.path("pointer").asText(), range.path("offset").asInt(), range.path("next").asInt());
             String snapshot = manifest.path("snapshotSha256").asText();
             int approvalFixtureCap = 180000;
             int recordedFactsCharacters = 43294;
@@ -1682,7 +1691,10 @@ class DeploymentToolchainReviewEvidenceTest {
                 String pointer = required.path("pointer").asText();
                 int next = required.path("next").asInt();
                 for (int offset = required.path("offset").asInt(); offset < next; offset += 4000) {
-                    var call = read("apt-required-" + pages++, snapshot, pointer, offset, Math.min(4000, next - offset));
+                    int end = Math.min(offset + 4000, next);
+                    var existing = present.getOrDefault(pointer, new TreeMap<>()).floorEntry(offset);
+                    if (existing != null && existing.getValue() >= end) continue;
+                    var call = read("apt-required-" + pages++, snapshot, pointer, offset, end - offset);
                     fixture.model.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(mockResponses(call)), Optional.empty()));
                 }
             }
@@ -2440,6 +2452,109 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     @Test
+    void r38NodeBindReadsPreviouslyRejectedShellCoordinatesInTheFixedSnapshot() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var command = r26Binding(fixture, "NODE", "24.22.3")) {
+            var action = intent("bind", fixture, command);
+            var facts = new DeploymentFixedCommandProtocol(fixture.context).inspect(action, command, fixture.layout, fixture.task);
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), action,
+                command, fixture.layout).orElseThrow();
+            var manifest = JSON.readTree(evidence.messages().getLast().text()).path(PHASE);
+            var shell = manifest.path("mirrorBootstrapShell");
+            String pointer = shell.path("sourcePointer").asText();
+            String source = r24Shell(fixture);
+            var reader = evidence.reader(8);
+            int[] offsets = {0, 8000, 16000, 24000, 32000};
+            var calls = new ArrayList<AiToolCall>();
+            for (int offset : offsets) {
+                var arguments = JSON.createObjectNode().put("pointer", pointer).put("offset", offset)
+                    .put("limit", Math.min(8000, source.length() - offset));
+                calls.add(new AiToolCall("r38-node-bind-" + offset, "evidence", arguments.toString()));
+            }
+            var response = mockResponses(calls.toArray(AiToolCall[]::new));
+            var pages = reader.read(response);
+            for (int i = 0; i < offsets.length; i++) {
+                int offset = offsets[i];
+                assertFalse(pages.get(i).error(), pages.get(i).text());
+                assertEquals(source.substring(offset, Math.min(offset + 8000, source.length())),
+                    pagePayload(pages.get(i).text()).at("/value/text").asText());
+            }
+            var messages = new ArrayList<>(evidence.messages());
+            reader.continueReview(messages, response, pages);
+            reader.read(response(Optional.empty(), verdict("source-visible", "APPROVE")));
+            assertTrue(reader.approvalEvidenceBlock().isEmpty());
+            var invalid = reader.read(mockResponses(read("foreign-snapshot", "0".repeat(64), pointer, 0, 1),
+                new AiToolCall("outside-source", "evidence", JSON.createObjectNode().put("pointer", pointer)
+                    .put("offset", source.length() + 1).put("limit", 1).toString())));
+            assertTrue(invalid.getFirst().text().contains("SNAPSHOT_MISMATCH"));
+            assertTrue(invalid.getLast().text().contains("CURSOR_INVALID"));
+            assertEquals(Optional.of("READ_REJECTED"), reader.approvalEvidenceBlock());
+        }
+    }
+
+    @Test
+    void r38PythonPreparationActualCursorBatchesFitTheTerminalWireAllowance() throws Exception {
+        int cap = 121089;
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.values());
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = diagnosedPreparation(fixture, "PYTHON", "3.12")) {
+            var action = intent("prepare", fixture, command);
+            var facts = new LinkedHashMap<String, Object>(
+                new DeploymentFixedCommandProtocol(fixture.context).inspect(action, command, fixture.layout, fixture.task));
+            facts.put("currentCommandEvidence", assisted.scope.effectFacts(action, fixture.task));
+            var unpadded = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), action, command,
+                fixture.layout).orElseThrow();
+            int padding = Math.max(0, 34589 - unpadded.messages().getLast().text().length() - 24);
+            if (padding > 0) facts.put("replayFixturePadding", "x".repeat(padding));
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), action, command,
+                fixture.layout).orElseThrow();
+            var initial = r31DeniedApproval(fixture, assisted, facts, action, command);
+            var messages = new ArrayList<>(initial.messages());
+            messages.set(messages.size() - 1, evidence.messages().getLast());
+            int fixed = wire(copy(initial, messages, 1048576), 1048576, Map.of()).length;
+            var reader = evidence.reader(16);
+            reader.offerInitialSource(messages);
+            var manifest = JSON.readTree(evidence.messages().getLast().text()).path(PHASE);
+            String snapshot = manifest.path("snapshotSha256").asText();
+            String policy = manifest.at("/mirrorPolicySource/sourcePointer").asText();
+            String shell = manifest.at("/mirrorBootstrapShell/sourcePointer").asText();
+            String helper = manifest.at("/installedHelperSource/sourcePointer").asText();
+            String runtime = "/mirrorTransport/runtimeSource";
+            var sources = Map.of(policy, DeploymentMirrorTasks.policy(fixture.task), shell, r24Shell(fixture),
+                helper, DeploymentManagedHelperBundle.renderScript(fixture.layout), runtime, DeploymentMirrorRuntime.runtimeSource());
+            var batches = List.of(
+                List.of(read("r38-python-1", snapshot, policy, 0, 8000), read("r38-python-2", snapshot, policy, 8000, 2000),
+                    read("r38-python-3", snapshot, helper, 186612, 3000), read("r38-python-4", snapshot, shell, 13709, 2000),
+                    read("r38-python-5", snapshot, runtime, 3984, 4000)),
+                List.of(read("r38-python-6", snapshot, helper, 186612, 5753), read("r38-python-7", snapshot, helper, 224950, 1775),
+                    read("r38-python-8", snapshot, helper, 277223, 4191), read("r38-python-9", snapshot, helper, 205808, 1885)),
+                List.of(read("r38-python-10", snapshot, policy, 0, 8000), read("r38-python-11", snapshot, policy, 8000, 1272),
+                    read("r38-python-12", snapshot, shell, 13709, 1118), read("r38-python-13", snapshot, runtime, 3984, 3157)));
+            byte[] encoded = wire(copy(initial, messages, 1048576), 1048576, Map.of());
+            int first = encoded.length;
+            assertTrue(first < cap, "first request " + first);
+            for (var batch : batches) {
+                var reply = mockResponses(batch.toArray(AiToolCall[]::new));
+                var results = reader.read(reply);
+                assertEquals(List.of(), results.stream().filter(AiToolResult::error).map(AiToolResult::text).toList());
+                reader.continueReview(messages, reply, results);
+                encoded = wire(copy(initial, messages, 1048576), 1048576, Map.of());
+                if (encoded.length > cap) {
+                    assertTrue(reader.repackBeforeSend(messages, exactBudgetProblem(encoded.length, cap)));
+                    encoded = wire(copy(initial, messages, cap), cap, Map.of());
+                }
+                assertTrue(encoded.length <= cap);
+                assertTrue(replayRetainedRanges(encoded, snapshot, sources).isPresent());
+            }
+            reader.read(response(Optional.empty(), verdict("r38-python-verdict", "APPROVE")));
+            System.out.printf("R38_PYTHON_REPLAY fixedEncoded=%d firstEncoded=%d terminalEncoded=%d cap=%d verdictBlock=%s%n",
+                fixed, first, encoded.length, cap, reader.approvalEvidenceBlock().orElse("NONE"));
+            String header = messages.get(messages.size() - 2).text().lines().skip(1).findFirst().orElseThrow();
+            var deferred = JSON.readTree(header).path("previouslyDeferred");
+            assertTrue(reader.approvalEvidenceBlock().isEmpty(), () -> reader.approvalEvidenceBlock() + " " + deferred);
+        }
+    }
+
+    @Test
     void sourceBuiltPythonReviewIncludesTheActualSignedAptPathAndExactSourceRanges() throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var command = diagnosedPreparation(fixture, "PYTHON", "3.12")) {
             var intent = intent("prepare", fixture, command);
@@ -2475,9 +2590,7 @@ class DeploymentToolchainReviewEvidenceTest {
                 "ruby_create_scratch(scratch, unit)", "ruby_remove_scratch(work / 'scratch', unit)",
                 "def verify_native_build_chain(release):", "verify_native_build_chain(release)",
                 "(\"/usr/bin/ar\", \"crs\", \"probe.a\", \"probe.o\")",
-                "def make_python(release):", "make_failure = make_python(release)",
-                "sha256 = download(url, archive, algorithm, expected)",
-                "digest.hexdigest().lower() != expected.lower()")) {
+                "make_failure = make_python(release)", "sha256 = download(url, archive, algorithm, expected)")) {
                 assertTrue(body.contains(checked), checked);
             }
             var helper = projected.path("installedHelperSource");
@@ -2487,7 +2600,21 @@ class DeploymentToolchainReviewEvidenceTest {
             int next = source.indexOf("PYTHON_MAKE_RESETIDS_PROBE = r'''", diagnostics);
             assertTrue(diagnostics >= 0 && next > diagnostics && next - diagnostics <= 8000);
             assertFalse(body.contains("PYTHON_MAKE_FAILURES = {"));
-            assertTrue(body.contains("PYTHON_MAKE_RESETIDS_PROBE = r'''"));
+            var resetids = helper.at("/namedRanges/pythonMakeResetidsProbe");
+            assertEquals(next, resetids.path(0).asInt());
+            assertTrue(source.substring(next, resetids.path(1).asInt()).startsWith("PYTHON_MAKE_RESETIDS_PROBE = r'''"));
+            for (var section : Map.of("pythonMakeInvocation", "def make_python(release):",
+                    "def download(", "official.hexdigest() != expected",
+                    "def preparation_lock(", "def preparation_lock(").entrySet()) {
+                var range = helper.path("namedRanges").path(section.getKey());
+                int offset = range.path(0).asInt(), length = range.path(1).asInt() - offset;
+                var call = read("read-pinned-section", snapshot, helper.path("sourcePointer").asText(), offset, length);
+                var result = evidence.reader(1).read(mockResponses(call)).getFirst();
+                assertFalse(result.error());
+                String returned = pagePayload(result.text()).at("/value/text").asText();
+                assertEquals(source.substring(offset, offset + length), returned);
+                assertTrue(returned.contains(section.getValue()), section.getKey());
+            }
             var diagnosticCall = read("read-python-diagnostic-grammar", snapshot, helper.path("sourcePointer").asText(),
                 diagnostics, next - diagnostics);
             var page = evidence.reader(1).read(mockResponses(diagnosticCall)).getFirst();

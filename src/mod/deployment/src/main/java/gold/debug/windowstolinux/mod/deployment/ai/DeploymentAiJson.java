@@ -188,7 +188,7 @@ public final class DeploymentAiJson {
         String current = facts(facts, bound, purpose == AiPurpose.APPROVAL);
         var messages = new ArrayList<AiMessage>();
         messages.add(new AiMessage(AiRole.SYSTEM, policy, List.of()));
-        var definitions = evidence.isPresent() ? List.of(definition, DeploymentCommandSourceEvidence.TOOL) : List.of(definition);
+        var definitions = evidence.isPresent() ? List.of(definition, evidence.orElseThrow().evidenceTool()) : List.of(definition);
         if (evidence.isPresent()) messages.addAll(evidence.orElseThrow().messages());
         else messages.add(new AiMessage(AiRole.USER, current, List.of()));
         var evidenceReader = evidence.map(value -> value.reader(output.execution().standaloneToolAttempts()));
@@ -275,6 +275,11 @@ public final class DeploymentAiJson {
                                           gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout,
                                           boolean nativeObservation, Map<String, ?> facts) {
         if (nativeObservation) return DeploymentHelperReviewContract.nativeObservationText(layout);
+        if ("deployment.mirror.compatibility.v1".equals(facts.get("operation")) && facts.containsKey("mirrorCompatibilityInput"))
+            return "Review the fixed Bash launcher, the complete executable stdin and the bound task independently. "
+                + "mirrorCompatibilityInput.stdinHex is the full actual stdin before JSON encoding. Each pair is one byte. "
+                + "Ordinary leading ASCII spaces and the final 0a byte are included exactly once. Compare the full body, "
+                + "line byte counts and digest using that representation before deciding whether the actual effects are safe.";
         if ("deployment.candidate.verify.v1".equals(facts.get("operation"))
             && facts.get("currentCommandEvidence") instanceof Map<?, ?> current && current.containsKey("candidateObservation"))
             return DeploymentHelperReviewContract.candidateVerificationText(layout);

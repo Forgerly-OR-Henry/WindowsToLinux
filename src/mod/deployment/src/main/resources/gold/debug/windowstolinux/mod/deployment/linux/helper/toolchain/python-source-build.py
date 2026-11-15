@@ -200,10 +200,6 @@ def make_python(release):
         return {signal.SIGKILL: 115, signal.SIGXFSZ: 116}.get(-code, 117)
     return hint if code else 0
 
-def only_source_worker_in_cgroup(unit):
-    with open("/sys/fs/cgroup/system.slice/" + unit + "/cgroup.procs", "rb") as processes:
-        return processes.read(64) == (str(os.getpid()) + "\n").encode("ascii")
-
 def make_resetids_probe_matches(unit, unit_deadline, clock_namespace):
     try:
         if (not clock_namespace or os.readlink("/proc/self/ns/time") != clock_namespace

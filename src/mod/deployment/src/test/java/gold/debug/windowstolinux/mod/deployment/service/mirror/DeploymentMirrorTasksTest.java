@@ -232,6 +232,40 @@ class DeploymentMirrorTasksTest extends DeploymentRuntimeFixture {
         }
     }
 
+    @Test
+    void directoryDiffCompatibilityEvidenceBindsAll269UnframedStdinBytes() throws Exception {
+        String script = """
+            set -eu
+            while IFS='=' read -r key value; do
+              [ "$key" = ID ] || continue
+              value="$(builtin printf '%s' "$value" | /usr/bin/tr -d '\\042\\047')"
+              case "$value" in ''|*[!a-z0-9_-]*) exit 64;; esac
+              builtin printf '%s\\n' "$value"
+              exit 0
+            done < /etc/os-release
+            exit 69
+            """;
+        var utf8 = java.nio.charset.StandardCharsets.UTF_8;
+        byte[] expected = script.getBytes(utf8);
+        try (var request = new CommandRequest("exec /usr/bin/env -i LC_ALL=C PATH=/usr/bin:/bin /bin/bash --noprofile --norc -p -s",
+            expected, java.time.Duration.ofSeconds(15), 1024)) {
+            var target = new gold.debug.windowstolinux.appapi.task.action.ActionTarget(TARGET.id(), "task", UUID.randomUUID().toString());
+            var action = RemoteActions.command(TARGET, "a".repeat(64), request).withSemantics(
+                new gold.debug.windowstolinux.appapi.task.action.ActionSemantics("deployment.mirror.compatibility.v1", Set.of(target)));
+            var facts = DeploymentCommandEvidence.facts(action, request);
+            var binding = (Map<?, ?>) facts.get("mirrorCompatibilityInput");
+            String hex = (String) binding.get("stdinHex");
+            assertEquals(269, binding.get("stdinBytes"));
+            assertEquals(538, hex.length());
+            assertEquals("0a", hex.substring(hex.length() - 2));
+            byte[] decoded = HexFormat.of().parseHex(hex);
+            assertArrayEquals(expected, decoded);
+            assertEquals(facts.get("completeExecutableInput"), new String(decoded, utf8));
+            assertEquals(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(decoded)),
+                binding.get("stdinSha256"));
+        }
+    }
+
     @Test void unusedAutomaticPurposesDoNotProbeAndAdmissionKeepsTheOriginalPreferences() throws Exception {
         enable();
         try (var runtime = open()) {

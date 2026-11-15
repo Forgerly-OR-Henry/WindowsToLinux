@@ -38,7 +38,7 @@ public final class MirroredInstallerTestFixture implements AutoCloseable {
         this(DownloadPoint.APT_UBUNTU);
     }
 
-    MirroredInstallerTestFixture(DownloadPoint systemPoint) throws Exception {
+    MirroredInstallerTestFixture(DownloadPoint... points) throws Exception {
         var fallback = NativeAiFixture.approvalCheckpoints(task);
         var tasks = (TaskService) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{TaskService.class}, (p,m,a) -> {
             if (a[0] != task) throw new AssertionError("Different task");
@@ -78,9 +78,11 @@ public final class MirroredInstallerTestFixture implements AutoCloseable {
         });
         var catalog = MirrorCatalog.load();
         var rows = new EnumMap<DownloadPoint,List<MirrorSettings.Row>>(DownloadPoint.class);
-        var providers = catalog.providersFor(systemPoint).stream().filter(MirrorCatalog.Provider::official).toList();
-        if (providers.size() != 1) throw new AssertionError("Exact official provider required");
-        rows.put(systemPoint, List.of(new MirrorSettings.Row(providers.getFirst().id(), "", false, false, "")));
+        for (var point : points) {
+            var providers = catalog.providersFor(point).stream().filter(MirrorCatalog.Provider::official).toList();
+            if (providers.size() != 1) throw new AssertionError("Exact official provider required");
+            rows.put(point, List.of(new MirrorSettings.Row(providers.getFirst().id(), "", false, false, "")));
+        }
         var selected = MirrorSelector.resolve(catalog, new MirrorSettings(1, rows, Map.of()), server.id(), "").withTask(task.id().toString());
         new DeploymentMirrorTasks(context).inherit(task, server, selected.toJson());
     }

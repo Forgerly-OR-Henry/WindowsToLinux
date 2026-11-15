@@ -15,6 +15,14 @@ record PreparationSourceRange(String section, int offset, int next) {
         "nodeMirroredMetadata", "nodeMirroredArchive", "archiveTarValidation", "nodeArchiveDigest",
         "nodeManagedArchive", "archiveVersionProbe", "nodePreparationLock");
     private static final Set<String> NODE_TRANSFER_SUPPLEMENT = Set.of("class MirrorRedirect(", "mirrorDownload");
+    private static final Set<String> PYTHON_PREPARATION_INITIAL = Set.of(
+        "shellStartup", "startupOwnership", "prepareDispatch", "pythonLauncher", "releaseDownloadPoint", "selectedRelease",
+        "def prepare(", "def official_url(",
+        "sourceResourceLimits", "sourceIsolationPreflight", "def source_install(", "def source_unit(", "pythonSourceWorker",
+        "def source_dependencies(", "pythonLegacyReceiverGuard",
+        "aptDispatch", "aptSourceSafety", "aptCredentialAndTransportPolicy", "aptSecurityAndFrozenTransaction",
+        "mirrorPolicyValidation", "mirrorRouteAdmission", "mirrorTLS", "mirrorDigest",
+        "def mirror_system_command(");
     private static final Set<String> APT_DEPENDENCY_WORKER_INITIAL = Set.of(
         "def dependency_manifest(", "def dependency_open_core_events(", "def dependency_worker(",
         "def dependency_supervise(", "def dependency_stop_owned(", "def dependency_validate_apt(",
@@ -23,7 +31,7 @@ record PreparationSourceRange(String section, int offset, int next) {
         "def dependency_ack_record(", "def dependency_result(", "dependencyAptBinaryPaths", "def dependency_protected(");
     private static final Set<String> APT_DEPENDENCY_SHELL_INITIAL = Set.of(
         "aptGuardedRepositoryAdmission", "aptSignedUpdateToFrozenInstall", "aptDispatch",
-        "aptSecurityAndFrozenTransaction");
+        "aptSecurityAndFrozenTransaction", "def mirror_system_command(", "aptFrozenPolicyAdmission");
 
     static List<PreparationSourceRange> helper(String helper, String ecosystem, boolean diagnosed) throws IOException {
         var ranges = new ArrayList<PreparationSourceRange>();
@@ -355,8 +363,10 @@ record PreparationSourceRange(String section, int offset, int next) {
 
     static List<PreparationSourceRange> aptDependencyRuntime(String runtime) throws IOException {
         return List.of(python(runtime, "def mirror_system_command("),
-            between(runtime, "aptFrozenPolicyAdmission", "    @classmethod\n    def from_environment(",
-                "\n    def transport_options("));
+            between(runtime, "aptFrozenPolicyAdmission", "class MirrorPolicy:",
+                "\n    def transport_options("),
+            between(runtime, "aptRuntimePolicyTransport", "    def transport_options(self, endpoint, url):",
+                "\n\nclass MirrorRedirect("));
     }
 
     static List<PreparationSourceRange> aptDependencyWorker(String worker) throws IOException {
@@ -395,6 +405,25 @@ record PreparationSourceRange(String section, int offset, int next) {
     static boolean aptDependencyInitial(PreparationSourceRange range) {
         return APT_DEPENDENCY_WORKER_INITIAL.contains(range.section())
             || APT_DEPENDENCY_SHELL_INITIAL.contains(range.section());
+    }
+
+    static List<PreparationSourceRange> pythonPreparationShell(String shell, boolean credentials) throws IOException {
+        var ranges = new ArrayList<>(aptDependencyShell(shell, credentials));
+        ranges.add(runtimeLauncher(shell));
+        ranges.add(between(shell, "aptSourceSafety", "wtl_apt_source_security() {\n", "\nwtl_apt_repository_uris() {"));
+        return ranges;
+    }
+
+    static List<PreparationSourceRange> pythonPreparationTransport(String runtime, boolean credentials) throws IOException {
+        var ranges = new ArrayList<>(nodeTransfer(runtime, credentials));
+        ranges.add(between(runtime, "mirrorPolicyValidation", "    @staticmethod\n    def validate_url(endpoint, url):",
+            "\n    @staticmethod\n    def redirect_path("));
+        ranges.addAll(transfer(runtime, "PYTHON", credentials, true));
+        return ranges.stream().distinct().toList();
+    }
+
+    static boolean pythonPreparationInitial(PreparationSourceRange range) {
+        return PYTHON_PREPARATION_INITIAL.contains(range.section());
     }
 
     static boolean buildsFromSource(String ecosystem) {

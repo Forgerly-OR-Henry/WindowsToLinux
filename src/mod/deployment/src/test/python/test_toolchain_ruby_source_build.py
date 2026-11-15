@@ -1,5 +1,6 @@
 """Exercise the formal Ruby recipe without starting a service or compiling Ruby."""
 import ast
+from contextlib import nullcontext
 import errno
 import hashlib
 import io
@@ -7,8 +8,10 @@ import json
 import os
 import pathlib
 import shutil
+import stat
 import subprocess
 import tempfile
+import time
 import types
 import unittest
 from unittest import mock
@@ -200,12 +203,14 @@ class RubySourceBuildTest(unittest.TestCase):
         raw['run'] = mock.Mock()
         raw['ruby_require_settled'] = mock.Mock()
         raw['ruby_mount_path'] = str
+        raw['remaining'] = mock.Mock(return_value=80)
         stage = self.root / 'stage'
         stage.mkdir()
         command = self.ns['ruby_unit_name'](OPERATION_ID, 'build')
         with mock.patch.dict('sys.modules', {'grp': types.SimpleNamespace(getgrnam=self.unallocated),
                                             'pwd': types.SimpleNamespace(getpwnam=self.unallocated)}), \
-                mock.patch.object(os, 'readlink', side_effect=('net:[11]', 'mnt:[12]')):
+                mock.patch.object(os, 'readlink', side_effect=('net:[11]', 'mnt:[12]', 'time:[13]')), \
+                mock.patch.object(time, 'monotonic_ns', return_value=1_000_000_000):
             ruby_unit(command, '/usr/local/lib/windowstolinux/toolchains/versions/ruby-selected', VERSION,
                       (stage, self.root / 'ruby.tar.gz', self.root / 'openssl-3.0.3.gem'))
         argv = raw['run'].call_args.args[0]
@@ -218,6 +223,7 @@ class RubySourceBuildTest(unittest.TestCase):
         self.assertIn('--property=ProtectSystem=strict', argv)
         self.assertIn('--property=MemoryMax=3221225472', argv)
         self.assertIn('--property=MemorySwapMax=0', argv)
+        self.assertIn('--property=RuntimeMaxSec=80s', argv)
         self.assertTrue(any(item.startswith('--property=BindPaths=') and item.endswith(':/tmp') for item in argv))
         self.assertTrue(any(item.startswith('--property=BindReadOnlyPaths=')
                             and ':/var/tmp ' in item and item.endswith(':/dev/shm') for item in argv))
@@ -231,7 +237,8 @@ class RubySourceBuildTest(unittest.TestCase):
         scratch = stage.parent.stat()
         self.assertEqual(['build', 'net:[11]', 'mnt:[12]', '/usr/local/lib/windowstolinux/toolchains/versions/ruby-selected',
                           VERSION, str(stage.stat().st_dev), str(stage.stat().st_ino), 'legacy', command,
-                          str(scratch.st_dev), str(scratch.st_ino), '1610612736', '96000', '3221225472'], worker_args[6:])
+                          str(scratch.st_dev), str(scratch.st_ino), '1610612736', '96000', '3221225472',
+                          '81000000000', 'time:[13]'], worker_args[6:])
         raw['ruby_require_settled'].assert_called_once_with(command)
 
     def test_owned_scratch_refuses_foreign_or_nested_mount_before_unmounting(self):
@@ -257,11 +264,7 @@ class RubySourceBuildTest(unittest.TestCase):
                         check(scratch, unit)
 
     def test_worker_requires_effective_scratch_and_cgroup_bounds_before_build(self):
-        worker = ast.parse(self.ns['RUBY_WORKER'])
-        worker.body = [definition for definition in worker.body if isinstance(definition, (ast.Import, ast.FunctionDef, ast.Assign))
-                       and not (isinstance(definition, ast.Assign) and definition.targets[0].id == 'failure')]
-        scope = {}
-        exec(compile(worker, '<Ruby resource guard>', 'exec'), scope)
+        scope = self.configure_worker()
         unit = self.ns['ruby_unit_name'](OPERATION_ID, 'build')
         paths = {'/proc/self/cgroup': '0::/system.slice/' + unit + '\n',
                  'memory.max': '3221225472\n', 'memory.swap.max': '0\n'}
@@ -429,12 +432,16 @@ class RubySourceBuildTest(unittest.TestCase):
         self.assertTrue(observed['stderrTruncated'])
         self.assertEqual('ruby-probe-runtime-verification', raw(self.launcher_observation(103), 'probe')['stage'])
 
-    def test_configure_distinguishes_start_errors_and_known_autoconf_failures(self):
-        # Load only the worker declarations so the fixture never enters a sandbox or runs configure.
+    def configure_worker(self):
         source = ast.parse(self.ns['RUBY_WORKER'], '<Ruby sandbox worker>')
         source.body = source.body[:next(i for i, node in enumerate(source.body) if isinstance(node, ast.Try))]
         worker = {}
         exec(compile(source, '<Ruby sandbox worker>', 'exec'), worker)
+        return worker
+
+    def test_configure_distinguishes_start_errors_and_known_autoconf_failures(self):
+        worker = self.configure_worker()
+        worker['fresh_config_log_directory'] = lambda _: nullcontext(None)
         release = pathlib.PurePosixPath('/tmp/wtl-toolchain-source') / ('ruby-' + VERSION)
         configure = str(release / 'configure').encode('ascii')
         conftest = b': line 921: ./conftest: Operation not permitted'
@@ -520,7 +527,7 @@ class RubySourceBuildTest(unittest.TestCase):
                     else:
                         start.return_value.stdout = io.BytesIO(message + b'\n' + b'private payload\n' * 2000)
                         start.return_value.wait.return_value = error.returncode
-                    worker['configure'](release, '/protected/ruby', [])
+                    worker['configure'](release, '/protected/ruby', [], 'test.service', '81000000000', 'time:[3]')
                 self.assertEqual((str(release / 'configure'), '--prefix=/protected/ruby', '--disable-install-doc'),
                                  start.call_args.args[0])
                 self.assertEqual(release, start.call_args.kwargs['cwd'])
@@ -541,13 +548,134 @@ class RubySourceBuildTest(unittest.TestCase):
                     self.assertNotIn('configure-failure=', other_diagnostic['stdout'])
         process = mock.MagicMock(stdout=io.BytesIO(configure + conftest), wait=mock.Mock(return_value=1))
         with mock.patch.object(subprocess, 'Popen', return_value=process), self.assertRaises(SystemExit) as observed:
-            worker['configure'](release, '/protected/ruby', [])
+            worker['configure'](release, '/protected/ruby', [], 'test.service', '81000000000', 'time:[3]')
         self.assertEqual(134, observed.exception.code)
         process = mock.MagicMock()
         process.stdout.readline.side_effect = OSError(errno.EIO, 'private pipe detail')
         with mock.patch.object(subprocess, 'Popen', return_value=process), self.assertRaises(SystemExit) as observed:
-            worker['configure'](release, '/protected/ruby', [])
+            worker['configure'](release, '/protected/ruby', [], 'test.service', '81000000000', 'time:[3]')
         self.assertEqual(135, observed.exception.code)
+
+    def test_config_log_refines_only_accepted_reporters_in_a_complete_terminal_check(self):
+        worker = self.configure_worker()
+        classify = worker['terminal_config_log_reporter']
+        current_configure = b'/tmp/wtl-toolchain-source/ruby-3.3.13/configure: '
+        suffix = b': private-value: Operation not permitted\n'
+        checking = b'configure:34: checking a fixed example\n'
+        ending = b'configure:37: error: private reason\n\n## output variables ##\nconfigure: exit 2\n'
+        earlier = b'configure:20: checking an earlier example\ncc' + suffix + b'configure:22: result: no\n'
+        for reporter, code in (
+            (b'/bin/dash: 35: ./conftest: Operation not permitted\n', 70),
+            (b'/usr/bin/cc' + suffix, 71),
+            (b'/usr/bin/ld' + suffix, 72),
+            (b'make[1]' + suffix, 73),
+            (current_configure + b'35: private-value: Operation not permitted\n', 74),
+            (b'./config.status' + suffix, 75),
+            (b'/tmp/private/make' + suffix, 131),
+            (b'make' + suffix + b'cc' + suffix, 131),
+            (b'make' + suffix + b'unknown' + suffix, 131),
+            (b'x' * 4097 + b'make' + suffix, 131),
+            (b'x' * 4097 + b'\nmake' + suffix, 131),
+            (b'', 131),
+        ):
+            with self.subTest(code=code, report_length=len(reporter)):
+                self.assertEqual(code, classify(earlier + checking + reporter + ending, 2, current_configure))
+        report = checking + b'make' + suffix + ending
+        for incomplete in (report[:-1], report + b'private trailing incomplete bytes',
+                           report.replace(b'configure: exit 2', b'private configure: exit 2'),
+                           report.replace(b'configure: exit 2', b'configure: exit 77'),
+                           report.replace(b'configure:37: error:', b'configure:37: notice:'),
+                           report[len(checking):]):
+            self.assertEqual(131, classify(incomplete, 2, current_configure))
+
+    def test_config_log_is_opened_only_by_held_directory_descriptor_and_requires_freshness(self):
+        worker = self.configure_worker()
+        for existing, expected in ((None, None), (FileNotFoundError(), 27), (OSError(errno.EIO), None)):
+            with self.subTest(existing=existing), \
+                    mock.patch.object(os, 'O_DIRECTORY', 0x10000, create=True), \
+                    mock.patch.object(os, 'O_NOFOLLOW', 0x20000, create=True), \
+                    mock.patch.object(os, 'open', return_value=27) as open_directory, \
+                    mock.patch.object(os, 'stat', side_effect=existing) as stat_file, \
+                    mock.patch.object(os, 'close') as close:
+                with worker['fresh_config_log_directory'](self.root) as descriptor:
+                    self.assertEqual(expected, descriptor)
+                    close.assert_not_called()
+                open_directory.assert_called_once_with(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                stat_file.assert_called_once_with('config.log', dir_fd=27, follow_symlinks=False)
+                close.assert_called_once_with(27)
+
+    def test_config_log_tail_rejects_changed_and_foreign_files_and_caps_the_read(self):
+        worker = self.configure_worker()
+        limit = worker['CONFIG_LOG_MAX_BYTES']
+        tail = b'a' * (limit - 4) + b'\nend'
+        state = dict(st_dev=8, st_ino=22, st_uid=61200, st_nlink=1, st_mode=stat.S_IFREG | 0o640,
+                     st_size=limit + 7, st_mtime_ns=5, st_ctime_ns=5)
+        for before, after, current, report, expected, reads in (
+            ({}, {}, {}, tail, b'end', True),
+            ({}, {'st_mtime_ns': 6}, {}, tail, b'', True),
+            ({}, {}, {'st_ino': 23}, tail, b'', True),
+            ({}, {}, {}, tail + b'x', b'', True),
+            ({'st_uid': 61201}, {}, {}, tail, b'', False),
+            ({'st_nlink': 2}, {}, {}, tail, b'', False),
+            ({'st_mode': stat.S_IFIFO | 0o640}, {}, {}, tail, b'', False),
+            ({'st_mode': stat.S_IFREG | 0o662}, {}, {}, tail, b'', False),
+        ):
+            with self.subTest(before=before, after=after, current=current, fresh=bool(expected)):
+                stream = mock.MagicMock()
+                stream.__enter__.return_value = stream
+                stream.read.return_value = report
+                identities = [types.SimpleNamespace(**(state | changes)) for changes in (before, after, current)]
+                with mock.patch.object(os, 'O_NOFOLLOW', 0x20000, create=True), \
+                        mock.patch.object(os, 'O_NONBLOCK', 0x800, create=True), \
+                        mock.patch.object(os, 'open', return_value=27) as open_file, \
+                        mock.patch.object(os, 'fdopen', return_value=stream), \
+                        mock.patch.object(os, 'fstat', side_effect=identities[:2]), \
+                        mock.patch.object(os, 'stat', return_value=identities[2]), \
+                        mock.patch.object(os, 'geteuid', return_value=61200, create=True):
+                    self.assertEqual(expected, worker['config_log_tail'](26))
+                    open_file.assert_called_once_with('config.log', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=26)
+                if reads:
+                    stream.seek.assert_called_once_with(7)
+                    stream.read.assert_called_once_with(limit + 1)
+                else:
+                    stream.read.assert_not_called()
+
+    def test_optional_config_log_requires_generic_pipe_hint_quiescence_and_matching_time_budget(self):
+        worker = self.configure_worker()
+        worker['fresh_config_log_directory'] = lambda _: nullcontext(27)
+        release = pathlib.PurePosixPath('/tmp/wtl-toolchain-source') / ('ruby-' + VERSION)
+        log = b'configure:1: checking test\nmake: private: Operation not permitted\nconfigure:2: error: private\nconfigure: exit 2\n'
+        eperm = b'private: Operation not permitted\n'
+        for output, clock, unit_deadline, quiescent, log_reads, expected in (
+            (eperm, 'time:[3]', '81000000000', True, 1, 73),
+            (eperm, 'time:[4]', '81000000000', True, 0, 131),
+            (eperm, 'time:[3]', '2000000000', True, 0, 131),
+            (eperm, 'time:[3]', '81000000000', False, 0, 131),
+            (b'make: ' + eperm, 'time:[3]', '81000000000', True, 0, 199),
+            (b'private: Permission denied\n', 'time:[3]', '81000000000', True, 0, 130),
+        ):
+            process = mock.MagicMock(stdout=io.BytesIO(output), wait=mock.Mock(return_value=2))
+            read = mock.Mock(return_value=log)
+            with self.subTest(status=expected, clock=clock, quiescent=quiescent), \
+                    mock.patch.dict(worker, config_log_tail=read, only_source_worker_in_cgroup=mock.Mock(return_value=quiescent)), \
+                    mock.patch.object(os, 'readlink', return_value='time:[3]'), \
+                    mock.patch.object(time, 'monotonic_ns', return_value=1_000_000_000), \
+                    mock.patch.object(subprocess, 'Popen', return_value=process), self.assertRaises(SystemExit) as error:
+                worker['configure'](release, '/protected/ruby', [], 'test.service', unit_deadline, clock)
+            self.assertEqual(expected, error.exception.code)
+            self.assertEqual(log_reads, read.call_count)
+            for observation, role, ecosystem, expected_stage in (
+                (self.launcher_observation(expected), 'build', 'ruby', 'ruby-build-source-configure'),
+                (dict(self.launcher_observation(expected), actualExitCode=98), 'build', 'ruby', 'ruby-build-launcher'),
+                (dict(self.launcher_observation(expected), timedOut=True), 'build', 'ruby', 'ruby-build-launcher'),
+                (self.launcher_observation(expected), 'probe', 'ruby', 'ruby-probe-launcher'),
+                (self.launcher_observation(expected), 'build', 'python', 'python-build-launcher'),
+            ):
+                diagnostic = self.ns['ruby_diagnostic'](observation, role, ecosystem)
+                self.assertEqual(expected_stage, diagnostic['stage'])
+                self.assertNotIn('private', str(diagnostic))
+                label = 'configure-failure=' + self.ns['RUBY_CONFIGURE_FAILURES'][expected] + '\n'
+                self.assertEqual(expected_stage == 'ruby-build-source-configure', label in diagnostic['stdout'])
 
     def test_missing_ambiguous_or_mismatching_manager_evidence_stays_at_launcher_stage(self):
         convert = self.ns['ruby_diagnostic']

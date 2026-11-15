@@ -32,6 +32,9 @@ import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.ui.UiService;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchiveReview;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
 import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
@@ -61,7 +64,10 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
 
     private final LinkedHashMap<String, Map<String, Object>> preparedToolchains = new LinkedHashMap<>();
 
-    private final LinkedHashMap<String, Map<String, Object>> sourceArchives = new LinkedHashMap<>();
+    private record CapturedArchive(DeploymentSourceMaterial material, DeploymentSourceArchive archive,
+                                   Map<String, Object> observation) { }
+
+    private final LinkedHashMap<String, CapturedArchive> sourceArchives = new LinkedHashMap<>();
 
     /** Validated application-to-source associations, independent of source display names. / 经校验的应用与来源对应关系，独立于来源显示名称。 */
     private final LinkedHashMap<String, Map<String, Object>> reviewedApplicationSources = new LinkedHashMap<>();
@@ -235,7 +241,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         if (selected == null || !request.server().id().equals(selected.get("server"))
             || !request.material().snapshot().id().toString().equals(selected.get("snapshotId"))
             || !request.archive().sourceManifestSha256().equals(selected.get("sourceRevision"))
-            || sourceArchives.values().stream().noneMatch(archive ->
+            || archiveObservations().stream().noneMatch(archive ->
             request.archive().sha256().equals(archive.get("archiveSha256"))
                 && request.archive().relativeRoot().equals(archive.get("relativeRoot"))
                 && request.archive().originSnapshotId().toString().equals(archive.get("originSnapshotId"))
@@ -321,8 +327,8 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     }
 
     /** Records the archiver's original-source association, never source trust or build permission. */
-    public synchronized void archiveCaptured(gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial material,
-                                             gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive archive,
+    public synchronized void archiveCaptured(DeploymentSourceMaterial material,
+                                             DeploymentSourceArchive archive,
                                              List<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement> requirements,
                                              TaskContext supplied) throws ApiException {
         sameTask(supplied);
@@ -354,13 +360,23 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             "ecosystem", requirement.ecosystem().name(), "declaration", requirement.declaration(), "source", requirement.source(),
             "purpose", requirement.purpose().name(), "constraint", requirement.constraint().name(),
             "version", requirement.version().map(value -> value.text()).orElse(""))).toList());
-        String key = archive.relativeRoot() + "\n" + archive.sha256();
+        String key = archiveKey(archive.relativeRoot(), archive.sha256());
         var previous = sourceArchives.get(key);
-        if (previous != null && !previous.equals(observation))
+        if (previous != null && (!previous.material().equals(material) || !previous.archive().equals(archive)
+            || !previous.observation().equals(observation)))
             throw new IllegalStateException("Original archive association cannot be replaced");
         if (previous == null && sourceArchives.size() == 32)
             sourceArchives.remove(sourceArchives.keySet().iterator().next());
-        sourceArchives.put(key, Map.copyOf(observation));
+        if (previous == null)
+            sourceArchives.put(key, new CapturedArchive(material, archive, Map.copyOf(observation)));
+    }
+
+    private static String archiveKey(String relativeRoot, String archiveSha256) {
+        return relativeRoot + "\n" + archiveSha256;
+    }
+
+    private List<Map<String, Object>> archiveObservations() {
+        return sourceArchives.values().stream().map(CapturedArchive::observation).toList();
     }
 
     public synchronized void toolchainsPrepared(ServerId server,
@@ -497,6 +513,11 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     @Override
     public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                                 TaskContext supplied) throws ApiException {
+        return facts(intent, request, supplied, true);
+    }
+
+    private Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
+                                 TaskContext supplied, boolean includeBuildText) throws ApiException {
         String operation = intent.semantics().map(value -> value.operation()).orElse("");
         var observation = nativePublicationApplication(intent, request, supplied);
         if (observation.isPresent()) return publicationObservationFacts(intent, observation.orElseThrow(), supplied);
@@ -567,8 +588,17 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             String invocation = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout);
             if (invocation.startsWith("exec /usr/bin/python3 -I -c ")) {
                 try {
-                    facts.put("currentBuildArchive", buildArchiveFacts(List.copyOf(sourceArchives.values()),
-                        Map.copyOf(reviewedApplicationSources), intent, request, layout));
+                    var association = buildArchiveFacts(archiveObservations(), Map.copyOf(reviewedApplicationSources),
+                        intent, request, layout);
+                    facts.put("currentBuildArchive", association);
+                    // The later authority checks revalidate the exact command and archive SHA without collecting text again.
+                    if (includeBuildText && mirroredBuildInput(request)) {
+                        var archive = (Map<?, ?>) association.get("archive");
+                        var captured = Objects.requireNonNull(sourceArchives.get(archiveKey(
+                            archive.get("relativeRoot").toString(), archive.get("archiveSha256").toString())));
+                        facts.put("currentBuildArchiveSource", DeploymentSourceArchiveReview.capture(
+                            captured.material(), captured.archive(), supplied));
+                    }
                 } catch (java.io.IOException invalid) {
                     throw new IllegalArgumentException("Build archive evidence cannot be decoded", invalid);
                 }
@@ -625,7 +655,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     public String reviewInstructions(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                                      TaskContext supplied) throws ApiException {
         // Revalidate original authority before selecting any trusted current-action supplement.
-        var facts = facts(intent, request, supplied);
+        var facts = facts(intent, request, supplied, false);
         if (facts.containsKey("publicationObservationScope"))
             return """
                 Match the exact guarded native observation's application, owner marker, release target and original workflow.
@@ -723,6 +753,16 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         return Map.of("currentToolchainPlan", planned.evidence(), "observedGap", observation, "fixedTransaction", binding);
     }
 
+    private static boolean mirroredBuildInput(gold.debug.windowstolinux.appapi.linux.command.CommandRequest request) {
+        byte[] input = request.stdin();
+        try {
+            return gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.buildInput(
+                new String(input, java.nio.charset.StandardCharsets.UTF_8)).isPresent();
+        } finally {
+            Arrays.fill(input, (byte) 0);
+        }
+    }
+
     /** Compares the literal build archive guard and complete collector to one captured source association. */
     static Map<String, Object> buildArchiveFacts(List<Map<String, Object>> archives,
                                                  Map<String, Map<String, Object>> reviewedSources, ActionIntent intent,
@@ -812,11 +852,11 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 "meaning", "Application identifiers from this original task's deterministically reviewed requests, matched to the captured original snapshot and exact component archive before preparation. Source display names and frozen logicalRootName label the selected source; they are not deployment application or component identifiers and need not equal them. Match each command application and resource target to its own reviewed association, source hashes, relative root, server and layout. These intended associations prove no live ownership, completed build, safe source or permission."));
         if (intent.type().equals("platform.sftp.upload") && intent.semantics()
             .filter(value -> value.operation().equals("deployment.candidate.upload.v1")).isPresent())
-            facts.put("currentSourceArchiveTransfer", archiveTransferFacts(List.copyOf(sourceArchives.values()), intent,
+            facts.put("currentSourceArchiveTransfer", archiveTransferFacts(archiveObservations(), intent,
                 new ServerId(Objects.requireNonNull(source).get("server").toString()),
                 gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied)));
         if (!sourceArchives.isEmpty())
-            facts.put("sourceArchiveObservations", Map.of("archives", List.copyOf(sourceArchives.values()),
+            facts.put("sourceArchiveObservations", Map.of("archives", archiveObservations(),
                 "meaning", "Archiver-produced frozen source/subtree associations captured before final confirmation under this original task/server. sourceToolchainRequirements preserve the deterministic selected component declarations/constraints/source files, independent of the initial draft URI/git field; they are not a resolved future installer result or installation proof. Source manifest and compressed archive hashes identify different objects; match the build envelope's expected archive SHA to its association and declared candidate. Listed companion files belong to that archived subtree; file lists and recent history (32 archives) are explicitly bounded, not a complete content/safety review. The deterministic build body is separately reviewed, not required to be a file or signature of the source manifest. It verifies actual compressed archive bytes before extraction; project hooks still require non-root candidate isolation, complete executable input and fresh independent host permission. These observations do not prove live remote state, safe content or authorization."));
         if (!preparedToolchains.isEmpty())
             facts.put("toolchainPreparationObservations", Map.of("bindings", List.copyOf(preparedToolchains.values()),
@@ -867,7 +907,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     @Override
     public void verify(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                        TaskContext supplied) throws ApiException {
-        facts(intent, request, supplied);
+        facts(intent, request, supplied, false);
     }
 
     /** Logical language capability calls, shared by analysis and recovery. / 分析和恢复共用的逻辑语言能力调用次数。 */

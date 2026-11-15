@@ -519,10 +519,12 @@ public final class DeploymentSourceBrowser {
 
     /** Redacts a complete line without replacing its remaining source with a truncation marker. / 脱敏完整行，不以截断标记代替剩余源码。 */
     private static String redacted(String line) {
-        if (line.matches("(?i).*(password|passwd|secret|token|authorization|api[_-]?key|private[_-]?key).*[:=].*")
+        return protectedText(line) ? "[credential content excluded]" : line;
+    }
+
+    static boolean protectedText(String line) {
+        return line.matches("(?i).*(password|passwd|secret|token|authorization|api[_-]?key|private[_-]?key).*[:=].*")
             || line.matches("(?i).*\\bbearer\\s+\\S+.*") || line.contains("PRIVATE KEY")
-            || line.matches(".*https?://[^ /]+:[^ /]+@.*"))
-            return "[credential content excluded]";
-        return line;
+            || line.matches(".*https?://[^ /]+:[^ /]+@.*");
     }
 }
