@@ -74,12 +74,19 @@ public final class MirrorSelector {
             result.put(point, List.copyOf(chain));
         }
         if (automaticPoints.contains(DownloadPoint.GNU_MAKE_SOURCE) && !settings.points().containsKey(DownloadPoint.GNU_MAKE_SOURCE)
-            && !result.get(DownloadPoint.PYTHON_DISTRIBUTION).isEmpty()) {
+            && (scopedDistribution(automaticPoints, result, DownloadPoint.PYTHON_DISTRIBUTION)
+                || scopedDistribution(automaticPoints, result, DownloadPoint.RUBY_DISTRIBUTION))) {
             var provider = catalog.providersFor(DownloadPoint.GNU_MAKE_SOURCE).getFirst();
             result.put(DownloadPoint.GNU_MAKE_SOURCE, List.of(endpoint(catalog, DownloadPoint.GNU_MAKE_SOURCE, provider)));
         }
         return new ResolvedMirrorPolicy(1, "", serverId, catalog.catalogVersion(), country, region, catalog.timeouts(), result);
     }
+
+    private static boolean scopedDistribution(Set<DownloadPoint> scope, Map<DownloadPoint, List<Endpoint>> endpoints,
+                                              DownloadPoint point) {
+        return scope.contains(point) && !endpoints.get(point).isEmpty();
+    }
+
     private static void add(List<Endpoint> chain, Set<String> seen, Endpoint endpoint) {
         if (seen.add(normalizedUrl(endpoint.baseUrl()))) {
             if (chain.size() >= 256) throw new IllegalArgumentException("Resolved mirror chain exceeds 256 endpoints");

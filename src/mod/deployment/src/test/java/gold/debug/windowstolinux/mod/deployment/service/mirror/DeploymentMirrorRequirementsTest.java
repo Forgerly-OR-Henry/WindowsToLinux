@@ -56,13 +56,34 @@ class DeploymentMirrorRequirementsTest {
         assertEquals(1, resolved.points().get(DownloadPoint.NODE_PACKAGE).size());
     }
 
-    @Test void onlyPythonUsingKindsRequireTheFixedGnuMakeSource() {
+    @Test void onlyPythonAndRubyUsingKindsRequireTheFixedGnuMakeSource() {
         var point = DownloadPoint.GNU_MAKE_SOURCE;
-        for (var kind : List.of(DeploymentProjectKind.PYTHON_SERVICE, DeploymentProjectKind.STATIC_SITE))
+        for (var kind : List.of(DeploymentProjectKind.PYTHON_SERVICE, DeploymentProjectKind.STATIC_SITE,
+                DeploymentProjectKind.RUBY_SERVICE))
             assertTrue(DeploymentMirrorRequirements.forKinds(List.of(kind)).contains(point));
-        for (var kind : List.of(DeploymentProjectKind.CMAKE_SERVICE, DeploymentProjectKind.RUBY_SERVICE,
+        for (var kind : List.of(DeploymentProjectKind.CMAKE_SERVICE,
                 DeploymentProjectKind.PHP_SERVICE, DeploymentProjectKind.NODE_SERVICE))
             assertFalse(DeploymentMirrorRequirements.forKinds(List.of(kind)).contains(point));
+    }
+
+    @Test void rubyDescendantEnablesOnlyTheFixedSourceInItsNewPolicy() throws Exception {
+        var catalog = MirrorCatalog.load();
+        marker("components/scorer", "Gemfile", "source 'https://rubygems.org'\n");
+        var active = DeploymentMirrorRequirements.forSource(root);
+        var point = DownloadPoint.GNU_MAKE_SOURCE;
+        assertTrue(active.containsAll(Set.of(DownloadPoint.RUBY_DISTRIBUTION, point)));
+        var ruby = new MirrorSettings.Row("official-ruby_distribution", "", false, false, "");
+        var python = new MirrorSettings.Row("official-python_distribution", "", false, false, "");
+        var enabled = new MirrorSettings(1, Map.of(DownloadPoint.RUBY_DISTRIBUTION, List.of(ruby)), Map.of());
+        var endpoint = MirrorSelector.resolve(catalog, enabled, "server", "CN", active).points().get(point).getFirst();
+        assertTrue(endpoint.official());
+        assertEquals(DownloadPoint.GNU_MAKE_ORIGIN, endpoint.baseUrl());
+        assertTrue(endpoint.redirectRules().isEmpty());
+        var unrelated = new MirrorSettings(1, Map.of(DownloadPoint.PYTHON_DISTRIBUTION, List.of(python)), Map.of());
+        assertTrue(MirrorSelector.resolve(catalog, unrelated, "server", "CN", active).points().get(point).isEmpty());
+        var disabled = new MirrorSettings(1, Map.of(DownloadPoint.RUBY_DISTRIBUTION, List.of(ruby),
+            point, List.of(MirrorSettings.Row.auto(false))), Map.of());
+        assertTrue(MirrorSelector.resolve(catalog, disabled, "server", "CN", active).points().get(point).isEmpty());
     }
 
     @Test void outOfScopeAutomaticStopsAtFixedPrefixAndLegacyOverloadStillExpands() {
@@ -143,13 +164,14 @@ class DeploymentMirrorRequirementsTest {
         Map<DeploymentProjectKind, Set<DownloadPoint>> expected = Map.of(
             DeploymentProjectKind.JAVA_SOURCE, Set.of(DownloadPoint.JAVA_JDK, DownloadPoint.JAVA_METADATA),
             DeploymentProjectKind.PYTHON_SERVICE, Set.of(DownloadPoint.PYTHON_DISTRIBUTION, DownloadPoint.PYTHON_METADATA,
-                DownloadPoint.PYTHON_PIP_BOOTSTRAP, DownloadPoint.PYTHON_PACKAGE),
+                DownloadPoint.PYTHON_PIP_BOOTSTRAP, DownloadPoint.PYTHON_PACKAGE, DownloadPoint.GNU_MAKE_SOURCE),
             DeploymentProjectKind.GO_SERVICE, Set.of(DownloadPoint.GO_DISTRIBUTION, DownloadPoint.GO_METADATA, DownloadPoint.GO_MODULE, DownloadPoint.GO_CHECKSUM),
             DeploymentProjectKind.RUST_SERVICE, Set.of(DownloadPoint.RUST_TOOLCHAIN, DownloadPoint.RUST_METADATA, DownloadPoint.RUST_CRATE, DownloadPoint.RUST_INDEX),
             DeploymentProjectKind.DOTNET_SERVICE, Set.of(DownloadPoint.DOTNET_SDK, DownloadPoint.DOTNET_METADATA, DownloadPoint.NUGET),
             DeploymentProjectKind.PHP_SERVICE, Set.of(DownloadPoint.PHP_DISTRIBUTION, DownloadPoint.PHP_METADATA,
                 DownloadPoint.COMPOSER_INSTALLER, DownloadPoint.COMPOSER_REPOSITORY),
-            DeploymentProjectKind.RUBY_SERVICE, Set.of(DownloadPoint.RUBY_DISTRIBUTION, DownloadPoint.RUBY_METADATA, DownloadPoint.RUBYGEMS));
+            DeploymentProjectKind.RUBY_SERVICE, Set.of(DownloadPoint.RUBY_DISTRIBUTION, DownloadPoint.RUBY_METADATA,
+                DownloadPoint.RUBYGEMS, DownloadPoint.GNU_MAKE_SOURCE));
         expected.forEach((kind, downloads) -> {
             var points = EnumSet.copyOf(systems());
             points.addAll(downloads);

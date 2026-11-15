@@ -40,9 +40,10 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "4091d7e6d3348ff0806e1fdeff7d048559269a9dc8ec93364dd808ffe8f1997c";
-    private static final String RUBY_SOURCE_SHA256 = "100dac75d3f8c8d0a7533408ddebf5e95dc1273e4638b076a664764cf2b01922";
-    private static final String PYTHON_SOURCE_SHA256 = "90aa12568be554f4f9675b4657cb8e19dd26f71c477f68c7269876968d3e2650";
+    public static final String EXPECTED_SHA256 = "4c81aa13d783567773f79a2bc2aadced4e3f497fa1e6eb2520fb490cf1198696";
+    private static final String RUBY_SOURCE_SHA256 = "00aaf1a248978360e0af34021b924a06b402d1cde7085e9643dd0ac196f29893";
+    private static final String GNU_MAKE_SOURCE_SHA256 = "fabf9252d95b17e8a15e0d7e80a826824b02b45f291e14d1ca0fb65b577a44a4";
+    private static final String PYTHON_SOURCE_SHA256 = "ac309b1d2fc1549089444886f3503221e45eaaf86e95358409f18ed5634d1e39";
 
     /**
      * ROOT.
@@ -429,7 +430,7 @@ public final class DeploymentManagedHelperBundle {
     public static String publicationRecoveryFragment(String fragment) {
         return switch (fragment) {
             case "toolchain/10-release-metadata.py", "toolchain/20-installation-boundaries.py", "toolchain/30-managed-installation.py",
-                 "toolchain/40-binding-protocol.py" ->
+                 "toolchain/40-binding-protocol.py", "toolchain/tracked-operations.py" ->
                 "toolchain/publication-recovery-r37/" + fragment.substring("toolchain/".length());
             default -> fragment;
         };
@@ -450,7 +451,7 @@ public final class DeploymentManagedHelperBundle {
                         "managed-deployment privilege helper fragment is unavailable: " + fragment);
                 }
                 String content = new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
-                content = DeploymentRemoteLayoutTemplate.render(expandResourceInserts(content), layout);
+                content = DeploymentRemoteLayoutTemplate.render(expandResourceInserts(content, fixedPublicationRecovery), layout);
                 content = fixedPublicationRecovery
                     ? gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderPublicationRecoveryToolchainSources(content)
                     : gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderToolchainSources(content);
@@ -481,25 +482,17 @@ public final class DeploymentManagedHelperBundle {
                             + "                else:\n");
                     }
                     if (!fixedPublicationRecovery && fragment.endsWith("40-binding-protocol.py")) {
-                        try (InputStream ruby = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + "toolchain/ruby-source-build.py")) {
-                            if (ruby == null) throw new IllegalStateException("Ruby source build fragment unavailable");
-                            String isolated = new String(ruby.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
-                            if (!RUBY_SOURCE_SHA256.equals(sha256(isolated.getBytes(StandardCharsets.UTF_8))))
-                                throw new IllegalStateException("Ruby source build fragment identity changed");
-                            content = insertBefore(content, "\n\ndef main(args):", "\n\n" + isolated);
-                        }
+                        content = insertBefore(content, "\n\ndef main(args):", "\n\n"
+                            + pinnedToolchainSource("gnu-make-source.py", GNU_MAKE_SOURCE_SHA256));
+                        content = insertBefore(content, "\n\ndef main(args):", "\n\n"
+                            + pinnedToolchainSource("ruby-source-build.py", RUBY_SOURCE_SHA256));
                         try (var rust = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + "toolchain/rust-distribution.py")) {
                             if (rust == null) throw new IllegalStateException("Rust distribution fragment unavailable");
                             String installer = new String(rust.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
                             content = insertBefore(content, "\n\ndef main(args):", "\n\n" + installer);
                         }
-                        try (var python = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + "toolchain/python-source-build.py")) {
-                            if (python == null) throw new IllegalStateException("Python source build fragment unavailable");
-                            String isolated = new String(python.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
-                            if (!PYTHON_SOURCE_SHA256.equals(sha256(isolated.getBytes(StandardCharsets.UTF_8))))
-                                throw new IllegalStateException("Python source build fragment identity changed");
-                            content = insertBefore(content, "\n\ndef main(args):", "\n\n" + isolated);
-                        }
+                        content = insertBefore(content, "\n\ndef main(args):", "\n\n"
+                            + pinnedToolchainSource("python-source-build.py", PYTHON_SOURCE_SHA256));
                     }
                     output.write((content + "\n").getBytes(StandardCharsets.UTF_8));
                     if (fragment.endsWith("40-binding-protocol.py"))
@@ -535,15 +528,15 @@ public final class DeploymentManagedHelperBundle {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
-    private static String expandResourceInserts(String script) throws IOException {
+    private static String expandResourceInserts(String script, boolean fixedPublicationRecovery) throws IOException {
         for (var insert : RESOURCE_INSERTS.entrySet()) {
             if (!script.contains(insert.getKey()))
                 continue;
-            try (InputStream input = DeploymentManagedHelperBundle.class
-                .getResourceAsStream(ROOT + insert.getValue())) {
+            String fragment = fixedPublicationRecovery ? publicationRecoveryFragment(insert.getValue()) : insert.getValue();
+            try (InputStream input = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + fragment)) {
                 if (input == null) {
                     throw new IllegalStateException(
-                        "managed-deployment privilege helper insert is unavailable: " + insert.getValue());
+                        "managed-deployment privilege helper insert is unavailable: " + fragment);
                 }
                 script = script.replaceAll("(?m)^[ \t]*" + java.util.regex.Pattern.quote(insert.getKey()),
                     java.util.regex.Matcher.quoteReplacement(
@@ -583,6 +576,16 @@ public final class DeploymentManagedHelperBundle {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("JDK SHA-256 is unavailable", exception);
+        }
+    }
+
+    private static String pinnedToolchainSource(String name, String expectedDigest) throws IOException {
+        try (InputStream stream = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + "toolchain/" + name)) {
+            if (stream == null) throw new IllegalStateException("Toolchain source fragment unavailable: " + name);
+            String source = new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+            if (!expectedDigest.equals(sha256(source.getBytes(StandardCharsets.UTF_8))))
+                throw new IllegalStateException("Toolchain source fragment identity changed: " + name);
+            return source;
         }
     }
 }

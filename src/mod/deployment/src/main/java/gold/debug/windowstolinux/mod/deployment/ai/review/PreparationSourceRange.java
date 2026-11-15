@@ -18,10 +18,22 @@ record PreparationSourceRange(String section, int offset, int next) {
     private static final Set<String> PYTHON_PREPARATION_INITIAL = Set.of(
         "shellStartup", "startupOwnership", "prepareDispatch", "pythonLauncher", "selectedRelease",
         "sourceResourceLimits", "sourceIsolationPreflight", "def source_install(", "def source_unit(", "pythonSourceWorker",
-        "pythonMakeSourceIdentity", "pythonMakeBootstrapExecution",
+        "pythonMakeSourceIdentity", "gnuMakeSourceIdentity", "pythonMakeBootstrapExecution",
         "def source_dependencies(", "pythonLegacyReceiverGuard",
         "aptDispatch", "aptSourceSafety", "aptCredentialAndTransportPolicy", "aptSecurityAndFrozenTransaction",
         "mirrorPolicyValidation", "mirrorRouteAdmission", "mirrorTLS", "mirrorDigest",
+        "def mirror_system_command(");
+    private static final Set<String> RUBY_MAKE_REQUIRED = Set.of(
+        "gnuMakeSourceIdentity", "gnuMakeBootstrap", "rubySourceWorker",
+        "def gnu_make_worker(", "def gnu_make_dependency(", "def prepare_gnu_make_source(",
+        "def gnu_make_origin(", "def download(", "def source_unit(", "def source_install(",
+        "def ruby_unit(", "def ruby_source_install(", "def install_with_ruby_isolation(", "rubyIsolatedInstallDispatch",
+        "rubySourceRecipe", "def install_key_with_ruby_recipe(", "def ruby_recipe_key(", "def require_ruby_source_record(");
+    private static final Set<String> RUBY_PREPARATION_INITIAL = Set.of(
+        "shellStartup", "startupOwnership", "prepareDispatch", "pythonLauncher", "selectedRelease",
+        "sourceResourceLimits", "sourceIsolationPreflight", "def prepare(", "def source_dependencies(",
+        "aptDispatch", "aptSourceSafety", "aptCredentialAndTransportPolicy", "aptSecurityAndFrozenTransaction",
+        "mirrorPolicyValidation", "mirrorRouteAdmission", "mirrorTLS", "mirrorBoundedRead", "mirrorDigest",
         "def mirror_system_command(");
     private static final Set<String> APT_DEPENDENCY_WORKER_INITIAL = Set.of(
         "def dependency_manifest(", "def dependency_open_core_events(", "def dependency_worker(",
@@ -95,32 +107,34 @@ record PreparationSourceRange(String section, int offset, int next) {
             ranges.add(python(helper, "def source_dependencies("));
         if (ecosystem.equals("RUBY")) {
             ranges.addAll(sourceIsolation(helper));
+            ranges.addAll(gnuMakeSource(helper));
             ranges.add(python(helper, "def ruby_mount_path("));
             ranges.add(python(helper, "def ruby_publish("));
             ranges.add(python(helper, "def ruby_link_target("));
-            ranges.add(between(helper, "rubySourceWorker", "RUBY_WORKER = SOURCE_WORKER + r'''\n",
+            ranges.add(between(helper, "rubySourceWorker", "\nRUBY_WORKER = ",
                 "\n\ndef ruby_system_command("));
-            for (String function : List.of("ruby_unit", "ruby_probe", "ruby_source_install"))
+            for (String function : List.of("ruby_unit", "ruby_probe", "ruby_source_install",
+                    "install_with_ruby_isolation", "install_key_with_ruby_recipe", "ruby_recipe_key", "require_ruby_source_record"))
                 ranges.add(python(helper, "def " + function + "("));
+            ranges.add(between(helper, "rubySourceRecipe", "RUBY_LEGACY_SOURCE_RECIPE = ", "\nRUBY_DYNAMIC_MIN, "));
+            ranges.add(between(helper, "rubyIsolatedInstallDispatch", "\ninstallation_key = install_key_with_ruby_recipe",
+                "\nprobe = probe_with_ruby_isolation"));
         }
         return List.copyOf(ranges);
     }
 
     private static List<PreparationSourceRange> pythonSourcePreparation(String helper) throws IOException {
         var ranges = new ArrayList<>(sourceIsolation(helper));
-        int worker = offset(helper, "\nPYTHON_SOURCE_WORKER = SOURCE_WORKER + ");
+        int worker = offset(helper, "\nPYTHON_SOURCE_WORKER = ");
         ranges.add(between(helper, "pythonMakeSourceIdentity", "PYTHON_LEGACY_SOURCE_RECIPE = ",
-            "\nPYTHON_GNU_MAKE_FAILURES = "));
-        ranges.add(between(helper, "pythonMakeBootstrap", "PYTHON_GNU_MAKE_BOOTSTRAP = r'''",
-            "\nPYTHON_SOURCE_WORKER = SOURCE_WORKER + "));
+            "\nPYTHON_MAKE_FAILURES = "));
+        ranges.addAll(gnuMakeSource(helper));
         ranges.add(between(helper, "pythonMakeBootstrapExecution", "def bootstrap_gnu_make(",
-            "\nPYTHON_SOURCE_WORKER = SOURCE_WORKER + "));
+            "\n'''"));
         ranges.add(between(helper, "pythonMakeInvocation", "def make_python(",
             "\n\nfailure = 90", worker));
-        ranges.add(between(helper, "pythonSourceWorker", "\nfailure = 90\n", "\n\ndef python_make_dependency(", worker));
-        ranges.add(between(helper, "pythonSourceAdapter", "def python_make_dependency(", "\n\ndef main(args):"));
-        ranges.add(python(helper, "def prepare_python_make_source("));
-        ranges.add(python(helper, "def gnu_make_origin("));
+        ranges.add(between(helper, "pythonSourceWorker", "\nfailure = 90\n", "\n\ndef python_source_marker_recipe_matches(", worker));
+        ranges.add(between(helper, "pythonSourceAdapter", "def python_source_marker_recipe_matches(", "\n\ndef main(args):"));
         ranges.add(between(helper, "pythonLegacyReceiverGuard",
             "    if ecosystem == 'PYTHON' or layout == 'python':\n", "\n    MIRROR_POINT = toolchain_point(ecosystem)"));
         ranges.add(between(helper, "pythonSystemProfile", "def discover_system(ecosystem, identity):", "\n    binaries = "));
@@ -128,10 +142,19 @@ record PreparationSourceRange(String section, int offset, int next) {
         return ranges;
     }
 
+    private static List<PreparationSourceRange> gnuMakeSource(String helper) throws IOException {
+        return List.of(
+            between(helper, "gnuMakeSourceIdentity", "\nGNU_MAKE_SOURCE_VERSION = ", "\nGNU_MAKE_FAILURES = "),
+            between(helper, "gnuMakeBootstrap", "GNU_MAKE_BOOTSTRAP = r'''", "\ndef gnu_make_worker("),
+            python(helper, "def gnu_make_worker("), python(helper, "def gnu_make_dependency("),
+            between(helper, "def prepare_gnu_make_source(", "def prepare_gnu_make_source(", "\n\n"),
+            python(helper, "def gnu_make_origin("));
+    }
+
     private static List<PreparationSourceRange> sourceIsolation(String helper) throws IOException {
         return List.of(
             between(helper, "sourceResourceLimits", "\nRUBY_SCRATCH_BYTES = ", "\nRUBY_OPENSSL_DIGEST = "),
-            between(helper, "sourceIsolationPreflight", "SOURCE_WORKER = r'''\n", "\nRUBY_WORKER = SOURCE_WORKER"),
+            between(helper, "sourceIsolationPreflight", "SOURCE_WORKER = r'''\n", "\nRUBY_WORKER = "),
             python(helper, "def source_install("), python(helper, "def source_unit("),
             python(helper, "def ruby_scratch_mount("), python(helper, "def ruby_create_scratch("),
             python(helper, "def ruby_remove_scratch("),
@@ -418,25 +441,31 @@ record PreparationSourceRange(String section, int offset, int next) {
             || APT_DEPENDENCY_SHELL_INITIAL.contains(range.section());
     }
 
-    static List<PreparationSourceRange> pythonPreparationShell(String shell, boolean credentials) throws IOException {
+    static List<PreparationSourceRange> sourceBuildPreparationShell(String shell, boolean credentials) throws IOException {
         var ranges = new ArrayList<>(aptDependencyShell(shell, credentials));
         ranges.add(runtimeLauncher(shell));
         ranges.add(between(shell, "aptSourceSafety", "wtl_apt_source_security() {\n", "\nwtl_apt_repository_uris() {"));
         return ranges;
     }
 
-    static List<PreparationSourceRange> pythonPreparationTransport(String runtime, boolean credentials) throws IOException {
+    static List<PreparationSourceRange> sourceBuildPreparationTransport(String runtime, String ecosystem, boolean credentials) throws IOException {
         var ranges = new ArrayList<>(nodeTransfer(runtime, credentials));
         ranges.add(between(runtime, "mirrorPolicyValidation", "    @staticmethod\n    def validate_url(endpoint, url):",
             "\n    @staticmethod\n    def validate_redirect("));
         ranges.add(between(runtime, "mirrorRedirectValidation", "    @staticmethod\n    def validate_redirect(endpoint, original, url):",
             "\n    @staticmethod\n    def redirect_path("));
-        ranges.addAll(transfer(runtime, "PYTHON", credentials, true));
+        ranges.addAll(transfer(runtime, ecosystem, credentials, true));
         return ranges.stream().distinct().toList();
     }
 
-    static boolean pythonPreparationInitial(PreparationSourceRange range) {
-        return PYTHON_PREPARATION_INITIAL.contains(range.section());
+    static boolean sourceBuildPreparationInitial(String ecosystem, PreparationSourceRange range) {
+        if (!ecosystem.equals("RUBY")) return PYTHON_PREPARATION_INITIAL.contains(range.section());
+        return RUBY_PREPARATION_INITIAL.contains(range.section()) ||
+            rubyMakeRequired(range) && !range.section().equals("def gnu_make_origin(");
+    }
+
+    static boolean rubyMakeRequired(PreparationSourceRange range) {
+        return RUBY_MAKE_REQUIRED.contains(range.section());
     }
 
     static boolean buildsFromSource(String ecosystem) {

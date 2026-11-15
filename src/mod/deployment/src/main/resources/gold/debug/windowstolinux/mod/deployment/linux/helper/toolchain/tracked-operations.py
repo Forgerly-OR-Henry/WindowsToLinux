@@ -431,6 +431,8 @@ def tracked_validate_selection(operation):
         fail('integrity', 'tracked marker differs from the selected official artifact')
     if marker.stat().st_mode & 0o222:
         fail('integrity', 'tracked completion marker is not sealed')
+    if selected['ecosystem'] == 'RUBY' and selected['origin'] == 'MANAGED':
+        require_ruby_source_record(record, directory)
     verify_system(record)
     probe(record['ecosystem'], directory, record['version'])
     return {k: record[k] for k in fields}

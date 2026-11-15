@@ -35,7 +35,8 @@ class PythonSourceBuildTest(unittest.TestCase):
                    '__WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__': {'GNU_MAKE_SOURCE': ['https://ftp.gnu.org/gnu/make/']},
                    '__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__': []}
         for name in ('10-release-metadata.py', 'archive-boundaries.py', '20-installation-boundaries.py',
-                     '30-managed-installation.py', 'tracked-operations.py', 'ruby-source-build.py', 'python-source-build.py'):
+                     '30-managed-installation.py', 'tracked-operations.py', 'gnu-make-source.py',
+                     'ruby-source-build.py', 'python-source-build.py'):
             exec(compile((FRAGMENTS / name).read_bytes(), name, 'exec'), self.ns)
         self.unit = mock.Mock()
         self.seal = mock.Mock()
@@ -75,7 +76,8 @@ class PythonSourceBuildTest(unittest.TestCase):
             self.assertFalse(marker.exists())
             self.assertEqual((self.destination, VERSION), (destination, version))
             if mounts is not None:
-                stage, archive, make_archive = mounts
+                stage, archive, make_archive, openssl_gem = mounts
+                self.assertIsNone(openssl_gem)
                 self.assertTrue(unit_id.startswith('wtl-python-build-'))
                 self.assertTrue(stage.is_dir())
                 self.assertEqual('scratch', stage.parent.name)
@@ -207,7 +209,7 @@ class PythonSourceBuildTest(unittest.TestCase):
                 mock.patch.object(os, 'readlink', side_effect=('net:[1]', 'mnt:[2]', 'time:[3]')), \
                 mock.patch.object(time, 'monotonic_ns', return_value=1_000_000_000):
             ns['source_unit']('wtl-python-build-01234567890123456789012345678901.service',
-                              prefix, VERSION, 'python', ns['PYTHON_SOURCE_WORKER'], (stage, archive, make_archive))
+                              prefix, VERSION, 'python', ns['PYTHON_SOURCE_WORKER'], (stage, archive, make_archive, None))
         init, role, ecosystem = ns['ruby_run'].call_args.args
         self.assertEqual(('build', 'python'), (role, ecosystem))
         self.assertIn('--property=DynamicUser=yes', init)
@@ -545,7 +547,7 @@ class PythonSourceBuildTest(unittest.TestCase):
 
     def test_gnu_make_bootstrap_receipt_requires_matching_python_build_manager_exit(self):
         diagnose = self.ns['ruby_diagnostic']
-        for code, (stage, executable) in self.ns['PYTHON_GNU_MAKE_FAILURES'].items():
+        for code, (stage, executable) in self.ns['GNU_MAKE_FAILURES'].items():
             observation = {'actualExitCode': code, 'timedOut': False, 'cancelled': False,
                            'stdout': 'Finished with result: exit-code\n'
                                      f'Main processes terminated with: code=exited/status={code}\n',
@@ -556,7 +558,7 @@ class PythonSourceBuildTest(unittest.TestCase):
                 self.assertIn('worker-executable=' + executable + '\n', result['stdout'])
                 self.assertNotIn('private fixture output', str(result))
                 for other, role, ecosystem in ((dict(observation, actualExitCode=99), 'build', 'python'),
-                                               (observation, 'probe', 'python'), (observation, 'build', 'ruby')):
+                                               (observation, 'probe', 'python')):
                     result = diagnose(other, role, ecosystem)
                     self.assertEqual(ecosystem + '-' + role + '-launcher', result['stage'])
                     self.assertNotIn('worker-executable=', result['stdout'])

@@ -1,4 +1,5 @@
-RUBY_RECIPE = 'ruby-dynamic-user-build-v1'
+RUBY_LEGACY_SOURCE_RECIPE = 'ruby-dynamic-user-build-v1'
+RUBY_RECIPE = 'ruby-dynamic-user-build-v2-gnu-make-' + GNU_MAKE_SOURCE_VERSION
 RUBY_DYNAMIC_MIN, RUBY_DYNAMIC_MAX = 61184, 65519
 RUBY_BUILD_BYTES = 1024 * 1024 * 1024
 RUBY_BUILD_ENTRIES = 40000
@@ -218,10 +219,11 @@ def only_source_worker_in_cgroup(unit):
         return processes.read(64) == (str(os.getpid()) + "\n").encode("ascii")
 '''
 
-RUBY_WORKER = SOURCE_WORKER + r'''
+RUBY_WORKER = gnu_make_worker(r'''
 from contextlib import contextmanager
 import io
 import re
+import shutil
 import stat
 import time
 
@@ -370,6 +372,16 @@ def configure(release, prefix, options, unit, unit_deadline, clock_namespace):
     if status:
         sys.exit(status)
 
+
+def sealed_gnu_make(identity, digest, unit):
+    global failure
+    failure = 215
+    if (not only_source_worker_in_cgroup(unit) or gnu_make_binary_digest() != digest
+            or gnu_make_binary_identity(os.lstat(GNU_MAKE_PROGRAM)) != identity
+            or environment["MAKE"] != "make" or shutil.which("make", path=environment["PATH"]) != GNU_MAKE_PROGRAM):
+        sys.exit(failure)
+
+
 failure = 90
 try:
     mode, network, mount, prefix, version, *arguments = sys.argv[1:]
@@ -385,28 +397,46 @@ try:
         release = extract_release("ruby-" + version)
         verify_build_scratch(release, prefix)
         verify_native_build_chain(release)
+        unit = resource_limits[0]
+        runtime_path = environment["PATH"]
+        digest = bootstrap_gnu_make(unit)
+        # RubyGems records Make argv in installed gem_make.out files. The verified private binary is first on PATH.
+        environment["MAKE"] = "make"
+        failure = 215
+        make_identity = gnu_make_binary_identity(os.lstat(GNU_MAKE_PROGRAM))
+        sealed_gnu_make(make_identity, digest, unit)
         options = ["--with-out-ext=openssl"] if legacy == "legacy" else []
         failure = 98
-        configure(release, prefix, options, resource_limits[0], unit_deadline, clock_namespace)
+        configure(release, prefix, options, unit, unit_deadline, clock_namespace)
+        sealed_gnu_make(make_identity, digest, unit)
         failure = 99
-        command("/usr/bin/make", "-j2", cwd=release)
+        command(GNU_MAKE_PROGRAM, "MAKE=make", "-j2", cwd=release)
+        sealed_gnu_make(make_identity, digest, unit)
         failure = 100
-        command("/usr/bin/make", "install", cwd=release)
+        command(GNU_MAKE_PROGRAM, "MAKE=make", "install", cwd=release)
+        sealed_gnu_make(make_identity, digest, unit)
         if legacy == "legacy":
             failure = 101
             command(ruby, prefix + "/bin/gem", "install", "--local", "/tmp/openssl-3.0.3.gem",
                     "--no-document", "--ignore-dependencies", cwd=release)
+            sealed_gnu_make(make_identity, digest, unit)
+        del environment["MAKE"]
+        environment["PATH"] = runtime_path
         failure = 102
-        command(ruby, "-r", "rbconfig", "-e", "abort unless RbConfig::CONFIG.fetch('prefix') == ARGV.fetch(0)", prefix)
+        command(ruby, "-r", "rbconfig", "-e",
+                "abort unless RbConfig::CONFIG.fetch('prefix') == ARGV.fetch(0); "
+                "abort if [RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].any? { |config| "
+                "config.values.any? { |value| value.include?(ARGV.fetch(1)) } }",
+                prefix, str(GNU_MAKE_BUILD))
 
     else:
         failure = 126
         require_ruby_resources(*arguments)
     failure = 103
     command(ruby, "-e", "abort unless RUBY_VERSION == ARGV.fetch(0); require 'openssl'; require 'zlib'; require 'yaml'", version)
-except (OSError, KeyError, ValueError, subprocess.CalledProcessError):
+except (OSError, KeyError, ValueError, subprocess.SubprocessError, tarfile.TarError):
     sys.exit(failure)
-'''
+''')
 
 
 def ruby_system_command(executable, *arguments):
@@ -680,8 +710,7 @@ def ruby_diagnostic(command, role, ecosystem='ruby'):
     configure_failure = RUBY_CONFIGURE_FAILURES.get(exit_code) if ecosystem == 'ruby' and role == 'build' else None
     make_failure = (globals().get('PYTHON_MAKE_FAILURES', {}).get(exit_code)
                     if ecosystem == 'python' and role == 'build' else None)
-    gnu_make_failure = (globals().get('PYTHON_GNU_MAKE_FAILURES', {}).get(exit_code)
-                        if ecosystem == 'python' and role == 'build' else None)
+    gnu_make_failure = GNU_MAKE_FAILURES.get(exit_code) if role == 'build' else None
     build_probe_failure = None
     if role == 'build' and exit_code is not None and 145 <= exit_code <= 164:
         index, detail = divmod(exit_code - 145, len(SOURCE_BUILD_PROBE_FAILURES))
@@ -770,16 +799,16 @@ def source_unit(unit, directory, version, ecosystem, worker_source, build_mounts
                    os.readlink('/proc/self/ns/mnt'), directory, version])
     if build_mounts:
         properties.append('PrivateTmp=yes')
-        stage, archive, dependency = build_mounts
+        stage, archive, make_archive, openssl_gem = build_mounts
         staged = stage.lstat()
-        sources = [ruby_mount_path(archive) + ':/tmp/wtl-toolchain-release']
+        legacy = ecosystem == 'ruby' and version_key(version)[:2] == (3, 0)
+        if make_archive is None or (openssl_gem is not None) != legacy:
+            fail('integrity', 'source build dependency mounts differ from its recipe')
+        sources = [ruby_mount_path(archive) + ':/tmp/wtl-toolchain-release',
+                   ruby_mount_path(make_archive) + ':/tmp/wtl-gnu-make-source']
         flavor = 'standard'
-        if ecosystem == 'python':
-            if dependency is None:
-                fail('integrity', 'Python source build is missing its GNU Make archive')
-            sources.append(ruby_mount_path(dependency) + ':/tmp/wtl-gnu-make-source')
-        elif dependency is not None:
-            sources.append(ruby_mount_path(dependency) + ':/tmp/openssl-3.0.3.gem')
+        if openssl_gem is not None:
+            sources.append(ruby_mount_path(openssl_gem) + ':/tmp/openssl-3.0.3.gem')
             flavor = 'legacy'
         mounts = [ruby_mount_path(stage) + ':' + directory]
         writable = [directory]
@@ -981,10 +1010,11 @@ def source_install(ecosystem, recipe, identity, url, algorithm, expected, layout
                 ('directory', str(destination)), ('source', url), ('sha256', expected),
                 ('official_algorithm', algorithm), ('official_digest', expected)))):
             fail('integrity', 'existing installation does not match its source recipe')
-        recipe_matches = (python_source_marker_recipe_matches(record) if ecosystem == 'PYTHON'
-                          else record.get('recipe') == recipe)
-        if not recipe_matches:
-            fail('integrity', 'existing installation does not match its source recipe')
+        if ecosystem == 'PYTHON':
+            if not python_source_marker_recipe_matches(record):
+                fail('integrity', 'existing installation does not match its source recipe')
+        else:
+            require_ruby_source_record(record, destination)
         probe_release(destination, identity)
         return record
 
@@ -1007,14 +1037,13 @@ def source_install(ecosystem, recipe, identity, url, algorithm, expected, layout
         archive.chmod(0o444)
         if tracked is not None:
             tracked.archive_downloaded(sha256)
-        dependency, dependencies = None, {}
-        if ecosystem == 'PYTHON':
-            dependency, dependencies['gnu_make'] = prepare_python_make_source(work)
-        elif ecosystem == 'RUBY' and version_key(identity)[:2] == (3, 0):
-            dependency = work / 'openssl-3.0.3.gem'
-            gem_url = source_url('RUBYGEMS', 'downloads/' + dependency.name)
-            download(gem_url, dependency, 'sha256', RUBY_OPENSSL_DIGEST)
-            dependency.chmod(0o444)
+        make_archive, make_dependency = prepare_gnu_make_source(work)
+        dependencies, openssl_gem = {'gnu_make': make_dependency}, None
+        if ecosystem == 'RUBY' and version_key(identity)[:2] == (3, 0):
+            openssl_gem = work / 'openssl-3.0.3.gem'
+            gem_url = source_url('RUBYGEMS', 'downloads/' + openssl_gem.name)
+            download(gem_url, openssl_gem, 'sha256', RUBY_OPENSSL_DIGEST)
+            openssl_gem.chmod(0o444)
             dependencies['openssl'] = {'version': '3.0.3', 'source': gem_url, 'sha256': RUBY_OPENSSL_DIGEST}
         source_dependencies(layout)
         scratch = work / 'scratch'
@@ -1026,7 +1055,7 @@ def source_install(ecosystem, recipe, identity, url, algorithm, expected, layout
         stage.chmod(0o777)
         with create_installation_directory(destination, tracked):
             sandbox_started = True
-            run_unit(unit, destination, identity, (stage, archive, dependency))
+            run_unit(unit, destination, identity, (stage, archive, make_archive, openssl_gem))
             sandbox_settled = True
             publish(stage, destination)
             probe_release(destination, identity)
@@ -1055,8 +1084,44 @@ _previous_tracked_cleanup = tracked_cleanup
 
 def install_key_with_ruby_recipe(ecosystem, identity, expected):
     if ecosystem == 'RUBY':
-        return hashlib.sha256(('RUBY\n' + identity + '\n' + expected + '\n' + RUBY_RECIPE).encode()).hexdigest()
+        return ruby_recipe_key(identity, expected, RUBY_RECIPE + '\n' + GNU_MAKE_SOURCE_SHA256)
     return _previous_installation_key(ecosystem, identity, expected)
+
+
+def ruby_recipe_key(identity, expected, recipe):
+    return hashlib.sha256(('RUBY\n' + identity + '\n' + expected + '\n' + recipe).encode()).hexdigest()
+
+
+def require_ruby_source_record(record, directory):
+    identity, expected = record.get('version'), record.get('official_digest')
+    if (not isinstance(identity, str) or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', identity)
+            or not isinstance(expected, str) or not re.fullmatch('[a-f0-9]{64}', expected)
+            or record.get('official_algorithm') != 'sha256' or record.get('sha256') != expected):
+        fail('integrity', 'managed Ruby marker differs from the official installation identity')
+    recipe, dependencies = record.get('recipe'), record.get('dependencies')
+    if not isinstance(dependencies, dict):
+        fail('integrity', 'managed Ruby source recipe lacks its dependency proofs')
+    required = set()
+    if version_key(identity)[:2] == (3, 0):
+        required.add('openssl')
+        gem = dependencies.get('openssl')
+        if (not isinstance(gem, dict) or set(gem) != {'version', 'source', 'sha256'}
+                or gem['version'] != '3.0.3' or gem['sha256'] != RUBY_OPENSSL_DIGEST
+                or not isinstance(gem['source'], str) or not gem['source'].endswith('/downloads/openssl-3.0.3.gem')):
+            fail('integrity', 'managed Ruby source recipe lacks its pinned OpenSSL dependency')
+    if recipe == RUBY_RECIPE:
+        key = install_key_with_ruby_recipe('RUBY', identity, expected)
+        required.add('gnu_make')
+        if dependencies.get('gnu_make') != gnu_make_dependency():
+            fail('integrity', 'managed Ruby source recipe lacks its pinned GNU Make dependency')
+    elif recipe == RUBY_LEGACY_SOURCE_RECIPE:
+        key = ruby_recipe_key(identity, expected, RUBY_LEGACY_SOURCE_RECIPE)
+    elif 'recipe' not in record:
+        key = _previous_installation_key('RUBY', identity, expected)
+    else:
+        fail('integrity', 'managed Ruby source recipe is unknown')
+    if set(dependencies) != required or directory != ROOT / 'versions' / ('ruby-' + key):
+        fail('integrity', 'managed Ruby marker differs from its source recipe and path')
 
 
 def install_with_ruby_isolation(ecosystem, identity, url, algorithm, expected, layout):

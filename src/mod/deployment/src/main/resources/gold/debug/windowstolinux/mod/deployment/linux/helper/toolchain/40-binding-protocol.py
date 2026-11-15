@@ -34,6 +34,8 @@ def validated_binding(encoded, restoring=False):
             fail('integrity', 'binding differs from the prepared installation')
         if record['source'] != base64.b64decode(f[9], validate=True).decode():
             fail('integrity', 'binding source differs from prepared evidence')
+        if f[0] == 'RUBY' and f[8] == 'MANAGED':
+            require_ruby_source_record(record, directory)
         if f[0] == 'DOTNET':
             if f[8] != 'MANAGED':
                 fail('integrity', 'managed .NET binding has the wrong origin')
@@ -88,6 +90,8 @@ def existing_installation(fields):
         fail('integrity', 'saved installation differs from the immutable binding')
     if record['source'] != base64.b64decode(fields[9], validate=True).decode():
         fail('integrity', 'saved installation source differs from the immutable binding')
+    if fields[0] == 'RUBY' and fields[8] == 'MANAGED':
+        require_ruby_source_record(record, directory)
     if fields[0] == 'DOTNET':
         validate_managed_dotnet_record(record, directory, fields[6])
         if 'dotnet_probe_files' not in record:
@@ -275,6 +279,8 @@ def main(args):
                     fail('integrity', 'toolchain completion marker differs from the immutable binding')
                 if fields[0] == 'DOTNET':
                     verify_managed_dotnet_probe_files(record, directory, fields[6])
+                elif fields[0] == 'RUBY' and fields[8] == 'MANAGED':
+                    require_ruby_source_record(record, directory)
                 else:
                     verify_system(record)
             return

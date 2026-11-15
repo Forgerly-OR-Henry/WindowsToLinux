@@ -3080,6 +3080,85 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     @Test
+    void sourceBuiltRubyReviewBindsFrozenMakeToTheOriginalIsolatedWorkerAndRequiresItsRoute() throws Exception {
+        int maximum = 1048576;
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.APT_UBUNTU, DownloadPoint.RUBY_DISTRIBUTION);
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = diagnosedPreparation(fixture, "RUBY", "3.3")) {
+            var action = intent("prepare", fixture, command);
+            var facts = new LinkedHashMap<String, Object>(
+                new DeploymentFixedCommandProtocol(fixture.context).inspect(action, command, fixture.layout, fixture.task));
+            facts.put("currentCommandEvidence", assisted.scope.effectFacts(action, fixture.task));
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, maximum), action, command,
+                fixture.layout).orElseThrow();
+            var initial = r31DeniedApproval(fixture, assisted, facts, action, command);
+            var factsFrame = JSON.readTree(evidence.messages().getLast().text());
+            var endpoint = factsFrame.at("/mirrorTransport/frozenPolicy/points/GNU_MAKE_SOURCE/0");
+            assertEquals(DownloadPoint.GNU_MAKE_PROVIDER, endpoint.path("providerId").asText());
+            assertEquals(DownloadPoint.GNU_MAKE_ORIGIN, endpoint.path("baseUrl").asText());
+            assertTrue(endpoint.path("official").asBoolean());
+            var manifest = factsFrame.path(PHASE);
+            var selection = manifest.path("preparationSelection");
+            String body = evidence.messages().get(selection.path("ordinal").asInt()).text()
+                .substring(selection.path("headerCharacters").asInt());
+            var helper = manifest.path("installedHelperSource");
+            String pointer = helper.path("sourcePointer").asText();
+            String source = DeploymentManagedHelperBundle.renderScript(fixture.layout);
+            var sources = Map.of(pointer, source, manifest.at("/mirrorBootstrapShell/sourcePointer").asText(), r24Shell(fixture),
+                "/mirrorTransport/runtimeSource", DeploymentMirrorRuntime.runtimeSource());
+            var inline = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            for (var range : manifest.path("selectedPreparationRanges")) {
+                String sourcePointer = range.path("sourcePointer").asText();
+                int offset = range.path("offset").asInt(), next = range.path("next").asInt();
+                int start = range.path("startCharacter").asInt();
+                assertEquals(sources.get(sourcePointer).substring(offset, next), body.substring(start, start + next - offset));
+                addR24Range(inline, sourcePointer, offset, next);
+            }
+            for (String expected : List.of("RUBY_WORKER = gnu_make_worker(", "def bootstrap_gnu_make(", "\"./build.sh\"",
+                    "GNU_MAKE_SOURCE_BYTES = 2348200", "dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3",
+                    "def prepare_gnu_make_source(", "maximum=GNU_MAKE_SOURCE_BYTES", "/tmp/wtl-gnu-make-source",
+                    "configure(release, prefix, options", "environment[\"MAKE\"] = \"make\"",
+                    "command(GNU_MAKE_PROGRAM, \"MAKE=make\", \"-j2\"",
+                    "command(GNU_MAKE_PROGRAM, \"MAKE=make\", \"install\"", "sealed_gnu_make(make_identity, digest, unit)",
+                    "del environment[\"MAKE\"]", "MemorySwapMax=0",
+                    "APT::Get::AllowUnauthenticated=false", "Acquire::Check-Valid-Until=true", "--no-download")) {
+                assertTrue(body.contains(expected), expected);
+            }
+            assertIdentity(helper, source);
+            var required = manifest.path("requiredPreparationRanges");
+            assertTrue(required.isArray() && required.size() >= 10);
+            var missing = helper.at("/namedRanges/def gnu_make_origin(");
+            int offset = missing.path(0).asInt(), next = missing.path(1).asInt();
+            assertTrue(offset > 0 && next > offset && next - offset <= 8000);
+            assertTrue(source.substring(offset, next).contains("the frozen GNU Make route differs from the fixed source"));
+            for (var range : required) {
+                assertEquals(pointer, range.path("sourcePointer").asText());
+                if (range.path("section").asText().equals("def gnu_make_origin(")) continue;
+                var visible = inline.get(pointer).floorEntry(range.path("offset").asInt());
+                assertTrue(visible != null && visible.getValue() >= range.path("next").asInt(), range.path("section").asText());
+            }
+            String snapshot = manifest.path("snapshotSha256").asText();
+            var reader = evidence.reader(8);
+            reader.read(response(Optional.empty(), verdict("ruby-early-approval", "APPROVE")));
+            assertEquals(Optional.of("REQUIRED_SOURCE_MISSING"), reader.approvalEvidenceBlock());
+            var messages = new ArrayList<>(initial.messages());
+            messages.set(messages.size() - 1, evidence.messages().getLast());
+            int first = wire(fixture.model.requests.getFirst(), maximum, Map.of()).length;
+            var reply = mockResponses(read("ruby-fixed-gnu-origin", snapshot, pointer, offset, next - offset));
+            var pages = reader.read(reply);
+            assertFalse(pages.getFirst().error());
+            assertEquals(source.substring(offset, next), pagePayload(pages.getFirst().text()).at("/value/text").asText());
+            reader.continueReview(messages, reply, pages);
+            byte[] retained = wire(copy(initial, messages, maximum), maximum, Map.of());
+            assertTrue(replayRetainedRanges(retained, snapshot, sources).isPresent());
+            reader.read(response(Optional.empty(), verdict("ruby-complete-approval", "APPROVE")));
+            assertEquals(Optional.empty(), reader.approvalEvidenceBlock());
+            assertEquals(0, assisted.hosts.get());
+            System.out.printf("R46_RUBY_REVIEW firstEncoded=%d retainedEncoded=%d cap=%d%n", first, retained.length, maximum);
+        }
+    }
+
+    @Test
     void sourceBuiltPythonReviewIncludesTheActualSignedAptPathAndExactSourceRanges() throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.APT_UBUNTU, DownloadPoint.PYTHON_DISTRIBUTION);
              var command = diagnosedPreparation(fixture, "PYTHON", "3.12")) {
@@ -3112,7 +3191,7 @@ class DeploymentToolchainReviewEvidenceTest {
             assertTrue(body.contains("apt-helper"));
             assertTrue(body.contains("--no-download"));
             assertTrue(body.contains("def mirror_system_command("));
-            assertTrue(body.contains("if ecosystem == 'PYTHON':"));
+            assertTrue(body.contains("if ecosystem == 'PYTHON' or layout == 'python':"));
             for (String checked : List.of("RUBY_SCRATCH_BYTES = 1536 * 1024 * 1024",
                 "RUBY_SCRATCH_INODES = 96000", "RUBY_MEMORY_BYTES = 3 * 1024 * 1024 * 1024",
                 "MemorySwapMax=0", "require_ruby_resources(*resource_limits)",
@@ -3129,14 +3208,14 @@ class DeploymentToolchainReviewEvidenceTest {
             String source = originals.get(helper.path("sourcePointer").asText());
             String snapshot = projected.path("snapshotSha256").asText();
             int diagnostics = source.indexOf("PYTHON_MAKE_FAILURES = {");
-            int next = source.indexOf("PYTHON_GNU_MAKE_BOOTSTRAP = r'''", diagnostics);
+            int next = source.indexOf("\nPYTHON_SOURCE_WORKER = ", diagnostics);
             assertTrue(diagnostics >= 0 && next > diagnostics && next - diagnostics <= 8000);
             assertFalse(body.contains("PYTHON_MAKE_FAILURES = {"));
-            var bootstrap = helper.at("/namedRanges/pythonMakeBootstrap");
-            assertEquals(next, bootstrap.path(0).asInt());
-            assertTrue(source.substring(next, bootstrap.path(1).asInt()).startsWith("PYTHON_GNU_MAKE_BOOTSTRAP = r'''"));
+            var bootstrap = helper.at("/namedRanges/gnuMakeBootstrap");
+            int bootstrapOffset = bootstrap.path(0).asInt();
+            assertTrue(source.substring(bootstrapOffset, bootstrap.path(1).asInt()).startsWith("GNU_MAKE_BOOTSTRAP = r'''"));
             for (var section : Map.of("pythonMakeInvocation", "def make_python(release):",
-                    "def prepare_python_make_source(", "maximum=GNU_MAKE_SOURCE_BYTES",
+                    "def prepare_gnu_make_source(", "maximum=GNU_MAKE_SOURCE_BYTES",
                     "def gnu_make_origin(", "the frozen GNU Make route differs from the fixed source",
                     "def download(", "official.hexdigest() != expected",
                     "def preparation_lock(", "def preparation_lock(").entrySet()) {

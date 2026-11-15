@@ -92,7 +92,7 @@ public final class DeploymentCommandSourceEvidence {
     private static final int MAX_CORRECTABLE_BATCH = 16;
     private static final int NATIVE_REQUEST_TEXT_BYTES = 1024 * 1024;
     private static final int NATIVE_TOOL_ENVELOPE_BYTES = 4096;
-    private static final int PYTHON_INITIAL_WIRE_TARGET = 110_000;
+    private static final int ISOLATED_SOURCE_INITIAL_WIRE_TARGET = 110_000;
     private static final int APT_INITIAL_WIRE_TARGET = 145_000;
     private static final Set<String> OPERATIONS = Set.of(PREPARE, BIND,
         DeploymentToolchainDependencies.OPERATION);
@@ -137,6 +137,10 @@ public final class DeploymentCommandSourceEvidence {
         Review the original Python preparation, authority, arguments, limits and effects. Check release admission, artifact integrity, install and SYSTEM reuse, probes, ownership, locks and cleanup. For a managed source build, review the GNU_MAKE_SOURCE route and pinned archive, the read-only binding, the original isolated Make bootstrap, and the chosen executable for configure, build and install. Inspect the worker isolation and resource bounds and the reached APT signature/frozen-install or DNF path and hooks. Staged definitions are not execution.
         The product reconstructs exactAction from ordered LITERAL, SOURCE_TEXT and SHELL_SINGLE_QUOTE segments and compares it to the original. selectedPreparationRanges maps exact excerpts to their UTF-16 source; startCharacter counts from the preparationSelection header end. The initial supplement and retained frames describe exact source in range order. Review those bytes before using evidence. All original fields and full sources remain pageable.
         Request missing source with snapshotSha256, pointer, offset and limit 1–8000, at most eight calls per response. Use the latest frame's previouslyDeferred if prior source was omitted. Submit a fresh native submit_result alone. Deny insufficient evidence or unsafe effects.
+        """;
+
+    private static final String RUBY_PREPARE_INSTRUCTION = """
+        Follow the exact Ruby managed source path. Review its GNU_MAKE_SOURCE frozen route, pinned archive, read-only worker binding, and bounded Make bootstrap. Check the Make selected for configure, build, install and any legacy OpenSSL gem. requiredPreparationRanges identifies mandatory source. Use exact inline and retained bytes first and read only missing ranges, including pendingRequired in a supplement or retained frame.
         """;
 
     private static final String DEPENDENCY_INSTRUCTION = """
@@ -305,7 +309,7 @@ public final class DeploymentCommandSourceEvidence {
             if (PREPARE.equals(operation)) {
                 projectPreparationPolicy(current, projected);
                 nodeView = addPreparationSelection(current, projected, manifest, messages, snapshot, sourceBodies, initialRanges,
-                    initialSourceRanges);
+                    initialSourceRanges, requiredRanges);
             }
         }
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
@@ -323,6 +327,8 @@ public final class DeploymentCommandSourceEvidence {
             case "PYTHON" -> combinedLocations(List.of("def open_preparation_lock(",
                 "def require_ruby_resources(", "def ruby_scratch_mount(", "def ruby_mount_path(",
                 "def ruby_publish(", "def ruby_link_target(", "def verify_system(", "def materialize_system("));
+            case "RUBY" -> combinedLocations(List.of("def ruby_source_install(", "def source_unit(",
+                "def gnu_make_origin(", "def prepare_gnu_make_source(", "def bootstrap_gnu_make("));
             default -> HELPER_LOCATIONS;
         };
     }
@@ -336,7 +342,8 @@ public final class DeploymentCommandSourceEvidence {
     private static Optional<NodePreparationView> addPreparationSelection(ObjectNode current, ObjectNode projected, ObjectNode manifest, List<AiMessage> messages,
                                                 String snapshot, Map<String, String> sources,
                                                 Map<String, NavigableMap<Integer, Integer>> initialRanges,
-                                                Map<String, NavigableMap<Integer, Integer>> initialSourceRanges) throws IOException {
+                                                Map<String, NavigableMap<Integer, Integer>> initialSourceRanges,
+                                                Map<String, NavigableMap<Integer, Integer>> requiredRanges) throws IOException {
         boolean diagnosed = current.has("originalToolchainPreparation");
         String ecosystem = preparationEcosystem(current);
         if (ecosystem.equals("NODE")) {
@@ -371,9 +378,9 @@ public final class DeploymentCommandSourceEvidence {
             putSelectionFrame(manifest, messages, snapshot, sources, NODE_PREPARATION_SELECTION, "nodePreparationSelection", body);
             return Optional.of(view);
         }
-        if (ecosystem.equals("PYTHON")) {
-            addPythonPreparationSelection(current, projected, manifest, messages, snapshot, sources, initialRanges,
-                initialSourceRanges, diagnosed);
+        if (isolatedSourcePreparation(ecosystem)) {
+            addSourceBuildPreparationSelection(current, projected, manifest, messages, snapshot, sources, initialRanges,
+                initialSourceRanges, requiredRanges, ecosystem, diagnosed);
             return Optional.empty();
         }
         String source = preparationSelection(current, sources, initialRanges,
@@ -385,36 +392,46 @@ public final class DeploymentCommandSourceEvidence {
         return Optional.empty();
     }
 
-    private static void addPythonPreparationSelection(ObjectNode current, ObjectNode projected, ObjectNode manifest,
+    private static void addSourceBuildPreparationSelection(ObjectNode current, ObjectNode projected, ObjectNode manifest,
             List<AiMessage> messages, String snapshot, Map<String, String> sources,
             Map<String, NavigableMap<Integer, Integer>> initialRanges,
-            Map<String, NavigableMap<Integer, Integer>> initialSourceRanges, boolean diagnosed) throws IOException {
+            Map<String, NavigableMap<Integer, Integer>> initialSourceRanges,
+            Map<String, NavigableMap<Integer, Integer>> requiredRanges, String ecosystem, boolean diagnosed) throws IOException {
         var body = new StringBuilder();
         var selected = manifest.putArray("selectedPreparationRanges");
         String policy = sources.get(MIRROR_POLICY_SOURCE);
         initialSourceRanges.put(MIRROR_POLICY_SOURCE, new TreeMap<>(Map.of(0, policy.length())));
         String helper = sources.get(INSTALLED_HELPER_SOURCE);
-        selectPythonPreparationSource(body, selected, initialRanges, initialSourceRanges,
+        var helperRanges = PreparationSourceRange.helper(helper, ecosystem, diagnosed);
+        if (ecosystem.equals("RUBY")) {
+            var required = helperRanges.stream().filter(PreparationSourceRange::rubyMakeRequired).toList();
+            var selection = manifest.putArray("requiredPreparationRanges");
+            required.forEach(range -> selection.addObject().put("section", range.section())
+                .put("sourcePointer", INSTALLED_HELPER_SOURCE).put("offset", range.offset()).put("next", range.next()));
+            requiredRanges.put(INSTALLED_HELPER_SOURCE, mergeRanges(required));
+        }
+        selectSourceBuildPreparationSource(body, selected, initialRanges, initialSourceRanges, ecosystem,
             (ObjectNode) manifest.path("installedHelperSource"), INSTALLED_HELPER_SOURCE, helper,
-            PreparationSourceRange.helper(helper, "PYTHON", diagnosed));
+            helperRanges);
         var endpointPolicy = current.at(PUBLIC_MIRROR_POLICY + "/points");
         boolean credentials = endpointPolicy.findValues("credentialManaged").stream().anyMatch(JsonNode::asBoolean);
         String shell = sources.get(MIRROR_BOOTSTRAP_SHELL);
-        selectPythonPreparationSource(body, selected, initialRanges, initialSourceRanges,
+        selectSourceBuildPreparationSource(body, selected, initialRanges, initialSourceRanges, ecosystem,
             (ObjectNode) manifest.path("mirrorBootstrapShell"), MIRROR_BOOTSTRAP_SHELL, shell,
-            PreparationSourceRange.pythonPreparationShell(shell, credentials));
+            PreparationSourceRange.sourceBuildPreparationShell(shell, credentials));
         String runtime = sources.get(MIRROR_RUNTIME);
-        selectPythonPreparationSource(body, selected, initialRanges, initialSourceRanges,
+        selectSourceBuildPreparationSource(body, selected, initialRanges, initialSourceRanges, ecosystem,
             (ObjectNode) projected.at(MIRROR_RUNTIME), MIRROR_RUNTIME, runtime,
-            PreparationSourceRange.pythonPreparationTransport(runtime, credentials));
+            PreparationSourceRange.sourceBuildPreparationTransport(runtime, ecosystem, credentials));
         putSelectionFrame(manifest, messages, snapshot, sources, PREPARATION_SELECTION, "preparationSelection", body);
     }
 
-    private static void selectPythonPreparationSource(StringBuilder body, ArrayNode selected,
+    private static void selectSourceBuildPreparationSource(StringBuilder body, ArrayNode selected,
             Map<String, NavigableMap<Integer, Integer>> initialRanges,
-            Map<String, NavigableMap<Integer, Integer>> initialSourceRanges, ObjectNode descriptor,
+            Map<String, NavigableMap<Integer, Integer>> initialSourceRanges, String ecosystem, ObjectNode descriptor,
             String pointer, String source, List<PreparationSourceRange> ranges) {
-        var initial = ranges.stream().filter(PreparationSourceRange::pythonPreparationInitial).toList();
+        var initial = ranges.stream()
+            .filter(range -> PreparationSourceRange.sourceBuildPreparationInitial(ecosystem, range)).toList();
         appendSelection(body, selected, initialRanges, pointer, source, initial);
         addNamedRanges(descriptor, ranges, initial);
         initialSourceRanges.put(pointer, mergeRanges(ranges));
@@ -473,7 +490,7 @@ public final class DeploymentCommandSourceEvidence {
             default -> ecosystem + "_DISTRIBUTION";
         }));
         if (ecosystem.equals("RUBY")) required.add("RUBYGEMS");
-        if (ecosystem.equals("PYTHON") && points.has("GNU_MAKE_SOURCE")) required.add("GNU_MAKE_SOURCE");
+        if (isolatedSourcePreparation(ecosystem) && points.has("GNU_MAKE_SOURCE")) required.add("GNU_MAKE_SOURCE");
         if (PreparationSourceRange.buildsFromSource(ecosystem)) {
             for (var point : DownloadPoint.values())
                 if (point.name().startsWith("APT_") || point.name().startsWith("DNF_")) required.add(point.name());
@@ -500,8 +517,7 @@ public final class DeploymentCommandSourceEvidence {
     }
 
     private boolean nodePreparationReview() {
-        String input = current.has("originalToolchainPreparation") ? "originalToolchainPreparation" : "toolchainPreparation";
-        return preparationReview() && "NODE".equals(current.path(input).path("ecosystem").asText());
+        return preparationReview() && reviewEcosystem().equals("NODE");
     }
 
     private static void appendSelection(StringBuilder body, com.fasterxml.jackson.databind.node.ArrayNode selected,
@@ -1136,7 +1152,7 @@ public final class DeploymentCommandSourceEvidence {
 
         private int initialSourceBudget(List<AiMessage> messages) throws IOException {
             int bound = sourceBodies.containsKey(DEPENDENCY_APT_SELECTION) ? APT_INITIAL_WIRE_TARGET
-                : pythonPreparationReview() ? PYTHON_INITIAL_WIRE_TARGET : 0;
+                : isolatedSourcePreparationReview() ? ISOLATED_SOURCE_INITIAL_WIRE_TARGET : 0;
             if (bound == 0) return nativeFrameBudget(messages);
             int remaining = bound - NATIVE_TOOL_ENVELOPE_BYTES;
             for (var message : messages) remaining -= quotedBytes(message);
@@ -1148,14 +1164,16 @@ public final class DeploymentCommandSourceEvidence {
                 .put("initialSupplement", true);
             var entries = header.putArray("ranges");
             var visible = copyRanges(inline);
-            if (completeInstallerReview()) appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
+            if (completeInstallerReview() || rubyPreparationReview())
+                appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
             int bodyBudget = available - quotedBytes(RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n");
             if (bodyBudget <= 0) return Optional.empty();
             var body = new StringBuilder();
             retainHistory(initialSourceRanges, visible, entries, body, bodyBudget);
             if (entries.isEmpty()) return Optional.empty();
             if (reconstructRuntimeShell(visible)) header.put("runtimeShellReconstructible", true);
-            if (completeInstallerReview()) appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
+            if (completeInstallerReview() || rubyPreparationReview())
+                appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
             var message = new AiMessage(AiRole.USER, RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n" + body, List.of());
             return quotedBytes(message) <= available ? Optional.of(new RetainedFrame(message, visible)) : Optional.empty();
         }
@@ -1498,7 +1516,7 @@ public final class DeploymentCommandSourceEvidence {
                 appendVisibleRange(read.pointer(), read.offset(), read.next(), visible, entries, body);
             }
             int remaining = retainHistory(confirmedRequired(), visible, entries, body, historyBytes);
-            if (nodePreparation || pythonPreparationReview() || sourceBodies.containsKey(DEPENDENCY_APT_SELECTION))
+            if (nodePreparation || isolatedSourcePreparationReview() || sourceBodies.containsKey(DEPENDENCY_APT_SELECTION))
                 remaining = retainHistory(requested, visible, entries, body, remaining);
             remaining = retainHistory(lastVisible, visible, entries, body, remaining);
             retainHistory(confirmed, visible, entries, body, remaining);
@@ -1710,9 +1728,21 @@ public final class DeploymentCommandSourceEvidence {
             .anyMatch(value -> value.asText().equals("NODE"));
     }
 
-    private boolean pythonPreparationReview() {
+    private String reviewEcosystem() {
         String input = current.has("originalToolchainPreparation") ? "originalToolchainPreparation" : "toolchainPreparation";
-        return preparationReview() && current.path(input).path("ecosystem").asText().equals("PYTHON");
+        return current.path(input).path("ecosystem").asText();
+    }
+
+    private boolean rubyPreparationReview() {
+        return preparationReview() && reviewEcosystem().equals("RUBY");
+    }
+
+    private boolean isolatedSourcePreparationReview() {
+        return preparationReview() && isolatedSourcePreparation(reviewEcosystem());
+    }
+
+    private static boolean isolatedSourcePreparation(String ecosystem) {
+        return ecosystem.equals("PYTHON") || ecosystem.equals("RUBY");
     }
 
     private String readCorrection() {
@@ -1734,7 +1764,8 @@ public final class DeploymentCommandSourceEvidence {
         if (installerReview()) return INSTALLER_INSTRUCTION + (completeInstallerReview() ? COMPLETE_INSTALLER_INSTRUCTION : "");
         if (preparationReview()) {
             if (nodePreparationReview()) return NODE_PREPARE_INSTRUCTION;
-            return pythonPreparationReview() ? PYTHON_PREPARE_INSTRUCTION : PREPARE_INSTRUCTION;
+            if (rubyPreparationReview()) return RUBY_PREPARE_INSTRUCTION + PREPARE_INSTRUCTION;
+            return reviewEcosystem().equals("PYTHON") ? PYTHON_PREPARE_INSTRUCTION : PREPARE_INSTRUCTION;
         }
         if (dependencyReview() && sourceBodies.containsKey(DEPENDENCY_APT_SELECTION)) return DEPENDENCY_APT_INSTRUCTION;
         if (dependencyReview()) return INSTRUCTION + DEPENDENCY_INSTRUCTION;

@@ -91,7 +91,7 @@ public final class DeploymentMirrorRequirements {
             case PHP_SERVICE -> Collections.addAll(points, DownloadPoint.PHP_DISTRIBUTION,
                 DownloadPoint.PHP_METADATA, DownloadPoint.COMPOSER_INSTALLER, DownloadPoint.COMPOSER_REPOSITORY);
             case RUBY_SERVICE -> Collections.addAll(points, DownloadPoint.RUBY_DISTRIBUTION,
-                DownloadPoint.RUBY_METADATA, DownloadPoint.RUBYGEMS);
+                DownloadPoint.RUBY_METADATA, DownloadPoint.RUBYGEMS, DownloadPoint.GNU_MAKE_SOURCE);
             case DOCKERFILE_CONTAINER -> points.add(DownloadPoint.OCI_REGISTRY);
             case CMAKE_SERVICE -> { /* The existing adapter obtains its tools through the system package manager. */ }
             case RECOGNITION_PREVIEW, MANAGED_PROCESS -> points.addAll(ALL);

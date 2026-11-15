@@ -33,7 +33,7 @@ class RubySourceBuildTest(unittest.TestCase):
         self.ns = {'__name__': 'controlled_ruby_test', '__WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__': {},
                    '__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__': ['example.invalid']}
         for name in ('10-release-metadata.py', 'archive-boundaries.py', '20-installation-boundaries.py',
-                     '30-managed-installation.py', 'tracked-operations.py', 'ruby-source-build.py'):
+                     '30-managed-installation.py', 'tracked-operations.py', 'gnu-make-source.py', 'ruby-source-build.py'):
             exec(compile((SOURCES / name).read_text(encoding='utf-8'), name, 'exec'), self.ns)
         self.ns.update(ROOT=self.root, owned_directory=mock.Mock(), tracked_sync_directory=mock.Mock(),
                        source_dependencies=mock.Mock(), ruby_require_settled=mock.Mock(), ruby_probe=mock.Mock(),
@@ -42,7 +42,9 @@ class RubySourceBuildTest(unittest.TestCase):
                        ruby_remove_scratch=mock.Mock(),
                        ruby_publish=mock.Mock(side_effect=self.publish_installation))
         self.ns['download'] = mock.Mock(side_effect=self.download)
-        self.ns['source_url'] = mock.Mock(return_value='https://example.invalid/openssl-3.0.3.gem')
+        self.ns['source_url'] = mock.Mock(side_effect=lambda point, relative:
+                                        self.ns['GNU_MAKE_SOURCE_URL'] if point == 'GNU_MAKE_SOURCE'
+                                        else 'https://example.invalid/' + relative)
         if os.name == 'nt':
             # Windows read-only DOS attributes cannot model POSIX modes and prevent fixture removal.
             chmod = pathlib.Path.chmod
@@ -51,8 +53,10 @@ class RubySourceBuildTest(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
     def stage_installation(self, unit, destination, version, mounts):
-        stage, source, _ = mounts
+        stage, source, make_archive, openssl_gem = mounts
         self.assertTrue(source.is_file())
+        self.assertEqual(make_archive.stat().st_size, self.ns['GNU_MAKE_SOURCE_BYTES'])
+        self.assertEqual(openssl_gem is not None, version.startswith('3.0.'))
         self.assertEqual(destination, self.destination(version))
         self.assertFalse((destination / '.w2l-toolchain.json').exists())
         (stage / 'ruby').write_text('fixed staged output')
@@ -63,9 +67,15 @@ class RubySourceBuildTest(unittest.TestCase):
         (destination / 'bin').mkdir()
         shutil.copyfile(stage / 'ruby', destination / 'bin/ruby')
 
-    @staticmethod
-    def download(url, target, algorithm, digest):
-        target.write_bytes(b'controlled archive')
+    def download(self, url, target, algorithm, digest, *, point=None, maximum=None):
+        if point is None:
+            target.write_bytes(b'controlled archive')
+        else:
+            self.assertEqual(('GNU_MAKE_SOURCE', self.ns['GNU_MAKE_SOURCE_URL'], 'sha256',
+                              self.ns['GNU_MAKE_SOURCE_SHA256'], self.ns['GNU_MAKE_SOURCE_BYTES']),
+                             (point, url, algorithm, digest, maximum))
+            with target.open('xb') as archive:
+                archive.truncate(maximum)
         return digest
 
     def destination(self, version=VERSION):
@@ -87,6 +97,7 @@ class RubySourceBuildTest(unittest.TestCase):
         (old / '.w2l-toolchain.json').write_text('previous recipe marker')
         record = self.install()
         self.assertEqual(self.ns['RUBY_RECIPE'], record['recipe'])
+        self.assertEqual({'gnu_make': self.ns['gnu_make_dependency']()}, record['dependencies'])
         self.assertEqual(str(self.destination()), record['directory'])
         self.assertEqual('previous recipe marker', (old / '.w2l-toolchain.json').read_text())
         self.ns['source_dependencies'].assert_called_once_with('ruby')
@@ -98,10 +109,45 @@ class RubySourceBuildTest(unittest.TestCase):
         record = self.install('3.0.7')
         arguments = self.ns['ruby_unit'].call_args.args
         self.assertEqual('3.0.7', arguments[2])
-        self.assertEqual('openssl-3.0.3.gem', arguments[3][2].name)
+        self.assertEqual(('gnu-make-source.tar.gz', 'openssl-3.0.3.gem'), tuple(path.name for path in arguments[3][2:]))
         self.assertEqual(self.ns['RUBY_OPENSSL_DIGEST'], record['dependencies']['openssl']['sha256'])
         self.assertEqual(record['dependencies']['openssl']['sha256'], self.ns['download'].call_args.args[-1])
         self.assertEqual('sha256', self.ns['download'].call_args.args[-2])
+
+    def test_new_ruby_recipe_binds_exact_make_hash_and_legacy_markers_can_only_match_old_paths(self):
+        recipe = self.ns['RUBY_RECIPE']
+        key = hashlib.sha256(f'RUBY\n{VERSION}\n{DIGEST}\n{recipe}\n{self.ns["GNU_MAKE_SOURCE_SHA256"]}'.encode()).hexdigest()
+        self.assertEqual('ruby-' + key, self.destination().name)
+        current = self.install()
+        self.ns.update(saved_installation_marker=lambda directory: directory / '.w2l-toolchain.json',
+                       tracked_regular=lambda path, limit: path.read_bytes())
+        self.ns['source_url'].side_effect = AssertionError('saved recipe validation needs no route')
+        self.assertEqual(current, self.install())
+        self.ns['ruby_unit'].assert_called_once()
+        validate = self.ns['require_ruby_source_record']
+        legacy_recipe = self.ns['RUBY_LEGACY_SOURCE_RECIPE']
+        legacy_key = self.ns['ruby_recipe_key'](VERSION, DIGEST, legacy_recipe)
+        legacy = self.destination().with_name('ruby-' + legacy_key)
+        snapshot_key = self.ns['_previous_installation_key']('RUBY', VERSION, DIGEST)
+        snapshot = legacy.with_name('ruby-' + snapshot_key)
+        saved = dict(current, directory=str(legacy), recipe=legacy_recipe, dependencies={})
+        validate(saved, legacy)
+        original = dict(saved, directory=str(snapshot))
+        del original['recipe']
+        validate(original, snapshot)
+        for record, directory in ((saved, self.destination()), (current, legacy),
+                                  (dict(current, dependencies={}), self.destination()),
+                                  (dict(current, sha256='0' * 64), self.destination())):
+            with self.subTest(directory=directory, recipe=record.get('recipe')), self.assertRaises(self.ns['PreparationFailure']):
+                validate(record, directory)
+
+    def test_unauthorized_make_route_never_starts_or_publishes_ruby(self):
+        self.ns['source_url'].side_effect = self.ns['PreparationFailure']('mirror', 'controlled denial')
+        with self.assertRaises(self.ns['PreparationFailure']):
+            self.install()
+        for name in ('ruby_create_scratch', 'ruby_unit', 'ruby_publish', 'ruby_probe'):
+            self.ns[name].assert_not_called()
+        self.assertEqual([], list((self.root / 'work').iterdir()))
 
     def test_failed_unit_without_proven_quiescence_leaves_tracked_work_unpublished(self):
         selected = {'directory': str(self.destination())}
@@ -211,8 +257,8 @@ class RubySourceBuildTest(unittest.TestCase):
                                             'pwd': types.SimpleNamespace(getpwnam=self.unallocated)}), \
                 mock.patch.object(os, 'readlink', side_effect=('net:[11]', 'mnt:[12]', 'time:[13]')), \
                 mock.patch.object(time, 'monotonic_ns', return_value=1_000_000_000):
-            ruby_unit(command, '/usr/local/lib/windowstolinux/toolchains/versions/ruby-selected', VERSION,
-                      (stage, self.root / 'ruby.tar.gz', self.root / 'openssl-3.0.3.gem'))
+            ruby_unit(command, '/usr/local/lib/windowstolinux/toolchains/versions/ruby-selected', '3.0.7',
+                      (stage, self.root / 'ruby.tar.gz', self.root / 'gnu-make-source.tar.gz', self.root / 'openssl-3.0.3.gem'))
         argv = raw['run'].call_args.args[0]
         self.assertIn('--wait', argv)
         self.assertIn('--collect', argv)
@@ -231,12 +277,13 @@ class RubySourceBuildTest(unittest.TestCase):
         self.assertIn('--property=StandardError=null', argv)
         self.assertIn('--property=RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK', argv)
         self.assertTrue(any(item.startswith('--property=BindReadOnlyPaths=') and ':/tmp/openssl-3.0.3.gem' in item for item in argv))
+        self.assertTrue(any(item.startswith('--property=BindReadOnlyPaths=') and ':/tmp/wtl-gnu-make-source' in item for item in argv))
         worker_args = argv[argv.index('--') + 1:]
         self.assertEqual(['/usr/bin/python3', '-I', '-S', '-B', '-c'], worker_args[:5])
         compile(worker_args[5], '<Ruby sandbox worker>', 'exec')
         scratch = stage.parent.stat()
         self.assertEqual(['build', 'net:[11]', 'mnt:[12]', '/usr/local/lib/windowstolinux/toolchains/versions/ruby-selected',
-                          VERSION, str(stage.stat().st_dev), str(stage.stat().st_ino), 'legacy', command,
+                          '3.0.7', str(stage.stat().st_dev), str(stage.stat().st_ino), 'legacy', command,
                           str(scratch.st_dev), str(scratch.st_ino), '1610612736', '96000', '3221225472',
                           '81000000000', 'time:[13]'], worker_args[6:])
         raw['ruby_require_settled'].assert_called_once_with(command)
@@ -596,6 +643,72 @@ class RubySourceBuildTest(unittest.TestCase):
         self.assertNotIn('sample-private-value', str(observed))
         self.assertTrue(observed['stderrTruncated'])
         self.assertEqual('ruby-probe-runtime-verification', raw(self.launcher_observation(103), 'probe')['stage'])
+
+    def test_shared_make_status_requires_a_confirmed_build_worker_exit(self):
+        diagnose = self.ns['ruby_diagnostic']
+        for status, (stage, executable) in self.ns['GNU_MAKE_FAILURES'].items():
+            with self.subTest(status=status):
+                observation = self.launcher_observation(status)
+                report = diagnose(observation, 'build')
+                self.assertEqual('ruby-build-' + stage, report['stage'])
+                self.assertIn('worker-executable=' + executable + '\n', report['stdout'])
+                for other, role in ((dict(observation, actualExitCode=99), 'build'), (observation, 'probe')):
+                    self.assertEqual('ruby-' + role + '-launcher', diagnose(other, role)['stage'])
+
+    def test_worker_routes_configure_build_install_and_legacy_gem_through_verified_make(self):
+        source = ast.parse(self.ns['RUBY_WORKER'])
+        index = next(i for i, node in enumerate(source.body) if isinstance(node, ast.Try)) - 1
+        state = {}
+        exec(compile(ast.Module(body=source.body[:index], type_ignores=[]), '<Ruby declarations>', 'exec'), state)
+        worker = compile(ast.Module(body=source.body[index:], type_ignores=[]), '<Ruby sandbox worker>', 'exec')
+        program = state['GNU_MAKE_PROGRAM']
+        path = program.rsplit('/', 1)[0] + ':/usr/bin:/bin'
+        unit, release, prefix = 'wtl-ruby-build-fixture.service', self.root / 'trusted-release', '/protected/ruby'
+        mounts = ['42', '7', 'legacy', unit, '5', '6', '1610612736', '96000', '3221225472', '81000000000', 'time:[3]']
+        arguments = ['', 'build', 'net:[1]', 'mnt:[2]', prefix, '3.0.7', *mounts]
+        observed = []
+
+        def bootstrap(selected):
+            self.assertEqual(unit, selected)
+            state['environment'].update(MAKE=program, PATH=path)
+            return 'sealed-digest'
+
+        def configure(*argv):
+            self.assertEqual((release, prefix, ['--with-out-ext=openssl'], unit, *mounts[-2:]), argv)
+            observed.append(('configure', state['environment'].copy()))
+
+        def command(*argv, cwd=None):
+            observed.append((argv, state['environment'].copy()))
+
+        identity = object()
+        binary = mock.Mock(return_value='sealed-digest')
+        state.update(require_isolated=mock.Mock(), require_staging_mount=mock.Mock(), require_ruby_resources=mock.Mock(),
+                     verify_build_scratch=mock.Mock(), verify_native_build_chain=mock.Mock(),
+                     extract_release=mock.Mock(return_value=release), configure=configure, command=command,
+                     bootstrap_gnu_make=mock.Mock(side_effect=bootstrap), gnu_make_binary_digest=binary,
+                     only_source_worker_in_cgroup=mock.Mock(return_value=True),
+                     gnu_make_binary_identity=mock.Mock(return_value=identity),
+                     shutil=types.SimpleNamespace(which=mock.Mock(return_value=program)),
+                     os=types.SimpleNamespace(lstat=mock.Mock(return_value=identity)))
+        with mock.patch.object(self.ns['sys'], 'argv', arguments):
+            exec(worker, state)
+        self.assertEqual('configure', observed[0][0])
+        self.assertEqual((program, 'MAKE=make', '-j2'), observed[1][0])
+        self.assertEqual((program, 'MAKE=make', 'install'), observed[2][0])
+        self.assertEqual((prefix + '/bin/ruby', prefix + '/bin/gem', 'install', '--local', '/tmp/openssl-3.0.3.gem'),
+                         observed[3][0][:5])
+        self.assertTrue(all(env['MAKE'] == 'make' and env['PATH'] == path for _, env in observed[:4]))
+        self.assertTrue(all('MAKE' not in env and env['PATH'] == '/usr/bin:/bin' for _, env in observed[4:]))
+        self.assertIn('RbConfig::MAKEFILE_CONFIG', observed[4][0][4])
+        self.assertEqual(prefix, observed[4][0][-2])
+        self.assertEqual(5, binary.call_count)
+        state['bootstrap_gnu_make'].assert_called_once_with(unit)
+        observed.clear()
+        binary.side_effect = ['sealed-digest', 'changed-after-configure']
+        with mock.patch.object(self.ns['sys'], 'argv', arguments), self.assertRaises(SystemExit) as stopped:
+            exec(worker, state)
+        self.assertEqual(215, stopped.exception.code)
+        self.assertEqual(['configure'], [name for name, _ in observed])
 
     def configure_worker(self):
         source = ast.parse(self.ns['RUBY_WORKER'], '<Ruby sandbox worker>')
