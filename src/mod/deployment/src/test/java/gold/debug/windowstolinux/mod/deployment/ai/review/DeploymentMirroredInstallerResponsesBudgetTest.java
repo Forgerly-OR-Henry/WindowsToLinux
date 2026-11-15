@@ -4,8 +4,16 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.app.ai.model.*;
 import gold.debug.windowstolinux.appapi.ai.model.*;
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentCandidateChannel;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -34,6 +42,50 @@ class DeploymentMirroredInstallerResponsesBudgetTest {
     @ValueSource(strings={"PLAIN","FILES","TRACKED"})
     void assistedNativePackageFactsAndActualWorkflowFitCompleteResponsesWithoutWeakeningGates(String kind) throws Exception {
         verifyFullResponses(kind, true);
+    }
+
+    @Test
+    void guardedArchiveVerificationFitsTheOriginalFileTransferSendLimit() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture()) {
+            String application = "wtl-assisted-file-transfer-395gk4u1y8-backend";
+            String sha = "a".repeat(64);
+            var candidate = new DeploymentRemoteWorkspace(application, sha, fixture.layout);
+            String body = DeploymentCandidateChannel.archiveVerificationScript(
+                fixture.layout, application, candidate.candidateId(), fixture.task.id());
+            String guarded = DeploymentManagedHelperBundle.verifiedCommand(body, fixture.layout);
+            try (var command = new CommandRequest(guarded, new byte[0], Duration.ofSeconds(30), 4096)) {
+                var target = new ActionTarget(fixture.server.id(), "deployment-candidate", candidate.candidateRoot());
+                var action = RemoteActions.command(fixture.server, "original", command)
+                    .withSemantics(new ActionSemantics("deployment.candidate.verify.v1", Set.of(target)));
+                var facts = new LinkedHashMap<String, Object>(DeploymentCommandEvidence.facts(action, command));
+                String expected = DeploymentCandidateChannel.archiveVerificationOutput(22233, sha);
+                facts.put("currentCommandEvidence", Map.of("candidateObservation", Map.of(
+                    "candidate", candidate.candidateId(), "task", fixture.task.id().toString(),
+                    "archiveSha256", sha, "archiveBytes", 22233, "expectedStdout", expected),
+                    "workflowAuthorization", Map.of("server", fixture.server.id(), "task", fixture.task.id().toString())));
+                int padding = 16081 - DeploymentAiJson.facts(facts, ONE_MIB).length();
+                assertTrue(padding > 0);
+                facts.put("fixturePadding", "x".repeat(padding));
+                fixture.model.nativeReply(new AiToolCall("verify-denied", "submit_result",
+                    "{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled independent denial\"}"));
+                var decision = new DeploymentAiJson(fixture.context).askCommand("Review the exact archive verification",
+                    facts, fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed, action, command);
+                assertEquals("DENY", decision.path("decision").asText());
+                var captured = fixture.model.requests.getFirst();
+                assertEquals(1, captured.tools().size());
+                var request = new AiRequest(captured.purpose(), captured.messages(), Optional.of(65536), captured.timeout(),
+                    captured.jsonObjectResponse(), captured.tools(), 37776, captured.requiredToolName(),
+                    captured.generationRecoveryAttempts(), Optional.of("gpt-6-luna"), Optional.of(AiReasoningMode.HIGH));
+                byte[] wire = ModelProtocolCodec.forProtocol(ModelProtocol.OPENAI_RESPONSES)
+                    .encode("gpt-6-luna", request, 65536, ModelReasoningLevel.HIGH, Map.of());
+                var user = JSON.readTree(JSON.readTree(wire).path("input").get(1).at("/content/0/text").asText());
+                assertEquals(action.exactAction(), user.path("exactAction").asText());
+                assertEquals(expected, user.at("/currentCommandEvidence/candidateObservation/expectedStdout").asText());
+                assertTrue(captured.messages().getFirst().text().contains("candidate-query-task takes the literal"));
+                assertFalse(captured.messages().getFirst().text().contains("handoff-restore"));
+                System.out.printf("R38_CANDIDATE_VERIFY_RESPONSES bytes=%d cap=37776%n", wire.length);
+            }
+        }
     }
 
     private void verifyFullResponses(String kind, boolean assistedFacts) throws Exception {

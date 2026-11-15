@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.assisted;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -29,11 +30,20 @@ final class DeploymentAssistedCandidateReview {
 
     static String verificationInstructions() {
         return """
+            Review only the exact upcoming read. Match its server and task to workflowAuthorization, its candidate/archive to candidateObservation, and the SSH account and host identity if observed. Require a fresh exact host grant after independent review.
             For the guarded archive verification, candidate-query-task is the first step of the outer command.
             Its CANDIDATE_STATE and BUILD_ACTIVE lines form helperStdoutPrefix. The outer command checks the exact archive path and appends BYTES, SHA256 and OWNER in that order.
             Compare candidateObservation.expectedStdout against the complete outer command stdout. The standalone candidate query's two-line contract applies only to the nested helper here.
             These are acceptance conditions for the upcoming read. Verify the guard, target, original task and archive association independently for this command.
             """;
+    }
+
+    static Map<String, Object> verificationEvidence(Map<String, Object> observed) {
+        var current = new LinkedHashMap<String, Object>();
+        for (String field : Set.of("workflowAuthorization", "sourceSelection", "candidateObservation", "candidateSshAuthentication")) {
+            if (observed.containsKey(field)) current.put(field, observed.get(field));
+        }
+        return Map.copyOf(current);
     }
 
     static final class AlternateCandidate extends IllegalArgumentException {

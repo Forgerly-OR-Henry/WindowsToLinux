@@ -11,7 +11,7 @@ public final class DeploymentHelperReviewContract {
     public static final String REVISION = "managed-helper-review.v2";
 
     /** Independently pinned helper source identity. / 独立固定的 helper 源码身份。 */
-    private static final String HELPER_SHA = "7ec53edbc9295fe8b964aa7756079e44d8e51b6ca6bfe83585e7dbeb9dca4a67";
+    private static final String HELPER_SHA = "332d9e97b294dc5a1c39268697dea36074cb0b2a3c5d4ebae88c79a4453ce3c8";
 
     /** Independently pinned non-root build entry identity. / 独立固定的非 root 构建入口身份。 */
     private static final String BUILD_SHA = "516062e3d3dba347f7eb7057ae66e36d5fc2ff332ed75eb0ed3e568a92a75496";
@@ -105,6 +105,16 @@ public final class DeploymentHelperReviewContract {
         return selectedText(layout, List.of("managed-helper-review.", "Helper ", "Only these ", "Installed calls ",
             "The pinned helper starts ", "Management/candidate ownership ", "Interface: ", "The pinned prepare_official_toolchains ",
             "prepare-toolchains bind/verify ", "Receipt/ownership/"));
+    }
+
+    /** Source-bound contract for the exact read-only guarded archive verification. */
+    public static String candidateVerificationText(DeploymentRemoteLayout layout) {
+        return selectedText(layout, List.of("managed-helper-review.", "Helper ", "Only these ", "Installed calls ",
+            "The pinned helper starts ", "Management/candidate ownership ", "Interface: "))
+            + """
+
+            candidate-query-task takes the literal application, candidate and original task. It checks the owned candidate and original task marker before reading its build unit ActiveState. The reviewed outer command then checks the fixed archive path and reports its bytes, SHA256 and numeric owner. Inspect the complete guard, command, original identity and expected output independently. No live candidate state or permission follows from this contract.
+            """;
     }
 
     /** The exact native publication observation uses the complete guarded command and this pinned read contract. */

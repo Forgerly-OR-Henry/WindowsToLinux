@@ -99,7 +99,7 @@ public final class DeploymentAgentPublicationContinuationProgram {
     private static String assembleBase(DeploymentRemoteLayout layout){
         var output=new StringBuilder();var catalog=DeploymentToolchainCatalog.defaults();
         for(String fragment:FRAGMENTS){
-            String content=resource("linux/helper/"+fragment);
+            String content=resource("linux/helper/"+DeploymentManagedHelperBundle.publicationRecoveryFragment(fragment));
             for(var insert:RESOURCE_INSERTS.entrySet())if(content.contains(insert.getKey()))content=content.replaceAll("(?m)^[ \t]*"+java.util.regex.Pattern.quote(insert.getKey()),java.util.regex.Matcher.quoteReplacement(resource("linux/helper/"+insert.getValue())));
             content=gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderPublicationRecoveryToolchainSources(DeploymentRemoteLayoutTemplate.render(content,layout));
             if(fragment.startsWith("toolchain/")){

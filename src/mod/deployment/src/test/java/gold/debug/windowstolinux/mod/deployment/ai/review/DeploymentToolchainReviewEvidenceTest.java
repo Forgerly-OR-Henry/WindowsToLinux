@@ -1199,7 +1199,9 @@ class DeploymentToolchainReviewEvidenceTest {
         assertEquals("DENY", model.askCommand("Inspect exact current request", original, fixture.model.configurationRevision,
             fixture.task, DeploymentReviewDecision::malformed, intent, command).path("decision").asText());
         assertEquals(0, assisted.hosts.get());
-        return fixture.model.requests.getFirst();
+        var sent = fixture.model.requests.getFirst();
+        // The manual historical replays create a fresh Reader at the fixed baseline, without an initial supplement.
+        return copy(sent, sent.messages().stream().filter(message -> !nodeInitialSupplement(message)).toList(), sent.maxRequestBytes());
     }
 
     @ParameterizedTest
@@ -1443,6 +1445,10 @@ class DeploymentToolchainReviewEvidenceTest {
             var initial = r31DeniedApproval(fixture, assisted, facts, action, command);
             var manifest = JSON.readTree(initial.messages().getLast().text()).path(PHASE);
             assertFalse(manifest.path("requiredAptRanges").isEmpty());
+            assertTrue(manifest.path("selectedAptRanges").findValuesAsText("section").containsAll(List.of(
+                "def dependency_mirror_environment(", "def dependency_static_identity(", "def dependency_validate_ownership(",
+                "def dependency_events_read(", "def dependency_ack_record(", "def dependency_result(",
+                "dependencyAptBinaryPaths", "def dependency_protected(")));
             String snapshot = manifest.path("snapshotSha256").asText();
             String inline = manifest.path("dependencyAptSelection").path("sourcePointer").asText();
             for (int i = 0; i < 3; i++)
@@ -1888,7 +1894,9 @@ class DeploymentToolchainReviewEvidenceTest {
                     }
                     sentBytes.add(encoded.length);
                     if (step == 0) {
-                        assertTrue(encoded.length < replay.lastCap(), () -> "Fixed initial request: " + encoded.length);
+                        var baseline = wireMessages.stream().filter(message -> !nodeInitialSupplement(message)).toList();
+                        int baselineBytes = wire(copy(received, baseline, maximum), maximum, Map.of()).length;
+                        assertTrue(baselineBytes < replay.lastCap(), () -> "Fixed initial request: " + baselineBytes);
                         addReplaySource(sources, projected.at("/mirrorTransport/runtimeSource"), DeploymentMirrorRuntime.runtimeSource());
                         addReplaySource(sources, manifest.path("mirrorPolicySource"), DeploymentMirrorTasks.policy(fixture.task));
                         addReplaySource(sources, manifest.path("installedHelperSource"), DeploymentManagedHelperBundle.renderScript(fixture.layout));
@@ -2200,6 +2208,56 @@ class DeploymentToolchainReviewEvidenceTest {
     private record R28Preparation(String ecosystem, String branch, int factsCharacters, int cap, String lastReads) { }
 
     @Test
+    void nodeInitialSupplementCanBeRemovedBeforeAnySourceIsCountedAsVisible() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture();
+             var command = diagnosedPreparation(fixture, "NODE", "24");
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
+            var action = intent("prepare", fixture, command);
+            var original = new LinkedHashMap<String, Object>(
+                new DeploymentFixedCommandProtocol(fixture.context).inspect(action, command, fixture.layout, fixture.task));
+            original.put("currentCommandEvidence", assisted.scope.effectFacts(action, fixture.task));
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(original, 1048576),
+                action, command, fixture.layout).orElseThrow();
+            reply(fixture, verdict("node-supplement-denial", "DENY"));
+            assertEquals("DENY", new DeploymentAiJson(assisted.context).askCommand("Inspect exact current request",
+                original, fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed, action, command)
+                .path("decision").asText());
+            var initial = fixture.model.requests.getFirst();
+            var reader = evidence.reader(8);
+            var messages = new ArrayList<>(initial.messages().stream().filter(message -> !nodeInitialSupplement(message)).toList());
+            messages.set(messages.size() - 1, evidence.messages().getLast());
+            int baseBytes = wire(copy(initial, messages, 1048576), 1048576, Map.of()).length;
+            reader.offerInitialSource(messages);
+            var supplement = messages.stream().filter(DeploymentToolchainReviewEvidenceTest::nodeInitialSupplement).findFirst().orElseThrow();
+            var header = JSON.readTree(supplement.text().lines().skip(1).findFirst().orElseThrow());
+            assertFalse(header.has("latestReads"));
+            var range = header.path("ranges").get(0);
+            int fullBytes = wire(copy(initial, messages, 1048576), 1048576, Map.of()).length;
+            assertTrue(fullBytes > baseBytes);
+            assertTrue(reader.repackBeforeSend(messages, exactBudgetProblem(fullBytes, baseBytes)));
+            assertFalse(messages.stream().anyMatch(DeploymentToolchainReviewEvidenceTest::nodeInitialSupplement));
+            assertEquals(baseBytes, wire(copy(initial, messages, baseBytes), baseBytes, Map.of()).length);
+            int offset = range.path("offset").asInt(), next = Math.min(range.path("next").asInt(), offset + 80);
+            String pointer = range.path("pointer").asText();
+            var response = mockResponses(read("first-real-read", header.path("snapshotSha256").asText(), pointer,
+                offset, next - offset));
+            var page = reader.read(response).getFirst();
+            assertFalse(page.error());
+            assertTrue(page.text().endsWith(supplement.text().split("\n", 3)[2].substring(0, next - offset)));
+            assertEquals(0, assisted.hosts.get());
+        }
+    }
+
+    private static boolean nodeInitialSupplement(AiMessage message) {
+        return nodeInitialSupplement(message.text());
+    }
+
+    private static boolean nodeInitialSupplement(String text) {
+        return text.startsWith("WTL-COMMAND-RETAINED-SOURCE-1\n")
+            && text.lines().skip(1).findFirst().orElse("").contains("\"initialSupplement\":true");
+    }
+
+    @Test
     void r29AssetLendingNodePreparationStartsWithExactReachedEvidenceInsideOriginalCeiling() throws Exception {
         try (var fixture = new MirroredInstallerTestFixture();
              var command = diagnosedPreparation(fixture, "NODE", "24");
@@ -2215,15 +2273,18 @@ class DeploymentToolchainReviewEvidenceTest {
             var selection = facts.at("/" + PHASE + "/nodePreparationSelection");
             String frame = initial.messages().get(1 + selection.path("ordinal").asInt()).text()
                 .substring(selection.path("headerCharacters").asInt());
+            String supplement = initial.messages().get(initial.messages().size() - 2).text();
+            assertTrue(supplement.contains("\"initialSupplement\":true"));
+            assertEquals(6, facts.at("/" + PHASE + "/selectedPreparationRanges").size());
             for (String marker : List.of("SHASUMS256.txt", "linux-x64.tar.gz", "def checksum_text(",
-                    "exec(compile(payload,", "do_handshake()",
+                    "exec(compile(payload,", "do_handshake()", "class MirrorRedirect(",
                     "digest.hexdigest().lower() != expected.lower()", "os.replace(temporary, target)"))
-                assertTrue(frame.contains(marker), marker + "\n" + frame);
+                assertTrue(frame.contains(marker) || supplement.contains(marker), marker);
             var helperRanges = facts.at("/" + PHASE + "/installedHelperSource/namedRanges");
-            assertTrue(helperRanges.path("archiveTarValidation").isArray());
+            assertTrue(supplement.contains("data.extractall(root, members=members)"));
             assertTrue(helperRanges.path("nodeSystemOwnership").isArray());
             assertTrue(helperRanges.path("def verify_system(").isArray());
-            assertTrue(facts.at("/mirrorTransport/runtimeSource/namedRanges/class MirrorRedirect(").isArray());
+            assertTrue(facts.at("/mirrorTransport/runtimeSource/sourcePointer").isTextual());
             assertFalse(frame.contains("wtl_run_mirror_runtime() {"));
             assertFalse(frame.contains("source_dependencies(layout)"), "Node's archive facts do not repeat the unrelated source-build branch");
             assertEquals("NODE", facts.at("/originalToolchainPreparation/ecosystem").asText());
@@ -2423,14 +2484,15 @@ class DeploymentToolchainReviewEvidenceTest {
             String source = originals.get(helper.path("sourcePointer").asText());
             String snapshot = projected.path("snapshotSha256").asText();
             int diagnostics = source.indexOf("PYTHON_MAKE_FAILURES = {");
-            int make = source.indexOf("def make_python(release):", diagnostics);
-            assertTrue(diagnostics >= 0 && make > diagnostics && make - diagnostics <= 8000);
+            int next = source.indexOf("PYTHON_MAKE_RESETIDS_PROBE = r'''", diagnostics);
+            assertTrue(diagnostics >= 0 && next > diagnostics && next - diagnostics <= 8000);
             assertFalse(body.contains("PYTHON_MAKE_FAILURES = {"));
+            assertTrue(body.contains("PYTHON_MAKE_RESETIDS_PROBE = r'''"));
             var diagnosticCall = read("read-python-diagnostic-grammar", snapshot, helper.path("sourcePointer").asText(),
-                diagnostics, make - diagnostics);
+                diagnostics, next - diagnostics);
             var page = evidence.reader(1).read(mockResponses(diagnosticCall)).getFirst();
             assertFalse(page.error());
-            assertEquals(source.substring(diagnostics, make), pagePayload(page.text()).at("/value/text").asText());
+            assertEquals(source.substring(diagnostics, next), pagePayload(page.text()).at("/value/text").asText());
         }
     }
 
@@ -2979,7 +3041,8 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     private static JsonNode restore(JsonNode wire, Map<String, String> pagedSources) throws Exception {
-        var messages = wire.path("input");
+        var messages = java.util.stream.StreamSupport.stream(wire.path("input").spliterator(), false)
+            .filter(message -> !nodeInitialSupplement(message.at("/content/0/text").asText())).toList();
         var projection = (ObjectNode) JSON.readTree(messages.get(messages.size() - 1).at("/content/0/text").asText());
         var manifest = projection.path(PHASE);
         var sources = new LinkedHashMap<>(pagedSources);

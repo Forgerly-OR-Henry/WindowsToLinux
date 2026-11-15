@@ -40,9 +40,9 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "7ec53edbc9295fe8b964aa7756079e44d8e51b6ca6bfe83585e7dbeb9dca4a67";
-    private static final String RUBY_SOURCE_SHA256 = "8e3fc08b185bfead7b580e4169c77836558d89617cf9068bce6f5d1683335fd9";
-    private static final String PYTHON_SOURCE_SHA256 = "4a1989876ec9608e5d1dcb66447b1d09ec05f05a73aa7bbd1821fafc87579126";
+    public static final String EXPECTED_SHA256 = "332d9e97b294dc5a1c39268697dea36074cb0b2a3c5d4ebae88c79a4453ce3c8";
+    private static final String RUBY_SOURCE_SHA256 = "49aad5e07e6b3f0d73f3a400cbf9b72b17ca71ac0b2dd71554756b13007e4db1";
+    private static final String PYTHON_SOURCE_SHA256 = "6c9f64aad4e43ff12d7b60d6ec512934a752f92c52bb3f02bfd19591ee0d5811";
 
     /**
      * ROOT.
@@ -425,6 +425,16 @@ public final class DeploymentManagedHelperBundle {
         return assemble(catalog, layout, fragments, false);
     }
 
+    /** Keeps the toolchain fragments of the original fixed publication recovery program. */
+    public static String publicationRecoveryFragment(String fragment) {
+        return switch (fragment) {
+            case "toolchain/20-installation-boundaries.py", "toolchain/30-managed-installation.py",
+                 "toolchain/40-binding-protocol.py" ->
+                "toolchain/publication-recovery-r37/" + fragment.substring("toolchain/".length());
+            default -> fragment;
+        };
+    }
+
     private static byte[] assemble(DeploymentToolchainCatalog catalog, DeploymentRemoteLayout layout, List<String> fragments,
                                    boolean fixedPublicationRecovery) {
         String toolchainOpening = fixedPublicationRecovery
@@ -433,7 +443,8 @@ public final class DeploymentManagedHelperBundle {
         String toolchainClosing = fixedPublicationRecovery ? "WTL_OFFICIAL_TOOLCHAINS\n}\n" : "WTL_OFFICIAL_TOOLCHAINS\n  )\n}\n";
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         for (String fragment : fragments) {
-            try (InputStream stream = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + fragment)) {
+            String resource = fixedPublicationRecovery ? publicationRecoveryFragment(fragment) : fragment;
+            try (InputStream stream = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + resource)) {
                 if (stream == null) {
                     throw new IllegalStateException(
                         "managed-deployment privilege helper fragment is unavailable: " + fragment);

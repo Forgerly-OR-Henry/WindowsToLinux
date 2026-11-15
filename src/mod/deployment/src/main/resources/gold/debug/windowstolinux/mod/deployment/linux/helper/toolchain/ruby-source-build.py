@@ -31,6 +31,7 @@ RUBY_WORKER_FAILURES = {
     129: ('scratch-execute', 'sh'),
 }
 RUBY_CONFIGURE_FAILURES = {
+    89: 'output-operation-not-permitted-reported-by-configure-shell',
     104: 'start-permission-denied',
     105: 'start-path-or-interpreter-missing',
     106: 'start-executable-format',
@@ -57,6 +58,7 @@ RUBY_CONFIGURE_FAILURES = {
     195: 'output-operation-not-permitted-reported-by-rm',
     196: 'output-operation-not-permitted-reported-by-chmod',
     197: 'output-operation-not-permitted-reported-by-install',
+    199: 'output-operation-not-permitted-reported-by-make',
 }
 SOURCE_BUILD_PROBE_STAGES = (('c-compile', 'cc'), ('static-archive', 'ar'), ('c-link', 'cc'), ('native-execute', 'probe'))
 SOURCE_BUILD_PROBE_FAILURES = ('start-permission-denied', 'start-not-found', 'start-os-error', 'child-nonzero', 'child-signal')
@@ -203,7 +205,7 @@ RUBY_WORKER = SOURCE_WORKER + r'''
 import re
 
 RUBY_EPERM_REPORTERS = (
-    (165, rb"^(?:(?:\./)?configure|(?:/(?:usr/)?bin/)?(?:ba)?sh): (?:line )?[0-9]+: (?:\.\./|\./)?conftest(?:\.exe)?: "),
+    (165, rb"^(?:(?:\./)?configure|(?:/(?:usr/)?bin/)?(?:ba|da)?sh): (?:line )?[0-9]+: (?:\.\./|\./)?conftest(?:\.exe)?: "),
     (166, rb"^(?:\./)?config\.status: "),
     (167, rb"^(?:[^: ]*/)?(?:gcc(?:-[0-9]+)?|cc|cc1|g\+\+|c\+\+): "),
     (168, rb"^(?:[^: ]*/)?(?:(?:[a-z0-9_]+-)*ld(?:\.bfd)?|collect2): "),
@@ -214,6 +216,8 @@ RUBY_EPERM_REPORTERS = (
     (195, rb"^(?:/(?:usr/)?bin/)?rm: "),
     (196, rb"^(?:/(?:usr/)?bin/)?chmod: "),
     (197, rb"^(?:/(?:usr/)?bin/)?install: "),
+    (199, rb"^(?:/(?:usr/)?bin/)?make(?:\[[0-9]+\])?: "),
+    (89, rb"^(?:(?:\./)?configure|(?:/(?:usr/)?bin/)?(?:ba|da)?sh): "),
 )
 
 def configure(release, prefix, options):
@@ -473,6 +477,7 @@ def source_unit(unit, directory, version, ecosystem, worker_source, build_mounts
     if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
         fail('metadata', 'invalid exact Ruby release')
     directory = ruby_mount_path(directory)
+    launch_start = time.monotonic_ns()
     seconds = remaining() if build_mounts else min(60, remaining())
     user = 'wr' + unit.split('-')[-1][:28]
     for lookup in (pwd.getpwnam, grp.getgrnam):
@@ -517,6 +522,12 @@ def source_unit(unit, directory, version, ecosystem, worker_source, build_mounts
         properties.extend(['MemoryMax=' + str(RUBY_MEMORY_BYTES), 'MemorySwapMax=0'])
         worker.extend([unit, str(info.st_dev), str(info.st_ino), str(RUBY_SCRATCH_BYTES),
                        str(RUBY_SCRATCH_INODES), str(RUBY_MEMORY_BYTES)])
+        if ecosystem == 'python':
+            try:
+                clock_namespace = os.readlink('/proc/self/ns/time')
+            except OSError:
+                clock_namespace = ''
+            worker.extend([str(launch_start + seconds * 1_000_000_000), clock_namespace])
         properties.extend(['BindReadOnlyPaths=' + ' '.join(sources), 'BindPaths=' + ' '.join(mounts),
                            'ReadWritePaths=' + ' '.join(writable)])
     else:

@@ -48,6 +48,14 @@ class DeploymentAssistedCandidateReviewTest {
         assertTrue(instructions.contains("candidateObservation.expectedStdout against the complete outer command stdout"));
         assertEquals(sha256, facts.get("archiveSha256"));
         assertFalse(facts.containsKey("commandGrant"));
+        var scoped = DeploymentAssistedCandidateReview.verificationEvidence(Map.of(
+            "candidateObservation", facts, "workflowAuthorization", Map.of("task", originalTask),
+            "sourceSelection", Map.of("sourceRevision", sha256), "candidateSshAuthentication", Map.of("server", server.id()),
+            "hostPrerequisiteObservations", Map.of(), "toolchainPreparationObservations", Map.of(),
+            "sourceArchiveObservations", Map.of(), "reviewedApplicationSources", Map.of()));
+        assertEquals(Set.of("workflowAuthorization", "sourceSelection", "candidateSshAuthentication", "candidateObservation"),
+            scoped.keySet());
+        assertEquals(facts, scoped.get("candidateObservation"));
         assertThrows(IllegalArgumentException.class, () -> review(candidate, script + ":\n",
             DeploymentAssistedCandidateReview.VERIFY, Set.of()));
         assertThrows(IllegalArgumentException.class, () -> review(candidate,

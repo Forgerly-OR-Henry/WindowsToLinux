@@ -492,11 +492,14 @@ public final class DeploymentMirrorTasks {
         if (!COMPATIBILITY_LAUNCHER.equals(launcher) || !COMPATIBILITY_SCRIPT.equals(executable)
             || !java.util.Arrays.equals(executable.getBytes(StandardCharsets.UTF_8), input))
             throw new IllegalArgumentException("Mirror compatibility command differs from the fixed launcher or script");
-        var lineBytes = java.util.Arrays.stream(executable.split("(?<=\\n)"))
-            .map(line -> line.getBytes(StandardCharsets.UTF_8).length).toList();
+        var lines = List.of(executable.split("(?<=\\n)"));
+        var lineBytes = lines.stream().map(line -> line.getBytes(StandardCharsets.UTF_8).length).toList();
+        var leadingSpaces = lines.stream().map(line -> (int) line.chars().takeWhile(value -> value == ' ').count()).toList();
+        long lfBytes = executable.chars().filter(value -> value == '\n').count();
         return Map.of("launcher", launcher, "scriptPointer", "/completeExecutableInput", "stdinEncoding", "UTF-8",
             "stdinBytes", input.length, "stdinSha256", sha256(input), "stdinLineBytes", lineBytes,
-            "sourceRepresentation", "Client verified exact UTF-8 stdin against the decoded script. The ordered line byte counts include the newline bytes. JSON framing and escapes are excluded.");
+            "stdinLeadingAsciiSpaces", leadingSpaces, "stdinLfBytes", lfBytes,
+            "sourceRepresentation", "The product compared the decoded script byte for byte with the actual UTF-8 stdin. Each line count includes its leading ASCII spaces and LF. Removing indentation or LF changes the byte count. JSON framing and escapes are excluded.");
     }
 
     private Optional<String> exitAddress(TaskContext task, ServerId server, MirrorCatalog catalog) throws ApiException {

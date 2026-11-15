@@ -44,10 +44,62 @@ PYTHON_MAKE_FAILURES = {
     190: 'output-operation-not-permitted-reported-by-chmod',
     191: 'output-operation-not-permitted-reported-by-install',
     192: 'output-operation-not-permitted-reported-by-make',
+    198: 'output-operation-not-permitted-reported-by-make-with-resetids-startup-probe-match',
 }
-PYTHON_SOURCE_WORKER = SOURCE_WORKER + r'''
+
+PYTHON_MAKE_RESETIDS_PROBE = r'''
+import errno
+import os
+import pathlib
+import re
+import subprocess
+import sys
+import tempfile
+
+TRUE = "/usr/bin/true"
+MAKE = ("/usr/bin/make", "--no-print-directory", "-rR", "-j2", "-f", "probe.mk", "probe")
+MAKE_REPORT = rb"^(?:/(?:usr/)?bin/)?make: /usr/bin/true: Operation not permitted$"
+MAX_STDERR = 2048
+
+def spawn_true_matches(resetids, expected_error=None):
+    try:
+        pid = os.posix_spawn(TRUE, (TRUE,), os.environ, resetids=resetids)
+    except OSError as error:
+        return expected_error is not None and error.errno == expected_error
+    _, status = os.waitpid(pid, 0)
+    return expected_error is None and status == 0
+
+def make_recipe_matches(directory):
+    with (directory / "probe.mk").open("xb") as makefile:
+        makefile.write(b".PHONY: probe\nprobe:\n\t@/usr/bin/true\n")
+    with subprocess.Popen(MAKE, cwd=directory, stdin=subprocess.DEVNULL,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) as make:
+        output = make.stderr.read(MAX_STDERR + 1)
+        if len(output) > MAX_STDERR:
+            make.kill()
+            return False
+        return make.wait() == 2 and any(re.fullmatch(MAKE_REPORT, line)
+                                        for line in output.split(b"\n")[:-1])
+
+def resetids_probe_matches():
+    if any(len(set(ids)) != 1 or not 61184 <= ids[0] <= 65519 for ids in (os.getresuid(), os.getresgid())):
+        return False
+    if not spawn_true_matches(False) or not spawn_true_matches(True, errno.EPERM):
+        return False
+    with tempfile.TemporaryDirectory(prefix=".wtl-make-probe-", dir="/tmp") as temporary:
+        return make_recipe_matches(pathlib.Path(temporary))
+
+if __name__ == "__main__":
+    try:
+        sys.exit(0 if resetids_probe_matches() else 1)
+    except (OSError, AttributeError, TypeError):
+        sys.exit(1)
+'''
+
+PYTHON_SOURCE_WORKER = SOURCE_WORKER + "\nMAKE_RESETIDS_PROBE = " + repr(PYTHON_MAKE_RESETIDS_PROBE) + r'''
 import re
 import signal
+import time
 
 # Child output is untrusted. Retain only the highest-priority matching fixed hint in the unit.
 MAKE_OUTPUT_RULES = (
@@ -148,6 +200,37 @@ def make_python(release):
         return {signal.SIGKILL: 115, signal.SIGXFSZ: 116}.get(-code, 117)
     return hint if code else 0
 
+def only_source_worker_in_cgroup(unit):
+    with open("/sys/fs/cgroup/system.slice/" + unit + "/cgroup.procs", "rb") as processes:
+        return processes.read(64) == (str(os.getpid()) + "\n").encode("ascii")
+
+def make_resetids_probe_matches(unit, unit_deadline, clock_namespace):
+    try:
+        if (not clock_namespace or os.readlink("/proc/self/ns/time") != clock_namespace
+                or not only_source_worker_in_cgroup(unit)):
+            return False
+        now = time.monotonic_ns()
+        stop = now + 3_000_000_000
+        # Leave time to reap the diagnostic child and report the original build failure.
+        if int(unit_deadline) - stop < 2_000_000_000:
+            return False
+        process = subprocess.Popen(("/usr/bin/python3", "-I", "-S", "-B", "-c", MAKE_RESETIDS_PROBE),
+                                   cwd="/tmp", env=environment, start_new_session=True, stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            remaining = (stop - time.monotonic_ns()) / 1_000_000_000
+            matched = process.wait(timeout=max(0, remaining)) == 0
+        except (OSError, subprocess.TimeoutExpired):
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=1)
+            return False
+        return matched and only_source_worker_in_cgroup(unit) and time.monotonic_ns() < stop
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return False
+
 failure = 90
 try:
     mode, network, mount, prefix, version, *arguments = sys.argv[1:]
@@ -156,7 +239,7 @@ try:
     python_flags = (python, "-I", "-S", "-B", "-c")
     if mode == "build":
         failure = 95
-        device, inode, _, *resource_limits = arguments
+        device, inode, _, *resource_limits, unit_deadline, clock_namespace = arguments
         require_staging_mount(prefix, device, inode)
         failure = 126
         require_ruby_resources(*resource_limits)
@@ -168,6 +251,8 @@ try:
         command(str(release / "configure"), "--prefix=" + prefix, "--with-ensurepip=install", cwd=release)
         failure = 99
         make_failure = make_python(release)
+        if make_failure == 192 and make_resetids_probe_matches(resource_limits[0], unit_deadline, clock_namespace):
+            sys.exit(198)
         if make_failure:
             sys.exit(make_failure)
         failure = 100

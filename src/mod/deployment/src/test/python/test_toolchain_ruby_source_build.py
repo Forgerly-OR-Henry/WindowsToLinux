@@ -464,6 +464,20 @@ class RubySourceBuildTest(unittest.TestCase):
              165, 'output-operation-not-permitted-conftest'),
             (subprocess.CalledProcessError(1, 'private command'), configure + conftest,
              165, 'output-operation-not-permitted-conftest'),
+            (subprocess.CalledProcessError(1, 'private command'), b'/bin/dash' + conftest,
+             165, 'output-operation-not-permitted-conftest'),
+            (subprocess.CalledProcessError(1, 'private command'),
+             configure + b': line 921: private-value: Operation not permitted',
+             89, 'output-operation-not-permitted-reported-by-configure-shell'),
+            (subprocess.CalledProcessError(1, 'private command'),
+             b'/bin/dash: 26: private-value: Operation not permitted',
+             89, 'output-operation-not-permitted-reported-by-configure-shell'),
+            (subprocess.CalledProcessError(1, 'private command'),
+             b'/usr/bin/make[1]: private-value: Operation not permitted',
+             199, 'output-operation-not-permitted-reported-by-make'),
+            (subprocess.CalledProcessError(1, 'private command'),
+             b'/tmp/private/make: private-value: Operation not permitted',
+             131, 'output-operation-not-permitted'),
             (subprocess.CalledProcessError(1, 'private command'), configure + b'.extra' + conftest,
              131, 'output-operation-not-permitted'),
             (subprocess.CalledProcessError(1, 'private command'), b'/tmp/other/configure' + conftest,
@@ -492,6 +506,9 @@ class RubySourceBuildTest(unittest.TestCase):
             (subprocess.CalledProcessError(1, 'private command'),
              configure + conftest + b'\nmkdir: private-value: Operation not permitted',
              171, 'output-permission-hints-ambiguous'),
+            (subprocess.CalledProcessError(1, 'private command'),
+             b'make: private-value: Operation not permitted\n/bin/dash: private-value: Operation not permitted',
+             171, 'output-permission-hints-ambiguous'),
             (subprocess.CalledProcessError(1, 'private command'), b'x' * 4097 + configure + conftest,
              134, 'configure-nonzero'),
         )
@@ -513,6 +530,15 @@ class RubySourceBuildTest(unittest.TestCase):
                 self.assertEqual('ruby-build-source-configure', diagnostic['stage'])
                 self.assertIn('configure-failure=' + reason + '\n', diagnostic['stdout'])
                 self.assertNotIn('private', str(diagnostic))
+                for other, role, ecosystem in (
+                    (dict(self.launcher_observation(status), actualExitCode=98), 'build', 'ruby'),
+                    (dict(self.launcher_observation(status), timedOut=True), 'build', 'ruby'),
+                    (dict(self.launcher_observation(status), cancelled=True), 'build', 'ruby'),
+                    (self.launcher_observation(status), 'probe', 'ruby'),
+                    (self.launcher_observation(status), 'build', 'python'),
+                ):
+                    other_diagnostic = self.ns['ruby_diagnostic'](other, role, ecosystem)
+                    self.assertNotIn('configure-failure=', other_diagnostic['stdout'])
         process = mock.MagicMock(stdout=io.BytesIO(configure + conftest), wait=mock.Mock(return_value=1))
         with mock.patch.object(subprocess, 'Popen', return_value=process), self.assertRaises(SystemExit) as observed:
             worker['configure'](release, '/protected/ruby', [])

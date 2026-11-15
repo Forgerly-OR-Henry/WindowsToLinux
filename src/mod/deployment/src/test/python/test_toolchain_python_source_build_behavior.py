@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import types
 import unittest
 from unittest import mock
@@ -140,10 +141,11 @@ class PythonSourceBuildTest(unittest.TestCase):
         archive = self.root / 'archive'
         prefix = '/usr/local/lib/windowstolinux/toolchains/versions/python-fixture'
         namespace_unallocated = mock.Mock(side_effect=KeyError)
-        ns.update(ruby_mount_path=str, ruby_run=mock.Mock())
+        ns.update(ruby_mount_path=str, ruby_run=mock.Mock(), remaining=mock.Mock(return_value=80))
         with mock.patch.dict('sys.modules', {'grp': types.SimpleNamespace(getgrnam=namespace_unallocated),
                                             'pwd': types.SimpleNamespace(getpwnam=namespace_unallocated)}), \
-                mock.patch.object(os, 'readlink', side_effect=('net:[1]', 'mnt:[2]')):
+                mock.patch.object(os, 'readlink', side_effect=('net:[1]', 'mnt:[2]', 'time:[3]')), \
+                mock.patch.object(time, 'monotonic_ns', return_value=1_000_000_000):
             ns['source_unit']('wtl-python-build-01234567890123456789012345678901.service',
                               prefix, VERSION, 'python', ns['PYTHON_SOURCE_WORKER'], (stage, archive, None))
         init, role, ecosystem = ns['ruby_run'].call_args.args
@@ -156,23 +158,27 @@ class PythonSourceBuildTest(unittest.TestCase):
                       + str(stage.parent / 'readonly') + ':/var/tmp ' + str(stage.parent / 'readonly') + ':/dev/shm', init)
         self.assertIn('--property=BindPaths=' + str(stage) + ':' + prefix + ' ' + str(stage.parent) + ':/tmp', init)
         self.assertIn('--property=ReadWritePaths=' + prefix + ' /tmp', init)
+        self.assertIn('--property=RuntimeMaxSec=80s', init)
         worker = init[init.index('--') + 1:]
         self.assertEqual(['/usr/bin/python3', '-I', '-S', '-B', '-c'], worker[:5])
         self.assertEqual(ns['PYTHON_SOURCE_WORKER'], worker[5])
         scratch = stage.parent.stat()
         self.assertEqual(['build', 'net:[1]', 'mnt:[2]', prefix, VERSION, str(stage.stat().st_dev), str(stage.stat().st_ino),
                           'standard', 'wtl-python-build-01234567890123456789012345678901.service',
-                          str(scratch.st_dev), str(scratch.st_ino), '1610612736', '96000', '3221225472'], worker[6:])
+                          str(scratch.st_dev), str(scratch.st_ino), '1610612736', '96000', '3221225472',
+                          '81000000000', 'time:[3]'], worker[6:])
 
     def test_worker_validates_isolation_before_configure_and_runs_fixed_commands(self):
         tree = ast.parse(self.ns['PYTHON_SOURCE_WORKER'])
         definitions = self.make_worker_functions()
         definitions.update(require_ruby_resources=mock.Mock(), verify_build_scratch=mock.Mock(),
-                           verify_native_build_chain=mock.Mock())
+                           verify_native_build_chain=mock.Mock(),
+                           make_resetids_probe_matches=mock.Mock(side_effect=AssertionError('unexpected diagnostic')))
         tree.body = tree.body[next(i for i, node in enumerate(tree.body) if isinstance(node, ast.Try)) - 1:]
         worker = compile(tree, '<CPython source worker>', 'exec')
         argv = ['', 'build', 'net:[1]', 'mnt:[2]', '/protected/python', VERSION, '42', '7', 'standard',
-                'wtl-python-build-test.service', '5', '6', '1610612736', '96000', '3221225472']
+                'wtl-python-build-test.service', '5', '6', '1610612736', '96000', '3221225472',
+                '81000000000', 'time:[3]']
         with mock.patch.object(self.ns['sys'], 'argv', argv), \
                 mock.patch.object(os, 'geteuid', return_value=0, create=True), \
                 mock.patch.object(os, 'getegid', return_value=0, create=True), \
@@ -201,7 +207,7 @@ class PythonSourceBuildTest(unittest.TestCase):
                 mock.patch.object(subprocess, 'Popen', return_value=process) as popen, \
                 mock.patch.object(subprocess, 'run') as run:
             exec(worker, definitions)
-        definitions['require_ruby_resources'].assert_called_once_with(*argv[-6:])
+        definitions['require_ruby_resources'].assert_called_once_with(*argv[-8:-2])
         definitions['verify_build_scratch'].assert_called_once_with(release, '/protected/python')
         definitions['verify_native_build_chain'].assert_called_once_with(release)
         calls = [entry.args[0] for entry in run.call_args_list]
@@ -221,6 +227,150 @@ class PythonSourceBuildTest(unittest.TestCase):
         worker = {}
         exec(compile(tree, '<CPython make fixture>', 'exec'), worker)
         return worker
+
+    def test_failed_build_never_installs_and_only_status_192_runs_the_diagnostic(self):
+        tree = ast.parse(self.ns['PYTHON_SOURCE_WORKER'])
+        tree.body = tree.body[next(i for i, node in enumerate(tree.body) if isinstance(node, ast.Try)) - 1:]
+        worker = compile(tree, '<CPython source worker>', 'exec')
+        argv = ['', 'build', 'net:[1]', 'mnt:[2]', '/protected/python', VERSION, '42', '7', 'standard',
+                'wtl-python-build-test.service', '5', '6', '1610612736', '96000', '3221225472',
+                '81000000000', 'time:[3]']
+        release = self.root / 'release'
+        for make_status, probe_match, expected in ((192, True, 198), (192, False, 192),
+                                                    (137, True, 137), (184, True, 184), (115, True, 115)):
+            diagnostic = mock.Mock(return_value=probe_match)
+            command = mock.Mock()
+            inputs = dict(sys=self.ns['sys'], subprocess=subprocess, require_isolated=mock.Mock(), require_staging_mount=mock.Mock(),
+                          require_ruby_resources=mock.Mock(), extract_release=mock.Mock(return_value=release),
+                          verify_build_scratch=mock.Mock(), verify_native_build_chain=mock.Mock(),
+                          command=command, make_python=mock.Mock(return_value=make_status),
+                          make_resetids_probe_matches=diagnostic)
+            with self.subTest(status=make_status, probe=probe_match), mock.patch.object(self.ns['sys'], 'argv', argv), \
+                    self.assertRaises(SystemExit) as error:
+                exec(worker, inputs)
+            self.assertEqual(expected, error.exception.code)
+            command.assert_called_once_with(str(release / 'configure'), '--prefix=/protected/python',
+                                            '--with-ensurepip=install', cwd=release)
+            if make_status == 192:
+                diagnostic.assert_called_once_with(argv[9], argv[-2], argv[-1])
+            else:
+                diagnostic.assert_not_called()
+
+    def test_resetids_probe_uses_matching_clock_remaining_budget_and_a_quiescent_worker(self):
+        worker = self.make_worker_functions()
+        diagnose = worker['make_resetids_probe_matches']
+        process = mock.Mock(pid=37)
+        for clock, deadline, cgroup, child_exit, expected, launches in (
+            ('time:[3]', '6000000000', (True, True), 0, True, 1),
+            ('time:[3]', '6000000000', (True, False), 0, False, 1),
+            ('time:[3]', '6000000000', (True,), 1, False, 1),
+            ('time:[3]', '5999999999', (True,), 0, False, 0),
+            ('time:[3]', '6000000000', (False,), 0, False, 0),
+            ('time:[4]', '6000000000', (), 0, False, 0),
+            ('', '6000000000', (), 0, False, 0),
+        ):
+            with self.subTest(clock=clock, deadline=deadline, cgroup=cgroup, child=child_exit), \
+                    mock.patch.dict(worker, only_source_worker_in_cgroup=mock.Mock(side_effect=cgroup)), \
+                    mock.patch.object(os, 'readlink', return_value='time:[3]'), \
+                    mock.patch.object(time, 'monotonic_ns', return_value=1_000_000_000), \
+                    mock.patch.object(subprocess, 'Popen', return_value=process) as start:
+                process.wait.reset_mock()
+                process.wait.return_value = child_exit
+                self.assertEqual(expected, diagnose('python.service', deadline, clock))
+                self.assertEqual(launches, start.call_count)
+                if launches:
+                    start.assert_called_once_with(('/usr/bin/python3', '-I', '-S', '-B', '-c',
+                                                   self.ns['PYTHON_MAKE_RESETIDS_PROBE']),
+                                                  cwd='/tmp', env=worker['environment'], start_new_session=True,
+                                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                                  stderr=subprocess.DEVNULL)
+                    process.wait.assert_called_once_with(timeout=3)
+        for contents, alone in ((b'37\n', True), (b'38\n37\n', False), (b'37', False), (b'3' * 128, False)):
+            stream = mock.mock_open(read_data=contents)
+            with mock.patch('builtins.open', stream), mock.patch.object(os, 'getpid', return_value=37):
+                self.assertEqual(alone, worker['only_source_worker_in_cgroup']('python.service'))
+            stream().read.assert_called_once_with(64)
+
+    def test_resetids_probe_timeout_kills_and_reaps_only_the_owned_diagnostic_group(self):
+        worker = self.make_worker_functions()
+        process = mock.Mock(pid=37)
+        process.wait.side_effect = (subprocess.TimeoutExpired('fixture', 3), -9)
+        with mock.patch.dict(worker, only_source_worker_in_cgroup=mock.Mock(return_value=True)), \
+                mock.patch.object(os, 'readlink', return_value='time:[3]'), \
+                mock.patch.object(time, 'monotonic_ns', return_value=1_000_000_000), \
+                mock.patch.object(os, 'killpg', create=True) as kill, \
+                mock.patch.object(signal, 'SIGKILL', 9, create=True), \
+                mock.patch.object(subprocess, 'Popen', return_value=process):
+            self.assertFalse(worker['make_resetids_probe_matches']('python.service', '6000000000', 'time:[3]'))
+        kill.assert_called_once_with(37, 9)
+        self.assertEqual([mock.call(timeout=3), mock.call(timeout=1)], process.wait.call_args_list)
+
+    def test_resetids_child_requires_the_fixed_spawn_pair_and_exact_make_report(self):
+        probe = {'__name__': 'test_resetids_probe'}
+        exec(compile(self.ns['PYTHON_MAKE_RESETIDS_PROBE'], '<Make resetids check>', 'exec'), probe)
+        true = '/usr/bin/true'
+        with mock.patch.object(os, 'posix_spawn', create=True,
+                               side_effect=(37, OSError(errno.EPERM, 'fixture'), 38, OSError(errno.EACCES, 'fixture'))) as spawn, \
+                mock.patch.object(os, 'waitpid', return_value=(37, 0)) as wait:
+            self.assertTrue(probe['spawn_true_matches'](False))
+            self.assertTrue(probe['spawn_true_matches'](True, errno.EPERM))
+            self.assertFalse(probe['spawn_true_matches'](True, errno.EPERM))
+            self.assertFalse(probe['spawn_true_matches'](True, errno.EPERM))
+        self.assertEqual([mock.call(true, (true,), os.environ, resetids=flag) for flag in (False, True, True, True)],
+                         spawn.call_args_list)
+        self.assertEqual([mock.call(37, 0), mock.call(38, 0)], wait.call_args_list)
+        for output, code, expected in (
+            (b'make: /usr/bin/true: Operation not permitted\n', 2, True),
+            (b'/usr/bin/make: /usr/bin/true: Operation not permitted\n', 2, True),
+            (b'make: /usr/bin/true: Operation not permitted', 2, False),
+            (b'make: stat: /usr/bin/true: Operation not permitted\n', 2, False),
+            (b'make: /tmp/private: Operation not permitted\n', 2, False),
+            (b'make: /usr/bin/true: Operation not permitted\n', 0, False),
+            (b'make: /usr/bin/true: Operation not permitted\n', -9, False),
+            (b'make: /usr/bin/true: Operation not permitted\n' + b'x' * 2048, 2, False),
+        ):
+            with self.subTest(length=len(output), exit_code=code), tempfile.TemporaryDirectory(dir=self.root) as work:
+                directory = pathlib.Path(work)
+                child = mock.MagicMock()
+                child.__enter__.return_value = child
+                child.stderr = io.BytesIO(output)
+                child.wait.return_value = code
+                with mock.patch.object(subprocess, 'Popen', return_value=child) as start:
+                    self.assertEqual(expected, probe['make_recipe_matches'](directory))
+                start.assert_called_once_with(('/usr/bin/make', '--no-print-directory', '-rR', '-j2',
+                                               '-f', 'probe.mk', 'probe'), cwd=directory, stdin=subprocess.DEVNULL,
+                                              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                self.assertEqual(b'.PHONY: probe\nprobe:\n\t@/usr/bin/true\n', (directory / 'probe.mk').read_bytes())
+                self.assertEqual(len(output) > 2048, child.kill.called)
+
+    def test_resetids_child_checks_identity_and_requires_all_three_observations(self):
+        probe = {'__name__': 'test_resetids_probe'}
+        exec(compile(self.ns['PYTHON_MAKE_RESETIDS_PROBE'], '<Make resetids check>', 'exec'), probe)
+        dynamic = (61200, 61200, 61200)
+        for gid, spawn_results, make_match, expected in (
+            ((0, 61200, 61200), (), False, False),
+            (dynamic, (False,), False, False),
+            (dynamic, (True, False), False, False),
+            (dynamic, (True, True), False, False),
+            (dynamic, (True, True), True, True),
+        ):
+            spawn = mock.Mock(side_effect=spawn_results)
+            make = mock.Mock(return_value=make_match)
+            with self.subTest(gid=gid, spawn=spawn_results, make=make_match), \
+                    mock.patch.object(os, 'getresuid', return_value=dynamic, create=True), \
+                    mock.patch.object(os, 'getresgid', return_value=gid, create=True), \
+                    mock.patch.dict(probe, spawn_true_matches=spawn, make_recipe_matches=make), \
+                    mock.patch.object(tempfile, 'TemporaryDirectory') as temporary:
+                temporary.return_value.__enter__.return_value = str(self.root)
+                self.assertEqual(expected, probe['resetids_probe_matches']())
+            self.assertEqual([mock.call(False), mock.call(True, errno.EPERM)][:len(spawn_results)], spawn.call_args_list)
+            if spawn_results == (True, True):
+                temporary.assert_called_once_with(prefix='.wtl-make-probe-', dir='/tmp')
+                make.assert_called_once_with(self.root)
+                temporary.return_value.__exit__.assert_called_once()
+            else:
+                temporary.assert_not_called()
+                make.assert_not_called()
 
     def test_make_hints_are_fixed_and_require_complete_bounded_lines(self):
         classify = self.make_worker_functions()['make_output_hint']

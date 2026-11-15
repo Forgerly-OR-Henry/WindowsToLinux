@@ -18,9 +18,11 @@ class DeploymentManagedHelperBundleTest {
         String original = DeploymentManagedHelperBundle.renderScript();
         String recovery = DeploymentManagedHelperBundle.renderPublicationRecovery(layout);
         assertEquals(16, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
-        assertEquals("7ec53edbc9295fe8b964aa7756079e44d8e51b6ca6bfe83585e7dbeb9dca4a67",
+        assertEquals("332d9e97b294dc5a1c39268697dea36074cb0b2a3c5d4ebae88c79a4453ce3c8",
             HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(original.getBytes(StandardCharsets.UTF_8))));
         assertEquals(original, DeploymentManagedHelperBundle.renderScript());
+        assertEquals("7ecc321fe09bb66efdf0a0e80dddd0ca7bc1520522809b43b2bfb1b9a5dcabe7",
+            HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(recovery.getBytes(StandardCharsets.UTF_8))));
         assertTrue(original.contains("def ruby_source_install("));
         assertFalse(recovery.contains("def ruby_source_install("));
         assertFalse(recovery.contains("ordinary-offline"));

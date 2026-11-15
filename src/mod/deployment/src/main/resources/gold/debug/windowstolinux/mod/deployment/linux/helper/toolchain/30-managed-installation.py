@@ -192,6 +192,103 @@ def seal_installation(destination, marker_pending=False):
         marker.chmod(0o444)
 
 
+def managed_dotnet_file_digest(path, required_mode, archive_source=False):
+    def protected(info):
+        return (stat.S_ISREG(info.st_mode) and (archive_source or info.st_uid == 0) and info.st_nlink == 1
+                and not info.st_mode & 0o7022 and (archive_source or info.st_mode & required_mode == required_mode)
+                and 0 < info.st_size <= 16 * 1024 * 1024)
+
+    before = path.lstat()
+    if not protected(before):
+        fail('ownership', 'managed .NET probe requires protected regular files')
+    flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+    with os.fdopen(os.open(path, flags), 'rb') as source:
+        opened = os.fstat(source.fileno())
+        if not protected(opened) or not os.path.samestat(before, opened):
+            fail('integrity', 'managed .NET probe file changed during open')
+        payload = source.read(opened.st_size + 1)
+        after = os.fstat(source.fileno())
+    if len(payload) != opened.st_size or any(
+        not protected(current) or not os.path.samestat(opened, current)
+        or (current.st_size, current.st_mtime_ns, current.st_ctime_ns)
+        != (opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns)
+        for current in (after, path.lstat())
+    ):
+        fail('integrity', 'managed .NET probe file changed during verification')
+    return hashlib.sha256(payload).hexdigest()
+
+
+def managed_dotnet_probe_identity(directory, version, archive_source=False):
+    # The native muxer can select libhostfxr from this tree before listing SDKs. The OS loader and
+    # system libraries are host prerequisites. This identity does not measure the whole SDK tree.
+    if not re.fullmatch(r'[0-9]{1,6}(?:\.[0-9]{1,6}){2}', version):
+        fail('metadata', 'invalid managed .NET SDK release')
+    if archive_source:
+        # Tar may retain vendor UID/GID. Only the verified extraction below a root-private work directory
+        # can use that metadata; every installed path is checked under the stricter rules below.
+        owned_directory(directory.parent)
+        if directory.parent.lstat().st_mode & 0o077:
+            fail('ownership', 'managed .NET archive work directory is not private')
+
+    def require_directory(path):
+        if not stat.S_ISDIR(path.lstat().st_mode):
+            fail('ownership', 'managed .NET probe requires real directories')
+        if not archive_source:
+            owned_directory(path)
+
+    hostfxr = directory / 'host' / 'fxr'
+    sdk = directory / 'sdk'
+    for path in (directory, hostfxr.parent, hostfxr, sdk, sdk / version):
+        require_directory(path)
+    files = {'dotnet': managed_dotnet_file_digest(directory / 'dotnet', 0o005, archive_source)}
+    for runtime in hostfxr.iterdir():
+        if len(files) > 16 or not re.fullmatch(r'[0-9]{1,6}(?:\.[0-9]{1,6}){2}', runtime.name):
+            fail('integrity', 'unexpected managed .NET hostfxr layout')
+        require_directory(runtime)
+        library = runtime / 'libhostfxr.so'
+        files[library.relative_to(directory).as_posix()] = managed_dotnet_file_digest(library, 0o004, archive_source)
+    if len(files) == 1:
+        fail('integrity', 'managed .NET hostfxr is missing')
+    return files
+
+
+def load_managed_dotnet_marker(directory):
+    marker = saved_installation_marker(directory)
+    if marker is None or marker.lstat().st_mode & 0o222:
+        fail('ownership', 'managed .NET requires a sealed completion marker')
+    return tracked_json(tracked_regular(marker, 65536))
+
+
+def validate_managed_dotnet_record(record, directory, version):
+    if not isinstance(record, dict):
+        fail('integrity', 'invalid managed .NET marker')
+    fields = ('ecosystem', 'version', 'directory', 'origin', 'official_algorithm')
+    expected = record.get('official_digest')
+    if (tuple(record.get(k) for k in fields) != ('DOTNET', version, str(directory), 'MANAGED', 'sha512')
+        or not tracked_digest(record.get('sha256')) or not isinstance(expected, str)
+        or not re.fullmatch('[a-f0-9]{128}', expected)
+        or directory != ROOT / 'versions' / ('dotnet-' + installation_key('DOTNET', version, expected))):
+        fail('integrity', 'managed .NET marker differs from the official installation identity')
+
+
+def verify_managed_dotnet_probe_files(record, directory, version):
+    validate_managed_dotnet_record(record, directory, version)
+    if 'dotnet_probe_files' not in record:
+        fail('integrity', 'managed .NET must be prepared again from its official archive')
+    if record['dotnet_probe_files'] != managed_dotnet_probe_identity(directory, version):
+        fail('integrity', 'managed .NET probe files differ from the verified archive')
+
+
+def probe_managed_dotnet(record, directory, version):
+    verify_managed_dotnet_probe_files(record, directory, version)
+    command = ['/usr/bin/setpriv', '--reuid=65534', '--regid=65534', '--clear-groups', '--no-new-privs',
+               '--inh-caps=-all', '--ambient-caps=-all', '--bounding-set=-all', '--',
+               str(directory / 'dotnet'), '--list-sdks']
+    code, output = managed_dotnet_probe_output(command, directory)
+    if code or output.splitlines() != [version + ' [' + str(directory / 'sdk') + ']']:
+        fail('probe', 'managed .NET did not report the selected exact SDK and directory')
+
+
 def install(ecosystem, identity, url, algorithm, expected, layout):
     global MIRROR_POINT
     MIRROR_POINT = toolchain_point(ecosystem)
@@ -200,14 +297,26 @@ def install(ecosystem, identity, url, algorithm, expected, layout):
         '[a-f0-9]{' + str(64 if algorithm == 'sha256' else 128) + '}', expected
     ):
         fail('metadata', 'invalid official artifact digest')
+    dotnet = ecosystem == 'DOTNET'
+    if dotnet and (algorithm != 'sha512' or layout != 'flat'):
+        fail('metadata', 'managed .NET requires the verified official flat SDK archive')
     key = installation_key(ecosystem, identity, expected)
     destination = ROOT / 'versions' / (ecosystem.lower() + '-' + key)
     marker = saved_installation_marker(destination)
+    previous_dotnet = None
     if marker is not None:
-        record = json.loads(marker.read_text())
-        probe(ecosystem, destination, identity)
-        seal_installation(destination)
-        return record
+        if not dotnet:
+            record = json.loads(marker.read_text())
+            probe(ecosystem, destination, identity)
+            seal_installation(destination)
+            return record
+        previous_dotnet = load_managed_dotnet_marker(destination)
+        validate_managed_dotnet_record(previous_dotnet, destination, identity)
+        if previous_dotnet.get('source') != url or previous_dotnet['official_digest'] != expected:
+            fail('integrity', 'managed .NET marker differs from selected official metadata')
+        if 'dotnet_probe_files' in previous_dotnet:
+            probe_managed_dotnet(previous_dotnet, destination, identity)
+            return previous_dotnet
     work_parent = ROOT / 'work'
     if tracked is None:
         work_parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -224,6 +333,15 @@ def install(ecosystem, identity, url, algorithm, expected, layout):
         source = unpacked if layout == 'flat' else next(iter(unpacked.iterdir()))
         if layout != 'flat' and (not source.is_dir() or len(list(unpacked.iterdir())) != 1):
             fail('archive', 'unexpected official archive layout')
+        dotnet_probe_files = managed_dotnet_probe_identity(source, identity, archive_source=True) if dotnet else None
+        if previous_dotnet is not None:
+            if previous_dotnet['sha256'] != sha256:
+                fail('integrity', 'managed .NET archived bytes differ from the existing installation identity')
+            # Upgrade only the marker, grounding the expected digests in the verified archive.
+            previous_dotnet['dotnet_probe_files'] = dotnet_probe_files
+            probe_managed_dotnet(previous_dotnet, destination, identity)
+            tracked_atomic_json(marker, previous_dotnet, 0o444)
+            return previous_dotnet
         with create_installation_directory(destination, tracked):
             marker = destination / '.w2l-toolchain.json'
             dependencies = {}
@@ -269,7 +387,8 @@ def install(ecosystem, identity, url, algorithm, expected, layout):
                     run(['make', 'install'], source)
                     if layout == 'ruby' and version_key(identity)[:2] == (3, 0):
                         dependencies['openssl'] = ruby_legacy_tls(destination, work)
-            probe(ecosystem, destination, identity)
+            if not dotnet:
+                probe(ecosystem, destination, identity)
             record = {
                 'ecosystem': ecosystem,
                 'version': identity,
@@ -281,7 +400,12 @@ def install(ecosystem, identity, url, algorithm, expected, layout):
                 'official_digest': expected,
                 'dependencies': dependencies,
             }
-            if tracked is None:
+            if dotnet:
+                record['dotnet_probe_files'] = dotnet_probe_files
+                seal_installation(destination, marker_pending=True)
+                probe_managed_dotnet(record, destination, identity)
+                tracked_atomic_json(marker, record, 0o444)
+            elif tracked is None:
                 marker.write_text(json.dumps(record, sort_keys=True))
                 seal_installation(destination)
             else:
@@ -291,11 +415,12 @@ def install(ecosystem, identity, url, algorithm, expected, layout):
 
 
 def probe(ecosystem, directory, expected):
+    if ecosystem == 'DOTNET':
+        return probe_managed_dotnet(load_managed_dotnet_marker(directory), directory, expected)
     commands = {
         'JAVA': ['bin/java', '-version'],
         'NODE': ['bin/node', '--version'],
         'PYTHON': ['bin/python3', '-I', '-S', '-B', '--version'],
-        'DOTNET': ['dotnet', '--list-sdks'],
         'KOTLIN': ['bin/kotlinc', '-version'],
         'GO': ['bin/go', 'version'],
         'RUST': ['bin/rustc', '--version'],

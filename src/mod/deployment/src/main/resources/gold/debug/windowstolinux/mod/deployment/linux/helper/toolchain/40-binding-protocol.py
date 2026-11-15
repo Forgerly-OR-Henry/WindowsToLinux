@@ -25,13 +25,19 @@ def validated_binding(encoded, restoring=False):
         marker = directory / '.w2l-toolchain.json'
         if marker.is_symlink() or marker.stat().st_uid != 0 or marker.stat().st_mode & 0o022:
             fail('ownership', 'binding marker must be root-owned')
-        record = json.loads(marker.read_text())
-        verify_system(record)
+        record = load_managed_dotnet_marker(directory) if f[0] == 'DOTNET' else json.loads(marker.read_text())
+        if f[0] != 'DOTNET':
+            verify_system(record)
         if [record[k] for k in ('ecosystem', 'version', 'directory', 'sha256')] != [f[0], f[6], f[7], f[10]]:
             fail('integrity', 'binding differs from the prepared installation')
         if record['source'] != base64.b64decode(f[9], validate=True).decode():
             fail('integrity', 'binding source differs from prepared evidence')
-        probe(f[0], directory, f[6])
+        if f[0] == 'DOTNET':
+            if f[8] != 'MANAGED':
+                fail('integrity', 'managed .NET binding has the wrong origin')
+            probe_managed_dotnet(record, directory, f[6])
+        else:
+            probe(f[0], directory, f[6])
         if f[0] == 'JAVA':
             os.environ['JAVA_HOME'] = str(directory)
     return payload
@@ -69,7 +75,7 @@ def existing_installation(fields):
     owned_directory(directory)
     if marker.is_symlink() or marker.stat().st_uid != 0 or marker.stat().st_mode & 0o022:
         fail('ownership', 'saved installation marker must be root-owned')
-    record = json.loads(marker.read_text())
+    record = load_managed_dotnet_marker(directory) if fields[0] == 'DOTNET' else json.loads(marker.read_text())
     if [record[k] for k in ('ecosystem', 'version', 'directory', 'origin', 'sha256')] != [
         fields[0],
         fields[6],
@@ -80,6 +86,12 @@ def existing_installation(fields):
         fail('integrity', 'saved installation differs from the immutable binding')
     if record['source'] != base64.b64decode(fields[9], validate=True).decode():
         fail('integrity', 'saved installation source differs from the immutable binding')
+    if fields[0] == 'DOTNET':
+        validate_managed_dotnet_record(record, directory, fields[6])
+        if 'dotnet_probe_files' not in record:
+            return None  # Restore must verify the official archive before recording any new file identity.
+        probe_managed_dotnet(record, directory, fields[6])
+        return record
     try:
         verify_system(record)
     except (PreparationFailure, OSError):
@@ -254,12 +266,15 @@ def main(args):
                     fail('ownership', 'toolchain completion marker must be root-owned')
                 if marker.stat().st_size > 65536:
                     fail('integrity', 'toolchain completion marker exceeds budget')
-                record = json.loads(marker.read_text())
+                record = load_managed_dotnet_marker(directory) if fields[0] == 'DOTNET' else json.loads(marker.read_text())
                 if [record.get(key) for key in ('ecosystem', 'version', 'directory', 'origin', 'sha256')] != [
                     fields[0], fields[6], fields[7], fields[8], fields[10],
                 ] or record.get('source') != base64.b64decode(fields[9], validate=True).decode():
                     fail('integrity', 'toolchain completion marker differs from the immutable binding')
-                verify_system(record)
+                if fields[0] == 'DOTNET':
+                    verify_managed_dotnet_probe_files(record, directory, fields[6])
+                else:
+                    verify_system(record)
             return
         if len(args) == 2 and args[0] == 'bind':
             bind(args[1])

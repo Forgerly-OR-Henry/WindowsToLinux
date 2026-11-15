@@ -61,7 +61,7 @@ public final class DeploymentCommandSourceEvidence {
     private static final String PREPARE = "deployment.toolchain.prepare.v1";
     private static final String NODE_PREPARE_INSTRUCTION = """
         Review this exact Node preparation. Match the original authority, arguments, effects and limits. Verify NODE_METADATA and NODE_DISTRIBUTION route, redirect, TLS and SHA256 checks, archive or SYSTEM reuse, locks, probes and diagnostics.
-        selectedPreparationRanges maps inline text to original UTF-16 coordinates. startCharacter counts from the frame header end. namedRanges locates other reached bytes by [offset,next]. Use snapshotSha256 and pointer to read only needed ranges, up to eight calls separately from the verdict. Read raw pages and retained text in header range order. The broader preparationSelection and original facts remain readable.
+        selectedPreparationRanges maps inline text to original UTF-16 coordinates. startCharacter counts from the frame header end. namedRanges locates other reached bytes by [offset,next]. Read optional initialSupplement, raw pages and retained text in header range order. Use snapshotSha256 and pointer to read only needed absent ranges, up to eight calls separately from the verdict. The broader preparationSelection and original facts remain readable.
         Restore exactAction in segment order: LITERAL copies text, SOURCE_TEXT copies source and SHELL_SINGLE_QUOTE applies Bash single quoting. Deny unsafe effects or insufficient evidence. Submit a fresh native submit_result alone.
         """;
     private static final String MIRROR_BOOTSTRAP_SHELL = "/" + PROJECTION + "/mirrorBootstrapShell";
@@ -140,7 +140,7 @@ public final class DeploymentCommandSourceEvidence {
     private static final String DEPENDENCY_APT_INSTRUCTION = """
         Restore exactAction and completeExecutableInput from ordered segments. LITERAL copies text; SOURCE_TEXT copies the reference; SHELL_SINGLE_QUOTE applies Bash single quoting; JSON_STRING encodes source as a JSON string with double quotes. Review exact arguments, resource limits, targets, original authority, and effects independently. Digests identify bytes and grant no permission.
         A prior probe observed APT. selectedAptRanges maps exact text in dependencyAptSelection to original source. Follow the complete dependency_supervise implementation, its READY/ACK and ownership checks, held cgroup events and exact stop before the receipt. The decoded dependencySystemShell is the shell invoked by mirror_system_command. Review APT/dpkg admission, registered hooks and frozen installation. The protected OS package database is a trust assumption. Authenticated packages can still run maintainer scripts and triggers in this root transaction. The worker selects the current OS again. Read required alternate paths from the original sources.
-        requiredAptRanges identifies other exact source that must be delivered before APPROVE. Request those ranges first with snapshotSha256, pointer, offset and a limit from 1 through 8000, up to eight ranges per response. The retained frame's pendingRequired lists remaining ranges. Exact source follows the JSON header in range order. Request additional source when needed. Submit a fresh native submit_result alone. Deny unsafe effects or insufficient evidence.
+        requiredAptRanges is the initial list only. After a read, use pendingRequired from the latest retained frame for remaining required ranges. Do not request the old list again or request ranges already visible. Use snapshotSha256, pointer, offset and a limit from 1 through 8000, up to eight ranges per response. Exact source follows the JSON header in range order. Request additional source when needed. Submit a fresh native submit_result alone. Deny unsafe effects or insufficient evidence.
         """;
 
     private static final String BUILD_INSTRUCTION = """
@@ -153,7 +153,7 @@ public final class DeploymentCommandSourceEvidence {
         The selectedRangeFrame supplies exact pinned bind dispatch, Python launch, locking, ownership, marker comparison, SYSTEM file rehash, prepared binary probes and binding write logic. For each selectedRanges entry, startCharacter counts from the frame header end and offset through next gives its original source coordinates. Review those excerpts and the actual selected arguments, including interpreter/child execution boundaries and marker trust.
         The mirrored outer command creates protected task-private files, stages policy/runtime/bootstrap data, defines fixed shell functions and cleans the private root. Check these effects in exactAction and the current policy. The literal bind branch runs the admitted probes from the existing installation and binds the recorded rows. Neither declaring a shell function nor staging its source invokes that function. Inspect additional branches only if the exact current command can reach them. A staged runtime or unrelated install branch does not establish what a selected tool binary does.
         Restore exactAction in ordered segments: LITERAL copies text, SOURCE_TEXT copies the referenced source, and SHELL_SINGLE_QUOTE encloses source in apostrophes and replaces every apostrophe with '"'"'. Every staged source remains fully available by its snapshotSha256 and sourcePointer. Use evidence only for specific unresolved ranges, at most eight calls per response and no verdict in the same response. Read UTF-16 offsets from selectedRanges, locations or a prior page's next; use existing visible bytes rather than requesting them twice.
-        A WTL-COMMAND-EVIDENCE-PAGE-1 result and a WTL-COMMAND-RETAINED-SOURCE-1 USER frame contain a JSON header then exact source text in header order. Each range spans next minus offset UTF-16 code units. newRanges in a page omits bytes already in visible frames or results. The retained frame may omit older bytes; they remain available from the original snapshot. latestReads reports successful or rejected requests. If latestBatchRejected is present, no page from that oversized batch was read; resubmit only the missing ranges in groups of at most eight. Review current evidence independently; missing evidence or unsafe effects require DENY. Submit exactly one fresh native submit_result alone.
+        A source descriptor's characters gives the end in UTF-16 code units. Stop when next reaches that value. Do not request a larger offset. A WTL-COMMAND-EVIDENCE-PAGE-1 result and a WTL-COMMAND-RETAINED-SOURCE-1 USER frame contain a JSON header then exact source text in header order. Each range spans next minus offset code units. newRanges in a page omits bytes already in visible frames or results. The retained frame may omit older bytes; they remain available from the original snapshot. latestReads reports successful or rejected requests. If latestBatchRejected is present, no page from that oversized batch was read; resubmit only the missing ranges in groups of at most eight. Review current evidence independently; missing evidence or unsafe effects require DENY. Submit exactly one fresh native submit_result alone.
         """;
 
     public static final AiToolDefinition TOOL = new AiToolDefinition("evidence",
@@ -169,15 +169,17 @@ public final class DeploymentCommandSourceEvidence {
     private final Map<String, String> sourceBodies;
     private final Map<String, NavigableMap<Integer, Integer>> initialRanges;
     private final Map<String, NavigableMap<Integer, Integer>> requiredRanges;
+    private final Map<String, NavigableMap<Integer, Integer>> nodeSupplement;
 
     private DeploymentCommandSourceEvidence(JsonNode current, String originalFacts, String snapshot, List<AiMessage> messages,
                                               Map<String, String> sourceBodies, Map<String, NavigableMap<Integer, Integer>> initialRanges) {
-        this(current, originalFacts, snapshot, messages, sourceBodies, initialRanges, Map.of());
+        this(current, originalFacts, snapshot, messages, sourceBodies, initialRanges, Map.of(), Map.of());
     }
 
     private DeploymentCommandSourceEvidence(JsonNode current, String originalFacts, String snapshot, List<AiMessage> messages,
             Map<String, String> sourceBodies, Map<String, NavigableMap<Integer, Integer>> initialRanges,
-            Map<String, NavigableMap<Integer, Integer>> requiredRanges) {
+            Map<String, NavigableMap<Integer, Integer>> requiredRanges,
+            Map<String, NavigableMap<Integer, Integer>> nodeSupplement) {
         this.current = current;
         this.originalFacts = originalFacts;
         this.snapshot = snapshot;
@@ -185,6 +187,7 @@ public final class DeploymentCommandSourceEvidence {
         this.sourceBodies = Map.copyOf(sourceBodies);
         this.initialRanges = Map.copyOf(initialRanges);
         this.requiredRanges = Collections.unmodifiableMap(new LinkedHashMap<>(requiredRanges));
+        this.nodeSupplement = Collections.unmodifiableMap(new LinkedHashMap<>(nodeSupplement));
     }
 
     public List<AiMessage> messages() {
@@ -221,6 +224,7 @@ public final class DeploymentCommandSourceEvidence {
         var sourceBodies = new LinkedHashMap<String, String>();
         var initialRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
         var requiredRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
+        var nodeSupplement = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
         if (mirror.isPresent()) {
             var parts = projectMirror(projected, manifest, messages, snapshot, exact, mirror.orElseThrow().policy(),
                 dependency, !aptDependency(current), sourceBodies);
@@ -244,7 +248,9 @@ public final class DeploymentCommandSourceEvidence {
             if (!descriptor.path("sha256").asText().equals(requiredText(current, "installedHelperSha256")))
                 throw new IOException("Review helper source differs from original pin");
             if (binding) {
-                var bindingRanges = BindingSourceRange.select(helper);
+                boolean managedDotnet = current.at("/decodedToolchainBinding/toolchains").findValues("ecosystem").stream()
+                    .anyMatch(value -> value.asText().equals("DOTNET"));
+                var bindingRanges = BindingSourceRange.select(helper, managedDotnet);
                 String selected = bindingSelection(descriptor, helper, bindingRanges, initialRanges);
                 sourceBodies.put(BINDING_SELECTION, selected);
                 frames.add(sourceFrame(messages, snapshot, BINDING_SELECTION, selected));
@@ -253,12 +259,13 @@ public final class DeploymentCommandSourceEvidence {
             sourceBodies.put(INSTALLED_HELPER_SOURCE, helper);
             if (PREPARE.equals(operation)) {
                 projectPreparationPolicy(current, projected);
-                addPreparationSelection(current, projected, manifest, messages, snapshot, sourceBodies, initialRanges);
+                addPreparationSelection(current, projected, manifest, messages, snapshot, sourceBodies, initialRanges,
+                    nodeSupplement);
             }
         }
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
         return Optional.of(new DeploymentCommandSourceEvidence(current, original, snapshot, messages, sourceBodies, initialRanges,
-            requiredRanges));
+            requiredRanges, nodeSupplement));
     }
 
     private static List<String> helperLocations(ObjectNode current, boolean binding) throws IOException {
@@ -283,7 +290,8 @@ public final class DeploymentCommandSourceEvidence {
 
     private static void addPreparationSelection(ObjectNode current, ObjectNode projected, ObjectNode manifest, List<AiMessage> messages,
                                                 String snapshot, Map<String, String> sources,
-                                                Map<String, NavigableMap<Integer, Integer>> initialRanges) throws IOException {
+                                                Map<String, NavigableMap<Integer, Integer>> initialRanges,
+                                                Map<String, NavigableMap<Integer, Integer>> nodeSupplement) throws IOException {
         boolean diagnosed = current.has("originalToolchainPreparation");
         String ecosystem = preparationEcosystem(current);
         if (ecosystem.equals("NODE")) {
@@ -300,6 +308,7 @@ public final class DeploymentCommandSourceEvidence {
             addNamedRanges((ObjectNode) manifest.path("installedHelperSource"), helperRanges, initialHelper);
             appendSelection(body, selected, initialRanges, INSTALLED_HELPER_SOURCE, helper,
                 initialHelper);
+            nodeSupplement.put(INSTALLED_HELPER_SOURCE, mergeRanges(PreparationSourceRange.nodeHelperSupplement(helperRanges)));
             String runtime = sources.get(MIRROR_RUNTIME);
             var points = current.at(PUBLIC_MIRROR_POLICY + "/points");
             boolean credentials = List.of("NODE_METADATA", "NODE_DISTRIBUTION").stream()
@@ -309,6 +318,7 @@ public final class DeploymentCommandSourceEvidence {
             var initialRuntime = PreparationSourceRange.nodeTransferInitial(runtimeRanges);
             addNamedRanges((ObjectNode) projected.at(MIRROR_RUNTIME), runtimeRanges, initialRuntime);
             appendSelection(body, selected, initialRanges, MIRROR_RUNTIME, runtime, initialRuntime);
+            nodeSupplement.put(MIRROR_RUNTIME, mergeRanges(PreparationSourceRange.nodeTransferSupplement(runtimeRanges)));
             putSelectionFrame(manifest, messages, snapshot, sources, NODE_PREPARATION_SELECTION, "nodePreparationSelection", body);
             return;
         }
@@ -318,6 +328,12 @@ public final class DeploymentCommandSourceEvidence {
         var frame = sourceFrame(messages, snapshot, PREPARATION_SELECTION, source);
         manifest.withArray("frames").add(frame);
         manifest.set("preparationSelection", frame);
+    }
+
+    private static NavigableMap<Integer, Integer> mergeRanges(List<PreparationSourceRange> ranges) {
+        var merged = new TreeMap<Integer, Integer>();
+        for (var range : ranges) DeploymentEvidencePages.remember(merged, range.offset(), range.next());
+        return merged;
     }
 
     private static void addNamedRanges(ObjectNode descriptor, List<PreparationSourceRange> all,
@@ -401,10 +417,8 @@ public final class DeploymentCommandSourceEvidence {
                                         Map<String, NavigableMap<Integer, Integer>> initialRanges, String pointer,
                                         String source, List<PreparationSourceRange> ranges) {
         var supplied = initialRanges.computeIfAbsent(pointer, ignored -> new TreeMap<>());
-        var selectedRanges = new TreeMap<Integer, Integer>();
         var offsets = new TreeMap<Integer, Integer>();
-        for (var range : ranges) DeploymentEvidencePages.remember(selectedRanges, range.offset(), range.next());
-        selectedRanges.forEach((offset, next) -> {
+        mergeRanges(ranges).forEach((offset, next) -> {
             if (!body.isEmpty()) body.append('\n');
             offsets.put(offset, body.length());
             body.append(source, offset, next);
@@ -797,6 +811,7 @@ public final class DeploymentCommandSourceEvidence {
         private final Map<String, NavigableMap<Integer, Integer>> confirmed = new LinkedHashMap<>();
         private final boolean nodePreparation = nodePreparationReview();
         private Optional<AiMessage> priorEvidence = Optional.empty();
+        private Optional<AiMessage> initialSupplement = Optional.empty();
         private List<ReadReceipt> latestReads = List.of();
         private Map<String, NavigableMap<Integer, Integer>> pendingVisible = Map.of();
         private Map<String, NavigableMap<Integer, Integer>> lastVisible = Map.of();
@@ -833,6 +848,38 @@ public final class DeploymentCommandSourceEvidence {
             var range = new TreeMap<Integer, Integer>();
             range.put(0, body.length());
             delivered.put(pointer, range);
+        }
+
+        /** Offers exact optional source with the first Node request. */
+        public void offerInitialSource(List<AiMessage> messages) throws IOException {
+            if (nodeSupplement.isEmpty() || initialSupplement.isPresent() || !lastVisible.isEmpty()) return;
+            int position = messages.lastIndexOf(DeploymentCommandSourceEvidence.this.messages.getLast());
+            if (position < 0) return;
+            var offered = fittedInitialSource(nativeFrameBudget(messages));
+            if (offered.isEmpty()) return;
+            useInitialSource(offered);
+            messages.add(position, offered.orElseThrow().message());
+        }
+
+        private Optional<RetainedFrame> fittedInitialSource(int available) throws IOException {
+            var header = JSON.createObjectNode().put("snapshotSha256", snapshot).put("trust", "UNTRUSTED_DATA")
+                .put("initialSupplement", true);
+            var entries = header.putArray("ranges");
+            int bodyBudget = available - quotedBytes(RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n");
+            if (bodyBudget <= 0) return Optional.empty();
+            var body = new StringBuilder();
+            var visible = copyRanges(inline);
+            retainHistory(nodeSupplement, visible, entries, body, bodyBudget);
+            if (entries.isEmpty()) return Optional.empty();
+            var message = new AiMessage(AiRole.USER, RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n" + body, List.of());
+            return quotedBytes(message) <= available ? Optional.of(new RetainedFrame(message, visible)) : Optional.empty();
+        }
+
+        private void useInitialSource(Optional<RetainedFrame> frame) {
+            initialSupplement = frame.map(RetainedFrame::message);
+            pendingVisible = frame.map(RetainedFrame::visible).orElse(inline);
+            delivered.clear();
+            delivered.putAll(copyRanges(pendingVisible));
         }
 
         public List<AiToolResult> read(AiResponse response) throws IOException {
@@ -938,14 +985,14 @@ public final class DeploymentCommandSourceEvidence {
             boolean responses = isResponses(response);
             if (rebased || responses && (buildReview() || preparationReview() || installerReview() || !requiredRanges.isEmpty() || continuedResponses)) {
                 priorEvidence.ifPresent(messages::remove);
+                initialSupplement.ifPresent(messages::remove);
+                initialSupplement = Optional.empty();
                 int factsIndex = messages.lastIndexOf(DeploymentCommandSourceEvidence.this.messages.getLast());
                 if (factsIndex < 0) throw new IOException("Current review facts unavailable");
                 // A previous result-format correction can also leave a native batch after the current facts.
                 messages.subList(factsIndex + 1, messages.size()).clear();
                 // The native codec checks aggregate raw text and schemas before the exact wire-size check.
-                int available = NATIVE_REQUEST_TEXT_BYTES - NATIVE_TOOL_ENVELOPE_BYTES
-                    - messages.stream().mapToInt(message -> message.text().getBytes(StandardCharsets.UTF_8).length).sum();
-                var frame = fittedSource(available).orElseThrow(
+                var frame = fittedSource(nativeFrameBudget(messages)).orElseThrow(
                     () -> new IOException("Current command evidence frame cannot fit the native request bound"));
                 var evidence = frame.message();
                 adoptRetainedFrame(frame);
@@ -959,6 +1006,11 @@ public final class DeploymentCommandSourceEvidence {
             results.forEach(result -> messages.add(AiMessage.result(result)));
             pendingVisible = copyRanges(delivered);
             if (responses) continuedResponses = true;
+        }
+
+        private int nativeFrameBudget(List<AiMessage> messages) {
+            return NATIVE_REQUEST_TEXT_BYTES - NATIVE_TOOL_ENVELOPE_BYTES
+                - messages.stream().mapToInt(message -> message.text().getBytes(StandardCharsets.UTF_8).length).sum();
         }
 
         private void rememberDeliveredRanges() {
@@ -998,15 +1050,15 @@ public final class DeploymentCommandSourceEvidence {
             DeploymentEvidencePages.remember(ranges.computeIfAbsent(pointer, ignored -> new TreeMap<>()), start, end);
         }
 
-        /** Repacks one unsent Responses continuation under the owning encoder's measured ceiling. */
+        /** Repacks unsent source under the owning encoder's measured ceiling. */
         public boolean repackBeforeSend(List<AiMessage> messages, Problem problem) throws IOException {
-            if (!rebased || priorEvidence.isEmpty() || !exactBudgetRefusal(problem)) return false;
+            if (!exactBudgetRefusal(problem)) return false;
+            if (lastVisible.isEmpty() && initialSupplement.isPresent()) return repackInitialSource(messages, problem);
+            if (!rebased || priorEvidence.isEmpty()) return false;
             var original = priorEvidence.orElseThrow();
             int position = messages.indexOf(original);
             if (position < 0) return false;
-            int available = quotedBytes(original) + Integer.parseInt(problem.context().get("maximumRequestBytes"))
-                - Integer.parseInt(problem.context().get("encodedRequestBytes"));
-            var fitted = fittedSource(available);
+            var fitted = fittedSource(frameBudget(original, problem));
             if (fitted.isEmpty()) return false;
             var frame = fitted.orElseThrow();
             if (frame.message().equals(original)) return false;
@@ -1015,6 +1067,22 @@ public final class DeploymentCommandSourceEvidence {
             messages.set(position, frame.message());
             priorEvidence = Optional.of(frame.message());
             return true;
+        }
+
+        private boolean repackInitialSource(List<AiMessage> messages, Problem problem) throws IOException {
+            var original = initialSupplement.orElseThrow();
+            int position = messages.indexOf(original);
+            if (position < 0) return false;
+            var fitted = fittedInitialSource(frameBudget(original, problem));
+            if (fitted.isPresent()) messages.set(position, fitted.orElseThrow().message());
+            else messages.remove(position);
+            useInitialSource(fitted);
+            return true;
+        }
+
+        private int frameBudget(AiMessage original, Problem problem) throws IOException {
+            return quotedBytes(original) + Integer.parseInt(problem.context().get("maximumRequestBytes"))
+                - Integer.parseInt(problem.context().get("encodedRequestBytes"));
         }
 
         private Optional<RetainedFrame> fittedSource(int available) throws IOException {

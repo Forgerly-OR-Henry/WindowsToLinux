@@ -1,6 +1,7 @@
 # @compat:toolchain-archives@
 
 import contextlib
+import selectors
 import stat
 import threading
 
@@ -133,6 +134,39 @@ def probe_output(command):
             tracked_process_finished(process)
         output.seek(0)
         return code, output.read(8192).decode('utf-8', errors='replace')
+
+
+def managed_dotnet_probe_output(command, directory):
+    environment = {'PATH': '/usr/bin:/bin', 'LC_ALL': 'C', 'HOME': '/nonexistent',
+                   'DOTNET_CLI_HOME': '/nonexistent', 'DOTNET_ROOT': str(directory),
+                   'DOTNET_MULTILEVEL_LOOKUP': '0', 'DOTNET_CLI_TELEMETRY_OPTOUT': '1'}
+    deadline = time.monotonic() + min(60, remaining())
+    output = bytearray()
+    with subprocess.Popen(command, cwd=directory, env=environment, stdin=subprocess.DEVNULL,
+                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True,
+                          close_fds=True) as process:
+        tracked_process_started(process)
+        try:
+            with selectors.DefaultSelector() as reader:
+                reader.register(process.stdout, selectors.EVENT_READ)
+                while True:
+                    wait = deadline - time.monotonic()
+                    if wait <= 0 or not reader.select(wait):
+                        raise subprocess.TimeoutExpired(command, 60)
+                    chunk = os.read(process.stdout.fileno(), 8193 - len(output))
+                    if not chunk:
+                        break
+                    output.extend(chunk)
+                    if len(output) > 8192:
+                        fail('probe', 'managed .NET SDK listing exceeded its output budget')
+            return process.wait(timeout=max(0, deadline - time.monotonic())), output.decode('utf-8')
+        finally:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+            tracked_process_finished(process)
 
 
 DEADLINE = None

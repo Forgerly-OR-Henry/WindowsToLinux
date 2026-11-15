@@ -174,7 +174,7 @@ public final class DeploymentAiJson {
         policy += " Submit exactly one native submit_result call. Its arguments are the complete requested result. Text alone is not a submission.";
         if (purpose == AiPurpose.APPROVAL) {
             var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
-            policy += "\n" + reviewContract(evidence, layout, nativeObservation);
+            policy += "\n" + reviewContract(evidence, layout, nativeObservation, facts);
         }
         if (evidence.isPresent()) policy += "\n" + evidence.orElseThrow().instructions();
         var conversation = purpose == AiPurpose.APPROVAL ? approvalConversation : null;
@@ -273,8 +273,11 @@ public final class DeploymentAiJson {
 
     private static String reviewContract(Optional<DeploymentCommandSourceEvidence> evidence,
                                           gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout,
-                                          boolean nativeObservation) {
+                                          boolean nativeObservation, Map<String, ?> facts) {
         if (nativeObservation) return DeploymentHelperReviewContract.nativeObservationText(layout);
+        if ("deployment.candidate.verify.v1".equals(facts.get("operation"))
+            && facts.get("currentCommandEvidence") instanceof Map<?, ?> current && current.containsKey("candidateObservation"))
+            return DeploymentHelperReviewContract.candidateVerificationText(layout);
         if (evidence.filter(DeploymentCommandSourceEvidence::bindingReview).isPresent())
             return DeploymentHelperReviewContract.bindingText(layout);
         if (evidence.filter(DeploymentCommandSourceEvidence::toolchainReview).isPresent())
@@ -286,6 +289,7 @@ public final class DeploymentAiJson {
                                          String revision, TaskContext task, boolean extended,
                                          Optional<DeploymentCommandSourceEvidence.Reader> evidenceReader)
         throws ApiException, CapabilityOutcomeException, IOException {
+        if (evidenceReader.isPresent()) evidenceReader.orElseThrow().offerInitialSource(messages);
         while (true) {
             AiResponse response;
             try {

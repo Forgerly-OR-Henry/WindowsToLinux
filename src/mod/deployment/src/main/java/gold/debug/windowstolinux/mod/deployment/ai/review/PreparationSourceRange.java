@@ -11,10 +11,16 @@ record PreparationSourceRange(String section, int offset, int next) {
     private static final Pattern PYTHON_SECTION = Pattern.compile("(?m)^(?:@|def |class |if __name__ == )");
     private static final Set<String> NODE_HELPER_INITIAL = Set.of("selectedRelease", "pinnedMirrorRuntime", "def checksum_text(");
     private static final Set<String> NODE_TRANSFER_INITIAL = Set.of("mirrorRouteAdmission", "mirrorTLS", "mirrorDigest");
+    private static final Set<String> NODE_HELPER_SUPPLEMENT = Set.of("prepareDispatch", "pythonLauncher",
+        "nodeMirroredMetadata", "nodeMirroredArchive", "archiveTarValidation", "nodeArchiveDigest",
+        "nodeManagedArchive", "archiveVersionProbe", "nodePreparationLock");
+    private static final Set<String> NODE_TRANSFER_SUPPLEMENT = Set.of("class MirrorRedirect(", "mirrorDownload");
     private static final Set<String> APT_DEPENDENCY_WORKER_INITIAL = Set.of(
         "def dependency_manifest(", "def dependency_open_core_events(", "def dependency_worker(",
         "def dependency_supervise(", "def dependency_stop_owned(", "def dependency_validate_apt(",
-        "def dependency_transaction(", "def dependency_main(");
+        "def dependency_transaction(", "def dependency_main(", "def dependency_mirror_environment(",
+        "def dependency_static_identity(", "def dependency_validate_ownership(", "def dependency_events_read(",
+        "def dependency_ack_record(", "def dependency_result(", "dependencyAptBinaryPaths", "def dependency_protected(");
     private static final Set<String> APT_DEPENDENCY_SHELL_INITIAL = Set.of(
         "aptGuardedRepositoryAdmission", "aptSignedUpdateToFrozenInstall", "aptDispatch",
         "aptSecurityAndFrozenTransaction");
@@ -44,13 +50,14 @@ record PreparationSourceRange(String section, int offset, int next) {
         boolean java = ecosystem.equals("JAVA");
         boolean archive = java || ecosystem.equals("GO") || ecosystem.equals("DOTNET") || node;
         if (archive) {
-            ranges.addAll(archiveInstallation(helper));
+            ranges.addAll(archiveInstallation(helper, ecosystem.equals("DOTNET")));
             ranges.add(between(helper, "archiveVersionProbe", "def probe(ecosystem, directory, expected):",
                 java ? "\n    if ecosystem == 'PYTHON':\n        run(" : "\n    if ecosystem == 'JAVA':\n        run("));
             ranges.add(python(helper, "def extract(archive, destination):"));
-            if (ecosystem.equals("DOTNET")) ranges.add(between(helper, "dotnetSystemReuse",
-                "def discover_system(ecosystem, identity):", "\n    binaries = "));
-            else ranges.add(python(helper, "def discover_system("));
+            if (ecosystem.equals("DOTNET")) {
+                ranges.add(between(helper, "dotnetSystemReuse", "def discover_system(ecosystem, identity):", "\n    binaries = "));
+                ranges.addAll(dotnetProbe(helper));
+            } else ranges.add(python(helper, "def discover_system("));
             if (node) {
                 for (String function : List.of("checksum_text", "saved_installation_marker", "verify_system"))
                     ranges.add(python(helper, "def " + function + "("));
@@ -93,7 +100,9 @@ record PreparationSourceRange(String section, int offset, int next) {
 
     private static List<PreparationSourceRange> pythonSourcePreparation(String helper) throws IOException {
         var ranges = new ArrayList<>(sourceIsolation(helper));
-        int worker = offset(helper, "PYTHON_SOURCE_WORKER = SOURCE_WORKER + r'''");
+        int worker = offset(helper, "\nPYTHON_SOURCE_WORKER = SOURCE_WORKER + ");
+        ranges.add(between(helper, "pythonMakeResetidsProbe", "PYTHON_MAKE_RESETIDS_PROBE = r'''",
+            "\nPYTHON_SOURCE_WORKER = SOURCE_WORKER + "));
         ranges.add(between(helper, "pythonMakeInvocation", "def make_python(release):",
             "\n\nfailure = 90", worker));
         ranges.add(between(helper, "pythonSourceWorker", "\nfailure = 90\n", "\n\ndef main(args):", worker));
@@ -156,15 +165,32 @@ record PreparationSourceRange(String section, int offset, int next) {
         return new PreparationSourceRange("selectedRelease", start, next < 0 ? end : Math.min(next, end));
     }
 
-    private static List<PreparationSourceRange> archiveInstallation(String helper) throws IOException {
+    private static List<PreparationSourceRange> archiveInstallation(String helper, boolean dotnet) throws IOException {
         var install = python(helper, "def install(ecosystem, identity, url, algorithm, expected, layout):");
         int alternate = helper.indexOf("\n            else:\n", install.offset());
-        int finish = helper.indexOf("\n            probe(ecosystem, destination, identity)", alternate);
+        int finish = helper.indexOf("\n            if not dotnet:\n                probe(ecosystem, destination, identity)", alternate);
         if (alternate < install.offset() || finish <= alternate || finish >= install.next() ||
             !helper.substring(install.offset(), alternate).contains("if layout in ('flat', 'archive'):"))
             throw new IOException("Fixed archive installation branch unavailable");
-        return List.of(new PreparationSourceRange("archiveInstall", install.offset(), alternate),
+        if (dotnet) return List.of(new PreparationSourceRange("archiveInstall", install.offset(), alternate),
             new PreparationSourceRange("archiveReceipt", finish, install.next()));
+        var admission = between(helper, "archiveInstall", "def install(ecosystem, identity, url, algorithm, expected, layout):",
+            "\n        previous_dotnet = load_managed_dotnet_marker(", install.offset());
+        var download = between(helper, "archiveDownload", "\n    work_parent = ROOT / 'work'",
+            "\n        dotnet_probe_files = managed_dotnet_probe_identity(", admission.next());
+        var copy = between(helper, "archiveCopy", "\n        with create_installation_directory(destination, tracked):",
+            "\n            else:\n", download.next());
+        var receipt = between(helper, "archiveReceipt", "\n            if not dotnet:\n                probe(ecosystem, destination, identity)",
+            "\n            if dotnet:\n", finish);
+        int seal = helper.indexOf("\n            elif tracked is None:\n                marker.write_text(", receipt.next());
+        if (seal < receipt.next() || seal >= install.next()) throw new IOException("Fixed archive completion branch unavailable");
+        return List.of(admission, download, copy, receipt, new PreparationSourceRange("archiveSeal", seal, install.next()));
+    }
+
+    static List<PreparationSourceRange> dotnetProbe(String helper) throws IOException {
+        return List.of(python(helper, "def managed_dotnet_probe_output("),
+            between(helper, "managedDotnetProbeIdentityAndExecution", "\ndef managed_dotnet_file_digest(",
+                "\ndef install(ecosystem, identity, url, algorithm, expected, layout):"));
     }
 
     static List<PreparationSourceRange> nodeHelper(String helper, boolean diagnosed) throws IOException {
@@ -174,6 +200,7 @@ record PreparationSourceRange(String section, int offset, int next) {
             "\n        data.extractall(root, members=members)", extract.offset());
         var ranges = new ArrayList<>(List.of(
             between(helper, "prepareDispatch", "    prepare-toolchains)\n", "    retain)"),
+            between(helper, "pythonLauncher", "prepare_official_toolchains() {\n", "\nSHIPPED_CATALOG = "),
             selectedRelease(helper, "NODE", release),
             between(helper, "pinnedMirrorRuntime", "        for path in (runtime, policy_path):",
                 "\n    return MIRROR_MODULE, policy", offset(helper, "def task_mirrors(")),
@@ -203,6 +230,10 @@ record PreparationSourceRange(String section, int offset, int next) {
         return ranges.stream().filter(range -> NODE_HELPER_INITIAL.contains(range.section())).toList();
     }
 
+    static List<PreparationSourceRange> nodeHelperSupplement(List<PreparationSourceRange> ranges) {
+        return ranges.stream().filter(range -> NODE_HELPER_SUPPLEMENT.contains(range.section())).toList();
+    }
+
     static List<PreparationSourceRange> nodeTransfer(String runtime, boolean credentials) throws IOException {
         var ranges = new ArrayList<>(List.of(
             between(runtime, "policyDigest", "    @classmethod\n    def from_environment(", "\n    def remaining("),
@@ -226,6 +257,10 @@ record PreparationSourceRange(String section, int offset, int next) {
 
     static List<PreparationSourceRange> nodeTransferInitial(List<PreparationSourceRange> ranges) {
         return ranges.stream().filter(range -> NODE_TRANSFER_INITIAL.contains(range.section())).toList();
+    }
+
+    static List<PreparationSourceRange> nodeTransferSupplement(List<PreparationSourceRange> ranges) {
+        return ranges.stream().filter(range -> NODE_TRANSFER_SUPPLEMENT.contains(range.section())).toList();
     }
 
     static List<PreparationSourceRange> transfer(String runtime, String ecosystem, boolean credentials,

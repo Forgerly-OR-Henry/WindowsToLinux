@@ -32,6 +32,7 @@ class DeploymentHelperInstallerContractTest {
     private static final String LEGACY_ENTRY_DIGEST = "6eb9b24576e51e318044f67b1c77fc34b41c4c979cadfec1a5eb799c5122a91a";
     private static final String R33_HELPER_DIGEST = "65686d1c5fe7dc22fdf4529bae7d14822477452826cbcbd52697570b89928d07";
     private static final String R35_HELPER_DIGEST = "7a61bae1181f600a3a5df9675a878e6359cd3cc3f9823981df7e0db467dee8a9";
+    private static final String R37_HELPER_DIGEST = "7ec53edbc9295fe8b964aa7756079e44d8e51b6ca6bfe83585e7dbeb9dca4a67";
     private Path temporary;
 
     @BeforeEach
@@ -300,7 +301,7 @@ class DeploymentHelperInstallerContractTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {R33_HELPER_DIGEST, R35_HELPER_DIGEST})
+    @ValueSource(strings = {R33_HELPER_DIGEST, R35_HELPER_DIGEST, R37_HELPER_DIGEST})
     void previousHelperIsTrustedOnlyForTheOriginalLayoutUpgrade(String digest) {
         var original = DeploymentRemoteLayout.original();
         var custom = new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths(

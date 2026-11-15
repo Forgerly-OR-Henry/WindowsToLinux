@@ -179,6 +179,13 @@ class DeploymentMirrorTasksTest extends DeploymentRuntimeFixture {
                     assertEquals(inputBytes.length, executable.get("stdinBytes"));
                     assertEquals(inputBytes.length, ((List<?>) executable.get("stdinLineBytes")).stream()
                         .mapToInt(value -> (int) value).sum());
+                    assertEquals(List.of(8, 36, 30, 70, 52, 33, 9, 23, 8), executable.get("stdinLineBytes"));
+                    assertEquals(List.of(0, 0, 2, 2, 2, 2, 2, 0, 0), executable.get("stdinLeadingAsciiSpaces"));
+                    assertEquals(9L, executable.get("stdinLfBytes"));
+                    var json = new com.fasterxml.jackson.databind.ObjectMapper();
+                    var wireFacts = json.readTree(json.readValue(json.writeValueAsString(json.writeValueAsString(facts)), String.class));
+                    assertArrayEquals(inputBytes, wireFacts.path("completeExecutableInput").asText()
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
                     assertEquals(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(inputBytes)),
                         executable.get("stdinSha256"));
                     var startup = (Map<?, ?>) facts.get("builtInSshStartup");

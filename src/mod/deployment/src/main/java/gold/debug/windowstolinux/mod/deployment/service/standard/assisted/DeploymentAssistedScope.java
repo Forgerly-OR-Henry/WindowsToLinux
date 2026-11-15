@@ -530,6 +530,8 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                     "task", supplied.id().toString(), "authenticatedHostFingerprint", authenticated.fingerprint(),
                     "sshAccount", authenticated.expected().username(),
                     "meaning", "The product connected using the original fixed task, endpoint and SSH account and observed this authenticated host key. The connection grants no privileges. The pinned helper verifies effective UID 0 at execution."));
+            if (operation.equals(DeploymentAssistedCandidateReview.VERIFY))
+                return DeploymentAssistedCandidateReview.verificationEvidence(facts);
         }
         if (intent.semantics().filter(value -> Set.of("deployment.helper.install.v1", "deployment.helper.install.files.v1",
                 "deployment.helper.install.tracked.v1").contains(value.operation())).isPresent()) {
@@ -630,11 +632,11 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 publicationObservationScope carries the selected application's frozen association when captured and describes the scope of the upcoming read.
                 Check the installed helper pin, literal limits and the native observation contract. An earlier publication or health receipt does not prove present state or supply the fresh host grant. Request a verdict only for this observation.
                 """;
-        String instructions = gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources.text(
-            DeploymentAssistedApproval.class, "fixed-effect-review.md");
         String operation = intent.semantics().map(value -> value.operation()).orElse("");
         if (operation.equals(DeploymentAssistedCandidateReview.VERIFY) && facts.containsKey("candidateObservation"))
-            instructions += "\n" + DeploymentAssistedCandidateReview.verificationInstructions();
+            return DeploymentAssistedCandidateReview.verificationInstructions();
+        String instructions = gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources.text(
+            DeploymentAssistedApproval.class, "fixed-effect-review.md");
         if (Set.of("deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1",
             gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION).contains(operation))
             instructions = toolchainReviewInstructions(instructions, operation);
