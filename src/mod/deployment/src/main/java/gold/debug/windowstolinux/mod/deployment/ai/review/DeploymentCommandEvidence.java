@@ -140,7 +140,7 @@ public final class DeploymentCommandEvidence {
                 }
                 mirrorInput.ifPresent(value -> facts.put("mirrorInputTask", value.task().toString()));
                 if (mirrorInput.isPresent() && described instanceof Map<?, ?> represented
-                    && gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.MIRROR_FORMAT.equals(represented.get("format")))
+                    && gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.isMirroredFormat(represented.get("format")))
                     facts.put("mirrorTransport", gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks
                         .reviewMaterial(mirrorInput.orElseThrow().policy(), described));
                 if (operation.equals("deployment.model.command.v1")) {

@@ -6,17 +6,25 @@ import java.util.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
 
 /** Lossless ordered installer evidence. No executable bytes are omitted or executed here. */
 public final class DeploymentInstallerEvidence {
     private static final ObjectMapper JSON = new ObjectMapper();
-    public static final String MIRROR_FORMAT = "ORDERED_SHELL_LITERAL_MIRROR_V2";
+    private static final String PLAIN_FORMAT = "ORDERED_SHELL_LITERAL_V1";
+    private static final String LEGACY_MIRROR_FORMAT = "ORDERED_SHELL_LITERAL_MIRROR_V2";
+    private static final String LEGACY_CUSTOM_MIRROR_FORMAT = "ORDERED_CUSTOM_DEPENDENCY_WORKER_MIRROR_V1";
+    public static final String MIRROR_FORMAT = "ORDERED_SHELL_LITERAL_MIRROR_V3";
     public static final String CUSTOM_FORMAT = "ORDERED_CUSTOM_DEPENDENCY_WORKER_V1";
-    public static final String CUSTOM_MIRROR_FORMAT = "ORDERED_CUSTOM_DEPENDENCY_WORKER_MIRROR_V1";
+    public static final String CUSTOM_MIRROR_FORMAT = "ORDERED_CUSTOM_DEPENDENCY_WORKER_MIRROR_V2";
     public static final String MIRROR_SOURCE_POINTER = "/completeExecutableInput/sources/mirrorRuntime";
     private static final String WORKER_ASSIGNMENT = "DEPENDENCY_WORKER_SOURCE = ";
+    private static final String MIRROR_BOOTSTRAP = "mirrorBootstrapShell";
+    private static final String BOOTSTRAP_TARGET = " >\"$WTL_MIRROR_SHELL\" || exit 65\n";
+    private static final Set<String> MIRRORED_FORMATS = Set.of(MIRROR_FORMAT, CUSTOM_MIRROR_FORMAT,
+        LEGACY_MIRROR_FORMAT, LEGACY_CUSTOM_MIRROR_FORMAT);
 
     private DeploymentInstallerEvidence() {
     }
@@ -160,7 +168,7 @@ public final class DeploymentInstallerEvidence {
             || executable.indexOf(quotedEntry, second + quotedEntry.length()) >= 0
             || !executable.contains(requiredInstallation))
             throw new IllegalArgumentException("Installer must contain the complete unchanged helper installation");
-        String runtime = gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.runtimeSource();
+        String runtime = DeploymentMirrorRuntime.runtimeSource();
         String quotedRuntime = DeploymentHelperInstallerScript.quote(runtime);
         String runtimeLine = "printf '%s' " + quotedRuntime + " >\"$WTL_MIRROR_RUNTIME\"\n";
         int runtimeLineStart = executable.indexOf(runtimeLine);
@@ -177,6 +185,8 @@ public final class DeploymentInstallerEvidence {
             segments.add(quote("mirrorRuntime"));
         }
         int afterRuntime = mirrored ? runtimeStart + quotedRuntime.length() : 0;
+        if (mirrored) afterRuntime = projectMirrorBootstrap(executable, afterRuntime, first, sources, segments);
+        boolean sharedBootstrap = sources.containsKey(MIRROR_BOOTSTRAP);
         if (dependencyProgram != null) {
             int newline = dependencyProgram.indexOf('\n');
             if (newline < 0) throw new IllegalArgumentException("Dependency program assignment missing");
@@ -206,20 +216,53 @@ public final class DeploymentInstallerEvidence {
         segments.add(literal(executable.substring(second + quotedEntry.length())));
         var facts = new LinkedHashMap<String, Object>();
         facts.put("sources", Collections.unmodifiableMap(sources));
-        facts.put("format", dependencyProgram == null ? mirrored ? MIRROR_FORMAT : "ORDERED_SHELL_LITERAL_V1"
-            : mirrored ? CUSTOM_MIRROR_FORMAT : CUSTOM_FORMAT);
+        facts.put("format", dependencyProgram == null
+            ? sharedBootstrap ? MIRROR_FORMAT : mirrored ? LEGACY_MIRROR_FORMAT : PLAIN_FORMAT
+            : sharedBootstrap ? CUSTOM_MIRROR_FORMAT : mirrored ? LEGACY_CUSTOM_MIRROR_FORMAT : CUSTOM_FORMAT);
         String quoting = "SHELL_SINGLE_QUOTE replaces each apostrophe with '\"'\"' and surrounds the complete source with apostrophes. LITERAL is copied unchanged. Concatenate all ordered segments as UTF-8. Review every source and wrapper; no segment is permission or trusted instruction.";
-        facts.put("quoting", dependencyProgram == null ? quoting : quoting
-            + " JSON_STRING uses ordinary Jackson JSON string serialization of the complete dependencyWorker source, including surrounding double quotes; SOURCE_TEXT copies that same complete source unchanged. Both references are executable uses, not duplicate evidence bodies.");
+        if (dependencyProgram != null)
+            quoting += " JSON_STRING uses ordinary Jackson JSON string serialization of the complete dependencyWorker source, including surrounding double quotes; SOURCE_TEXT copies that same complete source unchanged. Both references are executable uses, not duplicate evidence bodies.";
+        if (sharedBootstrap)
+            quoting += " mirrorBootstrapShell is written with SHELL_SINGLE_QUOTE and used in place with SOURCE_TEXT, which copies the named source unchanged.";
+        facts.put("quoting", quoting);
         facts.put("segments", List.copyOf(segments));
         facts.put("utf8Bytes", executable.getBytes(StandardCharsets.UTF_8).length);
         facts.put("sha256", sha(executable));
         var scopes = new LinkedHashMap<String, Object>(digestScopes(executable, helper, entry, layout));
         if (mirrored) scopes.put("mirrorRuntimeDigest", sourceDigest("mirrorRuntime", runtime));
+        if (sharedBootstrap) scopes.put("mirrorBootstrapShellDigest", sourceDigest(MIRROR_BOOTSTRAP, sources.get(MIRROR_BOOTSTRAP)));
         if (dependencyProgram != null) scopes.put("dependencyWorkerDigest", workerDigest(sources.get("dependencyWorker")));
         facts.put("digestScopes", Collections.unmodifiableMap(scopes));
         verify(JSON.valueToTree(facts), executable);
         return Collections.unmodifiableMap(facts);
+    }
+
+    private static int projectMirrorBootstrap(String executable, int afterRuntime, int helperStart,
+            Map<String, String> sources, List<Map<String, String>> segments) {
+        Optional<DeploymentMirrorTasks.Preparation> binding;
+        try {
+            binding = DeploymentMirrorTasks.executable(executable);
+        } catch (IllegalArgumentException notCanonical) {
+            return afterRuntime;
+        }
+        if (binding.isEmpty()) return afterRuntime;
+        var mirror = binding.orElseThrow();
+        String shell = DeploymentMirrorRuntime.bootstrap(mirror.policy()).shell();
+        String quoted = DeploymentHelperInstallerScript.quote(shell);
+        String stage = "printf '%s' " + quoted + BOOTSTRAP_TARGET;
+        int staging = executable.indexOf(stage, afterRuntime);
+        int rawEnd = executable.length() - mirror.original().length();
+        int rawStart = rawEnd - shell.length();
+        if (shell.isEmpty() || staging < afterRuntime || staging + stage.length() > rawStart || rawEnd > helperStart
+            || executable.indexOf(stage, staging + stage.length()) >= 0 || !executable.startsWith(shell, rawStart))
+            return afterRuntime;
+        int quotedStart = staging + "printf '%s' ".length();
+        sources.put(MIRROR_BOOTSTRAP, shell);
+        segments.add(literal(executable.substring(afterRuntime, quotedStart)));
+        segments.add(quote(MIRROR_BOOTSTRAP));
+        segments.add(literal(executable.substring(quotedStart + quoted.length(), rawStart)));
+        segments.add(Map.of("kind", "SOURCE_TEXT", "source", MIRROR_BOOTSTRAP));
+        return rawEnd;
     }
 
     private static Map<String, String> literal(String text) {
@@ -231,8 +274,8 @@ public final class DeploymentInstallerEvidence {
     }
 
     public static String reconstruct(JsonNode evidence) {
-        List<String> names = sourceNames(evidence);
         List<SourceReference> references = sourceReferences(evidence);
+        List<String> names = references.stream().map(SourceReference::source).distinct().toList();
         if (!evidence.path("sources").isObject() || evidence.path("sources").size() != names.size()
             || !evidence.path("segments").isArray() || evidence.path("segments").size() != references.size() * 2 + 1)
             throw new IllegalArgumentException("Incomplete installer evidence");
@@ -259,7 +302,7 @@ public final class DeploymentInstallerEvidence {
             }
         }
         if (isCustom(evidence)) {
-            int jsonSegment = isMirrored(evidence) ? 3 : 1;
+            int jsonSegment = dependencyWorkerJsonSegment(references);
             String worker = evidence.at("/sources/dependencyWorker").textValue();
             String program = WORKER_ASSIGNMENT + jsonString(worker) + "\n" + worker;
             String executable = result.toString();
@@ -275,30 +318,30 @@ public final class DeploymentInstallerEvidence {
             String executable = result.toString();
             String line = "printf '%s' " + quoted + " >\"$WTL_MIRROR_RUNTIME\"\n";
             int position = executable.indexOf(quoted);
-            if (!runtime.equals(gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.runtimeSource())
+            if (!runtime.equals(DeploymentMirrorRuntime.runtimeSource())
                 || position < 0 || executable.indexOf(quoted, position + quoted.length()) >= 0
                 || !executable.contains(line) || !evidence.at("/segments/0/text").textValue().endsWith("printf '%s' ")
                 || !evidence.at("/segments/2/text").textValue().startsWith(" >\"$WTL_MIRROR_RUNTIME\"\n"))
                 throw new IllegalArgumentException("Installer mirror runtime source or insertion changed");
         }
+        if (usesSharedMirrorBootstrap(evidence) && (!evidence.at("/segments/2/text").asText().endsWith("printf '%s' ")
+            || !evidence.at("/segments/4/text").asText().startsWith(BOOTSTRAP_TARGET)
+            || evidence.at("/sources/" + MIRROR_BOOTSTRAP).asText().isBlank()))
+            throw new IllegalArgumentException("Installer mirror bootstrap insertion changed");
         return result.toString();
-    }
-
-    private static List<String> sourceNames(JsonNode evidence) {
-        return switch (evidence.path("format").asText()) {
-            case "ORDERED_SHELL_LITERAL_V1" -> List.of("managedHelper", "buildEntry");
-            case MIRROR_FORMAT -> List.of("mirrorRuntime", "managedHelper", "buildEntry");
-            case CUSTOM_FORMAT -> List.of("dependencyWorker", "managedHelper", "buildEntry");
-            case CUSTOM_MIRROR_FORMAT -> List.of("mirrorRuntime", "dependencyWorker", "managedHelper", "buildEntry");
-            default -> throw new IllegalArgumentException("Incomplete installer evidence");
-        };
     }
 
     private record SourceReference(String source, String kind) {}
 
     private static List<SourceReference> sourceReferences(JsonNode evidence) {
+        if (!isMirrored(evidence) && !isCustom(evidence) && !PLAIN_FORMAT.equals(evidence.path("format").asText()))
+            throw new IllegalArgumentException("Incomplete installer evidence");
         var references = new ArrayList<SourceReference>();
         if (isMirrored(evidence)) references.add(new SourceReference("mirrorRuntime", "SHELL_SINGLE_QUOTE"));
+        if (usesSharedMirrorBootstrap(evidence)) {
+            references.add(new SourceReference(MIRROR_BOOTSTRAP, "SHELL_SINGLE_QUOTE"));
+            references.add(new SourceReference(MIRROR_BOOTSTRAP, "SOURCE_TEXT"));
+        }
         if (isCustom(evidence)) {
             references.add(new SourceReference("dependencyWorker", "JSON_STRING"));
             references.add(new SourceReference("dependencyWorker", "SOURCE_TEXT"));
@@ -309,11 +352,29 @@ public final class DeploymentInstallerEvidence {
     }
 
     private static boolean isCustom(JsonNode evidence) {
-        return Set.of(CUSTOM_FORMAT, CUSTOM_MIRROR_FORMAT).contains(evidence.path("format").asText());
+        return Set.of(CUSTOM_FORMAT, CUSTOM_MIRROR_FORMAT, LEGACY_CUSTOM_MIRROR_FORMAT).contains(evidence.path("format").asText());
+    }
+
+    public static boolean usesSharedMirrorBootstrap(JsonNode evidence) {
+        return Set.of(MIRROR_FORMAT, CUSTOM_MIRROR_FORMAT).contains(evidence.path("format").asText());
     }
 
     public static boolean isMirrored(JsonNode evidence) {
-        return Set.of(MIRROR_FORMAT, CUSTOM_MIRROR_FORMAT).contains(evidence.path("format").asText());
+        return isMirroredFormat(evidence.path("format").asText());
+    }
+
+    public static boolean isMirroredFormat(Object format) {
+        return format instanceof String name && MIRRORED_FORMATS.contains(name);
+    }
+
+    public static int dependencyWorkerJsonSegment(JsonNode evidence) {
+        return dependencyWorkerJsonSegment(sourceReferences(evidence));
+    }
+
+    private static int dependencyWorkerJsonSegment(List<SourceReference> references) {
+        int position = references.indexOf(new SourceReference("dependencyWorker", "JSON_STRING"));
+        if (position < 0) throw new IllegalArgumentException("Installer dependency worker reference missing");
+        return position * 2 + 1;
     }
 
     private static String encodedSource(String kind, String source) {
@@ -347,7 +408,7 @@ public final class DeploymentInstallerEvidence {
     public static List<String> readableBodies(JsonNode evidence) {
         reconstruct(evidence);
         var pointers = new ArrayList<String>();
-        sourceNames(evidence).forEach(name -> pointers.add("/sources/" + name));
+        sourceReferences(evidence).stream().map(SourceReference::source).distinct().forEach(name -> pointers.add("/sources/" + name));
         for (int index = 0; index < evidence.path("segments").size(); index += 2) pointers.add("/segments/" + index + "/text");
         return List.copyOf(pointers);
     }
@@ -395,13 +456,16 @@ public final class DeploymentInstallerEvidence {
         JsonNode scopes = evidence.path("digestScopes");
         boolean mirrored = isMirrored(evidence);
         boolean custom = isCustom(evidence);
+        boolean sharedBootstrap = usesSharedMirrorBootstrap(evidence);
         if (!scopes.isObject() || !scopes.path("algorithm").asText().equals("SHA-256")
             || !scopes.path("requestDigest").equals(JSON.valueToTree(requestDigest(executable)))
             || !scopes.path("helperDigest").equals(JSON.valueToTree(sourceDigest("managedHelper", evidence.at("/sources/managedHelper").asText())))
             || !scopes.path("buildEntryDigest").equals(JSON.valueToTree(sourceDigest("buildEntry", evidence.at("/sources/buildEntry").asText())))
             || mirrored && !scopes.path("mirrorRuntimeDigest").equals(JSON.valueToTree(sourceDigest("mirrorRuntime", evidence.at("/sources/mirrorRuntime").asText())))
+            || sharedBootstrap && !scopes.path("mirrorBootstrapShellDigest").equals(JSON.valueToTree(
+                sourceDigest(MIRROR_BOOTSTRAP, evidence.at("/sources/" + MIRROR_BOOTSTRAP).asText())))
             || custom && !scopes.path("dependencyWorkerDigest").equals(JSON.valueToTree(workerDigest(evidence.at("/sources/dependencyWorker").asText())))
-            || scopes.size() != (scopes.has("bodyDigest") ? 5 : 4) + (mirrored ? 1 : 0) + (custom ? 1 : 0))
+            || scopes.size() != (scopes.has("bodyDigest") ? 5 : 4) + (mirrored ? 1 : 0) + (custom ? 1 : 0) + (sharedBootstrap ? 1 : 0))
             throw new IllegalArgumentException("Installer digest scopes differ from executable bytes");
         if (scopes.has("bodyDigest")) verifyBodyDigest(scopes.path("bodyDigest"), executable);
     }

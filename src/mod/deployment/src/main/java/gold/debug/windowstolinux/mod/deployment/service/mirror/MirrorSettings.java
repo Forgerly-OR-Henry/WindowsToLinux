@@ -12,6 +12,7 @@ public record MirrorSettings(int formatVersion, Map<DownloadPoint, List<Row>> po
         Objects.requireNonNull(points).forEach((point, rows) -> {
             if (rows == null || rows.isEmpty() || rows.size() > 3)
                 throw new IllegalArgumentException("A download point requires 1-3 rows");
+            if (point == DownloadPoint.GNU_MAKE_SOURCE) validateGnuMakeRow(rows);
             copy.put(Objects.requireNonNull(point), List.copyOf(rows));
         });
         points = Collections.unmodifiableMap(copy);
@@ -19,6 +20,13 @@ public record MirrorSettings(int formatVersion, Map<DownloadPoint, List<Row>> po
         if (serverRegions.size() > 1024 || serverRegions.entrySet().stream().anyMatch(e ->
             e.getKey().isBlank() || e.getKey().length() > 256 || !e.getValue().matches("[A-Z]{2}")))
             throw new IllegalArgumentException("Server region correction requires server ID and ISO country code");
+    }
+
+    private static void validateGnuMakeRow(List<Row> rows) {
+        var row = rows.getFirst();
+        if (rows.size() != 1 || !row.customUrl().isEmpty() || !row.secretRef().isEmpty()
+            || !row.providerId().isEmpty() && !row.providerId().equals(DownloadPoint.GNU_MAKE_PROVIDER))
+            throw new IllegalArgumentException("GNU Make requires one fixed official provider without credentials");
     }
 
     public record Row(String providerId, String customUrl, boolean automatic, boolean privacyConsent,
@@ -69,7 +77,9 @@ public record MirrorSettings(int formatVersion, Map<DownloadPoint, List<Row>> po
 
     public static MirrorSettings defaults() {
         var points = new EnumMap<DownloadPoint, List<Row>>(DownloadPoint.class);
-        for (var point : DownloadPoint.values()) points.put(point, List.of(Row.auto(false)));
+        for (var point : DownloadPoint.values()) {
+            if (point != DownloadPoint.GNU_MAKE_SOURCE) points.put(point, List.of(Row.auto(false)));
+        }
         return new MirrorSettings(1, points, Map.of());
     }
 

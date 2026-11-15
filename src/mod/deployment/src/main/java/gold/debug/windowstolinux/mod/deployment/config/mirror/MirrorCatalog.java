@@ -96,6 +96,21 @@ public record MirrorCatalog(int formatVersion, String catalogVersion, Map<String
             if (providers.stream().noneMatch(p -> p.official() && p.sources().containsKey(point)))
                 throw new IllegalArgumentException("Missing official source for " + point);
         }
+        validateGnuMakeSource(points.get(DownloadPoint.GNU_MAKE_SOURCE), providers);
+    }
+
+    private static void validateGnuMakeSource(Point point, List<Provider> providers) {
+        var make = providers.stream().filter(provider -> provider.sources().containsKey(DownloadPoint.GNU_MAKE_SOURCE)).toList();
+        if (make.size() != 1 || !make.getFirst().official() || !make.getFirst().id().equals(DownloadPoint.GNU_MAKE_PROVIDER)
+            || !make.getFirst().excludedCountries().isEmpty())
+            throw new IllegalArgumentException("GNU Make requires the fixed official provider");
+        var source = make.getFirst().sources().get(DownloadPoint.GNU_MAKE_SOURCE);
+        String origin = DownloadPoint.GNU_MAKE_ORIGIN;
+        if (!source.complete() || !point.protocol().equals("HTTP") || !point.sourceOrigins().equals(List.of(origin))
+            || !source.baseUrl().equals(origin) || !source.allowedHosts().equals(List.of(MirrorSettings.urlHost(origin)))
+            || !source.routes().equals(List.of(new Route(origin, origin))) || !source.repoTemplates().isEmpty()
+            || !point.repoTemplates().isEmpty() || !source.redirectRules().isEmpty())
+            throw new IllegalArgumentException("GNU Make catalog route differs from the fixed source");
     }
     public Point point(DownloadPoint point) { return points.get(point); }
     public List<Provider> providersFor(DownloadPoint point) {

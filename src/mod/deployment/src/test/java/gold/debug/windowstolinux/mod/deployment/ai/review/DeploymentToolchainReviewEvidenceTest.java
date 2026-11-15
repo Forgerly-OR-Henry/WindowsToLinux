@@ -82,7 +82,7 @@ class DeploymentToolchainReviewEvidenceTest {
                 intent, request, fixture.layout).orElseThrow();
             var sources = (ObjectNode) facts.at("/completeExecutableInput/sources");
             var exactSources = new LinkedHashMap<String, String>();
-            for (String name : List.of("mirrorRuntime", "managedHelper", "buildEntry")) {
+            for (String name : List.of("mirrorRuntime", "mirrorBootstrapShell", "managedHelper", "buildEntry")) {
                 var descriptor = sources.path(name);
                 assertEquals("EVIDENCE_PAGES", descriptor.path("retrieval").asText());
                 String source = collect(evidence, descriptor, "installerReviewEvidence");
@@ -2556,12 +2556,16 @@ class DeploymentToolchainReviewEvidenceTest {
 
     @Test
     void sourceBuiltPythonReviewIncludesTheActualSignedAptPathAndExactSourceRanges() throws Exception {
-        try (var fixture = new MirroredInstallerTestFixture(); var command = diagnosedPreparation(fixture, "PYTHON", "3.12")) {
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.APT_UBUNTU, DownloadPoint.PYTHON_DISTRIBUTION);
+             var command = diagnosedPreparation(fixture, "PYTHON", "3.12")) {
             var intent = intent("prepare", fixture, command);
             var facts = new DeploymentFixedCommandProtocol(fixture.context).inspect(intent, command, fixture.layout, fixture.task);
             var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), intent, command,
                 fixture.layout).orElseThrow();
-            var projected = JSON.readTree(evidence.messages().getLast().text()).path(PHASE);
+            var factsFrame = JSON.readTree(evidence.messages().getLast().text());
+            assertEquals("https://ftp.gnu.org/gnu/make/",
+                factsFrame.at("/mirrorTransport/frozenPolicy/points/GNU_MAKE_SOURCE/0/baseUrl").asText());
+            var projected = factsFrame.path(PHASE);
             var frame = projected.path("preparationSelection");
             String body = evidence.messages().get(frame.path("ordinal").intValue()).text()
                 .substring(frame.path("headerCharacters").intValue());
@@ -2590,20 +2594,25 @@ class DeploymentToolchainReviewEvidenceTest {
                 "ruby_create_scratch(scratch, unit)", "ruby_remove_scratch(work / 'scratch', unit)",
                 "def verify_native_build_chain(release):", "verify_native_build_chain(release)",
                 "(\"/usr/bin/ar\", \"crs\", \"probe.a\", \"probe.o\")",
-                "make_failure = make_python(release)", "sha256 = download(url, archive, algorithm, expected)")) {
+                "make_failure = make_python(release)", "sha256 = download(url, archive, algorithm, expected)",
+                "GNU_MAKE_SOURCE_BYTES = 2348200", "dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3",
+                "def bootstrap_gnu_make(", "\"./build.sh\"", "bootstrap_gnu_make(resource_limits[0])",
+                "command(GNU_MAKE_PROGRAM, GNU_MAKE_OVERRIDE, \"install\"")) {
                 assertTrue(body.contains(checked), checked);
             }
             var helper = projected.path("installedHelperSource");
             String source = originals.get(helper.path("sourcePointer").asText());
             String snapshot = projected.path("snapshotSha256").asText();
             int diagnostics = source.indexOf("PYTHON_MAKE_FAILURES = {");
-            int next = source.indexOf("PYTHON_MAKE_RESETIDS_PROBE = r'''", diagnostics);
+            int next = source.indexOf("PYTHON_GNU_MAKE_BOOTSTRAP = r'''", diagnostics);
             assertTrue(diagnostics >= 0 && next > diagnostics && next - diagnostics <= 8000);
             assertFalse(body.contains("PYTHON_MAKE_FAILURES = {"));
-            var resetids = helper.at("/namedRanges/pythonMakeResetidsProbe");
-            assertEquals(next, resetids.path(0).asInt());
-            assertTrue(source.substring(next, resetids.path(1).asInt()).startsWith("PYTHON_MAKE_RESETIDS_PROBE = r'''"));
+            var bootstrap = helper.at("/namedRanges/pythonMakeBootstrap");
+            assertEquals(next, bootstrap.path(0).asInt());
+            assertTrue(source.substring(next, bootstrap.path(1).asInt()).startsWith("PYTHON_GNU_MAKE_BOOTSTRAP = r'''"));
             for (var section : Map.of("pythonMakeInvocation", "def make_python(release):",
+                    "def prepare_python_make_source(", "maximum=GNU_MAKE_SOURCE_BYTES",
+                    "def gnu_make_origin(", "the frozen GNU Make route differs from the fixed source",
                     "def download(", "official.hexdigest() != expected",
                     "def preparation_lock(", "def preparation_lock(").entrySet()) {
                 var range = helper.path("namedRanges").path(section.getKey());

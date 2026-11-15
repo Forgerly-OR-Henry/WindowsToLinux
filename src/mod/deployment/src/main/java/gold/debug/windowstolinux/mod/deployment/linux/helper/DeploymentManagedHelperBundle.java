@@ -40,9 +40,9 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "33c1a67cb7a7602d809ae6938ec40e9cd152cab31254acd3ca215c1ef755dcd9";
-    private static final String RUBY_SOURCE_SHA256 = "7facd7fb3cbdc5e02525129428c560c1bd418af60984052eb3c80a4930a8bd19";
-    private static final String PYTHON_SOURCE_SHA256 = "acd9c9685b253a51b72280aa70ab06452610450f02703021412d7f6a7fcf47d0";
+    public static final String EXPECTED_SHA256 = "a68639329a6fb5b5d4af6e8132a2097807266ef96e3b09809f3620570b79dfe5";
+    private static final String RUBY_SOURCE_SHA256 = "39ce9f882948e69367ae9ad39519130995ce49bab2b79971e600e92ab7a7b43c";
+    private static final String PYTHON_SOURCE_SHA256 = "32e4b00659d3c79d2c257fe44fdcf47bcbb302a9203aa5fd8c32b80d06fcedf9";
 
     /**
      * ROOT.
@@ -428,7 +428,7 @@ public final class DeploymentManagedHelperBundle {
     /** Keeps the toolchain fragments of the original fixed publication recovery program. */
     public static String publicationRecoveryFragment(String fragment) {
         return switch (fragment) {
-            case "toolchain/20-installation-boundaries.py", "toolchain/30-managed-installation.py",
+            case "toolchain/10-release-metadata.py", "toolchain/20-installation-boundaries.py", "toolchain/30-managed-installation.py",
                  "toolchain/40-binding-protocol.py" ->
                 "toolchain/publication-recovery-r37/" + fragment.substring("toolchain/".length());
             default -> fragment;

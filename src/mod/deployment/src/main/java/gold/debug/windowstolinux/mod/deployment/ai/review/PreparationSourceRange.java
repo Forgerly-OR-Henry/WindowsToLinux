@@ -17,8 +17,9 @@ record PreparationSourceRange(String section, int offset, int next) {
     private static final Set<String> NODE_TRANSFER_SUPPLEMENT = Set.of("class MirrorRedirect(", "mirrorDownload");
     private static final Set<String> PYTHON_PREPARATION_INITIAL = Set.of(
         "shellStartup", "startupOwnership", "prepareDispatch", "pythonLauncher", "releaseDownloadPoint", "selectedRelease",
-        "def prepare(", "def official_url(",
+        "def official_url(",
         "sourceResourceLimits", "sourceIsolationPreflight", "def source_install(", "def source_unit(", "pythonSourceWorker",
+        "pythonMakeSourceIdentity", "pythonMakeBootstrapExecution",
         "def source_dependencies(", "pythonLegacyReceiverGuard",
         "aptDispatch", "aptSourceSafety", "aptCredentialAndTransportPolicy", "aptSecurityAndFrozenTransaction",
         "mirrorPolicyValidation", "mirrorRouteAdmission", "mirrorTLS", "mirrorDigest",
@@ -109,11 +110,18 @@ record PreparationSourceRange(String section, int offset, int next) {
     private static List<PreparationSourceRange> pythonSourcePreparation(String helper) throws IOException {
         var ranges = new ArrayList<>(sourceIsolation(helper));
         int worker = offset(helper, "\nPYTHON_SOURCE_WORKER = SOURCE_WORKER + ");
-        ranges.add(between(helper, "pythonMakeResetidsProbe", "PYTHON_MAKE_RESETIDS_PROBE = r'''",
+        ranges.add(between(helper, "pythonMakeSourceIdentity", "PYTHON_LEGACY_SOURCE_RECIPE = ",
+            "\nPYTHON_GNU_MAKE_FAILURES = "));
+        ranges.add(between(helper, "pythonMakeBootstrap", "PYTHON_GNU_MAKE_BOOTSTRAP = r'''",
             "\nPYTHON_SOURCE_WORKER = SOURCE_WORKER + "));
-        ranges.add(between(helper, "pythonMakeInvocation", "def make_python(release):",
+        ranges.add(between(helper, "pythonMakeBootstrapExecution", "def bootstrap_gnu_make(",
+            "\nPYTHON_SOURCE_WORKER = SOURCE_WORKER + "));
+        ranges.add(between(helper, "pythonMakeInvocation", "def make_python(",
             "\n\nfailure = 90", worker));
-        ranges.add(between(helper, "pythonSourceWorker", "\nfailure = 90\n", "\n\ndef main(args):", worker));
+        ranges.add(between(helper, "pythonSourceWorker", "\nfailure = 90\n", "\n\ndef python_make_dependency(", worker));
+        ranges.add(between(helper, "pythonSourceAdapter", "def python_make_dependency(", "\n\ndef main(args):"));
+        ranges.add(python(helper, "def prepare_python_make_source("));
+        ranges.add(python(helper, "def gnu_make_origin("));
         ranges.add(between(helper, "pythonLegacyReceiverGuard",
             "    if ecosystem == 'PYTHON' or layout == 'python':\n", "\n    MIRROR_POINT = toolchain_point(ecosystem)"));
         ranges.add(between(helper, "pythonSystemProfile", "def discover_system(ecosystem, identity):", "\n    binaries = "));

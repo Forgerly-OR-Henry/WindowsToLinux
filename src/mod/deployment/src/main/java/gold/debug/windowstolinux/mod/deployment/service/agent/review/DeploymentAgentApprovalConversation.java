@@ -226,7 +226,9 @@ public final class DeploymentAgentApprovalConversation implements DeploymentAppr
                 : "Read-only navigation into the complete current installer sources, whose ordered segments reproduce the exactAction-bound stdin. locations and installerLocations are pointer/range/hash navigation into the complete authoritative sources, not delivery coverage. require_deployer identifies the root management controller and candidate owner. Project scripts follow agent-run -> agent_run -> run_restricted_build -> systemd-run User=wtlb-* -> build-entry -> setpriv -> .build-script. DynamicUser, NoNewPrivileges and capability properties differ between ordinary and container branches; inspect every complete source and every installer segment independently. installerLocations point into literal wrappers: judge installation-time file, digest, service and receipt effects from their complete text. The current installer invokes probe; native-db requires a separate dispatched verb and operation. The layout unit can be claimed and systemd reloaded, without starting or enabling the service. The packaged workspace-recover reports retained candidates and unresolved entries without cleanup. The cleanup functions require a later distinct invocation. Checks in future restricted-build functions do not substitute for current installation-time checks. These counts and locations do not prove target state, waive host installation effects or grant approval.",
             "installerLocations", installerLocations,
             "locations", locations));
-        result.put("digestScopes", evidence.path("digestScopes"));
+        if (DeploymentInstallerEvidence.usesSharedMirrorBootstrap(evidence))
+            result.put("digestScopesPointer", "/completeExecutableInput/digestScopes");
+        else result.put("digestScopes", evidence.path("digestScopes"));
         result.put("requiredExecutableEvidencePointers", DeploymentInstallerEvidence.readableBodies(evidence).stream()
             .map(pointer -> "/completeExecutableInput" + pointer).toList());
         if (customPrerequisites)

@@ -192,6 +192,8 @@ class MirrorPolicy:
 
     @staticmethod
     def validate_redirect(endpoint, original, url):
+        if endpoint.get('providerId') == 'official-gnu_make_source':
+            raise MirrorFailure('the fixed GNU Make source does not permit redirects')
         try:
             return MirrorPolicy.validate_url(endpoint, url)
         except MirrorFailure:

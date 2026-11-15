@@ -23,6 +23,20 @@ import gold.debug.windowstolinux.mod.deployment.service.mirror.MirrorSettings;
 
 final class DeploymentMirrorRuntimeTest {
     @Test
+    void currentToolchainRenderingAddsGnuSourceAndKeepsHistoricalRecoverySubstitutions() {
+        String template = "origins=__WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__\nhosts=__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__\n"
+            + "runtime=__WTL_MIRROR_RUNTIME_SHA256__";
+        String current = DeploymentMirrorRuntime.renderToolchainSources(template);
+        String recovery = DeploymentMirrorRuntime.renderPublicationRecoveryToolchainSources(template);
+        assertTrue(current.contains("\"GNU_MAKE_SOURCE\":[\"https://ftp.gnu.org/gnu/make/\"]"));
+        assertFalse(current.lines().filter(line -> line.startsWith("hosts=")).findFirst().orElseThrow().contains("ftp.gnu.org"));
+        assertFalse(recovery.contains("GNU_MAKE_SOURCE"));
+        assertFalse(recovery.contains("ftp.gnu.org"));
+        assertTrue(current.contains("runtime=" + DeploymentMirrorRuntime.runtimeSha256()));
+        assertTrue(recovery.contains("runtime=0ef501b4eea1fff29bef1da73b089816d135901bb73cef8997bee3c592a74089"));
+    }
+
+    @Test
     void pythonNamedIndexesPreserveArtifactNamesAndMetadataBindings() throws Exception {
         runPythonIndexFixture(List.of(), 11);
     }

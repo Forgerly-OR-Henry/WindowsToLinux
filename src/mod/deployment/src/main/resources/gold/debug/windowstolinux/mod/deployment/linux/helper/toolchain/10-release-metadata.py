@@ -29,6 +29,8 @@ MAX_METADATA = 32 * 1024 * 1024
 MAX_ARCHIVE = 2 * 1024 * 1024 * 1024
 MIRROR_DEFAULT_SOURCE_ORIGINS = __WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__
 MIRROR_DEFAULT_ALLOWED_HOSTS = set(__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__)
+GNU_MAKE_POINT = 'GNU_MAKE_SOURCE'
+GNU_MAKE_ORIGIN = 'https://ftp.gnu.org/gnu/make/'
 
 
 class PreparationFailure(Exception):
@@ -65,6 +67,11 @@ def official_url(url, historical=False):
 class OfficialRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return super().redirect_request(req, fp, code, msg, headers, official_url(newurl))
+
+
+class GnuMakeRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        fail('network', 'the fixed GNU Make source does not permit redirects')
 
 
 MIRROR_POINT = None
@@ -118,7 +125,31 @@ def source_origin(point, index=0):
 
 
 def source_url(point, relative, index=0):
+    if point == GNU_MAKE_POINT:
+        if relative != GNU_MAKE_SOURCE_NAME or index != 0:
+            fail('metadata', 'the GNU Make source must name the fixed release archive')
+        return gnu_make_origin(*task_mirrors()) + relative
     return source_origin(point, index).rstrip('/') + '/' + relative.lstrip('/')
+
+
+def gnu_make_origin(module, policy):
+    if policy is None:
+        if MIRROR_DEFAULT_SOURCE_ORIGINS.get(GNU_MAKE_POINT) != [GNU_MAKE_ORIGIN]:
+            fail('integrity', 'the GNU Make default origin differs from the fixed source')
+        return GNU_MAKE_ORIGIN
+    try:
+        endpoint, = policy.endpoints(GNU_MAKE_POINT)
+    except (module['MirrorFailure'], ValueError):
+        fail('metadata', 'the frozen GNU Make source must have one official endpoint')
+    if (endpoint.get('providerId') != 'official-gnu_make_source' or endpoint.get('official') is not True
+            or endpoint.get('custom') is not False or endpoint.get('protocol') != 'HTTP'
+            or endpoint.get('baseUrl') != GNU_MAKE_ORIGIN or endpoint.get('sourceOrigins') != [GNU_MAKE_ORIGIN]
+            or endpoint.get('allowedHosts') != ['ftp.gnu.org'] or endpoint.get('secretRef')
+            or endpoint.get('repoTemplates') or endpoint.get('redirectRules') or endpoint.get('credentialManaged')
+            or endpoint.get('routes') != [{'origin': GNU_MAKE_ORIGIN, 'prefix': GNU_MAKE_ORIGIN,
+                                          'pattern': '', 'replacement': ''}]):
+        fail('metadata', 'the frozen GNU Make route differs from the fixed source')
+    return GNU_MAKE_ORIGIN
 
 
 def toolchain_point(ecosystem):
@@ -161,38 +192,55 @@ def json_at(url, validator=None):
         fail('metadata', 'invalid official JSON')
 
 
-def download(url, target, algorithm, expected):
+def download(url, target, algorithm, expected, point=None, maximum=MAX_ARCHIVE):
+    if type(maximum) is not int or not 1 <= maximum <= MAX_ARCHIVE:
+        fail('metadata', 'invalid archive download size limit')
+    if point is not None and point != GNU_MAKE_POINT:
+        fail('metadata', 'unsupported explicit archive download point')
     module, policy = task_mirrors()
+    fixed_make = point == GNU_MAKE_POINT
+    if fixed_make:
+        if (url != gnu_make_origin(module, policy) + GNU_MAKE_SOURCE_NAME or url != GNU_MAKE_SOURCE_URL
+                or algorithm != 'sha256' or expected != GNU_MAKE_SOURCE_SHA256
+                or maximum != GNU_MAKE_SOURCE_BYTES):
+            fail('metadata', 'the GNU Make archive identity differs from the fixed release')
+        source = url
+    else:
+        source = official_url(url)
     if policy is not None:
         try:
-            point = 'RUBYGEMS' if any(url.startswith(origin) for origin in MIRROR_DEFAULT_SOURCE_ORIGINS.get('RUBYGEMS', [])) else MIRROR_POINT
-            return module['mirror_transfer'](policy, point, official_url(url), target,
-                                             algorithm, expected, MAX_ARCHIVE)['sha256']
+            if point is None:
+                point = 'RUBYGEMS' if any(url.startswith(origin) for origin in MIRROR_DEFAULT_SOURCE_ORIGINS.get('RUBYGEMS', [])) else MIRROR_POINT
+            result = module['mirror_transfer'](policy, point, source, target, algorithm, expected, maximum)
+            if fixed_make and result['bytes'] != maximum:
+                fail('integrity', 'the GNU Make archive size differs from the fixed release')
+            return result['sha256']
         except module['MirrorFailure'] as error:
             fail('network', str(error))
     official = hashlib.new(algorithm)
     sha256 = hashlib.sha256()
     total = 0
     try:
-        request = urllib.request.Request(official_url(url), headers={'User-Agent': 'WindowsToLinux-toolchains/1'})
+        request = urllib.request.Request(source, headers={'User-Agent': 'WindowsToLinux-toolchains/1'})
+        handlers = (urllib.request.ProxyHandler({}), GnuMakeRedirect()) if fixed_make else (OfficialRedirect(),)
         with (
-            urllib.request.build_opener(OfficialRedirect()).open(request, timeout=45) as response,
+            urllib.request.build_opener(*handlers).open(request, timeout=45) as response,
             target.open('xb') as output,
         ):
             while True:
                 remaining()
-                block = response.read(1024 * 1024)
+                block = response.read(min(1024 * 1024, maximum + 1 - total))
                 if not block:
                     break
                 total += len(block)
-                if total > MAX_ARCHIVE:
+                if total > maximum:
                     fail('archive', 'archive exceeds the download size limit')
                 official.update(block)
                 sha256.update(block)
                 output.write(block)
     except OSError as error:
         fail('network', type(error).__name__ + ': official artifact download failed')
-    if official.hexdigest() != expected:
+    if official.hexdigest() != expected or fixed_make and total != maximum:
         fail('integrity', 'download does not match the official release digest')
     return sha256.hexdigest()
 

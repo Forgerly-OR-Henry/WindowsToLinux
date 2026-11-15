@@ -39,6 +39,7 @@ class DeploymentMirrorRequirementsTest {
         assertTrue(required.containsAll(Set.of(DownloadPoint.NODE_DISTRIBUTION, DownloadPoint.NODE_METADATA, DownloadPoint.NODE_PACKAGE)));
         assertFalse(required.contains(DownloadPoint.JAVA_JDK));
         assertFalse(required.contains(DownloadPoint.PHP_DISTRIBUTION));
+        assertFalse(required.contains(DownloadPoint.GNU_MAKE_SOURCE));
         var points = new EnumMap<DownloadPoint, List<MirrorSettings.Row>>(DownloadPoint.class);
         for (var point : DownloadPoint.values()) points.put(point, List.of(MirrorSettings.Row.auto(true)));
         for (var point : required) {
@@ -53,6 +54,15 @@ class DeploymentMirrorRequirementsTest {
         assertTrue(resolved.points().get(DownloadPoint.JAVA_JDK).isEmpty());
         assertTrue(resolved.points().get(DownloadPoint.PHP_DISTRIBUTION).isEmpty());
         assertEquals(1, resolved.points().get(DownloadPoint.NODE_PACKAGE).size());
+    }
+
+    @Test void onlyPythonUsingKindsRequireTheFixedGnuMakeSource() {
+        var point = DownloadPoint.GNU_MAKE_SOURCE;
+        for (var kind : List.of(DeploymentProjectKind.PYTHON_SERVICE, DeploymentProjectKind.STATIC_SITE))
+            assertTrue(DeploymentMirrorRequirements.forKinds(List.of(kind)).contains(point));
+        for (var kind : List.of(DeploymentProjectKind.CMAKE_SERVICE, DeploymentProjectKind.RUBY_SERVICE,
+                DeploymentProjectKind.PHP_SERVICE, DeploymentProjectKind.NODE_SERVICE))
+            assertFalse(DeploymentMirrorRequirements.forKinds(List.of(kind)).contains(point));
     }
 
     @Test void outOfScopeAutomaticStopsAtFixedPrefixAndLegacyOverloadStillExpands() {

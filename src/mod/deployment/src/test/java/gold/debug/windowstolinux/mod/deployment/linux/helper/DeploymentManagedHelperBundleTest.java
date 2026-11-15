@@ -18,7 +18,7 @@ class DeploymentManagedHelperBundleTest {
         String original = DeploymentManagedHelperBundle.renderScript();
         String recovery = DeploymentManagedHelperBundle.renderPublicationRecovery(layout);
         assertEquals(16, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
-        assertEquals("33c1a67cb7a7602d809ae6938ec40e9cd152cab31254acd3ca215c1ef755dcd9",
+        assertEquals("a68639329a6fb5b5d4af6e8132a2097807266ef96e3b09809f3620570b79dfe5",
             HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(original.getBytes(StandardCharsets.UTF_8))));
         assertEquals(original, DeploymentManagedHelperBundle.renderScript());
         assertEquals("7ecc321fe09bb66efdf0a0e80dddd0ca7bc1520522809b43b2bfb1b9a5dcabe7",

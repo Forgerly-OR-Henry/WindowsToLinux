@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "catalogVersion": "2026-11-07.1",
+  "catalogVersion": "2026-11-16.1",
   "timeouts": {
     "connectSeconds": 10,
     "readSeconds": 60,
@@ -586,6 +586,14 @@
         "https://www.python.org/ftp/python/"
       ],
       "coverageNote": "完整兼容独立提供方=2；部分兼容审计项=0；自动展开全部兼容候选，最多256端点。允许跨地区及官方补齐，按实际point计数，不以品牌别名补数。"
+    },
+    "GNU_MAKE_SOURCE": {
+      "label": "GNU Make 源码引导",
+      "protocol": "HTTP",
+      "sourceOrigins": [
+        "https://ftp.gnu.org/gnu/make/"
+      ],
+      "coverageNote": "固定官方 GNU HTTPS，供 CPython 源码构建引导使用。仅接受固定的已签名发布归档、大小和 SHA-256。禁止自定义端点、传递凭证及重定向。"
     },
     "PYTHON_PIP_BOOTSTRAP": {
       "label": "pip 引导",
@@ -1406,6 +1414,33 @@
           "complete": true,
           "coverageNote": "已核实此协议的部署所需路径；对象缺失、重定向越界或未映射URL按失败处理。",
           "repoTemplates": {}
+        }
+      }
+    },
+    {
+      "id": "official-gnu_make_source",
+      "label": "GNU 官方 Make 源码",
+      "country": "",
+      "region": "NORTH_AMERICA",
+      "official": true,
+      "evidence": [
+        "https://ftp.gnu.org/gnu/make/",
+        "https://lists.gnu.org/archive/html/info-gnu/2023-02/msg00011.html"
+      ],
+      "sources": {
+        "GNU_MAKE_SOURCE": {
+          "baseUrl": "https://ftp.gnu.org/gnu/make/",
+          "allowedHosts": [
+            "ftp.gnu.org"
+          ],
+          "routes": [
+            {
+              "origin": "https://ftp.gnu.org/gnu/make/",
+              "prefix": "https://ftp.gnu.org/gnu/make/"
+            }
+          ],
+          "complete": true,
+          "coverageNote": "官方 make-4.4.1.tar.gz，审核绑定发布归档和精确 SHA-256。此点没有其他端点。"
         }
       }
     },

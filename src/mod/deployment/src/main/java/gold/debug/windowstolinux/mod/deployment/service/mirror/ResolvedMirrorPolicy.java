@@ -12,7 +12,20 @@ public record ResolvedMirrorPolicy(int formatVersion, String task, String server
         timeouts = Map.copyOf(timeouts);
         var copy = new EnumMap<DownloadPoint, List<Endpoint>>(DownloadPoint.class);
         points.forEach((point, endpoints) -> copy.put(point, List.copyOf(endpoints)));
+        var make = copy.getOrDefault(DownloadPoint.GNU_MAKE_SOURCE, List.of());
+        if (make.size() > 1 || make.stream().anyMatch(endpoint -> !fixedGnuMakeEndpoint(endpoint)))
+            throw new IllegalArgumentException("Frozen GNU Make source differs from the official provider");
         points = Collections.unmodifiableMap(copy);
+    }
+
+    private static boolean fixedGnuMakeEndpoint(Endpoint endpoint) {
+        String origin = DownloadPoint.GNU_MAKE_ORIGIN;
+        return endpoint.official() && !endpoint.custom() && endpoint.protocol().equals("HTTP")
+            && endpoint.providerId().equals(DownloadPoint.GNU_MAKE_PROVIDER)
+            && endpoint.baseUrl().equals(origin) && endpoint.sourceOrigins().equals(List.of(origin))
+            && endpoint.allowedHosts().equals(List.of(MirrorSettings.urlHost(origin)))
+            && endpoint.routes().equals(List.of(new Route(origin, origin)))
+            && endpoint.secretRef().isEmpty() && endpoint.repoTemplates().isEmpty() && endpoint.redirectRules().isEmpty();
     }
     public record Route(String origin, String prefix, String pattern, String replacement) {
         public Route(String origin, String prefix) { this(origin, prefix, "", ""); }
@@ -110,7 +123,7 @@ public record ResolvedMirrorPolicy(int formatVersion, String task, String server
             var value = new ObjectMapper().enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
                 .readValue(json, ResolvedMirrorPolicy.class);
             if (value.formatVersion() != 1 || !Objects.equals(value.task(), task) || !Objects.equals(value.server(), server)
-                || value.catalogVersion() == null || value.points().size() != DownloadPoint.values().length)
+                || value.catalogVersion() == null || !completePointSet(value.points().keySet()))
                 throw new IllegalArgumentException("Mirror snapshot binding invalid");
             if (value.timeouts().isEmpty() || value.timeouts().size() > 20
                 || value.timeouts().values().stream().anyMatch(n -> n == null || n < 1 || n > 16_777_216))
@@ -139,5 +152,11 @@ public record ResolvedMirrorPolicy(int formatVersion, String task, String server
             }
             return value;
         } catch (JsonProcessingException e) { throw new IllegalArgumentException("Invalid mirror snapshot", e); }
+    }
+
+    private static boolean completePointSet(Set<DownloadPoint> points) {
+        var required = EnumSet.allOf(DownloadPoint.class);
+        if (!points.contains(DownloadPoint.GNU_MAKE_SOURCE)) required.remove(DownloadPoint.GNU_MAKE_SOURCE);
+        return points.equals(required);
     }
 }

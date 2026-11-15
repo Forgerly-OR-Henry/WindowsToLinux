@@ -66,7 +66,7 @@ class DeploymentCustomInstallerCoverageTest {
             assertEquals(JSON.readTree(current), DeploymentApprovalSourceCarrier.restore(current, messages));
             var projection = JSON.readTree(messages.getLast().text());
             var frames = projection.at("/approvalSourceCarrier/frames");
-            assertEquals(10, frames.size());
+            assertEquals(13, frames.size());
             var workerFrames = new ArrayList<JsonNode>();
             for (var frame : frames) if (frame.path("pointer").asText().equals(WORKER)) workerFrames.add(frame);
             assertEquals(1, workerFrames.size(), "The raw USER manifest includes the complete worker exactly once");
@@ -109,7 +109,7 @@ class DeploymentCustomInstallerCoverageTest {
             var second = fixture.model.requests.getLast().messages();
             assertEquals(first.getLast(), second.getLast());
             var frames = JSON.readTree(first.getLast().text()).at("/approvalSourceCarrier/frames");
-            assertEquals(10, frames.size());
+            assertEquals(13, frames.size());
             for (var frame : frames) assertEquals(first.get(frame.path("messageIndex").intValue()), second.get(frame.path("messageIndex").intValue()));
             assertEquals(MirroredInstallerTestFixture.restoreCarrier(first), MirroredInstallerTestFixture.restoreCarrier(second));
         }

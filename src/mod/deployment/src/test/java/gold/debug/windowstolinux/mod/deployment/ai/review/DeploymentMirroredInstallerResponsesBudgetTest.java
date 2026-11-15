@@ -118,10 +118,17 @@ class DeploymentMirroredInstallerResponsesBudgetTest {
             var current=MirroredInstallerTestFixture.restoreCarrier(captured.messages());
             var carrier=projection.path("approvalSourceCarrier");
             assertEquals("WTL_APPROVAL_SOURCE_CARRIER_V1",carrier.path("format").asText());
-            assertEquals(kind.equals("CUSTOM")?10:7,carrier.path("frames").size());
+            assertEquals(kind.equals("CUSTOM")?13:10,carrier.path("frames").size());
+            assertEquals(1, java.util.stream.StreamSupport.stream(carrier.path("frames").spliterator(), false)
+                .filter(frame -> frame.path("pointer").asText().equals("/completeExecutableInput/sources/mirrorBootstrapShell"))
+                .count());
             assertTrue(carrier.path("currentCharacters").intValue()<=ONE_MIB,"The complete current including regenerated navigation passed the original facts gate before framing");
             assertTrue(current.path("helperInstallationSourceEvidence").has("requiredExecutableEvidencePointers"));
             assertTrue(current.at("/helperInstallationSourceEvidence/sourceCounts").has("mirrorRuntime"));
+            String digestScopesPointer=current.at("/helperInstallationSourceEvidence/digestScopesPointer").textValue();
+            assertEquals("/completeExecutableInput/digestScopes",digestScopesPointer);
+            assertTrue(current.at(digestScopesPointer).has("mirrorBootstrapShellDigest"));
+            assertFalse(current.path("helperInstallationSourceEvidence").has("digestScopes"));
             assertEquals("/completeExecutableInput/sources/mirrorRuntime",current.at("/mirrorTransport/runtimeSourcePointer").asText());
             var schema=JSON.readTree(captured.tools().getFirst().inputSchema());
             assertEquals(Set.of("decision","requiresUserConfirmation","reason"),JSON.convertValue(schema.path("required"),new com.fasterxml.jackson.core.type.TypeReference<Set<String>>(){}));

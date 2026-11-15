@@ -83,6 +83,28 @@ class DeploymentMirrorSettingsEditorTest {
         });
     }
 
+    @Test void gnuMakeFixedSourcePreservesInheritedPreferenceAndCanBeDisabledWithoutConsent() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            var saved = new EnumMap<DownloadPoint, java.util.List<MirrorSettings.Row>>(fixed().points());
+            var point = DownloadPoint.GNU_MAKE_SOURCE;
+            saved.remove(point);
+            var questions = new AtomicInteger();
+            var editor = new DeploymentMirrorSettingsEditor(catalog, messages, () -> { questions.incrementAndGet(); return false; });
+            editor.load(new MirrorSettings(1, saved, Map.of()));
+            assertFalse(editor.values().points().containsKey(point));
+            assertEquals(1, sources(editor, point).getFirst().getItemCount());
+            assertFalse(find(editor, "deployment.mirror.add." + point.name()).isVisible());
+            var disable = (JCheckBox)find(editor, "deployment.mirror.auto." + point.name());
+            assertFalse(disable.isSelected());
+            disable.doClick();
+            var row = editor.values().rows(point).getFirst();
+            assertTrue(row.automatic());
+            assertFalse(row.privacyConsent());
+            assertTrue(row.secretRef().isEmpty());
+            assertEquals(0, questions.get());
+        });
+    }
+
     private static Component find(Container parent, String name) {
         for (var child : parent.getComponents()) {
             if (name.equals(child.getName())) return child;

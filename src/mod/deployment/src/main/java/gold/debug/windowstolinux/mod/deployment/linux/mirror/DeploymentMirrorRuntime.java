@@ -7,6 +7,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.mod.deployment.config.mirror.MirrorCatalog;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
 
 /** Renders task-owned download policy and protocol adapters before executable review. */
 public final class DeploymentMirrorRuntime {
@@ -56,7 +57,10 @@ public final class DeploymentMirrorRuntime {
             && !source.contains("__WTL_MIRROR_RUNTIME_SHA256__"))
             return source;
         var origins = new java.util.TreeMap<String, java.util.List<String>>();
-        catalog.points().forEach((point, configuration) -> origins.put(point.name(), configuration.sourceOrigins()));
+        catalog.points().forEach((point, configuration) -> {
+            if (!publicationRecovery || point != DownloadPoint.GNU_MAKE_SOURCE)
+                origins.put(point.name(), configuration.sourceOrigins());
+        });
         var hosts = new java.util.TreeSet<String>();
         var toolchains = java.util.Set.of("JAVA_JDK", "JAVA_METADATA", "NODE_DISTRIBUTION", "NODE_METADATA",
             "GO_DISTRIBUTION", "GO_METADATA", "DOTNET_SDK", "DOTNET_METADATA", "KOTLIN_DISTRIBUTION",
@@ -102,7 +106,14 @@ public final class DeploymentMirrorRuntime {
 
     /** Pure shell setup remains usable before the first Python/system dependency bootstrap. */
     public static String bootstrapPrefix(String policyJson) {
-        if (policyJson == null || policyJson.isBlank()) return "";
+        return bootstrap(policyJson).prefix();
+    }
+
+    /** Keeps the exact source used both for the staged file and in the command itself. */
+    public record Bootstrap(String prefix, String shell) { }
+
+    public static Bootstrap bootstrap(String policyJson) {
+        if (policyJson == null || policyJson.isBlank()) return new Bootstrap("", "");
         JsonNode policy;
         try {
             policy = new ObjectMapper().readTree(policyJson);
@@ -184,7 +195,7 @@ public final class DeploymentMirrorRuntime {
                 + "export WTL_MIRROR_CREDENTIALS_DIR=\"${TMPDIR:-/tmp}/wtl-mirror-material" + suffix + "\"; fi\n"
                 + "[ -d \"$WTL_MIRROR_CREDENTIALS_DIR\" ] && [ ! -L \"$WTL_MIRROR_CREDENTIALS_DIR\" ] || exit 65\n";
         }
-        return "# WTL_MIRROR_TASK=" + task + "\n" + """
+        String prefix = "# WTL_MIRROR_TASK=" + task + "\n" + """
             # Root validates the fixed host temporary parent before creating any task files.
             # The restricted build keeps the temporary directory supplied by its quota volume.
             wtl_mirror_trusted_parent() {
@@ -230,6 +241,7 @@ public final class DeploymentMirrorRuntime {
             wtl_wrapper() { wtl_run_mirror_runtime /usr/bin/python3 wrapper "$@"; }
             wtl_source_url() { wtl_run_mirror_runtime /usr/bin/python3 source-url "$@"; }
             """.formatted(runtimeSha256(), quote(policyJson), quote(runtimeSource()), quote(shell)) + credentialSetup + shell;
+        return new Bootstrap(prefix, shell);
     }
 
     /** Writers call this to retain old-task behavior while routing new-task dependency requests. */

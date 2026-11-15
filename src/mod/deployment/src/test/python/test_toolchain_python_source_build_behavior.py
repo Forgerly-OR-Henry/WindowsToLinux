@@ -1,6 +1,7 @@
 """Exercise guarded CPython preparation without network, a compiler, root or systemd."""
 import ast
 import errno
+import hashlib
 import io
 import json
 import os
@@ -8,6 +9,7 @@ import pathlib
 import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import types
@@ -19,6 +21,7 @@ FRAGMENTS = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/d
 VERSION = '3.12.12'
 DIGEST = 'a' * 64
 URL = 'https://www.python.org/ftp/python/3.12.12/Python-3.12.12.tgz'
+MAKE_URL = 'https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz'
 OPERATION = '2fc3c77f-bfc6-4340-980b-7665c62c9ab2'
 
 
@@ -29,7 +32,8 @@ class PythonSourceBuildTest(unittest.TestCase):
         self.root = pathlib.Path(work.name) / 'toolchains'
         (self.root / 'versions').mkdir(parents=True)
         self.ns = {'__name__': 'fixture_cpython_source',
-                   '__WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__': {}, '__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__': []}
+                   '__WTL_MIRROR_DEFAULT_SOURCE_ORIGINS__': {'GNU_MAKE_SOURCE': ['https://ftp.gnu.org/gnu/make/']},
+                   '__WTL_MIRROR_DEFAULT_ALLOWED_HOSTS__': []}
         for name in ('10-release-metadata.py', 'archive-boundaries.py', '20-installation-boundaries.py',
                      '30-managed-installation.py', 'tracked-operations.py', 'ruby-source-build.py', 'python-source-build.py'):
             exec(compile((FRAGMENTS / name).read_bytes(), name, 'exec'), self.ns)
@@ -48,9 +52,14 @@ class PythonSourceBuildTest(unittest.TestCase):
         key = self.ns['installation_key']('PYTHON', VERSION, DIGEST)
         self.destination = self.root / 'versions' / ('python-' + key)
 
-    @staticmethod
-    def download(url, target, algorithm, digest):
-        target.write_bytes(b'fixture archive')
+    def download(self, url, target, algorithm, digest, *, point=None, maximum=None):
+        if point is not None:
+            self.assertEqual(('GNU_MAKE_SOURCE', MAKE_URL, 'sha256', self.ns['GNU_MAKE_SOURCE_SHA256'],
+                              self.ns['GNU_MAKE_SOURCE_BYTES']), (point, url, algorithm, digest, maximum))
+            with target.open('xb') as archive:
+                archive.truncate(maximum)
+        else:
+            target.write_bytes(b'fixture archive')
         return digest
 
     def install(self):
@@ -63,12 +72,13 @@ class PythonSourceBuildTest(unittest.TestCase):
             self.assertFalse(marker.exists())
             self.assertEqual((self.destination, VERSION), (destination, version))
             if mounts is not None:
-                stage, archive, gem = mounts
+                stage, archive, make_archive = mounts
                 self.assertTrue(unit_id.startswith('wtl-python-build-'))
                 self.assertTrue(stage.is_dir())
                 self.assertEqual('scratch', stage.parent.name)
-                self.assertIsNone(gem)
                 self.assertEqual(b'fixture archive', archive.read_bytes())
+                self.assertEqual((archive.parent, 'gnu-make-source.tar.gz', self.ns['GNU_MAKE_SOURCE_BYTES']),
+                                 (make_archive.parent, make_archive.name, make_archive.stat().st_size))
                 self.seal.assert_not_called()
             else:
                 self.assertTrue(unit_id.startswith('wtl-python-probe-'))
@@ -78,7 +88,9 @@ class PythonSourceBuildTest(unittest.TestCase):
         self.ns['run'] = mock.Mock(side_effect=AssertionError('legacy privileged execution'))
         record = self.install()
         self.assertEqual(record, json.loads(marker.read_text()))
-        self.assertEqual('python-dynamic-user-build-v1', record['recipe'])
+        self.assertEqual('python-dynamic-user-build-v2-gnu-make-4.4.1', record['recipe'])
+        self.assertEqual({'gnu_make': {'version': '4.4.1', 'source': MAKE_URL,
+                                      'sha256': self.ns['GNU_MAKE_SOURCE_SHA256']}}, record['dependencies'])
         self.assertEqual(self.destination, pathlib.Path(record['directory']))
         self.assertEqual(DIGEST, record['sha256'])
         self.assertEqual(2, self.unit.call_count)
@@ -94,11 +106,48 @@ class PythonSourceBuildTest(unittest.TestCase):
         record = {'ecosystem': 'PYTHON', 'origin': 'MANAGED', 'version': VERSION, 'directory': str(self.destination),
                   'source': URL, 'sha256': DIGEST, 'official_algorithm': 'sha256', 'official_digest': DIGEST,
                   'dependencies': {}}
-        marker.write_text(json.dumps(record), encoding='utf-8')
         self.ns['saved_installation_marker'] = mock.Mock(return_value=marker)
-        self.assertEqual(record, self.install())
-        self.assertEqual((self.destination, VERSION), self.unit.call_args.args[1:])
+        for historical in (record, dict(record, recipe='python-dynamic-user-build-v1')):
+            with self.subTest(recipe=historical.get('recipe')):
+                marker.write_text(json.dumps(historical), encoding='utf-8')
+                self.assertEqual(historical, self.install())
+                self.assertEqual((self.destination, VERSION), self.unit.call_args.args[1:])
         self.ns['download'].assert_not_called()
+
+    def test_new_marker_requires_the_exact_gnu_make_dependency(self):
+        record = self.install()
+        marker = self.destination / '.w2l-toolchain.json'
+        self.ns['saved_installation_marker'] = mock.Mock(return_value=marker)
+        self.ns['source_url'] = mock.Mock(side_effect=AssertionError('GNU Make route is unavailable'))
+        self.unit.reset_mock()
+        self.ns['download'].reset_mock()
+        self.assertEqual(record, self.install())
+        self.unit.assert_called_once()
+        self.unit.reset_mock()
+        dependency = dict(record['dependencies']['gnu_make'], sha256=DIGEST)
+        marker.chmod(0o644)
+        marker.write_text(json.dumps(dict(record, dependencies={'gnu_make': dependency})), encoding='utf-8')
+        with self.assertRaises(self.ns['PreparationFailure']):
+            self.install()
+        self.unit.assert_not_called()
+        self.ns['download'].assert_not_called()
+        self.ns['source_url'].assert_not_called()
+
+    def test_short_gnu_make_archive_fails_before_preparation_or_publication(self):
+        def download(url, target, algorithm, digest, **options):
+            if not options:
+                return self.download(url, target, algorithm, digest)
+            target.write_bytes(b'short')
+            return digest
+
+        self.ns['download'].side_effect = download
+        with self.assertRaises(self.ns['PreparationFailure']) as error:
+            self.install()
+        self.assertEqual('integrity', error.exception.category)
+        self.ns['source_dependencies'].assert_not_called()
+        self.unit.assert_not_called()
+        self.seal.assert_not_called()
+        self.assertEqual([], list((self.root / 'work').iterdir()))
 
     def test_failed_unit_never_promotes_or_seals_a_managed_installation(self):
         self.unit.side_effect = self.ns['PreparationFailure']('installation', 'fixture failure')
@@ -139,6 +188,7 @@ class PythonSourceBuildTest(unittest.TestCase):
         stage = self.root / 'stage'
         stage.mkdir()
         archive = self.root / 'archive'
+        make_archive = self.root / 'gnu-make-source.tar.gz'
         prefix = '/usr/local/lib/windowstolinux/toolchains/versions/python-fixture'
         namespace_unallocated = mock.Mock(side_effect=KeyError)
         ns.update(ruby_mount_path=str, ruby_run=mock.Mock(), remaining=mock.Mock(return_value=80))
@@ -147,7 +197,7 @@ class PythonSourceBuildTest(unittest.TestCase):
                 mock.patch.object(os, 'readlink', side_effect=('net:[1]', 'mnt:[2]', 'time:[3]')), \
                 mock.patch.object(time, 'monotonic_ns', return_value=1_000_000_000):
             ns['source_unit']('wtl-python-build-01234567890123456789012345678901.service',
-                              prefix, VERSION, 'python', ns['PYTHON_SOURCE_WORKER'], (stage, archive, None))
+                              prefix, VERSION, 'python', ns['PYTHON_SOURCE_WORKER'], (stage, archive, make_archive))
         init, role, ecosystem = ns['ruby_run'].call_args.args
         self.assertEqual(('build', 'python'), (role, ecosystem))
         self.assertIn('--property=DynamicUser=yes', init)
@@ -155,9 +205,12 @@ class PythonSourceBuildTest(unittest.TestCase):
         self.assertIn('--property=MemoryMax=3221225472', init)
         self.assertIn('--property=MemorySwapMax=0', init)
         self.assertIn('--property=BindReadOnlyPaths=' + str(archive) + ':/tmp/wtl-toolchain-release '
+                      + str(make_archive) + ':/tmp/wtl-gnu-make-source '
                       + str(stage.parent / 'readonly') + ':/var/tmp ' + str(stage.parent / 'readonly') + ':/dev/shm', init)
         self.assertIn('--property=BindPaths=' + str(stage) + ':' + prefix + ' ' + str(stage.parent) + ':/tmp', init)
         self.assertIn('--property=ReadWritePaths=' + prefix + ' /tmp', init)
+        self.assertIn('--property=SystemCallFilter=~@mount @privileged @obsolete '
+                      'io_uring_setup io_uring_enter io_uring_register', init)
         self.assertIn('--property=RuntimeMaxSec=80s', init)
         worker = init[init.index('--') + 1:]
         self.assertEqual(['/usr/bin/python3', '-I', '-S', '-B', '-c'], worker[:5])
@@ -171,9 +224,11 @@ class PythonSourceBuildTest(unittest.TestCase):
     def test_worker_validates_isolation_before_configure_and_runs_fixed_commands(self):
         tree = ast.parse(self.ns['PYTHON_SOURCE_WORKER'])
         definitions = self.make_worker_functions()
+        pinned_make = definitions['GNU_MAKE_PROGRAM']
+        bootstrap = mock.Mock(side_effect=lambda unit: definitions['environment'].update(
+            MAKE=pinned_make, PATH=pinned_make.rsplit('/', 1)[0] + ':/usr/bin:/bin'))
         definitions.update(require_ruby_resources=mock.Mock(), verify_build_scratch=mock.Mock(),
-                           verify_native_build_chain=mock.Mock(),
-                           make_resetids_probe_matches=mock.Mock(side_effect=AssertionError('unexpected diagnostic')))
+                           verify_native_build_chain=mock.Mock(), bootstrap_gnu_make=bootstrap)
         tree.body = tree.body[next(i for i, node in enumerate(tree.body) if isinstance(node, ast.Try)) - 1:]
         worker = compile(tree, '<CPython source worker>', 'exec')
         argv = ['', 'build', 'net:[1]', 'mnt:[2]', '/protected/python', VERSION, '42', '7', 'standard',
@@ -186,6 +241,7 @@ class PythonSourceBuildTest(unittest.TestCase):
             exec(worker, definitions)
         self.assertEqual(90, error.exception.code)
         run.assert_not_called()
+        bootstrap.assert_not_called()
 
         status = 'NoNewPrivs: 1\nSeccomp: 2\nCapEff: 0\nCapPrm: 0\nCapBnd: 0\n'
         source = pathlib.Path('/tmp/wtl-toolchain-source')
@@ -211,10 +267,15 @@ class PythonSourceBuildTest(unittest.TestCase):
         definitions['verify_build_scratch'].assert_called_once_with(release, '/protected/python')
         definitions['verify_native_build_chain'].assert_called_once_with(release)
         calls = [entry.args[0] for entry in run.call_args_list]
-        self.assertEqual(['/usr/bin/tar', str(release / 'configure'), '/usr/bin/make',
+        self.assertEqual(['/usr/bin/tar', str(release / 'configure'), pinned_make,
                           '/protected/python/bin/python3', '/protected/python/bin/python3'], [entry[0] for entry in calls])
         self.assertEqual(('--prefix=/protected/python', '--with-ensurepip=install'), calls[1][1:])
-        self.assertEqual(('/usr/bin/make', '-j2'), popen.call_args.args[0])
+        self.assertEqual((pinned_make, 'MAKE=' + pinned_make, '-j2'), popen.call_args.args[0])
+        self.assertEqual((pinned_make, 'MAKE=' + pinned_make, 'install'), calls[2])
+        for child in [run.call_args_list[1], popen.call_args, run.call_args_list[2]]:
+            self.assertEqual(pinned_make, child.kwargs['env']['MAKE'])
+            self.assertTrue(child.kwargs['env']['PATH'].startswith(pinned_make.rsplit('/', 1)[0] + ':'))
+        bootstrap.assert_called_once_with(argv[9])
         self.assertEqual(release, popen.call_args.kwargs['cwd'])
         self.assertEqual(('-I', '-S', '-B', '-c'), calls[3][1:5])
         self.assertIn('sys.base_prefix', calls[3][5])
@@ -228,7 +289,7 @@ class PythonSourceBuildTest(unittest.TestCase):
         exec(compile(tree, '<CPython make fixture>', 'exec'), worker)
         return worker
 
-    def test_failed_build_never_installs_and_only_status_192_runs_the_diagnostic(self):
+    def test_failed_build_keeps_the_observed_status_and_never_installs(self):
         tree = ast.parse(self.ns['PYTHON_SOURCE_WORKER'])
         tree.body = tree.body[next(i for i, node in enumerate(tree.body) if isinstance(node, ast.Try)) - 1:]
         worker = compile(tree, '<CPython source worker>', 'exec')
@@ -236,141 +297,119 @@ class PythonSourceBuildTest(unittest.TestCase):
                 'wtl-python-build-test.service', '5', '6', '1610612736', '96000', '3221225472',
                 '81000000000', 'time:[3]']
         release = self.root / 'release'
-        for make_status, probe_match, expected in ((192, True, 198), (192, False, 192),
-                                                    (137, True, 137), (184, True, 184), (115, True, 115)):
-            diagnostic = mock.Mock(return_value=probe_match)
-            command = mock.Mock()
-            inputs = dict(sys=self.ns['sys'], subprocess=subprocess, require_isolated=mock.Mock(), require_staging_mount=mock.Mock(),
+        for make_status in (192, 137, 184, 115):
+            inputs = self.make_worker_functions()
+            inputs.update(require_isolated=mock.Mock(), require_staging_mount=mock.Mock(),
                           require_ruby_resources=mock.Mock(), extract_release=mock.Mock(return_value=release),
                           verify_build_scratch=mock.Mock(), verify_native_build_chain=mock.Mock(),
-                          command=command, make_python=mock.Mock(return_value=make_status),
-                          make_resetids_probe_matches=diagnostic)
-            with self.subTest(status=make_status, probe=probe_match), mock.patch.object(self.ns['sys'], 'argv', argv), \
+                          command=mock.Mock(), make_python=mock.Mock(return_value=make_status), bootstrap_gnu_make=mock.Mock())
+            with self.subTest(status=make_status), mock.patch.object(self.ns['sys'], 'argv', argv), \
                     self.assertRaises(SystemExit) as error:
                 exec(worker, inputs)
-            self.assertEqual(expected, error.exception.code)
-            command.assert_called_once_with(str(release / 'configure'), '--prefix=/protected/python',
-                                            '--with-ensurepip=install', cwd=release)
-            if make_status == 192:
-                diagnostic.assert_called_once_with(argv[9], argv[-2], argv[-1])
-            else:
-                diagnostic.assert_not_called()
+            self.assertEqual(make_status, error.exception.code)
+            inputs['command'].assert_called_once_with(str(release / 'configure'), '--prefix=/protected/python',
+                                                     '--with-ensurepip=install', cwd=release)
+            inputs['bootstrap_gnu_make'].assert_called_once_with(argv[9])
 
-    def test_resetids_probe_uses_matching_clock_remaining_budget_and_a_quiescent_worker(self):
+    def test_make_archive_requires_exact_bytes_and_regular_members_under_the_single_root(self):
         worker = self.make_worker_functions()
-        diagnose = worker['make_resetids_probe_matches']
-        process = mock.Mock(pid=37)
-        for clock, deadline, cgroup, child_exit, expected, launches in (
-            ('time:[3]', '6000000000', (True, True), 0, True, 1),
-            ('time:[3]', '6000000000', (True, False), 0, False, 1),
-            ('time:[3]', '6000000000', (True,), 1, False, 1),
-            ('time:[3]', '5999999999', (True,), 0, False, 0),
-            ('time:[3]', '6000000000', (False,), 0, False, 0),
-            ('time:[4]', '6000000000', (), 0, False, 0),
-            ('', '6000000000', (), 0, False, 0),
-        ):
-            with self.subTest(clock=clock, deadline=deadline, cgroup=cgroup, child=child_exit), \
-                    mock.patch.dict(worker, only_source_worker_in_cgroup=mock.Mock(side_effect=cgroup)), \
-                    mock.patch.object(os, 'readlink', return_value='time:[3]'), \
-                    mock.patch.object(time, 'monotonic_ns', return_value=1_000_000_000), \
-                    mock.patch.object(subprocess, 'Popen', return_value=process) as start:
-                process.wait.reset_mock()
-                process.wait.return_value = child_exit
-                self.assertEqual(expected, diagnose('python.service', deadline, clock))
-                self.assertEqual(launches, start.call_count)
-                if launches:
-                    start.assert_called_once_with(('/usr/bin/python3', '-I', '-S', '-B', '-c',
-                                                   self.ns['PYTHON_MAKE_RESETIDS_PROBE']),
-                                                  cwd='/tmp', env=worker['environment'], start_new_session=True,
-                                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                                  stderr=subprocess.DEVNULL)
-                    process.wait.assert_called_once_with(timeout=3)
-        for contents, alone in ((b'37\n', True), (b'38\n37\n', False), (b'37', False), (b'3' * 128, False)):
-            stream = mock.mock_open(read_data=contents)
-            with mock.patch('builtins.open', stream), mock.patch.object(os, 'getpid', return_value=37):
-                self.assertEqual(alone, worker['only_source_worker_in_cgroup']('python.service'))
-            stream().read.assert_called_once_with(64)
+        name = 'make-4.4.1'
+        content = io.BytesIO()
+        with tarfile.open(fileobj=content, mode='w:gz') as archive:
+            for directory in [name, name + '/src'] + [name + '/dir' + str(i) for i in range(19)]:
+                entry = tarfile.TarInfo(directory)
+                entry.type = tarfile.DIRTYPE
+                archive.addfile(entry)
+            files = ['configure', 'build.sh', 'src/job.c'] + ['stub' + str(i) for i in range(392)]
+            for filename in files:
+                entry = tarfile.TarInfo(name + '/' + filename)
+                data = b'x' * 8_780_526 if filename == 'configure' else b''
+                entry.size = len(data)
+                archive.addfile(entry, io.BytesIO(data))
+        valid = content.getvalue()
 
-    def test_resetids_probe_timeout_kills_and_reaps_only_the_owned_diagnostic_group(self):
-        worker = self.make_worker_functions()
-        process = mock.Mock(pid=37)
-        process.wait.side_effect = (subprocess.TimeoutExpired('fixture', 3), -9)
-        with mock.patch.dict(worker, only_source_worker_in_cgroup=mock.Mock(return_value=True)), \
-                mock.patch.object(os, 'readlink', return_value='time:[3]'), \
-                mock.patch.object(time, 'monotonic_ns', return_value=1_000_000_000), \
-                mock.patch.object(os, 'killpg', create=True) as kill, \
-                mock.patch.object(signal, 'SIGKILL', 9, create=True), \
-                mock.patch.object(subprocess, 'Popen', return_value=process):
-            self.assertFalse(worker['make_resetids_probe_matches']('python.service', '6000000000', 'time:[3]'))
-        kill.assert_called_once_with(37, 9)
-        self.assertEqual([mock.call(timeout=3), mock.call(timeout=1)], process.wait.call_args_list)
+        invalid_archives = []
+        for filename, kind in ((name + '/../outside', tarfile.REGTYPE), (name + '/configure', tarfile.SYMTYPE)):
+            content = io.BytesIO()
+            with tarfile.open(fileobj=content, mode='w:gz') as archive:
+                entry = tarfile.TarInfo(filename)
+                entry.type = kind
+                archive.addfile(entry)
+            invalid_archives.append(content.getvalue())
+        for data, digest, accepted in [(valid, hashlib.sha256(valid).hexdigest(), True),
+                                       (valid, DIGEST, False)] + [
+                                           (data, hashlib.sha256(data).hexdigest(), False) for data in invalid_archives
+                                       ]:
+            info = types.SimpleNamespace(st_mode=0o100444, st_uid=0, st_nlink=1, st_size=len(data))
+            os_fixture = types.SimpleNamespace(O_RDONLY=0, O_NOFOLLOW=1, O_NONBLOCK=2,
+                                               open=mock.Mock(return_value=42), fstat=lambda fd: info,
+                                               fdopen=lambda fd, mode: io.BytesIO(data))
+            with self.subTest(accepted=accepted, size=len(data)), mock.patch.dict(
+                    worker, os=os_fixture, GNU_MAKE_SOURCE_BYTES=len(data), GNU_MAKE_SOURCE_SHA256=digest):
+                if accepted:
+                    self.assertEqual(data, worker['read_gnu_make_archive']())
+                else:
+                    with self.assertRaises(SystemExit) as error:
+                        worker['read_gnu_make_archive']()
+                    self.assertEqual(210, error.exception.code)
+            os_fixture.open.assert_called_once_with('/tmp/wtl-gnu-make-source', 3)
 
-    def test_resetids_child_requires_the_fixed_spawn_pair_and_exact_make_report(self):
-        probe = {'__name__': 'test_resetids_probe'}
-        exec(compile(self.ns['PYTHON_MAKE_RESETIDS_PROBE'], '<Make resetids check>', 'exec'), probe)
-        true = '/usr/bin/true'
-        with mock.patch.object(os, 'posix_spawn', create=True,
-                               side_effect=(37, OSError(errno.EPERM, 'fixture'), 38, OSError(errno.EACCES, 'fixture'))) as spawn, \
-                mock.patch.object(os, 'waitpid', return_value=(37, 0)) as wait:
-            self.assertTrue(probe['spawn_true_matches'](False))
-            self.assertTrue(probe['spawn_true_matches'](True, errno.EPERM))
-            self.assertFalse(probe['spawn_true_matches'](True, errno.EPERM))
-            self.assertFalse(probe['spawn_true_matches'](True, errno.EPERM))
-        self.assertEqual([mock.call(true, (true,), os.environ, resetids=flag) for flag in (False, True, True, True)],
-                         spawn.call_args_list)
-        self.assertEqual([mock.call(37, 0), mock.call(38, 0)], wait.call_args_list)
-        for output, code, expected in (
-            (b'make: /usr/bin/true: Operation not permitted\n', 2, True),
-            (b'/usr/bin/make: /usr/bin/true: Operation not permitted\n', 2, True),
-            (b'make: /usr/bin/true: Operation not permitted', 2, False),
-            (b'make: stat: /usr/bin/true: Operation not permitted\n', 2, False),
-            (b'make: /tmp/private: Operation not permitted\n', 2, False),
-            (b'make: /usr/bin/true: Operation not permitted\n', 0, False),
-            (b'make: /usr/bin/true: Operation not permitted\n', -9, False),
-            (b'make: /usr/bin/true: Operation not permitted\n' + b'x' * 2048, 2, False),
+    def test_gnu_make_bootstrap_has_no_system_make_and_requires_identity_and_recipe(self):
+        for feature, version, recipe_output, cgroup, expected in (
+            (b'#define USE_POSIX_SPAWN 1\n', b'GNU Make 4.4.1\n', b'', True, None),
+            (b'#undef USE_POSIX_SPAWN\n', b'GNU Make 4.4.1\n', b'', True, 213),
+            (b'#define USE_POSIX_SPAWN 1\n', b'GNU Make 4.3\n', b'', True, 215),
+            (b'#define USE_POSIX_SPAWN 1\n', b'GNU Make 4.4.1\n', b'private output', True, 216),
+            (b'#define USE_POSIX_SPAWN 1\n', b'GNU Make 4.4.1\n', b'', False, 216),
         ):
-            with self.subTest(length=len(output), exit_code=code), tempfile.TemporaryDirectory(dir=self.root) as work:
-                directory = pathlib.Path(work)
-                child = mock.MagicMock()
-                child.__enter__.return_value = child
-                child.stderr = io.BytesIO(output)
-                child.wait.return_value = code
-                with mock.patch.object(subprocess, 'Popen', return_value=child) as start:
-                    self.assertEqual(expected, probe['make_recipe_matches'](directory))
-                start.assert_called_once_with(('/usr/bin/make', '--no-print-directory', '-rR', '-j2',
-                                               '-f', 'probe.mk', 'probe'), cwd=directory, stdin=subprocess.DEVNULL,
-                                              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-                self.assertEqual(b'.PHONY: probe\nprobe:\n\t@/usr/bin/true\n', (directory / 'probe.mk').read_bytes())
-                self.assertEqual(len(output) > 2048, child.kill.called)
+            with self.subTest(expected=expected, absent_cgroup=not cgroup), tempfile.TemporaryDirectory(dir=self.root) as tmp:
+                directory = pathlib.Path(tmp)
+                worker = self.make_worker_functions()
+                build_root = directory / 'make-build'
+                release = build_root / 'make-4.4.1'
+                candidate = str(release / 'make')
+                real_temporary = tempfile.TemporaryDirectory
+                assert_called = []
 
-    def test_resetids_child_checks_identity_and_requires_all_three_observations(self):
-        probe = {'__name__': 'test_resetids_probe'}
-        exec(compile(self.ns['PYTHON_MAKE_RESETIDS_PROBE'], '<Make resetids check>', 'exec'), probe)
-        dynamic = (61200, 61200, 61200)
-        for gid, spawn_results, make_match, expected in (
-            ((0, 61200, 61200), (), False, False),
-            (dynamic, (False,), False, False),
-            (dynamic, (True, False), False, False),
-            (dynamic, (True, True), False, False),
-            (dynamic, (True, True), True, True),
-        ):
-            spawn = mock.Mock(side_effect=spawn_results)
-            make = mock.Mock(return_value=make_match)
-            with self.subTest(gid=gid, spawn=spawn_results, make=make_match), \
-                    mock.patch.object(os, 'getresuid', return_value=dynamic, create=True), \
-                    mock.patch.object(os, 'getresgid', return_value=gid, create=True), \
-                    mock.patch.dict(probe, spawn_true_matches=spawn, make_recipe_matches=make), \
-                    mock.patch.object(tempfile, 'TemporaryDirectory') as temporary:
-                temporary.return_value.__enter__.return_value = str(self.root)
-                self.assertEqual(expected, probe['resetids_probe_matches']())
-            self.assertEqual([mock.call(False), mock.call(True, errno.EPERM)][:len(spawn_results)], spawn.call_args_list)
-            if spawn_results == (True, True):
-                temporary.assert_called_once_with(prefix='.wtl-make-probe-', dir='/tmp')
-                make.assert_called_once_with(self.root)
-                temporary.return_value.__exit__.assert_called_once()
-            else:
-                temporary.assert_not_called()
-                make.assert_not_called()
+                def run(argv, **kwargs):
+                    assert_called.append(argv)
+                    self.assertTrue(kwargs['check'])
+                    self.assertLessEqual(kwargs['timeout'], 75)
+                    if argv[0] == '/usr/bin/tar':
+                        self.assertEqual(b'archive', kwargs['input'])
+                        (release / 'src').mkdir(parents=True)
+                    elif argv[1] == './configure':
+                        self.assertEqual(('--enable-posix-spawn', '--disable-nls', '--without-guile', '--disable-load',
+                                          '--disable-dependency-tracking', '--prefix=/tmp/wtl-make-unused-prefix'), argv[2:])
+                        self.assertEqual('/usr/bin/false', kwargs['env']['MAKE'])
+                        (release / 'src/config.h').write_bytes(feature)
+                    elif argv[1] == './build.sh':
+                        self.assertEqual('/usr/bin/false', kwargs['env']['MAKE'])
+                    elif argv == (candidate, '--version'):
+                        kwargs['stdout'].write(version)
+                    else:
+                        self.assertEqual((candidate, '--no-print-directory', '-rR', '-j2', '-f', 'probe.mk', 'probe'), argv)
+                        self.assertEqual(b'.PHONY: probe\nprobe:\n\t@/usr/bin/true\n',
+                                         (pathlib.Path(kwargs['cwd']) / 'probe.mk').read_bytes())
+                        kwargs['stdout'].write(recipe_output)
+
+                with mock.patch.dict(worker, GNU_MAKE_BUILD=build_root, GNU_MAKE_PROGRAM=candidate,
+                                     read_gnu_make_archive=lambda: b'archive',
+                                     gnu_make_binary_digest=mock.Mock(return_value=DIGEST),
+                                     only_source_worker_in_cgroup=lambda unit: cgroup), \
+                        mock.patch.object(subprocess, 'run', side_effect=run), \
+                        mock.patch.object(tempfile, 'TemporaryDirectory',
+                                          side_effect=lambda **kwargs: real_temporary(dir=directory)):
+                    if expected is None:
+                        worker['bootstrap_gnu_make']('python.service')
+                        self.assertEqual(candidate, worker['environment']['MAKE'])
+                        self.assertEqual(str(release) + ':/usr/bin:/bin', worker['environment']['PATH'])
+                        self.assertEqual(5, len(assert_called))
+                    else:
+                        with self.assertRaises(SystemExit) as error:
+                            worker['bootstrap_gnu_make']('python.service')
+                        self.assertEqual(expected, error.exception.code)
+                        self.assertNotIn('MAKE', worker['environment'])
 
     def test_make_hints_are_fixed_and_require_complete_bounded_lines(self):
         classify = self.make_worker_functions()['make_output_hint']
@@ -443,12 +482,13 @@ class PythonSourceBuildTest(unittest.TestCase):
                     process.wait.assert_called_once()
 
     def test_make_drains_a_real_owned_process_before_reporting_the_error_hint(self):
-        make = self.make_worker_functions()['make_python']
+        worker = self.make_worker_functions()
+        make, pinned = worker['make_python'], worker['GNU_MAKE_PROGRAM']
         real_popen = subprocess.Popen
         children = []
 
         def start(argv, **kwargs):
-            self.assertEqual(('/usr/bin/make', '-j2'), argv)
+            self.assertEqual((pinned, 'MAKE=' + pinned, '-j2'), argv)
             child = real_popen([sys.executable, '-I', '-S', '-B', '-c',
                                 "import sys; sys.stdout.buffer.write(b'x' * 200000 + b'\\n'); "
                                 "sys.stderr.write('collect2: error: ld returned 1 exit status\\n'); sys.exit(2)"],
@@ -492,6 +532,24 @@ class PythonSourceBuildTest(unittest.TestCase):
                     result = diagnose(other, role, ecosystem)
                     self.assertEqual(ecosystem + '-' + role + '-launcher', result['stage'])
                     self.assertNotIn('make-failure=', result['stdout'])
+
+    def test_gnu_make_bootstrap_receipt_requires_matching_python_build_manager_exit(self):
+        diagnose = self.ns['ruby_diagnostic']
+        for code, (stage, executable) in self.ns['PYTHON_GNU_MAKE_FAILURES'].items():
+            observation = {'actualExitCode': code, 'timedOut': False, 'cancelled': False,
+                           'stdout': 'Finished with result: exit-code\n'
+                                     f'Main processes terminated with: code=exited/status={code}\n',
+                           'stderr': 'private fixture output'}
+            with self.subTest(code=code):
+                result = diagnose(observation, 'build', 'python')
+                self.assertEqual('python-build-' + stage, result['stage'])
+                self.assertIn('worker-executable=' + executable + '\n', result['stdout'])
+                self.assertNotIn('private fixture output', str(result))
+                for other, role, ecosystem in ((dict(observation, actualExitCode=99), 'build', 'python'),
+                                               (observation, 'probe', 'python'), (observation, 'build', 'ruby')):
+                    result = diagnose(other, role, ecosystem)
+                    self.assertEqual(ecosystem + '-' + role + '-launcher', result['stage'])
+                    self.assertNotIn('worker-executable=', result['stdout'])
 
     def test_tracked_cleanup_checks_python_build_and_probe_units_before_mutation(self):
         directory = self.root / 'operation'

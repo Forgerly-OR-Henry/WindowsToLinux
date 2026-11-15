@@ -22,13 +22,17 @@ class DeploymentMirroredInstallerCoverageTest {
             var coverage=new DeploymentAgentInputCoverage(request,facts);
             deliver(coverage,"request","script",request.script());
             var evidence=facts.path("completeExecutableInput");
+            String bootstrap = "/sources/mirrorBootstrapShell";
             for(String pointer:DeploymentInstallerEvidence.readableBodies(evidence)) {
-                if(pointer.equals("/sources/mirrorRuntime"))continue;
+                if(pointer.equals("/sources/mirrorRuntime") || pointer.equals(bootstrap))continue;
                 deliver(coverage,"evidence","/completeExecutableInput"+pointer,evidence.at(pointer).textValue());
             }
             assertFalse(coverage.complete(),"All old two-source leaves do not cover the newly factored executable runtime");
             assertTrue(JSON.valueToTree(coverage.missing()).path("equivalentEvidencePointers").toString().contains("/sources/mirrorRuntime"));
             deliver(coverage,"evidence",DeploymentInstallerEvidence.MIRROR_SOURCE_POINTER,evidence.at("/sources/mirrorRuntime").textValue());
+            assertFalse(coverage.complete(), "The shared bootstrap source is still required exactly once");
+            assertTrue(JSON.valueToTree(coverage.missing()).path("equivalentEvidencePointers").toString().contains(bootstrap));
+            deliver(coverage,"evidence","/completeExecutableInput"+bootstrap,evidence.at(bootstrap).textValue());
             assertTrue(coverage.complete());
             var hostCalls=new AtomicInteger();
             var host=(InteractionService)Proxy.newProxyInstance(getClass().getClassLoader(),new Class<?>[]{InteractionService.class},(p,m,a)->{hostCalls.incrementAndGet();throw new AssertionError("DENY must not reach host grant");});

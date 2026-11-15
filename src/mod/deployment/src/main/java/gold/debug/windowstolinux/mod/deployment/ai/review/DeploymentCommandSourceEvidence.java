@@ -130,7 +130,7 @@ public final class DeploymentCommandSourceEvidence {
         """;
 
     private static final String PYTHON_PREPARE_INSTRUCTION = """
-        Review the original Python preparation, authority, arguments, limits and effects. Check release admission, artifact integrity, install and SYSTEM reuse, probes, ownership, locks and cleanup. For source builds, inspect the worker isolation and resource bounds, plus the reached APT signature/frozen-install or DNF path and hooks. Use the exact active mirror endpoints. Staged definitions are not execution.
+        Review the original Python preparation, authority, arguments, limits and effects. Check release admission, artifact integrity, install and SYSTEM reuse, probes, ownership, locks and cleanup. For a managed source build, review the GNU_MAKE_SOURCE route and pinned archive, the read-only binding, the original isolated Make bootstrap, and the chosen executable for configure, build and install. Inspect the worker isolation and resource bounds and the reached APT signature/frozen-install or DNF path and hooks. Staged definitions are not execution.
         The product reconstructs exactAction from ordered LITERAL, SOURCE_TEXT and SHELL_SINGLE_QUOTE segments and compares it to the original. selectedPreparationRanges maps exact excerpts to their UTF-16 source; startCharacter counts from the preparationSelection header end. The initial supplement and retained frames describe exact source in range order. Review those bytes before using evidence. All original fields and full sources remain pageable.
         Request missing source with snapshotSha256, pointer, offset and limit 1–8000, at most eight calls per response. Use the latest frame's previouslyDeferred if prior source was omitted. Submit a fresh native submit_result alone. Deny insufficient evidence or unsafe effects.
         """;
@@ -444,6 +444,7 @@ public final class DeploymentCommandSourceEvidence {
             default -> ecosystem + "_DISTRIBUTION";
         }));
         if (ecosystem.equals("RUBY")) required.add("RUBYGEMS");
+        if (ecosystem.equals("PYTHON") && points.has("GNU_MAKE_SOURCE")) required.add("GNU_MAKE_SOURCE");
         if (PreparationSourceRange.buildsFromSource(ecosystem)) {
             for (var point : DownloadPoint.values())
                 if (point.name().startsWith("APT_") || point.name().startsWith("DNF_")) required.add(point.name());

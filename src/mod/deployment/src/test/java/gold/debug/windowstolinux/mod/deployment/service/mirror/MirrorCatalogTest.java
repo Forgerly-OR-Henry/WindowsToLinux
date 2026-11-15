@@ -235,14 +235,65 @@ class MirrorCatalogTest {
             "/gold/debug/windowstolinux/mod/deployment/config/mirrors-coverage.yaml")) {
             var matrix = new com.fasterxml.jackson.databind.ObjectMapper().readTree(input);
             assertEquals(catalog.regions().size(), matrix.path("regions").size());
+            var fixed = matrix.path("fixedOfficialPoints");
+            assertEquals(1, fixed.size());
+            var make = fixed.path(DownloadPoint.GNU_MAKE_SOURCE.name());
+            assertEquals(catalog.catalogVersion(), make.path("catalogVersion").asText());
+            assertEquals(1, make.path("compatibleProviderCount").asInt());
+            assertEquals(DownloadPoint.GNU_MAKE_PROVIDER, make.path("automaticProviderIds").get(0).asText());
             for (var region : matrix.path("regions")) {
-                assertEquals(DownloadPoint.values().length, region.path("points").size());
+                assertEquals(DownloadPoint.values().length - fixed.size(), region.path("points").size());
                 for (var point : DownloadPoint.values()) {
+                    if (fixed.has(point.name())) continue;
                     long count = catalog.providersFor(point).stream().map(p -> p.sources().get(point).baseUrl()).distinct().count();
                     assertEquals(count, region.path("points").path(point.name()).path("compatibleProviderCount").asLong());
                 }
             }
         }
+    }
+
+    @Test void gnuMakeSourceIsOfficialOnlyInNewPythonPoliciesAndDoesNotChangeOldSnapshots() throws Exception {
+        var catalog = MirrorCatalog.load();
+        var point = DownloadPoint.GNU_MAKE_SOURCE;
+        assertEquals(List.of(DownloadPoint.GNU_MAKE_PROVIDER),
+            catalog.allProvidersFor(point).stream().map(MirrorCatalog.Provider::id).toList());
+        var python = new MirrorSettings.Row("official-python_distribution", "", false, false, "");
+        var prefs = new MirrorSettings(1, Map.of(DownloadPoint.PYTHON_DISTRIBUTION, List.of(python)), Map.of());
+        var active = Set.of(DownloadPoint.PYTHON_DISTRIBUTION, point);
+        var current = MirrorSelector.resolve(catalog, prefs, "server", "CN", active).withTask("task");
+        var endpoint = current.points().get(point).getFirst();
+        assertTrue(endpoint.official());
+        assertEquals(DownloadPoint.GNU_MAKE_ORIGIN, endpoint.baseUrl());
+        assertEquals(List.of("ftp.gnu.org"), endpoint.allowedHosts());
+        assertTrue(endpoint.redirectRules().isEmpty());
+        assertTrue(MirrorSelector.resolve(catalog, prefs, "server", "CN", Set.of()).points().get(point).isEmpty());
+        assertTrue(MirrorSelector.resolve(catalog, MirrorSettings.defaults(), "server", "CN", active).points().get(point).isEmpty());
+        var defaultRows = new EnumMap<DownloadPoint, List<MirrorSettings.Row>>(MirrorSettings.defaults().points());
+        assertFalse(defaultRows.containsKey(point));
+        defaultRows.put(DownloadPoint.PYTHON_DISTRIBUTION, List.of(MirrorSettings.Row.auto(true)));
+        var consentedPython = new MirrorSettings(1, defaultRows, Map.of());
+        assertEquals(DownloadPoint.GNU_MAKE_ORIGIN,
+            MirrorSelector.resolve(catalog, consentedPython, "server", "CN", active).points().get(point).getFirst().baseUrl());
+
+        var disabled = new MirrorSettings(1, Map.of(DownloadPoint.PYTHON_DISTRIBUTION, List.of(python),
+            point, List.of(MirrorSettings.Row.auto(false))), Map.of());
+        assertTrue(MirrorSelector.resolve(catalog, disabled, "server", "CN", active).points().get(point).isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> new MirrorSettings(1,
+            Map.of(point, List.of(new MirrorSettings.Row("", "https://alternate.invalid/", false, false, ""))), Map.of()));
+        assertThrows(IllegalArgumentException.class, () -> new MirrorSettings(1,
+            Map.of(point, List.of(new MirrorSettings.Row(DownloadPoint.GNU_MAKE_PROVIDER, "", false, false, "test-ref"))), Map.of()));
+
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        var frozen = json.readTree(current.toJson());
+        var points = (com.fasterxml.jackson.databind.node.ObjectNode) frozen.path("points");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) points.path(point.name()).get(0)).put("custom", true);
+        assertThrows(IllegalArgumentException.class, () -> ResolvedMirrorPolicy.fromJson(frozen.toString(), "task", "server"));
+        points.remove(point.name());
+        var legacy = ResolvedMirrorPolicy.fromJson(frozen.toString(), "task", "server");
+        assertFalse(legacy.points().containsKey(point));
+        assertFalse(json.readTree(legacy.withTask("successor").toJson()).path("points").has(point.name()));
+        points.remove(DownloadPoint.PYTHON_DISTRIBUTION.name());
+        assertThrows(IllegalArgumentException.class, () -> ResolvedMirrorPolicy.fromJson(frozen.toString(), "task", "server"));
     }
     @Test void jdkCountryExclusionsAndWrapperIdentityTemplatesAreExplicitCatalogData() throws Exception {
         var catalog = MirrorCatalog.load();

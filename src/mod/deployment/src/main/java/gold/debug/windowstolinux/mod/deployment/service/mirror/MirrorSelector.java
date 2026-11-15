@@ -24,6 +24,10 @@ public final class MirrorSelector {
             throw new IllegalArgumentException("Unknown selected mirror region");
         var result = new EnumMap<DownloadPoint, List<Endpoint>>(DownloadPoint.class);
         for (var point : DownloadPoint.values()) {
+            if (point == DownloadPoint.GNU_MAKE_SOURCE && !automaticPoints.contains(point)) {
+                result.put(point, List.of());
+                continue;
+            }
             var chain = new ArrayList<Endpoint>();
             var seen = new HashSet<String>();
             for (var row : settings.rows(point)) {
@@ -68,6 +72,11 @@ public final class MirrorSelector {
                 }
             }
             result.put(point, List.copyOf(chain));
+        }
+        if (automaticPoints.contains(DownloadPoint.GNU_MAKE_SOURCE) && !settings.points().containsKey(DownloadPoint.GNU_MAKE_SOURCE)
+            && !result.get(DownloadPoint.PYTHON_DISTRIBUTION).isEmpty()) {
+            var provider = catalog.providersFor(DownloadPoint.GNU_MAKE_SOURCE).getFirst();
+            result.put(DownloadPoint.GNU_MAKE_SOURCE, List.of(endpoint(catalog, DownloadPoint.GNU_MAKE_SOURCE, provider)));
         }
         return new ResolvedMirrorPolicy(1, "", serverId, catalog.catalogVersion(), country, region, catalog.timeouts(), result);
     }

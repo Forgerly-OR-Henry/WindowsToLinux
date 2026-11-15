@@ -133,7 +133,7 @@ public final class DeploymentAgentHelperBootstrapEvidence {
         String tail = evidence.at(tailPointer).textValue();
         String worker = evidence.at("/sources/dependencyWorker").textValue();
         String workerPointer = "/completeExecutableInput/sources/dependencyWorker";
-        int jsonSegment = DeploymentInstallerEvidence.isMirrored(evidence) ? 3 : 1;
+        int jsonSegment = DeploymentInstallerEvidence.dependencyWorkerJsonSegment(evidence);
         int helperSegment = jsonSegment + 4;
         var prefixParts = new java.util.ArrayList<Map<String, Object>>();
         for (int index = 0; index < helperSegment; index++)

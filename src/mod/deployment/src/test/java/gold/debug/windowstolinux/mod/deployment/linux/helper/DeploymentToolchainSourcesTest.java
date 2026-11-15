@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class DeploymentToolchainSourcesTest {
     @Test
     void pureResourceExtractionKeepsDefaultHelperBytesUnchanged() {
-        assertEquals("33c1a67cb7a7602d809ae6938ec40e9cd152cab31254acd3ca215c1ef755dcd9", DeploymentManagedHelperBundle.EXPECTED_SHA256);
+        assertEquals("a68639329a6fb5b5d4af6e8132a2097807266ef96e3b09809f3620570b79dfe5", DeploymentManagedHelperBundle.EXPECTED_SHA256);
         String helper = DeploymentManagedHelperBundle.renderScript();
         String pure = DeploymentToolchainSources.archives();
         assertTrue(helper.contains(pure));
@@ -21,7 +21,9 @@ class DeploymentToolchainSourcesTest {
         assertTrue(metadata.contains("def official_url(url, historical=False):"));
         assertTrue(metadata.contains("def task_mirrors():"));
         assertTrue(metadata.contains("MIRROR_MODULE['MirrorPolicy'].from_environment(globals().get('DEADLINE'))"));
-        assertTrue(metadata.contains("module['mirror_transfer'](policy, point, official_url(url), target,"));
+        assertTrue(metadata.contains("source = official_url(url)"));
+        assertTrue(metadata.contains("module['mirror_transfer'](policy, point, source, target, algorithm, expected, maximum)"));
+        assertTrue(metadata.contains("the GNU Make archive identity differs from the fixed release"));
         assertFalse(metadata.contains("__WTL_MIRROR_RUNTIME_SHA256__"));
         assertFalse(metadata.contains("def install("));
         assertFalse(metadata.contains("def probe("));

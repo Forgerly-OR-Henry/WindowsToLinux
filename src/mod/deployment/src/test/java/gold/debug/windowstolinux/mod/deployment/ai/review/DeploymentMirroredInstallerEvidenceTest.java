@@ -39,16 +39,25 @@ class DeploymentMirroredInstallerEvidenceTest {
                     boolean custom = kind.equals("CUSTOM");
                     assertEquals(custom ? mirrored ? DeploymentInstallerEvidence.CUSTOM_MIRROR_FORMAT : DeploymentInstallerEvidence.CUSTOM_FORMAT
                         : mirrored ? DeploymentInstallerEvidence.MIRROR_FORMAT : "ORDERED_SHELL_LITERAL_V1", evidence.path("format").asText());
-                    assertEquals((mirrored ? 3 : 2) + (custom ? 1 : 0), evidence.path("sources").size());
-                    assertEquals((mirrored ? 7 : 5) + (custom ? 4 : 0), evidence.path("segments").size());
+                    assertEquals((mirrored ? 4 : 2) + (custom ? 1 : 0), evidence.path("sources").size());
+                    assertEquals((mirrored ? 11 : 5) + (custom ? 4 : 0), evidence.path("segments").size());
                     assertEquals(MirroredInstallerTestFixture.sha(executable), evidence.at("/digestScopes/requestDigest/value").asText());
                     if (kind.equals("TRACKED")) assertTrue(evidence.path("digestScopes").has("bodyDigest"));
                     if (mirrored) {
                         assertEquals(DeploymentMirrorRuntime.runtimeSource(), evidence.at("/sources/mirrorRuntime").textValue());
+                        var bootstrap = DeploymentMirrorRuntime.bootstrap(
+                            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(fixture.task));
+                        assertEquals(bootstrap.shell(), evidence.at("/sources/mirrorBootstrapShell").textValue());
+                        assertEquals(MirroredInstallerTestFixture.sha(bootstrap.shell()),
+                            evidence.at("/digestScopes/mirrorBootstrapShellDigest/value").asText());
+                        assertEquals(List.of("SHELL_SINGLE_QUOTE", "SOURCE_TEXT"), java.util.stream.StreamSupport
+                            .stream(evidence.path("segments").spliterator(), false)
+                            .filter(segment -> segment.path("source").asText().equals("mirrorBootstrapShell"))
+                            .map(segment -> segment.path("kind").asText()).toList());
                         assertFalse(facts.path("mirrorTransport").has("runtimeSource"));
                         assertEquals(DeploymentInstallerEvidence.MIRROR_SOURCE_POINTER, facts.at("/mirrorTransport/runtimeSourcePointer").textValue());
                         DeploymentInstallerEvidence.verifySourceReferences(facts);
-                        assertEquals(custom ? 10 : 7, DeploymentInstallerEvidence.readableBodies(evidence).size());
+                        assertEquals(custom ? 13 : 10, DeploymentInstallerEvidence.readableBodies(evidence).size());
                         assertTrue(facts.path("exactAction").asText().contains("stdinSha256="+MirroredInstallerTestFixture.sha(executable)));
                     }
                     String current = DeploymentAiJson.facts(JSON.convertValue(facts, new TypeReference<Map<String,Object>>(){}), 1048576);
@@ -58,8 +67,23 @@ class DeploymentMirroredInstallerEvidenceTest {
         }
     }
 
+    @Test
+    void noncanonicalMirrorKeepsTheLegacyCompleteLiteralShape() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture()) {
+            String original = fixture.installer("FILES", true);
+            String legacy = original.substring(original.indexOf('\n') + 1);
+            var evidence = JSON.valueToTree(DeploymentInstallerEvidence.describeFiles(legacy, fixture.layout));
+            assertTrue(DeploymentInstallerEvidence.isMirrored(evidence));
+            assertEquals("ORDERED_SHELL_LITERAL_MIRROR_V2", evidence.path("format").asText());
+            assertFalse(evidence.path("sources").has("mirrorBootstrapShell"));
+            assertEquals(7, DeploymentInstallerEvidence.readableBodies(evidence).size());
+            assertEquals(legacy, DeploymentInstallerEvidence.reconstruct(evidence));
+            DeploymentInstallerEvidence.verify(evidence, legacy);
+        }
+    }
+
     @ParameterizedTest
-    @ValueSource(strings={"RUNTIME_SOURCE","HELPER_SOURCE","POINTER","ORDER","DIGEST","MISSING","EXTRA","LITERAL"})
+    @ValueSource(strings={"RUNTIME_SOURCE","HELPER_SOURCE","POINTER","ORDER","DIGEST","MISSING","EXTRA","LITERAL","BOOTSTRAP_SCOPE","BOOTSTRAP_WRITE"})
     void changedSourceReferenceOrderDigestOrWrapperStopsBeforeModelOrHost(String mutation) throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var request = fixture.request(fixture.installer("TRACKED",true))) {
             ObjectNode current = JSON.valueToTree(fixture.facts("TRACKED",request));
@@ -73,6 +97,9 @@ class DeploymentMirroredInstallerEvidenceTest {
                 case "MISSING" -> ((ObjectNode)evidence.path("sources")).remove("mirrorRuntime");
                 case "EXTRA" -> ((ObjectNode)evidence.path("sources")).put("unreviewed","printf changed\n");
                 case "LITERAL" -> ((ObjectNode)evidence.path("segments").get(6)).put("text",evidence.at("/segments/6/text").asText()+"printf changed\n");
+                case "BOOTSTRAP_SCOPE" -> ((ObjectNode)evidence.at("/digestScopes/mirrorBootstrapShellDigest")).put("value","0".repeat(64));
+                case "BOOTSTRAP_WRITE" -> ((ObjectNode)evidence.path("segments").get(4)).put("text",
+                    evidence.at("/segments/4/text").asText().replace("$WTL_MIRROR_SHELL", "$WTL_MIRROR_RUNTIME"));
                 default -> throw new AssertionError(mutation);
             }
             Map<String,Object> map=JSON.convertValue(current,new TypeReference<>(){});

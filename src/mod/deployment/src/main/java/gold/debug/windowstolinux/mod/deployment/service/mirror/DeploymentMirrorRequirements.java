@@ -55,11 +55,13 @@ public final class DeploymentMirrorRequirements {
         switch (kind) {
             case NODE_SERVICE -> node(points);
             case STATIC_SITE -> {
-                Collections.addAll(points, DownloadPoint.PYTHON_DISTRIBUTION, DownloadPoint.PYTHON_METADATA);
+                Collections.addAll(points, DownloadPoint.PYTHON_DISTRIBUTION, DownloadPoint.PYTHON_METADATA,
+                    DownloadPoint.GNU_MAKE_SOURCE);
                 if (root == null || regular(root, "package.json")) node(points);
             }
             case PYTHON_SERVICE -> Collections.addAll(points, DownloadPoint.PYTHON_DISTRIBUTION,
-                DownloadPoint.PYTHON_METADATA, DownloadPoint.PYTHON_PIP_BOOTSTRAP, DownloadPoint.PYTHON_PACKAGE);
+                DownloadPoint.PYTHON_METADATA, DownloadPoint.PYTHON_PIP_BOOTSTRAP, DownloadPoint.PYTHON_PACKAGE,
+                DownloadPoint.GNU_MAKE_SOURCE);
             case JAVA_SOURCE -> java(points);
             case JAVA_JAR, SPRING_BOOT -> {
                 java(points);

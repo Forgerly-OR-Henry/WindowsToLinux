@@ -18,6 +18,7 @@ final class DeploymentMirrorSettingsEditor extends JPanel {
     private final Map<DownloadPoint, Chain> chains = new EnumMap<>(DownloadPoint.class);
     private Map<String, String> regions = new LinkedHashMap<>();
     private List<SecretChoice> credentials = List.of();
+    private boolean inheritedGnuMake;
 
     DeploymentMirrorSettingsEditor(MirrorCatalog catalog, ResourceBundle messages, BooleanSupplier consent) {
         this.catalog = Objects.requireNonNull(catalog);
@@ -33,7 +34,10 @@ final class DeploymentMirrorSettingsEditor extends JPanel {
 
     void load(MirrorSettings settings) {
         regions = new LinkedHashMap<>(settings.serverRegions());
-        chains.forEach((point, chain) -> chain.load(settings.rows(point)));
+        inheritedGnuMake = !settings.points().containsKey(DownloadPoint.GNU_MAKE_SOURCE);
+        chains.forEach((point, chain) -> chain.load(point == DownloadPoint.GNU_MAKE_SOURCE && inheritedGnuMake
+            ? List.of(new MirrorSettings.Row(DownloadPoint.GNU_MAKE_PROVIDER, "", false, false, ""))
+            : settings.rows(point)));
     }
 
     Map<String, String> regions() { return Map.copyOf(regions); }
@@ -49,7 +53,11 @@ final class DeploymentMirrorSettingsEditor extends JPanel {
 
     MirrorSettings values() {
         var points = new EnumMap<DownloadPoint, List<MirrorSettings.Row>>(DownloadPoint.class);
-        chains.forEach((point, chain) -> points.put(point, chain.rows.stream().map(Row::value).toList()));
+        chains.forEach((point, chain) -> {
+            var rows = chain.rows.stream().map(Row::value).toList();
+            if (point != DownloadPoint.GNU_MAKE_SOURCE || !inheritedGnuMake || rows.getFirst().automatic())
+                points.put(point, rows);
+        });
         return new MirrorSettings(1, points, regions);
     }
 
@@ -107,7 +115,7 @@ final class DeploymentMirrorSettingsEditor extends JPanel {
                 if (active) list.add(row);
                 if (row.automatic.isSelected()) active = false;
             }
-            add.setVisible(active && rows.size() < 3);
+            add.setVisible(point != DownloadPoint.GNU_MAKE_SOURCE && active && rows.size() < 3);
             revalidate();
             repaint();
         }
@@ -120,18 +128,21 @@ final class DeploymentMirrorSettingsEditor extends JPanel {
         final JCheckBox automatic = new JCheckBox(messages.getString("automatic"));
         final JButton remove = new JButton(messages.getString("remove"));
         final JComboBox<SecretChoice> credential = new JComboBox<>();
+        final boolean fixedOfficial;
         boolean accepted;
 
         Row(Chain chain, MirrorSettings.Row saved) {
             super(new FlowLayout(FlowLayout.LEADING));
-            source.addItem(new Choice("", messages.getString("choose")));
+            fixedOfficial = chain.point == DownloadPoint.GNU_MAKE_SOURCE;
+            if (!fixedOfficial) source.addItem(new Choice("", messages.getString("choose")));
+            else automatic.setText(messages.getString("source.fixed.disabled"));
             for (var provider : catalog.providersFor(chain.point)) {
                 String location = provider.country().matches("[A-Z]{2}")
                     ? new Locale.Builder().setRegion(provider.country()).build().getDisplayCountry(messages.getLocale())
                     : messages.getString("source.global");
                 source.addItem(new Choice(provider.id(), provider.label() + " · " + location));
             }
-            source.addItem(new Choice("custom", messages.getString("custom")));
+            if (!fixedOfficial) source.addItem(new Choice("custom", messages.getString("custom")));
             credential.addItem(new SecretChoice("", messages.getString("credential.none")));
             if (saved == null && source.getItemCount() > 2) source.setSelectedIndex(1);
             if (saved != null) {
@@ -145,8 +156,8 @@ final class DeploymentMirrorSettingsEditor extends JPanel {
                     source.setSelectedIndex(source.getItemCount() - 1);
                 }
                 custom.setText(saved.customUrl());
-                automatic.setSelected(saved.automatic());
-                accepted = saved.privacyConsent();
+                automatic.setSelected(saved.automatic() && (!fixedOfficial || !saved.privacyConsent()));
+                accepted = !fixedOfficial && saved.privacyConsent();
                 if (!saved.secretRef().isEmpty()) {
                     credential.addItem(new SecretChoice(saved.secretRef(), saved.secretRef()));
                     credential.setSelectedIndex(1);
@@ -159,7 +170,7 @@ final class DeploymentMirrorSettingsEditor extends JPanel {
             add(priority); add(source); add(custom); add(credential); add(automatic); add(remove);
             source.addActionListener(event -> refresh());
             automatic.addActionListener(event -> {
-                if (automatic.isSelected()) {
+                if (!fixedOfficial && automatic.isSelected()) {
                     if (!consent.getAsBoolean()) automatic.setSelected(false);
                     else accepted = true;
                 }
@@ -177,9 +188,11 @@ final class DeploymentMirrorSettingsEditor extends JPanel {
             custom.setVisible(((Choice)source.getSelectedItem()).id.equals("custom"));
             custom.setEnabled(!automatic.isSelected());
             credential.setEnabled(!automatic.isSelected());
+            credential.setVisible(!fixedOfficial);
         }
 
         void credentials() {
+            if (fixedOfficial) return;
             String selected = credential.getSelectedItem() instanceof SecretChoice choice ? choice.reference() : "";
             credential.removeAllItems();
             credential.addItem(new SecretChoice("", messages.getString("credential.none")));

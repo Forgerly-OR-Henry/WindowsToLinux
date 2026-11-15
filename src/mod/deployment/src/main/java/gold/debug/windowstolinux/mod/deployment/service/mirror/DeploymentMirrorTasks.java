@@ -309,8 +309,14 @@ public final class DeploymentMirrorTasks {
                 throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "MIRROR_PRIVACY_CONSENT_REQUIRED",
                     "Region matching requires explicit privacy consent; configure mirror settings to continue", Map.of(), Optional.empty()));
             var rows = new EnumMap<DownloadPoint, List<MirrorSettings.Row>>(DownloadPoint.class);
-            for (var point : DownloadPoint.values()) rows.put(point, settings.rows(point).stream()
-                .map(r -> new MirrorSettings.Row(r.providerId(), r.customUrl(), r.automatic(), r.automatic() || r.privacyConsent(), r.secretRef())).toList());
+            for (var point : DownloadPoint.values()) {
+                if (point == DownloadPoint.GNU_MAKE_SOURCE) {
+                    if (settings.points().containsKey(point)) rows.put(point, settings.rows(point));
+                } else {
+                    rows.put(point, settings.rows(point).stream()
+                        .map(r -> new MirrorSettings.Row(r.providerId(), r.customUrl(), r.automatic(), r.automatic() || r.privacyConsent(), r.secretRef())).toList());
+                }
+            }
             var confirmed = new MirrorSettings(1, rows, settings.serverRegions());
             new DeploymentMirrorStore(context.db()).saveConsent(task, settings, confirmed);
             settings = confirmed;
@@ -532,10 +538,11 @@ public final class DeploymentMirrorTasks {
     }
 
     private static boolean hasAutomatic(MirrorSettings settings, Set<DownloadPoint> active) {
-        return active.stream().anyMatch(p -> settings.rows(p).stream().anyMatch(MirrorSettings.Row::automatic));
+        return active.stream().filter(p -> p != DownloadPoint.GNU_MAKE_SOURCE)
+            .anyMatch(p -> settings.rows(p).stream().anyMatch(MirrorSettings.Row::automatic));
     }
     private static boolean needsConsent(MirrorSettings settings, Set<DownloadPoint> active) {
-        return active.stream().anyMatch(p -> settings.rows(p).stream()
+        return active.stream().filter(p -> p != DownloadPoint.GNU_MAKE_SOURCE).anyMatch(p -> settings.rows(p).stream()
             .filter(MirrorSettings.Row::automatic).findFirst().map(r -> !r.privacyConsent()).orElse(false));
     }
     private static String quote(String value) { return "'" + value.replace("'", "'\"'\"'") + "'"; }

@@ -34,8 +34,8 @@ class DeploymentCustomInstallerEvidenceTest {
             String program = DeploymentAgentToolchainPrograms.dependencies(fixture.layout);
             String worker = program.substring(program.indexOf('\n') + 1);
             assertEquals(mirrored ? DeploymentInstallerEvidence.CUSTOM_MIRROR_FORMAT : DeploymentInstallerEvidence.CUSTOM_FORMAT, evidence.path("format").asText());
-            assertEquals(mirrored ? 4 : 3, evidence.path("sources").size());
-            assertEquals(mirrored ? 11 : 9, evidence.path("segments").size());
+            assertEquals(mirrored ? 5 : 3, evidence.path("sources").size());
+            assertEquals(mirrored ? 15 : 9, evidence.path("segments").size());
             assertEquals(worker, evidence.at("/sources/dependencyWorker").textValue());
             assertArrayEquals(request.stdin(), DeploymentInstallerEvidence.reconstruct(evidence).getBytes(StandardCharsets.UTF_8));
             DeploymentInstallerEvidence.verify(evidence, script);
@@ -49,14 +49,15 @@ class DeploymentCustomInstallerEvidenceTest {
                 JSON.convertValue(facts.path("resourceTargets"), new TypeReference<Set<ActionTarget>>() {}));
             assertEquals(MirroredInstallerTestFixture.sha(worker), evidence.at("/digestScopes/dependencyWorkerDigest/value").textValue());
             assertEquals("COMPLETE_DEPENDENCY_WORKER_SOURCE_UTF8_BEFORE_JSON_STRING_OR_SOURCE_TEXT_TRANSFORMATION", evidence.at("/digestScopes/dependencyWorkerDigest/bytes").textValue());
-            int jsonIndex = mirrored ? 3 : 1;
+            int jsonIndex = mirrored ? 7 : 1;
+            assertEquals(jsonIndex, DeploymentInstallerEvidence.dependencyWorkerJsonSegment(evidence));
             assertEquals("JSON_STRING", evidence.path("segments").get(jsonIndex).path("kind").textValue());
             assertEquals("\n", evidence.path("segments").get(jsonIndex + 1).path("text").textValue());
             assertEquals("SOURCE_TEXT", evidence.path("segments").get(jsonIndex + 2).path("kind").textValue());
             assertEquals(2, java.util.stream.StreamSupport.stream(evidence.path("segments").spliterator(), false)
                 .filter(segment -> segment.path("source").asText().equals("dependencyWorker")).count());
             var leaves = DeploymentInstallerEvidence.readableBodies(evidence);
-            assertEquals(mirrored ? 10 : 8, leaves.size());
+            assertEquals(mirrored ? 13 : 8, leaves.size());
             assertEquals(1, leaves.stream().filter("/sources/dependencyWorker"::equals).count());
             if (mirrored) {
                 assertFalse(facts.path("mirrorTransport").has("runtimeSource"));
@@ -67,7 +68,7 @@ class DeploymentCustomInstallerEvidenceTest {
             var complete = JSON.readTree(JSON.writeValueAsString(conversation.facts("Review exact CUSTOM bytes",
                 fixture.facts("CUSTOM", request), fixture.model.configurationRevision, fixture.task)));
             var navigation = complete.at("/helperInstallationSourceEvidence/agentBootstrap");
-            assertEquals(mirrored ? 6 : 5, complete.at("/helperInstallationSourceEvidence/installerLocations").size());
+            assertEquals(mirrored ? 8 : 5, complete.at("/helperInstallationSourceEvidence/installerLocations").size());
             assertEquals(leaves.size(), complete.at("/helperInstallationSourceEvidence/requiredExecutableEvidencePointers").size());
             var prefix = new StringBuilder();
             for (var part : navigation.path("prefixParts")) prefix.append(MirroredInstallerTestFixture.navigationPart(complete, part, request.stdin()));
@@ -84,7 +85,7 @@ class DeploymentCustomInstallerEvidenceTest {
             String current = DeploymentAiJson.facts(JSON.convertValue(complete, new TypeReference<Map<String, Object>>() {}), 1048576);
             var messages = conversation.messages(current, fixture.model.configurationRevision, fixture.task);
             assertEquals(complete, MirroredInstallerTestFixture.restoreCarrier(messages));
-            assertEquals(mirrored ? 10 : 8, JSON.readTree(messages.getLast().text()).at("/approvalSourceCarrier/frames").size());
+            assertEquals(mirrored ? 13 : 8, JSON.readTree(messages.getLast().text()).at("/approvalSourceCarrier/frames").size());
             assertTrue(fixture.model.requests.isEmpty());
         }
     }
