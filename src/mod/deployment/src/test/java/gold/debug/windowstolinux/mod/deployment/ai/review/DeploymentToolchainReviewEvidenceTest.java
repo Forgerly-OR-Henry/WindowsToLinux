@@ -30,12 +30,18 @@ import gold.debug.windowstolinux.app.ai.model.ModelRequestBudgetException;
 import gold.debug.windowstolinux.appapi.ai.model.*;
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.task.action.*;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchiveReview;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics;
 import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
+import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence;
 import gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime;
@@ -343,6 +349,151 @@ class DeploymentToolchainReviewEvidenceTest {
         }
     }
 
+    @ParameterizedTest
+    @CsvSource({"APPROVE,459292,809654", "DENY,478459,811143", "DENY,451362,810883"})
+    void readyTrackedInstallerRequestsFormalVerdictAfterFirstRedundantRebasedRead(
+            String decision, int observedBeforeVerdict, int observedOpenBytes) throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
+            String installer = readyTrackedInstaller(fixture);
+            var executable = JSON.valueToTree(DeploymentInstallerEvidence.describe(installer, fixture.layout));
+            var exact = new LinkedHashMap<String, String>();
+            for (String leaf : DeploymentInstallerEvidence.readableBodies(executable))
+                exact.put("/completeExecutableInput" + leaf, executable.at(leaf).textValue());
+            int earlyBound = 1_500_000 - 65_536 - observedBeforeVerdict;
+            var bounded = wireBudgetContext(assisted.context, Map.of(), 0,
+                () -> fixture.model.requests.size() < 2 ? 1_048_576 : earlyBound, delivered -> {
+                    try {
+                        int turn = fixture.model.requests.size();
+                        var manifest = JSON.readTree(delivered.messages().getLast().text()).path("installerReviewEvidence");
+                        assertFalse(manifest.has("runtimeShellReconstruction"));
+                        assertFalse(manifest.path("completeSourceRequired").isEmpty());
+                        var visible = assertInstallerVisibleRanges(delivered, manifest, exact);
+                        exact.forEach((pointer, source) -> {
+                            if (!source.isEmpty()) assertEquals(Map.of(0, source.length()), visible.get(pointer));
+                        });
+                        assertEquals(0, assisted.hosts.get());
+                        if (turn < 2) {
+                            assertTrue(delivered.requiredToolName().isEmpty());
+                            fixture.model.replies.add(success(mockResponses(read("ready-reread-" + turn,
+                                manifest.path("snapshotSha256").asText(), "/completeExecutableInput/sources/managedHelper", 0, 8000))));
+                        } else {
+                            assertEquals(2, turn);
+                            assertEquals(Optional.of("submit_result"), delivered.requiredToolName());
+                            reply(fixture, verdict("ready-formal-verdict", decision));
+                        }
+                    } catch (Exception failure) {
+                        throw new AssertionError(failure);
+                    }
+                });
+            if (decision.equals("APPROVE")) {
+                assertEquals(TaskResult.SUCCEEDED, installReadyTrackedFixture(fixture, assisted, bounded, installer).outcome());
+                assertEquals(1, assisted.hosts.get());
+            } else {
+                var denied = assertThrows(ApiException.class, () -> installReadyTrackedFixture(fixture, assisted, bounded, installer));
+                assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
+                assertEquals(0, assisted.hosts.get());
+            }
+            assertEquals(3, fixture.model.requests.size());
+            var preceding = fixture.model.requests.get(1);
+            var formal = fixture.model.requests.getLast();
+            assertEquals(preceding.messages().subList(1, preceding.messages().size()), formal.messages().subList(1, formal.messages().size()));
+            assertEquals(preceding.timeout(), formal.timeout());
+            assertEquals(preceding.maxOutputTokens(), formal.maxOutputTokens());
+            assertEquals(0, formal.generationRecoveryAttempts());
+            var encoded = wire(formal, earlyBound, Map.of());
+            var nativeRequest = JSON.readTree(encoded);
+            assertEquals("submit_result", nativeRequest.at("/tool_choice/name").asText());
+            assertEquals(1, nativeRequest.path("tools").size());
+            for (int index = 1; index < formal.messages().size(); index++)
+                assertEquals(formal.messages().get(index).text(), nativeRequest.at("/input/" + index + "/content/0/text").asText());
+            int projectedBytes = observedOpenBytes + encoded.length - wire(preceding, 1_048_576, Map.of()).length;
+            assertTrue(projectedBytes <= earlyBound);
+            System.out.printf("R57_READY_INSTALLER decision=%s encoded=%d projected=%d ceiling=%d observed=%d%n",
+                decision, encoded.length, projectedBytes, earlyBound, observedBeforeVerdict);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing-required", "new-range", "stale-snapshot", "invalid-cursor", "empty-page"})
+    void readyTrackedInstallerKeepsBrowsingForAReadThatCannotAdvanceToFormalVerdict(String scenario) throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
+            String installer = readyTrackedInstaller(fixture);
+            int limit = scenario.equals("missing-required") ? 365119 : 1_048_576;
+            String expectedBlock = switch (scenario) {
+                case "missing-required" -> "REQUIRED_SOURCE_MISSING";
+                case "stale-snapshot", "invalid-cursor" -> "READ_REJECTED";
+                default -> "";
+            };
+            var bounded = wireBudgetContext(assisted.context, Map.of(), 0, () -> limit, delivered -> {
+                try {
+                    assertTrue(delivered.requiredToolName().isEmpty());
+                    int turn = fixture.model.requests.size();
+                    var facts = JSON.readTree(delivered.messages().getLast().text());
+                    var manifest = facts.path("installerReviewEvidence");
+                    String snapshot = manifest.path("snapshotSha256").asText();
+                    String pointer = "/completeExecutableInput/sources/managedHelper";
+                    int end = facts.at(pointer).path("characters").asInt();
+                    if (turn == 0) {
+                        fixture.model.replies.add(success(mockResponses(read("ready-initial", snapshot, pointer, 0, 64))));
+                    } else if (turn == 1) {
+                        var repeat = read("ready-repeat", snapshot, pointer, 0, 64);
+                        var next = switch (scenario) {
+                            case "new-range" -> read("ready-new", snapshot, "/exactAction", 0, 64);
+                            case "stale-snapshot" -> read("ready-stale", "0".repeat(64), pointer, 0, 64);
+                            case "invalid-cursor" -> read("ready-invalid", snapshot, pointer, end + 1, 64);
+                            case "empty-page" -> read("ready-empty", snapshot, pointer, end, 64);
+                            default -> repeat;
+                        };
+                        fixture.model.replies.add(success(next == repeat ? mockResponses(repeat) : mockResponses(repeat, next)));
+                    } else {
+                        assertEquals(2, turn);
+                        var header = installerRetainedHeader(delivered.messages().get(delivered.messages().size() - 2).text());
+                        switch (scenario) {
+                            case "new-range" -> assertTrue(header.path("ranges").findValuesAsText("pointer").contains("/exactAction"));
+                            case "stale-snapshot" -> assertEquals("SNAPSHOT_MISMATCH", header.at("/latestReads/1/rejectionCode").asText());
+                            case "invalid-cursor" -> assertEquals("CURSOR_INVALID", header.at("/latestReads/1/rejectionCode").asText());
+                            case "missing-required" -> assertFalse(header.path("pendingRequired").isEmpty());
+                            case "empty-page" -> assertEquals(end, header.at("/latestReads/1/next").asInt());
+                        }
+                        reply(fixture, verdict("ready-browse-verdict", expectedBlock.isEmpty() ? "DENY" : "APPROVE"));
+                    }
+                } catch (Exception failure) {
+                    throw new AssertionError(failure);
+                }
+            });
+            var rejected = assertThrows(ApiException.class, () -> installReadyTrackedFixture(fixture, assisted, bounded, installer));
+            if (expectedBlock.isEmpty()) assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", rejected.problem().eventCode());
+            else {
+                assertEquals("EVIDENCE_INCOMPLETE_VERDICT", rejected.problem().context().get("reviewCode"));
+                assertEquals(expectedBlock, rejected.problem().context().get("reviewEvidenceBlock"));
+            }
+            assertEquals(3, fixture.model.requests.size());
+            assertEquals(0, assisted.hosts.get());
+        }
+    }
+
+    private static String readyTrackedInstaller(MirroredInstallerTestFixture fixture) throws Exception {
+        var point = DownloadPoint.APT_UBUNTU;
+        String bodyDigest = DeploymentHelperInstallerScript.readyBodyDigest(fixture.layout, point);
+        return DeploymentHelperInstallerScript.renderTrackedReady(fixture.task.id(), fixture.operation,
+            MirroredInstallerTestFixture.sha(fixture.server.id()), bodyDigest, fixture.layout, point);
+    }
+
+    private static OperationResult<CommandResult> installReadyTrackedFixture(MirroredInstallerTestFixture fixture,
+            DeploymentNativeHelperPackageImpactTest.Assisted assisted, ModContext context, String installer) throws Exception {
+        var session = (RemoteSession) java.lang.reflect.Proxy.newProxyInstance(DeploymentToolchainReviewEvidenceTest.class.getClassLoader(),
+            new Class<?>[]{RemoteSession.class}, (proxy, method, arguments) -> {
+                assertEquals("execute", method.getName());
+                assertTrue(assisted.grants.contains(((ApprovalGrant) arguments[1]).id()));
+                assertArrayEquals(installer.getBytes(StandardCharsets.UTF_8), ((CommandRequest) arguments[0]).stdin());
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+            });
+        var helper = new DeploymentManagedHelper(session, assisted.host, fixture.server, fixture.task, fixture.model.configurationRevision,
+            DeploymentSendGuard.NONE, (intent, request, task) -> DeploymentFixedCommandApproval.approveWithEvidence(
+                context, assisted.host, intent, request, task, fixture.model.configurationRevision, "AUTOMATIC", false, assisted.scope));
+        return helper.installTracked(installer.getBytes(StandardCharsets.UTF_8), () -> { });
+    }
+
     private static Map<String, TreeMap<Integer, Integer>> assertInstallerVisibleRanges(
             AiRequest request, JsonNode installer, Map<String, String> exactSources) throws Exception {
         var bySource = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
@@ -364,20 +515,22 @@ class DeploymentToolchainReviewEvidenceTest {
         for (var range : header.path("ranges"))
             position += assertInstallerRange(exactSources, bySource, supplied, range.path("pointer").asText(), range, source, position);
         assertEquals(source.length(), position);
-        assertTrue(header.path("runtimeShellReconstructible").asBoolean());
-        var reconstruction = installer.path("runtimeShellReconstruction");
-        assertEquals("JSON_STRING", reconstruction.path("encoding").asText());
-        var from = reconstruction.path("source");
-        var target = reconstruction.path("target");
-        String shell = from.path("pointer").asText(), runtime = target.path("pointer").asText();
-        int shellOffset = from.path("offset").asInt(), shellNext = from.path("next").asInt();
-        var shellCoverage = bySource.get(shell).floorEntry(shellOffset);
-        assertNotNull(shellCoverage);
-        assertTrue(shellCoverage.getValue() >= shellNext, "Runtime reconstruction requires the actual shell text in this request");
-        String serialized = JSON.writeValueAsString(new String(supplied.get(shell), shellOffset, shellNext - shellOffset));
-        assertEquals(target.path("sha256").asText(), DeploymentEvidencePages.sha256(serialized));
-        assertEquals(target.path("utf8Bytes").asInt(), serialized.getBytes(StandardCharsets.UTF_8).length);
-        assertEquals(serialized.length(), assertInstallerRange(exactSources, bySource, supplied, runtime, target, serialized, 0));
+        if (exactSources.containsKey("/completeExecutableInput/sources/mirrorRuntime")) {
+            assertTrue(header.path("runtimeShellReconstructible").asBoolean());
+            var reconstruction = installer.path("runtimeShellReconstruction");
+            assertEquals("JSON_STRING", reconstruction.path("encoding").asText());
+            var from = reconstruction.path("source");
+            var target = reconstruction.path("target");
+            String shell = from.path("pointer").asText(), runtime = target.path("pointer").asText();
+            int shellOffset = from.path("offset").asInt(), shellNext = from.path("next").asInt();
+            var shellCoverage = bySource.get(shell).floorEntry(shellOffset);
+            assertNotNull(shellCoverage);
+            assertTrue(shellCoverage.getValue() >= shellNext, "Runtime reconstruction requires the actual shell text in this request");
+            String serialized = JSON.writeValueAsString(new String(supplied.get(shell), shellOffset, shellNext - shellOffset));
+            assertEquals(target.path("sha256").asText(), DeploymentEvidencePages.sha256(serialized));
+            assertEquals(target.path("utf8Bytes").asInt(), serialized.getBytes(StandardCharsets.UTF_8).length);
+            assertEquals(serialized.length(), assertInstallerRange(exactSources, bySource, supplied, runtime, target, serialized, 0));
+        }
         var pending = JSON.createArrayNode();
         for (var obligation : installer.path("completeSourceRequired")) {
             String pointer = obligation.path("pointer").asText();

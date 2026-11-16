@@ -1429,7 +1429,9 @@ public final class DeploymentCommandSourceEvidence {
                 .noneMatch(read -> read.next() > read.offset() && !coversPage(lastVisible, read));
             if (rebased) {
                 repeatedBatches = latestReadRepeated ? repeatedBatches + 1 : 0;
-                if (repeatedBatches > 1)
+                if (repeatedBatches > 1 || repeatedBatches == 1 && readyInstallerReview()
+                    && latestReads.stream().allMatch(read -> read.next() > read.offset())
+                    && !hasUnfulfilledApprovalEvidence())
                     throw new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.EVIDENCE_READ, TOOL.name(),
                         "EVIDENCE_NO_PROGRESS", new IOException("Independent review repeated evidence without progressing to a new source range or verdict"),
                         latestReads.size(), 0, repeatedBatches);
@@ -1969,6 +1971,10 @@ public final class DeploymentCommandSourceEvidence {
         return installerReview() && !requiredRanges.isEmpty();
     }
 
+    private boolean readyInstallerReview() {
+        return completeInstallerReview() && !sourceBodies.containsKey(INSTALLER_RUNTIME);
+    }
+
     public boolean bindingReview() {
         return BIND.equals(current.path("operation").asText());
     }
@@ -2021,7 +2027,7 @@ public final class DeploymentCommandSourceEvidence {
             If sourceArchiveHistory is present, the selected archive is already inline at selectedArchivePointer. The original history remains readable at sourcePointer.
             """ : "");
         if (installerReview()) {
-            if (completeInstallerReview() && !sourceBodies.containsKey(INSTALLER_RUNTIME))
+            if (readyInstallerReview())
                 return INSTALLER_INSTRUCTION.replace(", package transaction", "") + READY_INSTALLER_INSTRUCTION;
             return INSTALLER_INSTRUCTION + (completeInstallerReview() ? COMPLETE_INSTALLER_INSTRUCTION : "");
         }
