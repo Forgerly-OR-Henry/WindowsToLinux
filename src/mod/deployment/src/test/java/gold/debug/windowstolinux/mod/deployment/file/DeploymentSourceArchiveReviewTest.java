@@ -3,12 +3,15 @@ package gold.debug.windowstolinux.mod.deployment.file;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,6 +19,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.MatchResult;
+import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -24,6 +29,7 @@ import gold.debug.windowstolinux.app.ai.model.ModelProtocol;
 import gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec;
 import gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel;
 import gold.debug.windowstolinux.app.ai.model.ModelRequestBudgetException;
+import gold.debug.windowstolinux.appapi.ai.AiService;
 import gold.debug.windowstolinux.appapi.ai.model.AiContinuation;
 import gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt;
 import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
@@ -34,9 +40,11 @@ import gold.debug.windowstolinux.appapi.ai.model.AiUsage;
 import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot;
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
@@ -61,6 +69,9 @@ class DeploymentSourceArchiveReviewTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String LOG_ANALYZER_HEADER = "native/vendor/nlohmann/json.hpp";
     private static final String LOG_ANALYZER_HEADER_SHA256 = "aaf127c04cb31c406e5b04a63f1ae89369fccde6d8fa7cdda1ed4f32dfc5de63";
+    private static final String LOG_ANALYZER_MARKER = "SPDX-FileCopyrightText: 2013 - 2025 Niels Lohmann";
+    private static final int REVIEW_CEILING = 1_048_576;
+    private static final int ORIGINAL_PAGE_CEILING = 223_943;
     @TempDir
     Path temporary;
 
@@ -373,39 +384,57 @@ class DeploymentSourceArchiveReviewTest {
     private static void verifyLogAnalyzerBuildReview(MirroredInstallerTestFixture fixture, DeploymentSourceArchive archive,
                                                      DeploymentSourceArchiveReview.Evidence captured, String header) throws Exception {
         try (var build = buildReview(fixture, archive, captured)) {
-            String marker = "SPDX-FileCopyrightText: 2013 - 2025 Niels Lohmann";
-            String facts = DeploymentAiJson.facts(build.facts(), 1048576);
-            assertFalse(facts.contains(marker));
+            String facts = DeploymentAiJson.facts(build.facts(), REVIEW_CEILING);
+            assertFalse(facts.contains(LOG_ANALYZER_MARKER));
             assertFalse(JSON.readTree(facts).at("/currentCommandEvidence/currentBuildArchiveSource").has("pagedBodies"));
-            var reviewer = new DeploymentAiJson(fixture.context);
-            var initial = deny(fixture, reviewer, build.facts(), build.intent(), build.request());
-            byte[] wire = encode(initial);
-            assertTrue(wire.length < 223_943);
-            assertFalse(new String(wire, StandardCharsets.UTF_8).contains(marker));
-            var manifest = JSON.readTree(initial.messages().getLast().text()).path("buildReviewEvidence");
+            var nativeReview = nativeReview(fixture, REVIEW_CEILING);
+            fixture.model.nativeReply(verdict("APPROVE"));
+            assertEquals("APPROVE", review(nativeReview.reviewer(), fixture, build).path("decision").asText());
+            assertTrue(nativeReview.refusedSizes().isEmpty());
+            assertEquals(1, nativeReview.sent().size());
+            byte[] wire = nativeReview.sent().getFirst();
+            assertTrue(wire.length < REVIEW_CEILING);
+            var sizedMessages = new ArrayList<>(fixture.model.requests.getLast().messages());
+            var firstFacts = sizedMessages.getLast();
+            int padding = 45_338 - firstFacts.text().length(); // R58 build review evidenceCharacters.
+            if (padding > 0) {
+                var sizedFacts = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(firstFacts.text());
+                sizedFacts.put("fixturePadding", "x".repeat(padding));
+                sizedMessages.set(sizedMessages.size() - 1, new AiMessage(firstFacts.role(), JSON.writeValueAsString(sizedFacts), List.of()));
+            }
+            int historicalFactsWire = encode(reviewWithMessages(fixture.model.requests.getLast(), sizedMessages)).length;
+            assertTrue(historicalFactsWire < REVIEW_CEILING);
+            var input = JSON.readTree(wire).path("input");
+            var manifest = JSON.readTree(input.get(input.size() - 1).at("/content/0/text").asText()).path("buildReviewEvidence");
+            assertEquals(archive.sha256(), manifest.at("/projectArchive/archiveSha256").asText());
             String snapshot = manifest.path("snapshotSha256").asText();
-            var frame = retainedSource(JSON.readTree(wire).path("input"), snapshot);
+            var frame = retainedSource(input, snapshot);
             var members = manifest.at("/projectArchive/members");
             assertEquals(24, members.size());
-            assertEquals(23, frame.texts().size());
-            String pointer = "";
+            assertEquals(members.size(), frame.texts().size());
+            assertTrue(frame.header().path("initialSupplement").asBoolean());
+            assertFalse(frame.header().has("pendingRequired"));
+
+            var descriptor = frame.header().path("repeatedOriginalBlocks");
+            String pointer = descriptor.path("pointer").asText();
             for (var item : members) {
                 String memberPointer = item.path("sourcePointer").asText();
+                String content = frame.texts().get(memberPointer);
+                assertNotNull(content, memberPointer);
                 if (item.path("path").asText().equals(LOG_ANALYZER_HEADER)) {
-                    pointer = memberPointer;
+                    assertEquals(pointer, memberPointer);
                     assertEquals(LOG_ANALYZER_HEADER_SHA256, item.path("sha256").asText());
                     assertEquals(953_436, item.path("utf8Bytes").asInt());
                     assertEquals(header.length(), item.path("characters").asInt());
                     assertTrue(item.path("initiallyPaged").asBoolean());
-                    assertFalse(frame.texts().containsKey(pointer));
+                    verifyRepeatedOriginalBlocks(frame, descriptor, content, header);
                 } else {
-                    String content = frame.texts().get(memberPointer);
-                    assertNotNull(content, memberPointer);
                     assertEquals(item.path("sha256").asText(), digest(content.getBytes(StandardCharsets.UTF_8)));
+                    assertEquals(item.path("characters").asInt(), content.length());
                 }
             }
             assertFalse(pointer.isEmpty());
-            assertPendingHeader(frame, pointer, 0, header.length());
+            verifyBuildRuntimeRanges(frame, manifest, build.request());
 
             int pageSize = 8000;
             var evidence = DeploymentCommandSourceEvidence.project(facts, build.intent(), build.request(), fixture.layout,
@@ -413,21 +442,150 @@ class DeploymentSourceArchiveReviewTest {
             var localManifest = JSON.readTree(evidence.messages().getLast().text()).path("buildReviewEvidence");
             verifyLogAnalyzerHeaderPages(evidence, localManifest.path("snapshotSha256").asText(), pointer, header, pageSize);
 
-            var read = evidenceCall("log-analyzer-header-first", snapshot, pointer, 0, pageSize);
-            fixture.model.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(responses(read)), Optional.empty()));
+            var cappedReview = nativeReview(fixture, ORIGINAL_PAGE_CEILING);
+            fixture.model.nativeReply(verdict("DENY"));
+            assertEquals("DENY", review(cappedReview.reviewer(), fixture, build).path("decision").asText());
+            assertEquals(List.of(wire.length), cappedReview.refusedSizes());
+            assertEquals(1, cappedReview.sent().size());
+            byte[] plainWire = cappedReview.sent().getFirst();
+            assertTrue(plainWire.length < ORIGINAL_PAGE_CEILING);
+            assertFalse(new String(plainWire, StandardCharsets.UTF_8).contains(LOG_ANALYZER_MARKER));
+            var plain = retainedSource(JSON.readTree(plainWire).path("input"), snapshot);
+            assertFalse(plain.header().has("repeatedOriginalBlocks"));
+            assertEquals(frame.texts().size() - 1, plain.texts().size());
+            assertFalse(plain.texts().containsKey(pointer));
+            assertPendingHeader(plain, pointer, 0, header.length());
+
+            var originalFirstLimit = nativeReview(fixture, 629_030);
             fixture.model.nativeReply(verdict("APPROVE"));
-            var rejected = assertThrows(DeploymentCommandReviewModel.Failure.class, () -> reviewer
-                .askCommand("Review the original test input", build.facts(), fixture.model.configurationRevision,
-                    fixture.task, DeploymentReviewDecision::malformed, build.intent(), build.request()));
-            assertEquals("Current review source is incomplete", rejected.getCause().getMessage());
-            byte[] continuation = encode(fixture.model.requests.getLast());
-            assertTrue(continuation.length < 223_943);
-            var continued = retainedSource(JSON.readTree(continuation).path("input"), snapshot);
-            assertEquals(header.substring(0, pageSize), continued.texts().get(pointer));
-            assertPendingHeader(continued, pointer, pageSize, header.length());
-            System.out.printf("R72_ORIGINAL_ARCHIVE sha=%s members=25 captured=24 inline=23 pagedHeader=953436 initial=%d continued=%d ceiling=223943%n",
-                archive.sha256(), wire.length, continuation.length);
+            var incomplete = assertThrows(DeploymentCommandReviewModel.Failure.class,
+                () -> review(originalFirstLimit.reviewer(), fixture, build));
+            assertEquals("REQUIRED_SOURCE_MISSING", DeploymentCommandReviewModel.failureDiagnostics(incomplete).get("reviewEvidenceBlock"));
+            assertEquals(List.of(wire.length), originalFirstLimit.refusedSizes());
+            assertEquals(1, originalFirstLimit.sent().size());
+
+            var fallback = nativeReview(fixture, ORIGINAL_PAGE_CEILING);
+            var continuation = verifyPartialHeaderCannotApprove(fixture, build, fallback, snapshot, pointer, header, pageSize);
+            assertEquals(List.of(wire.length), fallback.refusedSizes());
+            assertFalse(retainedSource(JSON.readTree(fallback.sent().getFirst()).path("input"), snapshot)
+                .header().has("repeatedOriginalBlocks"));
+            assertTrue(continuation.length < ORIGINAL_PAGE_CEILING);
+
+            var rawAfterBlocks = nativeReview(fixture, REVIEW_CEILING);
+            verifyPartialHeaderCannotApprove(fixture, build, rawAfterBlocks, snapshot, pointer, header, pageSize);
+            assertTrue(rawAfterBlocks.refusedSizes().isEmpty());
+            assertTrue(retainedSource(JSON.readTree(rawAfterBlocks.sent().getFirst()).path("input"), snapshot)
+                .header().has("repeatedOriginalBlocks"));
+            System.out.printf("R75_ORIGINAL_ARCHIVE sha=%s members=25 captured=24 packedInitial=%d historicalFactsEncoded=%d references=%d "
+                    + "rawInitial=%d rawContinued=%d rawCeiling=%d historicalFirstCeiling=629030%n", archive.sha256(), wire.length,
+                historicalFactsWire, descriptor.path("references").asInt(), plainWire.length, continuation.length, ORIGINAL_PAGE_CEILING);
         }
+    }
+
+    private static void verifyRepeatedOriginalBlocks(RetainedSource frame, JsonNode descriptor, String display, String header)
+        throws Exception {
+        String pointer = descriptor.path("pointer").asText();
+        var range = frame.ranges().stream().filter(item -> item.pointer().equals(pointer)).findFirst().orElseThrow();
+        assertEquals(0, range.offset());
+        assertEquals(header.length(), range.next());
+        assertEquals(header.length(), descriptor.path("originalCharacters").asInt());
+        assertEquals(display.length(), descriptor.path("displayCharacters").asInt());
+        assertTrue(display.length() < header.length());
+        assertEquals(LOG_ANALYZER_HEADER_SHA256, descriptor.path("sha256").asText());
+
+        var displayedLines = Pattern.compile("[^\n]*\n|[^\n]+\\z").matcher(display).results().map(MatchResult::group).toList();
+        var originalLines = new ArrayList<String>();
+        var anchors = new LinkedHashMap<Integer, List<String>>();
+        int references = 0;
+        for (int index = 0; index < displayedLines.size(); index++) {
+            String line = displayedLines.get(index);
+            if (!line.startsWith("@WTL_")) {
+                originalLines.add(line);
+                continue;
+            }
+            String[] marker = line.stripTrailing().split(" ");
+            assertEquals(3, marker.length);
+            int first = Integer.parseInt(marker[1]);
+            int count = Integer.parseInt(marker[2]);
+            assertTrue(first > 0 && count > 0);
+            if (marker[0].equals("@WTL_BLOCK")) {
+                assertEquals(originalLines.size() + 1, first);
+                var literals = displayedLines.subList(index + 1, index + 1 + count);
+                assertTrue(literals.stream().noneMatch(literal -> literal.startsWith("@WTL_")));
+                assertNull(anchors.put(first, literals));
+                originalLines.addAll(literals);
+                index += count;
+            } else {
+                assertEquals("@WTL_COPY", marker[0]);
+                var block = anchors.get(first);
+                assertNotNull(block);
+                assertEquals(count, block.size());
+                originalLines.addAll(block);
+                references++;
+            }
+        }
+        assertTrue(references > 0);
+        assertEquals(references, descriptor.path("references").asInt());
+        assertEquals(originalLines.size(), descriptor.path("originalLines").asInt());
+        byte[] rebuilt = String.join("", originalLines).getBytes(StandardCharsets.UTF_8);
+        assertEquals(LOG_ANALYZER_HEADER_SHA256, digest(rebuilt));
+        assertArrayEquals(header.getBytes(StandardCharsets.UTF_8), rebuilt);
+    }
+
+    private static void verifyBuildRuntimeRanges(RetainedSource frame, JsonNode manifest, CommandRequest request) throws Exception {
+        var shellDescriptor = manifest.path("mirrorBootstrapShell");
+        String stdin = new String(request.stdin(), StandardCharsets.UTF_8);
+        int shellStart = stdin.indexOf("\nwtl_source_providers() {\n") + 1;
+        assertTrue(shellStart > 0);
+        String shell = stdin.substring(shellStart, shellStart + shellDescriptor.path("characters").asInt());
+        assertEquals(shellDescriptor.path("sha256").asText(), digest(shell.getBytes(StandardCharsets.UTF_8)));
+        var originals = Map.of(shellDescriptor.path("sourcePointer").asText(), shell,
+            "/mirrorTransport/runtimeSource", DeploymentMirrorRuntime.runtimeSource());
+        var coverage = new LinkedHashMap<String, BitSet>();
+        for (var range : frame.ranges()) {
+            if (frame.texts().containsKey(range.pointer())) continue;
+            String original = originals.get(range.pointer());
+            assertNotNull(original, range.pointer());
+            assertEquals(original.substring(range.offset(), range.next()), range.body());
+            coverage.computeIfAbsent(range.pointer(), ignored -> new BitSet()).set(range.offset(), range.next());
+        }
+        var literal = manifest.path("bootstrapShellLiteral");
+        if (literal.isObject()) {
+            var source = literal.path("source");
+            var target = literal.path("target");
+            String sourcePointer = source.path("pointer").asText();
+            int start = source.path("offset").asInt(), end = source.path("next").asInt();
+            String encoded = JSON.writeValueAsString(originals.get(sourcePointer).substring(start, end));
+            String targetPointer = target.path("pointer").asText();
+            int offset = target.path("offset").asInt(), next = target.path("next").asInt();
+            assertEquals(originals.get(targetPointer).substring(offset, next), encoded);
+            assertEquals(target.path("sha256").asText(), digest(encoded.getBytes(StandardCharsets.UTF_8)));
+            coverage.computeIfAbsent(targetPointer, ignored -> new BitSet()).set(offset, next);
+        }
+        for (var selected : manifest.path("selectedRuntimeRanges")) {
+            var seen = coverage.get(selected.path("sourcePointer").asText());
+            assertNotNull(seen);
+            assertTrue(seen.nextClearBit(selected.path("offset").asInt()) >= selected.path("next").asInt(), selected::toString);
+        }
+    }
+
+    private static byte[] verifyPartialHeaderCannotApprove(MirroredInstallerTestFixture fixture, BuildReview build,
+            NativeReview nativeReview, String snapshot, String pointer, String header, int pageSize) throws Exception {
+        var read = responses(evidenceCall("log-analyzer-header-first", snapshot, pointer, 0, pageSize));
+        fixture.model.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(read), Optional.empty()));
+        fixture.model.nativeReply(verdict("APPROVE"));
+        var rejected = assertThrows(DeploymentCommandReviewModel.Failure.class, () -> review(nativeReview.reviewer(), fixture, build));
+        var diagnostics = DeploymentCommandReviewModel.failureDiagnostics(rejected);
+        assertEquals("VERDICT", diagnostics.get("reviewStage"));
+        assertEquals("EVIDENCE_INCOMPLETE_VERDICT", diagnostics.get("reviewCode"));
+        assertEquals("REQUIRED_SOURCE_MISSING", diagnostics.get("reviewEvidenceBlock"));
+        assertEquals(2, nativeReview.sent().size());
+        byte[] continuation = nativeReview.sent().getLast();
+        var confirmed = retainedSource(JSON.readTree(continuation).path("input"), snapshot);
+        assertFalse(confirmed.header().has("repeatedOriginalBlocks"));
+        assertEquals(header.substring(0, pageSize), confirmed.texts().get(pointer));
+        assertPendingHeader(confirmed, pointer, pageSize, header.length());
+        return continuation;
     }
 
     private static void verifyLogAnalyzerHeaderPages(DeploymentCommandSourceEvidence evidence, String snapshot,
@@ -587,7 +745,9 @@ class DeploymentSourceArchiveReviewTest {
         return new AiResponse("", "fixture-model", "tool_calls", usage, List.of(call), Optional.empty());
     }
 
-    private record RetainedSource(JsonNode header, Map<String, String> texts) { }
+    private record SourceRange(String pointer, int offset, int next, String body) { }
+
+    private record RetainedSource(JsonNode header, Map<String, String> texts, List<SourceRange> ranges) { }
 
     private static RetainedSource retainedSource(JsonNode input, String snapshot) throws Exception {
         String banner = "WTL-COMMAND-RETAINED-SOURCE-1\n";
@@ -603,17 +763,68 @@ class DeploymentSourceArchiveReviewTest {
         assertEquals(snapshot, header.path("snapshotSha256").asText());
         int at = headerEnd + 1;
         var sources = new LinkedHashMap<String, String>();
+        var ranges = new ArrayList<SourceRange>();
+        var blocks = header.path("repeatedOriginalBlocks");
         for (var range : header.path("ranges")) {
-            int next = at + range.path("next").asInt() - range.path("offset").asInt();
             String pointer = range.path("pointer").asText();
+            int offset = range.path("offset").asInt();
+            int next = range.path("next").asInt();
+            int displayLength = pointer.equals(blocks.path("pointer").asText()) ? blocks.path("displayCharacters").asInt() : next - offset;
+            String body = frame.substring(at, at + displayLength);
+            ranges.add(new SourceRange(pointer, offset, next, body));
             if (pointer.startsWith("/buildReviewEvidence/projectArchive/members/")) {
-                assertEquals(0, range.path("offset").asInt());
-                assertNull(sources.put(pointer, frame.substring(at, next)));
+                assertEquals(0, offset);
+                assertNull(sources.put(pointer, body));
             }
-            at = next;
+            at += displayLength;
         }
         assertEquals(frame.length(), at);
-        return new RetainedSource(header, sources);
+        return new RetainedSource(header, sources, ranges);
+    }
+
+    private record NativeReview(DeploymentAiJson reviewer, List<byte[]> sent, List<Integer> refusedSizes) { }
+
+    private static NativeReview nativeReview(MirroredInstallerTestFixture fixture, int ceiling) {
+        var sent = new ArrayList<byte[]>();
+        var refusedSizes = new ArrayList<Integer>();
+        var loader = DeploymentSourceArchiveReviewTest.class.getClassLoader();
+        var original = fixture.context;
+        var service = Proxy.newProxyInstance(loader, new Class<?>[]{AiService.class}, (proxy, method, args) -> {
+            if (method.getName().equals("call")) {
+                var request = (AiRequest) args[0];
+                int bound = Math.min(ceiling, request.maxRequestBytes());
+                var bounded = new AiRequest(request.purpose(), request.messages(), request.maxOutputTokens(), request.timeout(),
+                    request.jsonObjectResponse(), request.tools(), bound, request.requiredToolName(), request.generationRecoveryAttempts(),
+                    request.modelId(), request.reasoningOverride());
+                try {
+                    sent.add(encode(bounded));
+                } catch (ModelRequestBudgetException failure) {
+                    refusedSizes.add(failure.encodedBytes());
+                    throw new ApiException(new Problem(ProblemCode.INVALID_INPUT, "AI_REQUEST_BUDGET", "Local encoder bound",
+                        Map.of("maximumRequestBytes", Integer.toString(bound), "encodedRequestBytes",
+                            Integer.toString(failure.encodedBytes())), Optional.empty()));
+                }
+            }
+            try {
+                return method.invoke(original.ai(), args);
+            } catch (InvocationTargetException failure) {
+                throw failure.getCause();
+            }
+        });
+        var context = (ModContext) Proxy.newProxyInstance(loader, new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+            if (method.getName().equals("ai")) return service;
+            try {
+                return method.invoke(original, args);
+            } catch (InvocationTargetException failure) {
+                throw failure.getCause();
+            }
+        });
+        return new NativeReview(new DeploymentAiJson(context), sent, refusedSizes);
+    }
+
+    private static JsonNode review(DeploymentAiJson reviewer, MirroredInstallerTestFixture fixture, BuildReview build) throws Exception {
+        return reviewer.askCommand("Review the original test input", build.facts(), fixture.model.configurationRevision,
+            fixture.task, DeploymentReviewDecision::malformed, build.intent(), build.request());
     }
 
     private static AiRequest deny(MirroredInstallerTestFixture fixture, DeploymentAiJson reviewer, Map<String, Object> facts,

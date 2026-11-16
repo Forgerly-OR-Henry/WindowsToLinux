@@ -167,7 +167,7 @@ public final class DeploymentSourceArchiveReview {
                 return "REVIEW_LINE_LIMIT";
             String digest = sha256(bytes);
             if (text.lines().anyMatch(DeploymentSourceBrowser::protectedText)
-                && !publishedJsonHeader(original.entry(), digest)) return "PROTECTED_CONTENT";
+                && !isPublishedJsonHeader(original.entry(), digest)) return "PROTECTED_CONTENT";
             if (!inline) pagedBodies.put(original.entry(), text);
             members.put(original.entry(), new Member(original.entry(), digest, bytes.length, text.length(),
                 inline ? text : null));
@@ -179,9 +179,10 @@ public final class DeploymentSourceArchiveReview {
         }
     }
 
-    private static boolean publishedJsonHeader(String entry, String digest) {
+    /** Identifies the exact published single-header dependency admitted for archive review. */
+    public static boolean isPublishedJsonHeader(String entry, String digest) {
         return (entry.equals(VENDORED_JSON_HEADER) || entry.endsWith("/" + VENDORED_JSON_HEADER))
-            && digest.equals(NLOHMANN_JSON_3_12_0_SHA256);
+            && NLOHMANN_JSON_3_12_0_SHA256.equals(digest);
     }
 
     private static String sha256(byte[] bytes) {
