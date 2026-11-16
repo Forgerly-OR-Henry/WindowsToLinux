@@ -283,6 +283,9 @@ public final class DeploymentAiJson {
         if ("deployment.candidate.verify.v1".equals(facts.get("operation"))
             && facts.get("currentCommandEvidence") instanceof Map<?, ?> current && current.containsKey("candidateObservation"))
             return DeploymentHelperReviewContract.candidateVerificationText(layout);
+        if ("deployment.build.run.v1".equals(facts.get("operation")) && facts.containsKey("buildCollector")
+            && evidence.isPresent())
+            return DeploymentHelperReviewContract.standardBuildText(layout);
         if (evidence.filter(DeploymentCommandSourceEvidence::bindingReview).isPresent())
             return DeploymentHelperReviewContract.bindingText(layout);
         if (evidence.filter(DeploymentCommandSourceEvidence::toolchainReview).isPresent())

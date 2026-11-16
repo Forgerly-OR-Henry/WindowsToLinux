@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -31,6 +32,8 @@ import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.task.action.*;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
+import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchiveReview;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics;
 import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
@@ -45,9 +48,11 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem.GoBuildWriter;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem.python.PipBuildWriter;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
+import gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -1315,6 +1320,132 @@ class DeploymentToolchainReviewEvidenceTest {
                 assertR30BuildWire(source, actual, projected, input, fixture);
             }
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {171785, 232077})
+    void r49CsvAnalyzerArchiveAndObservedReadsUseTheOriginalResponsesCeilings(int terminalCap) throws Exception {
+        String archiveSha = "971a4ba2fed28306717230d226fba0e61d98ef07069be0cc06ae2b72387427dc";
+        String manifestSha = "b".repeat(64);
+        var members = csvAnalyzerMembers();
+        var archive = new DeploymentSourceArchiveReview.Evidence(archiveSha, manifestSha, "analyzer",
+            members.size(), "COMPLETE", members, List.of());
+        try (var fixture = new MirroredInstallerTestFixture();
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
+            var workspace = new DeploymentRemoteWorkspace("wtl-assisted-csv-inspector-3r7i80rxkc-analyzer", archiveSha, fixture.layout);
+            var project = new DeploymentProjectFacts(Path.of("."), workspace.applicationId(), DeploymentProjectKind.PYTHON_SERVICE,
+                DeploymentBuildToolType.PIP_LOCKED, List.of(), List.of(), List.of());
+            var runtime = new DeploymentRuntimeDefinition.PythonService("3.12", "server.py",
+                new DeploymentHealthCheck.Http(java.net.URI.create("http://127.0.0.1:46131/healthz"), 200, 10));
+            var limits = new DeploymentBuildLimits(120, 32, 512, 65536, 128L * 1024 * 1024, false);
+            String body = new PipBuildWriter().render(project, runtime, workspace, limits);
+            String input = DeploymentMirrorTasks.withMaterials(
+                DeploymentMirrorRuntime.wrapBuild(body, DeploymentMirrorTasks.policy(fixture.task), 120), fixture.task.id());
+            String collector = DeploymentBuildOutputProtocol.script(workspace, 120, 32, 512, 65536, "ordinary",
+                MirroredInstallerTestFixture.sha(input), "-", List.of(List.of("BUILD_OK")));
+            try (var command = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(collector, fixture.layout),
+                input.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(135), 65536)) {
+                var action = RemoteActions.command(fixture.server, fixture.model.configurationRevision, command)
+                    .withSemantics(new ActionSemantics("deployment.build.run.v1",
+                        Set.of(new ActionTarget(fixture.server.id(), "deployment-build", workspace.candidateRoot()))));
+                var original = new LinkedHashMap<>(new DeploymentFixedCommandProtocol(fixture.context)
+                    .inspect(action, command, fixture.layout, fixture.task));
+                var current = new LinkedHashMap<String, Object>(assisted.scope.effectFacts(action, fixture.task));
+                current.put("currentBuildArchive", Map.of("archive", Map.of("archiveSha256", archiveSha,
+                    "sourceManifestSha256", manifestSha, "relativeRoot", "analyzer", "fileCount", members.size())));
+                current.put("currentBuildArchiveSource", archive);
+                original.put("currentCommandEvidence", current);
+                replayCsvAnalyzerBuild(fixture, assisted, action, command, original, members, body, terminalCap);
+            }
+        }
+    }
+
+    private static List<DeploymentSourceArchiveReview.Member> csvAnalyzerMembers() throws Exception {
+        Path component = Path.of("").toAbsolutePath();
+        while (component != null && !Files.isRegularFile(component.resolve("test/multi-language/success-csv-inspector/analyzer/server.py")))
+            component = component.getParent();
+        assertNotNull(component, "Repository CSV Inspector fixture is required");
+        Path root = component.resolve("test/multi-language/success-csv-inspector/analyzer");
+        var members = new ArrayList<DeploymentSourceArchiveReview.Member>();
+        for (String name : List.of("analysis.py", "pyproject.toml", "requirements.in", "requirements.lock", "server.py",
+            "windowstolinux-application.properties")) {
+            String text = Files.readString(root.resolve(name), StandardCharsets.UTF_8);
+            if (name.equals("windowstolinux-application.properties")) text = text.replace("18131", "46131");
+            members.add(new DeploymentSourceArchiveReview.Member(name, MirroredInstallerTestFixture.sha(text),
+                text.getBytes(StandardCharsets.UTF_8).length, text));
+        }
+        return List.copyOf(members);
+    }
+
+    private static void replayCsvAnalyzerBuild(MirroredInstallerTestFixture fixture, DeploymentNativeHelperPackageImpactTest.Assisted assisted,
+                                               ActionIntent action, CommandRequest command, Map<String, Object> original,
+                                               List<DeploymentSourceArchiveReview.Member> members, String body,
+                                               int terminalCap) throws Exception {
+        var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(original, 1048576),
+            action, command, fixture.layout).orElseThrow();
+        var projected = JSON.readTree(evidence.messages().getLast().text());
+        var sources = new LinkedHashMap<Integer, Map.Entry<String, String>>();
+        sources.put(30, Map.entry("/mirrorTransport/runtimeSource", DeploymentMirrorRuntime.runtimeSource()));
+        var shell = projected.at("/buildReviewEvidence/mirrorBootstrapShell");
+        sources.put(31, Map.entry(shell.path("sourcePointer").asText(), collect(evidence, shell, "buildReviewEvidence")));
+        List<String> observedBatches = List.of("30/66000/8000", "30/74000/8000", "31/0/8000", "30/66910/8000",
+            "30/64000/8000 30/68340/8000 30/82000/8000 30/198000/6000",
+            "30/32781/8000 30/40781/8000 30/48781/8000 30/56781/8000 30/64781/8000 30/76296/8000");
+        List<Integer> caps = List.of(499773, 449664, 397412, 344107, 288342, 232077, terminalCap);
+        boolean historicalTerminal = terminalCap == 171785;
+        var requested = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+        var batches = new ArrayList<List<AiToolCall>>();
+        var context = wireBudgetContext(assisted.context, Map.of(), 52900, () -> caps.get(fixture.model.requests.size()), sent -> {
+            if (!batches.isEmpty()) return;
+            try {
+                String snapshot = JSON.readTree(sent.messages().getLast().text()).at("/buildReviewEvidence/snapshotSha256").asText();
+                assertTrue(snapshot.matches("[a-f0-9]{64}"));
+                for (int index = 0; index < observedBatches.size(); index++) {
+                    var calls = new R24Turn(0, 0, 0, 0, 0, observedBatches.get(index)).calls(snapshot, sources, index);
+                    batches.add(calls);
+                    collectRequestedCoverage(requested, calls, sources);
+                    fixture.model.replies.add(success(mockResponses(calls.toArray(AiToolCall[]::new))));
+                }
+                reply(fixture, verdict("r49-csv-fixture-verdict", historicalTerminal ? "APPROVE" : "DENY"));
+            } catch (Exception invalid) {
+                throw new AssertionError("Cannot replay evidence against the actual request snapshot", invalid);
+            }
+        });
+        // The replay supplies reconstructed command and archive facts, not an open source-selection workflow.
+        String instructions = DeploymentReviewDecision.INSTRUCTION
+            + DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review.md")
+            + DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review-stage.md")
+            + "\n" + DeploymentAssistedScope.standardBuildReviewInstructions();
+        Callable<JsonNode> review = () -> new DeploymentAiJson(context).askCommand(instructions, original,
+            fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed, action, command);
+        if (historicalTerminal) {
+            var refused = assertThrows(DeploymentCommandReviewModel.Failure.class, review::call);
+            var details = DeploymentCommandReviewModel.failureDiagnostics(refused);
+            assertEquals("EVIDENCE_INCOMPLETE_VERDICT", details.get("reviewCode"));
+            assertTrue(Set.of("REQUESTED_SOURCE_MISSING", "REQUIRED_SOURCE_MISSING").contains(details.get("reviewEvidenceBlock")));
+        } else {
+            assertEquals("DENY", review.call().path("decision").asText());
+        }
+        assertEquals(0, assisted.hosts.get());
+        assertEquals(caps.size(), fixture.model.requests.size());
+        var sent = fixture.model.requests.getLast();
+        var manifest = JSON.readTree(sent.messages().getLast().text()).path("buildReviewEvidence");
+        for (int index = 0; index < members.size(); index++) {
+            var member = members.get(index);
+            var descriptor = manifest.at("/projectArchive/members/" + index);
+            assertEquals(member.path(), descriptor.path("path").asText());
+            assertIdentity(descriptor, member.text());
+            sources.put(40 + index, Map.entry(descriptor.path("sourcePointer").asText(), member.text()));
+            addR24Range(requested, descriptor.path("sourcePointer").asText(), 0, member.text().length());
+        }
+        sources.put(60, Map.entry("/buildReviewEvidence/buildBody", body));
+        byte[] encoded = wireWithR24FactsSize(sent, 52900, caps.getLast(), Map.of());
+        System.out.printf("R49_CSV_ANALYZER_RESPONSES replayFirst=%d replayTerminal=%d terminalCap=%d originalTerminal=255455 members=%d verdict=%s%n",
+            wireWithR24FactsSize(fixture.model.requests.getFirst(), 52900, caps.getFirst(), Map.of()).length,
+            encoded.length, caps.getLast(), members.size(), historicalTerminal ? "APPROVE_BLOCKED" : "DENY");
+        var visible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+        assertR24VisiblePages(encoded, manifest.path("snapshotSha256").asText(), batches.getLast(), true, visible, sources);
+        if (!historicalTerminal) assertR24Coverage(requested, visible);
     }
 
     private static void assertR30BuildWire(DeploymentCommandSourceEvidence evidence, AiRequest request,
@@ -3609,7 +3740,7 @@ class DeploymentToolchainReviewEvidenceTest {
             var message = messages.get(index);
             if (message.role() != AiRole.USER || !message.text().startsWith("{")) continue;
             var current = (ObjectNode) JSON.readTree(message.text());
-            if (!current.has(PHASE) && !current.has("installerReviewEvidence")) continue;
+            if (!current.has(PHASE) && !current.has("installerReviewEvidence") && !current.has("buildReviewEvidence")) continue;
             // The in-memory workflow uses less metadata than the original app. Preserve the observed payload scale.
             int extra = Math.max(0, minimumCharacters - message.text().length() - 24);
             if (extra > 0) {
@@ -3756,8 +3887,9 @@ class DeploymentToolchainReviewEvidenceTest {
                                                Map<Integer, Map.Entry<String, String>> sources, String pointer,
                                                JsonNode range, String text) {
         int offset = range.path("offset").asInt(), next = range.path("next").asInt();
-        assertEquals(sources.get(pointer.length()).getKey(), pointer);
-        assertEquals(sources.get(pointer.length()).getValue().substring(offset, next), text);
+        var source = sources.values().stream().filter(entry -> entry.getKey().equals(pointer)).findFirst()
+            .orElseThrow(() -> new AssertionError("Unexpected retained source " + pointer));
+        assertEquals(source.getValue().substring(offset, next), text);
         addR24Range(visible, pointer, offset, next);
     }
 
@@ -3940,7 +4072,7 @@ class DeploymentToolchainReviewEvidenceTest {
         String rangesName = installer ? "selectedInstallerRanges" : build || dependency ? "selectedRuntimeRanges"
             : apt ? "selectedAptRanges" : "selectedPreparationRanges";
         var selection = manifest.path(manifest.has("nodePreparationSelection") ? "nodePreparationSelection" : selectionName);
-        if (selection.isObject()) {
+        if (selection.has("ordinal")) {
             String text = evidence.messages().get(selection.path("ordinal").asInt()).text()
                 .substring(selection.path("headerCharacters").asInt());
             for (var range : manifest.path(rangesName))

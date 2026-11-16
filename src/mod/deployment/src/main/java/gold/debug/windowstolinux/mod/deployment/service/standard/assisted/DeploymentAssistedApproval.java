@@ -17,11 +17,13 @@ import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper;
 
 /** Applies the selected independent model policy only to registered fixed deployment effects, preserving exact host grants. / 仅对已登记固定部署效果应用所选独立模型策略，保留精确宿主授权。 */
 final class DeploymentAssistedApproval {
     /** Fixed standard operations; unclassified SSH or transfer effects never enter automatic review. / 固定标准动作；未分类SSH或传输效果绝不进入自动审核。 */
     private static final Set<String> OPERATIONS = Set.of("deployment.helper.install.v1", "deployment.helper.install.tracked.v1", "deployment.helper.install.status.v1", "deployment.helper.probe.v1",
+        DeploymentManagedHelper.PREREQUISITE_OBSERVATION,
         "deployment.candidate.host-probe.v1", "deployment.candidate.container-probe.v1", "deployment.candidate.capacity.v1", "deployment.candidate.create.v1", "deployment.candidate.query.v1", "deployment.candidate.upload.v1", "deployment.candidate.verify.v1",
         "deployment.candidate.compensation.observe.v1", "deployment.candidate.compensation.execute.v1", "deployment.candidate.compensation.receipt.v1",
         "deployment.toolchain.prepare.v1", "deployment.toolchain.diagnostic.v1", "deployment.toolchain.bind.v1", "deployment.build.preflight.v1", "deployment.build.run.v1",

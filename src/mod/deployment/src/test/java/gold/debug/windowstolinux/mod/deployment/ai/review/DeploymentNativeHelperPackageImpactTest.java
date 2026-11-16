@@ -21,6 +21,7 @@ import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -188,6 +189,57 @@ class DeploymentNativeHelperPackageImpactTest {
                 serverDigest, priorBody, priorRequest, fixture.layout, false));
             assertFalse(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, fixture.operation,
                 serverDigest, priorBody, requestDigest, fixture.layout, true));
+        }
+    }
+
+    @Test
+    void readyObservationAndPackageFreeInstallUseSeparateExactReviewsAndGrants() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var assisted = new Assisted(fixture)) {
+            var sent = new ArrayList<String>();
+            var usedGrants = new HashSet<UUID>();
+            var session = (RemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{RemoteSession.class}, (p, m, a) -> {
+                assertEquals("execute", m.getName());
+                UUID grant = ((ApprovalGrant) a[1]).id();
+                assertTrue(assisted.grants.contains(grant));
+                assertTrue(usedGrants.add(grant));
+                sent.add(new String(((CommandRequest) a[0]).stdin(), StandardCharsets.UTF_8));
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new CommandResult(Optional.of(0),
+                    sent.size() == 1 ? "APT_PREREQUISITES=READY\n" : "", "", false)), Optional.empty());
+            });
+            var ai = new DeploymentAiJson(assisted.context, fixture.conversation());
+            var helper = new DeploymentManagedHelper(session, assisted.host, fixture.server, fixture.task, fixture.model.configurationRevision,
+                gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard.NONE,
+                (intent, request, task) -> DeploymentFixedCommandApproval.approve(assisted.context, assisted.host, intent, request, task,
+                    fixture.model.configurationRevision, "AUTOMATIC", false, DeploymentCommandReviewModel.submission(ai), assisted.scope, true));
+            var point = DownloadPoint.APT_UBUNTU;
+            var serverDigest = MirroredInstallerTestFixture.sha(fixture.server.id());
+            String bodyDigest = DeploymentHelperInstallerScript.readyBodyDigest(fixture.layout, point);
+            String ready = DeploymentHelperInstallerScript.renderTrackedReady(fixture.task.id(), fixture.operation,
+                serverDigest, bodyDigest, fixture.layout, point);
+            for (String id : List.of("ready-observation", "ready-installer"))
+                fixture.model.nativeReply(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall(id, "submit_result",
+                    "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled independent verdict\"}"));
+            assertEquals(DeploymentManagedHelper.PrerequisiteState.READY, helper.observeAptPrerequisites(point).value().orElseThrow());
+            var transitions = new AtomicInteger();
+            assertEquals(TaskResult.SUCCEEDED, helper.installTracked(ready.getBytes(StandardCharsets.UTF_8),
+                transitions::incrementAndGet).outcome());
+            assertEquals(1, transitions.get());
+            assertEquals(List.of(DeploymentHelperInstallerScript.renderPrerequisiteObservation(point), ready), sent);
+            assertEquals(2, usedGrants.size());
+            assertEquals(DeploymentManagedHelper.PREREQUISITE_OBSERVATION,
+                assisted.grantedIntents.getFirst().semantics().orElseThrow().operation());
+            var installIntent = assisted.grantedIntents.getLast();
+            assertFalse(installIntent.semantics().orElseThrow().targets().stream().anyMatch(target ->
+                Set.of("package-manager", "package-set", "system-package-index", "system-package-transaction").contains(target.kind())));
+            try (var request = fixture.request(ready)) {
+                var json = new ObjectMapper().valueToTree(assisted.scope.facts(installIntent, request, fixture.task));
+                assertEquals("VERIFIED_EXISTING_APT_PREREQUISITES", json.at("/helperPackageImpact/packageMode").asText());
+                assertTrue(json.at("/helperPackageImpact/nativeTransactions/targets").isEmpty());
+            }
+            assertTrue(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, fixture.operation, serverDigest,
+                bodyDigest, DeploymentHelperInstallerScript.readyRequestDigest(ready), fixture.layout, true));
+            assertFalse(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, fixture.operation, serverDigest,
+                bodyDigest, DeploymentMirrorTasks.installerRequestDigest(ready, fixture.task), fixture.layout, true));
         }
     }
 

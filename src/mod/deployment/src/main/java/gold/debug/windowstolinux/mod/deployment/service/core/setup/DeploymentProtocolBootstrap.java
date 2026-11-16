@@ -205,12 +205,25 @@ public final class DeploymentProtocolBootstrap {
         String serverDigest = digest(server.id().getBytes(StandardCharsets.UTF_8));
         var point = DeploymentHelperInstallerScript.packagePoint(
             gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task));
-        String bodyDigest = DeploymentHelperInstallerScript.bodyDigest(layout, point);
-        byte[] script = DeploymentHelperInstallerScript.renderTracked(task.id(), operationId, serverDigest, bodyDigest, layout, point)
-            .getBytes(StandardCharsets.UTF_8);
+        boolean prerequisitesReady = false;
+        if (point.filter(DeploymentHelperInstallerScript::usesApt).isPresent()) {
+            var readiness = helper.observeAptPrerequisites(point.orElseThrow());
+            if (readiness.outcome() != TaskResult.SUCCEEDED || readiness.value().isEmpty())
+                return new OperationResult<>(readiness.outcome(), Optional.empty(), readiness.problem());
+            prerequisitesReady = readiness.value().orElseThrow() == DeploymentManagedHelper.PrerequisiteState.READY;
+        }
+        String bodyDigest = prerequisitesReady
+            ? DeploymentHelperInstallerScript.readyBodyDigest(layout, point.orElseThrow())
+            : DeploymentHelperInstallerScript.bodyDigest(layout, point);
+        String content = prerequisitesReady
+            ? DeploymentHelperInstallerScript.renderTrackedReady(task.id(), operationId, serverDigest, bodyDigest, layout, point.orElseThrow())
+            : DeploymentHelperInstallerScript.renderTracked(task.id(), operationId, serverDigest, bodyDigest, layout, point);
+        String requestDigest = prerequisitesReady ? DeploymentHelperInstallerScript.readyRequestDigest(content)
+            : gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(content, task);
+        byte[] script = content.getBytes(StandardCharsets.UTF_8);
         try {
             var journal = DeploymentProtocolBootstrapActionLog.begin(tasks, task, server, operationId, serverDigest,
-                bodyDigest, gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.installerRequestDigest(new String(script, StandardCharsets.UTF_8), task), layout);
+                bodyDigest, requestDigest, layout);
             return send(journal, script);
         } finally {
             Arrays.fill(script, (byte) 0);

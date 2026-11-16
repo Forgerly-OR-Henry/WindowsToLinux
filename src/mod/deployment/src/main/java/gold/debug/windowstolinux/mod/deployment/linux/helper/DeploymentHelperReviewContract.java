@@ -107,6 +107,15 @@ public final class DeploymentHelperReviewContract {
             "prepare-toolchains bind/verify ", "Receipt/ownership/"));
     }
 
+    /** Keeps the source-bound contract for the exact standard build collector and its selected isolation. */
+    public static String standardBuildText(DeploymentRemoteLayout layout) {
+        return selectedText(layout, List.of("managed-helper-review.", "Helper ", "Only these ", "Installed calls ",
+            "The pinned helper starts ", "Each systemd isolation preflight ", "Standard build-run parameters,",
+            "Management/candidate ownership ", "Interface: ", "For tasks with a frozen mirror snapshot",
+            "probe prints protocol only;", "candidate-create(-task)", "build-run/agent-run execute full stdin",
+            "prepare-toolchains bind/verify ", "Build identity setup ", "Receipt/ownership/"));
+    }
+
     /** Source-bound contract for the exact read-only guarded archive verification. */
     public static String candidateVerificationText(DeploymentRemoteLayout layout) {
         return selectedText(layout, List.of("managed-helper-review.", "Helper ", "Only these ", "Installed calls ",

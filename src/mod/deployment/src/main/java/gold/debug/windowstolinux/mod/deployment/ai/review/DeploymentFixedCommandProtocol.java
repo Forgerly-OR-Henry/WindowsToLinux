@@ -10,6 +10,7 @@ import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper;
 
 /** Fixed protocols shared by deployment modes, with no mode-specific interpretation. */
 public final class DeploymentFixedCommandProtocol implements DeploymentCommandProtocol {
@@ -21,6 +22,7 @@ public final class DeploymentFixedCommandProtocol implements DeploymentCommandPr
         "deployment.helper.install.tracked.v1",
         "deployment.helper.install.files.v1",
         "deployment.helper.install.status.v1",
+        DeploymentManagedHelper.PREREQUISITE_OBSERVATION,
         "deployment.mirror.ip.v1",
         "deployment.mirror.compatibility.v1",
         "deployment.helper.probe.v1",

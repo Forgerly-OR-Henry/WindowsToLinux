@@ -55,6 +55,90 @@ class DeploymentHelperInstallerContractTest {
     }
 
     @Test
+    void prerequisiteObservationParsesOnlyConclusivePackageStates() throws Exception {
+        var point = gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.APT_UBUNTU;
+        String program = DeploymentHelperInstallerScript.renderPrerequisiteObservation(point)
+            .replace("[ \"$EUID\" -eq 0 ] && apt_prerequisite_os", "apt_prerequisite_os")
+            .replace("/usr/bin/stat", "fixture_stat")
+            .replace("/usr/bin/env -i LC_ALL=C /usr/bin/timeout 15s", "fixture_invoke");
+        int call = program.lastIndexOf("\napt_prerequisites_observe\n");
+        assertTrue(call > 0);
+        String fixtures = """
+            apt_prerequisite_os() { return 0; }
+            apt_prerequisite_file() { return 0; }
+            files_trusted_directory() { return 0; }
+            files_trusted_runtime_path() { [ "$scenario" != unsafe ] || [ "$1" != /usr/bin/dpkg-query ]; }
+            type() { printf '/usr/bin/%s\\n' "${3}"; }
+            fixture_stat() {
+              if [ "$scenario" = drift ] && [ -e "$fixture/queried" ]; then printf 'changed\\n'
+              else printf 'record\\n'; fi
+            }
+            fixture_invoke() {
+              if [ "$1" = /usr/bin/dpkg ]; then printf 'amd64\\n'; return 0; fi
+              if [ "$scenario" = drift ]; then : > "$fixture/queried"; fi
+              if [ "$scenario" = unknown ]; then printf 'unexpected warning\\n' >&2; fi
+              local package
+              for package in @EXACT_PACKAGES@; do
+                if [ "$package" = sqlite3 ]; then
+                  case "$scenario" in
+                    missing) printf 'dpkg-query: no packages found matching sqlite3\\n' >&2; continue ;;
+                    partial) printf 'sqlite3\\tamd64\\thalf-configured\\tok\\t1:3.45.1-1\\n'; continue ;;
+                    multiarch) printf 'sqlite3\\tarm64\\tinstalled\\tok\\t3.45.1-1\\n'; continue ;;
+                  esac
+                fi
+                printf '%s\\tamd64\\tinstalled\\tok\\t1:3.45.1-1\\n' "$package"
+              done
+              [ "$scenario" != missing ]
+            }
+            """.replace("@EXACT_PACKAGES@", DeploymentHelperInstallerScript.APT_PACKAGES);
+        for (String scenario : List.of("ready", "missing", "partial", "multiarch", "unsafe", "unknown", "drift")) {
+            var result = execute("scenario=" + scenario + "\nfixture=" + DeploymentHelperInstallerScript.quote(bashPath(temporary)) + "\n"
+                + program.substring(0, call + 1) + fixtures + program.substring(call + 1));
+            String expected = switch (scenario) {
+                case "ready" -> "APT_PREREQUISITES=READY\n";
+                case "missing" -> "APT_PREREQUISITES=MISSING\n";
+                default -> "";
+            };
+            assertEquals(expected, result.output(), scenario);
+            assertEquals(expected.isEmpty() ? 64 : 0, result.exit(), scenario);
+        }
+    }
+
+    @Test
+    void packageFreeTrackedInstallerBindsItsReadOnlyChecksAndOriginalReceipt() throws Exception {
+        var layout = DeploymentRemoteLayout.original();
+        var point = gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.APT_UBUNTU;
+        var task = UUID.randomUUID();
+        var operation = UUID.randomUUID();
+        String body = DeploymentHelperInstallerScript.readyBodyDigest(layout, point);
+        String original = DeploymentHelperInstallerScript.renderTrackedReady(task, operation, "a".repeat(64), body, layout, point);
+        var evidence = new ObjectMapper().valueToTree(DeploymentInstallerEvidence.describe(original, layout));
+        assertEquals(original, DeploymentInstallerEvidence.reconstruct(evidence));
+        assertTrue(DeploymentInstallerEvidence.hasReadyBodyDigest(evidence, layout));
+        assertEquals(body, evidence.at("/digestScopes/bodyDigest/value").asText());
+        assertEquals(sha(original), DeploymentHelperInstallerScript.readyRequestDigest(original));
+        assertFalse(DeploymentInstallerEvidence.usesSharedMirrorBootstrap(evidence));
+        String preflight = original.substring(0, original.indexOf("prepare_stage=helper-payload-staging"));
+        assertFalse(preflight.contains("deployment_apt"));
+        assertFalse(preflight.contains("wtl_apt"));
+        assertFalse(preflight.contains("apt-get"));
+        int beforeLock = original.indexOf("prepare_stage=platform-prerequisites-before-lock");
+        int firstCheck = original.indexOf("prepare_stage=platform-prerequisites\n");
+        int lastCheck = original.lastIndexOf("[ \"$(apt_prerequisites_observe)\"");
+        assertTrue(beforeLock > 0 && beforeLock < original.indexOf("/usr/bin/flock -x \"$installer_lock\""));
+        assertTrue(firstCheck > original.indexOf("/usr/bin/flock -x \"$installer_lock\""));
+        assertTrue(firstCheck < original.indexOf("prepare_stage=installer-receipt\n"));
+        assertTrue(lastCheck > original.indexOf("helper_probe="));
+        assertTrue(lastCheck < original.indexOf("prepare_stage=installer-receipt-terminal\n"));
+        assertEquals(new DeploymentHelperInstallerScript.TrackedRequest(operation, "a".repeat(64), true),
+            DeploymentHelperInstallerScript.trackedRequest(original, task, layout, java.util.Optional.of(point)));
+        assertThrows(IllegalArgumentException.class,
+            () -> DeploymentHelperInstallerScript.trackedRequest(original + ":\n", task, layout, java.util.Optional.of(point)));
+        assertThrows(IllegalArgumentException.class,
+            () -> DeploymentHelperInstallerScript.trackedRequest(original, task, layout, java.util.Optional.empty()));
+    }
+
+    @Test
     void trackedDigestsNameTheirExactDifferentByteScopesAndRejectFalseReceiptBindings() throws Exception {
         var layout = DeploymentRemoteLayout.original();
         String body = DeploymentHelperInstallerScript.render(layout);

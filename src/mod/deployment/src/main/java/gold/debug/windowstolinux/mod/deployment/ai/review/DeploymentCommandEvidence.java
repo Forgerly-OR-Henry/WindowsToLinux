@@ -21,6 +21,8 @@ import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
@@ -30,6 +32,7 @@ public final class DeploymentCommandEvidence {
     /** Fixed operations whose stdin is executable Bash rather than protected data. / stdin是可执行Bash而非受保护数据的固定动作。 */
     private static final Set<String> SCRIPT_INPUT = Set.of("deployment.helper.install.v1",
         "deployment.helper.install.tracked.v1", "deployment.helper.install.files.v1",
+        DeploymentManagedHelper.PREREQUISITE_OBSERVATION,
         "deployment.helper.install.status.v1", "deployment.build.run.v1", "deployment.model.command.v1", "deployment.mirror.ip.v1", "deployment.mirror.compatibility.v1");
 
     /** Prevents construction. / 禁止构造。 */
@@ -54,6 +57,8 @@ public final class DeploymentCommandEvidence {
             "deployment.helper.install.files.v1").contains(operation) && request.script().contains(layout.helperPath());
         var facts = new LinkedHashMap<String, Object>(baseFacts(intent, request, layout, installedHelper));
         String invocation = installedHelper ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout) : request.script();
+        if (operation.equals(DeploymentManagedHelper.PREREQUISITE_OBSERVATION))
+            facts.put("helperPrerequisiteObservation", DeploymentManagedHelper.prerequisiteObservationEvidence(intent, request));
         platformProbe(operation, request).ifPresent(probe -> facts.put("platformProbe", probe));
         if (operation.equals("deployment.candidate.capacity.v1")) {
             byte[] input = request.stdin();
@@ -282,6 +287,10 @@ public final class DeploymentCommandEvidence {
         if (result.containsKey("mirrorInputTask") && !task.id().toString().equals(result.get("mirrorInputTask")))
             throw new IllegalArgumentException("Mirror executable input differs from original task");
         String mirrorPolicy = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task);
+        if (result.get("helperPrerequisiteObservation") instanceof Map<?, ?> observation
+            && DeploymentHelperInstallerScript.packagePoint(mirrorPolicy)
+                .filter(point -> point.name().equals(observation.get("expectedRepositoryPoint"))).isEmpty())
+            throw new IllegalArgumentException("Helper prerequisite observation differs from frozen repository point");
         if (!mirrorPolicy.isEmpty()) {
             var root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(mirrorPolicy);
             if (intent.serverIds().size() != 1 || !intent.serverIds().getFirst().equals(root.path("server").asText()))

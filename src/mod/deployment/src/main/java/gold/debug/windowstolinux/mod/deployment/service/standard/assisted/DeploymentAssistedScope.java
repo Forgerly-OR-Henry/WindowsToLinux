@@ -663,10 +663,22 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 Check the installed helper pin, literal limits and the native observation contract. An earlier publication or health receipt does not prove present state or supply the fresh host grant. Request a verdict only for this observation.
                 """;
         String operation = intent.semantics().map(value -> value.operation()).orElse("");
+        if (operation.equals(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper.PREREQUISITE_OBSERVATION))
+            return """
+                Review the read-only package and runtime observation against the complete source, fixed limits and exact targets.
+                This review precedes the observation. A future install requires its own independent review and exact host grant.
+                """;
         if (operation.equals(DeploymentAssistedCandidateReview.VERIFY) && facts.containsKey("candidateObservation"))
             return DeploymentAssistedCandidateReview.verificationInstructions();
-        String instructions = gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources.text(
-            DeploymentAssistedApproval.class, "fixed-effect-review.md");
+        String instructions = operation.equals("deployment.build.run.v1") && facts.containsKey("currentBuildArchive")
+            ? standardBuildReviewInstructions() : gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources.text(
+                DeploymentAssistedApproval.class, "fixed-effect-review.md");
+        if (facts.get("helperPackageImpact") instanceof Map<?, ?> impact
+            && "VERIFIED_EXISTING_APT_PREREQUISITES".equals(impact.get("packageMode")))
+            instructions += "\n" + """
+                Inspect the exact installer command, its protected live prerequisite recheck and its helper and receipt writes.
+                Verify the absence of package changes against the complete current evidence. A probe result grants no write authority.
+                """;
         if (Set.of("deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1",
             gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION).contains(operation))
             instructions = toolchainReviewInstructions(instructions, operation);
@@ -700,6 +712,23 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             || line.startsWith("For tracked and diagnosed toolchain JSON requests,")
             || line.startsWith("When the supplied evidence establishes the boundaries"))
             .collect(java.util.stream.Collectors.joining("\n"));
+    }
+
+    /** Trusted instructions for an exact archive-bound standard build. */
+    public static String standardBuildReviewInstructions() {
+        return """
+            Review the exact fixed build and original authority before any execution. Match the saved server, declared targets,
+            reviewed application and selected component archive. The original source display name alone does not identify the
+            application. Check the collector, complete executable stdin and project sources, engine, bound tools, candidate
+            ownership, non-root isolation, paths, source integrity, resource and time limits, and selected mirror effects.
+            The independently hash-bound helper and build-entry contract describes the fixed platform code. Verify the actual
+            command, input and boundaries. Only ordinary-offline adds the fixed network restrictions to the build unit. Any
+            selected Maven bootstrap labels only its exact range. Review all remaining executable input and nested hooks.
+            Deny unsafe effects, missing executable evidence, ownership or source drift, root project execution, writable host
+            executables, secret disclosure and unverified prerequisites. Exact digest checks and source frames grant no permission.
+            An approval permits only a request for a fresh host grant for this exact effect. Earlier grants cannot authorize it.
+            Submit the native verdict with a concrete reason. Missing material evidence or a missing boundary requires DENY.
+            """;
     }
 
     private Optional<String> nativePublicationApplication(ActionIntent intent,

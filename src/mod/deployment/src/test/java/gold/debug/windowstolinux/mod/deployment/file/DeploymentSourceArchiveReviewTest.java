@@ -13,24 +13,32 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.zip.GZIPInputStream;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.app.ai.model.ModelProtocol;
 import gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec;
 import gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel;
 import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
+import gold.debug.windowstolinux.appapi.ai.model.AiMessage;
+import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
 import gold.debug.windowstolinux.appapi.ai.model.AiToolCall;
+import gold.debug.windowstolinux.appapi.ai.model.AiUsage;
 import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot;
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandSourceEvidence;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentFixedCommandProtocol;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision;
 import gold.debug.windowstolinux.mod.deployment.ai.review.MirroredInstallerTestFixture;
@@ -170,16 +178,105 @@ class DeploymentSourceArchiveReviewTest {
             assertTrue(projected.at("/currentCommandEvidence/currentBuildArchiveSource").isMissingNode());
             var members = projected.at("/buildReviewEvidence/projectArchive/members");
             assertEquals(captured.memberCount(), members.size());
+            var texts = retainedTexts(JSON.readTree(wire).path("input"),
+                projected.at("/buildReviewEvidence/snapshotSha256").asText());
             for (int i = 0; i < members.size(); i++) {
                 var member = members.get(i);
-                String framed = sent.get(1 + member.path("ordinal").asInt()).text();
-                assertEquals(captured.members().get(i).text(), framed.substring(member.path("headerCharacters").asInt()));
+                String pointer = member.path("sourcePointer").asText();
+                assertEquals(captured.members().get(i).text(), texts.getOrDefault(pointer, ""));
                 assertEquals(captured.members().get(i).sha256(), member.path("sha256").asText());
             }
             assertFalse(new String(wire, StandardCharsets.UTF_8).contains("unrelated_sibling_marker"));
+            verifyBudgetAndOriginalAliases(fixture, intent, request, facts, sentRequest, captured);
             System.out.printf("R38_ASSET_BUILD_SOURCE_REPLAY files=%d fixture=%d observedWithAdditional=%d cap=344125%n",
                 members.size(), wire.length, observedReplay);
         }
+    }
+
+    private static void verifyBudgetAndOriginalAliases(MirroredInstallerTestFixture fixture, ActionIntent intent,
+            CommandRequest command, Map<String, Object> facts, AiRequest review,
+            DeploymentSourceArchiveReview.Evidence captured) throws Exception {
+        var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576),
+            intent, command, fixture.layout).orElseThrow();
+        var messages = new ArrayList<>(List.of(review.messages().getFirst()));
+        messages.addAll(evidence.messages());
+        int base = encode(reviewWithMessages(review, messages)).length;
+        var reader = evidence.reader(2);
+        reader.offerInitialSource(messages);
+        int complete = encode(reviewWithMessages(review, messages)).length;
+        var problem = new Problem(ProblemCode.INVALID_INPUT, "AI_REQUEST_BUDGET", "Local encoder bound",
+            Map.of("maximumRequestBytes", Integer.toString(base), "encodedRequestBytes", Integer.toString(complete)), Optional.empty());
+        assertTrue(reader.repackBeforeSend(messages, problem));
+        assertEquals(base, encode(reviewWithMessages(review, messages)).length);
+        reader.read(reply(new AiToolCall("approval", "submit_result",
+            "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Fixture\"}")));
+        assertEquals(Optional.of("REQUIRED_SOURCE_MISSING"), reader.approvalEvidenceBlock());
+
+        var manifest = JSON.readTree(evidence.messages().getLast().text()).path("buildReviewEvidence");
+        String snapshot = manifest.path("snapshotSha256").asText();
+        reader = evidence.reader(2);
+        reader.offerInitialSource(messages);
+        assertTrue(captured.members().getFirst().text().length() >= 100);
+        var memberRead = reader.read(reply(evidenceCall("member", snapshot,
+            "/currentCommandEvidence/currentBuildArchiveSource/members/0/text", 0, 100))).getFirst();
+        assertFalse(memberRead.error());
+        var memberHeader = JSON.readTree(memberRead.text().split("\n", 3)[1]);
+        assertEquals(captured.members().getFirst().sha256(), memberHeader.at("/value/sha256").asText());
+        assertTrue(memberHeader.at("/value/newRanges").isArray());
+        assertEquals(0, memberHeader.at("/value/newRanges").size());
+
+        var literal = manifest.path("bootstrapShellLiteral");
+        assertEquals("JSON_STRING", literal.path("encoding").asText());
+        var target = literal.path("target");
+        String original = DeploymentMirrorRuntime.runtimeSource().substring(target.path("offset").asInt(), target.path("next").asInt());
+        assertEquals(target.path("sha256").asText(), MirroredInstallerTestFixture.sha(original));
+        var literalRead = reader.read(reply(evidenceCall("literal", snapshot, target.path("pointer").asText(),
+            target.path("offset").asInt(), 80))).getFirst();
+        assertFalse(literalRead.error());
+        assertEquals(original.substring(0, 80), literalRead.text().split("\n", 3)[2]);
+    }
+
+    private static AiRequest reviewWithMessages(AiRequest review, List<AiMessage> messages) {
+        return new AiRequest(review.purpose(), messages, review.maxOutputTokens(), review.timeout(), review.jsonObjectResponse(),
+            review.tools(), review.maxRequestBytes(), review.requiredToolName(), review.generationRecoveryAttempts());
+    }
+
+    private static AiToolCall evidenceCall(String id, String snapshot, String pointer, int offset, int limit) throws Exception {
+        return new AiToolCall(id, "evidence", JSON.writeValueAsString(
+            Map.of("snapshotSha256", snapshot, "pointer", pointer, "offset", offset, "limit", limit)));
+    }
+
+    private static AiResponse reply(AiToolCall call) {
+        var usage = new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
+        return new AiResponse("", "fixture-model", "tool_calls", usage, List.of(call), Optional.empty());
+    }
+
+    private static Map<String, String> retainedTexts(JsonNode input, String snapshot) throws Exception {
+        String banner = "WTL-COMMAND-RETAINED-SOURCE-1\n";
+        var frames = new ArrayList<String>();
+        for (var message : input) {
+            String text = message.at("/content/0/text").asText();
+            if (text.startsWith(banner)) frames.add(text);
+        }
+        assertEquals(1, frames.size());
+        String frame = frames.getFirst();
+        int headerEnd = frame.indexOf('\n', banner.length());
+        var header = JSON.readTree(frame.substring(banner.length(), headerEnd));
+        assertEquals(snapshot, header.path("snapshotSha256").asText());
+        assertTrue(header.path("pendingRequired").isMissingNode());
+        int at = headerEnd + 1;
+        var sources = new LinkedHashMap<String, String>();
+        for (var range : header.path("ranges")) {
+            int next = at + range.path("next").asInt() - range.path("offset").asInt();
+            String pointer = range.path("pointer").asText();
+            if (pointer.startsWith("/buildReviewEvidence/projectArchive/members/")) {
+                assertEquals(0, range.path("offset").asInt());
+                assertNull(sources.put(pointer, frame.substring(at, next)));
+            }
+            at = next;
+        }
+        assertEquals(frame.length(), at);
+        return sources;
     }
 
     private static AiRequest deny(MirroredInstallerTestFixture fixture, DeploymentAiJson reviewer, Map<String, Object> facts,

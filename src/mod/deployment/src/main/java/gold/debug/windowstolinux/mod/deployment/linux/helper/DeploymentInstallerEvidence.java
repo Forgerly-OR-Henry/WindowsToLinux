@@ -50,6 +50,7 @@ public final class DeploymentInstallerEvidence {
             var mirror = DeploymentMirrorTasks.buildInput(executable);
             String original = mirror.map(DeploymentMirrorTasks.Preparation::original).orElse(executable);
             Optional<DownloadPoint> point = Optional.empty();
+            boolean ready = false;
             String expected;
             Set<gold.debug.windowstolinux.appapi.task.action.ActionTarget> targets;
             switch (semantics.operation()) {
@@ -63,13 +64,21 @@ public final class DeploymentInstallerEvidence {
                 }
                 case "deployment.helper.install.tracked.v1" -> {
                     String policy = DeploymentMirrorTasks.policy(task);
-                    if (!mirror.map(DeploymentMirrorTasks.Preparation::policy).orElse("").equals(policy))
-                        throw new IllegalArgumentException("Tracked installer differs from the frozen task mirror policy");
                     point = DeploymentHelperInstallerScript.packagePoint(policy);
-                    UUID operation = DeploymentHelperInstallerScript.trackedOperation(original, task, layout, point);
-                    expected = DeploymentHelperInstallerScript.renderTracked(task, operation, sha(server.id()),
-                        DeploymentHelperInstallerScript.bodyDigest(layout, point), layout, point);
-                    targets = DeploymentManagedHelper.trackedInstallationTargets(server, layout, operation, point);
+                    var tracked = DeploymentHelperInstallerScript.trackedRequest(original, task, layout, point);
+                    ready = tracked.ready();
+                    if (ready) {
+                        if (mirror.isPresent()) throw new IllegalArgumentException("Package-free installer cannot stage a mirror runtime");
+                        var aptPoint = point.orElseThrow();
+                        expected = DeploymentHelperInstallerScript.renderTrackedReady(task, tracked.operation(), sha(server.id()),
+                            DeploymentHelperInstallerScript.readyBodyDigest(layout, aptPoint), layout, aptPoint);
+                    } else {
+                        if (!mirror.map(DeploymentMirrorTasks.Preparation::policy).orElse("").equals(policy))
+                            throw new IllegalArgumentException("Tracked installer differs from the frozen task mirror policy");
+                        expected = DeploymentHelperInstallerScript.renderTracked(task, tracked.operation(), sha(server.id()),
+                            DeploymentHelperInstallerScript.bodyDigest(layout, point), layout, point);
+                    }
+                    targets = DeploymentManagedHelper.trackedInstallationTargets(server, layout, tracked.operation(), point, ready);
                 }
                 default -> throw new IllegalArgumentException("Not a native helper package installer");
             }
@@ -90,6 +99,16 @@ public final class DeploymentInstallerEvidence {
             facts.put("workflowRequestPointer", "/currentCommandEvidence/workflowAuthorization/frozenWorkflowRequest");
             facts.put("executableEvidencePointer", "/completeExecutableInput");
             facts.put("stdinSha256", sha(executable));
+            if (ready) {
+                facts.put("packageMode", "VERIFIED_EXISTING_APT_PREREQUISITES");
+                facts.put("expectedRepositoryPoint", point.orElseThrow().name());
+                facts.put("observedPackageSet", List.of(DeploymentHelperInstallerScript.APT_PACKAGES.split(" ")));
+                facts.put("runtimeGuard", "Inspect the protected OS package database and fixed runtime paths before taking the helper directory lock, again under the lock before the original STARTED receipt, and before success. A failed check stops this command. The helper directory lock does not lock the dpkg database.");
+                facts.put("nativeTransactions", Map.of("targets", List.of(), "effects",
+                    "The exact request has no package-manager transaction, package index update, package download or maintainer-script execution."));
+                facts.put("limits", "The local OS package database is a bootstrap trust assumption. Review the protected package and runtime checks, normal helper file and systemd effects, exact post-install probe and original receipt.");
+                return Collections.unmodifiableMap(facts);
+            }
             boolean apt = point.map(DeploymentHelperInstallerScript::usesApt).orElse(true);
             boolean dnf = point.map(value -> !DeploymentHelperInstallerScript.usesApt(value)).orElse(true);
             point.ifPresent(value -> facts.put("platformPackageScope", Map.of(
@@ -125,6 +144,17 @@ public final class DeploymentInstallerEvidence {
 
     public static Map<String, Object> describe(String executable) {
         return describe(executable, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original());
+    }
+
+    /** Recognizes the body digest after the caller verifies the actual installer bytes and digest scopes. */
+    public static boolean hasReadyBodyDigest(JsonNode executable, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        return readyPoint(executable.at("/digestScopes/bodyDigest/value").asText(), layout).isPresent();
+    }
+
+    private static Optional<DownloadPoint> readyPoint(String bodyDigest,
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        return List.of(DownloadPoint.APT_UBUNTU, DownloadPoint.APT_DEBIAN).stream()
+            .filter(point -> bodyDigest.equals(DeploymentHelperInstallerScript.readyBodyDigest(layout, point))).findFirst();
     }
 
     public static Map<String, Object> describe(String executable, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
@@ -479,15 +509,22 @@ public final class DeploymentInstallerEvidence {
         scopes.put("buildEntryDigest", sourceDigest("buildEntry", entry));
         var receipt = java.util.regex.Pattern.compile("FORMAT=1\\nTASK=([0-9a-f-]{36})\\nOPERATION=([0-9a-f-]{36})\\nSERVER_SHA256=([0-9a-f]{64})\\nBODY_SHA256=([0-9a-f]{64})\\nHELPER_SHA256=([0-9a-f]{64})\\nPHASE=STARTED\\n").matcher(executable);
         if (receipt.find()) {
-            var point = DeploymentMirrorTasks.executable(executable)
+            var mirror = DeploymentMirrorTasks.executable(executable);
+            var point = mirror
                 .flatMap(binding -> DeploymentHelperInstallerScript.packagePoint(binding.policy()));
-            String body = DeploymentHelperInstallerScript.render(layout, point);
+            var ready = mirror.isEmpty() ? readyPoint(receipt.group(4), layout) : Optional.<DownloadPoint>empty();
+            String body = ready.isPresent() ? DeploymentHelperInstallerScript.renderReady(layout, ready.orElseThrow())
+                : DeploymentHelperInstallerScript.render(layout, point);
             if (!receipt.group(4).equals(sha(body)) || !receipt.group(5).equals(sha(helper)))
                 throw new IllegalArgumentException("Installer receipt body/helper digest differs from its actual byte scope");
-            String tracked = DeploymentHelperInstallerScript.renderTracked(UUID.fromString(receipt.group(1)),
-                UUID.fromString(receipt.group(2)), receipt.group(3), receipt.group(4), layout, point);
+            UUID task = UUID.fromString(receipt.group(1));
+            UUID operation = UUID.fromString(receipt.group(2));
+            String tracked = ready.isPresent() ? DeploymentHelperInstallerScript.renderTrackedReady(task, operation,
+                receipt.group(3), receipt.group(4), layout, ready.orElseThrow())
+                : DeploymentHelperInstallerScript.renderTracked(task, operation, receipt.group(3), receipt.group(4), layout, point);
             int start = executable.indexOf(tracked);
-            if (start < 0 || executable.indexOf(tracked, start + tracked.length()) >= 0)
+            if (start < 0 || executable.indexOf(tracked, start + tracked.length()) >= 0
+                || ready.isPresent() && !executable.equals(tracked))
                 throw new IllegalArgumentException("Tracked installer receipt wrapper differs from the complete current implementation");
             int begin = tracked.indexOf("prepare_stage=installer-receipt\n");
             int beginEnd = tracked.indexOf(DeploymentHelperInstallerScript.BODY_AFTER_RECEIPT, begin);

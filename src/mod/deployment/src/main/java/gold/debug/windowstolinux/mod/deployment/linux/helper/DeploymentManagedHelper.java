@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.linux.helper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -13,6 +14,7 @@ import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.appapi.task.action.InteractionService;
@@ -24,9 +26,15 @@ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter;
 import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
 
 /** Runs the fixed helper installation and probe through one borrowed, host-authorized remote session. / 通过借用的宿主授权远端会话执行固定 helper 安装与探测。 */
 public final class DeploymentManagedHelper {
+    public static final String PREREQUISITE_OBSERVATION = "deployment.helper.prerequisites.observe.v1";
+    private static final Duration PREREQUISITE_OBSERVATION_BUDGET = Duration.ofSeconds(60);
+    private static final int PREREQUISITE_OBSERVATION_OUTPUT = 1024;
+    public enum PrerequisiteState { READY, MISSING }
     private final gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout;
     /** Actual original-mode approval for the complete helper request. / 完整 helper 请求的实际原模式审核。 */
     @FunctionalInterface
@@ -225,12 +233,15 @@ public final class DeploymentManagedHelper {
         String original = new String(script, StandardCharsets.UTF_8);
         String policy = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task);
         var point = DeploymentHelperInstallerScript.packagePoint(policy);
-        UUID operationId = DeploymentHelperInstallerScript.trackedOperation(original, task.id(), layout, point);
-        byte[] executable = DeploymentHelperInstallerScript.withMirrors(original, policy).getBytes(StandardCharsets.UTF_8);
+        var tracked = DeploymentHelperInstallerScript.trackedRequest(original, task.id(), layout, point);
+        if (tracked.ready() && !tracked.serverDigest().equals(DeploymentHelperInstallerScript.sha256(server.id())))
+            throw new IllegalArgumentException("Package-free tracked installer differs from the original server");
+        byte[] executable = (tracked.ready() ? original : DeploymentHelperInstallerScript.withMirrors(original, policy))
+            .getBytes(StandardCharsets.UTF_8);
         try (var request = new CommandRequest(DeploymentHelperInstallerScript.LAUNCHER, executable, Duration.ofHours(2),
             131072)) {
             var grant = approve("deployment.helper.install.tracked.v1", request,
-                trackedInstallationTargets(server, layout, operationId, point));
+                trackedInstallationTargets(server, layout, tracked.operation(), point, tracked.ready()));
             if (grant.outcome() != TaskResult.SUCCEEDED)
                 return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
             if (task.cancelToken().requested())
@@ -276,6 +287,63 @@ public final class DeploymentManagedHelper {
      * @throws ApiException if original review or remote access fails / 原审核或远端访问失败时 */
     public OperationResult<Identity> probePlatform() throws ApiException {
         return probe(true);
+    }
+
+    public OperationResult<PrerequisiteState> observeAptPrerequisites(DownloadPoint point) throws ApiException {
+        DeploymentMirrorTasks.requireCaptured(task.id());
+        if (!DeploymentHelperInstallerScript.packagePoint(DeploymentMirrorTasks.policy(task)).equals(Optional.of(point)))
+            throw new IllegalArgumentException("Prerequisite observation differs from the frozen repository point");
+        byte[] bytes = DeploymentHelperInstallerScript.renderPrerequisiteObservation(point).getBytes(StandardCharsets.UTF_8);
+        try (var request = new CommandRequest(DeploymentHelperInstallerScript.LAUNCHER, bytes,
+                PREREQUISITE_OBSERVATION_BUDGET, PREREQUISITE_OBSERVATION_OUTPUT)) {
+            var grant = approve(PREREQUISITE_OBSERVATION, request, prerequisiteObservationTargets(server));
+            if (grant.outcome() != TaskResult.SUCCEEDED)
+                return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
+            beforeSend.verify();
+            var result = session.execute(request, grant.value().orElseThrow());
+            for (var state : PrerequisiteState.values())
+                if (complete(result, "APT_PREREQUISITES=" + state.name() + "\n", true))
+                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(state), Optional.empty());
+            if (result.outcome() == TaskResult.CANCELLED)
+                return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+            return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
+                Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_HELPER_PREREQUISITES_UNCONFIRMED")));
+        } finally {
+            Arrays.fill(bytes, (byte) 0);
+        }
+    }
+
+    /** Supplies review facts only for a byte-identical, read-only request and its exact targets. */
+    public static Map<String, Object> prerequisiteObservationEvidence(ActionIntent intent, CommandRequest request) {
+        if (intent.serverIds().size() != 1 || !DeploymentHelperInstallerScript.LAUNCHER.equals(request.script())
+            || !PREREQUISITE_OBSERVATION_BUDGET.equals(request.timeout())
+            || request.outputLimitBytes() != PREREQUISITE_OBSERVATION_OUTPUT)
+            throw new IllegalArgumentException("Invalid helper prerequisite observation boundary");
+        var server = new ServerId(intent.serverIds().getFirst());
+        var action = new ActionSemantics(PREREQUISITE_OBSERVATION, prerequisiteObservationTargets(server));
+        if (!RemoteActions.command(server, intent.revision(), request).withSemantics(action).equals(intent))
+            throw new IllegalArgumentException("Invalid helper prerequisite observation intent");
+        byte[] input = request.stdin();
+        try {
+            for (var point : java.util.List.of(DownloadPoint.APT_UBUNTU, DownloadPoint.APT_DEBIAN))
+                if (Arrays.equals(input, DeploymentHelperInstallerScript.renderPrerequisiteObservation(point).getBytes(StandardCharsets.UTF_8)))
+                    return Map.of("expectedRepositoryPoint", point.name(), "packages", DeploymentHelperInstallerScript.APT_PACKAGES,
+                        "observation", "PROTECTED_EXISTING_OS_PACKAGE_DATABASE_AND_RUNTIME_PATHS",
+                        "possibleOutput", java.util.List.of("APT_PREREQUISITES=READY", "APT_PREREQUISITES=MISSING"));
+        } finally {
+            Arrays.fill(input, (byte) 0);
+        }
+        throw new IllegalArgumentException("Helper prerequisite observation source changed");
+    }
+
+    public static Set<ActionTarget> prerequisiteObservationTargets(ServerId server) {
+        return Set.of(new ActionTarget(server.id(), "file", "/etc/os-release"),
+            new ActionTarget(server.id(), "file", "/usr/lib/os-release"),
+            new ActionTarget(server.id(), "file", "/var/lib/dpkg/status"),
+            new ActionTarget(server.id(), "file", "/usr/bin/dpkg"),
+            new ActionTarget(server.id(), "file", "/usr/bin/dpkg-query"),
+            new ActionTarget(server.id(), "system-package-status", "dpkg:managed-helper-prerequisites"),
+            new ActionTarget(server.id(), "system-runtime-paths", "managed-helper-prerequisites"));
     }
 
     /** Keeps pure identity/recovery probes separate from platform readiness. / 将纯身份及恢复探测与平台就绪检查分开。
@@ -406,8 +474,20 @@ public final class DeploymentManagedHelper {
     public static Set<ActionTarget> trackedInstallationTargets(ServerId server,
             gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout, UUID operationId,
             Optional<gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint> point) {
+        return trackedInstallationTargets(server, layout, operationId, point, false);
+    }
+
+    static Set<ActionTarget> trackedInstallationTargets(ServerId server,
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout, UUID operationId,
+            Optional<DownloadPoint> point, boolean ready) {
         var targets = new java.util.HashSet<>(installationTargets(server, layout));
-        point.ifPresent(value -> {
+        if (ready) {
+            targets.removeIf(target -> switch (target.kind()) {
+                case "package-manager", "package-set", "system-package-index", "system-package-transaction" -> true;
+                default -> false;
+            });
+            targets.addAll(prerequisiteObservationTargets(server));
+        } else point.ifPresent(value -> {
             String excluded = DeploymentHelperInstallerScript.usesApt(value) ? "dnf" : "apt-get";
             targets.removeIf(target -> switch (target.kind()) {
                 case "package-manager" -> target.id().equals(excluded);

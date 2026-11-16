@@ -71,8 +71,12 @@ public final class DeploymentHelperInstallerScript {
         }
     }
 
-    static boolean usesApt(DownloadPoint point) {
+    public static boolean usesApt(DownloadPoint point) {
         return point.name().startsWith("APT_");
+    }
+
+    public static String renderPrerequisiteObservation(DownloadPoint point) {
+        return "set -euo pipefail\n" + DeploymentAptPrerequisites.program(point) + "apt_prerequisites_observe\n";
     }
 
     private static String guardPackagePoint(Optional<DownloadPoint> point) {
@@ -140,6 +144,50 @@ public final class DeploymentHelperInstallerScript {
             + renderStageDiagnostics() + renderPriorExecutableAdmission(layout, false) + renderInstallationLock(layout)
             + "installer_prior_files\n" + DeploymentRemoteLayoutAdmission.initialize(layout) + fixedLayout("""
             [ "$(id -u)" -eq 0 ] || exit 64
+            """, layout) + renderRuntimePathGuards() + fixedLayout("""
+            files_check_one() {
+              [ -e "$1" ] || [ -L "$1" ] || { files_missing=$((files_missing + 1)); return 0; }
+              [ ! -L "$1" ] && [ -f "$1" ] && [ -x "$1" ] || return 1
+              [ "$(/usr/bin/stat -c '%u:%g:%a:%h' -- "$1")" = '0:0:755:1' ] || return 1
+              printf '%s  %s\n' "$2" "$1" | /usr/bin/sha256sum --check --status
+            }
+            files_check() {
+              files_missing=0
+              for parent in @HELPER_EXISTING_PARENTS@; do
+                [ ! -e "$parent" ] && [ ! -L "$parent" ] && continue
+                files_trusted_directory "$parent" || { printf 'PREPARE_REJECT=installer-parent-ownership\\n'; exit 64; }
+              done
+              if [ -e @wtl:helper-directory@ ] || [ -L @wtl:helper-directory@ ]; then
+                files_trusted_directory @wtl:helper-directory@ || { printf 'PREPARE_REJECT=helper-directory-ownership\\n'; exit 64; }
+              fi
+            """, layout) + "  files_check_one " + quote(layout.helperPath()) + " "
+            + quote(DeploymentManagedHelperBundle.helperSha256(layout))
+            + " || { printf 'PREPARE_REJECT=helper-file-conflict\\n'; exit 64; }\n"
+            + "  files_check_one " + quote(layout.buildEntry()) + " "
+            + quote(DeploymentManagedHelperBundle.buildEntrySha256(layout))
+            + " || { printf 'PREPARE_REJECT=build-entry-conflict\\n'; exit 64; }\n}\n"
+            + "files_check_runtime() {\n  runtime_missing=0\n  for runtime_command in "
+            + String.join(" ", RUNTIME_COMMANDS) + "; do\n" + """
+                runtime_path=$(type -P -- "$runtime_command") || { runtime_missing=1; continue; }
+                files_trusted_runtime_path "$runtime_path" || { printf 'PREPARE_REJECT=runtime-command-ownership\\n'; exit 64; }
+              done
+            }
+            prepare_stage=files-readiness
+            files_check
+            files_check_runtime
+            if [ "$files_missing" -eq 0 ] && [ "$runtime_missing" -eq 0 ]; then
+              printf 'PREPARE_REJECT=files-install-not-required\\n'; exit 64
+            fi
+            """ + renderSecurityObservationFunctions() + renderInstallationLock(layout) + packageCommands() + """
+            prepare_stage=platform-packages
+            if [ "$runtime_missing" -ne 0 ]; then
+            """ + prerequisitesScript + fixedLayout("""
+            fi
+            """, layout) + renderFilesPublication(layout);
+    }
+
+    static String renderRuntimePathGuards() {
+        return """
             files_trusted_directory() {
               [ ! -L "$1" ] && [ -d "$1" ] || return 1
               [ "$(/usr/bin/stat -c '%u:%g' -- "$1")" = '0:0' ] || return 1
@@ -182,44 +230,11 @@ public final class DeploymentHelperInstallerScript {
               done
               [ -f "$resolved" ] && [ -x "$resolved" ]
             }
-            files_check_one() {
-              [ -e "$1" ] || [ -L "$1" ] || { files_missing=$((files_missing + 1)); return 0; }
-              [ ! -L "$1" ] && [ -f "$1" ] && [ -x "$1" ] || return 1
-              [ "$(/usr/bin/stat -c '%u:%g:%a:%h' -- "$1")" = '0:0:755:1' ] || return 1
-              printf '%s  %s\n' "$2" "$1" | /usr/bin/sha256sum --check --status
-            }
-            files_check() {
-              files_missing=0
-              for parent in @HELPER_EXISTING_PARENTS@; do
-                [ ! -e "$parent" ] && [ ! -L "$parent" ] && continue
-                files_trusted_directory "$parent" || { printf 'PREPARE_REJECT=installer-parent-ownership\\n'; exit 64; }
-              done
-              if [ -e @wtl:helper-directory@ ] || [ -L @wtl:helper-directory@ ]; then
-                files_trusted_directory @wtl:helper-directory@ || { printf 'PREPARE_REJECT=helper-directory-ownership\\n'; exit 64; }
-              fi
-            """, layout) + "  files_check_one " + quote(layout.helperPath()) + " "
-            + quote(DeploymentManagedHelperBundle.helperSha256(layout))
-            + " || { printf 'PREPARE_REJECT=helper-file-conflict\\n'; exit 64; }\n"
-            + "  files_check_one " + quote(layout.buildEntry()) + " "
-            + quote(DeploymentManagedHelperBundle.buildEntrySha256(layout))
-            + " || { printf 'PREPARE_REJECT=build-entry-conflict\\n'; exit 64; }\n}\n"
-            + "files_check_runtime() {\n  runtime_missing=0\n  for runtime_command in "
-            + String.join(" ", RUNTIME_COMMANDS) + "; do\n" + """
-                runtime_path=$(type -P -- "$runtime_command") || { runtime_missing=1; continue; }
-                files_trusted_runtime_path "$runtime_path" || { printf 'PREPARE_REJECT=runtime-command-ownership\\n'; exit 64; }
-              done
-            }
-            prepare_stage=files-readiness
-            files_check
-            files_check_runtime
-            if [ "$files_missing" -eq 0 ] && [ "$runtime_missing" -eq 0 ]; then
-              printf 'PREPARE_REJECT=files-install-not-required\\n'; exit 64
-            fi
-            """ + renderSecurityObservationFunctions() + renderInstallationLock(layout) + packageCommands() + """
-            prepare_stage=platform-packages
-            if [ "$runtime_missing" -ne 0 ]; then
-            """ + prerequisitesScript + fixedLayout("""
-            fi
+            """;
+    }
+
+    private static String renderFilesPublication(DeploymentRemoteLayout layout) {
+        return fixedLayout("""
             prepare_stage=helper-files-installation
             files_check
             files_check_runtime
@@ -282,6 +297,16 @@ public final class DeploymentHelperInstallerScript {
 
     public static String renderTracked(UUID taskId, UUID operationId, String serverDigest,
                                        String bodyDigest, DeploymentRemoteLayout layout, Optional<DownloadPoint> point) {
+        return renderTracked(taskId, operationId, serverDigest, bodyDigest, layout, point, false);
+    }
+
+    public static String renderTrackedReady(UUID taskId, UUID operationId, String serverDigest, String bodyDigest,
+            DeploymentRemoteLayout layout, DownloadPoint point) {
+        return renderTracked(taskId, operationId, serverDigest, bodyDigest, layout, Optional.of(point), true);
+    }
+
+    private static String renderTracked(UUID taskId, UUID operationId, String serverDigest, String bodyDigest,
+            DeploymentRemoteLayout layout, Optional<DownloadPoint> point, boolean ready) {
         java.util.Objects.requireNonNull(taskId);
         java.util.Objects.requireNonNull(operationId);
         if (serverDigest == null || !serverDigest.matches("[0-9a-f]{64}") || bodyDigest == null
@@ -331,7 +356,7 @@ public final class DeploymentHelperInstallerScript {
             /usr/bin/mv -fT -- "$bootstrap_terminal" "$bootstrap_receipt"
             /usr/bin/sync -f "$bootstrap_directory"
             """.formatted(operationId, quote(succeeded));
-        return render(begin, end, layout, point);
+        return render(begin, end, layout, point, ready);
     }
 
     /** Resolves only the exact current fixed installer and its original receipt, before review or dispatch. */
@@ -342,22 +367,55 @@ public final class DeploymentHelperInstallerScript {
 
     static UUID trackedOperation(String executable, UUID expectedTask,
             DeploymentRemoteLayout layout, Optional<DownloadPoint> point) {
+        var tracked = trackedRequest(executable, expectedTask, layout, point);
+        if (tracked.ready()) throw new IllegalArgumentException("Unexpected package-free tracked installer");
+        return tracked.operation();
+    }
+
+    record TrackedRequest(UUID operation, String serverDigest, boolean ready) {}
+
+    static TrackedRequest trackedRequest(String executable, UUID expectedTask, DeploymentRemoteLayout layout,
+            Optional<DownloadPoint> point) {
         java.util.Objects.requireNonNull(expectedTask);
         var receipt = java.util.regex.Pattern.compile("FORMAT=1\\nTASK=([0-9a-f-]{36})\\nOPERATION=([0-9a-f-]{36})\\nSERVER_SHA256=([0-9a-f]{64})\\nBODY_SHA256=([0-9a-f]{64})\\nHELPER_SHA256=([0-9a-f]{64})\\nPHASE=STARTED\\n").matcher(executable);
         if (!receipt.find() || !expectedTask.toString().equals(receipt.group(1)))
             throw new IllegalArgumentException("Tracked installer requires its original task receipt");
         java.util.UUID operation = java.util.UUID.fromString(receipt.group(2));
-        String bodyDigest = bodyDigest(layout, point);
-        if (!bodyDigest.equals(receipt.group(4)) || !DeploymentManagedHelperBundle.helperSha256(layout).equals(receipt.group(5))
-            || !renderTracked(expectedTask, operation, receipt.group(3), bodyDigest, layout, point).equals(executable))
+        String bodyDigest = receipt.group(4);
+        boolean ready = matchesReadyBodyDigest(bodyDigest, layout, point);
+        if ((!ready && !bodyDigest.equals(bodyDigest(layout, point)))
+            || !DeploymentManagedHelperBundle.helperSha256(layout).equals(receipt.group(5))
+            || !renderTracked(expectedTask, operation, receipt.group(3), bodyDigest, layout, point, ready).equals(executable))
             throw new IllegalArgumentException("Tracked installer differs from its exact body, helper or receipt envelope");
-        return operation;
+        return new TrackedRequest(operation, receipt.group(3), ready);
     }
 
     public static String bodyDigest(DeploymentRemoteLayout layout, Optional<DownloadPoint> point) {
+        return sha256(render(layout, point));
+    }
+
+    public static String readyBodyDigest(DeploymentRemoteLayout layout, DownloadPoint point) {
+        return sha256(renderReady(layout, point));
+    }
+
+    static String renderReady(DeploymentRemoteLayout layout, DownloadPoint point) {
+        return render("", "", layout, Optional.of(point), true);
+    }
+
+    private static boolean matchesReadyBodyDigest(String bodyDigest, DeploymentRemoteLayout layout,
+            Optional<DownloadPoint> point) {
+        return point.filter(DeploymentHelperInstallerScript::usesApt)
+            .filter(value -> bodyDigest.equals(readyBodyDigest(layout, value))).isPresent();
+    }
+
+    public static String readyRequestDigest(String original) {
+        return sha256(original);
+    }
+
+    static String sha256(String content) {
         try {
             return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
-                .digest(render(layout, point).getBytes(StandardCharsets.UTF_8)));
+                .digest(content.getBytes(StandardCharsets.UTF_8)));
         } catch (java.security.NoSuchAlgorithmException impossible) {
             throw new IllegalStateException(impossible);
         }
@@ -368,6 +426,10 @@ public final class DeploymentHelperInstallerScript {
             UUID operation, String serverDigest, String bodyDigest, String requestDigest, DeploymentRemoteLayout layout,
             boolean allowPreviouslySentUnscoped) {
         var point = packagePoint(DeploymentMirrorTasks.policy(task));
+        if (allowPreviouslySentUnscoped && matchesReadyBodyDigest(bodyDigest, layout, point)) {
+            String original = renderTrackedReady(task.id(), operation, serverDigest, bodyDigest, layout, point.orElseThrow());
+            return requestDigest.equals(readyRequestDigest(original));
+        }
         if (allowPreviouslySentUnscoped && point.isPresent() && bodyDigest.equals(bodyDigest(layout, Optional.empty())))
             point = Optional.empty();
         return bodyDigest.equals(bodyDigest(layout, point))
@@ -437,14 +499,27 @@ public final class DeploymentHelperInstallerScript {
      * @param end terminal receipt before response / 回包前终态回执
      * @return complete installer script / 完整安装脚本 */
     private static String render(String begin, String end, DeploymentRemoteLayout layout, Optional<DownloadPoint> point) {
+        return render(begin, end, layout, point, false);
+    }
+
+    private static String render(String begin, String end, DeploymentRemoteLayout layout, Optional<DownloadPoint> point,
+                                 boolean ready) {
+        String readyCheck = """
+            prepare_stage=platform-prerequisites
+            [ "$(apt_prerequisites_observe)" = APT_PREREQUISITES=READY ] || exit 64
+            prepare_stage=helper-installation
+            """;
         return "set -euo pipefail\nexport LC_ALL=C\n" + renderStageDiagnostics() + renderSecurityObservationFunctions()
             + """
             [ "$(id -u)" -eq 0 ] || exit 64
             command -v systemctl >/dev/null
-            """ + guardPackagePoint(point) + renderPriorExecutableAdmission(layout, true) + renderInstallationLock(layout)
-            + "installer_capture_prior\n" + begin + BODY_AFTER_RECEIPT
+            """ + (ready ? DeploymentAptPrerequisites.program(point.orElseThrow()) : guardPackagePoint(point))
+            + renderPriorExecutableAdmission(layout, true)
+            + (ready ? readyCheck.replace("prepare_stage=platform-prerequisites", "prepare_stage=platform-prerequisites-before-lock") : "")
+            + renderInstallationLock(layout)
+            + "installer_capture_prior\n" + (ready ? readyCheck : "") + begin + BODY_AFTER_RECEIPT
             + DeploymentRemoteLayoutAdmission.initialize(layout)
-            + (point.isPresent()
+            + (ready ? "prepare_stage=helper-installation\n" : point.isPresent()
             ? "prepare_stage=platform-packages\n" + scopedPackages(point.orElseThrow()) + "prepare_stage=helper-installation\n"
             : packageCommands() + """
             prepare_stage=platform-packages
@@ -457,7 +532,8 @@ public final class DeploymentHelperInstallerScript {
             else printf 'PREPARE_REJECT=platform-package-manager\\n'; exit 64; fi
             prepare_stage=helper-installation
             """
-            .formatted(APT_PACKAGES, DNF_PACKAGES)) + renderHelperInstallation(layout) + renderSecurityInvariant() + end + "printf 'HELPER_INSTALL=1\\nPROTOCOL="
+            .formatted(APT_PACKAGES, DNF_PACKAGES)) + renderHelperInstallation(layout) + (ready ? readyCheck : "")
+            + renderSecurityInvariant() + end + "printf 'HELPER_INSTALL=1\\nPROTOCOL="
             + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\\nSHA256="
             + DeploymentManagedHelperBundle.helperSha256(layout) + "\\n'\n";
     }
