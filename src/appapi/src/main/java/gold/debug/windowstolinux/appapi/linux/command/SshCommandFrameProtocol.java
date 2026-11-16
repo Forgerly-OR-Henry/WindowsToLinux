@@ -10,6 +10,9 @@ public final class SshCommandFrameProtocol {
     /** Fixed host probe requiring the privilege-checked frame. / 要求使用特权校验帧的固定宿主探测。 */
     public static final String PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER = "# WTL_SSH_PROTECTED_SYSTEM_PROBE_V2\n";
 
+    /** Fixed Perl helper launch requiring same-session SFTP path admission before SSH exec. / 要求在 SSH 执行前以同会话 SFTP 准入固定 Perl 路径的辅助程序启动。 */
+    public static final String HELPER_PERL_STARTUP_HEADER = "# WTL_SSH_HELPER_PERL_STARTUP_V1\n";
+
     /** Fixed launcher after the SSH server dispatches exec to the account shell.
      * Linux loader and libc startup settings are removed by that shell before the first product process.
      */

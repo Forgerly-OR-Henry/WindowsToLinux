@@ -14,7 +14,6 @@ import gold.debug.windowstolinux.app.linux.sftp.TransferPlan;
 import gold.debug.windowstolinux.app.linux.sftp.TransferProgressListener;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
-import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
@@ -361,9 +360,9 @@ public final class SshConnector implements AutoCloseable {
                 command = new SshCommandExecution(session, request, io);
                 long started = System.nanoTime();
                 try {
-                    boolean privilegeChecked = request.script().startsWith(SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER);
-                    if (privilegeChecked || request.script().startsWith(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER))
-                        verifyProtectedSystemProbe(cancellation, started, request.timeout(), privilegeChecked);
+                    var startup = SshProtectedSystemProbe.Profile.forScript(request.script());
+                    if (startup != SshProtectedSystemProbe.Profile.NONE)
+                        verifyProtectedSystemProbe(cancellation, started, request.timeout(), startup);
                     var result = command.run(cancellation, started);
                     uncertain = result.outcome() == TaskResult.UNKNOWN;
                     return result;
@@ -375,14 +374,14 @@ public final class SshConnector implements AutoCloseable {
             }
         }
 
-        /** Uses only same-session SFTP attributes before opening the approved probe's exec channel. / 打开已审批探测执行通道前仅使用同会话的 SFTP 元数据。
+        /** Uses only same-session SFTP attributes before opening the approved command's exec channel. / 打开已审批命令执行通道前仅使用同会话的 SFTP 元数据。
          * @param cancellation original task cancellation / 原任务取消请求
          * @param started monotonic start time shared with command execution / 与命令执行共用的单调时钟起点
          * @param timeout original approved request timeout / 原已审批请求期限
-         * @param privilegeChecked whether the frame requires the V2 privilege gate / 命令帧是否要求 V2 特权门禁
+         * @param startup launch paths required by the request header / 请求首行要求校验的启动路径
          * @throws ApiException if the launch paths or original deadline cannot be satisfied / 启动路径或原期限无法满足时 */
         private void verifyProtectedSystemProbe(CancelToken cancellation, long started, Duration timeout,
-                                                boolean privilegeChecked) throws ApiException {
+                                                SshProtectedSystemProbe.Profile startup) throws ApiException {
             Thread worker = Thread.currentThread();
             long budget = timeout.toNanos();
             CancelToken stop = () -> cancellation.requested() || worker.isInterrupted()
@@ -402,7 +401,7 @@ public final class SshConnector implements AutoCloseable {
                 }
                 // SFTP v3 reports numeric UID and POSIX mode; both attributes must actually be returned.
                 try (var scope = openFileScope(stop, true)) {
-                    boolean protectedPaths = SshProtectedSystemProbe.verify(scope.channel(), privilegeChecked);
+                    boolean protectedPaths = SshProtectedSystemProbe.verify(scope.channel(), startup);
                     checkProtectedProbeStop(cancellation, stop);
                     if (!protectedPaths)
                         throw failure(ProblemCode.ACCESS_DENIED, "SSH_PROTECTED_SYSTEM_PROBE_UNCONFIRMED",

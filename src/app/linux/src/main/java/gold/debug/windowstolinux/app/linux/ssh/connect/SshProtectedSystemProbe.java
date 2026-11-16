@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.app.linux.ssh.connect;
 import java.io.IOException;
 import java.util.List;
 
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import org.apache.sshd.sftp.client.SftpClient;
 import org.apache.sshd.sftp.client.SftpClient.Attribute;
 import org.apache.sshd.sftp.client.SftpClient.Attributes;
@@ -13,17 +14,33 @@ final class SshProtectedSystemProbe {
     /** Fixed non-link executables used at SSH framing and before ordinary probe admission. / 用于 SSH 帧启动和常规探测准入前的固定非链接程序。 */
     private static final List<String> SYSTEM_TOOLS = List.of("/usr/bin/env", "/usr/bin/stat", "/usr/bin/readlink");
 
+    enum Profile {
+        NONE,
+        SYSTEM_PROBE,
+        PRIVILEGE_CHECKED_SYSTEM_PROBE,
+        HELPER_PERL_STARTUP;
+
+        static Profile forScript(String script) {
+            if (script.startsWith(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER)) return SYSTEM_PROBE;
+            if (script.startsWith(SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER))
+                return PRIVILEGE_CHECKED_SYSTEM_PROBE;
+            if (script.startsWith(SshCommandFrameProtocol.HELPER_PERL_STARTUP_HEADER)) return HELPER_PERL_STARTUP;
+            return NONE;
+        }
+    }
+
     /** Keeps verification stateless between command requests. / 保持命令请求之间的校验无状态。 */
     private SshProtectedSystemProbe() {
     }
 
     /** Checks each ancestor before its children and recognizes the system merged-usr /bin link. / 先核验祖先再核验子项，并识别系统 merged-usr 的 /bin 链接。
      * @param sftp metadata channel on the original authenticated session / 原已认证会话上的元数据通道
-     * @param privilegeChecked whether to require the additional V2 launch tools and reject set-ID / 是否校验 V2 附加启动工具并拒绝 set-ID
+     * @param profile launch paths required by the exact script header / 精确脚本首行要求校验的启动路径
      * @return whether every required fixed path met its metadata constraints / 每个必需固定路径是否满足元数据约束
      * @throws IOException if a metadata request fails / 元数据请求失败时 */
-    static boolean verify(SftpClient sftp, boolean privilegeChecked) throws IOException {
+    static boolean verify(SftpClient sftp, Profile profile) throws IOException {
         if (sftp.getVersion() != SftpConstants.SFTP_V3) return false;
+        boolean privilegeChecked = profile == Profile.PRIVILEGE_CHECKED_SYSTEM_PROBE;
         for (String directory : List.of("/", "/usr", "/usr/bin")) {
             if (!protectedDirectory(sftp.lstat(directory))) return false;
         }
@@ -31,7 +48,15 @@ final class SshProtectedSystemProbe {
             if (!protectedExecutable(sftp.lstat(executable), privilegeChecked)) return false;
         }
         if (!protectedBash(sftp, privilegeChecked)) return false;
-        if (!privilegeChecked) return true;
+        return switch (profile) {
+            case HELPER_PERL_STARTUP -> protectedExecutable(sftp.lstat("/usr/bin/perl"), true);
+            case PRIVILEGE_CHECKED_SYSTEM_PROBE -> protectedPrivilegeTools(sftp);
+            case SYSTEM_PROBE -> true;
+            case NONE -> false;
+        };
+    }
+
+    private static boolean protectedPrivilegeTools(SftpClient sftp) throws IOException {
         if (!protectedExecutable(sftp.lstat("/usr/bin/setpriv"), true)) return false;
         var sbin = sftp.lstat("/usr/sbin");
         if (!sbin.isSymbolicLink())

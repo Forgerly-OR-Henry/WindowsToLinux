@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.linux.ssh.connect;
 
+import static gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol.FRAME_LAUNCHER;
+import static gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol.HELPER_PERL_STARTUP_HEADER;
 import static gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER;
 import static gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol.PRIVILEGE_CHECKED_FRAME_LAUNCHER;
 import static gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER;
@@ -46,6 +48,42 @@ class SshProtectedSystemProbeTest {
     Path root;
 
     @ParameterizedTest
+    @ValueSource(strings = {"safe", "perl-absent", "perl-symlink", "perl-directory", "perl-nonexecutable",
+        "perl-unowned", "perl-group-writable", "perl-world-writable", "perl-missing-mode", "perl-missing-owner",
+        "perl-setuid", "perl-setgid", "writable-root", "writable-parent", "writable-usr-bin"})
+    void helperPerlStartupRequiresProtectedInterpreterBeforeDispatch(String scenario) throws Exception {
+        var events = new CopyOnWriteArrayList<String>();
+        var metadataSession = new AtomicReference<ServerSession>();
+        var commands = new CopyOnWriteArrayList<SshCommandExecutionTest.WireCommand>();
+        var failures = new ConcurrentLinkedQueue<Throwable>();
+        boolean safe = scenario.equals("safe");
+        try (var server = new LinuxLoopbackSshServer(root, ssh -> {
+            ssh.setSubsystemFactories(List.of(sftp("usr/bin", scenario, events, metadataSession)));
+            ssh.setCommandFactory((channel, command) -> {
+                events.add("exec");
+                assertTrue(safe, "Rejected Perl startup metadata reached exec");
+                assertSame(metadataSession.get(), channel.getSession());
+                assertTrue(command.startsWith(FRAME_LAUNCHER));
+                return acknowledgeFrame(commands, failures, HELPER_PERL_STARTUP_HEADER);
+            });
+        }); var connector = new SshConnector(); var connection = SshCommandExecutionTest.connect(connector, server);
+             var request = SshCommandExecutionTest.request(HELPER_PERL_STARTUP_HEADER + ":\n", 4096)) {
+            if (safe) {
+                assertEquals(TaskResult.SUCCEEDED, connection.execute(request, () -> false).outcome());
+                assertEquals(List.of("/", "/usr", "/usr/bin", "/usr/bin/env", "/usr/bin/stat", "/usr/bin/readlink",
+                    "/bin", "readlink:/bin", "/usr/bin/bash", "/usr/bin/perl", "exec"), events);
+            } else {
+                var denied = assertThrows(ApiException.class, () -> connection.execute(request, () -> false));
+                assertEquals("SSH_PROTECTED_SYSTEM_PROBE_UNCONFIRMED", denied.problem().eventCode(), scenario);
+                assertFalse(events.contains("exec"));
+                assertEquals(scenario.startsWith("perl-"), events.contains("/usr/bin/perl"), scenario);
+            }
+        }
+        assertTrue(failures.isEmpty(), failures.toString());
+        assertTrue(commands.stream().noneMatch(command -> command.worker.isAlive()));
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"split", "usr/bin", "/usr/bin"})
     void verifiesFixedLaunchPathsInTheSameSessionBeforeExec(String binTarget) throws Exception {
         var events = new CopyOnWriteArrayList<String>();
@@ -54,7 +92,7 @@ class SshProtectedSystemProbeTest {
         var commands = new CopyOnWriteArrayList<SshCommandExecutionTest.WireCommand>();
         var failures = new ConcurrentLinkedQueue<Throwable>();
         try (var server = new LinuxLoopbackSshServer(root, ssh -> {
-            ssh.setSubsystemFactories(List.of(sftp(binTarget, "safe", events, metadataSession)));
+            ssh.setSubsystemFactories(List.of(sftp(binTarget, "perl-absent", events, metadataSession)));
             ssh.setCommandFactory((channel, command) -> {
                 execSession.set(channel.getSession());
                 events.add("exec");
@@ -183,7 +221,7 @@ class SshProtectedSystemProbeTest {
             command.exit.onExit(0);
         }); var connector = new SshConnector(); var connection = SshCommandExecutionTest.connect(connector, fixture.server);
              var guarded = SshCommandExecutionTest.request(PROTECTED_SYSTEM_PROBE_HEADER + ":\n", 4096);
-             var plain = SshCommandExecutionTest.request(":\n", 4096)) {
+             var plain = SshCommandExecutionTest.request(":\n" + HELPER_PERL_STARTUP_HEADER, 4096)) {
             assertThrows(ApiException.class, () -> connection.execute(guarded, () -> false));
             assertEquals(0, fixture.calls.get());
             assertEquals(TaskResult.SUCCEEDED, connection.execute(plain, () -> false).outcome());
@@ -232,7 +270,9 @@ class SshProtectedSystemProbeTest {
 
                     @Override
                     protected void writeAttrs(Buffer buffer, Map<String, ?> attributes) {
-                        if (attributes.get("fixtureSetId") instanceof Integer specialMode) {
+                        if (attributes.get("fixtureAttributes") instanceof Attributes wireAttributes) {
+                            SftpHelper.writeAttributes(buffer, wireAttributes, getVersion());
+                        } else if (attributes.get("fixtureSetId") instanceof Integer specialMode) {
                             // Send the exact bits: PosixFilePermission cannot represent set-ID.
                             var mode = new Attributes().owner(0, 0);
                             mode.setPermissions(0100755 | specialMode);
@@ -254,6 +294,7 @@ class SshProtectedSystemProbeTest {
     }
 
     private static Map<String, Object> attributes(String path, String binTarget, String scenario) throws FileNotFoundException {
+        if (path.equals("/usr/bin/perl")) return Map.of("fixtureAttributes", perlAttributes(scenario));
         boolean link = path.equals("/bin") && !binTarget.equals("split")
             || path.equals("/usr/bin/stat") && scenario.equals("tool-symlink");
         boolean directory = List.of("/", "/usr", "/usr/bin", "/bin", "/usr/sbin").contains(path) && !link;
@@ -267,7 +308,8 @@ class SshProtectedSystemProbeTest {
             || scenario.equals("unowned-bin-link") && path.equals("/bin");
         boolean writable = scenario.equals("writable-file") && path.equals("/usr/bin/readlink")
             || scenario.equals("writable-parent") && path.equals("/usr")
-            || scenario.equals("writable-root") && path.equals("/");
+            || scenario.equals("writable-root") && path.equals("/")
+            || scenario.equals("writable-usr-bin") && path.equals("/usr/bin");
         var attributes = new HashMap<String, Object>();
         attributes.put(IoUtils.REGFILE_VIEW_ATTR, !directory && !link);
         attributes.put(IoUtils.DIRECTORY_VIEW_ATTR, directory);
@@ -282,6 +324,25 @@ class SshProtectedSystemProbeTest {
             case "setuid-env:/usr/bin/env", "setuid-reader:/usr/sbin/getcap" -> attributes.put("fixtureSetId", 04000);
             case "setgid-bash:/usr/bin/bash", "setgid-runner:/usr/bin/setpriv" -> attributes.put("fixtureSetId", 02000);
             default -> {}
+        }
+        return attributes;
+    }
+
+    private static Attributes perlAttributes(String scenario) throws FileNotFoundException {
+        if (scenario.equals("perl-absent")) throw new FileNotFoundException("No fixture metadata for Perl");
+        var attributes = new Attributes();
+        if (!scenario.equals("perl-missing-owner")) attributes.owner(scenario.equals("perl-unowned") ? 1000 : 0, 0);
+        if (!scenario.equals("perl-missing-mode")) {
+            attributes.setPermissions(switch (scenario) {
+                case "perl-symlink" -> 0120755;
+                case "perl-directory" -> 0040755;
+                case "perl-nonexecutable" -> 0100644;
+                case "perl-group-writable" -> 0100775;
+                case "perl-world-writable" -> 0100757;
+                case "perl-setuid" -> 0104755;
+                case "perl-setgid" -> 0102755;
+                default -> 0100755;
+            });
         }
         return attributes;
     }

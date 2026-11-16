@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.linux.helper;
 
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTemplate;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
@@ -12,6 +13,13 @@ import java.util.UUID;
 public final class DeploymentHelperInstallerScript {
     /** Starts fixed installers before inherited Bash hooks, functions, options or PATH can be used. */
     public static final String LAUNCHER = "exec /usr/bin/env -i LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash --noprofile --norc -p -s";
+
+    /** Requires same-session SSH metadata admission before starting this fixed Perl bootstrap. */
+    public static final String PERL_STARTUP_LAUNCHER = SshCommandFrameProtocol.HELPER_PERL_STARTUP_HEADER + LAUNCHER;
+
+    static String trackedLauncher(boolean ready) {
+        return ready ? PERL_STARTUP_LAUNCHER : LAUNCHER;
+    }
 
     /** Same no-effect receipt boundary in tracked and plain bodies; never an execution stage. */
     static final String BODY_AFTER_RECEIPT = "# WTL_INSTALLER_BODY_AFTER_RECEIPT\n";
@@ -77,7 +85,7 @@ public final class DeploymentHelperInstallerScript {
     }
 
     public static String renderPrerequisiteObservation(DownloadPoint point) {
-        return "set -euo pipefail\n" + DeploymentAptPrerequisites.program(point) + "apt_prerequisites_observe\n";
+        return "set -euo pipefail\n" + DeploymentAptPrerequisites.observationProgram(point);
     }
 
     private static String guardPackagePoint(Optional<DownloadPoint> point) {

@@ -58,13 +58,13 @@ class DeploymentHelperInstallerContractTest {
     void prerequisiteObservationParsesOnlyConclusivePackageStates() throws Exception {
         var point = gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.APT_UBUNTU;
         String program = DeploymentHelperInstallerScript.renderPrerequisiteObservation(point)
-            .replace("[ \"$EUID\" -eq 0 ] && apt_prerequisite_metadata", "apt_prerequisite_metadata")
+            .replace("[ \"$EUID\" -eq 0 ] && apt_prerequisite_metadata || exit 64\n", "")
+            .replace("[ \"$EUID\" -eq 0 ] && apt_prerequisite_os", "apt_prerequisite_os")
             .replace("/usr/bin/stat", "fixture_stat")
             .replace("/usr/bin/env -i LC_ALL=C /usr/bin/timeout 15s", "fixture_invoke");
         int call = program.lastIndexOf("\napt_prerequisites_observe\n");
         assertTrue(call > 0);
         String fixtures = """
-            apt_prerequisite_metadata() { return 0; }
             apt_prerequisite_os() { return 0; }
             apt_prerequisite_file() { return 0; }
             files_trusted_directory() { return 0; }
@@ -108,8 +108,14 @@ class DeploymentHelperInstallerContractTest {
     @Test
     void prerequisiteMetadataGuardRejectsBeforeObservation() throws Exception {
         var point = gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.APT_UBUNTU;
-        String program = DeploymentHelperInstallerScript.renderPrerequisiteObservation(point)
+        String original = DeploymentHelperInstallerScript.renderPrerequisiteObservation(point);
+        int metadataCall = original.indexOf("[ \"$EUID\" -eq 0 ] && apt_prerequisite_metadata || exit 64\n");
+        assertTrue(metadataCall > 0);
+        assertTrue(metadataCall < original.indexOf("$(/usr/bin/stat "));
+        assertTrue(metadataCall < original.indexOf("$(/usr/bin/readlink "));
+        String program = original
             .replace("[ \"$EUID\" -eq 0 ] && apt_prerequisite_metadata", "apt_prerequisite_metadata")
+            .replace("[ \"$EUID\" -eq 0 ] && apt_prerequisite_os", "apt_prerequisite_os")
             .replace("[ ! -L \"$path\" ] && [ -O \"$path\" ] && [ -d \"$path\" ] && [ -x \"$path\" ]", ":")
             .replace("[ ! -L /usr/bin/perl ] && [ -O /usr/bin/perl ] && [ -f /usr/bin/perl ] && [ -x /usr/bin/perl ]", ":")
             .replace("LC_ALL=C /usr/bin/perl -T -f", "LC_ALL=C fixture_perl -T -f")
@@ -118,7 +124,7 @@ class DeploymentHelperInstallerContractTest {
             .replace("/usr/bin/env -i LC_ALL=C /usr/bin/timeout 15s", "fixture_invoke");
         int call = program.lastIndexOf("\napt_prerequisites_observe\n");
         assertTrue(call > 0);
-        String fixtures = """
+        String metadataFixture = """
             fixture_perl() {
               [ "$#" -eq 2 ] && [ "$1" = -T ] && [ "$2" = -f ] || return 1
               printf 'metadata\\n' >> "$fixture/calls"
@@ -148,6 +154,8 @@ class DeploymentHelperInstallerContractTest {
                 while IFS= read -r line; do printf '%s\\n' "$line"; done
               } | FIXTURE_METADATA_CASE="$scenario" /usr/bin/perl "$@"
             }
+            """;
+        String fixtures = """
             apt_prerequisite_os() { printf 'os\\n' >> "$fixture/calls"; fixture_stat; fixture_readlink; }
             apt_prerequisite_file() { return 0; }
             files_trusted_directory() { return 0; }
@@ -164,7 +172,7 @@ class DeploymentHelperInstallerContractTest {
             "non-executable", "non-root-link", "non-root-group", "symlink-loop")) {
             Files.deleteIfExists(calls);
             var result = execute("scenario=" + scenario + "\nfixture=" + DeploymentHelperInstallerScript.quote(bashPath(temporary)) + "\n"
-                + program.substring(0, call + 1) + fixtures + program.substring(call + 1));
+                + metadataFixture + program.substring(0, call + 1) + fixtures + program.substring(call + 1));
             assertEquals(64, result.exit(), scenario);
             assertEquals("", result.output(), scenario);
             List<String> expected = scenario.equals("trusted-symlink")

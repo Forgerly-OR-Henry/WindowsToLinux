@@ -6,6 +6,7 @@ import java.util.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
@@ -34,8 +35,8 @@ public final class DeploymentInstallerEvidence {
             gold.debug.windowstolinux.appapi.task.action.ActionIntent intent,
             gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, UUID task,
             gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws java.io.IOException {
-        if (intent.serverIds().size() != 1 || !request.script().equals(DeploymentHelperInstallerScript.LAUNCHER))
-            throw new IllegalArgumentException("Native helper package evidence requires its exact launcher and server");
+        if (intent.serverIds().size() != 1)
+            throw new IllegalArgumentException("Native helper package evidence requires its original server");
         var server = new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst());
         var semantics = intent.semantics().orElseThrow();
         var actual = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, intent.revision(), request)
@@ -82,6 +83,8 @@ public final class DeploymentInstallerEvidence {
                 }
                 default -> throw new IllegalArgumentException("Not a native helper package installer");
             }
+            if (!request.script().equals(DeploymentHelperInstallerScript.trackedLauncher(ready)))
+                throw new IllegalArgumentException("Native helper installer launcher differs from its exact form");
             if (mirror.isPresent()) {
                 var bound = mirror.orElseThrow();
                 if (!bound.task().equals(task) || !JSON.readTree(bound.policy()).path("server").asText().equals(server.id())
@@ -160,6 +163,19 @@ public final class DeploymentInstallerEvidence {
 
     public static Map<String, Object> describe(String executable, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
         return describe(executable, DeploymentHelperInstallerScript.renderHelperInstallation(layout), layout);
+    }
+
+    /** Binds the protected launcher to the byte-verified package-free installer form. */
+    public static Map<String, Object> describeTracked(String executable, String launcher,
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        var evidence = describe(executable, layout);
+        var scopes = (Map<?, ?>) evidence.get("digestScopes");
+        boolean ready = scopes.get("bodyDigest") instanceof Map<?, ?> body && body.get("value") instanceof String digest
+            && readyPoint(digest, layout).isPresent();
+        if ((ready || launcher.startsWith(SshCommandFrameProtocol.HELPER_PERL_STARTUP_HEADER))
+            && !launcher.equals(DeploymentHelperInstallerScript.trackedLauncher(ready)))
+            throw new IllegalArgumentException("Tracked helper installer launcher differs from its exact form");
+        return evidence;
     }
 
     public static Map<String, Object> describeFiles(String executable) {

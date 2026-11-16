@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
@@ -196,13 +197,16 @@ class DeploymentNativeHelperPackageImpactTest {
     void readyObservationAndPackageFreeInstallUseSeparateExactReviewsAndGrants() throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var assisted = new Assisted(fixture)) {
             var sent = new ArrayList<String>();
+            var launchers = new ArrayList<String>();
             var usedGrants = new HashSet<UUID>();
             var session = (RemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{RemoteSession.class}, (p, m, a) -> {
                 assertEquals("execute", m.getName());
                 UUID grant = ((ApprovalGrant) a[1]).id();
                 assertTrue(assisted.grants.contains(grant));
                 assertTrue(usedGrants.add(grant));
-                sent.add(new String(((CommandRequest) a[0]).stdin(), StandardCharsets.UTF_8));
+                var request = (CommandRequest) a[0];
+                launchers.add(request.script());
+                sent.add(new String(request.stdin(), StandardCharsets.UTF_8));
                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new CommandResult(Optional.of(0),
                     sent.size() == 1 ? "APT_PREREQUISITES=READY\n" : "", "", false)), Optional.empty());
             });
@@ -225,6 +229,8 @@ class DeploymentNativeHelperPackageImpactTest {
                 transitions::incrementAndGet).outcome());
             assertEquals(1, transitions.get());
             assertEquals(List.of(DeploymentHelperInstallerScript.renderPrerequisiteObservation(point), ready), sent);
+            var protectedLauncher = SshCommandFrameProtocol.HELPER_PERL_STARTUP_HEADER + DeploymentHelperInstallerScript.LAUNCHER;
+            assertEquals(List.of(protectedLauncher, protectedLauncher), launchers);
             assertEquals(2, usedGrants.size());
             var observeIntent = assisted.grantedIntents.getFirst();
             assertEquals(DeploymentManagedHelper.PREREQUISITE_OBSERVATION, observeIntent.semantics().orElseThrow().operation());
@@ -236,14 +242,38 @@ class DeploymentNativeHelperPackageImpactTest {
             var observationFacts = new ObjectMapper().readTree(fixture.model.requests.getFirst().messages().getLast().text());
             assertEquals("/usr/bin/perl", observationFacts.at("/helperPrerequisiteObservation/metadataToolGuard/bootstrapInterpreter").asText());
             assertEquals("perl-base", observationFacts.at("/helperPrerequisiteObservation/metadataToolGuard/bootstrapPackage").asText());
+            assertEquals(SshCommandFrameProtocol.HELPER_PERL_STARTUP_HEADER.stripTrailing(),
+                observationFacts.at("/helperPrerequisiteObservation/metadataToolGuard/startupAdmission/marker").asText());
+            assertEquals("APT_PREREQUISITES=READY\n", observationFacts.at("/helperPrerequisiteObservation/acceptedResult/stdout/0").asText());
+            assertEquals("APT_PREREQUISITES=MISSING\n", observationFacts.at("/helperPrerequisiteObservation/acceptedResult/stdout/1").asText());
+            assertEquals(MirroredInstallerTestFixture.sha(sent.getFirst()),
+                observationFacts.at("/helperPrerequisiteObservation/stdinSha256").asText());
             var installIntent = assisted.grantedIntents.getLast();
             assertFalse(installIntent.semantics().orElseThrow().targets().stream().anyMatch(target ->
                 Set.of("package-manager", "package-set", "system-package-index", "system-package-transaction").contains(target.kind())));
-            try (var request = fixture.request(ready)) {
+            try (var request = new CommandRequest(protectedLauncher, ready.getBytes(StandardCharsets.UTF_8),
+                    java.time.Duration.ofHours(2), 131072)) {
                 var json = new ObjectMapper().valueToTree(assisted.scope.facts(installIntent, request, fixture.task));
                 assertEquals("VERIFIED_EXISTING_APT_PREREQUISITES", json.at("/helperPackageImpact/packageMode").asText());
                 assertEquals("/usr/bin/perl", json.at("/helperPackageImpact/metadataToolGuard/bootstrapInterpreter").asText());
                 assertTrue(json.at("/helperPackageImpact/nativeTransactions/targets").isEmpty());
+            }
+            for (String launcher : List.of(DeploymentHelperInstallerScript.LAUNCHER, protectedLauncher + "\n")) {
+                try (var request = new CommandRequest(launcher, sent.getFirst().getBytes(StandardCharsets.UTF_8),
+                        java.time.Duration.ofSeconds(60), 1024)) {
+                    var intent = RemoteActions.command(fixture.server, observeIntent.revision(), request)
+                        .withSemantics(observeIntent.semantics().orElseThrow());
+                    assertThrows(IllegalArgumentException.class, () ->
+                        DeploymentManagedHelper.prerequisiteObservationEvidence(intent, request));
+                }
+                try (var request = new CommandRequest(launcher, ready.getBytes(StandardCharsets.UTF_8),
+                        java.time.Duration.ofHours(2), 131072)) {
+                    var intent = RemoteActions.command(fixture.server, installIntent.revision(), request)
+                        .withSemantics(installIntent.semantics().orElseThrow());
+                    assertThrows(IllegalArgumentException.class, () ->
+                        DeploymentCommandEvidence.facts(intent, request, fixture.layout));
+                    assertThrows(IllegalArgumentException.class, () -> assisted.scope.facts(intent, request, fixture.task));
+                }
             }
             assertTrue(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, fixture.operation, serverDigest,
                 bodyDigest, DeploymentHelperInstallerScript.readyRequestDigest(ready), fixture.layout, true));

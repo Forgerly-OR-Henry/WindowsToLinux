@@ -11,6 +11,11 @@ final class DeploymentAptPrerequisites {
         return program(point, true);
     }
 
+    static String observationProgram(DownloadPoint point) {
+        return metadataGuard() + "[ \"$EUID\" -eq 0 ] && apt_prerequisite_metadata || exit 64\n"
+            + program(point, false) + "apt_prerequisites_observe\n";
+    }
+
     /** Renders the previous bytes for matching an existing installation receipt. */
     static String previouslySentProgram(DownloadPoint point) {
         return program(point, false);

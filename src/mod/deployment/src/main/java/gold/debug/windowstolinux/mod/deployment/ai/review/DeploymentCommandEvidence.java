@@ -25,6 +25,7 @@ import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
@@ -139,10 +140,12 @@ public final class DeploymentCommandEvidence {
                         .ifPresent(value -> facts.put("candidateMavenBootstrap", value));
                 facts.put("inputKind", "EXECUTABLE_SCRIPT");
                 var mirrorInput = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.executable(executable);
-                Object described = operation.equals("deployment.helper.install.files.v1")
-                    ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describeFiles(executable, layout)
-                    : operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
-                    ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describe(executable, layout) : executable;
+                Object described = switch (operation) {
+                    case "deployment.helper.install.files.v1" -> DeploymentInstallerEvidence.describeFiles(executable, layout);
+                    case "deployment.helper.install.v1" -> DeploymentInstallerEvidence.describe(executable, layout);
+                    case "deployment.helper.install.tracked.v1" -> DeploymentInstallerEvidence.describeTracked(executable, request.script(), layout);
+                    default -> executable;
+                };
                 facts.put("completeExecutableInput", described);
                 if (operation.equals("deployment.mirror.compatibility.v1")) {
                     var binding = new LinkedHashMap<>(DeploymentMirrorTasks.compatibilityEvidence(request.script(), executable, input));
@@ -248,6 +251,7 @@ public final class DeploymentCommandEvidence {
         }
         facts.put("operation", operation);
         boolean privilegeChecked = request.script().startsWith(SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER);
+        boolean helperPerlStartup = request.script().startsWith(SshCommandFrameProtocol.HELPER_PERL_STARTUP_HEADER);
         facts.put("builtInSshStartup", Map.of(
             "frameLauncher", privilegeChecked ? SshCommandFrameProtocol.PRIVILEGE_CHECKED_FRAME_LAUNCHER : SshCommandFrameProtocol.FRAME_LAUNCHER,
             "requestLauncher", SshCommandFrameProtocol.SCRIPT_LAUNCHER,
@@ -255,6 +259,7 @@ public final class DeploymentCommandEvidence {
             "scope", "Built-in SSH exec transport implementation after the SSH server dispatches the fixed frame. "
                 + "The account shell unsets the listed Linux loader and libc startup variables before starting the first product executable. "
                 + (privilegeChecked ? "The account shell first runs the SFTP-admitted getcap to check the launch files. A clear result is required before setpriv establishes no-new-privileges for the frame. " : "")
+                + (helperPerlStartup ? "The helper Perl startup marker requires same-session SFTP metadata admission of the fixed launch tools before SSH exec. " : "")
                 + "Both Bash processes start with privileged mode enabled; this suppresses startup imports without changing the SSH account or granting privileges. "
                 + "The SSH server, the initial account shell and its startup policy, and installed interpreters are host prerequisites. "
                 + "These facts describe the shipped code, not a live host measurement. Review further interpreters launched by the request."));

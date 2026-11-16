@@ -350,35 +350,43 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"APPROVE,459292,809654", "DENY,478459,811143", "DENY,451362,810883"})
-    void readyTrackedInstallerRequestsFormalVerdictAfterFirstRedundantRebasedRead(
-            String decision, int observedBeforeVerdict, int observedOpenBytes) throws Exception {
+    @CsvSource({"rebased,APPROVE,459292,809654,0", "rebased,DENY,478459,811143,0",
+        "rebased,DENY,451362,810883,0", "file-transfer,APPROVE,280631,817729,20710",
+        "log-analyzer,DENY,264673,817054,20071", "empty-page,DENY,280631,817729,20710",
+        "file-transfer,BUDGET,677940,817729,20710"})
+    void readyTrackedInstallerRequestsFormalVerdictAfterCoveredEvidenceBatch(
+            String trace, String decision, int observedBeforeVerdict, int observedOpenBytes, int factsCharacters) throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
             String installer = readyTrackedInstaller(fixture);
             var executable = JSON.valueToTree(DeploymentInstallerEvidence.describe(installer, fixture.layout));
             var exact = new LinkedHashMap<String, String>();
             for (String leaf : DeploymentInstallerEvidence.readableBodies(executable))
                 exact.put("/completeExecutableInput" + leaf, executable.at(leaf).textValue());
-            int earlyBound = 1_500_000 - 65_536 - observedBeforeVerdict;
-            var bounded = wireBudgetContext(assisted.context, Map.of(), 0,
-                () -> fixture.model.requests.size() < 2 ? 1_048_576 : earlyBound, delivered -> {
+            int verdictTurn = trace.equals("rebased") ? 2 : 1;
+            int verdictBound = Math.min(1_048_576, 1_500_000 - 65_536 - observedBeforeVerdict);
+            var bounded = wireBudgetContext(assisted.context, Map.of(), factsCharacters,
+                () -> fixture.model.requests.size() < verdictTurn ? 1_048_576 : verdictBound, delivered -> {
                     try {
                         int turn = fixture.model.requests.size();
-                        var manifest = JSON.readTree(delivered.messages().getLast().text()).path("installerReviewEvidence");
+                        var facts = JSON.readTree(delivered.messages().getLast().text());
+                        var manifest = facts.path("installerReviewEvidence");
                         assertFalse(manifest.has("runtimeShellReconstruction"));
                         assertFalse(manifest.path("completeSourceRequired").isEmpty());
-                        var visible = assertInstallerVisibleRanges(delivered, manifest, exact);
-                        exact.forEach((pointer, source) -> {
+                        var sources = new LinkedHashMap<>(exact);
+                        if (verdictTurn == 2 && turn > 0) sources.put("/operation", facts.path("operation").asText());
+                        var visible = assertInstallerVisibleRanges(delivered, manifest, sources);
+                        sources.forEach((pointer, source) -> {
                             if (!source.isEmpty()) assertEquals(Map.of(0, source.length()), visible.get(pointer));
                         });
                         assertEquals(0, assisted.hosts.get());
-                        if (turn < 2) {
+                        if (turn < verdictTurn) {
                             assertTrue(delivered.requiredToolName().isEmpty());
-                            fixture.model.replies.add(success(mockResponses(read("ready-reread-" + turn,
-                                manifest.path("snapshotSha256").asText(), "/completeExecutableInput/sources/managedHelper", 0, 8000))));
+                            fixture.model.replies.add(success(mockResponses(readyInstallerCoveredReads(trace, turn,
+                                manifest.path("snapshotSha256").asText(), exact))));
                         } else {
-                            assertEquals(2, turn);
+                            assertEquals(verdictTurn, turn);
                             assertEquals(Optional.of("submit_result"), delivered.requiredToolName());
+                            assertNotEquals("BUDGET", decision, "An oversized verdict must be rejected before model delivery");
                             reply(fixture, verdict("ready-formal-verdict", decision));
                         }
                     } catch (Exception failure) {
@@ -388,40 +396,74 @@ class DeploymentToolchainReviewEvidenceTest {
             if (decision.equals("APPROVE")) {
                 assertEquals(TaskResult.SUCCEEDED, installReadyTrackedFixture(fixture, assisted, bounded, installer).outcome());
                 assertEquals(1, assisted.hosts.get());
+            } else if (decision.equals("BUDGET")) {
+                var rejected = assertThrows(ApiException.class, () -> installReadyTrackedFixture(fixture, assisted, bounded, installer));
+                assertEquals("AI_REQUEST_BUDGET", rejected.problem().eventCode());
+                assertEquals(1, fixture.model.requests.size());
+                assertEquals(0, assisted.hosts.get());
+                return;
             } else {
                 var denied = assertThrows(ApiException.class, () -> installReadyTrackedFixture(fixture, assisted, bounded, installer));
                 assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
                 assertEquals(0, assisted.hosts.get());
             }
-            assertEquals(3, fixture.model.requests.size());
-            var preceding = fixture.model.requests.get(1);
+            assertEquals(verdictTurn + 1, fixture.model.requests.size());
+            var preceding = fixture.model.requests.get(verdictTurn - 1);
             var formal = fixture.model.requests.getLast();
             assertEquals(preceding.messages().subList(1, preceding.messages().size()), formal.messages().subList(1, formal.messages().size()));
             assertEquals(preceding.timeout(), formal.timeout());
             assertEquals(preceding.maxOutputTokens(), formal.maxOutputTokens());
             assertEquals(0, formal.generationRecoveryAttempts());
-            var encoded = wire(formal, earlyBound, Map.of());
+            var encoded = wire(formal, verdictBound, Map.of());
             var nativeRequest = JSON.readTree(encoded);
             assertEquals("submit_result", nativeRequest.at("/tool_choice/name").asText());
             assertEquals(1, nativeRequest.path("tools").size());
             for (int index = 1; index < formal.messages().size(); index++)
                 assertEquals(formal.messages().get(index).text(), nativeRequest.at("/input/" + index + "/content/0/text").asText());
             int projectedBytes = observedOpenBytes + encoded.length - wire(preceding, 1_048_576, Map.of()).length;
-            assertTrue(projectedBytes <= earlyBound);
-            System.out.printf("R57_READY_INSTALLER decision=%s encoded=%d projected=%d ceiling=%d observed=%d%n",
-                decision, encoded.length, projectedBytes, earlyBound, observedBeforeVerdict);
+            assertTrue(projectedBytes <= verdictBound);
+            System.out.printf("READY_INSTALLER trace=%s decision=%s encoded=%d projected=%d ceiling=%d observed=%d%n",
+                trace, decision, encoded.length, projectedBytes, verdictBound, observedBeforeVerdict);
         }
     }
 
+    private static AiToolCall[] readyInstallerCoveredReads(String trace, int turn, String snapshot,
+                                                            Map<String, String> exact) throws Exception {
+        String prefix = "/completeExecutableInput/segments/0/text";
+        String bridge = "/completeExecutableInput/segments/2/text";
+        String tail = "/completeExecutableInput/segments/4/text";
+        String entry = "/completeExecutableInput/sources/buildEntry";
+        String helper = "/completeExecutableInput/sources/managedHelper";
+        return switch (trace) {
+            case "rebased" -> turn == 0
+                ? new AiToolCall[] {read("ready-operation", snapshot, "/operation", 0, 64)}
+                : new AiToolCall[] {read("ready-repeated", snapshot, helper, 0, 8000),
+                    read("ready-end", snapshot, helper, exact.get(helper).length(), 64)};
+            case "file-transfer" -> new AiToolCall[] {
+                read("prefix-first", snapshot, prefix, 1317, 8000), read("prefix-second", snapshot, prefix, 9317, 184),
+                read("prefix-third", snapshot, prefix, 13362, 155), read("prefix-fourth", snapshot, prefix, 14953, 1847),
+                read("prefix-final", snapshot, prefix, exact.get(prefix).length() - 251, 251),
+                read("installer-tail", snapshot, tail, 0, 3251), read("installer-bridge", snapshot, bridge, 0, 29),
+                read("installer-entry", snapshot, entry, 0, 4723)};
+            case "log-analyzer" -> new AiToolCall[] {
+                read("prefix-first", snapshot, prefix, 0, 8000), read("prefix-second", snapshot, prefix, 8000, 8000),
+                read("prefix-third", snapshot, prefix, 16000, 8000), read("prefix-final", snapshot, prefix, 24000, 8000),
+                read("installer-bridge", snapshot, bridge, 0, 29), read("installer-tail", snapshot, tail, 0, 3251),
+                read("installer-entry", snapshot, entry, 0, 4723), read("installer-helper", snapshot, helper, 0, 8000)};
+            case "empty-page" -> new AiToolCall[] {read("ready-end", snapshot, helper, exact.get(helper).length(), 64)};
+            default -> throw new AssertionError(trace);
+        };
+    }
+
     @ParameterizedTest
-    @ValueSource(strings = {"missing-required", "new-range", "stale-snapshot", "invalid-cursor", "empty-page"})
+    @ValueSource(strings = {"missing-required", "new-range", "stale-snapshot", "invalid-cursor", "unknown-pointer", "malformed"})
     void readyTrackedInstallerKeepsBrowsingForAReadThatCannotAdvanceToFormalVerdict(String scenario) throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
             String installer = readyTrackedInstaller(fixture);
             int limit = scenario.equals("missing-required") ? 365119 : 1_048_576;
             String expectedBlock = switch (scenario) {
                 case "missing-required" -> "REQUIRED_SOURCE_MISSING";
-                case "stale-snapshot", "invalid-cursor" -> "READ_REJECTED";
+                case "stale-snapshot", "invalid-cursor", "unknown-pointer", "malformed" -> "READ_REJECTED";
                 default -> "";
             };
             var bounded = wireBudgetContext(assisted.context, Map.of(), 0, () -> limit, delivered -> {
@@ -434,26 +476,35 @@ class DeploymentToolchainReviewEvidenceTest {
                     String pointer = "/completeExecutableInput/sources/managedHelper";
                     int end = facts.at(pointer).path("characters").asInt();
                     if (turn == 0) {
-                        fixture.model.replies.add(success(mockResponses(read("ready-initial", snapshot, pointer, 0, 64))));
+                        String firstPointer = scenario.equals("missing-required") ? pointer : "/operation";
+                        fixture.model.replies.add(success(mockResponses(read("ready-initial", snapshot, firstPointer, 0, 64))));
                     } else if (turn == 1) {
                         var repeat = read("ready-repeat", snapshot, pointer, 0, 64);
                         var next = switch (scenario) {
                             case "new-range" -> read("ready-new", snapshot, "/exactAction", 0, 64);
                             case "stale-snapshot" -> read("ready-stale", "0".repeat(64), pointer, 0, 64);
                             case "invalid-cursor" -> read("ready-invalid", snapshot, pointer, end + 1, 64);
-                            case "empty-page" -> read("ready-empty", snapshot, pointer, end, 64);
+                            case "unknown-pointer" -> read("ready-unknown", snapshot, "/missing", 0, 64);
+                            case "malformed" -> new AiToolCall("ready-malformed", "evidence", "{}");
                             default -> repeat;
                         };
-                        fixture.model.replies.add(success(next == repeat ? mockResponses(repeat) : mockResponses(repeat, next)));
+                        AiResponse readResponse = switch (scenario) {
+                            case "missing-required" -> mockResponses(repeat);
+                            case "new-range" -> mockResponses(next, repeat);
+                            default -> mockResponses(repeat, next);
+                        };
+                        fixture.model.replies.add(success(readResponse));
                     } else {
                         assertEquals(2, turn);
                         var header = installerRetainedHeader(delivered.messages().get(delivered.messages().size() - 2).text());
                         switch (scenario) {
-                            case "new-range" -> assertTrue(header.path("ranges").findValuesAsText("pointer").contains("/exactAction"));
+                            case "new-range" -> assertInstallerReturnedPage(delivered, snapshot, "/exactAction", 0,
+                                facts.path("exactAction").asText().substring(0, 64));
                             case "stale-snapshot" -> assertEquals("SNAPSHOT_MISMATCH", header.at("/latestReads/1/rejectionCode").asText());
                             case "invalid-cursor" -> assertEquals("CURSOR_INVALID", header.at("/latestReads/1/rejectionCode").asText());
                             case "missing-required" -> assertFalse(header.path("pendingRequired").isEmpty());
-                            case "empty-page" -> assertEquals(end, header.at("/latestReads/1/next").asInt());
+                            case "unknown-pointer" -> assertEquals("POINTER_UNAVAILABLE", header.at("/latestReads/1/rejectionCode").asText());
+                            case "malformed" -> assertEquals("ARGUMENTS_INVALID", header.at("/latestReads/1/rejectionCode").asText());
                         }
                         reply(fixture, verdict("ready-browse-verdict", expectedBlock.isEmpty() ? "DENY" : "APPROVE"));
                     }

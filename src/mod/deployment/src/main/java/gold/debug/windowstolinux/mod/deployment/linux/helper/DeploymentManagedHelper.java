@@ -12,6 +12,7 @@ import java.util.UUID;
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
@@ -34,7 +35,13 @@ public final class DeploymentManagedHelper {
     public static final String PREREQUISITE_OBSERVATION = "deployment.helper.prerequisites.observe.v1";
     private static final Duration PREREQUISITE_OBSERVATION_BUDGET = Duration.ofSeconds(60);
     private static final int PREREQUISITE_OBSERVATION_OUTPUT = 1024;
-    public enum PrerequisiteState { READY, MISSING }
+    public enum PrerequisiteState {
+        READY, MISSING;
+
+        String stdout() {
+            return "APT_PREREQUISITES=" + name() + "\n";
+        }
+    }
     private final gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout;
     /** Actual original-mode approval for the complete helper request. / 完整 helper 请求的实际原模式审核。 */
     @FunctionalInterface
@@ -238,8 +245,8 @@ public final class DeploymentManagedHelper {
             throw new IllegalArgumentException("Package-free tracked installer differs from the original server");
         byte[] executable = (tracked.ready() ? original : DeploymentHelperInstallerScript.withMirrors(original, policy))
             .getBytes(StandardCharsets.UTF_8);
-        try (var request = new CommandRequest(DeploymentHelperInstallerScript.LAUNCHER, executable, Duration.ofHours(2),
-            131072)) {
+        try (var request = new CommandRequest(DeploymentHelperInstallerScript.trackedLauncher(tracked.ready()), executable,
+            Duration.ofHours(2), 131072)) {
             var grant = approve("deployment.helper.install.tracked.v1", request,
                 trackedInstallationTargets(server, layout, tracked.operation(), point, tracked.ready()));
             if (grant.outcome() != TaskResult.SUCCEEDED)
@@ -294,7 +301,7 @@ public final class DeploymentManagedHelper {
         if (!DeploymentHelperInstallerScript.packagePoint(DeploymentMirrorTasks.policy(task)).equals(Optional.of(point)))
             throw new IllegalArgumentException("Prerequisite observation differs from the frozen repository point");
         byte[] bytes = DeploymentHelperInstallerScript.renderPrerequisiteObservation(point).getBytes(StandardCharsets.UTF_8);
-        try (var request = new CommandRequest(DeploymentHelperInstallerScript.LAUNCHER, bytes,
+        try (var request = new CommandRequest(DeploymentHelperInstallerScript.PERL_STARTUP_LAUNCHER, bytes,
                 PREREQUISITE_OBSERVATION_BUDGET, PREREQUISITE_OBSERVATION_OUTPUT)) {
             var grant = approve(PREREQUISITE_OBSERVATION, request, prerequisiteObservationTargets(server));
             if (grant.outcome() != TaskResult.SUCCEEDED)
@@ -302,7 +309,7 @@ public final class DeploymentManagedHelper {
             beforeSend.verify();
             var result = session.execute(request, grant.value().orElseThrow());
             for (var state : PrerequisiteState.values())
-                if (complete(result, "APT_PREREQUISITES=" + state.name() + "\n", true))
+                if (complete(result, state.stdout(), true))
                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(state), Optional.empty());
             if (result.outcome() == TaskResult.CANCELLED)
                 return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
@@ -315,7 +322,7 @@ public final class DeploymentManagedHelper {
 
     /** Supplies review facts only for a byte-identical, read-only request and its exact targets. */
     public static Map<String, Object> prerequisiteObservationEvidence(ActionIntent intent, CommandRequest request) {
-        if (intent.serverIds().size() != 1 || !DeploymentHelperInstallerScript.LAUNCHER.equals(request.script())
+        if (intent.serverIds().size() != 1 || !DeploymentHelperInstallerScript.PERL_STARTUP_LAUNCHER.equals(request.script())
             || !PREREQUISITE_OBSERVATION_BUDGET.equals(request.timeout())
             || request.outputLimitBytes() != PREREQUISITE_OBSERVATION_OUTPUT)
             throw new IllegalArgumentException("Invalid helper prerequisite observation boundary");
@@ -325,12 +332,17 @@ public final class DeploymentManagedHelper {
             throw new IllegalArgumentException("Invalid helper prerequisite observation intent");
         byte[] input = request.stdin();
         try {
-            for (var point : java.util.List.of(DownloadPoint.APT_UBUNTU, DownloadPoint.APT_DEBIAN))
-                if (Arrays.equals(input, DeploymentHelperInstallerScript.renderPrerequisiteObservation(point).getBytes(StandardCharsets.UTF_8)))
+            for (var point : java.util.List.of(DownloadPoint.APT_UBUNTU, DownloadPoint.APT_DEBIAN)) {
+                String expected = DeploymentHelperInstallerScript.renderPrerequisiteObservation(point);
+                if (Arrays.equals(input, expected.getBytes(StandardCharsets.UTF_8)))
                     return Map.of("expectedRepositoryPoint", point.name(), "packages", DeploymentHelperInstallerScript.APT_PACKAGES,
                         "observation", "PROTECTED_EXISTING_OS_PACKAGE_DATABASE_AND_RUNTIME_PATHS",
+                        "stdinSha256", DeploymentHelperInstallerScript.sha256(expected),
                         "metadataToolGuard", prerequisiteMetadataToolFacts(),
-                        "possibleOutput", java.util.List.of("APT_PREREQUISITES=READY", "APT_PREREQUISITES=MISSING"));
+                        "executionOrder", java.util.List.of("apt_prerequisite_metadata", "apt_prerequisites_observe"),
+                        "acceptedResult", Map.of("stdout", Arrays.stream(PrerequisiteState.values()).map(PrerequisiteState::stdout).toList(),
+                            "exitCode", 0, "stderr", "", "truncated", false));
+            }
         } finally {
             Arrays.fill(input, (byte) 0);
         }
@@ -340,7 +352,11 @@ public final class DeploymentManagedHelper {
     static Map<String, Object> prerequisiteMetadataToolFacts() {
         return Map.of("bootstrapInterpreter", "/usr/bin/perl", "bootstrapPackage", "perl-base",
             "guardedExecutables", java.util.List.of("/usr/bin/stat", "/usr/bin/readlink"),
-            "boundary", "The base operating system supplies Perl and its loader. Bash builtins check the fixed interpreter path before isolated startup. Perl builtins then check root ownership, file types and write modes on the interpreter and both metadata tool paths, including traversed directories, before either metadata tool runs. Review the exact checks in stdin.");
+            "startupAdmission", Map.of("marker", SshCommandFrameProtocol.HELPER_PERL_STARTUP_HEADER.stripTrailing(),
+                "executables", java.util.List.of("/usr/bin/env", "/bin/bash", "/usr/bin/perl", "/usr/bin/stat", "/usr/bin/readlink"),
+                "mechanism", "The built-in SSH transport uses SFTP v3 LSTAT and READLINK on the same authenticated session to check protected root-owned startup paths before requesting SSH exec. Unavailable or unsafe metadata blocks dispatch.",
+                "trustAssumptions", "SFTP and exec share the same host filesystem view. The OS installation, dynamic loader and initial SSH account shell remain trusted."),
+            "boundary", "Inside the reviewed stdin, Bash builtins first check the fixed Perl path. Isolated Perl uses filesystem metadata to recheck the interpreter, both metadata tools and the traversed directories before stat or readlink is executed. A failed metadata guard stops the command before the OS and package status observation.");
     }
 
     public static Set<ActionTarget> prerequisiteObservationTargets(ServerId server) {

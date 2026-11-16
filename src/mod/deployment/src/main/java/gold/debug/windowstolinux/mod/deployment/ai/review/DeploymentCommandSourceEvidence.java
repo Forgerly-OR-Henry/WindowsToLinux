@@ -1613,16 +1613,17 @@ public final class DeploymentCommandSourceEvidence {
             correctionRequired = latestReads.stream().anyMatch(ReadReceipt::rejected);
             latestReadRepeated = !correctionRequired && latestReads.stream()
                 .noneMatch(read -> read.next() > read.offset() && !coversPage(lastVisible, read));
-            if (rebased) {
-                repeatedBatches = latestReadRepeated ? repeatedBatches + 1 : 0;
-                if (repeatedBatches > 1 || repeatedBatches == 1 && (readyInstallerReview()
-                    || initialMirror && !unconfirmed(initialSourceRanges, lastVisible))
-                    && latestReads.stream().allMatch(read -> read.next() > read.offset())
-                    && !hasUnfulfilledApprovalEvidence())
-                    throw new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.EVIDENCE_READ, TOOL.name(),
-                        "EVIDENCE_NO_PROGRESS", new IOException("Independent review repeated evidence without progressing to a new source range or verdict"),
-                        latestReads.size(), 0, repeatedBatches);
-            }
+            if (rebased) repeatedBatches = latestReadRepeated ? repeatedBatches + 1 : 0;
+            boolean readyInstallerRepeated = readyInstallerReview() && latestReadRepeated
+                && approvalEvidenceBlock(lastVisible).isEmpty();
+            boolean initialMirrorRepeated = repeatedBatches == 1 && initialMirror
+                && !unconfirmed(initialSourceRanges, lastVisible)
+                && latestReads.stream().allMatch(read -> read.next() > read.offset())
+                && !hasUnfulfilledApprovalEvidence();
+            if (readyInstallerRepeated || initialMirrorRepeated || repeatedBatches > 1)
+                throw new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.EVIDENCE_READ, TOOL.name(),
+                    "EVIDENCE_NO_PROGRESS", new IOException("Independent review repeated evidence without progressing to a new source range or verdict"),
+                    latestReads.size(), 0, Math.max(1, repeatedBatches));
             return results;
         }
 
@@ -1769,9 +1770,12 @@ public final class DeploymentCommandSourceEvidence {
         }
 
         public Optional<String> approvalEvidenceBlock() {
+            return approvalEvidenceBlock(rebased || initialBlockSource ? lastVisible : confirmed);
+        }
+
+        private Optional<String> approvalEvidenceBlock(Map<String, NavigableMap<Integer, Integer>> reviewContext) {
             if (correctionRequired) return Optional.of("READ_REJECTED");
             if (packedBuildReview() && buildArchiveSourceUnavailable()) return Optional.of("REQUIRED_SOURCE_MISSING");
-            var reviewContext = rebased || initialBlockSource ? lastVisible : confirmed;
             if (unconfirmed(requiredRanges, reviewContext)) return Optional.of("REQUIRED_SOURCE_MISSING");
             if (unconfirmed(requested, reviewContext)) return Optional.of("REQUESTED_SOURCE_MISSING");
             return Optional.empty();
