@@ -32,6 +32,11 @@ public final class DeploymentSourceArchiveReview {
     private static final int MAX_PAGED_MEMBER_BYTES = 1024 * 1024;
     private static final int MAX_READ_BYTES = MAX_INLINE_BYTES + MAX_PAGED_MEMBER_BYTES;
     private static final int MAX_PAGED_LINE_CHARACTERS = 16 * 1024;
+    private static final String VENDORED_JSON_HEADER = "vendor/nlohmann/json.hpp";
+    // The upstream release publishes this digest for the single-header distribution.
+    // https://github.com/nlohmann/json/releases/tag/v3.12.0
+    private static final String NLOHMANN_JSON_3_12_0_SHA256 =
+        "aaf127c04cb31c406e5b04a63f1ae89369fccde6d8fa7cdda1ed4f32dfc5de63";
 
     private DeploymentSourceArchiveReview() { }
 
@@ -160,9 +165,11 @@ public final class DeploymentSourceArchiveReview {
             if (text.indexOf('\0') >= 0) return "NON_TEXT";
             if (!inline && text.lines().anyMatch(line -> line.length() > MAX_PAGED_LINE_CHARACTERS))
                 return "REVIEW_LINE_LIMIT";
-            if (text.lines().anyMatch(DeploymentSourceBrowser::protectedText)) return "PROTECTED_CONTENT";
+            String digest = sha256(bytes);
+            if (text.lines().anyMatch(DeploymentSourceBrowser::protectedText)
+                && !publishedJsonHeader(original.entry(), digest)) return "PROTECTED_CONTENT";
             if (!inline) pagedBodies.put(original.entry(), text);
-            members.put(original.entry(), new Member(original.entry(), sha256(bytes), bytes.length, text.length(),
+            members.put(original.entry(), new Member(original.entry(), digest, bytes.length, text.length(),
                 inline ? text : null));
             return null;
         } catch (CharacterCodingException binary) {
@@ -170,6 +177,11 @@ public final class DeploymentSourceArchiveReview {
         } finally {
             Arrays.fill(bytes, (byte) 0);
         }
+    }
+
+    private static boolean publishedJsonHeader(String entry, String digest) {
+        return (entry.equals(VENDORED_JSON_HEADER) || entry.endsWith("/" + VENDORED_JSON_HEADER))
+            && digest.equals(NLOHMANN_JSON_3_12_0_SHA256);
     }
 
     private static String sha256(byte[] bytes) {
