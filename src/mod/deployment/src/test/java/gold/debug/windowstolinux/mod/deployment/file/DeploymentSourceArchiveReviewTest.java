@@ -56,6 +56,8 @@ import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandSourc
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentFixedCommandProtocol;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision;
 import gold.debug.windowstolinux.mod.deployment.ai.review.MirroredInstallerTestFixture;
+import gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.build.LogAnalyzerBuildReviewFixture;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildOutputProtocol;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime;
@@ -195,6 +197,9 @@ class DeploymentSourceArchiveReviewTest {
                 }
             }
             verifyLogAnalyzerBuildReview(fixture, archive, captured, header);
+            try (var renderedFixture = LogAnalyzerBuildReviewFixture.mirrorFixture()) {
+                verifyRenderedLogAnalyzerBuildReview(renderedFixture, material, archive, captured, header);
+            }
         }
     }
 
@@ -394,15 +399,7 @@ class DeploymentSourceArchiveReviewTest {
             assertEquals(1, nativeReview.sent().size());
             byte[] wire = nativeReview.sent().getFirst();
             assertTrue(wire.length < REVIEW_CEILING);
-            var sizedMessages = new ArrayList<>(fixture.model.requests.getLast().messages());
-            var firstFacts = sizedMessages.getLast();
-            int padding = 45_338 - firstFacts.text().length(); // R58 build review evidenceCharacters.
-            if (padding > 0) {
-                var sizedFacts = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(firstFacts.text());
-                sizedFacts.put("fixturePadding", "x".repeat(padding));
-                sizedMessages.set(sizedMessages.size() - 1, new AiMessage(firstFacts.role(), JSON.writeValueAsString(sizedFacts), List.of()));
-            }
-            int historicalFactsWire = encode(reviewWithMessages(fixture.model.requests.getLast(), sizedMessages)).length;
+            int historicalFactsWire = encodedAtLogAnalyzerFactsFloor(fixture.model.requests.getLast());
             assertTrue(historicalFactsWire < REVIEW_CEILING);
             var input = JSON.readTree(wire).path("input");
             var manifest = JSON.readTree(input.get(input.size() - 1).at("/content/0/text").asText()).path("buildReviewEvidence");
@@ -480,6 +477,89 @@ class DeploymentSourceArchiveReviewTest {
                     + "rawInitial=%d rawContinued=%d rawCeiling=%d historicalFirstCeiling=629030%n", archive.sha256(), wire.length,
                 historicalFactsWire, descriptor.path("references").asInt(), plainWire.length, continuation.length, ORIGINAL_PAGE_CEILING);
         }
+    }
+
+    private static int encodedAtLogAnalyzerFactsFloor(AiRequest request) throws Exception {
+        var messages = new ArrayList<>(request.messages());
+        var facts = messages.getLast();
+        int padding = 45_338 - facts.text().length(); // R58 build review evidenceCharacters.
+        if (padding > 0) {
+            var sizedFacts = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(facts.text());
+            sizedFacts.put("fixturePadding", "x".repeat(padding));
+            messages.set(messages.size() - 1, new AiMessage(facts.role(), JSON.writeValueAsString(sizedFacts), List.of()));
+        }
+        return encode(reviewWithMessages(request, messages)).length;
+    }
+
+    private static void verifyRenderedLogAnalyzerBuildReview(MirroredInstallerTestFixture fixture,
+            DeploymentSourceMaterial material, DeploymentSourceArchive archive, DeploymentSourceArchiveReview.Evidence captured,
+            String header) throws Exception {
+        try (var build = LogAnalyzerBuildReviewFixture.render(fixture, material, archive, captured)) {
+            var nativeReview = nativeReview(fixture, REVIEW_CEILING);
+            fixture.model.nativeReply(verdict("APPROVE"));
+            String instructions = DeploymentAssistedScope.standardBuildReviewInstructions();
+            JsonNode decision;
+            try {
+                decision = nativeReview.reviewer().askCommand(instructions, build.facts(), fixture.model.configurationRevision,
+                    fixture.task, DeploymentReviewDecision::malformed, build.intent(), build.request());
+            } catch (DeploymentCommandReviewModel.Failure failure) {
+                fail("Rendered Log Analyzer build did not deliver complete evidence, encoder refusals: " + nativeReview.refusedSizes(), failure);
+                return;
+            }
+            assertEquals("APPROVE", decision.path("decision").asText());
+            assertTrue(nativeReview.refusedSizes().isEmpty());
+            assertEquals(1, nativeReview.sent().size());
+            byte[] wire = nativeReview.sent().getFirst();
+            int historicalFactsWire = encodedAtLogAnalyzerFactsFloor(fixture.model.requests.getLast());
+            assertTrue(historicalFactsWire < REVIEW_CEILING);
+            var input = JSON.readTree(wire).path("input");
+            var manifest = JSON.readTree(input.get(input.size() - 1).at("/content/0/text").asText()).path("buildReviewEvidence");
+            assertEquals(archive.sha256(), manifest.at("/projectArchive/archiveSha256").asText());
+            var frame = retainedSource(input, manifest.path("snapshotSha256").asText());
+            assertFalse(frame.header().has("pendingRequired"));
+            assertEquals(captured.members().size(), frame.texts().size());
+            var descriptor = frame.header().path("repeatedOriginalBlocks");
+            verifyRepeatedOriginalBlocks(frame, descriptor, frame.texts().get(descriptor.path("pointer").asText()), header);
+            verifyBuildRuntimeRanges(frame, manifest, build.request());
+            verifyRenderedBuildBody(input, manifest.path("buildBody"), build);
+            assertEquals(392, build.bindingBytes());
+            assertEquals("d16b3b4efd86b4c33c5b3018bca667d4cb644712091d51c39f3f8089af4fb7ea", build.bindingSha256());
+
+            int firstHistoricalLimit = 629_030;
+            var limited = nativeReview(fixture, firstHistoricalLimit);
+            fixture.model.nativeReply(verdict("APPROVE"));
+            var rejected = assertThrows(DeploymentCommandReviewModel.Failure.class, () -> limited.reviewer().askCommand(
+                instructions, build.facts(), fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed,
+                build.intent(), build.request()));
+            assertEquals("REQUIRED_SOURCE_MISSING", DeploymentCommandReviewModel.failureDiagnostics(rejected).get("reviewEvidenceBlock"));
+            assertEquals(List.of(wire.length), limited.refusedSizes());
+            assertEquals(1, limited.sent().size());
+            assertTrue(limited.sent().getFirst().length < firstHistoricalLimit);
+            System.out.printf("R76_RENDERED_LOG_ANALYZER archive=%s bodySha=%s bodyBytes=%d bindingSha=%s bindingBytes=%d "
+                    + "nativeBytes=%d historicalFactsEncoded=%d historicalFirstCeiling=%d fallbackBytes=%d%n", archive.sha256(),
+                build.buildBodySha256(), build.buildBodyBytes(), build.bindingSha256(), build.bindingBytes(),
+                wire.length, historicalFactsWire, firstHistoricalLimit, limited.sent().getFirst().length);
+        }
+    }
+
+    private static void verifyRenderedBuildBody(JsonNode input, JsonNode descriptor, LogAnalyzerBuildReviewFixture.Rendered build)
+        throws Exception {
+        String pointer = descriptor.path("sourcePointer").asText();
+        assertEquals(build.buildBodySha256(), descriptor.path("sha256").asText());
+        var records = new ArrayList<String>();
+        for (var message : input) {
+            String text = message.at("/content/0/text").asText();
+            if (!text.startsWith("WTL-TOOLCHAIN-REVIEW-SOURCE-1\n")) continue;
+            var parts = text.split("\n", 3);
+            if (pointer.equals(JSON.readTree(parts[1]).path("sourcePointer").asText())) records.add(parts[2]);
+        }
+        assertEquals(1, records.size());
+        String source = records.getFirst();
+        byte[] bytes = source.getBytes(StandardCharsets.UTF_8);
+        assertEquals(build.buildBodyBytes(), bytes.length);
+        assertEquals(build.buildBodySha256(), digest(bytes));
+        assertTrue(source.contains("wtl_dependency RUST_CRATE cargo fetch --locked"));
+        assertTrue(source.contains("cmake") && source.contains("log-worker"));
     }
 
     private static void verifyRepeatedOriginalBlocks(RetainedSource frame, JsonNode descriptor, String display, String header)
