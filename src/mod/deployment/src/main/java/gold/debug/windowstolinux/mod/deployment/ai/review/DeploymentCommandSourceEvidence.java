@@ -111,7 +111,7 @@ public final class DeploymentCommandSourceEvidence {
         "def mirror_transfer(", "def _mirror_transfer(", "def mirror_system_command(", "class DnfRepositoryGateway:",
         "def mirror_dnf(", "def mirror_oci_prepare(", "def mirror_main(");
     private static final List<String> HELPER_LOCATIONS = List.of("prepare_official_toolchains() {",
-        "    prepare-toolchains)\n", "def main(args):", "def prepare(args):",
+        "    prepare-toolchains)\n", "def main(args):", "def prepare(",
         "def installation_diagnostic_main(", "def installation_diagnostic_request(", "def preparation_lock(",
         "def task_mirrors(", "def official_url(", "def fetch(", "def release(",
         "def download(url, target,", "def extract(", "def discover_system(", "def materialize_system(", "def install(",
@@ -121,7 +121,7 @@ public final class DeploymentCommandSourceEvidence {
         "def extract(archive, destination):");
     private static final List<String> BINDING_HELPER_LOCATIONS = List.of("require_root() {", "require_deployer() {",
         "assert_not_writable_by_others() {", "SHIPPED_CATALOG = {", "ROOT = pathlib.Path(", "def owned_directory(path):",
-        "def preparation_lock(verifying):", "def open_preparation_lock(path, creating):", "def run(command, cwd=None, environment=None):",
+        "def preparation_lock(", "def open_preparation_lock(path, creating):", "def run(command, cwd=None, environment=None):",
         "def probe_output(command):", "def verify_system(record):", "def version_key(version):", "def release_build(version):");
     private static final ObjectNode SCHEMA = schema();
     private static final ObjectNode BOUND_SCHEMA = boundSchema();
@@ -280,9 +280,9 @@ public final class DeploymentCommandSourceEvidence {
         return messages;
     }
 
-    /** A bound binding reader already owns the current snapshot identity. */
+    /** Selected fixed reviews bind evidence arguments to their server-side snapshot. */
     public AiToolDefinition evidenceTool() {
-        return boundBindingEvidence() ? BOUND_TOOL : TOOL;
+        return boundEvidenceArguments() ? BOUND_TOOL : TOOL;
     }
 
     public static boolean supports(ActionIntent intent) {
@@ -347,6 +347,12 @@ public final class DeploymentCommandSourceEvidence {
                 dependency, !aptDependency(current), sourceBodies);
             if (!exact.equals(restoreSegments(parts, sourceBodies)))
                 throw new IOException("Mirrored projection does not restore the original command");
+            if (PREPARE.equals(operation) && preparationEcosystem(current).equals("DOTNET")) {
+                String member = current.has("originalToolchainPreparation") ? "originalToolchainPreparation" : "toolchainPreparation";
+                var actual = JSON.valueToTree(DeploymentCommandEvidence.facts(intent, request, layout).get(member));
+                if (!actual.equals(current.path(member)))
+                    throw new IOException(".NET preparation evidence differs from the original invocation");
+            }
             boolean goReview = goMirrorReview(current, operation, intent, request, layout);
             boolean phpBinding = !goReview && phpMirrorBinding(current, operation, intent, request, layout);
             if (goReview || phpBinding) {
@@ -437,7 +443,7 @@ public final class DeploymentCommandSourceEvidence {
     private static List<String> helperLocations(ObjectNode current, boolean binding) throws IOException {
         if (binding) return BINDING_HELPER_LOCATIONS;
         return switch (preparationEcosystem(current)) {
-            case "NODE" -> List.of("prepare_official_toolchains() {", "def prepare(args):", "def installation_diagnostic_request(",
+            case "NODE" -> List.of("prepare_official_toolchains() {", "def prepare(", "def installation_diagnostic_request(",
                 "def preparation_lock(", "def extract(", "def discover_system(", "def materialize_system(",
                 "def saved_installation_marker(");
             case "RUST" -> combinedLocations(RUST_HELPER_LOCATIONS);
@@ -1584,7 +1590,7 @@ public final class DeploymentCommandSourceEvidence {
             JsonNode arguments;
             try {
                 arguments = DeploymentAiJson.arguments(call);
-                DeploymentToolSchemas.validate(boundBindingEvidence() && !arguments.has("snapshotSha256") ? BOUND_SCHEMA : SCHEMA, arguments);
+                DeploymentToolSchemas.validate(boundEvidenceArguments() && !arguments.has("snapshotSha256") ? BOUND_SCHEMA : SCHEMA, arguments);
             } catch (IllegalArgumentException invalid) {
                 return rejectRead(call, ReadRejection.ARGUMENTS_INVALID);
             }
@@ -2149,6 +2155,14 @@ public final class DeploymentCommandSourceEvidence {
         return false;
     }
 
+    private boolean dotnetPreparationReview() {
+        return preparationReview() && reviewEcosystem().equals("DOTNET");
+    }
+
+    private boolean boundEvidenceArguments() {
+        return dotnetPreparationReview() || boundBindingEvidence();
+    }
+
     private String reviewEcosystem() {
         String input = current.has("originalToolchainPreparation") ? "originalToolchainPreparation" : "toolchainPreparation";
         return current.path(input).path("ecosystem").asText();
@@ -2167,7 +2181,7 @@ public final class DeploymentCommandSourceEvidence {
     }
 
     private String readCorrection() {
-        return boundBindingEvidence()
+        return boundEvidenceArguments()
             ? "Correct rejected evidence with pointer, offset and limit in this review's fixed snapshot."
             : "Correct rejected evidence using the current snapshotSha256, exact sourcePointer and a valid UTF-16 cursor.";
     }
@@ -2195,6 +2209,9 @@ public final class DeploymentCommandSourceEvidence {
             if (rubyPreparationReview()) return RUBY_PREPARE_INSTRUCTION + PREPARE_INSTRUCTION;
             if (reviewEcosystem().equals("KOTLIN")) return KOTLIN_JAVA_PREPARE_INSTRUCTION + PREPARE_INSTRUCTION;
             if (goMirrorReview()) return PREPARE_INSTRUCTION + GO_MIRROR_INSTRUCTION;
+            if (dotnetPreparationReview()) return PREPARE_INSTRUCTION.replace(
+                "using the current snapshotSha256 and exact sourcePointer, UTF-16 offset and limit from 1 through 8000.",
+                "using pointer (the exact sourcePointer), offset in UTF-16 units and limit from 1 through 8000. The tool owns the current snapshot identity.");
             return reviewEcosystem().equals("PYTHON") ? PYTHON_PREPARE_INSTRUCTION : PREPARE_INSTRUCTION;
         }
         if (dependencyReview() && sourceBodies.containsKey(DEPENDENCY_APT_SELECTION)) return DEPENDENCY_APT_INSTRUCTION;

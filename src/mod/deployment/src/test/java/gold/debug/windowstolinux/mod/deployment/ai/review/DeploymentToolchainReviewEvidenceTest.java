@@ -3363,6 +3363,11 @@ class DeploymentToolchainReviewEvidenceTest {
             assertTrue(supplement.contains("data.extractall(root, members=members)"));
             assertTrue(helperRanges.path("nodeSystemOwnership").isArray());
             assertTrue(helperRanges.path("def verify_system(").isArray());
+            var diagnostic = helperRanges.path("preparationDiagnosticRun");
+            String diagnosticSource = DeploymentManagedHelperBundle.renderScript(fixture.layout)
+                .substring(diagnostic.path(0).asInt(-1), diagnostic.path(1).asInt(-1));
+            assertTrue(diagnosticSource.startsWith("def start_installation_diagnostic("));
+            assertTrue(diagnosticSource.contains("with preparation_lock(verifying=False):\n                prepare(request['arguments'])"));
             assertTrue(facts.at("/mirrorTransport/runtimeSource/sourcePointer").isTextual());
             assertFalse(frame.contains("wtl_run_mirror_runtime() {"));
             assertFalse(frame.contains("source_dependencies(layout)"), "Node's archive facts do not repeat the unrelated source-build branch");
@@ -3749,6 +3754,138 @@ class DeploymentToolchainReviewEvidenceTest {
         }
     }
 
+    @Test
+    void r58AssetLendingDotnetPreparationReplaysTerminalCoordinatesBeforeFreshHostGrant() throws Exception {
+        int cap = 773022;
+        String helper = "/toolchainReviewEvidence/installedHelperSource";
+        String runtime = "/mirrorTransport/runtimeSource";
+        // The original log retained these coordinates, but not the original snapshot arguments.
+        var calls = List.of(boundEvidenceRead("r58-helper-first", helper, 166062, 3178),
+            boundEvidenceRead("r58-runtime-first", runtime, 20251, 4000),
+            boundEvidenceRead("r58-runtime-second", runtime, 24251, 4000),
+            boundEvidenceRead("r58-helper-second", helper, 174190, 2150));
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.values());
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = diagnosedPreparation(fixture, "DOTNET", "10", "10.0.300", "-")) {
+            var action = intent("prepare", fixture, command);
+            fixture.model.replies.add(success(mockResponses(calls.toArray(AiToolCall[]::new))));
+            reply(fixture, verdict("r58-fresh-review", "APPROVE"));
+            var bounded = wireBudgetContext(assisted.context, Map.of(), 0, () -> cap,
+                delivered -> assertEquals(0, assisted.hosts.get()));
+            var result = DeploymentFixedCommandApproval.approveWithEvidence(bounded, assisted.host, action, command,
+                fixture.task, fixture.model.configurationRevision, "AUTOMATIC", false, assisted.scope);
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
+            assertEquals(List.of(action), assisted.grantedIntents);
+            assertEquals(Set.of(result.value().orElseThrow().id()), assisted.grants);
+            assertEquals(2, fixture.model.requests.size());
+
+            var initial = fixture.model.requests.getFirst();
+            var evidenceTool = initial.tools().stream().filter(tool -> tool.name().equals("evidence")).findFirst().orElseThrow();
+            var schema = JSON.readTree(evidenceTool.inputSchema());
+            assertEquals(JSON.valueToTree(List.of("pointer", "offset", "limit")), schema.path("required"));
+            assertTrue(schema.at("/properties/snapshotSha256").isMissingNode());
+            var facts = JSON.readTree(initial.messages().getLast().text());
+            var manifest = facts.path(PHASE);
+            String snapshot = manifest.path("snapshotSha256").asText();
+            assertTrue(snapshot.matches("[0-9a-f]{64}"));
+            assertEquals("10.0.300", facts.at("/originalToolchainPreparation/requestedExact").asText());
+            var sources = r24Sources(initial, facts, fixture);
+            var selection = manifest.path("preparationSelection");
+            String selectionBody = initial.messages().get(1 + selection.path("ordinal").asInt()).text()
+                .substring(selection.path("headerCharacters").asInt());
+            for (var range : manifest.path("selectedPreparationRanges")) {
+                String pointer = range.path("sourcePointer").asText();
+                int offset = range.path("offset").asInt(), next = range.path("next").asInt();
+                int start = range.path("startCharacter").asInt();
+                assertEquals(sources.get(pointer.length()).getValue().substring(offset, next),
+                    selectionBody.substring(start, start + next - offset));
+            }
+            var terminal = fixture.model.requests.getLast();
+            assertEquals(snapshot, JSON.readTree(terminal.messages().getLast().text()).path(PHASE).path("snapshotSha256").asText());
+            byte[] encoded = wire(terminal, cap, Map.of());
+            assertTrue(encoded.length <= cap);
+            var visible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            seedInlineSourceRanges(facts, visible);
+            assertR24VisiblePages(encoded, snapshot, calls, true, visible, sources);
+            var requested = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            for (var call : calls) {
+                var arguments = DeploymentAiJson.arguments(call);
+                int offset = arguments.path("offset").asInt();
+                addR24Range(requested, arguments.path("pointer").asText(), offset, offset + arguments.path("limit").asInt());
+            }
+            assertR24Coverage(requested, visible);
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"short-snapshot,ARGUMENTS_INVALID", "wrong-snapshot,SNAPSHOT_MISMATCH", "bad-cursor,CURSOR_INVALID",
+        "other-ecosystem,ARGUMENTS_INVALID"})
+    void r58DotnetPreparationRejectsInvalidEvidenceBeforeApproval(String scenario, String rejection) throws Exception {
+        boolean node = scenario.equals("other-ecosystem");
+        String pointer = "/toolchainReviewEvidence/installedHelperSource";
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.values());
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = diagnosedPreparation(fixture, node ? "NODE" : "DOTNET", node ? "24" : "10")) {
+            var action = intent("prepare", fixture, command);
+            var call = switch (scenario) {
+                case "short-snapshot" -> read("r58-short", "0".repeat(61), pointer, 166062, 3178);
+                case "wrong-snapshot" -> read("r58-wrong", "0".repeat(64), pointer, 166062, 3178);
+                case "bad-cursor" -> boundEvidenceRead("r58-bad-cursor", pointer,
+                    DeploymentManagedHelperBundle.renderScript(fixture.layout).length() + 1, 1);
+                case "other-ecosystem" -> boundEvidenceRead("r58-node", pointer, 166062, 3178);
+                default -> throw new IllegalArgumentException(scenario);
+            };
+            fixture.model.replies.add(success(mockResponses(call)));
+            reply(fixture, verdict("r58-invalid-batch-verdict", "APPROVE"));
+            var blocked = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approveWithEvidence(
+                assisted.context, assisted.host, action, command, fixture.task, fixture.model.configurationRevision,
+                "AUTOMATIC", false, assisted.scope));
+            assertEquals("EVIDENCE_INCOMPLETE_VERDICT", blocked.problem().context().get("reviewCode"));
+            assertEquals("READ_REJECTED", blocked.problem().context().get("reviewEvidenceBlock"));
+            assertEquals(0, assisted.hosts.get());
+            assertEquals(2, fixture.model.requests.size());
+            var retained = fixture.model.requests.getLast().messages().stream().map(AiMessage::text)
+                .filter(message -> message.startsWith("WTL-COMMAND-RETAINED-SOURCE-1\n")).findFirst().orElseThrow();
+            assertEquals(rejection, installerRetainedHeader(retained).at("/latestReads/0/rejectionCode").asText());
+            if (node) {
+                var tool = fixture.model.requests.getFirst().tools().stream().filter(definition -> definition.name().equals("evidence"))
+                    .findFirst().orElseThrow();
+                assertTrue(JSON.readTree(tool.inputSchema()).at("/properties/snapshotSha256").isObject());
+            }
+        }
+    }
+
+    @Test
+    void r58DotnetPreparationKeepsSnapshotAndRequestedSourceBoundToTheFixedInvocation() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.values());
+             var command = diagnosedPreparation(fixture, "DOTNET", "10", "10.0.300", "-")) {
+            var action = intent("prepare", fixture, command);
+            var facts = new DeploymentFixedCommandProtocol(fixture.context).inspect(action, command, fixture.layout, fixture.task);
+            String original = DeploymentAiJson.facts(facts, 1048576);
+            var evidence = DeploymentCommandSourceEvidence.project(original, action, command, fixture.layout).orElseThrow();
+            String snapshot = MirroredInstallerTestFixture.sha(original);
+            var projected = JSON.readTree(evidence.messages().getLast().text());
+            assertEquals(snapshot, projected.path(PHASE).path("snapshotSha256").asText());
+            String pointer = "/toolchainReviewEvidence/installedHelperSource";
+            var source = DeploymentManagedHelperBundle.renderScript(fixture.layout);
+            var visible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            seedInlineSourceRanges(projected, visible);
+            var missing = DeploymentEvidencePages.missing(source, 0, source.length(), visible.get(pointer)).getFirst();
+            int offset = (int) missing.get("offset");
+            var reader = evidence.reader(8);
+            var result = reader.read(mockResponses(read("r58-correct-explicit-snapshot", snapshot, pointer, offset, 1))).getFirst();
+            assertFalse(result.error(), result.text());
+            var page = pagePayload(result.text());
+            assertEquals(snapshot, page.path("snapshotSha256").asText());
+            assertEquals(source.substring(offset, offset + 1), page.at("/value/text").asText());
+            assertEquals(Optional.of("REQUESTED_SOURCE_MISSING"), reader.approvalEvidenceBlock());
+
+            var mismatched = JSON.readTree(original);
+            ((ObjectNode) mismatched.path("originalToolchainPreparation")).put("requestedExact", "10.0.301");
+            assertThrows(IOException.class, () -> DeploymentCommandSourceEvidence.project(mismatched.toString(), action, command, fixture.layout));
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void rustPreparationIncludesExactSystemReuseAndDistributionBoundaries(boolean diagnosed) throws Exception {
@@ -3853,7 +3990,7 @@ class DeploymentToolchainReviewEvidenceTest {
                 var oldManifest = JSON.readTree(oldEvidence.messages().getLast().text()).path(PHASE);
                 assertFalse(oldManifest.path("mirrorBootstrapShell").isMissingNode());
                 var oldReader = oldEvidence.reader(8);
-                var invalidLimit = oldReader.read(mockResponses(boundBindingRead("old-8500", shellPointer, 16500, 8500))).getFirst();
+                var invalidLimit = oldReader.read(mockResponses(boundEvidenceRead("old-8500", shellPointer, 16500, 8500))).getFirst();
                 assertTrue(invalidLimit.error());
                 assertEquals(Optional.of("READ_REJECTED"), oldReader.approvalEvidenceBlock());
 
@@ -3876,7 +4013,7 @@ class DeploymentToolchainReviewEvidenceTest {
                     helperPointer, 0, 1))).getFirst().text().contains("SNAPSHOT_MISMATCH"));
                 assertEquals(Optional.of("READ_REJECTED"), stale.approvalEvidenceBlock());
                 var missing = sourceEvidence.reader(8);
-                assertTrue(missing.read(mockResponses(boundBindingRead("old-shell-pointer", shellPointer, 0, 7000))).getFirst().error());
+                assertTrue(missing.read(mockResponses(boundEvidenceRead("old-shell-pointer", shellPointer, 0, 7000))).getFirst().error());
                 assertEquals(Optional.of("READ_REJECTED"), missing.approvalEvidenceBlock());
 
                 int[][] helpingRanges = {{343500, 300}, {146000, 250}, {147500, 500}};
@@ -3886,7 +4023,7 @@ class DeploymentToolchainReviewEvidenceTest {
                 for (int[] range : helpingRanges) {
                     int start = range[0], limit = range[1];
                     assertTrue(start + limit <= helper.length());
-                    calls.add(boundBindingRead("asset-node-source-" + start, helperPointer, start, limit));
+                    calls.add(boundEvidenceRead("asset-node-source-" + start, helperPointer, start, limit));
                     addR24Range(requested, helperPointer, start, start + limit);
                 }
                 fixture.model.replies.add(success(mockResponses(calls.toArray(AiToolCall[]::new))));
@@ -3927,7 +4064,7 @@ class DeploymentToolchainReviewEvidenceTest {
         }
     }
 
-    private static AiToolCall boundBindingRead(String id, String pointer, int offset, int limit) {
+    private static AiToolCall boundEvidenceRead(String id, String pointer, int offset, int limit) {
         return new AiToolCall(id, "evidence", JSON.createObjectNode().put("pointer", pointer)
             .put("offset", offset).put("limit", limit).toString());
     }
@@ -4706,9 +4843,14 @@ class DeploymentToolchainReviewEvidenceTest {
 
     private static CommandRequest diagnosedPreparation(MirroredInstallerTestFixture fixture, String ecosystem, String branch,
                                                         String javaPrerequisite) {
+        return diagnosedPreparation(fixture, ecosystem, branch, "-", javaPrerequisite);
+    }
+
+    private static CommandRequest diagnosedPreparation(MirroredInstallerTestFixture fixture, String ecosystem, String branch,
+                                                        String exact, String javaPrerequisite) {
         long seconds = 135;
         var input = new DeploymentToolchainDiagnostics.Request(fixture.operation, fixture.task.id().toString(), fixture.server.id(),
-            "a".repeat(64), "a".repeat(64), fixture.layout, List.of("prepare", ecosystem, branch, "-", "120", javaPrerequisite),
+            "a".repeat(64), "a".repeat(64), fixture.layout, List.of("prepare", ecosystem, branch, exact, "120", javaPrerequisite),
             "KOTLIN".equals(ecosystem) ? new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentKotlinJavaRequirement(
                 gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement.ConstraintType.SERIES,
                 "21", "21.0.13+9") : null);

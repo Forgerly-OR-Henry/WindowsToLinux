@@ -186,16 +186,17 @@ record PreparationSourceRange(String section, int offset, int next) {
             between(helper, "rustDispatchPredecessors", "\ninstallation_key = install_key_with_ruby_recipe\n", "\nRUST_DISTRIBUTION_RECIPE = "),
             between(helper, "rustComponentReceiver", "RUST_DISTRIBUTION_RECIPE = ", "\nPYTHON_SOURCE_RECIPE = "),
             between(helper, "rustPythonEntry", "\nif __name__ == '__main__':\n", "\nWTL_OFFICIAL_TOOLCHAINS\n",
-                offset(helper, "def prepare(args):"))
+                offset(helper, "\ndef prepare("))
         ));
         if (diagnosed) {
             ranges.add(between(helper, "rustDiagnosticRequest", "TRACKED_OPERATION = None\nINSTALLATION_DIAGNOSTIC = None",
                 "\ndef tracked_request("));
             ranges.add(between(helper, "rustDiagnosticArguments", "def installation_diagnostic_request(",
                 "\ndef installation_diagnostic_main("));
+            ranges.add(installationDiagnosticWorker(helper));
         } else {
             ranges.add(between(helper, "rustDirectDispatch", "def main(args):\n", "\n        if verifying:\n            binding = "));
-            ranges.add(between(helper, "rustDirectPrepare", "\n        prepare(args)\n", "\ndef prepare(args):"));
+            ranges.add(between(helper, "rustDirectPrepare", "\n        prepare(args)\n", "\ndef prepare("));
         }
         return ranges;
     }
@@ -265,9 +266,13 @@ record PreparationSourceRange(String section, int offset, int next) {
             "\n    if ecosystem == 'JAVA':\n        run(", offset(helper, "def probe(ecosystem, directory, expected):")));
         ranges.add(between(helper, "nodePreparationLock", "def require_preparation_lock_file(",
             "\ndef tracked_process_started("));
-        if (diagnosed) ranges.add(between(helper, "preparationDiagnosticRun", "        try:\n            with preparation_lock(verifying=False):",
-            "\n    owned_directory(ROOT)\n", offset(helper, "def installation_diagnostic_main(args, raw=None):")));
+        if (diagnosed) ranges.add(installationDiagnosticWorker(helper));
         return ranges;
+    }
+
+    private static PreparationSourceRange installationDiagnosticWorker(String helper) throws IOException {
+        var diagnostic = python(helper, "def start_installation_diagnostic(");
+        return new PreparationSourceRange("preparationDiagnosticRun", diagnostic.offset(), diagnostic.next());
     }
 
     static List<PreparationSourceRange> nodeHelperInitial(List<PreparationSourceRange> ranges) {
