@@ -74,6 +74,7 @@ public final class DeploymentCommandSourceEvidence {
     private static final String MIRROR_BOOTSTRAP_SHELL = "/" + PROJECTION + "/mirrorBootstrapShell";
     private static final String MIRROR_POLICY_SOURCE = "/" + PROJECTION + "/mirrorPolicySource";
     private static final List<String> MIRROR_BINDING_SOURCES = List.of(MIRROR_POLICY_SOURCE, MIRROR_BOOTSTRAP_SHELL);
+    private static final Set<String> MIRROR_PREPARATION_SOURCES = Set.of("GO", "RUST");
     private static final String DEPENDENCY_WORKER = "/" + PROJECTION + "/dependencyWorker";
     private static final String DEPENDENCY_RUNTIME = "/" + PROJECTION + "/mirrorRuntime";
     private static final String DEPENDENCY_RUNTIME_SELECTION = "/" + PROJECTION + "/dependencyRuntimeSelection";
@@ -140,7 +141,7 @@ public final class DeploymentCommandSourceEvidence {
         Decide independently. Deny unsafe effects or insufficient evidence. Submit a fresh native submit_result alone.
         """;
 
-    private static final String GO_MIRROR_INSTRUCTION = """
+    private static final String INITIAL_MIRROR_INSTRUCTION = """
         The initial supplement and retained frames supply exact staged originals at initialMirrorSourcePointers. Use the supplied ranges before requesting absent source needed for the current decision. All original shell, policy, runtime and helper ranges remain available.
         """;
 
@@ -188,7 +189,7 @@ public final class DeploymentCommandSourceEvidence {
     private static final String DEPENDENCY_APT_INSTRUCTION = """
         Restore exactAction and completeExecutableInput from ordered segments. LITERAL copies text; SOURCE_TEXT copies the reference; SHELL_SINGLE_QUOTE applies Bash single quoting; JSON_STRING encodes source as a JSON string with double quotes. Review exact arguments, resource limits, targets, original authority, and effects independently. Digests identify bytes and grant no permission.
         A prior probe observed APT. selectedAptRanges maps exact text in dependencyAptSelection to original source. Follow the complete dependency_supervise implementation, its READY/ACK and ownership checks, held cgroup events and exact stop before the receipt. The decoded dependencySystemShell is the shell invoked by mirror_system_command. Review APT/dpkg admission, registered hooks and frozen installation. The protected OS package database is a trust assumption. Authenticated packages can still run maintainer scripts and triggers in this root transaction. The worker selects the current OS again. Read required alternate paths from the original sources.
-        requiredAptRanges is the initial list only. After a read, use pendingRequired from the latest retained frame for remaining required ranges. Do not request the old list again or request ranges already visible. Use snapshotSha256, pointer, offset and a limit from 1 through 8000, up to eight ranges per response. Exact source follows the JSON header in range order. Request additional source when needed. Submit a fresh native submit_result alone. Deny unsafe effects or insufficient evidence.
+        requiredAptRanges is the initial list only. For an initial supplement marked nativeAptRequiredSource, or after a read, use pendingRequired from the latest retained frame for remaining required ranges. An omitted pendingRequired then means that the required ranges are present. Do not request the old list again or request ranges already visible. Use snapshotSha256, pointer, offset and a limit from 1 through 8000, up to eight ranges per response. Exact source follows the JSON header in range order. Request additional source when needed. Submit a fresh native submit_result alone. Deny unsafe effects or insufficient evidence.
         """;
 
     private static final String BUILD_INSTRUCTION = """
@@ -353,9 +354,9 @@ public final class DeploymentCommandSourceEvidence {
                 if (!actual.equals(current.path(member)))
                     throw new IOException(".NET preparation evidence differs from the original invocation");
             }
-            boolean goReview = goMirrorReview(current, operation, intent, request, layout);
-            boolean phpBinding = !goReview && phpMirrorBinding(current, operation, intent, request, layout);
-            if (goReview || phpBinding) {
+            boolean initialMirror = verifiedInitialMirrorReview(current, operation, intent, request, layout);
+            boolean phpBinding = !initialMirror && phpMirrorBinding(current, operation, intent, request, layout);
+            if (initialMirror || phpBinding) {
                 var pointers = manifest.putArray("initialMirrorSourcePointers");
                 for (String pointer : MIRROR_BINDING_SOURCES) {
                     var fullRange = new TreeMap<>(Map.of(0, sourceBodies.get(pointer).length()));
@@ -370,10 +371,15 @@ public final class DeploymentCommandSourceEvidence {
             boolean apt = mirror.isPresent() && aptDependency(current);
             projectDependency(current, projected, manifest, messages, snapshot, exact, script, request, sourceBodies, apt);
             if (apt) {
+                boolean nativeApt = verifiedNativeAptObservation(current, intent, request, layout);
                 projectAptDependency(projected, manifest, messages, snapshot, sourceBodies, initialRanges, requiredRanges,
-                    mirror.orElseThrow().policy(), scopedNativeAptDependency(current));
-                for (String pointer : List.of(DEPENDENCY_RUNTIME, DEPENDENCY_SYSTEM_SHELL)) {
-                    if (requiredRanges.containsKey(pointer)) initialSourceRanges.put(pointer, requiredRanges.get(pointer));
+                    mirror.orElseThrow().policy(), scopedNativeAptDependency(current), nativeApt);
+                if (nativeApt) {
+                    initialSourceRanges.putAll(requiredRanges);
+                } else {
+                    for (String pointer : List.of(DEPENDENCY_RUNTIME, DEPENDENCY_SYSTEM_SHELL)) {
+                        if (requiredRanges.containsKey(pointer)) initialSourceRanges.put(pointer, requiredRanges.get(pointer));
+                    }
                 }
             } else if (mirror.isPresent())
                 addRuntimeSelection(manifest, messages, snapshot, sourceBodies, initialRanges,
@@ -408,10 +414,11 @@ public final class DeploymentCommandSourceEvidence {
             requiredRanges, initialSourceRanges, Optional.empty(), nodeView));
     }
 
-    private static boolean goMirrorReview(ObjectNode current, String operation, ActionIntent intent,
-                                           CommandRequest request, DeploymentRemoteLayout layout) throws IOException {
+    private static boolean verifiedInitialMirrorReview(ObjectNode current, String operation, ActionIntent intent,
+                                                       CommandRequest request, DeploymentRemoteLayout layout) throws IOException {
+        String ecosystem = PREPARE.equals(operation) ? preparationEcosystem(current) : "";
         String member;
-        if (PREPARE.equals(operation) && preparationEcosystem(current).equals("GO")) {
+        if (MIRROR_PREPARATION_SOURCES.contains(ecosystem)) {
             member = current.has("originalToolchainPreparation") ? "originalToolchainPreparation" : "toolchainPreparation";
         } else if (BIND.equals(operation) && managedBinding(current.path("decodedToolchainBinding"), "GO")) {
             member = "decodedToolchainBinding";
@@ -419,8 +426,8 @@ public final class DeploymentCommandSourceEvidence {
             return false;
         }
         var actual = JSON.valueToTree(DeploymentCommandEvidence.facts(intent, request, layout).get(member));
-        if (!actual.equals(current.path(member)) || PREPARE.equals(operation) && !"GO".equals(actual.path("ecosystem").asText()))
-            throw new IOException("Go review evidence differs from the exact original invocation");
+        if (!actual.equals(current.path(member)) || !ecosystem.isEmpty() && !ecosystem.equals(actual.path("ecosystem").asText()))
+            throw new IOException("Initial mirror evidence differs from the exact original invocation");
         return true;
     }
 
@@ -1332,11 +1339,25 @@ public final class DeploymentCommandSourceEvidence {
         return DeploymentToolchainDependencies.isScopedNativeAptProfile(current.at("/toolchainDependencies/profile").asText());
     }
 
+    private static boolean verifiedNativeAptObservation(JsonNode current, ActionIntent intent, CommandRequest request,
+                                                        DeploymentRemoteLayout layout) throws IOException {
+        var prerequisite = current.at("/currentCommandEvidence/currentNativeBuildPrerequisites");
+        var gap = prerequisite.path("observedGap");
+        if (!scopedNativeAptDependency(current) || !gap.path("nativeBuildPrerequisitesMissing").asBoolean()
+            || !"apt".equals(gap.path("packageManager").asText()) || !gap.hasNonNull("nativeBuildProfile")) return false;
+        var transaction = JSON.readTree(JSON.writeValueAsBytes(DeploymentToolchainDependencies.inspect(intent, request, layout)));
+        if (!transaction.equals(current.path("toolchainDependencies")) || !transaction.equals(prerequisite.path("fixedTransaction"))
+            || !transaction.path("profile").equals(gap.path("nativeBuildProfile"))
+            || !intent.revision().equals(gap.path("reviewedPlanSha256").asText()))
+            throw new IOException("Native APT review evidence differs from the exact original transaction");
+        return true;
+    }
+
     private static void projectAptDependency(ObjectNode projected, ObjectNode manifest, List<AiMessage> messages,
                                               String snapshot, Map<String, String> sources,
                                               Map<String, NavigableMap<Integer, Integer>> initialRanges,
                                               Map<String, NavigableMap<Integer, Integer>> requiredRanges,
-                                              String policy, boolean aptOnly) throws IOException {
+                                              String policy, boolean aptOnly, boolean nativeApt) throws IOException {
         var publicPolicy = JSON.valueToTree(DeploymentMirrorTasks.reviewMaterial(policy)).path("frozenPolicy");
         var points = (ObjectNode) publicPolicy.path("points");
         var names = new ArrayList<String>();
@@ -1364,7 +1385,7 @@ public final class DeploymentCommandSourceEvidence {
         manifest.set("dependencySystemShell", pagedSource(DEPENDENCY_SYSTEM_SHELL, shell, List.of("wtl_apt() (", "wtl_apt_install_frozen() {"))
             .put("literalSourcePointer", DEPENDENCY_RUNTIME).put("literalOffset", shellStart).put("literalNext", shellEnd));
         selectAptSource(selection, selected, required, initialRanges, requiredRanges, DEPENDENCY_SYSTEM_SHELL, shell,
-            PreparationSourceRange.aptDependencyShell(shell, credentials));
+            PreparationSourceRange.aptDependencyShell(shell, credentials, nativeApt));
         selectAptSource(selection, selected, required, initialRanges, requiredRanges, DEPENDENCY_RUNTIME, runtime,
             PreparationSourceRange.aptDependencyRuntime(runtime));
         putSelectionFrame(manifest, messages, snapshot, sources, DEPENDENCY_APT_SELECTION, "dependencyAptSelection", selection);
@@ -1406,7 +1427,7 @@ public final class DeploymentCommandSourceEvidence {
         private final Map<String, NavigableMap<Integer, Integer>> requested = new LinkedHashMap<>();
         private final Map<String, NavigableMap<Integer, Integer>> confirmed = new LinkedHashMap<>();
         private final boolean nodePreparation = nodePreparationReview();
-        private final boolean goMirror = goMirrorReview();
+        private final boolean initialMirror = initialMirrorReview();
         private final boolean phpBinding = phpMirrorBindingReview();
         private Optional<AiMessage> priorEvidence = Optional.empty();
         private Optional<AiMessage> initialSupplement = Optional.empty();
@@ -1463,7 +1484,7 @@ public final class DeploymentCommandSourceEvidence {
         }
 
         private int initialSourceBudget(List<AiMessage> messages) throws IOException {
-            int bound = sourceBodies.containsKey(DEPENDENCY_APT_SELECTION) ? APT_INITIAL_WIRE_TARGET
+            int bound = sourceBodies.containsKey(DEPENDENCY_APT_SELECTION) && !nativeAptInitialSource() ? APT_INITIAL_WIRE_TARGET
                 : isolatedSourcePreparationReview() ? ISOLATED_SOURCE_INITIAL_WIRE_TARGET : 0;
             if (bound == 0) return nativeFrameBudget(messages);
             int remaining = bound - NATIVE_TOOL_ENVELOPE_BYTES;
@@ -1484,7 +1505,9 @@ public final class DeploymentCommandSourceEvidence {
                 .put("initialSupplement", true);
             var entries = header.putArray("ranges");
             var visible = copyRanges(inline);
-            boolean showPending = completeInstallerReview() || rubyPreparationReview() || packedBuildReview() || phpBinding;
+            boolean nativeApt = nativeAptInitialSource();
+            if (nativeApt) header.put("nativeAptRequiredSource", true);
+            boolean showPending = completeInstallerReview() || rubyPreparationReview() || packedBuildReview() || phpBinding || nativeApt;
             if (showPending)
                 appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
             int bodyBudget = available - quotedBytes(RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n");
@@ -1497,6 +1520,10 @@ public final class DeploymentCommandSourceEvidence {
                 appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
             var message = new AiMessage(AiRole.USER, RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n" + body, List.of());
             return quotedBytes(message) <= available ? Optional.of(new RetainedFrame(message, visible)) : Optional.empty();
+        }
+
+        private boolean nativeAptInitialSource() {
+            return initialSourceRanges.containsKey(DEPENDENCY_WORKER);
         }
 
         private void useInitialSource(Optional<RetainedFrame> frame) {
@@ -1537,7 +1564,7 @@ public final class DeploymentCommandSourceEvidence {
             if (rebased) {
                 repeatedBatches = latestReadRepeated ? repeatedBatches + 1 : 0;
                 if (repeatedBatches > 1 || repeatedBatches == 1 && (readyInstallerReview()
-                    || goMirror && !unconfirmed(initialSourceRanges, lastVisible))
+                    || initialMirror && !unconfirmed(initialSourceRanges, lastVisible))
                     && latestReads.stream().allMatch(read -> read.next() > read.offset())
                     && !hasUnfulfilledApprovalEvidence())
                     throw new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.EVIDENCE_READ, TOOL.name(),
@@ -1642,7 +1669,7 @@ public final class DeploymentCommandSourceEvidence {
         public void continueReview(List<AiMessage> messages, AiResponse response, List<AiToolResult> results) throws IOException {
             boolean responses = isResponses(response);
             if (rebased || responses && (buildReview() || preparationReview() || installerReview()
-                || goMirror || !requiredRanges.isEmpty() || continuedResponses)) {
+                || initialMirror || !requiredRanges.isEmpty() || continuedResponses)) {
                 priorEvidence.ifPresent(messages::remove);
                 initialSupplement.ifPresent(messages::remove);
                 initialSupplement = Optional.empty();
@@ -1896,9 +1923,9 @@ public final class DeploymentCommandSourceEvidence {
                 return;
             }
             int remaining = retainHistory(confirmedRequired(), visible, entries, body, historyBytes);
-            if (nodePreparation || isolatedSourcePreparationReview() || goMirror || sourceBodies.containsKey(DEPENDENCY_APT_SELECTION))
+            if (nodePreparation || isolatedSourcePreparationReview() || initialMirror || sourceBodies.containsKey(DEPENDENCY_APT_SELECTION))
                 remaining = retainHistory(requested, visible, entries, body, remaining);
-            if (goMirror) remaining = retainHistory(initialSourceRanges, visible, entries, body, remaining);
+            if (initialMirror) remaining = retainHistory(initialSourceRanges, visible, entries, body, remaining);
             remaining = retainHistory(lastVisible, visible, entries, body, remaining);
             retainHistory(confirmed, visible, entries, body, remaining);
         }
@@ -2130,9 +2157,9 @@ public final class DeploymentCommandSourceEvidence {
         return completeInstallerReview() && !sourceBodies.containsKey(INSTALLER_RUNTIME);
     }
 
-    private boolean goMirrorReview() {
+    private boolean initialMirrorReview() {
         return initialSourceRanges.containsKey(MIRROR_BOOTSTRAP_SHELL)
-            && (preparationReview() && reviewEcosystem().equals("GO")
+            && (preparationReview() && MIRROR_PREPARATION_SOURCES.contains(reviewEcosystem())
                 || bindingReview() && managedBinding(current.path("decodedToolchainBinding"), "GO"));
     }
 
@@ -2208,7 +2235,7 @@ public final class DeploymentCommandSourceEvidence {
             if (nodePreparationReview()) return NODE_PREPARE_INSTRUCTION;
             if (rubyPreparationReview()) return RUBY_PREPARE_INSTRUCTION + PREPARE_INSTRUCTION;
             if (reviewEcosystem().equals("KOTLIN")) return KOTLIN_JAVA_PREPARE_INSTRUCTION + PREPARE_INSTRUCTION;
-            if (goMirrorReview()) return PREPARE_INSTRUCTION + GO_MIRROR_INSTRUCTION;
+            if (initialMirrorReview()) return PREPARE_INSTRUCTION + INITIAL_MIRROR_INSTRUCTION;
             if (dotnetPreparationReview()) return PREPARE_INSTRUCTION.replace(
                 "using the current snapshotSha256 and exact sourcePointer, UTF-16 offset and limit from 1 through 8000.",
                 "using pointer (the exact sourcePointer), offset in UTF-16 units and limit from 1 through 8000. The tool owns the current snapshot identity.");
@@ -2217,7 +2244,7 @@ public final class DeploymentCommandSourceEvidence {
         if (dependencyReview() && sourceBodies.containsKey(DEPENDENCY_APT_SELECTION)) return DEPENDENCY_APT_INSTRUCTION;
         if (dependencyReview()) return INSTRUCTION + DEPENDENCY_INSTRUCTION;
         if (bindingReview() && current.has("localNodeBinding")) return LOCAL_NODE_BIND_INSTRUCTION;
-        String bindingInstruction = BIND_INSTRUCTION + (goMirrorReview() ? GO_MIRROR_INSTRUCTION : "");
+        String bindingInstruction = BIND_INSTRUCTION + (initialMirrorReview() ? INITIAL_MIRROR_INSTRUCTION : "");
         if (phpMirrorBindingReview()) bindingInstruction += PHP_MIRROR_BINDING_INSTRUCTION;
         if (boundBindingEvidence()) return bindingInstruction.replace("by its snapshotSha256 and sourcePointer.",
             "by sourcePointer in this request's fixed snapshot. Call evidence with pointer, offset and limit only. No snapshot argument is needed.");

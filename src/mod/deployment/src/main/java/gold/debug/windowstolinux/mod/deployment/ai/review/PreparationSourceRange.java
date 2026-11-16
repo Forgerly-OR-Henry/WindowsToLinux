@@ -434,10 +434,15 @@ record PreparationSourceRange(String section, int offset, int next) {
         return ranges;
     }
 
-    static List<PreparationSourceRange> aptDependencyShell(String shell, boolean credentials) throws IOException {
+    static List<PreparationSourceRange> aptDependencyShell(String shell, boolean credentials, boolean nativeApt) throws IOException {
         var ranges = new ArrayList<>(aptSystemShell(shell, credentials));
         ranges.add(between(shell, "aptRepositoryUriAdmission", "wtl_apt_source_security() {\n",
             "\nwtl_apt_sandbox_identity() {"));
+        if (nativeApt) {
+            ranges.add(between(shell, "aptBoundedSubprocess", "wtl_stop_package_tree() {\n", "\nwtl_run_mirror_runtime() {"));
+            ranges.add(between(shell, "aptResultAndCleanup", "\n      wtl_package_log \"$log\"", "\nwtl_apt() ("));
+            ranges.add(between(shell, "aptTransactionLog", "wtl_package_log() {\n", "\nwtl_apt_source_security() {"));
+        }
         return ranges;
     }
 

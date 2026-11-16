@@ -3926,6 +3926,84 @@ class DeploymentToolchainReviewEvidenceTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"APPROVE", "DENY"})
+    void r58LogAnalyzerRustPreparationShowsExactMirrorSourcesInFirstNativeRequest(String decision) throws Exception {
+        int cap = 1_048_576;
+        int historicalFactsCharacters = 32553;
+        String shellPointer = "/" + PHASE + "/mirrorBootstrapShell";
+        String policyPointer = "/" + PHASE + "/mirrorPolicySource";
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.values());
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = diagnosedPreparation(fixture, "RUST", "1.95", "1.95.0", "-")) {
+            var action = intent("prepare", fixture, command);
+            reply(fixture, verdict("r74-rust-verdict", decision));
+            var bounded = wireBudgetContext(assisted.context, Map.of(), historicalFactsCharacters, () -> cap,
+                delivered -> assertEquals(0, assisted.hosts.get()));
+            Callable<OperationResult<ApprovalGrant>> review = () -> DeploymentFixedCommandApproval.approveWithEvidence(
+                bounded, assisted.host, action, command, fixture.task, fixture.model.configurationRevision,
+                "AUTOMATIC", false, assisted.scope);
+            if (decision.equals("DENY")) {
+                assertReviewDenied(review);
+                assertEquals(0, assisted.hosts.get());
+            } else {
+                var result = review.call();
+                assertEquals(TaskResult.SUCCEEDED, result.outcome());
+                assertEquals(List.of(action), assisted.grantedIntents);
+                assertEquals(Set.of(result.value().orElseThrow().id()), assisted.grants);
+            }
+            assertEquals(1, fixture.model.requests.size());
+            var initial = fixture.model.requests.getFirst();
+            assertTrue(initial.requiredToolName().isEmpty());
+            var facts = JSON.readTree(initial.messages().getLast().text());
+            assertEquals("RUST", facts.at("/originalToolchainPreparation/ecosystem").asText());
+            assertEquals("1.95.0", facts.at("/originalToolchainPreparation/requestedExact").asText());
+            var manifest = facts.path(PHASE);
+            assertEquals(JSON.valueToTree(List.of(policyPointer, shellPointer)), manifest.path("initialMirrorSourcePointers"));
+            assertFalse(manifest.has("requiredMirrorSourcePointers"));
+            String snapshot = manifest.path("snapshotSha256").asText();
+            String shell = r24Shell(fixture);
+            String policy = DeploymentMirrorTasks.policy(fixture.task);
+            assertIdentity(manifest.path("mirrorBootstrapShell"), shell);
+            assertIdentity(manifest.path("mirrorPolicySource"), policy);
+            assertEquals(action.exactAction(), restoreValue(facts.path("exactAction"), Map.of(
+                shellPointer, shell, policyPointer, policy, "/mirrorTransport/runtimeSource", DeploymentMirrorRuntime.runtimeSource())));
+
+            byte[] encoded = wire(initial, cap, Map.of());
+            int atHistoricalFactsSize = wireWithR24FactsSize(initial, historicalFactsCharacters, cap, Map.of()).length;
+            var visible = replayRetainedRanges(encoded, snapshot, Map.of(shellPointer, shell, policyPointer, policy)).orElseThrow();
+            assertEquals(Map.of(0, shell.length()), visible.get(shellPointer));
+            assertEquals(Map.of(0, policy.length()), visible.get(policyPointer));
+            // R58 stdout 473, 487, 501, 515, 529-531 logged these coordinates without the original arguments.
+            var requested = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            for (int[] range : new int[][] {{0, 8000}, {11960, 8000}, {30195, 8000}, {8000, 3960}, {19960, 8000}, {27960, 2235}}) {
+                addR24Range(requested, shellPointer, range[0], range[0] + range[1]);
+            }
+            addR24Range(requested, policyPointer, 0, 6000);
+            assertR24Coverage(requested, visible);
+            System.out.printf("R74_RUST_PREPARE_FIRST_FRAME decision=%s encoded=%d historicalFactsEncoded=%d originalCap=%d shellCharacters=%d policyCharacters=%d%n",
+                decision, encoded.length, atHistoricalFactsSize, cap, shell.length(), policy.length());
+        }
+    }
+
+    @Test
+    void r58LogAnalyzerRustPreparationRejectsForgedTypedFacts() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture();
+             var command = diagnosedPreparation(fixture, "RUST", "1.95", "1.95.0", "-")) {
+            var action = intent("prepare", fixture, command);
+            var facts = new LinkedHashMap<>(new DeploymentFixedCommandProtocol(fixture.context)
+                .inspect(action, command, fixture.layout, fixture.task));
+            ObjectNode forged = JSON.valueToTree(facts.get("originalToolchainPreparation"));
+            forged.put("requestedExact", "1.95.1");
+            facts.put("originalToolchainPreparation", forged);
+            var failed = assertThrows(IOException.class, () -> new DeploymentAiJson(fixture.context).askCommand(
+                "Review the exact original Rust preparation", facts, fixture.model.configurationRevision, fixture.task,
+                DeploymentReviewDecision::malformed, action, command));
+            assertTrue(failed.getMessage().contains("invocation"), failed.getMessage());
+            assertTrue(fixture.model.requests.isEmpty());
+        }
+    }
+
     @Test
     void r38NodeBindReadsPreviouslyRejectedShellCoordinatesInTheFixedSnapshot() throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var command = r26Binding(fixture, "NODE", "24.22.3")) {
@@ -4875,6 +4953,91 @@ class DeploymentToolchainReviewEvidenceTest {
         String command = DeploymentManagedHelperBundle.verifiedCommand("'" + fixture.layout.helperPath() + "' prepare-toolchains " + arguments, fixture.layout);
         String wrapped = DeploymentMirrorTasks.preparationCommand(command, fixture.task, seconds);
         return new CommandRequest(wrapped, new byte[0], Duration.ofSeconds(seconds), 65536);
+    }
+
+    @Test
+    void r58NativeAptFirstRequestProvidesExactRequiredEvidenceAndFailsClosedWhenRepacked() throws Exception {
+        String profile = "NATIVE_BUILD_APT_3";
+        int historicalLimit = 987753;
+        int historicalFactsCharacters = 42064;
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.values());
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = dependencyRequest(fixture, profile)) {
+            var action = RemoteActions.command(fixture.server, "a".repeat(64), command).withSemantics(new ActionSemantics(
+                DeploymentToolchainDependencies.OPERATION,
+                DeploymentToolchainDependencies.dependencyTargets(fixture.server, profile, "b".repeat(32), fixture.layout)));
+            var facts = new LinkedHashMap<String, Object>(new DeploymentFixedCommandProtocol(fixture.context)
+                .inspect(action, command, fixture.layout, fixture.task));
+            var gap = JSON.createObjectNode().put("packageManager", "apt").put("nativeBuildPrerequisitesMissing", true)
+                .put("nativeBuildProfile", profile).put("reviewedPlanSha256", action.revision());
+            facts.put("currentCommandEvidence", Map.of("currentNativeBuildPrerequisites", Map.of(
+                "observedGap", gap, "currentToolchainPlan", Map.of("runtimeKind", "RustService"),
+                "fixedTransaction", facts.get("toolchainDependencies"))));
+            var nextCap = new java.util.concurrent.atomic.AtomicInteger(historicalLimit);
+            var model = new DeploymentAiJson(wireBudgetContext(assisted.context, Map.of(), historicalFactsCharacters, nextCap::get));
+            reply(fixture, verdict("r74-apt-approve", "APPROVE"));
+            assertEquals("APPROVE", model.askCommand("Inspect the exact native prerequisite transaction", facts,
+                fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed, action, command).path("decision").asText());
+            assertEquals(1, fixture.model.requests.size());
+            assertEquals(0, assisted.hosts.get());
+            var first = fixture.model.requests.getFirst();
+            var projection = JSON.readTree(first.messages().getLast().text());
+            var manifest = projection.path(PHASE);
+            String snapshot = manifest.path("snapshotSha256").asText();
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), action,
+                command, fixture.layout).orElseThrow();
+            var exact = new LinkedHashMap<String, String>();
+            for (String name : List.of("dependencyWorker", "dependencySystemShell", "mirrorRuntime")) {
+                var descriptor = manifest.path(name);
+                String source = collect(evidence, descriptor, PHASE);
+                assertIdentity(descriptor, source);
+                exact.put(descriptor.path("sourcePointer").asText(), source);
+            }
+            assertEquals("a4a6973db82a519aef7c0b3414795a7af3120254e257e6f8e30aa19ff90c3e11",
+                manifest.at("/dependencyWorker/sha256").asText());
+            assertEquals(JSON.valueToTree(List.of("cmake", "ninja-build")),
+                projection.at("/toolchainDependencies/nativeTransaction/requestedPackages/APT"));
+            byte[] original = wireWithR24FactsSize(first, historicalFactsCharacters, historicalLimit, Map.of());
+            var visible = replayRetainedRanges(original, snapshot, exact).orElseThrow();
+            var required = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            for (var range : manifest.path("requiredAptRanges"))
+                addR24Range(required, range.path("pointer").asText(), range.path("offset").asInt(), range.path("next").asInt());
+            assertFalse(required.isEmpty());
+            assertR24Coverage(required, visible);
+            var historicalWorker = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            String workerPointer = manifest.at("/dependencyWorker/sourcePointer").asText();
+            for (int[] range : new int[][] {{5338, 591}, {13832, 580}, {18733, 1505}, {25142, 968}, {30317, 1056},
+                {50119, 8000}, {58119, 1885}, {62302, 8000}, {70302, 1509}})
+                addR24Range(historicalWorker, workerPointer, range[0], range[0] + range[1]);
+            assertR24Coverage(historicalWorker, visible);
+            var fullSupplement = first.messages().stream().filter(DeploymentToolchainReviewEvidenceTest::nodeInitialSupplement)
+                .findFirst().orElseThrow().text();
+            var fullHeader = JSON.readTree(fullSupplement.lines().skip(1).findFirst().orElseThrow());
+            assertTrue(fullHeader.path("nativeAptRequiredSource").asBoolean());
+            assertFalse(fullHeader.has("pendingRequired"));
+            assertTrue(fullSupplement.contains("wtl_stop_package_tree() {"));
+            assertTrue(fullSupplement.contains("wtl_package_log() {"));
+
+            nextCap.set(original.length - 9000);
+            reply(fixture, verdict("r74-apt-small-approve", "APPROVE"));
+            var refused = assertThrows(DeploymentCommandReviewModel.Failure.class, () -> model.askCommand(
+                "Inspect the exact native prerequisite transaction", facts, fixture.model.configurationRevision, fixture.task,
+                DeploymentReviewDecision::malformed, action, command));
+            assertEquals("REQUIRED_SOURCE_MISSING", DeploymentCommandReviewModel.failureDiagnostics(refused).get("reviewEvidenceBlock"));
+            assertEquals(2, fixture.model.requests.size());
+            var small = fixture.model.requests.getLast();
+            byte[] smallWire = wireWithR24FactsSize(small, historicalFactsCharacters, nextCap.get(), Map.of());
+            var smallVisible = replayRetainedRanges(smallWire, snapshot, exact).orElseThrow();
+            assertFalse(smallVisible.equals(visible));
+            assertEquals(0, assisted.hosts.get());
+
+            gap.put("nativeBuildProfile", "NATIVE_BUILD_APT_7");
+            assertThrows(IOException.class, () -> model.askCommand("Inspect the exact native prerequisite transaction", facts,
+                fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed, action, command));
+            assertEquals(2, fixture.model.requests.size());
+            System.out.printf("R74_NATIVE_APT_FIRST_FRAME encoded=%d repacked=%d historicalCap=%d stressCap=%d requiredWorkerRanges=9%n",
+                original.length, smallWire.length, historicalLimit, nextCap.get());
+        }
     }
 
     private static CommandRequest dependencyRequest(MirroredInstallerTestFixture fixture, String profile) {
