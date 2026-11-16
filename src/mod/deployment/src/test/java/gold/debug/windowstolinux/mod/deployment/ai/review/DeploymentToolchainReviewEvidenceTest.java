@@ -1507,6 +1507,202 @@ class DeploymentToolchainReviewEvidenceTest {
         assertEquals(frame.length(), position);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"APPROVE", "DENY"})
+    void r61PhpBindingPresentsCompleteOrderedOriginalsThroughIndependentVerdict(String decision) throws Exception {
+        int[] bounds = {468882, 450431, 330362, 298193};
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.values());
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = r26Binding(fixture, "PHP", "8.3.36")) {
+            var action = intent("bind", fixture, command);
+            String shell = r24Shell(fixture);
+            assertTrue(shell.length() > 40000, "The real fixture must contain the historical tail cursor");
+            String policy = DeploymentMirrorTasks.policy(fixture.task);
+            String helper = DeploymentManagedHelperBundle.renderScript(fixture.layout);
+            var sizes = new ArrayList<Integer>();
+            var clippedTail = new ArrayList<Integer>();
+            var bounded = wireBudgetContext(assisted.context, Map.of(), 36792,
+                () -> bounds[fixture.model.requests.size()], delivered -> {
+                    try {
+                        int turn = fixture.model.requests.size();
+                        byte[] encoded = wireWithR24FactsSize(delivered, 36792, bounds[turn], Map.of());
+                        sizes.add(encoded.length);
+                        var facts = JSON.readTree(delivered.messages().getLast().text());
+                        var manifest = facts.path(PHASE);
+                        var frame = r61PhpMirrorFrame(encoded, manifest, policy, shell, helper, turn > 0);
+                        String snapshot = manifest.path("snapshotSha256").asText();
+                        String pointer = manifest.path("mirrorBootstrapShell").path("sourcePointer").asText();
+                        String helperPointer = manifest.path("installedHelperSource").path("sourcePointer").asText();
+                        assertEquals(action.exactAction(), restoreValue(facts.path("exactAction"), Map.of(
+                            pointer, shell, manifest.path("mirrorPolicySource").path("sourcePointer").asText(), policy,
+                            "/mirrorTransport/runtimeSource", DeploymentMirrorRuntime.runtimeSource())));
+                        assertEquals(0, assisted.hosts.get());
+                        switch (turn) {
+                            case 0 -> {
+                                assertTrue(delivered.requiredToolName().isEmpty());
+                                assertTrue(frame.path("initialSupplement").asBoolean());
+                                var calls = new ArrayList<AiToolCall>();
+                                for (int offset = 0; offset <= 40000; offset += 8000)
+                                    calls.add(read("r58-php-shell-" + offset, snapshot, pointer, offset, 8000));
+                                calls.add(read("r61-retained-helper", snapshot, helperPointer, 500000, 1024));
+                                fixture.model.replies.add(success(mockResponses(calls.toArray(AiToolCall[]::new))));
+                            }
+                            case 1 -> {
+                                assertTrue(delivered.requiredToolName().isEmpty());
+                                fixture.model.replies.add(success(mockResponses(read("r58-tail-1076", snapshot, pointer, 38000, 2140))));
+                            }
+                            case 2 -> {
+                                assertTrue(delivered.requiredToolName().isEmpty(), "One redundant batch leaves the PHP evidence tool available");
+                                assertEquals(38000, frame.at("/latestReads/0/offset").asInt());
+                                assertEquals(Math.min(shell.length(), 40140), frame.at("/latestReads/0/next").asInt());
+                                clippedTail.add(frame.at("/latestReads/0/next").asInt());
+                                var calls = new ArrayList<AiToolCall>();
+                                for (int offset = 0; offset < 38000; offset += 8000)
+                                    calls.add(read("r58-php-backread-" + offset, snapshot, pointer, offset, Math.min(8000, 38000 - offset)));
+                                fixture.model.replies.add(success(mockResponses(calls.toArray(AiToolCall[]::new))));
+                            }
+                            case 3 -> {
+                                assertEquals(Optional.of("submit_result"), delivered.requiredToolName());
+                                assertEquals("submit_result", JSON.readTree(encoded).at("/tool_choice/name").asText());
+                                var previous = fixture.model.requests.getLast();
+                                assertEquals(previous.messages().subList(1, previous.messages().size()),
+                                    delivered.messages().subList(1, delivered.messages().size()));
+                                assertEquals(previous.maxOutputTokens(), delivered.maxOutputTokens());
+                                assertEquals(previous.timeout(), delivered.timeout());
+                                reply(fixture, verdict("r61-independent-php-verdict", decision));
+                            }
+                            default -> throw new AssertionError("Unexpected PHP review continuation");
+                        }
+                    } catch (Exception failure) {
+                        throw new AssertionError(failure);
+                    }
+                });
+            Callable<OperationResult<ApprovalGrant>> review = () -> DeploymentFixedCommandApproval.approveWithEvidence(
+                bounded, assisted.host, action, command, fixture.task, fixture.model.configurationRevision, "AUTOMATIC", false,
+                (intent, request, task) -> assisted.scope.effectFacts(intent, task));
+            if (decision.equals("APPROVE")) {
+                assertEquals(TaskResult.SUCCEEDED, review.call().outcome());
+                assertEquals(List.of(action), assisted.grantedIntents);
+            } else {
+                assertReviewDenied(review);
+                assertEquals(0, assisted.hosts.get());
+            }
+            assertEquals(bounds.length, fixture.model.requests.size());
+            System.out.printf("R61_PHP_BIND decision=%s encoded=%s firstCeiling=%d formalCeiling=%d shellCharacters=%d shellSha=%s policyCharacters=%d policySha=%s tailEnd=%s%n",
+                decision, sizes, bounds[0], bounds[3], shell.length(), MirroredInstallerTestFixture.sha(shell),
+                policy.length(), MirroredInstallerTestFixture.sha(policy), clippedTail);
+        }
+    }
+
+    private static JsonNode r61PhpMirrorFrame(byte[] encoded, JsonNode manifest, String policy, String shell, String helper,
+                                               boolean retainedHelper) throws Exception {
+        var source = JSON.readTree(encoded).path("input").get(2).at("/content/0/text").asText();
+        assertTrue(source.startsWith("WTL-COMMAND-RETAINED-SOURCE-1\n"));
+        var header = installerRetainedHeader(source);
+        assertEquals(manifest.path("snapshotSha256"), header.path("snapshotSha256"));
+        assertFalse(header.has("pendingRequired"));
+        String policyPointer = manifest.path("mirrorPolicySource").path("sourcePointer").asText();
+        String shellPointer = manifest.path("mirrorBootstrapShell").path("sourcePointer").asText();
+        assertEquals(List.of(policyPointer, shellPointer), JSON.convertValue(manifest.path("requiredMirrorSourcePointers"), List.class));
+        assertIdentity(manifest.path("mirrorPolicySource"), policy);
+        assertIdentity(manifest.path("mirrorBootstrapShell"), shell);
+        var ranges = header.path("ranges");
+        assertEquals(retainedHelper ? 3 : 2, ranges.size());
+        int position = source.indexOf('\n', source.indexOf('\n') + 1) + 1;
+        assertEquals(policyPointer, ranges.get(0).path("pointer").asText());
+        assertEquals(0, ranges.get(0).path("offset").asInt());
+        assertEquals(policy.length(), ranges.get(0).path("next").asInt());
+        assertEquals(shellPointer, ranges.get(1).path("pointer").asText());
+        assertEquals(0, ranges.get(1).path("offset").asInt());
+        assertEquals(shell.length(), ranges.get(1).path("next").asInt());
+        assertEquals(policy + shell + (retainedHelper ? helper.substring(500000, 501024) : ""), source.substring(position));
+        if (retainedHelper) {
+            assertEquals(manifest.path("installedHelperSource").path("sourcePointer"), ranges.get(2).path("pointer"));
+            assertEquals(500000, ranges.get(2).path("offset").asInt());
+            assertEquals(501024, ranges.get(2).path("next").asInt());
+        }
+        return header;
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing-initial", "missing-rebased", "stale-snapshot", "invalid-cursor", "deny-incomplete"})
+    void r61PhpBindingGatesApprovalOnCurrentNativeSourceAndAllowsIncompleteDenial(String scenario) throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.PHP_METADATA, DownloadPoint.PHP_DISTRIBUTION);
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = r26Binding(fixture, "PHP", "8.3.36")) {
+            var action = intent("bind", fixture, command);
+            reply(fixture, verdict("r61-baseline-denial", "DENY"));
+            assertReviewDenied(() -> DeploymentFixedCommandApproval.approveWithEvidence(
+                assisted.context, assisted.host, action, command, fixture.task, fixture.model.configurationRevision, "AUTOMATIC", false,
+                (intent, request, task) -> assisted.scope.effectFacts(intent, task)));
+            var baseline = fixture.model.requests.getFirst();
+            int start = fixture.model.requests.size();
+            var bare = baseline.messages().stream().filter(message -> !nodeInitialSupplement(message)).toList();
+            assertEquals(baseline.messages().size() - 1, bare.size());
+            int tight = wire(copy(baseline, bare, 1_048_576), 1_048_576, Map.of()).length + 5500;
+            boolean fromStart = scenario.equals("missing-initial") || scenario.equals("deny-incomplete");
+            boolean brokenRead = scenario.equals("stale-snapshot") || scenario.equals("invalid-cursor");
+            var bounded = wireBudgetContext(assisted.context, Map.of(), 0,
+                () -> fromStart || scenario.equals("missing-rebased") && fixture.model.requests.size() > start ? tight : 468882,
+                delivered -> {
+                    try {
+                        int turn = fixture.model.requests.size() - start;
+                        assertTrue(delivered.requiredToolName().isEmpty());
+                        var manifest = JSON.readTree(delivered.messages().getLast().text()).path(PHASE);
+                        String snapshot = manifest.path("snapshotSha256").asText();
+                        String pointer = manifest.path("mirrorBootstrapShell").path("sourcePointer").asText();
+                        int end = manifest.path("mirrorBootstrapShell").path("characters").asInt();
+                        if (!fromStart && turn == 0) {
+                            assertTrue(delivered.messages().stream().anyMatch(DeploymentToolchainReviewEvidenceTest::nodeInitialSupplement));
+                            var call = switch (scenario) {
+                                case "stale-snapshot" -> read("r61-stale", "0".repeat(64), pointer, 0, 64);
+                                case "invalid-cursor" -> read("r61-outside", snapshot, pointer, end + 1, 64);
+                                default -> read("r61-tail", snapshot, pointer, end - 64, 64);
+                            };
+                            fixture.model.replies.add(success(mockResponses(call)));
+                            return;
+                        }
+                        var frame = delivered.messages().stream().map(AiMessage::text)
+                            .filter(text -> text.startsWith("WTL-COMMAND-RETAINED-SOURCE-1\n")).findFirst().orElseThrow();
+                        var header = installerRetainedHeader(frame);
+                        if (brokenRead) {
+                            assertFalse(header.has("pendingRequired"));
+                            assertEquals(scenario.equals("stale-snapshot") ? "SNAPSHOT_MISMATCH" : "CURSOR_INVALID",
+                                header.at("/latestReads/0/rejectionCode").asText());
+                        } else {
+                            assertFalse(header.path("pendingRequired").isMissingNode());
+                            assertTrue(header.path("pendingRequired").findValuesAsText("pointer").contains(pointer));
+                        }
+                        reply(fixture, verdict("r61-gated-verdict", scenario.equals("deny-incomplete") ? "DENY" : "APPROVE"));
+                    } catch (Exception failure) {
+                        throw new AssertionError(failure);
+                    }
+                });
+            var rejected = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approveWithEvidence(
+                bounded, assisted.host, action, command, fixture.task, fixture.model.configurationRevision, "AUTOMATIC", false,
+                (intent, request, task) -> assisted.scope.effectFacts(intent, task)));
+            if (scenario.equals("deny-incomplete")) {
+                assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", rejected.problem().eventCode());
+            } else {
+                assertEquals("EVIDENCE_INCOMPLETE_VERDICT", rejected.problem().context().get("reviewCode"));
+                assertEquals(brokenRead ? "READ_REJECTED" : "REQUIRED_SOURCE_MISSING", rejected.problem().context().get("reviewEvidenceBlock"));
+            }
+            assertEquals(0, assisted.hosts.get());
+        }
+    }
+
+    @Test
+    void r61PhpBindingRejectsFactsNotMatchingTheOriginalTypedInvocation() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var command = r26Binding(fixture, "NODE", "24.22.3")) {
+            var action = intent("bind", fixture, command);
+            var facts = JSON.valueToTree(new DeploymentFixedCommandProtocol(fixture.context).inspect(action, command, fixture.layout, fixture.task));
+            ((ObjectNode) facts.at("/decodedToolchainBinding/toolchains/0")).put("ecosystem", "PHP");
+            var rejected = assertThrows(IOException.class, () ->
+                DeploymentCommandSourceEvidence.project(facts.toString(), action, command, fixture.layout));
+            assertTrue(rejected.getMessage().contains("PHP binding evidence differs"));
+        }
+    }
+
     @Test
     void r26AssetLendingOversizedBindReadBatchGetsOneNoActionCorrection() throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var command = r26Binding(fixture, "DOTNET", "10.0.300")) {
@@ -1563,7 +1759,7 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     private static CommandRequest r26Binding(MirroredInstallerTestFixture fixture, String ecosystem, String version) {
-        String branch = version.substring(0, ecosystem.equals("GO") ? version.lastIndexOf('.') : version.indexOf('.'));
+        String branch = version.substring(0, Set.of("GO", "PHP").contains(ecosystem) ? version.lastIndexOf('.') : version.indexOf('.'));
         String declaration = Base64.getEncoder().encodeToString(branch.getBytes(StandardCharsets.UTF_8));
         String canonical = "WTL-TOOLS-1\tcurrent\n" + ecosystem + "\tLANGUAGE_TARGET\t" + declaration + "\tZml4dHVyZQ==\tSERIES\t"
             + branch

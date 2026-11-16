@@ -72,6 +72,7 @@ public final class DeploymentCommandSourceEvidence {
         """;
     private static final String MIRROR_BOOTSTRAP_SHELL = "/" + PROJECTION + "/mirrorBootstrapShell";
     private static final String MIRROR_POLICY_SOURCE = "/" + PROJECTION + "/mirrorPolicySource";
+    private static final List<String> MIRROR_BINDING_SOURCES = List.of(MIRROR_POLICY_SOURCE, MIRROR_BOOTSTRAP_SHELL);
     private static final String DEPENDENCY_WORKER = "/" + PROJECTION + "/dependencyWorker";
     private static final String DEPENDENCY_RUNTIME = "/" + PROJECTION + "/mirrorRuntime";
     private static final String DEPENDENCY_RUNTIME_SELECTION = "/" + PROJECTION + "/dependencyRuntimeSelection";
@@ -140,6 +141,10 @@ public final class DeploymentCommandSourceEvidence {
 
     private static final String GO_MIRROR_INSTRUCTION = """
         The initial supplement and retained frames supply exact staged originals at initialMirrorSourcePointers. Use the supplied ranges before requesting absent source needed for the current decision. All original shell, policy, runtime and helper ranges remain available.
+        """;
+
+    private static final String PHP_MIRROR_BINDING_INSTRUCTION = """
+        requiredMirrorSourcePointers identify the exact staged policy and bootstrap shell. Each is presented from its original offset zero when complete. Review the full ordered source in the current supplement or retained frame together with the literal invocation. For pendingRequired, read the missing original bytes with the current snapshot, using at most 8000 UTF-16 code units per call. Deny if the evidence is insufficient or the effects are unsafe.
         """;
 
     private static final String PYTHON_PREPARE_INSTRUCTION = """
@@ -325,12 +330,17 @@ public final class DeploymentCommandSourceEvidence {
                 dependency, !aptDependency(current), sourceBodies);
             if (!exact.equals(restoreSegments(parts, sourceBodies)))
                 throw new IOException("Mirrored projection does not restore the original command");
-            if (goMirrorReview(current, operation, intent, request, layout)) {
+            boolean goReview = goMirrorReview(current, operation, intent, request, layout);
+            boolean phpBinding = !goReview && phpMirrorBinding(current, operation, intent, request, layout);
+            if (goReview || phpBinding) {
                 var pointers = manifest.putArray("initialMirrorSourcePointers");
-                for (String pointer : List.of(MIRROR_POLICY_SOURCE, MIRROR_BOOTSTRAP_SHELL)) {
-                    initialSourceRanges.put(pointer, new TreeMap<>(Map.of(0, sourceBodies.get(pointer).length())));
+                for (String pointer : MIRROR_BINDING_SOURCES) {
+                    var fullRange = new TreeMap<>(Map.of(0, sourceBodies.get(pointer).length()));
+                    initialSourceRanges.put(pointer, fullRange);
+                    if (phpBinding) requiredRanges.put(pointer, fullRange);
                     pointers.add(pointer);
                 }
+                if (phpBinding) manifest.set("requiredMirrorSourcePointers", pointers.deepCopy());
             }
         }
         if (dependency) {
@@ -380,7 +390,7 @@ public final class DeploymentCommandSourceEvidence {
         String member;
         if (PREPARE.equals(operation) && preparationEcosystem(current).equals("GO")) {
             member = current.has("originalToolchainPreparation") ? "originalToolchainPreparation" : "toolchainPreparation";
-        } else if (BIND.equals(operation) && managedGoBinding(current.path("decodedToolchainBinding"))) {
+        } else if (BIND.equals(operation) && managedBinding(current.path("decodedToolchainBinding"), "GO")) {
             member = "decodedToolchainBinding";
         } else {
             return false;
@@ -391,10 +401,19 @@ public final class DeploymentCommandSourceEvidence {
         return true;
     }
 
-    private static boolean managedGoBinding(JsonNode binding) {
+    private static boolean phpMirrorBinding(ObjectNode current, String operation, ActionIntent intent,
+                                            CommandRequest request, DeploymentRemoteLayout layout) throws IOException {
+        if (!BIND.equals(operation) || !managedBinding(current.path("decodedToolchainBinding"), "PHP")) return false;
+        var actual = JSON.valueToTree(DeploymentCommandEvidence.facts(intent, request, layout).get("decodedToolchainBinding"));
+        if (!actual.equals(current.path("decodedToolchainBinding")))
+            throw new IOException("PHP binding evidence differs from the exact original invocation");
+        return true;
+    }
+
+    private static boolean managedBinding(JsonNode binding, String ecosystem) {
         if (!binding.at("/literalValidation/canonicalTypedBinding").asBoolean()) return false;
         for (var toolchain : binding.path("toolchains"))
-            if ("GO".equals(toolchain.path("ecosystem").asText()) && "MANAGED".equals(toolchain.path("origin").asText())) return true;
+            if (ecosystem.equals(toolchain.path("ecosystem").asText()) && "MANAGED".equals(toolchain.path("origin").asText())) return true;
         return false;
     }
 
@@ -1337,6 +1356,7 @@ public final class DeploymentCommandSourceEvidence {
         private final Map<String, NavigableMap<Integer, Integer>> confirmed = new LinkedHashMap<>();
         private final boolean nodePreparation = nodePreparationReview();
         private final boolean goMirror = goMirrorReview();
+        private final boolean phpBinding = phpMirrorBindingReview();
         private Optional<AiMessage> priorEvidence = Optional.empty();
         private Optional<AiMessage> initialSupplement = Optional.empty();
         private List<ReadReceipt> latestReads = List.of();
@@ -1413,7 +1433,8 @@ public final class DeploymentCommandSourceEvidence {
                 .put("initialSupplement", true);
             var entries = header.putArray("ranges");
             var visible = copyRanges(inline);
-            if (completeInstallerReview() || rubyPreparationReview() || packedBuildReview())
+            boolean showPending = completeInstallerReview() || rubyPreparationReview() || packedBuildReview() || phpBinding;
+            if (showPending)
                 appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
             int bodyBudget = available - quotedBytes(RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n");
             if (bodyBudget <= 0) return Optional.empty();
@@ -1421,7 +1442,7 @@ public final class DeploymentCommandSourceEvidence {
             retainHistory(initialSourceRanges, visible, entries, body, bodyBudget);
             if (entries.isEmpty()) return Optional.empty();
             if (reconstructRuntimeShell(visible)) header.put("runtimeShellReconstructible", true);
-            if (completeInstallerReview() || rubyPreparationReview() || packedBuildReview())
+            if (showPending)
                 appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
             var message = new AiMessage(AiRole.USER, RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n" + body, List.of());
             return quotedBytes(message) <= available ? Optional.of(new RetainedFrame(message, visible)) : Optional.empty();
@@ -1680,7 +1701,7 @@ public final class DeploymentCommandSourceEvidence {
 
         private Optional<RetainedFrame> fittedSource(int available) throws IOException {
             if (available <= 0) return Optional.empty();
-            if (packedBuildReview()) {
+            if (packedBuildReview() || phpBinding) {
                 var complete = retainedSource(latestReads, false, Integer.MAX_VALUE);
                 if (quotedBytes(complete.message()) <= available) return Optional.of(complete);
             }
@@ -1770,7 +1791,7 @@ public final class DeploymentCommandSourceEvidence {
             var entries = header.putArray("ranges");
             var body = new StringBuilder();
             var visible = copyRanges(inline);
-            if (packedBuildReview() && historyBytes == Integer.MAX_VALUE) {
+            if ((packedBuildReview() || phpBinding) && historyBytes == Integer.MAX_VALUE) {
                 var exact = copyRanges(requiredRanges);
                 requested.forEach((pointer, ranges) ->
                     ranges.forEach((start, end) -> rememberRange(exact, pointer, start, end)));
@@ -1781,6 +1802,7 @@ public final class DeploymentCommandSourceEvidence {
                     appendVisibleRange(read.pointer(), read.offset(), read.next(), visible, entries, body);
                 }
                 retainPriorSource(visible, entries, body, historyBytes);
+                if (phpBinding) body = orderedPhpMirrorBody(entries, body);
             }
             if (reconstructRuntimeShell(visible)) header.put("runtimeShellReconstructible", true);
             var described = visible;
@@ -1802,6 +1824,11 @@ public final class DeploymentCommandSourceEvidence {
 
         private void retainPriorSource(Map<String, NavigableMap<Integer, Integer>> visible, ArrayNode entries,
                                        StringBuilder body, int historyBytes) throws IOException {
+            if (phpBinding) {
+                int remaining = retainHistory(requested, visible, entries, body, historyBytes);
+                retainHistory(requiredRanges, visible, entries, body, remaining);
+                return;
+            }
             if (packedBuildReview()) {
                 int remaining = retainHistory(requiredRanges, visible, entries, body, historyBytes);
                 retainHistory(requested, visible, entries, body, remaining);
@@ -1813,6 +1840,35 @@ public final class DeploymentCommandSourceEvidence {
             if (goMirror) remaining = retainHistory(initialSourceRanges, visible, entries, body, remaining);
             remaining = retainHistory(lastVisible, visible, entries, body, remaining);
             retainHistory(confirmed, visible, entries, body, remaining);
+        }
+
+        private StringBuilder orderedPhpMirrorBody(ArrayNode entries, StringBuilder body) throws IOException {
+            var mirror = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
+            var other = JSON.createArrayNode();
+            var otherBody = new StringBuilder();
+            int position = 0;
+            for (var entry : entries) {
+                String pointer = entry.path("pointer").asText();
+                int offset = entry.path("offset").asInt(), next = entry.path("next").asInt();
+                if (requiredRanges.containsKey(pointer)) rememberRange(mirror, pointer, offset, next);
+                else {
+                    other.add(entry);
+                    otherBody.append(body, position, position + next - offset);
+                }
+                position += next - offset;
+            }
+            if (mirror.isEmpty()) return body;
+            entries.removeAll();
+            var ordered = new StringBuilder(body.length());
+            for (String pointer : MIRROR_BINDING_SOURCES) {
+                String source = sourceText(pointer);
+                for (var range : mirror.getOrDefault(pointer, Collections.emptyNavigableMap()).entrySet()) {
+                    entries.add(retainedLocation(pointer, range.getKey(), range.getValue()));
+                    ordered.append(source, range.getKey(), range.getValue());
+                }
+            }
+            entries.addAll(other);
+            return ordered.append(otherBody);
         }
 
         private boolean nodeSourceHasDescriptor(String pointer) {
@@ -1861,7 +1917,7 @@ public final class DeploymentCommandSourceEvidence {
                     for (var gap : DeploymentEvidencePages.missing(source, range.getKey(), range.getValue(), known)) {
                         int offset = (int) gap.get("offset"), end = (int) gap.get("next");
                         while (offset < end) {
-                            int next = completeInstallerReview() || packedBuildReview() ? fittingHistoryEnd(pointer, source, offset, end, byteBudget)
+                            int next = completeInstallerReview() || packedBuildReview() || phpBinding ? fittingHistoryEnd(pointer, source, offset, end, byteBudget)
                                 : Math.min(end, offset + MAX_READ_CHARACTERS);
                             if (next <= offset) break;
                             if (next < end && Character.isSurrogatePair(source.charAt(next - 1), source.charAt(next))) next--;
@@ -1921,7 +1977,7 @@ public final class DeploymentCommandSourceEvidence {
                                        Map<String, NavigableMap<Integer, Integer>> visible) throws IOException {
             var deferred = header.putArray(name);
             int omitted = 0;
-            boolean aggregateRanges = packedBuildReview() || completeInstallerReview() && "pendingRequired".equals(name);
+            boolean aggregateRanges = packedBuildReview() || (completeInstallerReview() || phpBinding) && "pendingRequired".equals(name);
             for (var entry : ranges.entrySet()) {
                 String pointer = entry.getKey();
                 String source = sourceText(pointer);
@@ -2016,7 +2072,11 @@ public final class DeploymentCommandSourceEvidence {
     private boolean goMirrorReview() {
         return initialSourceRanges.containsKey(MIRROR_BOOTSTRAP_SHELL)
             && (preparationReview() && reviewEcosystem().equals("GO")
-                || bindingReview() && managedGoBinding(current.path("decodedToolchainBinding")));
+                || bindingReview() && managedBinding(current.path("decodedToolchainBinding"), "GO"));
+    }
+
+    private boolean phpMirrorBindingReview() {
+        return bindingReview() && requiredRanges.containsKey(MIRROR_BOOTSTRAP_SHELL);
     }
 
     public boolean bindingReview() {
@@ -2086,6 +2146,7 @@ public final class DeploymentCommandSourceEvidence {
         if (dependencyReview()) return INSTRUCTION + DEPENDENCY_INSTRUCTION;
         if (bindingReview() && current.has("localNodeBinding")) return LOCAL_NODE_BIND_INSTRUCTION;
         String bindingInstruction = BIND_INSTRUCTION + (goMirrorReview() ? GO_MIRROR_INSTRUCTION : "");
+        if (phpMirrorBindingReview()) bindingInstruction += PHP_MIRROR_BINDING_INSTRUCTION;
         if (boundBindingEvidence()) return bindingInstruction.replace("by its snapshotSha256 and sourcePointer.",
             "by sourcePointer in this request's fixed snapshot. Call evidence with pointer, offset and limit only. No snapshot argument is needed.");
         return bindingReview() ? bindingInstruction : INSTRUCTION;
