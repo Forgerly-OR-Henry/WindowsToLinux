@@ -217,7 +217,14 @@ class DeploymentStandardCandidateRunnerTest extends DeploymentRuntimeFixture {
                             approved.semantics().orElseThrow().operation());
                         var bound = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.inspect(
                             approved, command, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original());
-                        assertEquals("NATIVE_BUILD", bound.get("profile"));
+                        assertEquals(nativeCase.equals("COMPILER") ? "NATIVE_BUILD_APT_4" : "NATIVE_BUILD_APT_3",
+                            bound.get("profile"));
+                        var roots = approved.semantics().orElseThrow().targets().stream()
+                            .filter(target -> target.kind().equals("system-package")).map(target -> target.id())
+                            .collect(java.util.stream.Collectors.toSet());
+                        assertEquals(nativeCase.equals("COMPILER") ? Set.of("gcc") : Set.of("cmake", "ninja-build"), roots);
+                        assertFalse(approved.semantics().orElseThrow().targets().stream()
+                            .anyMatch(target -> target.id().startsWith("DNF:")));
                         assertTrue(actions.indexOf("bind-tools") < actions.indexOf("native-install"));
                         assertEquals(nativeCase.startsWith("RECOVERY") ? 3 : 2, hostReads.get());
                         assertEquals(nativeCase.startsWith("RECOVERY") ? 1 : 0, uploads.get());
@@ -233,9 +240,6 @@ class DeploymentStandardCandidateRunnerTest extends DeploymentRuntimeFixture {
                         if (nativeCase.equals("EXIT")) return new OperationResult<>(TaskResult.SUCCEEDED,
                             Optional.of(new CommandResult(Optional.of(4), "", "", false)), Optional.empty());
                         if (nativeCase.equals("RECEIPT")) return reply("TOOLCHAIN_DEPENDENCIES={}\n");
-                        var packages = new LinkedHashMap<String, String>();
-                        gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.packages("APT", "NATIVE_BUILD")
-                            .forEach(name -> packages.put(name, "1.0"));
                         return reply(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DependencyReceiptFixture.receipt(command, "APT",
                             gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()));
                     }

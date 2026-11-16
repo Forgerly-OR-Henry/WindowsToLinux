@@ -13,6 +13,7 @@ import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentEcosystemToolType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
 
@@ -23,6 +24,9 @@ public final class DeploymentToolchainDependencies {
     private static final String ROOT = "/gold/debug/windowstolinux/mod/deployment/service/deploy/toolchain/";
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final List<String> PROFILES = List.of("PYTHON", "PHP", "RUBY", "NATIVE_BUILD", "HELPER_RUNTIME");
+    private static final String NATIVE_APT_PREFIX = "NATIVE_BUILD_APT_";
+    private static final Pattern NATIVE_APT_PROFILE = Pattern.compile(NATIVE_APT_PREFIX + "(?:[1-9]|1[0-5])");
+    private static final List<String> NATIVE_APT_ROOTS = List.of("cmake", "ninja-build", "gcc", "g++");
     private static final String PACKAGES_TEXT = resource("dependency-packages.json");
     private static final JsonNode PACKAGES = packages();
     public static final String BOOTSTRAP = "import sys;sys.dont_write_bytecode=True;code=sys.stdin.buffer.read();exec(compile(code,'<wtl-agent-toolchain>','exec'),{'__name__':'__main__','PROGRAM_SOURCE':code})";
@@ -43,7 +47,11 @@ public final class DeploymentToolchainDependencies {
     }
 
     public static String dependencies(DeploymentRemoteLayout layout) {
-        String worker = workerSource(layout);
+        return dependencies(layout, PROFILE);
+    }
+
+    public static String dependencies(DeploymentRemoteLayout layout, String profile) {
+        String worker = workerSource(layout, profile);
         try {
             return "DEPENDENCY_WORKER_SOURCE = " + JSON.writeValueAsString(worker) + "\n" + worker;
         } catch (IOException failure) {
@@ -51,16 +59,59 @@ public final class DeploymentToolchainDependencies {
         }
     }
 
-    private static String workerSource(DeploymentRemoteLayout layout) {
+    public static String nativeAptProfile(Set<DeploymentEcosystemToolType> missing) {
+        int mask = 0;
+        for (var tool : Set.copyOf(missing)) {
+            mask |= switch (tool) {
+                case CMAKE -> 1;
+                case NINJA -> 2;
+                case C_COMPILER -> 4;
+                case CPP_COMPILER -> 8;
+                default -> throw new IllegalArgumentException("Unsupported native APT prerequisite");
+            };
+        }
+        if (mask == 0)
+            throw new IllegalArgumentException("At least one missing native APT prerequisite required");
+        return NATIVE_APT_PREFIX + mask;
+    }
+
+    public static boolean isScopedNativeAptProfile(String profile) {
+        return profile != null && NATIVE_APT_PROFILE.matcher(profile).matches();
+    }
+
+    private static String workerSource(DeploymentRemoteLayout layout, String profile) {
         Objects.requireNonNull(layout);
+        boolean scoped = isScopedNativeAptProfile(profile);
+        if (!scoped && !PROFILES.contains(profile))
+            throw new IllegalArgumentException("Unsupported dependency profile");
         try {
+            String lifecycle = resource("dependency-lifecycle.py");
+            String transaction = resource("agent-toolchain-dependencies.py");
+            String scope = "";
+            if (scoped) {
+                scope = "DEPENDENCY_SCOPED_PROFILE = " + JSON.writeValueAsString(profile) + "\n"
+                    + resource("native-apt-dependencies.py") + "\n";
+                String legacyProfiles = "args[0] not in ('JAVA', 'NODE', 'PYTHON', 'DOTNET', 'KOTLIN', 'GO', 'RUST', 'PHP', 'RUBY', 'NATIVE_BUILD', 'HELPER_RUNTIME')";
+                lifecycle = replaceRequired(lifecycle, legacyProfiles, "args[0] != DEPENDENCY_SCOPED_PROFILE");
+                transaction = replaceRequired(transaction, legacyProfiles, "args[0] != DEPENDENCY_SCOPED_PROFILE");
+                transaction = replaceRequired(transaction, "    if ecosystem in ('PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD', 'HELPER_RUNTIME'):", "    if ecosystem == DEPENDENCY_SCOPED_PROFILE:");
+                transaction = replaceRequired(transaction, "        packages = dependency_packages(manager, ecosystem)",
+                    "        packages = dependency_native_apt_scope(OS_PROFILE, ecosystem)");
+            }
             return gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.renderToolchainSources(
                 "import json\nDEPENDENCY_PACKAGES = json.loads(" + JSON.writeValueAsString(PACKAGES_TEXT)
                 + ")\nDEPENDENCY_OPERATIONS_ROOT = " + JSON.writeValueAsString(operationsRoot(layout)) + "\n"
-                + resource("dependency-lifecycle.py") + "\n" + resource("agent-toolchain-dependencies.py"));
+                + scope + lifecycle + "\n" + transaction);
         } catch (IOException failure) {
             throw new IllegalStateException("Dependency source cannot be rendered", failure);
         }
+    }
+
+    private static String replaceRequired(String source, String original, String replacement) {
+        int offset = source.indexOf(original);
+        if (offset < 0 || source.indexOf(original, offset + original.length()) >= 0)
+            throw new IllegalStateException("Scoped dependency worker source anchor changed");
+        return source.substring(0, offset) + replacement + source.substring(offset + original.length());
     }
 
     public static String operationsRoot(DeploymentRemoteLayout layout) {
@@ -68,7 +119,11 @@ public final class DeploymentToolchainDependencies {
     }
 
     public static String workerDigest(DeploymentRemoteLayout layout) {
-        return sha256(workerSource(layout).getBytes(StandardCharsets.UTF_8));
+        return workerDigest(layout, PROFILE);
+    }
+
+    public static String workerDigest(DeploymentRemoteLayout layout, String profile) {
+        return sha256(workerSource(layout, profile).getBytes(StandardCharsets.UTF_8));
     }
 
     public static String unit(String operation) {
@@ -76,7 +131,7 @@ public final class DeploymentToolchainDependencies {
     }
 
     public static List<String> frame(String profile, String operation, long seconds, ServerId server, String task) {
-        if (!PROFILES.contains(profile) || seconds < 45 || seconds > 7200
+        if ((!isScopedNativeAptProfile(profile) && !PROFILES.contains(profile)) || seconds < 45 || seconds > 7200
             || !server.id().matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
             || !UUID.fromString(task).toString().equals(task))
             throw new IllegalArgumentException("Original dependency budget/server/task required");
@@ -113,6 +168,15 @@ public final class DeploymentToolchainDependencies {
     }
 
     public static List<String> packages(String manager, String profile) {
+        if (isScopedNativeAptProfile(profile)) {
+            if (!"APT".equals(manager))
+                throw new IllegalArgumentException("Scoped native prerequisites require APT");
+            int mask = Integer.parseInt(profile.substring(NATIVE_APT_PREFIX.length()));
+            var result = new ArrayList<String>();
+            for (int index = 0; index < NATIVE_APT_ROOTS.size(); index++)
+                if ((mask & (1 << index)) != 0) result.add(NATIVE_APT_ROOTS.get(index));
+            return List.copyOf(result);
+        }
         JsonNode names = PACKAGES.path(manager).path(profile);
         if (!names.isArray())
             throw new IllegalArgumentException("Unsupported dependency manager or ecosystem");
@@ -168,6 +232,10 @@ public final class DeploymentToolchainDependencies {
                             throw new IllegalStateException("Invalid dependency package name");
                 }
             }
+            var nativeApt = new ArrayList<String>();
+            result.path("APT").path(PROFILE).forEach(name -> nativeApt.add(name.textValue()));
+            if (!nativeApt.equals(NATIVE_APT_ROOTS))
+                throw new IllegalStateException("Unexpected native APT prerequisite order");
             return result;
         } catch (IOException failure) {
             throw new IllegalStateException("Dependency manifest unreadable", failure);
@@ -185,14 +253,15 @@ public final class DeploymentToolchainDependencies {
     }
 
     public static Set<ActionTarget> dependencyTargets(ServerId server, String profile) {
+        boolean scoped = isScopedNativeAptProfile(profile);
         Set<ActionTarget> targets = new LinkedHashSet<>();
-        for (String manager : List.of("APT", "DNF")) {
+        for (String manager : (scoped ? List.of("APT") : List.of("APT", "DNF"))) {
             targets.add(target(server, "system-package-index", manager + ":configured-authenticated-sources"));
             targets.add(target(server, "system-package-transaction", manager + ":authenticated-dependency-closure:" + profile));
             for (String name : DeploymentToolchainDependencies.packages(manager, profile))
                 targets.add(target(server, "system-package", name));
         }
-        targets.add(target(server, "system-repository", "DNF:centos:crb:transaction-only"));
+        if (!scoped) targets.add(target(server, "system-repository", "DNF:centos:crb:transaction-only"));
         return Set.copyOf(targets);
     }
 
@@ -232,7 +301,8 @@ public final class DeploymentToolchainDependencies {
                 || !operation.equals(root.path("operation").asText()) || !ecosystem.equals(root.path("ecosystem").asText()))
                 return false;
             String manager = root.path("manager").asText();
-            if (!List.of("APT", "DNF").contains(manager) || !root.path("packages").isObject())
+            if (!(isScopedNativeAptProfile(ecosystem) ? "APT".equals(manager) : List.of("APT", "DNF").contains(manager))
+                || !root.path("packages").isObject())
                 return false;
             var actual = new java.util.HashSet<String>();
             var fields = root.path("packages").fields();
@@ -256,7 +326,7 @@ public final class DeploymentToolchainDependencies {
                 || !life.path("server").isTextual() || !life.path("task").isTextual()
                 || !unit(operation).equals(life.path("unit").asText()) || !life.path("invocationId").asText().matches("[a-f0-9]{32}")
                 || life.path("invocationId").asText().equals("0".repeat(32))
-                || !workerDigest(layout).equals(life.path("workerSourceSha256").asText())
+                || !workerDigest(layout, ecosystem).equals(life.path("workerSourceSha256").asText())
                 || !integer(life, "totalSeconds", seconds) || !life.path("runtimeSeconds").isIntegralNumber()
                 || !life.path("runtimeSeconds").canConvertToLong() || life.path("runtimeSeconds").longValue() < 1
                 || life.path("runtimeSeconds").longValue() > seconds - 30 || !integer(life, "stopSeconds", 5)
@@ -369,7 +439,11 @@ public final class DeploymentToolchainDependencies {
         }
     }
     public static List<Map<String, Object>> dependencySourceLocations(String body, String pointer) {
-        return sourceLocations(body, DEPENDENCY_LOCATIONS, pointer);
+        if (!body.contains("\ndef dependency_native_apt_scope("))
+            return sourceLocations(body, DEPENDENCY_LOCATIONS, pointer);
+        var locations = new ArrayList<>(DEPENDENCY_LOCATIONS);
+        locations.add("dependency_native_apt_scope");
+        return sourceLocations(body, locations, pointer);
     }
 
     public static Map<String, Object> inspect(gold.debug.windowstolinux.appapi.task.action.ActionIntent intent,
@@ -402,8 +476,8 @@ public final class DeploymentToolchainDependencies {
             throw new IllegalArgumentException("One original server required");
         var server = new ServerId(servers.get(0).textValue());
         String revision = text(current, "businessRevision"), body = text(current, "completeExecutableInput");
-        if (!revision.matches("[0-9a-f]{64}") || !text(current, "inputKind").equals("EXECUTABLE_SCRIPT")
-            || !body.equals(dependencies(layout))) throw new IllegalArgumentException("Complete bundled dependency source required");
+        if (!revision.matches("[0-9a-f]{64}") || !text(current, "inputKind").equals("EXECUTABLE_SCRIPT"))
+            throw new IllegalArgumentException("Complete bundled dependency source required");
         String exact = text(current, "exactAction");
         var match = ACTION.matcher(exact);
         if (!match.matches()) throw new IllegalArgumentException("Dependency exact action incomplete");
@@ -412,9 +486,14 @@ public final class DeploymentToolchainDependencies {
         if (timeout.getNano() != 0 || timeout.getSeconds() < 45 || timeout.getSeconds() > 7200 || outputLimit != 65536)
             throw new IllegalArgumentException("Dependency bounds changed");
         var arguments = arguments(match.group(5));
-        if (arguments.size() != 5 || common && !arguments.getFirst().equals(PROFILE))
+        if (arguments.size() != 5)
             throw new IllegalArgumentException("Dependency profile/frame changed");
         String profile = arguments.getFirst(), identity = identity(arguments.get(1));
+        boolean scoped = isScopedNativeAptProfile(profile);
+        if (common ? !(profile.equals(PROFILE) || scoped) : !PROFILES.contains(profile))
+            throw new IllegalArgumentException("Dependency profile/frame changed");
+        if (!body.equals(dependencies(layout, profile)))
+            throw new IllegalArgumentException("Complete bundled dependency source required");
         if (!arguments.equals(frame(profile, identity, timeout.getSeconds(), server, arguments.get(4))))
             throw new IllegalArgumentException("Dependency budget/server/task frame changed");
         var targets = dependencyTargets(server, profile, identity, layout);
@@ -440,7 +519,7 @@ public final class DeploymentToolchainDependencies {
             facts.put("serviceLifecycle", Map.of("unit", unit(identity), "manifest", operationsRoot(layout) + "/" + identity + "/manifest.json",
                 "totalSeconds", timeout.getSeconds(), "maximumRuntimeSeconds", timeout.getSeconds() - 30,
                 "stopSeconds", 5, "observationAndStartupReserveSeconds", 25,
-                "workerSourceSha256", workerDigest(layout),
+                "workerSourceSha256", workerDigest(layout, profile),
                 "exitType", "cgroup", "receiptFormatVersion", 2,
                 "termination", "Type=exec/ExitType=cgroup root-owned transient service; independent RuntimeMaxSec, KillMode=control-group and SendSIGKILL. Worker requires READY, bound core cgroup2 events FD and ACK before package actions. Completion requires loaded normal-exit identity, fresh pread0 of the same held core FD (populated0 or distinct retirement proof), exact stop and actual launcher wait0. Missing path/EOF/other errno or unconfirmed cancellation/disconnect remains UNKNOWN; no global apt/dpkg kill or replay."));
             facts.put("server", server.id());
@@ -451,13 +530,16 @@ public final class DeploymentToolchainDependencies {
             facts.put("utf8Bytes", bytes.length);
             facts.put("lineCount", Math.toIntExact(body.lines().count()));
             facts.put("locations", dependencySourceLocations(body, "/completeExecutableInput"));
-                facts.put("nativeTransaction", Map.of(
+            Map<String, List<String>> requested = scoped ? Map.of("APT", packages("APT", profile))
+                : Map.of("APT", packages("APT", profile), "DNF", packages("DNF", profile));
+            facts.put("nativeTransaction", Map.of(
                     "evidenceKind", "CURRENT_SOURCE_AND_DECLARED_SCOPE_ONLY",
-                    "requestedPackages", Map.of("APT", DeploymentToolchainDependencies.packages("APT", profile),
-                        "DNF", DeploymentToolchainDependencies.packages("DNF", profile)),
+                    "requestedPackages", requested,
                     "transactionTargets", targets.stream().filter(target -> target.kind().equals("system-package-transaction"))
                         .map(ActionTarget::id).sorted().toList(),
-                    "effects", "Root package maintenance includes resolver-selected transitive dependencies, installation, upgrade, configuration, distribution maintainer scripts, triggers and registered OS hooks. Requested names are not the entire transaction.",
+                    "effects", scoped
+                        ? "This Ubuntu/Debian APT transaction passes only the listed root package names, with --no-remove and --no-install-recommends. APT may still select and upgrade installed transitive packages, including toolchain packages, and run distribution maintainer scripts, triggers and registered OS hooks as root. The root list is not the resolved closure."
+                        : "Root package maintenance includes resolver-selected transitive dependencies, installation, upgrade, configuration, distribution maintainer scripts, triggers and registered OS hooks. Requested names are not the entire transaction.",
                     "osBaseline", "Existing OS interpreter and protected package database are bootstrap trust assumptions. Source-level tool/configuration guards are evaluated during execution; this request supplies no fixed OS binary SHA or observed download authentication result.",
                     "meaning", "Navigation and declared scope only. Inspect the current source and enforced authentication independently; these facts grant no permission and establish no execution result."));
             facts.put("bundledSourceSha256", digest);

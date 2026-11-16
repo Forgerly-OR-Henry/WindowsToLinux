@@ -40,6 +40,8 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.capability.De
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.support.runtime.DeploymentRuntimeCapabilityMatcher;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies;
 
 /** Freezes one original assisted task and its language-call budget without replacing platform authority. / 冻结一项原辅助任务及语言调用预算，不替换平台权限。 */
 public final class DeploymentAssistedScope implements ModContext, gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence {
@@ -305,8 +307,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             throw new IllegalArgumentException("Host prerequisite observation differs from reviewed plan");
         validateWorkflow(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(
             workflow, supplied, request.server()));
-        var result = gold.debug.windowstolinux.mod.deployment.service.deploy.support.runtime.DeploymentRuntimeCapabilityMatcher
-            .evaluate(host, request.facts(), request.runtime(), tools);
+        var result = DeploymentRuntimeCapabilityMatcher.evaluate(host, request.facts(), request.runtime(), tools);
         hostPrerequisites.remove(request.facts().applicationId());
         if (!result.missingHostPrerequisite()
             || gold.debug.windowstolinux.mod.deployment.service.deploy.support.DeploymentHostMatcher.evaluatePlatform(host).support()
@@ -315,7 +316,12 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         var observation = new LinkedHashMap<String, Object>(association);
         observation.put("reviewedPlanSha256", expected);
         observation.put("requiredCapability", result.detail().orElseThrow());
-        observation.put("nativeBuildPrerequisitesMissing", gold.debug.windowstolinux.mod.deployment.service.deploy.support.runtime.DeploymentRuntimeCapabilityMatcher.nativeBuildPrerequisitesMissing(host, request.facts(), request.runtime()));
+        var missingNativeTools = DeploymentRuntimeCapabilityMatcher.missingNativeBuildTools(host, request.facts(), request.runtime());
+        observation.put("nativeBuildPrerequisitesMissing", !missingNativeTools.isEmpty());
+        observation.put("missingNativeBuildTools", missingNativeTools.stream().map(Enum::name).sorted().toList());
+        if (!missingNativeTools.isEmpty())
+            observation.put("nativeBuildProfile", "apt".equals(host.packageManager())
+                ? DeploymentToolchainDependencies.nativeAptProfile(missingNativeTools) : DeploymentToolchainDependencies.PROFILE);
         observation.put("observedAt", java.time.Instant.now().toString());
         observation.put("distro", host.distro().name());
         observation.put("version", host.version());
@@ -680,7 +686,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 Verify the absence of package changes against the complete current evidence. A probe result grants no write authority.
                 """;
         if (Set.of("deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1",
-            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION).contains(operation))
+            DeploymentToolchainDependencies.OPERATION).contains(operation))
             instructions = toolchainReviewInstructions(instructions, operation);
         if (operation.equals("deployment.toolchain.prepare.v1"))
             instructions += "\n" + DeploymentAssistedPreparationReview.instructions(intent, request,
@@ -698,10 +704,28 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 java.util.Arrays.fill(input, (byte) 0);
             }
         }
-        if (intent.semantics().filter(value -> value.operation().equals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION)).isPresent())
-            instructions += "\n" + gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources.text(
-                DeploymentAssistedApproval.class, "native-dependencies-review.md");
+        if (DeploymentToolchainDependencies.OPERATION.equals(operation)) {
+            var prerequisites = (Map<?, ?>) facts.get("currentNativeBuildPrerequisites");
+            var transaction = (Map<?, ?>) prerequisites.get("fixedTransaction");
+            String profile = (String) transaction.get("profile");
+            instructions += "\n" + (DeploymentToolchainDependencies.isScopedNativeAptProfile(profile)
+                ? scopedAptReviewInstructions()
+                : gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources.text(
+                    DeploymentAssistedApproval.class, "native-dependencies-review.md"));
+        }
         return instructions;
+    }
+
+    private static String scopedAptReviewInstructions() {
+        return """
+            Compare the observed missing native tools with the exact fixed APT profile, literal command and package targets.
+            Follow the protected Ubuntu/Debian admission, authenticated sources, index and frozen archive handling from the
+            actual worker and mirror code. The declared root packages are only the observed gaps. Review resolver-selected
+            dependencies and potential upgrades, distribution maintainer scripts, triggers and validated OS hooks under
+            the authenticated transaction target. Read any missing reached source and deny insufficient evidence or unsafe effects.
+            A fresh exact host grant must follow the independent verdict. The completion receipt and a new full host probe
+            must confirm the reviewed prerequisites before the candidate proceeds.
+            """;
     }
 
     private static String toolchainReviewInstructions(String instructions, String operation) {
@@ -778,7 +802,9 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied);
         if (!r.layout().digest().equals(layout.digest()))
             throw new IllegalArgumentException("Native plan layout differs from original task");
-        var binding = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.inspect(intent, request, layout);
+        var binding = DeploymentToolchainDependencies.inspect(intent, request, layout);
+        if (!binding.get("profile").equals(observation.get("nativeBuildProfile")))
+            throw new IllegalArgumentException("Native package request differs from the observed missing tools");
         return Map.of("currentToolchainPlan", planned.evidence(), "observedGap", observation, "fixedTransaction", binding);
     }
 

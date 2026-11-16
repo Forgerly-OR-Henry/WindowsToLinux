@@ -1,6 +1,8 @@
 package gold.debug.windowstolinux.mod.deployment.service.deploy.support.runtime;
 
+import java.util.EnumSet;
 import java.util.Objects;
+import java.util.Set;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentEcosystemToolType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts;
@@ -9,6 +11,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.project.Deplo
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentProjectToolchainRequirements;
 
 /**
@@ -108,19 +111,28 @@ public final class DeploymentRuntimeCapabilityMatcher {
     /** Typed native gap shared by preparation and its current independent review. */
     public static boolean nativeBuildPrerequisitesMissing(DeploymentLinuxCapabilityFacts capabilities,
             DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime) {
-        if (!(runtime instanceof DeploymentRuntimeDefinition.CmakeService) && runtime.workload().companions().isEmpty()) return false;
-        if (!companionBuildTools(capabilities)) return true;
-        for (var need : DeploymentProjectToolchainRequirements.from(facts, runtime)) {
-            if (need.ecosystem() == gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType.C
-                && !hasTool(capabilities, DeploymentEcosystemToolType.C_COMPILER)) return true;
-            if (need.ecosystem() == gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType.CPP
-                && !hasTool(capabilities, DeploymentEcosystemToolType.CPP_COMPILER)) return true;
-        }
-        return runtime instanceof DeploymentRuntimeDefinition.CmakeService
-            && (facts.languageFacts().sourceLanguages().contains(SourceLanguageType.C)
-                && !hasTool(capabilities, DeploymentEcosystemToolType.C_COMPILER)
-                || facts.languageFacts().sourceLanguages().contains(SourceLanguageType.CPP)
-                && !hasTool(capabilities, DeploymentEcosystemToolType.CPP_COMPILER));
+        return !missingNativeBuildTools(capabilities, facts, runtime).isEmpty();
+    }
+
+    /** Tools the reviewed native build requires and the current probe does not satisfy. */
+    public static Set<DeploymentEcosystemToolType> missingNativeBuildTools(DeploymentLinuxCapabilityFacts capabilities,
+            DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime) {
+        boolean cmakeService = runtime instanceof DeploymentRuntimeDefinition.CmakeService;
+        if (!cmakeService && runtime.workload().companions().isEmpty()) return Set.of();
+        var missing = EnumSet.noneOf(DeploymentEcosystemToolType.class);
+        if (!cmakeAvailable(capabilities)) missing.add(DeploymentEcosystemToolType.CMAKE);
+        if (!hasTool(capabilities, DeploymentEcosystemToolType.NINJA)) missing.add(DeploymentEcosystemToolType.NINJA);
+        var requirements = DeploymentProjectToolchainRequirements.from(facts, runtime);
+        var languages = facts.languageFacts().sourceLanguages();
+        if ((cmakeService && languages.contains(SourceLanguageType.C)
+                || requirements.stream().anyMatch(need -> need.ecosystem() == DeploymentToolchainType.C))
+            && !hasTool(capabilities, DeploymentEcosystemToolType.C_COMPILER))
+            missing.add(DeploymentEcosystemToolType.C_COMPILER);
+        if ((cmakeService && languages.contains(SourceLanguageType.CPP)
+                || requirements.stream().anyMatch(need -> need.ecosystem() == DeploymentToolchainType.CPP))
+            && !hasTool(capabilities, DeploymentEcosystemToolType.CPP_COMPILER))
+            missing.add(DeploymentEcosystemToolType.CPP_COMPILER);
+        return Set.copyOf(missing);
     }
 
     /**
@@ -131,9 +143,12 @@ public final class DeploymentRuntimeCapabilityMatcher {
      * @return true when companion build tools predicate against the supplied evidence, false otherwise / 根据所提供证据检查配套单元构建工具集合条件时为 true，否则为 false
      */
     private static boolean companionBuildTools(DeploymentLinuxCapabilityFacts capabilities) {
+        return cmakeAvailable(capabilities) && hasTool(capabilities, DeploymentEcosystemToolType.NINJA);
+    }
+
+    private static boolean cmakeAvailable(DeploymentLinuxCapabilityFacts capabilities) {
         return anyVersion(capabilities, DeploymentEcosystemToolType.CMAKE,
-            version -> version[0] > 3 || version[0] == 3 && version[1] >= 25)
-            && hasTool(capabilities, DeploymentEcosystemToolType.NINJA);
+            version -> version[0] > 3 || version[0] == 3 && version[1] >= 25);
     }
 
     /**

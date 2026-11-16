@@ -14,7 +14,7 @@ public final class DependencyReceiptFixture {
         var ownership = new TreeMap<String, Object>();
         ownership.put("formatVersion", 2);ownership.put("operation", operation);ownership.put("profile", profile);
         ownership.put("unit", DeploymentToolchainDependencies.unit(operation));ownership.put("invocationId", "b".repeat(32));
-        ownership.put("workerSourceSha256", DeploymentToolchainDependencies.workerDigest(layout));
+        ownership.put("workerSourceSha256", DeploymentToolchainDependencies.workerDigest(layout, profile));
         ownership.put("description", "WTL_DEPENDENCY_2:" + operation + ":" + ownership.get("workerSourceSha256"));
         ownership.put("server", server.id());ownership.put("task", task);ownership.put("exitType", "cgroup");
         ownership.put("totalSeconds", seconds);ownership.put("runtimeSeconds", seconds - 30);

@@ -327,7 +327,7 @@ public final class DeploymentCommandSourceEvidence {
             projectDependency(current, projected, manifest, messages, snapshot, exact, script, request, sourceBodies, apt);
             if (apt) {
                 projectAptDependency(projected, manifest, messages, snapshot, sourceBodies, initialRanges, requiredRanges,
-                    mirror.orElseThrow().policy());
+                    mirror.orElseThrow().policy(), scopedNativeAptDependency(current));
                 for (String pointer : List.of(DEPENDENCY_RUNTIME, DEPENDENCY_SYSTEM_SHELL)) {
                     if (requiredRanges.containsKey(pointer)) initialSourceRanges.put(pointer, requiredRanges.get(pointer));
                 }
@@ -1217,23 +1217,28 @@ public final class DeploymentCommandSourceEvidence {
     }
 
     private static boolean aptDependency(JsonNode current) {
+        if (scopedNativeAptDependency(current)) return true;
         var observation = current.at("/currentCommandEvidence/currentNativeBuildPrerequisites/observedGap");
-        return "NATIVE_BUILD".equals(current.at("/toolchainDependencies/profile").asText())
+        return DeploymentToolchainDependencies.PROFILE.equals(current.at("/toolchainDependencies/profile").asText())
             && observation.path("nativeBuildPrerequisitesMissing").asBoolean()
             && "apt".equals(observation.path("packageManager").asText());
+    }
+
+    private static boolean scopedNativeAptDependency(JsonNode current) {
+        return DeploymentToolchainDependencies.isScopedNativeAptProfile(current.at("/toolchainDependencies/profile").asText());
     }
 
     private static void projectAptDependency(ObjectNode projected, ObjectNode manifest, List<AiMessage> messages,
                                               String snapshot, Map<String, String> sources,
                                               Map<String, NavigableMap<Integer, Integer>> initialRanges,
                                               Map<String, NavigableMap<Integer, Integer>> requiredRanges,
-                                              String policy) throws IOException {
+                                              String policy, boolean aptOnly) throws IOException {
         var publicPolicy = JSON.valueToTree(DeploymentMirrorTasks.reviewMaterial(policy)).path("frozenPolicy");
         var points = (ObjectNode) publicPolicy.path("points");
         var names = new ArrayList<String>();
         points.fieldNames().forEachRemaining(names::add);
         for (String name : names) {
-            if (!name.startsWith("APT_") && !name.startsWith("DNF_")) points.remove(name);
+            if (!name.startsWith("APT_") && (aptOnly || !name.startsWith("DNF_"))) points.remove(name);
         }
         projected.set("dependencyPublicPolicy", publicPolicy);
         boolean credentials = names.stream().filter(name -> name.startsWith("APT_"))

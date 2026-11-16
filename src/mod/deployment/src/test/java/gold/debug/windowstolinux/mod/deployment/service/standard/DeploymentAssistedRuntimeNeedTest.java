@@ -19,6 +19,7 @@ import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuth
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.file.*;
 import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies;
 import gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.plan.ReviewedPlanIdentity;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.*;
@@ -264,7 +265,7 @@ class DeploymentAssistedRuntimeNeedTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"NATIVE_VALID", "NATIVE_DENY", "NATIVE_APPROVE", "NATIVE_SOURCE", "NATIVE_ARCHIVE", "NATIVE_LAYOUT", "NATIVE_PLAN", "NATIVE_TASK", "NATIVE_NO_GAP", "NATIVE_CLEARED", "NATIVE_NO_PLAN"})
+    @ValueSource(strings = {"NATIVE_VALID", "NATIVE_DENY", "NATIVE_APPROVE", "NATIVE_SOURCE", "NATIVE_ARCHIVE", "NATIVE_LAYOUT", "NATIVE_PLAN", "NATIVE_TASK", "NATIVE_NO_GAP", "NATIVE_CLEARED", "NATIVE_NO_PLAN", "NATIVE_WIDER_PROFILE", "NATIVE_OTHER_SCOPE"})
     void nativeDependenciesRequireTheCurrentTypedPlanAndGap(String mutation) throws Exception {
         runtimeNeed(mutation);
     }
@@ -356,18 +357,26 @@ class DeploymentAssistedRuntimeNeedTest {
                     if (mutation.equals("NATIVE_NO_PLAN")) { var field = DeploymentAssistedScope.class.getDeclaredField("toolchainPlan"); field.setAccessible(true); field.set(scope, null); }
                     var actualLayout = mutation.equals("NATIVE_LAYOUT") ? new DeploymentRemoteLayout(new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(
                         "/srv/other/helper", "/srv/other/apps", "/srv/other/state", "/srv/other/config", "/srv/other/data")) : layout;
-                    String program = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencies(actualLayout);
+                    String profile = switch (mutation) {
+                        case "NATIVE_WIDER_PROFILE" -> "NATIVE_BUILD";
+                        case "NATIVE_OTHER_SCOPE" -> "NATIVE_BUILD_APT_4";
+                        default -> "NATIVE_BUILD_APT_3";
+                    };
+                    String program = DeploymentToolchainDependencies.dependencies(actualLayout, profile);
                     try (var command = new gold.debug.windowstolinux.appapi.linux.command.CommandRequest(
-                        gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.command(List.of("NATIVE_BUILD", "a".repeat(32), "60", server.id(), fixture.task.id().toString())),
+                        DeploymentToolchainDependencies.command(List.of(profile, "a".repeat(32), "60", server.id(), fixture.task.id().toString())),
                         program.getBytes(java.nio.charset.StandardCharsets.UTF_8), java.time.Duration.ofSeconds(60), 65536)) {
                         var intent = RemoteActions.command(server, mutation.equals("NATIVE_PLAN") ? "d".repeat(64) : identity, command).withSemantics(new ActionSemantics(
-                            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION,
-                            gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(server, "NATIVE_BUILD", "a".repeat(32), actualLayout)));
+                            DeploymentToolchainDependencies.OPERATION,
+                            DeploymentToolchainDependencies.dependencyTargets(server, profile, "a".repeat(32), actualLayout)));
                         exactNativeIntent.set(intent); exactNativeRequest.set(command);
                         var supplied = mutation.equals("NATIVE_TASK") ? new NativeAiFixture().task : fixture.task;
                         if (Set.of("NATIVE_VALID", "NATIVE_DENY", "NATIVE_APPROVE").contains(mutation) || mutation.startsWith("NATIVE_POST_")) {
                             var facts = new ObjectMapper().valueToTree(scope.facts(intent, command, supplied));
                             assertTrue(facts.at("/currentNativeBuildPrerequisites/observedGap/nativeBuildPrerequisitesMissing").asBoolean());
+                            assertEquals(List.of("CMAKE", "NINJA"), new ObjectMapper().convertValue(
+                                facts.at("/currentNativeBuildPrerequisites/observedGap/missingNativeBuildTools"), List.class));
+                            assertEquals(profile, facts.at("/currentNativeBuildPrerequisites/fixedTransaction/profile").asText());
                             assertTrue(scope.reviewInstructions(intent, command, supplied).contains("maintainer scripts"));
                             if (mutation.equals("NATIVE_APPROVE") || mutation.startsWith("NATIVE_POST_")) {
                                 fixture.nativeReply(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("approve-native", "submit_result",
@@ -504,6 +513,8 @@ class DeploymentAssistedRuntimeNeedTest {
         var values = new HashMap<String, String>(Map.of("DISTRO_ID", "ubuntu", "VERSION", "24.04", "ARCH", "x86_64",
             "PACKAGE_MANAGER", "apt", "PACKAGE_ARCH", "amd64", "SYSTEMD", "1", "CPU_LEVEL", "x86-64-v1",
             "PYTHON3", "1", "PYTHON_VERSIONS", "3.12"));
+        values.put("TOOL_C_COMPILER", "13.3.0");
+        values.put("TOOL_CPP_COMPILER", "13.3.0");
         if (ready) {
             values.put("TOOL_CMAKE", "3.28.3");
             values.put("TOOL_NINJA", "1.11.1");

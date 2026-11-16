@@ -17,6 +17,8 @@ import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHe
 import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentCandidateChannel;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentHostCapabilityStatus;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.support.runtime.DeploymentRuntimeCapabilityMatcher;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.DeploymentStandardPlanner;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.support.DeploymentHostMatcher;
@@ -258,22 +260,24 @@ public final class DeploymentStandardCandidateRunner {
         if (preparedFacts.outcome() != TaskResult.SUCCEEDED) return withoutPreparedValue(preparedFacts);
         var host = preparedFacts.value().orElseThrow();
         preparationObserver.hostObserved(selection.rendered.reviewedPlanSha256(), host, selection.tools, task);
-        var runtime = gold.debug.windowstolinux.mod.deployment.service.deploy.support.runtime.DeploymentRuntimeCapabilityMatcher.evaluate(host, request.facts(), request.runtime(), selection.tools);
+        var runtime = DeploymentRuntimeCapabilityMatcher.evaluate(host, request.facts(), request.runtime(), selection.tools);
         boolean platformReady = DeploymentHostMatcher.evaluatePlatform(host).support() == DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION;
         boolean nativeAttempted = false;
-        if (platformReady && runtime.missingHostPrerequisite()
-            && gold.debug.windowstolinux.mod.deployment.service.deploy.support.runtime.DeploymentRuntimeCapabilityMatcher.nativeBuildPrerequisitesMissing(host, request.facts(), request.runtime())) {
+        var missingNativeTools = DeploymentRuntimeCapabilityMatcher.missingNativeBuildTools(host, request.facts(), request.runtime());
+        if (platformReady && runtime.missingHostPrerequisite() && !missingNativeTools.isEmpty()) {
             if (cancelled(task)) return cancelledPreparation();
             long seconds = Math.min(7200, selection.commands.remainingSeconds());
             if (seconds < 45) return failedPreparation(ProblemCode.TIMEOUT, "DEPLOYMENT_BUILD_BUDGET_EXHAUSTED");
             String operation = java.util.UUID.randomUUID().toString().replace("-", "");
-            byte[] input = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencies(request.layout()).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            String profile = "apt".equals(host.packageManager()) ? DeploymentToolchainDependencies.nativeAptProfile(missingNativeTools)
+                : DeploymentToolchainDependencies.PROFILE;
+            byte[] input = DeploymentToolchainDependencies.dependencies(request.layout(), profile).getBytes(java.nio.charset.StandardCharsets.UTF_8);
             gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.linux.command.CommandResult> installed;
             try {
-                installed = selection.commands.send(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION,
-                    gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyTargets(request.server(), "NATIVE_BUILD", operation, request.layout()),
-                    gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.command(
-                        gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.frame("NATIVE_BUILD", operation, seconds, request.server(), task.id().toString())), input,
+                installed = selection.commands.send(DeploymentToolchainDependencies.OPERATION,
+                    DeploymentToolchainDependencies.dependencyTargets(request.server(), profile, operation, request.layout()),
+                    DeploymentToolchainDependencies.command(
+                        DeploymentToolchainDependencies.frame(profile, operation, seconds, request.server(), task.id().toString())), input,
                     java.time.Duration.ofSeconds(seconds), 65536);
             } finally { java.util.Arrays.fill(input, (byte) 0); }
             if (installed.outcome() != TaskResult.SUCCEEDED) return withoutPreparedValue(installed);
@@ -283,7 +287,7 @@ public final class DeploymentStandardCandidateRunner {
             var result = installed.value().orElseThrow();
             if (result.exitCode().orElseThrow() != 0)
                 return failedPreparation(ProblemCode.IO_FAILURE, "DEPLOYMENT_NATIVE_BUILD_PREREQUISITES_FAILED");
-            if (!gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.dependencyReceipt(result.stdout(), "NATIVE_BUILD", operation,
+            if (!DeploymentToolchainDependencies.dependencyReceipt(result.stdout(), profile, operation,
                     seconds, request.server(), task.id().toString(), request.layout()))
                 return unknownPreparation("DEPLOYMENT_NATIVE_BUILD_PREREQUISITES_UNCONFIRMED");
             if (cancelled(task)) return cancelledPreparation();
@@ -292,7 +296,7 @@ public final class DeploymentStandardCandidateRunner {
             if (preparedFacts.outcome() != TaskResult.SUCCEEDED) return withoutPreparedValue(preparedFacts);
             host = preparedFacts.value().orElseThrow();
             preparationObserver.hostObserved(selection.rendered.reviewedPlanSha256(), host, selection.tools, task);
-            runtime = gold.debug.windowstolinux.mod.deployment.service.deploy.support.runtime.DeploymentRuntimeCapabilityMatcher.evaluate(host, request.facts(), request.runtime(), selection.tools);
+            runtime = DeploymentRuntimeCapabilityMatcher.evaluate(host, request.facts(), request.runtime(), selection.tools);
         }
         if (DeploymentHostMatcher.evaluate(host, request.facts(), request.runtime(), selection.tools)
             .support() != DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION) {

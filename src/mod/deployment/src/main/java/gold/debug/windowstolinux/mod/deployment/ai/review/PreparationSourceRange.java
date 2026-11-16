@@ -421,6 +421,11 @@ record PreparationSourceRange(String section, int offset, int next) {
         ranges.add(between(worker, "dependencyAptSourceIdentity", "def dependency_url(", "def dependency_apt_hook_owners("));
         ranges.add(between(worker, "dependencyAptAuthentication", "def dependency_apt_hook_owners(",
             "\ndef dependency_validate_apt("));
+        if (worker.contains("\nDEPENDENCY_SCOPED_PROFILE = ")) {
+            ranges.add(between(worker, "scopedNativeAptPackagePolicy", "\nDEPENDENCY_PACKAGES = ",
+                "\n\"\"\"Operation-owned dependency service"));
+            ranges.add(python(worker, "def dependency_frame("));
+        }
         return ranges;
     }
 
@@ -449,7 +454,8 @@ record PreparationSourceRange(String section, int offset, int next) {
 
     static boolean aptDependencyInitial(PreparationSourceRange range) {
         return APT_DEPENDENCY_WORKER_INITIAL.contains(range.section())
-            || APT_DEPENDENCY_SHELL_INITIAL.contains(range.section());
+            || APT_DEPENDENCY_SHELL_INITIAL.contains(range.section())
+            || range.section().equals("scopedNativeAptPackagePolicy");
     }
 
     static List<PreparationSourceRange> sourceBuildPreparationShell(String shell, boolean credentials) throws IOException {

@@ -2138,12 +2138,15 @@ class DeploymentToolchainReviewEvidenceTest {
         assertR24Coverage(requested, visible);
     }
 
-    @Test
-    void aptRequiredEvidenceMustReachTheIndependentReviewerBeforeApproval() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"NATIVE_BUILD", "NATIVE_BUILD_APT_3"})
+    void aptRequiredEvidenceMustReachTheIndependentReviewerBeforeApproval(String profile) throws Exception {
         try (var fixture = new MirroredInstallerTestFixture();
              var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
-             var command = request("dependencies", fixture)) {
-            var action = intent("dependencies", fixture, command);
+             var command = dependencyRequest(fixture, profile)) {
+            var action = RemoteActions.command(fixture.server, "a".repeat(64), command).withSemantics(new ActionSemantics(
+                DeploymentToolchainDependencies.OPERATION,
+                DeploymentToolchainDependencies.dependencyTargets(fixture.server, profile, "b".repeat(32), fixture.layout)));
             var facts = new LinkedHashMap<String, Object>(
                 new DeploymentFixedCommandProtocol(fixture.context).inspect(action, command, fixture.layout, fixture.task));
             var effects = new LinkedHashMap<String, Object>(assisted.scope.effectFacts(action, fixture.task));
@@ -2162,7 +2165,17 @@ class DeploymentToolchainReviewEvidenceTest {
             var initial = fixture.model.requests.getFirst();
             var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), action, command,
                 fixture.layout).orElseThrow();
-            var manifest = JSON.readTree(initial.messages().getLast().text()).path(PHASE);
+            var initialFacts = JSON.readTree(initial.messages().getLast().text());
+            var manifest = initialFacts.path(PHASE);
+            if (DeploymentToolchainDependencies.isScopedNativeAptProfile(profile)) {
+                assertEquals(JSON.valueToTree(List.of("cmake", "ninja-build")),
+                    initialFacts.at("/toolchainDependencies/nativeTransaction/requestedPackages/APT"));
+                assertTrue(initialFacts.at("/toolchainDependencies/nativeTransaction/requestedPackages/DNF").isMissingNode());
+                assertFalse(initialFacts.path("dependencyPublicPolicy").path("points").properties().stream()
+                    .anyMatch(entry -> entry.getKey().startsWith("DNF_")));
+                assertTrue(manifest.path("selectedAptRanges").findValuesAsText("section").contains("scopedNativeAptPackagePolicy"));
+                assertTrue(initial.messages().stream().anyMatch(message -> message.text().contains("def dependency_native_apt_scope(")));
+            }
             var sources = new LinkedHashMap<Integer, Map.Entry<String, String>>();
             for (String source : List.of("dependencyWorker", "dependencySystemShell", "mirrorRuntime")) {
                 var descriptor = manifest.path(source);
@@ -2231,7 +2244,8 @@ class DeploymentToolchainReviewEvidenceTest {
             for (var range : missing)
                 addR24Range(allRequired, range.path("pointer").asText(), range.path("offset").asInt(), range.path("next").asInt());
             assertR24Coverage(allRequired, finalVisible);
-            System.out.printf("R36_APT_REQUIRED_EVIDENCE fixed=%d largest=%d fixtureCap=%d pages=%d%n", fixed, largest, approvalFixtureCap, pages);
+            System.out.printf("NATIVE_APT_REQUIRED_EVIDENCE profile=%s fixed=%d largest=%d fixtureCap=%d pages=%d%n",
+                profile, fixed, largest, approvalFixtureCap, pages);
         }
     }
 
@@ -4182,21 +4196,21 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     private static CommandRequest request(String kind, MirroredInstallerTestFixture fixture) {
-        byte[] stdin = new byte[0];
-        String command;
-        long seconds;
-        if (kind.equals("dependencies")) {
-            seconds = 120;
-            command = DeploymentToolchainDependencies.command(DeploymentToolchainDependencies.frame("NATIVE_BUILD", "b".repeat(32),
-                seconds, fixture.server, fixture.task.id().toString()));
-            stdin = DeploymentToolchainDependencies.dependencies(fixture.layout).getBytes(StandardCharsets.UTF_8);
-        } else {
-            seconds = kind.equals("prepare") ? 135 : 180;
-            String arguments = kind.equals("prepare") ? "'prepare' 'NODE' '22' '-' '120' '-'" : "'bind' '" + binding(fixture) + "'";
-            command = DeploymentManagedHelperBundle.verifiedCommand("'" + fixture.layout.helperPath() + "' prepare-toolchains " + arguments, fixture.layout);
-        }
+        if (kind.equals("dependencies")) return dependencyRequest(fixture, DeploymentToolchainDependencies.PROFILE);
+        long seconds = kind.equals("prepare") ? 135 : 180;
+        String arguments = kind.equals("prepare") ? "'prepare' 'NODE' '22' '-' '120' '-'" : "'bind' '" + binding(fixture) + "'";
+        String command = DeploymentManagedHelperBundle.verifiedCommand("'" + fixture.layout.helperPath() + "' prepare-toolchains " + arguments, fixture.layout);
         String wrapped = DeploymentMirrorTasks.preparationCommand(command, fixture.task, seconds);
-        return new CommandRequest(wrapped, stdin, Duration.ofSeconds(seconds), 65536);
+        return new CommandRequest(wrapped, new byte[0], Duration.ofSeconds(seconds), 65536);
+    }
+
+    private static CommandRequest dependencyRequest(MirroredInstallerTestFixture fixture, String profile) {
+        long seconds = 120;
+        String command = DeploymentToolchainDependencies.command(DeploymentToolchainDependencies.frame(profile, "b".repeat(32),
+            seconds, fixture.server, fixture.task.id().toString()));
+        String wrapped = DeploymentMirrorTasks.preparationCommand(command, fixture.task, seconds);
+        byte[] input = DeploymentToolchainDependencies.dependencies(fixture.layout, profile).getBytes(StandardCharsets.UTF_8);
+        return new CommandRequest(wrapped, input, Duration.ofSeconds(seconds), 65536);
     }
 
     private static ActionIntent intent(String kind, MirroredInstallerTestFixture fixture, CommandRequest request) {
