@@ -253,9 +253,9 @@ public final class DeploymentCommandSourceEvidence {
         return messages;
     }
 
-    /** The Node binding reader already owns the current snapshot identity. */
+    /** A bound binding reader already owns the current snapshot identity. */
     public AiToolDefinition evidenceTool() {
-        return nodeBindingReview() ? BOUND_TOOL : TOOL;
+        return boundBindingEvidence() ? BOUND_TOOL : TOOL;
     }
 
     public static boolean supports(ActionIntent intent) {
@@ -784,6 +784,9 @@ public final class DeploymentCommandSourceEvidence {
         boolean packed = projectBuildArchive(projected, manifest, sources, requiredRanges);
         Optional<SourceSelectionView> selectionView = Optional.empty();
         if (packed) {
+            var transport = (ObjectNode) projected.path("mirrorTransport");
+            transport.set("runtimeSource", pagedSource(MIRROR_RUNTIME, runtime, buildRuntimeLocations(wrapper.original())));
+            projectBuildContext(projected, manifest);
             requiredRanges.putAll(selectedRanges);
             describeBuildBootstrapLiteral(manifest, runtime, shell, requiredRanges.get(MIRROR_RUNTIME));
             String view = selection.toString();
@@ -798,6 +801,33 @@ public final class DeploymentCommandSourceEvidence {
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
         return Optional.of(new DeploymentCommandSourceEvidence(current, original, snapshot, messages, sources,
             packed ? Map.of() : selectedRanges, requiredRanges, packed ? requiredRanges : Map.of(), Optional.empty(), selectionView));
+    }
+
+    private static List<String> buildRuntimeLocations(String body) {
+        if (body.lines().anyMatch(line -> line.strip().equals(
+            "wtl_dependency PYTHON_PACKAGE ./.venv/bin/python -m pip install --disable-pip-version-check --require-hashes -r ./requirements.lock")))
+            return List.of("class MirrorPolicy:", "class MirrorRedirect(", "def mirror_wrapper(",
+                "def mirror_dependency(", "def locked_dependency(", "class LockedRepositoryTransport:",
+                "class RepositoryGateway:", "def python_filename(", "elif point == 'PYTHON_PACKAGE':");
+        return List.of("class MirrorPolicy:", "class MirrorRedirect(", "def mirror_wrapper(",
+            "def mirror_dependency(", "def locked_dependency(", "class RepositoryGateway:");
+    }
+
+    /** Keep the exact selected archive inline and make the duplicate archive history available via the original snapshot. */
+    private static void projectBuildContext(ObjectNode projected, ObjectNode manifest) throws IOException {
+        if (!(projected.path("currentCommandEvidence") instanceof ObjectNode evidence)) return;
+        var history = evidence.path("sourceArchiveObservations");
+        var rows = history.path("archives");
+        var selected = evidence.at("/currentBuildArchive/archive");
+        if (!history.isObject() || !rows.isArray() || !selected.isObject()) return;
+        int matches = 0;
+        for (var row : rows) if (row.equals(selected)) matches++;
+        if (matches != 1) return;
+        String pointer = "/currentCommandEvidence/sourceArchiveObservations";
+        var description = pagedSource(pointer, JSON.writeValueAsString(history), List.of());
+        description.put("selectedArchivePointer", "/currentCommandEvidence/currentBuildArchive/archive");
+        manifest.set("sourceArchiveHistory", description);
+        evidence.remove("sourceArchiveObservations");
     }
 
     private static boolean projectBuildArchive(ObjectNode projected, ObjectNode manifest, Map<String, String> sources,
@@ -1417,7 +1447,7 @@ public final class DeploymentCommandSourceEvidence {
             JsonNode arguments;
             try {
                 arguments = DeploymentAiJson.arguments(call);
-                DeploymentToolSchemas.validate(nodeBindingReview() && !arguments.has("snapshotSha256") ? BOUND_SCHEMA : SCHEMA, arguments);
+                DeploymentToolSchemas.validate(boundBindingEvidence() && !arguments.has("snapshotSha256") ? BOUND_SCHEMA : SCHEMA, arguments);
             } catch (IllegalArgumentException invalid) {
                 return rejectRead(call, ReadRejection.ARGUMENTS_INVALID);
             }
@@ -1910,9 +1940,15 @@ public final class DeploymentCommandSourceEvidence {
         return BIND.equals(current.path("operation").asText());
     }
 
-    private boolean nodeBindingReview() {
-        return bindingReview() && current.at("/decodedToolchainBinding/toolchains").findValues("ecosystem").stream()
-            .anyMatch(value -> value.asText().equals("NODE"));
+    private boolean boundBindingEvidence() {
+        if (!bindingReview()) return false;
+        var decoded = current.path("decodedToolchainBinding");
+        if (!decoded.at("/literalValidation/canonicalTypedBinding").asBoolean(false)) return false;
+        for (var row : decoded.path("toolchains")) {
+            String ecosystem = row.path("ecosystem").asText();
+            if (ecosystem.equals("NODE") || ecosystem.equals("RUST")) return true;
+        }
+        return false;
     }
 
     private String reviewEcosystem() {
@@ -1933,7 +1969,7 @@ public final class DeploymentCommandSourceEvidence {
     }
 
     private String readCorrection() {
-        return nodeBindingReview()
+        return boundBindingEvidence()
             ? "Correct rejected evidence with pointer, offset and limit in this review's fixed snapshot."
             : "Correct rejected evidence using the current snapshotSha256, exact sourcePointer and a valid UTF-16 cursor.";
     }
@@ -1947,7 +1983,10 @@ public final class DeploymentCommandSourceEvidence {
     }
 
     public String instructions() {
-        if (buildReview()) return BUILD_INSTRUCTION + (packedBuildReview() ? BUILD_ARCHIVE_INSTRUCTION : "");
+        if (buildReview()) return BUILD_INSTRUCTION + (packedBuildReview() ? BUILD_ARCHIVE_INSTRUCTION + """
+            Runtime locations navigate the current build. All original ranges remain readable. Check the reached dependency path and request source still needed for the verdict.
+            If sourceArchiveHistory is present, the selected archive is already inline at selectedArchivePointer. The original history remains readable at sourcePointer.
+            """ : "");
         if (installerReview()) {
             if (completeInstallerReview() && !sourceBodies.containsKey(INSTALLER_RUNTIME))
                 return INSTALLER_INSTRUCTION.replace(", package transaction", "") + READY_INSTALLER_INSTRUCTION;
@@ -1961,7 +2000,7 @@ public final class DeploymentCommandSourceEvidence {
         }
         if (dependencyReview() && sourceBodies.containsKey(DEPENDENCY_APT_SELECTION)) return DEPENDENCY_APT_INSTRUCTION;
         if (dependencyReview()) return INSTRUCTION + DEPENDENCY_INSTRUCTION;
-        if (nodeBindingReview()) return BIND_INSTRUCTION.replace("by its snapshotSha256 and sourcePointer.",
+        if (boundBindingEvidence()) return BIND_INSTRUCTION.replace("by its snapshotSha256 and sourcePointer.",
             "by sourcePointer in this request's fixed snapshot. Call evidence with pointer, offset and limit only. No snapshot argument is needed.");
         return bindingReview() ? BIND_INSTRUCTION : INSTRUCTION;
     }

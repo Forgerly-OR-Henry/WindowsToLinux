@@ -32,7 +32,6 @@ import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.task.action.*;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
-import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchiveReview;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics;
 import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
@@ -55,6 +54,7 @@ import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
 import gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class DeploymentToolchainReviewEvidenceTest {
@@ -1323,8 +1323,8 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {171785, 232077})
-    void r49CsvAnalyzerArchiveAndObservedReadsUseTheOriginalResponsesCeilings(int terminalCap) throws Exception {
+    @CsvSource({"171785, 0", "171785, 52900", "232077, 52900"})
+    void r49CsvAnalyzerArchiveAndObservedReadsUseTheOriginalResponsesCeilings(int terminalCap, int factsFloor) throws Exception {
         String archiveSha = "971a4ba2fed28306717230d226fba0e61d98ef07069be0cc06ae2b72387427dc";
         String manifestSha = "b".repeat(64);
         var members = csvAnalyzerMembers();
@@ -1355,7 +1355,7 @@ class DeploymentToolchainReviewEvidenceTest {
                     "sourceManifestSha256", manifestSha, "relativeRoot", "analyzer", "fileCount", members.size())));
                 current.put("currentBuildArchiveSource", archive);
                 original.put("currentCommandEvidence", current);
-                replayCsvAnalyzerBuild(fixture, assisted, action, command, original, members, body, terminalCap);
+                replayCsvAnalyzerBuild(fixture, assisted, action, command, original, members, body, terminalCap, factsFloor);
             }
         }
     }
@@ -1380,7 +1380,7 @@ class DeploymentToolchainReviewEvidenceTest {
     private static void replayCsvAnalyzerBuild(MirroredInstallerTestFixture fixture, DeploymentNativeHelperPackageImpactTest.Assisted assisted,
                                                ActionIntent action, CommandRequest command, Map<String, Object> original,
                                                List<DeploymentSourceArchiveReview.Member> members, String body,
-                                               int terminalCap) throws Exception {
+                                               int terminalCap, int factsFloor) throws Exception {
         var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(original, 1048576),
             action, command, fixture.layout).orElseThrow();
         var projected = JSON.readTree(evidence.messages().getLast().text());
@@ -1392,10 +1392,10 @@ class DeploymentToolchainReviewEvidenceTest {
             "30/64000/8000 30/68340/8000 30/82000/8000 30/198000/6000",
             "30/32781/8000 30/40781/8000 30/48781/8000 30/56781/8000 30/64781/8000 30/76296/8000");
         List<Integer> caps = List.of(499773, 449664, 397412, 344107, 288342, 232077, terminalCap);
-        boolean historicalTerminal = terminalCap == 171785;
+        boolean withheldHistoricalEvidence = terminalCap == 171785 && factsFloor == 52900;
         var requested = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
         var batches = new ArrayList<List<AiToolCall>>();
-        var context = wireBudgetContext(assisted.context, Map.of(), 52900, () -> caps.get(fixture.model.requests.size()), sent -> {
+        var context = wireBudgetContext(assisted.context, Map.of(), factsFloor, () -> caps.get(fixture.model.requests.size()), sent -> {
             if (!batches.isEmpty()) return;
             try {
                 String snapshot = JSON.readTree(sent.messages().getLast().text()).at("/buildReviewEvidence/snapshotSha256").asText();
@@ -1406,19 +1406,17 @@ class DeploymentToolchainReviewEvidenceTest {
                     collectRequestedCoverage(requested, calls, sources);
                     fixture.model.replies.add(success(mockResponses(calls.toArray(AiToolCall[]::new))));
                 }
-                reply(fixture, verdict("r49-csv-fixture-verdict", historicalTerminal ? "APPROVE" : "DENY"));
+                reply(fixture, verdict("r49-csv-fixture-verdict", withheldHistoricalEvidence ? "APPROVE" : "DENY"));
             } catch (Exception invalid) {
                 throw new AssertionError("Cannot replay evidence against the actual request snapshot", invalid);
             }
         });
         // The replay supplies reconstructed command and archive facts, not an open source-selection workflow.
-        String instructions = DeploymentReviewDecision.INSTRUCTION
-            + DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review.md")
-            + DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review-stage.md")
+        String instructions = DeploymentReviewDecision.INSTRUCTION + DeploymentFixedCommandApproval.commandReviewInstructions(true)
             + "\n" + DeploymentAssistedScope.standardBuildReviewInstructions();
         Callable<JsonNode> review = () -> new DeploymentAiJson(context).askCommand(instructions, original,
             fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed, action, command);
-        if (historicalTerminal) {
+        if (withheldHistoricalEvidence) {
             var refused = assertThrows(DeploymentCommandReviewModel.Failure.class, review::call);
             var details = DeploymentCommandReviewModel.failureDiagnostics(refused);
             assertEquals("EVIDENCE_INCOMPLETE_VERDICT", details.get("reviewCode"));
@@ -1439,13 +1437,14 @@ class DeploymentToolchainReviewEvidenceTest {
             addR24Range(requested, descriptor.path("sourcePointer").asText(), 0, member.text().length());
         }
         sources.put(60, Map.entry("/buildReviewEvidence/buildBody", body));
-        byte[] encoded = wireWithR24FactsSize(sent, 52900, caps.getLast(), Map.of());
-        System.out.printf("R49_CSV_ANALYZER_RESPONSES replayFirst=%d replayTerminal=%d terminalCap=%d originalTerminal=255455 members=%d verdict=%s%n",
-            wireWithR24FactsSize(fixture.model.requests.getFirst(), 52900, caps.getFirst(), Map.of()).length,
-            encoded.length, caps.getLast(), members.size(), historicalTerminal ? "APPROVE_BLOCKED" : "DENY");
+        byte[] encoded = wireWithR24FactsSize(sent, factsFloor, caps.getLast(), Map.of());
+        System.out.printf("R53_CSV_ANALYZER_RESPONSES factsFloor=%d projectedFacts=%d replayFirst=%d replayTerminal=%d terminalCap=%d members=%d verdict=%s%n",
+            factsFloor, sent.messages().getLast().text().length(),
+            wireWithR24FactsSize(fixture.model.requests.getFirst(), factsFloor, caps.getFirst(), Map.of()).length,
+            encoded.length, caps.getLast(), members.size(), withheldHistoricalEvidence ? "APPROVE_BLOCKED" : "DENY");
         var visible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
         assertR24VisiblePages(encoded, manifest.path("snapshotSha256").asText(), batches.getLast(), true, visible, sources);
-        if (!historicalTerminal) assertR24Coverage(requested, visible);
+        if (!withheldHistoricalEvidence) assertR24Coverage(requested, visible);
     }
 
     private static void assertR30BuildWire(DeploymentCommandSourceEvidence evidence, AiRequest request,
@@ -3292,6 +3291,58 @@ class DeploymentToolchainReviewEvidenceTest {
                     .put("offset", source.length() + 1).put("limit", 1).toString())));
             assertTrue(invalid.getFirst().text().contains("SNAPSHOT_MISMATCH"));
             assertTrue(invalid.getLast().text().contains("CURSOR_INVALID"));
+            assertEquals(Optional.of("READ_REJECTED"), reader.approvalEvidenceBlock());
+        }
+    }
+
+    @Test
+    void r49RustBindRetainsObservedShellPagesAgainstItsOwnSnapshot() throws Exception {
+        int cap = 960481;
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.values());
+             var command = r26Binding(fixture, "RUST", "1.95.0")) {
+            var action = intent("bind", fixture, command);
+            var facts = new DeploymentFixedCommandProtocol(fixture.context).inspect(action, command, fixture.layout, fixture.task);
+            String pointer = "/toolchainReviewEvidence/mirrorBootstrapShell";
+            String shell = r24Shell(fixture);
+            assertTrue(shell.length() >= 38195);
+            int[][][] batches = {{{0, 8000}, {11000, 8000}, {34000, 4195}},
+                {{0, 8000}, {8000, 8000}, {16000, 8000}, {24000, 8000}, {32000, 6195}}};
+            for (int batch = 0; batch < batches.length; batch++) {
+                var calls = new ArrayList<AiToolCall>();
+                for (int[] range : batches[batch]) {
+                    var arguments = JSON.createObjectNode().put("pointer", pointer).put("offset", range[0]).put("limit", range[1]);
+                    calls.add(new AiToolCall("r49-rust-bind-" + batch + "-" + range[0], "evidence", arguments.toString()));
+                }
+                fixture.model.replies.add(success(mockResponses(calls.toArray(AiToolCall[]::new))));
+            }
+            reply(fixture, verdict("r49-rust-bind-denied", "DENY"));
+            var result = new DeploymentAiJson(fixture.context).askCommand("Review the original Rust binding", facts,
+                fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed, action, command);
+            assertEquals("DENY", result.path("decision").asText());
+            assertEquals(3, fixture.model.requests.size());
+            var initial = fixture.model.requests.getFirst();
+            var nativeEvidence = initial.tools().stream().filter(tool -> tool.name().equals("evidence")).findFirst().orElseThrow();
+            var schema = JSON.readTree(nativeEvidence.inputSchema());
+            assertTrue(schema.at("/properties/snapshotSha256").isMissingNode());
+            assertEquals(3, schema.path("required").size());
+            var terminal = fixture.model.requests.getLast();
+            var manifest = JSON.readTree(terminal.messages().getLast().text()).path(PHASE);
+            String snapshot = manifest.path("snapshotSha256").asText();
+            byte[] encoded = wire(terminal, cap, Map.of());
+            var visible = replayRetainedRanges(encoded, snapshot, Map.of(pointer, shell)).orElseThrow();
+            var covered = visible.get(pointer);
+            assertEquals(Map.of(0, 38195), covered);
+            assertTrue(encoded.length <= cap);
+
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), action,
+                command, fixture.layout).orElseThrow();
+            var reader = evidence.reader(8);
+            var ownSnapshot = JSON.readTree(evidence.messages().getLast().text()).at("/" + PHASE + "/snapshotSha256").asText();
+            assertFalse(reader.read(mockResponses(read("own-snapshot", ownSnapshot, pointer, 0, 1))).getFirst().error());
+            var stale = reader.read(mockResponses(read("foreign-snapshot", "0".repeat(64), pointer, 0, 8000))).getFirst();
+            assertTrue(stale.error());
+            assertTrue(stale.text().contains("SNAPSHOT_MISMATCH"));
+            reader.read(response(Optional.empty(), verdict("stale-source-approval", "APPROVE")));
             assertEquals(Optional.of("READ_REJECTED"), reader.approvalEvidenceBlock());
         }
     }

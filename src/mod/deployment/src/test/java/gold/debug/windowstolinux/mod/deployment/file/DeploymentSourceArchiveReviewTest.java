@@ -188,9 +188,34 @@ class DeploymentSourceArchiveReviewTest {
             }
             assertFalse(new String(wire, StandardCharsets.UTF_8).contains("unrelated_sibling_marker"));
             verifyBudgetAndOriginalAliases(fixture, intent, request, facts, sentRequest, captured);
+            verifyArchiveHistory(fixture, intent, request, facts, bound, captured);
             System.out.printf("R38_ASSET_BUILD_SOURCE_REPLAY files=%d fixture=%d observedWithAdditional=%d cap=344125%n",
                 members.size(), wire.length, observedReplay);
         }
+    }
+
+    private static void verifyArchiveHistory(MirroredInstallerTestFixture fixture, ActionIntent intent,
+            CommandRequest request, Map<String, Object> facts, Map<String, ?> selected,
+            DeploymentSourceArchiveReview.Evidence captured) throws Exception {
+        var other = Map.of("archiveSha256", "e".repeat(64), "relativeRoot", "web", "marker", "sibling-archive-proof");
+        var history = Map.of("archives", List.of(selected, other), "meaning", "Original source archive observations");
+        facts.put("currentCommandEvidence", Map.of("currentBuildArchive", Map.of("archive", selected),
+            "currentBuildArchiveSource", captured, "sourceArchiveObservations", history));
+        var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576),
+            intent, request, fixture.layout).orElseThrow();
+        String projectedText = evidence.messages().getLast().text();
+        var projected = JSON.readTree(projectedText);
+        var descriptor = projected.at("/buildReviewEvidence/sourceArchiveHistory");
+        assertEquals("/currentCommandEvidence/currentBuildArchive/archive", descriptor.path("selectedArchivePointer").asText());
+        assertEquals(JSON.valueToTree(selected), projected.at(descriptor.path("selectedArchivePointer").asText()));
+        assertFalse(projectedText.contains("sibling-archive-proof"));
+        String snapshot = projected.at("/buildReviewEvidence/snapshotSha256").asText();
+        var page = evidence.reader(1).read(reply(evidenceCall("history", snapshot,
+            descriptor.path("sourcePointer").asText(), 0, 8000))).getFirst();
+        assertFalse(page.error());
+        String originalHistory = page.text().split("\n", 3)[2];
+        assertEquals(JSON.valueToTree(history), JSON.readTree(originalHistory));
+        assertEquals(descriptor.path("sha256").asText(), MirroredInstallerTestFixture.sha(originalHistory));
     }
 
     private static void verifyBudgetAndOriginalAliases(MirroredInstallerTestFixture fixture, ActionIntent intent,
