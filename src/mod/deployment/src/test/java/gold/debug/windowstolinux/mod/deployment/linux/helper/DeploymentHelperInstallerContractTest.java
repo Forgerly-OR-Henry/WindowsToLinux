@@ -58,12 +58,13 @@ class DeploymentHelperInstallerContractTest {
     void prerequisiteObservationParsesOnlyConclusivePackageStates() throws Exception {
         var point = gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.APT_UBUNTU;
         String program = DeploymentHelperInstallerScript.renderPrerequisiteObservation(point)
-            .replace("[ \"$EUID\" -eq 0 ] && apt_prerequisite_os", "apt_prerequisite_os")
+            .replace("[ \"$EUID\" -eq 0 ] && apt_prerequisite_metadata", "apt_prerequisite_metadata")
             .replace("/usr/bin/stat", "fixture_stat")
             .replace("/usr/bin/env -i LC_ALL=C /usr/bin/timeout 15s", "fixture_invoke");
         int call = program.lastIndexOf("\napt_prerequisites_observe\n");
         assertTrue(call > 0);
         String fixtures = """
+            apt_prerequisite_metadata() { return 0; }
             apt_prerequisite_os() { return 0; }
             apt_prerequisite_file() { return 0; }
             files_trusted_directory() { return 0; }
@@ -105,6 +106,75 @@ class DeploymentHelperInstallerContractTest {
     }
 
     @Test
+    void prerequisiteMetadataGuardRejectsBeforeObservation() throws Exception {
+        var point = gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.APT_UBUNTU;
+        String program = DeploymentHelperInstallerScript.renderPrerequisiteObservation(point)
+            .replace("[ \"$EUID\" -eq 0 ] && apt_prerequisite_metadata", "apt_prerequisite_metadata")
+            .replace("[ ! -L \"$path\" ] && [ -O \"$path\" ] && [ -d \"$path\" ] && [ -x \"$path\" ]", ":")
+            .replace("[ ! -L /usr/bin/perl ] && [ -O /usr/bin/perl ] && [ -f /usr/bin/perl ] && [ -x /usr/bin/perl ]", ":")
+            .replace("LC_ALL=C /usr/bin/perl -T -f", "LC_ALL=C fixture_perl -T -f")
+            .replace("$(/usr/bin/stat ", "$(fixture_stat ")
+            .replace("$(/usr/bin/readlink ", "$(fixture_readlink ")
+            .replace("/usr/bin/env -i LC_ALL=C /usr/bin/timeout 15s", "fixture_invoke");
+        int call = program.lastIndexOf("\napt_prerequisites_observe\n");
+        assertTrue(call > 0);
+        String fixtures = """
+            fixture_perl() {
+              [ "$#" -eq 2 ] && [ "$1" = -T ] && [ "$2" = -f ] || return 1
+              printf 'metadata\\n' >> "$fixture/calls"
+              {
+                printf '%s\\n' 'BEGIN {
+                  my $case = $ENV{FIXTURE_METADATA_CASE};
+                  my %mode = (
+                    "/" => 0040755, "/usr" => 0040755, "/usr/bin" => 0040755, "/usr/libexec" => 0040755,
+                    "/usr/bin/perl" => 0100755, "/usr/bin/stat" => 0120777, "/usr/bin/readlink" => 0100755,
+                    "/usr/libexec/meta-stat" => 0120777, "/usr/libexec/coreutils" => 0100755,
+                  );
+                  my %target = ("/usr/bin/stat" => "../libexec/meta-stat", "/usr/libexec/meta-stat" => "/usr/libexec/coreutils");
+                  $mode{"/usr/bin"} = 0040775 if $case eq "writable-directory";
+                  $mode{"/usr/libexec"} = 0040775 if $case eq "writable-symlink-directory";
+                  $mode{"/usr/libexec/coreutils"} = 0100757 if $case eq "writable-target";
+                  $mode{"/usr/bin/readlink"} = 0100644 if $case eq "non-executable";
+                  $target{"/usr/libexec/meta-stat"} = "../bin/stat" if $case eq "symlink-loop";
+                  *CORE::GLOBAL::lstat = sub {
+                    my ($entry) = @_;
+                    return unless exists $mode{$entry};
+                    my $uid = $case eq "non-root-link" && $entry eq "/usr/bin/stat" ? 12 : 0;
+                    my $gid = $case eq "non-root-group" && $entry eq "/usr" ? 34 : 0;
+                    return (0, 0, $mode{$entry}, 0, $uid, $gid);
+                  };
+                  *CORE::GLOBAL::readlink = sub { return $target{$_[0]}; };
+                }'
+                while IFS= read -r line; do printf '%s\\n' "$line"; done
+              } | FIXTURE_METADATA_CASE="$scenario" /usr/bin/perl "$@"
+            }
+            apt_prerequisite_os() { printf 'os\\n' >> "$fixture/calls"; fixture_stat; fixture_readlink; }
+            apt_prerequisite_file() { return 0; }
+            files_trusted_directory() { return 0; }
+            files_trusted_runtime_path() { return 0; }
+            fixture_stat() { printf 'stat\\n' >> "$fixture/calls"; }
+            fixture_readlink() { printf 'readlink\\n' >> "$fixture/calls"; }
+            fixture_invoke() {
+              printf '%s\\n' "$1" >> "$fixture/calls"
+              if [ "$1" = /usr/bin/dpkg ]; then printf 'amd64\\n'; else return 2; fi
+            }
+            """;
+        Path calls = temporary.resolve("calls");
+        for (String scenario : List.of("trusted-symlink", "writable-directory", "writable-symlink-directory", "writable-target",
+            "non-executable", "non-root-link", "non-root-group", "symlink-loop")) {
+            Files.deleteIfExists(calls);
+            var result = execute("scenario=" + scenario + "\nfixture=" + DeploymentHelperInstallerScript.quote(bashPath(temporary)) + "\n"
+                + program.substring(0, call + 1) + fixtures + program.substring(call + 1));
+            assertEquals(64, result.exit(), scenario);
+            assertEquals("", result.output(), scenario);
+            List<String> expected = scenario.equals("trusted-symlink")
+                ? List.of("metadata", "os", "stat", "readlink", "stat", "/usr/bin/dpkg", "/usr/bin/dpkg-query")
+                : List.of("metadata");
+            assertEquals(expected, Files.readAllLines(calls), scenario);
+        }
+    }
+
+    @Test
     void packageFreeTrackedInstallerBindsItsReadOnlyChecksAndOriginalReceipt() throws Exception {
         var layout = DeploymentRemoteLayout.original();
         var point = gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.APT_UBUNTU;
@@ -123,9 +193,12 @@ class DeploymentHelperInstallerContractTest {
         assertFalse(preflight.contains("wtl_apt"));
         assertFalse(preflight.contains("apt-get"));
         int beforeLock = original.indexOf("prepare_stage=platform-prerequisites-before-lock");
+        int metadataAdmission = original.indexOf("\napt_prerequisite_metadata || exit 64\n");
+        int priorAdmission = original.indexOf("\ninstaller_prior_files\n");
         int firstCheck = original.indexOf("prepare_stage=platform-prerequisites\n");
         int lastCheck = original.lastIndexOf("[ \"$(apt_prerequisites_observe)\"");
         assertTrue(beforeLock > 0 && beforeLock < original.indexOf("/usr/bin/flock -x \"$installer_lock\""));
+        assertTrue(metadataAdmission > 0 && metadataAdmission < priorAdmission && priorAdmission < beforeLock);
         assertTrue(firstCheck > original.indexOf("/usr/bin/flock -x \"$installer_lock\""));
         assertTrue(firstCheck < original.indexOf("prepare_stage=installer-receipt\n"));
         assertTrue(lastCheck > original.indexOf("helper_probe="));
@@ -136,6 +209,39 @@ class DeploymentHelperInstallerContractTest {
             () -> DeploymentHelperInstallerScript.trackedRequest(original + ":\n", task, layout, java.util.Optional.of(point)));
         assertThrows(IllegalArgumentException.class,
             () -> DeploymentHelperInstallerScript.trackedRequest(original, task, layout, java.util.Optional.empty()));
+    }
+
+    @Test
+    void earlierAptReadyDigestsRemainAvailableOnlyForReconciliation() throws Exception {
+        var layout = DeploymentRemoteLayout.original();
+        var ubuntu = gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.APT_UBUNTU;
+        var debian = gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.APT_DEBIAN;
+        var task = UUID.fromString("11111111-2222-4333-8444-555555555555");
+        var operation = UUID.fromString("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+        String server = "9".repeat(64);
+        var bodyDigests = java.util.Map.of(ubuntu, "0a06e70a700b17dbcc7955a6a7742f50026eea31a8866ad52bcd521e25e13dc5",
+            debian, "2000ad0b2dff9c78c0cc0863468ee793e7438aa0d65eb84aeafa7cbe5c1d5a46");
+        var requestDigests = java.util.Map.of(ubuntu, "b12a96ce27c2065b8726b0b0d94165ea5efceea14a873c62086a31a03b69d600",
+            debian, "d27999dd9ddbbf9262485dcc64db73c93e984511d84bafe715eee6c5afa0f69d");
+        for (var point : List.of(ubuntu, debian)) {
+            String earlierBody = DeploymentHelperInstallerScript.previouslySentReady(DeploymentHelperInstallerScript.renderReady(layout, point), point);
+            assertEquals(bodyDigests.get(point), sha(earlierBody));
+            String current = DeploymentHelperInstallerScript.renderTrackedReady(task, operation, server, bodyDigests.get(point), layout, point);
+            String earlier = DeploymentHelperInstallerScript.previouslySentReady(current, point);
+            assertEquals(requestDigests.get(point), DeploymentHelperInstallerScript.readyRequestDigest(earlier));
+            assertThrows(IllegalArgumentException.class,
+                () -> DeploymentHelperInstallerScript.trackedRequest(earlier, task, layout, java.util.Optional.of(point)));
+        }
+        try (var fixture = new gold.debug.windowstolinux.mod.deployment.ai.review.MirroredInstallerTestFixture()) {
+            String priorBody = bodyDigests.get(ubuntu);
+            String current = DeploymentHelperInstallerScript.renderTrackedReady(fixture.task.id(), operation, server, priorBody, layout, ubuntu);
+            String earlier = DeploymentHelperInstallerScript.previouslySentReady(current, ubuntu);
+            String digest = DeploymentHelperInstallerScript.readyRequestDigest(earlier);
+            assertTrue(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, operation, server, priorBody, digest, layout, true));
+            assertFalse(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, operation, server, priorBody, digest, layout, false));
+            assertFalse(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, operation, server, priorBody,
+                DeploymentHelperInstallerScript.readyRequestDigest(current), layout, true));
+        }
     }
 
     @Test

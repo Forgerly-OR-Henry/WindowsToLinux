@@ -329,6 +329,7 @@ public final class DeploymentManagedHelper {
                 if (Arrays.equals(input, DeploymentHelperInstallerScript.renderPrerequisiteObservation(point).getBytes(StandardCharsets.UTF_8)))
                     return Map.of("expectedRepositoryPoint", point.name(), "packages", DeploymentHelperInstallerScript.APT_PACKAGES,
                         "observation", "PROTECTED_EXISTING_OS_PACKAGE_DATABASE_AND_RUNTIME_PATHS",
+                        "metadataToolGuard", prerequisiteMetadataToolFacts(),
                         "possibleOutput", java.util.List.of("APT_PREREQUISITES=READY", "APT_PREREQUISITES=MISSING"));
         } finally {
             Arrays.fill(input, (byte) 0);
@@ -336,10 +337,19 @@ public final class DeploymentManagedHelper {
         throw new IllegalArgumentException("Helper prerequisite observation source changed");
     }
 
+    static Map<String, Object> prerequisiteMetadataToolFacts() {
+        return Map.of("bootstrapInterpreter", "/usr/bin/perl", "bootstrapPackage", "perl-base",
+            "guardedExecutables", java.util.List.of("/usr/bin/stat", "/usr/bin/readlink"),
+            "boundary", "The base operating system supplies Perl and its loader. Bash builtins check the fixed interpreter path before isolated startup. Perl builtins then check root ownership, file types and write modes on the interpreter and both metadata tool paths, including traversed directories, before either metadata tool runs. Review the exact checks in stdin.");
+    }
+
     public static Set<ActionTarget> prerequisiteObservationTargets(ServerId server) {
         return Set.of(new ActionTarget(server.id(), "file", "/etc/os-release"),
             new ActionTarget(server.id(), "file", "/usr/lib/os-release"),
             new ActionTarget(server.id(), "file", "/var/lib/dpkg/status"),
+            new ActionTarget(server.id(), "file", "/usr/bin/perl"),
+            new ActionTarget(server.id(), "file", "/usr/bin/stat"),
+            new ActionTarget(server.id(), "file", "/usr/bin/readlink"),
             new ActionTarget(server.id(), "file", "/usr/bin/dpkg"),
             new ActionTarget(server.id(), "file", "/usr/bin/dpkg-query"),
             new ActionTarget(server.id(), "system-package-status", "dpkg:managed-helper-prerequisites"),

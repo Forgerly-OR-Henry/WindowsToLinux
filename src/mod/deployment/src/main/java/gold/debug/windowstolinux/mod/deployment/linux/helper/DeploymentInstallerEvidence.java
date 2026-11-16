@@ -103,6 +103,7 @@ public final class DeploymentInstallerEvidence {
                 facts.put("packageMode", "VERIFIED_EXISTING_APT_PREREQUISITES");
                 facts.put("expectedRepositoryPoint", point.orElseThrow().name());
                 facts.put("observedPackageSet", List.of(DeploymentHelperInstallerScript.APT_PACKAGES.split(" ")));
+                facts.put("metadataToolGuard", DeploymentManagedHelper.prerequisiteMetadataToolFacts());
                 facts.put("runtimeGuard", "Inspect the protected OS package database and fixed runtime paths before taking the helper directory lock, again under the lock before the original STARTED receipt, and before success. A failed check stops this command. The helper directory lock does not lock the dpkg database.");
                 facts.put("nativeTransactions", Map.of("targets", List.of(), "effects",
                     "The exact request has no package-manager transaction, package index update, package download or maintainer-script execution."));

@@ -15,6 +15,7 @@ public final class DeploymentHelperInstallerScript {
 
     /** Same no-effect receipt boundary in tracked and plain bodies; never an execution stage. */
     static final String BODY_AFTER_RECEIPT = "# WTL_INSTALLER_BODY_AFTER_RECEIPT\n";
+    private static final String METADATA_BEFORE_PRIOR_ADMISSION = "apt_prerequisite_metadata || exit 64\n";
     /** Root-owned original installer receipt directory. / root 持有的原安装回执目录。 */
     public static final String RECEIPT_DIRECTORY = "/var/lib/windowstolinux/helper-install-operations";
 
@@ -421,7 +422,7 @@ public final class DeploymentHelperInstallerScript {
         }
     }
 
-    /** Read-only reconciliation also accepts the exact pre-scope installer already sent by older releases. */
+    /** Read-only reconciliation also accepts exact earlier installer requests. */
     public static boolean matchesTrackedRequest(gold.debug.windowstolinux.appapi.task.run.TaskContext task,
             UUID operation, String serverDigest, String bodyDigest, String requestDigest, DeploymentRemoteLayout layout,
             boolean allowPreviouslySentUnscoped) {
@@ -430,11 +431,29 @@ public final class DeploymentHelperInstallerScript {
             String original = renderTrackedReady(task.id(), operation, serverDigest, bodyDigest, layout, point.orElseThrow());
             return requestDigest.equals(readyRequestDigest(original));
         }
+        if (allowPreviouslySentUnscoped && point.filter(DeploymentHelperInstallerScript::usesApt).isPresent()) {
+            var apt = point.orElseThrow();
+            String previous = previouslySentReady(renderReady(layout, apt), apt);
+            if (bodyDigest.equals(sha256(previous))) {
+                String original = previouslySentReady(renderTrackedReady(task.id(), operation, serverDigest, bodyDigest, layout, apt), apt);
+                return requestDigest.equals(readyRequestDigest(original));
+            }
+        }
         if (allowPreviouslySentUnscoped && point.isPresent() && bodyDigest.equals(bodyDigest(layout, Optional.empty())))
             point = Optional.empty();
         return bodyDigest.equals(bodyDigest(layout, point))
             && requestDigest.equals(DeploymentMirrorTasks.installerRequestDigest(
                 renderTracked(task.id(), operation, serverDigest, bodyDigest, layout, point), task));
+    }
+
+    /** Restores the exact previous APT-ready bytes for local digest comparison in reconciliation. */
+    static String previouslySentReady(String guardedInstaller, DownloadPoint point) {
+        String guarded = DeploymentAptPrerequisites.program(point) + METADATA_BEFORE_PRIOR_ADMISSION;
+        int start = guardedInstaller.indexOf(guarded);
+        if (start < 0 || guardedInstaller.indexOf(guarded, start + guarded.length()) >= 0)
+            throw new IllegalArgumentException("Current installer prerequisite section is not unique");
+        return guardedInstaller.substring(0, start) + DeploymentAptPrerequisites.previouslySentProgram(point)
+            + guardedInstaller.substring(start + guarded.length());
     }
 
     /** Builds one exact non-secret original installer receipt. / 构造精确的非秘密原安装回执。
@@ -513,7 +532,7 @@ public final class DeploymentHelperInstallerScript {
             + """
             [ "$(id -u)" -eq 0 ] || exit 64
             command -v systemctl >/dev/null
-            """ + (ready ? DeploymentAptPrerequisites.program(point.orElseThrow()) : guardPackagePoint(point))
+            """ + (ready ? DeploymentAptPrerequisites.program(point.orElseThrow()) + METADATA_BEFORE_PRIOR_ADMISSION : guardPackagePoint(point))
             + renderPriorExecutableAdmission(layout, true)
             + (ready ? readyCheck.replace("prepare_stage=platform-prerequisites", "prepare_stage=platform-prerequisites-before-lock") : "")
             + renderInstallationLock(layout)

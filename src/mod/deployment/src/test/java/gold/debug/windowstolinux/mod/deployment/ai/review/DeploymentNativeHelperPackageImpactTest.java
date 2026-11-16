@@ -226,14 +226,23 @@ class DeploymentNativeHelperPackageImpactTest {
             assertEquals(1, transitions.get());
             assertEquals(List.of(DeploymentHelperInstallerScript.renderPrerequisiteObservation(point), ready), sent);
             assertEquals(2, usedGrants.size());
-            assertEquals(DeploymentManagedHelper.PREREQUISITE_OBSERVATION,
-                assisted.grantedIntents.getFirst().semantics().orElseThrow().operation());
+            var observeIntent = assisted.grantedIntents.getFirst();
+            assertEquals(DeploymentManagedHelper.PREREQUISITE_OBSERVATION, observeIntent.semantics().orElseThrow().operation());
+            var metadataExecutables = Set.of("/usr/bin/perl", "/usr/bin/stat", "/usr/bin/readlink");
+            for (String executable : metadataExecutables) {
+                assertTrue(observeIntent.semantics().orElseThrow().targets().contains(new ActionTarget(
+                    fixture.server.id(), "file", executable)));
+            }
+            var observationFacts = new ObjectMapper().readTree(fixture.model.requests.getFirst().messages().getLast().text());
+            assertEquals("/usr/bin/perl", observationFacts.at("/helperPrerequisiteObservation/metadataToolGuard/bootstrapInterpreter").asText());
+            assertEquals("perl-base", observationFacts.at("/helperPrerequisiteObservation/metadataToolGuard/bootstrapPackage").asText());
             var installIntent = assisted.grantedIntents.getLast();
             assertFalse(installIntent.semantics().orElseThrow().targets().stream().anyMatch(target ->
                 Set.of("package-manager", "package-set", "system-package-index", "system-package-transaction").contains(target.kind())));
             try (var request = fixture.request(ready)) {
                 var json = new ObjectMapper().valueToTree(assisted.scope.facts(installIntent, request, fixture.task));
                 assertEquals("VERIFIED_EXISTING_APT_PREREQUISITES", json.at("/helperPackageImpact/packageMode").asText());
+                assertEquals("/usr/bin/perl", json.at("/helperPackageImpact/metadataToolGuard/bootstrapInterpreter").asText());
                 assertTrue(json.at("/helperPackageImpact/nativeTransactions/targets").isEmpty());
             }
             assertTrue(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, fixture.operation, serverDigest,
