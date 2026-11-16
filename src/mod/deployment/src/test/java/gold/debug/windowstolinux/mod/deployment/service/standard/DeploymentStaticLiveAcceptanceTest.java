@@ -6417,6 +6417,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                     System.out.println("AI_LIVE_TOOL_CATALOG " + value.tools().stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition::name).sorted().toList());
                     System.out.println("AI_LIVE_CONTEXT_BYTES continuation=" + value.messages().stream().flatMap(m -> m.continuation().stream())
                         .mapToLong(gold.debug.windowstolinux.appapi.ai.model.AiContinuation::payloadBytes).sum());
+                    if (value.purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL)
+                        logTrackedInstallerCoverage(value, evidence);
                     var binding = evidence.path("decodedToolchainBinding");
                     if (binding.isObject())
                         System.out.println("AI_LIVE_BINDING_INPUT operation=" + evidence.path("operation").asText()
@@ -7193,6 +7195,65 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
     }
 
     /** Records only current stage and retained body identities, never source or reasoning content. */
+    private static void logTrackedInstallerCoverage(gold.debug.windowstolinux.appapi.ai.model.AiRequest request,
+                                                    com.fasterxml.jackson.databind.JsonNode facts) {
+        if (!"deployment.helper.install.tracked.v1".equals(facts.path("operation").asText())) return;
+        var manifest = facts.path("installerReviewEvidence");
+        if (!manifest.path("completeSourceRequired").isArray()) return;
+        String snapshot = manifest.path("snapshotSha256").asText();
+        var frames = request.messages().stream()
+            .filter(message -> message.role() == gold.debug.windowstolinux.appapi.ai.model.AiRole.USER)
+            .map(message -> message.text()).filter(text -> text.startsWith("WTL-COMMAND-RETAINED-SOURCE-1\n")).toList();
+        try {
+            if (!snapshot.matches("[0-9a-f]{64}") || frames.size() > 1)
+                throw new IllegalArgumentException("Invalid installer frame identity");
+            var coverage = JSON.createObjectNode().put("snapshotSha256", snapshot);
+            coverage.set("required", installerRangeMetadata(manifest.path("completeSourceRequired"), "pointer"));
+            coverage.set("selected", installerRangeMetadata(manifest.path("selectedInstallerRanges"), "sourcePointer"));
+            if (!frames.isEmpty()) {
+                String frame = frames.getFirst();
+                int start = frame.indexOf('\n') + 1;
+                int end = frame.indexOf('\n', start);
+                if (end < start) throw new IllegalArgumentException("Installer frame has no header");
+                var header = JSON.readTree(frame.substring(start, end));
+                if (!snapshot.equals(header.path("snapshotSha256").asText()))
+                    throw new IllegalArgumentException("Installer frame is outside the current snapshot");
+                coverage.put("frame", header.path("initialSupplement").asBoolean() ? "INITIAL" : "RETAINED");
+                coverage.put("runtimeShellReconstructible", header.path("runtimeShellReconstructible").asBoolean());
+                var framed = installerRangeMetadata(header.path("ranges"), "pointer");
+                int frameCharacters = frame.length() - end - 1;
+                int coveredCharacters = 0;
+                for (var range : framed) coveredCharacters += range.get(2).asInt() - range.get(1).asInt();
+                if (frameCharacters != coveredCharacters)
+                    throw new IllegalArgumentException("Installer frame content does not match its declared ranges");
+                coverage.put("framedCharacters", frameCharacters).set("framed", framed);
+                coverage.set("missing", installerRangeMetadata(header.path("pendingRequired"), "pointer"));
+            } else {
+                coverage.put("frame", "SELECTION_ONLY");
+            }
+            System.out.println("AI_LIVE_TRACKED_INSTALLER_COVERAGE beforeSend=true " + coverage);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException | IllegalArgumentException invalid) {
+            System.out.println("AI_LIVE_TRACKED_INSTALLER_COVERAGE beforeSend=true state=UNAVAILABLE");
+        }
+    }
+
+    private static com.fasterxml.jackson.databind.node.ArrayNode installerRangeMetadata(
+            com.fasterxml.jackson.databind.JsonNode rows, String pointerField) {
+        var result = JSON.createArrayNode();
+        if (rows.isMissingNode()) return result;
+        if (!rows.isArray() || rows.size() > 256) throw new IllegalArgumentException("Unbounded installer range metadata");
+        for (var row : rows) {
+            String pointer = row.path(pointerField).asText();
+            int offset = row.path("offset").asInt(-1);
+            int next = row.path("next").asInt(-1);
+            if (!pointer.matches("/completeExecutableInput/(sources/(mirrorRuntime|mirrorBootstrapShell|managedHelper|buildEntry)|segments/(0|2|4|6|8|10)/text)")
+                    || offset < 0 || next < offset || next > 2_000_000)
+                throw new IllegalArgumentException("Unexpected installer range metadata");
+            result.addArray().add(pointer).add(offset).add(next);
+        }
+        return result;
+    }
+
     private static void agentContextMetadata(gold.debug.windowstolinux.appapi.ai.model.AiRequest request,
                                              com.fasterxml.jackson.databind.JsonNode state) {
         if (!state.isObject()) return;

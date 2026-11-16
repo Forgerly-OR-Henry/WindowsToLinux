@@ -116,7 +116,7 @@ class PlatformModelServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"EXACT", "WRONG_CODE", "WRAPPED_CODE", "EMPTY", "OUTPUT_LIMIT", "REFUSAL"})
+    @ValueSource(strings = {"EXACT", "WRONG_CODE", "WRAPPED_CODE", "EXTRA_TEXT", "EMPTY", "OUTPUT_LIMIT", "REFUSAL"})
     void responsesTextProbeRetainsStrictAnswerAndOnlySafeMismatchDetails(String scenario) throws Exception {
         try (var fixture = new PlatformAiServiceTest.Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var service = setup(runtime);
@@ -126,9 +126,13 @@ class PlatformModelServiceTest {
                     assertEquals("gpt-6-luna", wire.path("model").asText());
                     assertEquals("high", wire.at("/reasoning/effort").asText());
                     assertEquals(8192, wire.path("max_output_tokens").asInt());
+                    assertEquals(1, wire.path("input").size());
+                    assertEquals("user", wire.at("/input/0/role").asText());
                     String prompt = wire.at("/input/0/content/0/text").asText();
                     String challenge = prompt.substring(prompt.lastIndexOf('\n') + 1);
                     assertTrue(challenge.matches("[0-9A-F]{8}"));
+                    assertEquals("Repeat the eight characters on the final line. Reply with those eight characters only.\n"
+                        + challenge, prompt);
                     var response = PlatformAiServiceTest.JSON.createObjectNode().put("status", "completed");
                     var output = response.putArray("output");
                     switch (scenario) {
@@ -146,9 +150,12 @@ class PlatformModelServiceTest {
                                 case "EXACT" -> " " + challenge.toLowerCase(Locale.ROOT) + "\n";
                                 case "WRONG_CODE" -> (challenge.startsWith("0") ? "1" : "0") + challenge.substring(1);
                                 case "WRAPPED_CODE" -> "`" + challenge + "`";
+                                case "EXTRA_TEXT" -> "The eight characters are " + challenge + ".";
                                 default -> throw new AssertionError("Unknown probe fixture scenario");
                             };
                             if (scenario.equals("WRONG_CODE")) response.putObject("usage").put("input_tokens", 41).put("output_tokens", 33);
+                            if (scenario.equals("EXTRA_TEXT")) response.putObject("usage").put("output_tokens", 11)
+                                .putObject("output_tokens_details").put("reasoning_tokens", 0);
                             output.addObject().put("type", "message").put("role", "assistant").putArray("content")
                                 .addObject().put("type", "output_text").put("text", returned);
                         }
@@ -185,10 +192,14 @@ class PlatformModelServiceTest {
             });
             expected.put("answerShape", switch (scenario) {
                 case "WRONG_CODE" -> "EIGHT_HEX_TEXT";
-                case "WRAPPED_CODE" -> "OTHER_TEXT";
+                case "WRAPPED_CODE", "EXTRA_TEXT" -> "OTHER_TEXT";
                 default -> "EMPTY_TEXT";
             });
             if (scenario.equals("WRONG_CODE")) expected.put("outputTokens", "33");
+            if (scenario.equals("EXTRA_TEXT")) {
+                expected.put("outputTokens", "11");
+                expected.put("reasoningOutputTokens", "0");
+            }
             if (scenario.equals("OUTPUT_LIMIT")) {
                 expected.put("outputTokens", "8192");
                 expected.put("reasoningOutputTokens", "8191");

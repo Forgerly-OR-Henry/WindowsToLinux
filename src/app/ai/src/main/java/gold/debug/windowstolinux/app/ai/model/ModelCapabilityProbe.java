@@ -21,7 +21,8 @@ public record ModelCapabilityProbe(AiRequest request, String expected) {
         if (outputLimit < 1)
             throw new IllegalArgumentException("Model output limit must be positive");
         String expected = UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT);
-        var message = new AiMessage(AiRole.USER, "Copy the code on the next line as plain text. Return only the code, without quotes or markup.\n" + expected,
+        var message = new AiMessage(AiRole.USER,
+            "Repeat the eight characters on the final line. Reply with those eight characters only.\n" + expected,
             List.of());
         return new ModelCapabilityProbe(new AiRequest(AiPurpose.LANGUAGE, List.of(message),
             outputLimit, Duration.ofSeconds(30), false), expected);

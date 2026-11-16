@@ -48,7 +48,8 @@ public final class DeploymentCommandSourceEvidence {
     private static final String PROJECTION = "toolchainReviewEvidence";
     private static final String INSTALLER = "installerReviewEvidence";
     private static final String INSTALLER_SELECTION = "/" + INSTALLER + "/installerSelection";
-    private static final String INSTALLER_SOURCES = "/completeExecutableInput/sources/";
+    private static final String INSTALLER_INPUT = "/completeExecutableInput";
+    private static final String INSTALLER_SOURCES = INSTALLER_INPUT + "/sources/";
     private static final String INSTALLER_RUNTIME = INSTALLER_SOURCES + "mirrorRuntime";
     private static final String INSTALLER_SHELL = INSTALLER_SOURCES + "mirrorBootstrapShell";
     private static final String INSTALLER_RUNTIME_SHELL_ASSIGNMENT = "\nBOOTSTRAP_SHELL = ";
@@ -156,6 +157,7 @@ public final class DeploymentCommandSourceEvidence {
 
     private static final String COMPLETE_INSTALLER_INSTRUCTION = """
         For this mirrored installation, completeSourceRequired identifies the executable leaves whose original bytes must be visible together for APPROVE. Follow selectedInstallerRanges and the exact retained-source frame; source offsets and next are UTF-16, and frame text follows the ranges in order. A LITERAL text descriptor identifies the exact literal bytes, and SOURCE_TEXT copies its referenced source unchanged. The packaged mirrorRuntime and the task's mirrorBootstrapShell are different inputs. Follow the scoped package calls into the exact shell, including repository selection, transport, signature, download identity and final installation. A staged program may have other entrypoints; determine which are reached from the actual installer.
+        The tracked installer excerpts locate exclusive STARTED receipt creation, the package calls, the two payload writes and exact digest checks, and the terminal receipt replacement. Rejoin the write excerpts using the intervening ordered SHELL_SINGLE_QUOTE references to managedHelper and buildEntry. Coverage in selectedInstallerRanges and the current frame's ranges is already supplied.
         pendingRequired lists missing ranges. Use readExample's snapshotSha256 with the missing pointer and offset and a limit of at most 8000. At most eight evidence calls per response, separate from the verdict. Compare all required source with the original stdin order and digest. Deny unsafe effects or insufficient evidence independently.
         If runtimeShellReconstruction is present and the current frame reports runtimeShellReconstructible, replace the indicated runtime UTF-16 interval with the JSON string encoding of the indicated shell interval. JSON_STRING includes the surrounding double quotes. This restores the original runtime UTF-8 bytes, length and SHA-256. The original runtime bytes remain directly pageable.
         """;
@@ -906,10 +908,6 @@ public final class DeploymentCommandSourceEvidence {
         var selected = manifest.putArray("selectedInstallerRanges");
         var initialRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
         appendSelection(selection, selected, initialRanges, INSTALLER_HELPER, helper, List.of(startup, rootAndDeployer, ownership, dispatch));
-        appendSelection(selection, selected, initialRanges, INSTALLER_BUILD_ENTRY, buildEntry,
-            List.of(new PreparationSourceRange("buildEntry", 0, buildEntry.length())));
-        var messages = new ArrayList<AiMessage>();
-        putSelectionFrame(manifest, messages, snapshot, bodies, INSTALLER_SELECTION, "installerSelection", selection);
         var required = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
         var runtimeReference = complete ? runtimeShellReference(executable, bodies) : Optional.<RuntimeShellReference>empty();
         if (complete) {
@@ -920,7 +918,7 @@ public final class DeploymentCommandSourceEvidence {
             var projectedExecutable = projected.path("completeExecutableInput");
             for (String leaf : DeploymentInstallerEvidence.readableBodies(executable)) {
                 if (!leaf.startsWith("/segments/")) continue;
-                String pointer = "/completeExecutableInput" + leaf;
+                String pointer = INSTALLER_INPUT + leaf;
                 var segment = (ObjectNode) projectedExecutable.at(leaf.substring(0, leaf.lastIndexOf('/')));
                 String literal = segment.path("text").textValue();
                 bodies.put(pointer, literal);
@@ -933,10 +931,67 @@ public final class DeploymentCommandSourceEvidence {
             required.forEach((pointer, ranges) -> mandatory.addObject().put("pointer", pointer)
                 .put("offset", 0).put("next", ranges.firstEntry().getValue()));
             runtimeReference.ifPresent(reference -> manifest.set("runtimeShellReconstruction", reference.descriptor()));
+            appendTrackedInstallerSelection(executable, selection, selected, initialRanges, bodies);
         }
+        appendSelection(selection, selected, initialRanges, INSTALLER_BUILD_ENTRY, buildEntry,
+            List.of(new PreparationSourceRange("buildEntry", 0, buildEntry.length())));
+        var messages = new ArrayList<AiMessage>();
+        putSelectionFrame(manifest, messages, snapshot, bodies, INSTALLER_SELECTION, "installerSelection", selection);
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
         return new DeploymentCommandSourceEvidence(current, original, snapshot, messages, bodies, initialRanges, required, required,
             runtimeReference, Optional.empty());
+    }
+
+    private static void appendTrackedInstallerSelection(JsonNode executable, StringBuilder selection, ArrayNode selected,
+            Map<String, NavigableMap<Integer, Integer>> initialRanges, Map<String, String> sources) throws IOException {
+        String helperPrefix = INSTALLER_INPUT + DeploymentInstallerEvidence.prefixPointer(executable, "managedHelper");
+        String entryPrefix = INSTALLER_INPUT + DeploymentInstallerEvidence.prefixPointer(executable, "buildEntry");
+        String tail = INSTALLER_INPUT + DeploymentInstallerEvidence.tailPointer(executable);
+        String beforeHelper = sources.get(helperPrefix);
+        String betweenWrites = sources.get(entryPrefix);
+        String afterEntry = sources.get(tail);
+        String writeOperand = "printf '%s' ";
+        String helperWriteTarget = " > \"$helper_tmp\"\n";
+        String entryWriteTarget = " > \"$entry_tmp\"\n";
+        if (!beforeHelper.endsWith(writeOperand) || !betweenWrites.equals(helperWriteTarget + writeOperand)
+                || !afterEntry.startsWith(entryWriteTarget)) {
+            throw new IOException("Original tracked installer payload writes changed");
+        }
+        var started = installerLiteralRange(beforeHelper, "installerExclusiveStartedReceipt",
+            "\nprepare_stage=installer-receipt\n", "\n# WTL_INSTALLER_BODY_AFTER_RECEIPT\n");
+        uniqueIndex(beforeHelper.substring(started.offset(), started.next()), "( set -C;");
+        var packages = installerLiteralRange(beforeHelper, "installerPackageTransaction",
+            "\nprepare_stage=platform-packages\n", "\nprepare_stage=helper-installation\n");
+        int staging = uniqueIndex(beforeHelper, "\nprepare_stage=helper-payload-staging\n");
+        var prefixRanges = new ArrayList<>(List.of(started, packages,
+            new PreparationSourceRange("installerHelperPayloadWrite", staging + 1, beforeHelper.length())));
+        var scope = "\nprepare_stage=platform-package-scope\n";
+        if (beforeHelper.contains(scope)) {
+            int start = uniqueIndex(beforeHelper, scope);
+            int end = beforeHelper.indexOf('\n', start + scope.length());
+            if (end < 0 || !beforeHelper.substring(start, end).contains("$(wtl_system_point)")) {
+                throw new IOException("Original tracked installer package scope changed");
+            }
+            prefixRanges.add(new PreparationSourceRange("installerPackageScope", start + 1, end + 1));
+        }
+        appendSelection(selection, selected, initialRanges, helperPrefix, beforeHelper, prefixRanges);
+        appendSelection(selection, selected, initialRanges, entryPrefix, betweenWrites,
+            List.of(new PreparationSourceRange("installerBuildEntryPayloadWrite", 0, betweenWrites.length())));
+        var verify = new PreparationSourceRange("installerPayloadDigestChecks", 0,
+            uniqueIndex(afterEntry, "\n/usr/bin/sync -f \"$helper_tmp\"\n"));
+        uniqueIndex(afterEntry.substring(0, verify.next()), "\ninstaller_verify_executable \"$helper_tmp\" ");
+        uniqueIndex(afterEntry.substring(0, verify.next()), "\ninstaller_verify_executable \"$entry_tmp\" ");
+        var terminal = installerLiteralRange(afterEntry, "installerTerminalReceiptReplacement",
+            "\nprepare_stage=installer-receipt-terminal\n", "\nprintf 'HELPER_INSTALL=1");
+        uniqueIndex(afterEntry.substring(terminal.offset(), terminal.next()), "/usr/bin/mv -fT -- \"$bootstrap_terminal\" \"$bootstrap_receipt\"");
+        appendSelection(selection, selected, initialRanges, tail, afterEntry, List.of(verify, terminal));
+    }
+
+    private static PreparationSourceRange installerLiteralRange(String source, String section, String from, String until) throws IOException {
+        int start = uniqueIndex(source, from);
+        int end = uniqueIndex(source, until);
+        if (end <= start) throw new IOException("Original tracked installer stage order changed");
+        return new PreparationSourceRange(section, start + 1, end + 1);
     }
 
     private static void requireInstallerSource(Map<String, NavigableMap<Integer, Integer>> required,
@@ -1111,7 +1166,7 @@ public final class DeploymentCommandSourceEvidence {
         private boolean correctionRequired;
         private int repeatedBatches;
         private int remaining;
-        private int nodeFrameBudget = Integer.MAX_VALUE;
+        private int measuredFrameBudget = Integer.MAX_VALUE;
 
         private Reader(int attempts) {
             remaining = attempts;
@@ -1325,7 +1380,7 @@ public final class DeploymentCommandSourceEvidence {
                 // A previous result-format correction can also leave a native batch after the current facts.
                 messages.subList(factsIndex + 1, messages.size()).clear();
                 // The native codec checks aggregate raw text and schemas before the exact wire-size check.
-                var frame = fittedSource(Math.min(nativeFrameBudget(messages), nodeFrameBudget)).orElseThrow(
+                var frame = fittedSource(Math.min(nativeFrameBudget(messages), measuredFrameBudget)).orElseThrow(
                     () -> new IOException("Current command evidence frame cannot fit the native request bound"));
                 var evidence = frame.message();
                 adoptRetainedFrame(frame);
@@ -1392,9 +1447,9 @@ public final class DeploymentCommandSourceEvidence {
             int position = messages.indexOf(original);
             if (position < 0) return false;
             int available = frameBudget(original, problem);
-            if (nodePreparation) {
-                nodeFrameBudget = Math.min(nodeFrameBudget, available);
-                available = nodeFrameBudget;
+            if (nodePreparation || completeInstallerReview()) {
+                measuredFrameBudget = Math.min(measuredFrameBudget, available);
+                available = measuredFrameBudget;
             }
             var fitted = fittedSource(available);
             if (fitted.isEmpty()) return false;
@@ -1411,7 +1466,9 @@ public final class DeploymentCommandSourceEvidence {
             var original = initialSupplement.orElseThrow();
             int position = messages.indexOf(original);
             if (position < 0) return false;
-            var fitted = fittedInitialSource(frameBudget(original, problem));
+            int available = frameBudget(original, problem);
+            if (completeInstallerReview()) measuredFrameBudget = Math.min(measuredFrameBudget, available);
+            var fitted = fittedInitialSource(available);
             if (fitted.isPresent()) messages.set(position, fitted.orElseThrow().message());
             else messages.remove(position);
             useInitialSource(fitted);

@@ -133,6 +133,7 @@ class DeploymentToolchainReviewEvidenceTest {
             assertTrue(excerpt.contains("require_root() {") && excerpt.contains("require_deployer() {"));
             assertTrue(excerpt.contains("probe)\n        [ \"$#\" -eq 0 ] || reject probe-arguments"));
             assertTrue(installer.path("selectedInstallerRanges").has(4));
+            assertTrackedInstallerExcerpts(installer, excerpt);
             for (var range : installer.path("selectedInstallerRanges")) {
                 String source = exactSources.get(range.path("sourcePointer").asText());
                 int offset = range.path("offset").asInt(), next = range.path("next").asInt();
@@ -156,6 +157,127 @@ class DeploymentToolchainReviewEvidenceTest {
             assertInstallerReadReceipts(evidence, JSON.readTree(evidence.messages().getLast().text()).path("installerReviewEvidence"),
                 exactSources);
             System.out.printf("INSTALLER_REVIEW_WIRE bytes=%d ceiling=%d%n", encoded.length, 365119);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"DENY", "APPROVE"})
+    void r47TrackedInstallerReusesMeasuredResponsesFrameAfterShrinkingAndPreservesSourceGate(String verdict) throws Exception {
+        int factsCharacters = 31935;
+        int[] ceilings = {1048576, 900869, 688218, 688218};
+        int[] attempts = new int[ceilings.length];
+        try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var request = fixture.request(fixture.installer("TRACKED", true))) {
+            var action = fixture.intent("TRACKED", request);
+            var continuations = new LinkedHashMap<UUID, String>();
+            var bounded = wireBudgetContext(assisted.context, continuations, factsCharacters, () -> {
+                int delivered = fixture.model.requests.size();
+                attempts[delivered]++;
+                return ceilings[delivered];
+            }, delivered -> {
+                try {
+                    var facts = JSON.readTree(delivered.messages().getLast().text());
+                    var manifest = facts.path("installerReviewEvidence");
+                    String snapshot = manifest.path("snapshotSha256").asText();
+                    int turn = fixture.model.requests.size();
+                    var reads = r47InstallerReads(delivered, facts, snapshot, turn);
+                    if (reads.isEmpty()) reply(fixture, verdict("r47-installer-independent-verdict", verdict));
+                    else replyAtTotalBytes(fixture, continuations, 6000, "OPENAI_RESPONSES", reads.toArray(AiToolCall[]::new));
+                } catch (Exception failure) {
+                    throw new AssertionError(failure);
+                }
+            });
+            var blocked = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approveWithEvidence(
+                bounded, assisted.host, action, request, fixture.task, fixture.model.configurationRevision,
+                "AUTOMATIC", false, assisted.scope));
+            if (verdict.equals("DENY")) assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", blocked.problem().eventCode());
+            else {
+                assertEquals("EVIDENCE_INCOMPLETE_VERDICT", blocked.problem().context().get("reviewCode"));
+                assertEquals("REQUIRED_SOURCE_MISSING", blocked.problem().context().get("reviewEvidenceBlock"));
+            }
+            assertEquals(0, assisted.hosts.get());
+            assertEquals(ceilings.length, fixture.model.requests.size());
+            assertEquals(2, attempts[1], "The first smaller physical allowance must be measured");
+            assertEquals(2, attempts[2], "The second smaller physical allowance must be measured");
+            assertEquals(1, attempts[3], "The unchanged measured physical allowance must be reused on the next request");
+            var executable = JSON.valueToTree(fixture.facts("TRACKED", request)).path("completeExecutableInput");
+            var exact = new LinkedHashMap<String, String>();
+            for (var leaf : DeploymentInstallerEvidence.readableBodies(executable))
+                exact.put("/completeExecutableInput" + leaf, executable.at(leaf).textValue());
+            var encodedSizes = new ArrayList<Integer>();
+            for (int turn = 0; turn < ceilings.length; turn++) {
+                var delivered = fixture.model.requests.get(turn);
+                assertTrue(delivered.messages().stream().noneMatch(message -> message.continuation().isPresent()));
+                byte[] wire = wireWithR24FactsSize(delivered, factsCharacters, ceilings[turn], continuations);
+                encodedSizes.add(wire.length);
+                var wireInput = JSON.readTree(wire).path("input");
+                for (var message : delivered.messages()) {
+                    if (!message.text().startsWith("WTL-COMMAND-")) continue;
+                    assertTrue(java.util.stream.StreamSupport.stream(wireInput.spliterator(), false)
+                        .anyMatch(item -> item.at("/content/0/text").asText().equals(message.text())));
+                }
+                var manifest = JSON.readTree(delivered.messages().getLast().text()).path("installerReviewEvidence");
+                var coverage = assertInstallerVisibleRanges(delivered, manifest, exact);
+                if (turn != 0) {
+                    var helper = "/completeExecutableInput/sources/managedHelper";
+                    assertFalse(DeploymentEvidencePages.missing(exact.get(helper), 0, exact.get(helper).length(),
+                        coverage.get(helper)).isEmpty());
+                }
+            }
+            System.out.printf("R47_INSTALLER_REPLAY verdict=%s confirmedWire=%s ceilings=%s attempts=%s factsCharacters=%d%n",
+                verdict, encodedSizes, java.util.Arrays.toString(ceilings), java.util.Arrays.toString(attempts), factsCharacters);
+        }
+    }
+
+    private static List<AiToolCall> r47InstallerReads(AiRequest delivered, JsonNode facts, String snapshot, int turn) throws Exception {
+        var segments = "/completeExecutableInput/segments/";
+        if (turn == 0) {
+            var reads = new ArrayList<>(List.of(
+                read("r47-literal-0", snapshot, segments + "0/text", 0, 8000),
+                read("r47-literal-6", snapshot, segments + "6/text", 0, 8000),
+                read("r47-literal-6-middle", snapshot, segments + "6/text", 8000, 8000),
+                read("r47-literal-6-tail", snapshot, segments + "6/text", 16000, 7679),
+                read("r47-literal-4", snapshot, segments + "4/text", 0, 924),
+                read("r47-literal-10", snapshot, segments + "10/text", 0, 3111)));
+            // The synthetic task has a smaller mirror policy, so only replay the original tail when its offset exists.
+            if (facts.at(segments + "0/text/characters").asInt() > 8000)
+                reads.add(1, read("r47-literal-0-tail", snapshot, segments + "0/text", 8000, 415));
+            return reads;
+        }
+        if (turn == 1) {
+            var reads = new ArrayList<AiToolCall>();
+            for (int index = 0; index < 8; index++)
+                reads.add(read("r47-helper-page-" + index, snapshot, "/completeExecutableInput/sources/managedHelper",
+                    544476 + index * 8000, 8000));
+            return reads;
+        }
+        if (turn == 2) {
+            // Hold the last observed ceiling for one further missing range to check reuse after a successful rebase.
+            var frame = delivered.messages().get(delivered.messages().size() - 2).text();
+            var pending = installerRetainedHeader(frame).path("pendingRequired").get(0);
+            assertNotNull(pending);
+            int offset = pending.path("offset").asInt();
+            return List.of(read("r47-missing-page", snapshot, pending.path("pointer").asText(),
+                offset, Math.min(8000, pending.path("next").asInt() - offset)));
+        }
+        return List.of();
+    }
+
+    private static void assertTrackedInstallerExcerpts(JsonNode installer, String excerpt) {
+        var selected = installer.path("selectedInstallerRanges");
+        for (var stage : Map.of(
+                "installerPackageTransaction", Map.entry(6, "wtl_apt -o DPkg::Lock::Timeout=300 install"),
+                "installerExclusiveStartedReceipt", Map.entry(6, "( set -C; printf '%s' "),
+                "installerHelperPayloadWrite", Map.entry(6, "helper_tmp=$(/usr/bin/mktemp "),
+                "installerBuildEntryPayloadWrite", Map.entry(8, " > \"$helper_tmp\"\nprintf '%s' "),
+                "installerPayloadDigestChecks", Map.entry(10, "installer_verify_executable \"$helper_tmp\" "),
+                "installerTerminalReceiptReplacement", Map.entry(10, "/usr/bin/mv -fT -- \"$bootstrap_terminal\" \"$bootstrap_receipt\"")).entrySet()) {
+            var range = java.util.stream.StreamSupport.stream(selected.spliterator(), false)
+                .filter(node -> node.path("section").asText().equals(stage.getKey())).findFirst().orElseThrow();
+            assertEquals("/completeExecutableInput/segments/" + stage.getValue().getKey() + "/text", range.path("sourcePointer").asText());
+            int start = range.path("startCharacter").asInt();
+            assertTrue(excerpt.substring(start, start + range.path("next").asInt() - range.path("offset").asInt())
+                .contains(stage.getValue().getValue()), stage.getKey());
         }
     }
 
@@ -226,8 +348,8 @@ class DeploymentToolchainReviewEvidenceTest {
         for (var range : installer.path("selectedInstallerRanges"))
             assertInstallerRange(exactSources, bySource, supplied, range.path("sourcePointer").asText(), range, excerpts,
                 range.path("startCharacter").asInt());
-        String frame = request.messages().stream().filter(DeploymentToolchainReviewEvidenceTest::nodeInitialSupplement)
-            .findFirst().orElseThrow().text();
+        String frame = request.messages().stream().map(AiMessage::text)
+            .filter(text -> text.startsWith("WTL-COMMAND-RETAINED-SOURCE-1\n")).findFirst().orElseThrow();
         int end = frame.indexOf('\n', frame.indexOf('\n') + 1);
         var header = installerRetainedHeader(frame);
         assertEquals(installer.path("snapshotSha256"), header.path("snapshotSha256"));
@@ -3416,7 +3538,7 @@ class DeploymentToolchainReviewEvidenceTest {
             var message = messages.get(index);
             if (message.role() != AiRole.USER || !message.text().startsWith("{")) continue;
             var current = (ObjectNode) JSON.readTree(message.text());
-            if (!current.has(PHASE)) continue;
+            if (!current.has(PHASE) && !current.has("installerReviewEvidence")) continue;
             // The in-memory workflow uses less metadata than the original app. Preserve the observed payload scale.
             int extra = Math.max(0, minimumCharacters - message.text().length() - 24);
             if (extra > 0) {
