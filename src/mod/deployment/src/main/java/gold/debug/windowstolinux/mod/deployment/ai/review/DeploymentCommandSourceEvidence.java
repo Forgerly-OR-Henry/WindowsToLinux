@@ -57,6 +57,9 @@ public final class DeploymentCommandSourceEvidence {
     private static final String INSTALLER_RUNTIME_SHELL_ASSIGNMENT = "\nBOOTSTRAP_SHELL = ";
     private static final String INSTALLER_HELPER = INSTALLER_SOURCES + "managedHelper";
     private static final String INSTALLER_BUILD_ENTRY = INSTALLER_SOURCES + "buildEntry";
+    private static final String INSTALLER_WRITE_PREFIX = "printf '%s' ";
+    private static final String INSTALLER_HELPER_TEMP = "\"$helper_tmp\"";
+    private static final String INSTALLER_BUILD_ENTRY_TEMP = "\"$entry_tmp\"";
     private static final String INSTALLER_PROBE = "    probe)\n        [ \"$#\" -eq 0 ] || reject probe-arguments\n";
     private static final String MIRROR_RUNTIME = "/mirrorTransport/runtimeSource";
     private static final String INSTALLED_HELPER_SOURCE = "/" + PROJECTION + "/installedHelperSource";
@@ -177,7 +180,10 @@ public final class DeploymentCommandSourceEvidence {
 
     private static final String READY_INSTALLER_INSTRUCTION = """
         Review the exact existing-package observation and the installer checks before the helper lock, the STARTED receipt and success. This tracked request carries no package-manager transaction or mirror runtime. Check the installed package and executable-path predicates, then follow the original lock, payload verification, publication, systemd effects and receipt.
-        completeSourceRequired identifies all original installer bytes and embedded sources. Read any pendingRequired from the latest frame using the exact snapshot and source coordinates. Deny insufficient evidence or unsafe effects independently.
+        orderedStdinParts gives the whole original stdin order. At each partIndex use the exact source at sourcePointer. Each descriptor gives the source identity and length. Use the exact text in installerSelection and the current source frame, or read a missing range. Insert each complete SHELL_SINGLE_QUOTE operand between its adjacent literal parts, including when an excerpt ends at printf '%s' before the operand.
+        embeddedPayloadWrites maps the two quoted operands to their exact printf prefix, redirection and digestCheck spans. Each printf writes that operand's full unquoted source. Use the payload's characters, utf8Bytes and sha256 to identify those bytes, and use the spans to inspect how the original shell writes and verifies them. Source coverage and digests describe the request. Host effects require execution evidence.
+        completeSourceRequired identifies the required source. For the matching snapshotSha256, use requiredSourceCoverage and pendingRequired in the current initial supplement or retained frame. COMPLETE and [] mean the frame plus selectedInstallerRanges cover all required source. INCOMPLETE lists gaps in that coverage. The frame body follows its ranges in order, each next minus offset UTF-16 code units. Count any exact raw pages present for the same snapshot. If there is no current source frame, use the inline ranges and read missing required source. An absent frame cannot establish complete coverage.
+        Use the current snapshotSha256 and exact pointer, offset and limit to read absent evidence. Decide independently from the exact source and reached effects. Submit a fresh native submit_result alone, with DENY for unsafe effects or insufficient evidence.
         """;
 
     private static final String COMPLETE_INSTALLER_INSTRUCTION = """
@@ -1175,7 +1181,8 @@ public final class DeploymentCommandSourceEvidence {
             required.forEach((pointer, ranges) -> mandatory.addObject().put("pointer", pointer)
                 .put("offset", 0).put("next", ranges.firstEntry().getValue()));
             runtimeReference.ifPresent(reference -> manifest.set("runtimeShellReconstruction", reference.descriptor()));
-            appendTrackedInstallerSelection(executable, selection, selected, initialRanges, bodies, ready);
+            var verify = appendTrackedInstallerSelection(executable, selection, selected, initialRanges, bodies, ready);
+            if (ready) describeReadyInstallerStdin(manifest, projectedExecutable, bodies, verify);
         }
         appendSelection(selection, selected, initialRanges, INSTALLER_BUILD_ENTRY, buildEntry,
             List.of(new PreparationSourceRange("buildEntry", 0, buildEntry.length())));
@@ -1186,18 +1193,18 @@ public final class DeploymentCommandSourceEvidence {
             runtimeReference, Optional.empty());
     }
 
-    private static void appendTrackedInstallerSelection(JsonNode executable, StringBuilder selection, ArrayNode selected,
-            Map<String, NavigableMap<Integer, Integer>> initialRanges, Map<String, String> sources, boolean ready) throws IOException {
+    private static PreparationSourceRange appendTrackedInstallerSelection(JsonNode executable, StringBuilder selection,
+            ArrayNode selected, Map<String, NavigableMap<Integer, Integer>> initialRanges, Map<String, String> sources,
+            boolean ready) throws IOException {
         String helperPrefix = INSTALLER_INPUT + DeploymentInstallerEvidence.prefixPointer(executable, "managedHelper");
         String entryPrefix = INSTALLER_INPUT + DeploymentInstallerEvidence.prefixPointer(executable, "buildEntry");
         String tail = INSTALLER_INPUT + DeploymentInstallerEvidence.tailPointer(executable);
         String beforeHelper = sources.get(helperPrefix);
         String betweenWrites = sources.get(entryPrefix);
         String afterEntry = sources.get(tail);
-        String writeOperand = "printf '%s' ";
-        String helperWriteTarget = " > \"$helper_tmp\"\n";
-        String entryWriteTarget = " > \"$entry_tmp\"\n";
-        if (!beforeHelper.endsWith(writeOperand) || !betweenWrites.equals(helperWriteTarget + writeOperand)
+        String helperWriteTarget = installerWriteRedirection(INSTALLER_HELPER_TEMP);
+        String entryWriteTarget = installerWriteRedirection(INSTALLER_BUILD_ENTRY_TEMP);
+        if (!beforeHelper.endsWith(INSTALLER_WRITE_PREFIX) || !betweenWrites.equals(helperWriteTarget + INSTALLER_WRITE_PREFIX)
                 || !afterEntry.startsWith(entryWriteTarget)) {
             throw new IOException("Original tracked installer payload writes changed");
         }
@@ -1241,6 +1248,65 @@ public final class DeploymentCommandSourceEvidence {
         if (ready) tailRanges.add(installerLiteralRange(afterEntry, "installerPrerequisitesBeforeSuccess",
             "\nprepare_stage=platform-prerequisites\n", "\nprepare_stage=helper-installation\n"));
         appendSelection(selection, selected, initialRanges, tail, afterEntry, tailRanges);
+        return verify;
+    }
+
+    private static String installerWriteRedirection(String target) {
+        return " > " + target + "\n";
+    }
+
+    private static void describeReadyInstallerStdin(ObjectNode manifest, JsonNode projectedExecutable,
+            Map<String, String> sources, PreparationSourceRange verify) throws IOException {
+        var segments = projectedExecutable.path("segments");
+        var parts = manifest.putArray("orderedStdinParts");
+        for (int index = 0; index < segments.size(); index++) {
+            var segment = segments.get(index);
+            String kind = requiredText(segment, "kind");
+            String pointer = kind.equals("LITERAL") ? INSTALLER_INPUT + "/segments/" + index + "/text"
+                : INSTALLER_SOURCES + requiredText(segment, "source");
+            parts.addObject().put("partIndex", index).put("kind", kind).put("sourcePointer", pointer);
+        }
+        if (parts.size() != 5 || !INSTALLER_HELPER.equals(installerPartPointer(parts, 1))
+                || !INSTALLER_BUILD_ENTRY.equals(installerPartPointer(parts, 3)))
+            throw new IOException("Original READY installer payload order changed");
+        var projectedSources = projectedExecutable.path("sources");
+        var writes = manifest.putArray("embeddedPayloadWrites");
+        writes.add(describeInstallerPayloadWrite(parts, sources, projectedSources.path("managedHelper"),
+            1, INSTALLER_HELPER_TEMP, verify.next()));
+        writes.add(describeInstallerPayloadWrite(parts, sources, projectedSources.path("buildEntry"),
+            3, INSTALLER_BUILD_ENTRY_TEMP, verify.next()));
+    }
+
+    private static ObjectNode describeInstallerPayloadWrite(ArrayNode parts, Map<String, String> sources,
+            JsonNode descriptor, int index, String target, int verifyEnd) throws IOException {
+        String pointer = installerPartPointer(parts, index);
+        int characters = descriptor.path("characters").asInt();
+        int utf8Bytes = descriptor.path("utf8Bytes").asInt();
+        String digest = requiredText(descriptor, "sha256");
+        if (characters <= 0 || utf8Bytes <= 0 || !pointer.equals(requiredText(descriptor, "sourcePointer")))
+            throw new IOException("Original READY installer payload descriptor changed");
+        var write = JSON.createObjectNode().put("partIndex", index).put("sourcePointer", pointer).put("target", target)
+            .put("characters", characters).put("utf8Bytes", utf8Bytes).put("sha256", digest);
+        String prefix = installerPartPointer(parts, index - 1);
+        int prefixEnd = sources.get(prefix).length();
+        write.set("prefix", retainedLocation(prefix, prefixEnd - INSTALLER_WRITE_PREFIX.length(), prefixEnd));
+        write.set("redirection", retainedLocation(installerPartPointer(parts, index + 1), 0,
+            installerWriteRedirection(target).length()));
+        String tail = installerPartPointer(parts, parts.size() - 1);
+        String checks = sources.get(tail).substring(0, verifyEnd);
+        String check = "\ninstaller_verify_executable " + target + " " + DeploymentHelperInstallerScript.quote(digest) + " ";
+        int start = uniqueIndex(checks, check) + 1;
+        int newline = checks.indexOf('\n', start);
+        write.set("digestCheck", retainedLocation(tail, start, newline < 0 ? verifyEnd : newline));
+        return write;
+    }
+
+    private static String installerPartPointer(ArrayNode parts, int index) {
+        return parts.get(index).path("sourcePointer").asText();
+    }
+
+    private static ObjectNode retainedLocation(String pointer, int offset, int next) {
+        return JSON.createObjectNode().put("pointer", pointer).put("offset", offset).put("next", next);
     }
 
     private static PreparationSourceRange installerLiteralRange(String source, String section, String from, String until) throws IOException {
@@ -1551,16 +1617,14 @@ public final class DeploymentCommandSourceEvidence {
             boolean nativeApt = nativeAptInitialSource();
             if (nativeApt) header.put("nativeAptRequiredSource", true);
             boolean showPending = completeInstallerReview() || rubyPreparationReview() || packedBuildReview() || phpBinding || nativeApt;
-            if (showPending)
-                appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
+            if (showPending) appendRequiredCoverage(header, visible);
             int bodyBudget = available - quotedBytes(RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n");
             if (bodyBudget <= 0) return Optional.empty();
             var body = new StringBuilder();
             retainHistory(initialSourceRanges, visible, entries, body, bodyBudget);
             if (entries.isEmpty()) return Optional.empty();
             if (reconstructRuntimeShell(visible)) header.put("runtimeShellReconstructible", true);
-            if (showPending)
-                appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
+            if (showPending) appendRequiredCoverage(header, visible);
             var message = new AiMessage(AiRole.USER, RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n" + body, List.of());
             return quotedBytes(message) <= available ? Optional.of(new RetainedFrame(message, visible)) : Optional.empty();
         }
@@ -1960,7 +2024,7 @@ public final class DeploymentCommandSourceEvidence {
             }
             int omitted = appendUnconfirmed(header, "previouslyDeferred", requested, described);
             if (nodePreparation) groupNodeDeferred(header);
-            if (!requiredRanges.isEmpty()) appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
+            if (!requiredRanges.isEmpty()) appendRequiredCoverage(header, visible);
             header.put("omittedRanges", omitted);
             var message = new AiMessage(AiRole.USER, RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n" + body, List.of());
             return new RetainedFrame(message, visible);
@@ -2112,8 +2176,11 @@ public final class DeploymentCommandSourceEvidence {
                 + quotedBytes(JSON.writeValueAsString(retainedLocation(pointer, offset, next))) - 3;
         }
 
-        private ObjectNode retainedLocation(String pointer, int offset, int next) {
-            return JSON.createObjectNode().put("pointer", pointer).put("offset", offset).put("next", next);
+        private void appendRequiredCoverage(ObjectNode header, Map<String, NavigableMap<Integer, Integer>> visible) throws IOException {
+            int missing = appendUnconfirmed(header, "pendingRequired", requiredRanges, visible);
+            if (!readyInstallerReview()) return;
+            header.put("requiredSourceCoverage", missing == 0 ? "COMPLETE" : "INCOMPLETE");
+            if (missing == 0) header.putArray("pendingRequired");
         }
 
         private int appendUnconfirmed(ObjectNode header, String name,
