@@ -618,13 +618,16 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                     var association = buildArchiveFacts(archiveObservations(), Map.copyOf(reviewedApplicationSources),
                         intent, request, layout);
                     facts.put("currentBuildArchive", association);
-                    // The later authority checks revalidate the exact command and archive SHA without collecting text again.
-                    if (includeBuildText && mirroredBuildInput(request)) {
+                    if (mirroredBuildInput(request)) {
                         var archive = (Map<?, ?>) association.get("archive");
                         var captured = Objects.requireNonNull(sourceArchives.get(archiveKey(
                             archive.get("relativeRoot").toString(), archive.get("archiveSha256").toString())));
-                        facts.put("currentBuildArchiveSource", DeploymentSourceArchiveReview.capture(
-                            captured.material(), captured.archive(), supplied));
+                        if (includeBuildText) {
+                            facts.put("currentBuildArchiveSource", DeploymentSourceArchiveReview.capture(
+                                captured.material(), captured.archive(), supplied));
+                        } else {
+                            DeploymentSourceArchiveReview.verifyBinding(captured.material(), captured.archive(), supplied);
+                        }
                     }
                 } catch (java.io.IOException invalid) {
                     throw new IllegalArgumentException("Build archive evidence cannot be decoded", invalid);

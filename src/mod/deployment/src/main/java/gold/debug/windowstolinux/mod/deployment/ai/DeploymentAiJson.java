@@ -19,6 +19,7 @@ import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandSourc
 import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchiveReview;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract;
 
 /** Native model transport and side-effect-free structured submissions. Business validators retain authority. */
@@ -139,10 +140,17 @@ public final class DeploymentAiJson {
         if (approvalConversation != null) return askCommand(instruction, facts, revision, task, malformed);
         var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
         var evidence = DeploymentCommandSourceEvidence.supports(intent)
-            ? DeploymentCommandSourceEvidence.project(facts(facts, 1048576, true), intent, request, layout)
+            ? DeploymentCommandSourceEvidence.project(facts(facts, 1048576, true), intent, request, layout, capturedBuildArchive(facts))
             : Optional.<DeploymentCommandSourceEvidence>empty();
         boolean nativeObservation = DeploymentCommandEvidence.nativePublicationApplication(intent, request, layout).isPresent();
         return askCommand(instruction, facts, revision, task, malformed, evidence, nativeObservation);
+    }
+
+    private static Optional<DeploymentSourceArchiveReview.Evidence> capturedBuildArchive(Map<String, ?> facts) {
+        if (facts.get("currentCommandEvidence") instanceof Map<?, ?> current
+            && current.get("currentBuildArchiveSource") instanceof DeploymentSourceArchiveReview.Evidence archive)
+            return Optional.of(archive);
+        return Optional.empty();
     }
 
     private JsonNode askCommand(String instruction, Map<String, ?> facts, String revision, TaskContext task,
@@ -185,7 +193,7 @@ public final class DeploymentAiJson {
         } catch (Exception rejected) {
             throw new IOException("Approval conversation binding rejected", rejected);
         }
-        String current = facts(facts, bound, purpose == AiPurpose.APPROVAL);
+        String current = evidence.isPresent() ? "" : facts(facts, bound, purpose == AiPurpose.APPROVAL);
         var messages = new ArrayList<AiMessage>();
         messages.add(new AiMessage(AiRole.SYSTEM, policy, List.of()));
         var definitions = evidence.isPresent() ? List.of(definition, evidence.orElseThrow().evidenceTool()) : List.of(definition);

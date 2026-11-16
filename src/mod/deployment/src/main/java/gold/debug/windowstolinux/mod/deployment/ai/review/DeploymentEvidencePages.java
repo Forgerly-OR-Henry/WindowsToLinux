@@ -16,6 +16,10 @@ public final class DeploymentEvidencePages {
     }
 
     public static Map<String, Object> page(String text, int offset, int limit) {
+        return page(text, offset, limit, null);
+    }
+
+    static Map<String, Object> page(String text, int offset, int limit, String verifiedSha256) {
         if (offset < 0 || offset > text.length() || limit < 1 || splitsPair(text, offset))
             throw new IllegalArgumentException("Evidence page cursor outside its bound");
         int end = Math.min(text.length(), offset + limit);
@@ -24,7 +28,7 @@ public final class DeploymentEvidencePages {
             end--;
         }
         return Map.of("offset", offset, "next", end, "total", text.length(), "hasMore", end < text.length(),
-            "sha256", sha256(text), "text", text.substring(offset, end));
+            "sha256", verifiedSha256 == null ? sha256(text) : verifiedSha256, "text", text.substring(offset, end));
     }
 
     static Map<String, Object> retainAndDescribe(String text, Map<String, Object> page, NavigableMap<Integer, Integer> retained) {

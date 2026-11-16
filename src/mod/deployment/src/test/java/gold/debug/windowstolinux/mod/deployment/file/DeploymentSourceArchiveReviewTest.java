@@ -23,6 +23,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.app.ai.model.ModelProtocol;
 import gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec;
 import gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel;
+import gold.debug.windowstolinux.app.ai.model.ModelRequestBudgetException;
+import gold.debug.windowstolinux.appapi.ai.model.AiContinuation;
+import gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt;
 import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
 import gold.debug.windowstolinux.appapi.ai.model.AiMessage;
 import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
@@ -34,10 +37,13 @@ import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandSourceEvidence;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentFixedCommandProtocol;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision;
@@ -115,35 +121,225 @@ class DeploymentSourceArchiveReviewTest {
     }
 
     @Test
-    void oversizedComponentProvidesCoverageStatusWithoutOpeningEitherSnapshot() throws Exception {
+    void originalLogAnalyzerKeepsItsArchiveAndTracesEverySafeProjectTextPastTheOldAggregateBound() throws Exception {
         try (var fixture = new MirroredInstallerTestFixture()) {
+            Path staged = Files.createDirectory(temporary.resolve("log-analyzer")).toRealPath();
+            Path original = fixtureRoot("success-log-analyzer", "native/vendor/nlohmann/json.hpp");
+            var paths = new ArrayList<String>();
+            try (var files = Files.walk(original)) {
+                for (Path file : files.filter(Files::isRegularFile).sorted().toList()) {
+                    Path relative = original.relativize(file);
+                    Path target = staged.resolve(relative);
+                    Files.createDirectories(target.getParent());
+                    Files.copy(file, target);
+                    paths.add(relative.toString().replace('\\', '/'));
+                }
+            }
+            Path declaration = staged.resolve("windowstolinux-application.properties");
+            String originalDeclaration = Files.readString(declaration).replaceAll("(?m)^verification\\.arg\\.[0-9]+=.*\\R?", "")
+                .replaceAll("(?m)^expectedOutput=.*\\R?", "");
+            Files.writeString(declaration, originalDeclaration + """
+                verification.arg.0=--input
+                verification.arg.1=samples/events.log
+                verification.arg.2=--format
+                verification.arg.3=json
+                expectedOutput="matched": 6
+                """);
+            var material = new DeploymentSourceMaterial("Log Analyzer", new Snapshot(UUID.randomUUID(), "a".repeat(64), staged),
+                paths, List.of());
+            var archive = writeArchive(material, "", fixture.task);
+            assertEquals("6330280598c909dd9a39202b49506c59898000fa14681c5e1e197e1f38053c75", archive.sha256());
+            assertEquals(158_250, archive.byteCount());
+            assertEquals(995_661, archive.uncompressedByteCount());
+            var captured = DeploymentSourceArchiveReview.capture(material, archive, fixture.task);
+            assertEquals(25, captured.memberCount());
+            assertEquals(23, captured.members().size());
+            assertEquals(List.of("native/vendor/nlohmann/json.hpp", "samples/events.log"),
+                captured.omitted().stream().map(DeploymentSourceArchiveReview.Omitted::path).toList());
+            assertEquals(new DeploymentSourceArchiveReview.Omitted("native/vendor/nlohmann/json.hpp", 953_436, "PROTECTED_CONTENT"),
+                captured.omitted().getFirst());
+            assertTrue(captured.requiredUnavailable());
+            assertTrue(captured.pagedBodies().isEmpty());
+            try (var input = new TarArchiveInputStream(new GZIPInputStream(Files.newInputStream(archive.path())))) {
+                for (var entry = input.getNextEntry(); entry != null; entry = input.getNextEntry()) {
+                    byte[] originalBytes = input.readAllBytes();
+                    String entryName = entry.getName();
+                    var member = captured.members().stream().filter(item -> item.path().equals(entryName)).findFirst();
+                    if (member.isPresent()) {
+                        assertArrayEquals(originalBytes, member.orElseThrow().text().getBytes(StandardCharsets.UTF_8));
+                        assertEquals(digest(originalBytes), member.orElseThrow().sha256());
+                    } else if (entry.getName().equals("native/vendor/nlohmann/json.hpp")) {
+                        assertEquals("aaf127c04cb31c406e5b04a63f1ae89369fccde6d8fa7cdda1ed4f32dfc5de63", digest(originalBytes));
+                    }
+                }
+            }
+            try (var build = buildReview(fixture, archive, captured)) {
+                var initial = deny(fixture, new DeploymentAiJson(fixture.context), build.facts(), build.intent(), build.request());
+                byte[] wire = encode(initial);
+                assertTrue(wire.length < 223_943);
+                var manifest = JSON.readTree(initial.messages().getLast().text()).path("buildReviewEvidence");
+                var source = retainedTexts(JSON.readTree(wire).path("input"), manifest.path("snapshotSha256").asText());
+                assertEquals(23, source.size());
+                for (var item : manifest.at("/projectArchive/members")) {
+                    String content = source.get(item.path("sourcePointer").asText());
+                    assertEquals(item.path("sha256").asText(), digest(content.getBytes(StandardCharsets.UTF_8)));
+                }
+                fixture.model.nativeReply(verdict("APPROVE"));
+                assertThrows(DeploymentCommandReviewModel.Failure.class, () -> new DeploymentAiJson(fixture.context)
+                    .askCommand("Review this original archive", build.facts(), fixture.model.configurationRevision,
+                        fixture.task, DeploymentReviewDecision::malformed, build.intent(), build.request()));
+                System.out.printf("R65_ORIGINAL_ARCHIVE sha=%s members=25 visible=23 protectedHeader=953436 wire=%d ceiling=223943%n",
+                    archive.sha256(), wire.length);
+            }
+        }
+    }
+
+    @Test
+    void pagedLargeMemberUsesExactOriginalDigestAndUtf16RangesWithoutEnteringFactsOrApprovingMissingSource() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture()) {
+            Path source = Files.createDirectory(temporary.resolve("source")).toRealPath();
+            String introduction = "x".repeat(7999) + "\uD83E\uDDEA\n";
+            String row = "r65-original-paged-header-row\n";
+            int remaining = 953_436 - introduction.getBytes(StandardCharsets.UTF_8).length;
+            String original = introduction + row.repeat(remaining / row.length()) + "z".repeat(remaining % row.length());
+            Files.writeString(source.resolve("000-header.hpp"), original);
+            Files.writeString(source.resolve("main.cpp"), "int main() { return 0; }\n");
+            var material = new DeploymentSourceMaterial("Large text", new Snapshot(UUID.randomUUID(), "a".repeat(64), source),
+                List.of("000-header.hpp", "main.cpp"), List.of());
+            var archive = writeArchive(material, "", fixture.task);
+            var captured = DeploymentSourceArchiveReview.capture(material, archive, fixture.task);
+            assertEquals("COMPLETE", captured.coverage());
+            assertEquals(original, captured.pagedBodies().get("000-header.hpp"));
+            assertNull(captured.members().getFirst().text());
+            assertEquals(953_436, captured.members().getFirst().bytes());
+            assertFalse(JSON.writeValueAsString(captured).contains(row.strip()));
+            try (var build = buildReview(fixture, archive, captured)) {
+                String facts = DeploymentAiJson.facts(build.facts(), 1048576);
+                assertFalse(facts.contains(row.strip()));
+                assertThrows(IOException.class,
+                    () -> DeploymentCommandSourceEvidence.project(facts, build.intent(), build.request(), fixture.layout));
+                var evidence = DeploymentCommandSourceEvidence.project(facts, build.intent(), build.request(), fixture.layout,
+                    Optional.of(captured)).orElseThrow();
+                var manifest = JSON.readTree(evidence.messages().getLast().text()).path("buildReviewEvidence");
+                String snapshot = manifest.path("snapshotSha256").asText();
+                var descriptor = manifest.at("/projectArchive/members/0");
+                String pointer = descriptor.path("sourcePointer").asText();
+                String sha = digest(original.getBytes(StandardCharsets.UTF_8));
+                assertEquals(sha, descriptor.path("sha256").asText());
+                assertEquals(original.length(), descriptor.path("characters").asInt());
+                assertTrue(descriptor.path("initiallyPaged").asBoolean());
+                var reader = evidence.reader(140);
+                assertTrue(reader.read(reply(evidenceCall("stale", "0".repeat(64), pointer, 0, 8000))).getFirst().error());
+                assertTrue(reader.read(reply(evidenceCall("split", snapshot, pointer, 8000, 8000))).getFirst().error());
+
+                var rebuilt = new StringBuilder();
+                int cursor = 0, pages = 0;
+                while (cursor < original.length()) {
+                    String readPointer = pages == 1 ? "/currentCommandEvidence/currentBuildArchiveSource/members/0/text" : pointer;
+                    var result = reader.read(reply(evidenceCall("large-" + pages, snapshot, readPointer, cursor, 8000))).getFirst();
+                    assertFalse(result.error(), result::text);
+                    var parts = result.text().split("\n", 3);
+                    var page = JSON.readTree(parts[1]).path("value");
+                    assertEquals(sha, page.path("sha256").asText());
+                    assertEquals(cursor, page.path("offset").asInt());
+                    int next = page.path("next").asInt();
+                    if (pages == 0) assertEquals(7999, next);
+                    if (pages == 1) assertTrue(parts[2].startsWith("\uD83E\uDDEA"));
+                    assertEquals(original.substring(cursor, next), parts[2]);
+                    rebuilt.append(parts[2]);
+                    cursor = next;
+                    pages++;
+                }
+                assertEquals(sha, digest(rebuilt.toString().getBytes(StandardCharsets.UTF_8)));
+
+                fixture.model.nativeReply(verdict("APPROVE"));
+                assertThrows(DeploymentCommandReviewModel.Failure.class, () -> new DeploymentAiJson(fixture.context)
+                    .askCommand("Review this original archive", build.facts(), fixture.model.configurationRevision,
+                        fixture.task, DeploymentReviewDecision::malformed, build.intent(), build.request()));
+                byte[] first = encode(fixture.model.requests.getLast());
+                assertFalse(new String(first, StandardCharsets.UTF_8).contains(row.strip()));
+                assertTrue(first.length < 223_943);
+                var firstRequest = fixture.model.requests.getLast();
+                var forced = new ArrayList<>(firstRequest.messages());
+                forced.add(new AiMessage(gold.debug.windowstolinux.appapi.ai.model.AiRole.USER, original, List.of()));
+                var historical = new AiRequest(firstRequest.purpose(), forced, firstRequest.maxOutputTokens(), firstRequest.timeout(),
+                    firstRequest.jsonObjectResponse(), firstRequest.tools(), 223_943, firstRequest.requiredToolName(),
+                    firstRequest.generationRecoveryAttempts());
+                var full = assertThrows(ModelRequestBudgetException.class, () -> encode(historical));
+                assertTrue(full.encodedBytes() > 1_048_576, () -> "Fully exposed native request bytes: " + full.encodedBytes());
+
+                String nativeSnapshot = JSON.readTree(fixture.model.requests.getLast().messages().getLast().text())
+                    .at("/buildReviewEvidence/snapshotSha256").asText();
+                var firstPage = responses(evidenceCall("r65-read-part", nativeSnapshot, pointer, 7999, 8000));
+                fixture.model.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(firstPage), Optional.empty()));
+                fixture.model.nativeReply(verdict("DENY"));
+                var decision = new DeploymentAiJson(fixture.context).askCommand("Review this original archive", build.facts(),
+                    fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed, build.intent(), build.request());
+                assertEquals("DENY", decision.path("decision").asText());
+                byte[] continued = encode(fixture.model.requests.getLast());
+                assertTrue(continued.length < 223_943);
+                String wire = new String(continued, StandardCharsets.UTF_8);
+                assertTrue(wire.contains(row.strip()));
+                assertTrue(wire.contains("pendingRequired"));
+                assertFalse(wire.contains("z".repeat(Math.max(32, remaining % row.length()))));
+                System.out.printf("R65_PAGED_ARCHIVE bytes=953436 chars=%d pages=%d first=%d continued=%d forcedNativeFull=%d ceiling=223943 sha=%s%n",
+                    original.length(), pages, first.length, continued.length, full.encodedBytes(), sha);
+            }
+        }
+    }
+
+    @Test
+    void oversizedMemberPreservesSmallerTextAndFreshApprovalRechecksTheFrozenSnapshot() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture()) {
+            Path source = Files.createDirectory(temporary.resolve("source")).toRealPath();
+            Path small = source.resolve("main.cpp");
+            Files.writeString(small, "int main() { return 0; }\n");
+            Files.write(source.resolve("000-large.dat"), new byte[1_048_577]);
+            byte[] stableBytes = Files.readAllBytes(small);
             UUID origin = UUID.randomUUID();
-            FileSnapshot metadataOnly = new FileSnapshot() {
+            var frozen = new FileSnapshot() {
                 @Override public UUID id() { return origin; }
-                @Override public String sha256() { throw new AssertionError("Unexpected source digest re-scan"); }
-                @Override public Path directory() { throw new AssertionError("Unexpected snapshot read"); }
+                @Override public String sha256() {
+                    try {
+                        if (!java.util.Arrays.equals(stableBytes, Files.readAllBytes(small)))
+                            throw new IllegalStateException("Original fixture bytes changed");
+                    } catch (IOException failure) {
+                        throw new IllegalStateException(failure);
+                    }
+                    return "a".repeat(64);
+                }
+                @Override public Path directory() { return source; }
                 @Override public void close() { }
             };
-            var material = new DeploymentSourceMaterial("Large fixture", metadataOnly, List.of("backend/asset.dat"), List.of());
-            var archive = new DeploymentSourceArchive(metadataOnly, "c".repeat(64), 900, 65537, origin,
-                "a".repeat(64), "backend");
+            var material = new DeploymentSourceMaterial("Large fixture", frozen, List.of("000-large.dat", "main.cpp"), List.of());
+            var archive = writeArchive(material, "", fixture.task);
             var review = DeploymentSourceArchiveReview.capture(material, archive, fixture.task);
-            assertEquals("OUTSIDE_INLINE_REVIEW_BOUNDS", review.coverage());
-            assertEquals(1, review.memberCount());
-            assertTrue(review.members().isEmpty());
+            assertEquals("PARTIAL", review.coverage());
+            assertTrue(review.requiredUnavailable());
+            assertEquals(List.of(new DeploymentSourceArchiveReview.Omitted("000-large.dat", 1_048_577, "REVIEW_BYTE_LIMIT")), review.omitted());
+            assertEquals("main.cpp", review.members().getFirst().path());
+            DeploymentSourceArchiveReview.verifyBinding(material, archive, fixture.task);
+            Files.writeString(small, "int main() { return 1; }\n");
+            assertEquals(stableBytes.length, Files.size(small));
+            assertThrows(IOException.class, () -> DeploymentSourceArchiveReview.verifyBinding(material, archive, fixture.task));
+            assertThrows(IOException.class, () -> DeploymentSourceArchiveReview.capture(material, archive, fixture.task));
         }
     }
 
     private DeploymentSourceArchive writeArchive(DeploymentSourceMaterial material, TaskContext task) throws Exception {
+        return writeArchive(material, "backend", task);
+    }
+
+    private DeploymentSourceArchive writeArchive(DeploymentSourceMaterial material, String relativeRoot, TaskContext task) throws Exception {
         Path output = Files.createDirectory(temporary.resolve("archive"));
         Path file = output.resolve("source.tar.gz");
         long total;
         try (var stream = Files.newOutputStream(file)) {
-            total = DeploymentSourceTar.write(material, "backend", stream, task);
+            total = DeploymentSourceTar.write(material, relativeRoot, stream, task);
         }
         byte[] bytes = Files.readAllBytes(file);
         return new DeploymentSourceArchive(new Snapshot(UUID.randomUUID(), "b".repeat(64), output), digest(bytes),
-            bytes.length, total, material.snapshot().id(), material.snapshot().sha256(), "backend");
+            bytes.length, total, material.snapshot().id(), material.snapshot().sha256(), relativeRoot);
     }
 
     private static void verifyBuildRequest(MirroredInstallerTestFixture fixture, DeploymentSourceArchive archive,
@@ -327,6 +523,55 @@ class DeploymentSourceArchiveReviewTest {
                 return backend;
         }
         throw new IllegalStateException("Asset Lending backend fixture missing");
+    }
+
+
+    private record BuildReview(CommandRequest request, ActionIntent intent, Map<String, Object> facts) implements AutoCloseable {
+        @Override public void close() throws Exception { request.close(); }
+    }
+
+    private static BuildReview buildReview(MirroredInstallerTestFixture fixture, DeploymentSourceArchive archive,
+                                          DeploymentSourceArchiveReview.Evidence captured) throws Exception {
+        String body = "set -eu\ntest \"$(sha256sum \"$archive\" | awk '{print $1}')\" = '" + archive.sha256()
+            + "'\nprintf '%s\\n' OFFLINE_BUILD_REVIEW\n";
+        String input = DeploymentMirrorTasks.withMaterials(DeploymentMirrorRuntime.wrapBuild(
+            body, DeploymentMirrorTasks.policy(fixture.task), 120), fixture.task.id());
+        var workspace = new DeploymentRemoteWorkspace("r65-archive", "a".repeat(64), fixture.layout);
+        String collector = DeploymentBuildOutputProtocol.script(workspace, 120, 16, 512, 8192, "ordinary",
+            MirroredInstallerTestFixture.sha(input), "-", List.of(List.of("BUILD_OK")));
+        var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(collector, fixture.layout),
+            input.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(135), 65536);
+        var intent = RemoteActions.command(fixture.server, fixture.model.configurationRevision, request)
+            .withSemantics(new ActionSemantics("deployment.build.run.v1",
+                Set.of(new ActionTarget(fixture.server.id(), "deployment-build", workspace.candidateRoot()))));
+        var facts = new LinkedHashMap<String, Object>(new DeploymentFixedCommandProtocol(fixture.context)
+            .inspect(intent, request, fixture.layout, fixture.task));
+        var bound = Map.of("archiveSha256", archive.sha256(), "sourceManifestSha256", archive.sourceManifestSha256(),
+            "relativeRoot", archive.relativeRoot(), "fileCount", captured.memberCount());
+        facts.put("currentCommandEvidence", Map.of("currentBuildArchive", Map.of("archive", bound),
+            "currentBuildArchiveSource", captured));
+        return new BuildReview(request, intent, facts);
+    }
+
+    private static AiToolCall verdict(String decision) {
+        return new AiToolCall("r65-verdict", "submit_result", "{\"decision\":\"" + decision
+            + "\",\"requiresUserConfirmation\":false,\"reason\":\"Offline fixture\"}");
+    }
+
+    private static AiResponse responses(AiToolCall call) {
+        var base = reply(call);
+        var attempt = new AiGenerationAttempt(UUID.randomUUID(), 1, base.modelId(), "OPENAI_RESPONSES",
+            TaskResult.SUCCEEDED, "AI_GENERATION_COMPLETE", "NONE", 0L, base.usage(), 1, 65536);
+        return new AiResponse(base.text(), base.modelId(), base.finishReason(), base.usage(), base.toolCalls(),
+            Optional.of(new AiContinuation(UUID.randomUUID(), 64)), Optional.empty(), Optional.empty(), List.of(attempt));
+    }
+
+    private static Path fixtureRoot(String name, String requiredMember) {
+        for (Path current = Path.of("").toAbsolutePath(); current != null; current = current.getParent()) {
+            Path root = current.resolve("test/multi-language/" + name);
+            if (Files.isRegularFile(root.resolve(requiredMember))) return root;
+        }
+        throw new IllegalStateException("Project archive fixture missing: " + name);
     }
 
     private static String digest(byte[] bytes) throws Exception {
