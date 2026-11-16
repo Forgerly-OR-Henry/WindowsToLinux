@@ -1337,6 +1337,176 @@ class DeploymentToolchainReviewEvidenceTest {
         }
     }
 
+    @ParameterizedTest
+    @CsvSource({"prepare,APPROVE", "prepare,DENY", "bind,APPROVE", "bind,DENY"})
+    void r59GoReviewUsesExactInlineMirrorSourceAndStopsAtObservedRedundantBatch(String phase, String decision) throws Exception {
+        boolean prepare = phase.equals("prepare");
+        int[] observed = prepare ? new int[]{549766, 571390, 600650, 632195} : new int[]{978703, 996747, 1017395};
+        int factsCharacters = prepare ? 29610 : 34242;
+        String policy = "/" + PHASE + "/mirrorPolicySource";
+        String shell = "/" + PHASE + "/mirrorBootstrapShell";
+        String helper = "/" + PHASE + "/installedHelperSource";
+        String runtime = "/mirrorTransport/runtimeSource";
+        try (var fixture = new MirroredInstallerTestFixture(); var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = prepare ? diagnosedPreparation(fixture, "GO", "1.24") : r26Binding(fixture, "GO", "1.24.13")) {
+            var action = intent(phase, fixture, command);
+            var offered = new ArrayList<List<AiToolCall>>();
+            var sizes = new ArrayList<Integer>();
+            var requested = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            var bounded = wireBudgetContext(assisted.context, Map.of(), factsCharacters,
+                () -> 1_500_000 - 65_536 - observed[fixture.model.requests.size()], delivered -> {
+                    try {
+                        int turn = fixture.model.requests.size();
+                        int cap = 1_500_000 - 65_536 - observed[turn];
+                        byte[] encoded = wireWithR24FactsSize(delivered, factsCharacters, cap, Map.of());
+                        sizes.add(encoded.length);
+                        var facts = JSON.readTree(delivered.messages().getLast().text());
+                        var manifest = facts.path(PHASE);
+                        String snapshot = manifest.path("snapshotSha256").asText();
+                        var sources = r24Sources(delivered, facts, fixture);
+                        assertR59MirrorFrame(encoded, manifest.path("mirrorPolicySource"), snapshot, DeploymentMirrorTasks.policy(fixture.task));
+                        assertR59MirrorFrame(encoded, manifest.path("mirrorBootstrapShell"), snapshot, r24Shell(fixture));
+                        assertEquals(action.exactAction(), restoreValue(facts.path("exactAction"), Map.of(
+                            policy, DeploymentMirrorTasks.policy(fixture.task), shell, r24Shell(fixture), runtime, DeploymentMirrorRuntime.runtimeSource())));
+                        assertEquals(0, assisted.hosts.get());
+                        if (delivered.requiredToolName().equals(Optional.of("submit_result"))) {
+                            assertEquals(observed.length - 1, turn);
+                            assertEquals("submit_result", JSON.readTree(encoded).at("/tool_choice/name").asText());
+                            assertEquals(1, JSON.readTree(encoded).path("tools").size());
+                            var previous = fixture.model.requests.getLast();
+                            assertEquals(previous.messages().subList(1, previous.messages().size()),
+                                delivered.messages().subList(1, delivered.messages().size()));
+                            assertEquals(previous.timeout(), delivered.timeout());
+                            assertEquals(previous.maxOutputTokens(), delivered.maxOutputTokens());
+                            assertEquals(0, delivered.generationRecoveryAttempts());
+                            reply(fixture, verdict("r59-go-formal-verdict", decision));
+                            return;
+                        }
+                        if (turn > 0) {
+                            var latest = offered.getLast();
+                            var visible = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+                            seedInlineSourceRanges(facts, visible);
+                            assertR24VisiblePages(encoded, snapshot, latest, true, visible, sources);
+                            collectRequestedCoverage(requested, latest, sources);
+                            assertR24Coverage(requested, visible);
+                        }
+                        var batch = prepare ? switch (turn) {
+                            case 0 -> List.of(read("r58-p718", snapshot, policy, 0, 8000), read("r58-p719", snapshot, shell, 0, 8000),
+                                read("r58-p720", snapshot, runtime, 13799, 8000), read("r58-p721", snapshot, runtime, 16326, 8000));
+                            case 1 -> List.of(read("r58-p735", snapshot, shell, 12747, 1118), read("r58-p736", snapshot, runtime, 3984, 3179),
+                                read("r58-p737", snapshot, helper, 228179, 1775), read("r58-p738", snapshot, helper, 219803, 1772));
+                            case 2 -> List.of(read("r58-p752", snapshot, policy, 0, 8000));
+                            default -> throw new AssertionError("Go preparation sent an additional browse after the repeated batch");
+                        } : switch (turn) {
+                            case 0 -> List.of(read("r58-b919", snapshot, shell, 0, 8000));
+                            case 1 -> List.of(read("r58-b934", snapshot, shell, 30000, 8000));
+                            default -> throw new AssertionError("Go binding did not use the already supplied shell range");
+                        };
+                        offered.add(batch);
+                        fixture.model.replies.add(success(mockResponses(batch.toArray(AiToolCall[]::new))));
+                    } catch (Exception failure) {
+                        throw new AssertionError(failure);
+                    }
+                });
+            DeploymentCurrentCommandEvidence current = prepare ? assisted.scope : (intent, request, task) -> assisted.scope.effectFacts(intent, task);
+            Callable<OperationResult<ApprovalGrant>> review = () -> DeploymentFixedCommandApproval.approveWithEvidence(
+                bounded, assisted.host, action, command, fixture.task, fixture.model.configurationRevision, "AUTOMATIC", false, current);
+            if (decision.equals("APPROVE")) {
+                assertEquals(TaskResult.SUCCEEDED, review.call().outcome());
+                assertEquals(List.of(action), assisted.grantedIntents);
+            } else {
+                assertReviewDenied(review);
+                assertEquals(0, assisted.hosts.get());
+            }
+            assertEquals(observed.length, fixture.model.requests.size());
+            System.out.printf("R59_GO_REVIEW phase=%s decision=%s encoded=%s terminalCeiling=%d observed=%d%n",
+                phase, decision, sizes, 1_500_000 - 65_536 - observed[observed.length - 1], observed[observed.length - 1]);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"new-helper", "stale-snapshot", "invalid-cursor", "empty-page", "missing-requested"})
+    void r59GoReviewDoesNotForceVerdictWhenCoverageOrCursorIsUnresolved(String scenario) throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var command = diagnosedPreparation(fixture, "GO", "1.24")) {
+            var action = intent("prepare", fixture, command);
+            var facts = new DeploymentFixedCommandProtocol(fixture.context).inspect(action, command, fixture.layout, fixture.task);
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576),
+                action, command, fixture.layout).orElseThrow();
+            var messages = new ArrayList<AiMessage>();
+            messages.add(new AiMessage(AiRole.SYSTEM, "Review the exact current Go preparation.", List.of()));
+            messages.addAll(evidence.messages());
+            var manifest = JSON.readTree(messages.getLast().text()).path(PHASE);
+            String snapshot = manifest.path("snapshotSha256").asText();
+            String shell = manifest.path("mirrorBootstrapShell").path("sourcePointer").asText();
+            int shellEnd = manifest.path("mirrorBootstrapShell").path("characters").asInt();
+            String helper = manifest.path("installedHelperSource").path("sourcePointer").asText();
+            var reader = evidence.reader(16);
+            reader.offerInitialSource(messages);
+            var initial = new AiRequest(AiPurpose.APPROVAL, messages, 65536, Duration.ofMinutes(10), false, List.of(evidence.evidenceTool()));
+            var firstCalls = new ArrayList<AiToolCall>();
+            if (scenario.equals("missing-requested")) {
+                for (int index = 0; index < 8; index++)
+                    firstCalls.add(read("wide-helper-" + index, snapshot, helper, 500000 + index * 8000, 8000));
+            } else {
+                firstCalls.add(read("original-shell", snapshot, shell, 0, 8000));
+            }
+            var first = mockResponses(firstCalls.toArray(AiToolCall[]::new));
+            reader.continueReview(messages, first, reader.read(first));
+            if (scenario.equals("missing-requested")) {
+                int cap = wire(initial, 1_048_576, Map.of()).length + 6500;
+                var refusal = assertThrows(ModelRequestBudgetException.class, () -> wire(copy(initial, messages, cap), cap, Map.of()));
+                assertTrue(reader.repackBeforeSend(messages, exactBudgetProblem(refusal.encodedBytes(), cap)));
+                assertTrue(wire(copy(initial, messages, cap), cap, Map.of()).length <= cap);
+            }
+            var repeat = read("repeat-shell", snapshot, shell, 0, 8000);
+            var second = switch (scenario) {
+                case "new-helper" -> mockResponses(repeat, read("new-helper", snapshot, helper, 500000, 100));
+                case "stale-snapshot" -> mockResponses(repeat, read("stale", "0".repeat(64), shell, 0, 8000));
+                case "invalid-cursor" -> mockResponses(repeat, read("invalid", snapshot, shell, shellEnd + 1, 64));
+                case "empty-page" -> mockResponses(repeat, read("empty", snapshot, shell, shellEnd, 64));
+                default -> mockResponses(read("repeat-retained-helper", snapshot, helper, 500000, 64));
+            };
+            var result = reader.read(second);
+            assertFalse(result.getFirst().error());
+            var block = switch (scenario) {
+                case "stale-snapshot", "invalid-cursor" -> Optional.of("READ_REJECTED");
+                case "new-helper", "missing-requested" -> Optional.of("REQUESTED_SOURCE_MISSING");
+                default -> Optional.<String>empty();
+            };
+            assertEquals(block, reader.approvalEvidenceBlock());
+            if (scenario.equals("new-helper")) {
+                reader.continueReview(messages, second, result);
+                reader.read(response(Optional.empty(), verdict("approve-after-new-range", "APPROVE")));
+                assertEquals(Optional.empty(), reader.approvalEvidenceBlock());
+            } else if (scenario.equals("stale-snapshot")) {
+                assertTrue(result.getLast().text().contains("SNAPSHOT_MISMATCH"));
+            } else if (scenario.equals("invalid-cursor")) {
+                assertTrue(result.getLast().text().contains("CURSOR_INVALID"));
+            }
+        }
+    }
+
+    private static void assertR59MirrorFrame(byte[] encoded, JsonNode descriptor, String snapshot, String original) throws Exception {
+        assertIdentity(descriptor, original);
+        String frame = java.util.stream.StreamSupport.stream(JSON.readTree(encoded).path("input").spliterator(), false)
+            .filter(item -> item.path("role").asText().equals("user")).map(item -> item.at("/content/0/text").asText())
+            .filter(text -> text.startsWith("WTL-COMMAND-RETAINED-SOURCE-1\n")).findFirst().orElseThrow();
+        var header = installerRetainedHeader(frame);
+        assertEquals(snapshot, header.path("snapshotSha256").asText());
+        int position = frame.indexOf('\n', frame.indexOf('\n') + 1) + 1;
+        var coverage = new TreeMap<Integer, Integer>();
+        for (var range : header.path("ranges")) {
+            int offset = range.path("offset").asInt(), end = range.path("next").asInt();
+            if (descriptor.path("sourcePointer").equals(range.path("pointer"))) {
+                assertEquals(original.substring(offset, end), frame.substring(position, position + end - offset));
+                DeploymentEvidencePages.remember(coverage, offset, end);
+            }
+            position += end - offset;
+        }
+        assertEquals(Map.of(0, original.length()), coverage);
+        assertEquals(frame.length(), position);
+    }
+
     @Test
     void r26AssetLendingOversizedBindReadBatchGetsOneNoActionCorrection() throws Exception {
         try (var fixture = new MirroredInstallerTestFixture(); var command = r26Binding(fixture, "DOTNET", "10.0.300")) {
@@ -3910,11 +4080,17 @@ class DeploymentToolchainReviewEvidenceTest {
         var initial = fixture.model.requests.getLast();
         var facts = JSON.readTree(initial.messages().getLast().text());
         String snapshot = facts.at("/" + PHASE + "/snapshotSha256").asText();
+        boolean inlineGoMirror = facts.path(PHASE).has("initialMirrorSourcePointers");
         var sources = r24Sources(initial, facts, fixture);
+        var wireSources = new LinkedHashMap<>(sources);
         if (preparationSelectionPointer) {
             var selection = facts.at("/" + PHASE + "/preparationSelection");
-            addReplaySource(sources, selection,
+            String pointer = selection.path("sourcePointer").asText();
+            var selectedSource = Map.entry(pointer,
                 initial.messages().get(1 + selection.path("ordinal").asInt()).text().substring(selection.path("headerCharacters").asInt()));
+            sources.put(pointer.length(), selectedSource);
+            // R27 logs retained only pointer widths. The current wire can carry both originals with that width.
+            wireSources.put(-pointer.length(), selectedSource);
         }
         assertIdentity(facts.path("exactAction"), intent.exactAction());
         var continuations = new LinkedHashMap<UUID, String>();
@@ -3951,7 +4127,7 @@ class DeploymentToolchainReviewEvidenceTest {
             fixture.model.replies.clear();
         } else {
             assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", stopped.problem().eventCode());
-            if (corrected) assertTrue(sent >= 4 && sent <= turns.size());
+            if (corrected) assertTrue(sent >= (inlineGoMirror ? 3 : 4) && sent <= turns.size());
             else assertEquals(turns.size(), sent);
         }
 
@@ -3976,7 +4152,7 @@ class DeploymentToolchainReviewEvidenceTest {
                 var latest = requests.get(index - 1);
                 var asked = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
                 collectRequestedCoverage(asked, latest, sources);
-                assertR24VisiblePages(encoded, snapshot, latest, review.kind().equals("prepare") || index > 1, visible, sources);
+                assertR24VisiblePages(encoded, snapshot, latest, review.kind().equals("prepare") || inlineGoMirror || index > 1, visible, wireSources);
                 assertR24Coverage(asked, visible);
             }
             if (index == browsingRequests - 1 && terminalHeadroom > 0)

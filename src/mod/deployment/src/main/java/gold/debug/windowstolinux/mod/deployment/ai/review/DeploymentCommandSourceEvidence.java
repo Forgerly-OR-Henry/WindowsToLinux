@@ -138,6 +138,10 @@ public final class DeploymentCommandSourceEvidence {
         Decide independently. Deny unsafe effects or insufficient evidence. Submit a fresh native submit_result alone.
         """;
 
+    private static final String GO_MIRROR_INSTRUCTION = """
+        The initial supplement and retained frames supply exact staged originals at initialMirrorSourcePointers. Use the supplied ranges before requesting absent source needed for the current decision. All original shell, policy, runtime and helper ranges remain available.
+        """;
+
     private static final String PYTHON_PREPARE_INSTRUCTION = """
         Review the original Python preparation, authority, arguments, limits and effects. Check release admission, artifact integrity, install and SYSTEM reuse, probes, ownership, locks and cleanup. For a managed source build, review the GNU_MAKE_SOURCE route and pinned archive, the read-only binding, the original isolated Make bootstrap, and the chosen executable for configure, build and install. Inspect the worker isolation and resource bounds and the reached APT signature/frozen-install or DNF path and hooks. Staged definitions are not execution.
         The product reconstructs exactAction from ordered LITERAL, SOURCE_TEXT and SHELL_SINGLE_QUOTE segments and compares it to the original. selectedPreparationRanges maps exact excerpts to their UTF-16 source; startCharacter counts from the preparationSelection header end. The initial supplement and retained frames describe exact source in range order. Review those bytes before using evidence. All original fields and full sources remain pageable.
@@ -321,6 +325,13 @@ public final class DeploymentCommandSourceEvidence {
                 dependency, !aptDependency(current), sourceBodies);
             if (!exact.equals(restoreSegments(parts, sourceBodies)))
                 throw new IOException("Mirrored projection does not restore the original command");
+            if (goMirrorReview(current, operation, intent, request, layout)) {
+                var pointers = manifest.putArray("initialMirrorSourcePointers");
+                for (String pointer : List.of(MIRROR_POLICY_SOURCE, MIRROR_BOOTSTRAP_SHELL)) {
+                    initialSourceRanges.put(pointer, new TreeMap<>(Map.of(0, sourceBodies.get(pointer).length())));
+                    pointers.add(pointer);
+                }
+            }
         }
         if (dependency) {
             boolean apt = mirror.isPresent() && aptDependency(current);
@@ -362,6 +373,29 @@ public final class DeploymentCommandSourceEvidence {
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
         return Optional.of(new DeploymentCommandSourceEvidence(current, original, snapshot, messages, sourceBodies, initialRanges,
             requiredRanges, initialSourceRanges, Optional.empty(), nodeView));
+    }
+
+    private static boolean goMirrorReview(ObjectNode current, String operation, ActionIntent intent,
+                                           CommandRequest request, DeploymentRemoteLayout layout) throws IOException {
+        String member;
+        if (PREPARE.equals(operation) && preparationEcosystem(current).equals("GO")) {
+            member = current.has("originalToolchainPreparation") ? "originalToolchainPreparation" : "toolchainPreparation";
+        } else if (BIND.equals(operation) && managedGoBinding(current.path("decodedToolchainBinding"))) {
+            member = "decodedToolchainBinding";
+        } else {
+            return false;
+        }
+        var actual = JSON.valueToTree(DeploymentCommandEvidence.facts(intent, request, layout).get(member));
+        if (!actual.equals(current.path(member)) || PREPARE.equals(operation) && !"GO".equals(actual.path("ecosystem").asText()))
+            throw new IOException("Go review evidence differs from the exact original invocation");
+        return true;
+    }
+
+    private static boolean managedGoBinding(JsonNode binding) {
+        if (!binding.at("/literalValidation/canonicalTypedBinding").asBoolean()) return false;
+        for (var toolchain : binding.path("toolchains"))
+            if ("GO".equals(toolchain.path("ecosystem").asText()) && "MANAGED".equals(toolchain.path("origin").asText())) return true;
+        return false;
     }
 
     private static List<String> helperLocations(ObjectNode current, boolean binding) throws IOException {
@@ -1302,6 +1336,7 @@ public final class DeploymentCommandSourceEvidence {
         private final Map<String, NavigableMap<Integer, Integer>> requested = new LinkedHashMap<>();
         private final Map<String, NavigableMap<Integer, Integer>> confirmed = new LinkedHashMap<>();
         private final boolean nodePreparation = nodePreparationReview();
+        private final boolean goMirror = goMirrorReview();
         private Optional<AiMessage> priorEvidence = Optional.empty();
         private Optional<AiMessage> initialSupplement = Optional.empty();
         private List<ReadReceipt> latestReads = List.of();
@@ -1429,7 +1464,8 @@ public final class DeploymentCommandSourceEvidence {
                 .noneMatch(read -> read.next() > read.offset() && !coversPage(lastVisible, read));
             if (rebased) {
                 repeatedBatches = latestReadRepeated ? repeatedBatches + 1 : 0;
-                if (repeatedBatches > 1 || repeatedBatches == 1 && readyInstallerReview()
+                if (repeatedBatches > 1 || repeatedBatches == 1 && (readyInstallerReview()
+                    || goMirror && !unconfirmed(initialSourceRanges, lastVisible))
                     && latestReads.stream().allMatch(read -> read.next() > read.offset())
                     && !hasUnfulfilledApprovalEvidence())
                     throw new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.EVIDENCE_READ, TOOL.name(),
@@ -1532,7 +1568,8 @@ public final class DeploymentCommandSourceEvidence {
         /** A Responses rebase starts a new request with exact current evidence and no partial native history. */
         public void continueReview(List<AiMessage> messages, AiResponse response, List<AiToolResult> results) throws IOException {
             boolean responses = isResponses(response);
-            if (rebased || responses && (buildReview() || preparationReview() || installerReview() || !requiredRanges.isEmpty() || continuedResponses)) {
+            if (rebased || responses && (buildReview() || preparationReview() || installerReview()
+                || goMirror || !requiredRanges.isEmpty() || continuedResponses)) {
                 priorEvidence.ifPresent(messages::remove);
                 initialSupplement.ifPresent(messages::remove);
                 initialSupplement = Optional.empty();
@@ -1771,8 +1808,9 @@ public final class DeploymentCommandSourceEvidence {
                 return;
             }
             int remaining = retainHistory(confirmedRequired(), visible, entries, body, historyBytes);
-            if (nodePreparation || isolatedSourcePreparationReview() || sourceBodies.containsKey(DEPENDENCY_APT_SELECTION))
+            if (nodePreparation || isolatedSourcePreparationReview() || goMirror || sourceBodies.containsKey(DEPENDENCY_APT_SELECTION))
                 remaining = retainHistory(requested, visible, entries, body, remaining);
+            if (goMirror) remaining = retainHistory(initialSourceRanges, visible, entries, body, remaining);
             remaining = retainHistory(lastVisible, visible, entries, body, remaining);
             retainHistory(confirmed, visible, entries, body, remaining);
         }
@@ -1975,6 +2013,12 @@ public final class DeploymentCommandSourceEvidence {
         return completeInstallerReview() && !sourceBodies.containsKey(INSTALLER_RUNTIME);
     }
 
+    private boolean goMirrorReview() {
+        return initialSourceRanges.containsKey(MIRROR_BOOTSTRAP_SHELL)
+            && (preparationReview() && reviewEcosystem().equals("GO")
+                || bindingReview() && managedGoBinding(current.path("decodedToolchainBinding")));
+    }
+
     public boolean bindingReview() {
         return BIND.equals(current.path("operation").asText());
     }
@@ -2035,14 +2079,16 @@ public final class DeploymentCommandSourceEvidence {
             if (nodePreparationReview()) return NODE_PREPARE_INSTRUCTION;
             if (rubyPreparationReview()) return RUBY_PREPARE_INSTRUCTION + PREPARE_INSTRUCTION;
             if (reviewEcosystem().equals("KOTLIN")) return KOTLIN_JAVA_PREPARE_INSTRUCTION + PREPARE_INSTRUCTION;
+            if (goMirrorReview()) return PREPARE_INSTRUCTION + GO_MIRROR_INSTRUCTION;
             return reviewEcosystem().equals("PYTHON") ? PYTHON_PREPARE_INSTRUCTION : PREPARE_INSTRUCTION;
         }
         if (dependencyReview() && sourceBodies.containsKey(DEPENDENCY_APT_SELECTION)) return DEPENDENCY_APT_INSTRUCTION;
         if (dependencyReview()) return INSTRUCTION + DEPENDENCY_INSTRUCTION;
         if (bindingReview() && current.has("localNodeBinding")) return LOCAL_NODE_BIND_INSTRUCTION;
-        if (boundBindingEvidence()) return BIND_INSTRUCTION.replace("by its snapshotSha256 and sourcePointer.",
+        String bindingInstruction = BIND_INSTRUCTION + (goMirrorReview() ? GO_MIRROR_INSTRUCTION : "");
+        if (boundBindingEvidence()) return bindingInstruction.replace("by its snapshotSha256 and sourcePointer.",
             "by sourcePointer in this request's fixed snapshot. Call evidence with pointer, offset and limit only. No snapshot argument is needed.");
-        return bindingReview() ? BIND_INSTRUCTION : INSTRUCTION;
+        return bindingReview() ? bindingInstruction : INSTRUCTION;
     }
 
     private String sourceText(String pointer) throws IOException {
