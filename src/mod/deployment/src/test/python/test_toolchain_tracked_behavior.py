@@ -91,7 +91,7 @@ class TrackedToolchainBehaviorTest(unittest.TestCase):
         fields[0] = (fields[0] & ~0o777) | (0o700 if stat.S_ISDIR(fields[0]) else 0o444)
         return os.stat_result(fields)
 
-    def invoke(self, verb, request=None, raw=None):
+    def invoke(self, verb, request=None, raw=None, file_modes=None):
         request = request or self.request
         raw = self.raw(request) if raw is None else raw
         args = [verb, request['operationId'], hashlib.sha256(raw).hexdigest()]
@@ -123,9 +123,18 @@ class TrackedToolchainBehaviorTest(unittest.TestCase):
             return actual_rmtree(path, onexc=repair)
 
         actual_unlink = pathlib.Path.unlink
+
+        def lstat(path):
+            value = self.controlled_stat(actual_lstat(path))
+            if file_modes and path in file_modes:
+                fields = list(value)
+                fields[0] = file_modes[path]
+                return os.stat_result(fields)
+            return value
+
         with contextlib.ExitStack() as stack:
             stack.enter_context(mock.patch.dict('sys.modules', {'fcntl': self.fcntl}))
-            stack.enter_context(mock.patch.object(pathlib.Path, 'lstat', lambda path: self.controlled_stat(actual_lstat(path))))
+            stack.enter_context(mock.patch.object(pathlib.Path, 'lstat', lstat))
             stack.enter_context(mock.patch.object(pathlib.Path, 'stat', lambda path, *a, **k: self.controlled_stat(actual_stat(path, *a, **k))))
             stack.enter_context(mock.patch.object(os, 'fstat', lambda fd: self.controlled_stat(actual_fstat(fd))))
             if os.name == 'nt':
@@ -198,6 +207,72 @@ class TrackedToolchainBehaviorTest(unittest.TestCase):
         self.assertEqual('SETTLED_NO_EFFECTS', result['effectState'])
         self.assertEqual('VERIFIED', result['cleanupState'])
         self.assertEqual('UNKNOWN', result['executionStatus'])
+
+    def test_tracked_kotlin_rechecks_legacy_system_java_files_and_launcher_links(self):
+        self.ns['SHIPPED_CATALOG']['KOTLIN'] = ['2.0']
+        version = '8u412-b08'
+        system = self.root / 'system-java' / 'bin'
+        system.mkdir(parents=True)
+        files = []
+        for name in ('java', 'javac', 'jar'):
+            path = system / name
+            path.write_bytes(name.encode())
+            files.append({'name': name, 'path': str(path), 'sha256': hashlib.sha256(name.encode()).hexdigest()})
+        digest = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
+        key = hashlib.sha256(('JAVA\n' + version + '\nsystem\n' + digest).encode()).hexdigest()
+        java = self.root / 'versions' / ('java-' + key)
+        (java / 'bin').mkdir(parents=True)
+        record = {'ecosystem': 'JAVA', 'version': version, 'directory': str(java), 'origin': 'SYSTEM',
+                  'source': 'system:' + files[0]['path'], 'sha256': digest, 'system_files': files}
+        marker = java / '.w2l-toolchain.json'
+        original = json.dumps(record, sort_keys=True).encode()
+        marker.write_bytes(original)
+        targets = {}
+        modes = {}
+        for file in files:
+            alias = java / 'bin' / file['name']
+            alias.write_text('portable fixture for generated link')
+            targets[alias] = file['path']
+            modes[alias] = stat.S_IFLNK | 0o777
+            modes[pathlib.Path(file['path'])] = stat.S_IFREG | 0o755
+        launcher = java / 'bin' / 'java'
+        self.ns['release'].return_value = ('2.0.1', 'https://nodejs.org/fixture-kotlin.zip', 'sha256', 'b' * 64, 'archive')
+        install = self.ns['install'] = mock.Mock()
+
+        def probe(ecosystem, directory, exact):
+            self.assertEqual(('JAVA', java, version), (ecosystem, directory, exact))
+            self.assertEqual('before-java', os.environ.get('JAVA_HOME'))
+            self.assertGreater(self.ns['remaining'](), 0)
+            self.assertIsNotNone(self.ns['PREPARE_LOCK'])
+
+        self.ns['probe'].side_effect = probe
+        for fault in ('different link', 'changed binary', 'valid R37 record'):
+            with self.subTest(fault=fault), mock.patch.dict(os.environ, {'JAVA_HOME': 'before-java'}):
+                self.ns['probe'].reset_mock()
+                self.ns['release'].reset_mock()
+                install.reset_mock()
+                request = self.prepare_request()
+                request['parameters'].update(ecosystem='KOTLIN', branch='2.0', javaHome=str(java))
+                observed = targets.copy()
+                if fault == 'different link':
+                    observed[launcher] = files[1]['path']
+                (system / 'java').write_bytes(b'changed' if fault == 'changed binary' else b'java')
+                with mock.patch.object(os, 'readlink', side_effect=lambda path: observed[pathlib.Path(path)]):
+                    result = self.invoke('prepare-tracked', request, file_modes=modes)
+                self.assertEqual(original, marker.read_bytes())
+                if fault != 'valid R37 record':
+                    self.assertEqual('FAILED', result['executionStatus'])
+                    self.assertEqual('integrity', result['failureCategory'])
+                    self.assertEqual('before-java', os.environ.get('JAVA_HOME'))
+                    self.ns['probe'].assert_not_called()
+                    self.ns['release'].assert_not_called()
+                    install.assert_not_called()
+                else:
+                    self.assertEqual('SUCCEEDED', result['executionStatus'], result)
+                    self.assertEqual(str(java), os.environ.get('JAVA_HOME'))
+                    self.ns['probe'].assert_called_once_with('JAVA', java, version)
+                    self.ns['release'].assert_called_once_with('KOTLIN', '2.0', '')
+                    install.assert_called_once()
 
     def test_actual_installation_marker_recovers_without_terminal_receipt_or_another_install(self):
         with self.crash_before_terminal(), self.assertRaises(Crash):

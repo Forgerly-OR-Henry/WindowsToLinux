@@ -40,10 +40,12 @@ record PreparationSourceRange(String section, int offset, int next) {
         "def dependency_supervise(", "def dependency_stop_owned(", "def dependency_validate_apt(",
         "def dependency_transaction(", "def dependency_main(", "def dependency_mirror_environment(",
         "def dependency_static_identity(", "def dependency_validate_ownership(", "def dependency_events_read(",
-        "def dependency_ack_record(", "def dependency_result(", "dependencyAptBinaryPaths", "def dependency_protected(");
+        "def dependency_ack_record(", "def dependency_result(", "dependencyAptBinaryPaths", "def dependency_protected(",
+        "dependencyAptSourceIdentity");
     private static final Set<String> APT_DEPENDENCY_SHELL_INITIAL = Set.of(
         "aptGuardedRepositoryAdmission", "aptSignedUpdateToFrozenInstall", "aptDispatch",
-        "aptSecurityAndFrozenTransaction", "def mirror_system_command(", "aptFrozenPolicyAdmission");
+        "aptSecurityAndFrozenTransaction", "def mirror_system_command(", "aptFrozenPolicyAdmission",
+        "aptRepositoryUriAdmission");
 
     static List<PreparationSourceRange> helper(String helper, String ecosystem, boolean diagnosed) throws IOException {
         var ranges = new ArrayList<PreparationSourceRange>();
@@ -410,17 +412,26 @@ record PreparationSourceRange(String section, int offset, int next) {
             "dependency_validate_ownership", "dependency_retain_ownership", "dependency_ack_record", "dependency_validate_ack",
             "dependency_worker", "dependency_result", "dependency_completion_proof", "dependency_stop_owned",
             "dependency_supervise", "dependency_protected",
-            "dependency_profile", "dependency_bytes", "dependency_registered", "dependency_tool", "dependency_task_mirrors", "dependency_run",
+            "dependency_profile", "dependency_bytes", "dependency_text", "dependency_registered", "dependency_tool",
+            "dependency_task_mirrors", "dependency_run",
             "dependency_packages", "dependency_validate_apt", "dependency_transaction", "dependency_main"))
             ranges.add(python(worker, "def " + function + "("));
         ranges.add(between(worker, "dependencyAptHookOwners", "\nHOOK_OWNERS = frozenset(", "\n\n\nclass DependencyFailure("));
         ranges.add(between(worker, "dependencyAptBinaryPaths", "APT_BINARY_PATHS = {", "\n\n\ndef dependency_"));
+        ranges.add(between(worker, "dependencyAptSourceIdentity", "def dependency_url(", "def dependency_apt_hook_owners("));
         ranges.add(between(worker, "dependencyAptAuthentication", "def dependency_apt_hook_owners(",
             "\ndef dependency_validate_apt("));
         return ranges;
     }
 
     static List<PreparationSourceRange> aptDependencyShell(String shell, boolean credentials) throws IOException {
+        var ranges = new ArrayList<>(aptSystemShell(shell, credentials));
+        ranges.add(between(shell, "aptRepositoryUriAdmission", "wtl_apt_source_security() {\n",
+            "\nwtl_apt_sandbox_identity() {"));
+        return ranges;
+    }
+
+    private static List<PreparationSourceRange> aptSystemShell(String shell, boolean credentials) throws IOException {
         return List.of(
             between(shell, "aptRepositorySelection", "wtl_system_point() {\n", "\nwtl_dnf_repository_copy() {"),
             between(shell, "aptGuardedRepositoryAdmission", "wtl_system_package() {\n",
@@ -442,7 +453,7 @@ record PreparationSourceRange(String section, int offset, int next) {
     }
 
     static List<PreparationSourceRange> sourceBuildPreparationShell(String shell, boolean credentials) throws IOException {
-        var ranges = new ArrayList<>(aptDependencyShell(shell, credentials));
+        var ranges = new ArrayList<>(aptSystemShell(shell, credentials));
         ranges.add(runtimeLauncher(shell));
         ranges.add(between(shell, "aptSourceSafety", "wtl_apt_source_security() {\n", "\nwtl_apt_repository_uris() {"));
         return ranges;

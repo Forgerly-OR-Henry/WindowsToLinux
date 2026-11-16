@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -142,6 +143,10 @@ public final class DeploymentCommandSourceEvidence {
 
     private static final String RUBY_PREPARE_INSTRUCTION = """
         Follow the exact Ruby managed source path. Review its GNU_MAKE_SOURCE frozen route, pinned archive, read-only worker binding, and bounded Make bootstrap. Check the Make selected for configure, build, install and any legacy OpenSSL gem. requiredPreparationRanges identifies mandatory source. Use exact inline and retained bytes first and read only missing ranges, including pendingRequired in a supplement or retained frame.
+        """;
+
+    private static final String KOTLIN_JAVA_PREPARE_INSTRUCTION = """
+        Follow the actual configured Java prerequisite before Kotlin installation or probing. The requiredPreparationRanges identify the protected directory, bounded marker, original installation key, executable identities and exact Java version probe. For MANAGED records the official SHA-256 identifies the archive. For SYSTEM records inspect the protected launch links, target files and their saved hashes. Check the actual request path and every reached branch before the independent verdict.
         """;
 
     private static final String DEPENDENCY_INSTRUCTION = """
@@ -331,6 +336,8 @@ public final class DeploymentCommandSourceEvidence {
                 "def ruby_publish(", "def ruby_link_target(", "def verify_system(", "def materialize_system("));
             case "RUBY" -> combinedLocations(List.of("def ruby_source_install(", "def source_unit(",
                 "def gnu_make_origin(", "def prepare_gnu_make_source(", "def bootstrap_gnu_make("));
+            case "KOTLIN" -> combinedLocations(List.of("def require_prepared_java(", "def require_system_java_record(",
+                "def require_java_executable(", "def probe("));
             default -> HELPER_LOCATIONS;
         };
     }
@@ -352,7 +359,7 @@ public final class DeploymentCommandSourceEvidence {
             // Preserve the broader view and its exact page coordinates while sending a smaller execution slice.
             var parts = new ArrayList<ViewPart>();
             String broad = preparationSelection(current, sources, new LinkedHashMap<>(),
-                JSON.createArrayNode(), ecosystem, diagnosed, Optional.of(parts));
+                JSON.createArrayNode(), ecosystem, diagnosed, List.of(), Optional.of(parts));
             var view = NodePreparationView.exact(broad, parts, sources);
             sources.put(PREPARATION_SELECTION, broad);
             var descriptor = pagedSource(PREPARATION_SELECTION, broad, List.of());
@@ -385,8 +392,11 @@ public final class DeploymentCommandSourceEvidence {
                 initialSourceRanges, requiredRanges, ecosystem, diagnosed);
             return Optional.empty();
         }
+        var prerequisites = ecosystem.equals("KOTLIN")
+            ? kotlinJavaPrerequisite(sources.get(INSTALLED_HELPER_SOURCE)) : List.<PreparationSourceRange>of();
+        if (!prerequisites.isEmpty()) recordRequiredPreparation(manifest, requiredRanges, prerequisites);
         String source = preparationSelection(current, sources, initialRanges,
-            manifest.putArray("selectedPreparationRanges"), ecosystem, diagnosed, Optional.empty());
+            manifest.putArray("selectedPreparationRanges"), ecosystem, diagnosed, prerequisites, Optional.empty());
         sources.put(PREPARATION_SELECTION, source);
         var frame = sourceFrame(messages, snapshot, PREPARATION_SELECTION, source);
         manifest.withArray("frames").add(frame);
@@ -407,10 +417,7 @@ public final class DeploymentCommandSourceEvidence {
         var helperRanges = PreparationSourceRange.helper(helper, ecosystem, diagnosed);
         if (ecosystem.equals("RUBY")) {
             var required = helperRanges.stream().filter(PreparationSourceRange::rubyMakeRequired).toList();
-            var selection = manifest.putArray("requiredPreparationRanges");
-            required.forEach(range -> selection.addObject().put("section", range.section())
-                .put("sourcePointer", INSTALLED_HELPER_SOURCE).put("offset", range.offset()).put("next", range.next()));
-            requiredRanges.put(INSTALLED_HELPER_SOURCE, mergeRanges(required));
+            recordRequiredPreparation(manifest, requiredRanges, required);
         }
         selectSourceBuildPreparationSource(body, selected, initialRanges, initialSourceRanges, ecosystem,
             (ObjectNode) manifest.path("installedHelperSource"), INSTALLED_HELPER_SOURCE, helper,
@@ -426,6 +433,24 @@ public final class DeploymentCommandSourceEvidence {
             (ObjectNode) projected.at(MIRROR_RUNTIME), MIRROR_RUNTIME, runtime,
             PreparationSourceRange.sourceBuildPreparationTransport(runtime, ecosystem, credentials));
         putSelectionFrame(manifest, messages, snapshot, sources, PREPARATION_SELECTION, "preparationSelection", body);
+    }
+
+    private static void recordRequiredPreparation(ObjectNode manifest,
+            Map<String, NavigableMap<Integer, Integer>> requiredRanges, List<PreparationSourceRange> required) {
+        var selection = manifest.putArray("requiredPreparationRanges");
+        required.forEach(range -> selection.addObject().put("section", range.section())
+            .put("sourcePointer", INSTALLED_HELPER_SOURCE).put("offset", range.offset()).put("next", range.next()));
+        requiredRanges.put(INSTALLED_HELPER_SOURCE, mergeRanges(required));
+    }
+
+    private static List<PreparationSourceRange> kotlinJavaPrerequisite(String helper) throws IOException {
+        var ranges = new ArrayList<PreparationSourceRange>();
+        for (String name : List.of("prepare", "require_prepared_java", "require_java_executable", "require_system_java_record",
+                "owned_directory", "saved_installation_marker", "tracked_regular", "tracked_json", "tracked_digest",
+                "installation_key", "official_url", "verify_system", "probe", "version_key", "release_build")) {
+            ranges.add(PreparationSourceRange.python(helper, "def " + name + "("));
+        }
+        return ranges;
     }
 
     private static void selectSourceBuildPreparationSource(StringBuilder body, ArrayNode selected,
@@ -456,11 +481,14 @@ public final class DeploymentCommandSourceEvidence {
     private static String preparationSelection(ObjectNode current, Map<String, String> sources,
                                                Map<String, NavigableMap<Integer, Integer>> initialRanges,
                                                com.fasterxml.jackson.databind.node.ArrayNode selected,
-                                               String ecosystem, boolean diagnosed, Optional<List<ViewPart>> view) throws IOException {
+                                               String ecosystem, boolean diagnosed,
+                                               List<PreparationSourceRange> prerequisites, Optional<List<ViewPart>> view) throws IOException {
         var body = new StringBuilder();
         String helper = sources.get(INSTALLED_HELPER_SOURCE);
+        var helperRanges = new LinkedHashSet<>(prerequisites);
+        helperRanges.addAll(PreparationSourceRange.helper(helper, ecosystem, diagnosed));
         appendSelection(body, selected, initialRanges, INSTALLED_HELPER_SOURCE, helper,
-            PreparationSourceRange.helper(helper, ecosystem, diagnosed), view);
+            List.copyOf(helperRanges), view);
         if (ecosystem.equals("NODE") || ecosystem.equals("JAVA")) {
             String shell = sources.get(MIRROR_BOOTSTRAP_SHELL);
             appendSelection(body, selected, initialRanges, MIRROR_BOOTSTRAP_SHELL, shell,
@@ -1822,6 +1850,7 @@ public final class DeploymentCommandSourceEvidence {
         if (preparationReview()) {
             if (nodePreparationReview()) return NODE_PREPARE_INSTRUCTION;
             if (rubyPreparationReview()) return RUBY_PREPARE_INSTRUCTION + PREPARE_INSTRUCTION;
+            if (reviewEcosystem().equals("KOTLIN")) return KOTLIN_JAVA_PREPARE_INSTRUCTION + PREPARE_INSTRUCTION;
             return reviewEcosystem().equals("PYTHON") ? PYTHON_PREPARE_INSTRUCTION : PREPARE_INSTRUCTION;
         }
         if (dependencyReview() && sourceBodies.containsKey(DEPENDENCY_APT_SELECTION)) return DEPENDENCY_APT_INSTRUCTION;

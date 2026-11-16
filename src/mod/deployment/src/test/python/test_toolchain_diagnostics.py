@@ -53,11 +53,20 @@ class ToolchainDiagnosticsTest(unittest.TestCase):
         values[0] = (values[0] & ~0o777) | (0o700 if stat.S_ISDIR(values[0]) else 0o600)
         return os.stat_result(values)
 
-    def invoke(self, verb, raw=None):
+    def invoke(self, verb, raw=None, file_metadata=None):
         raw = self.raw if raw is None else raw
         actual_lstat, actual_fstat = pathlib.Path.lstat, os.fstat
         output = io.StringIO()
-        with mock.patch.object(pathlib.Path, 'lstat', lambda path: self.controlled_stat(actual_lstat(path))), \
+        def lstat(path):
+            info = self.controlled_stat(actual_lstat(path))
+            if file_metadata and path in file_metadata:
+                mode, uid = file_metadata[path]
+                values = list(info)
+                values[0], values[4] = mode, uid
+                return os.stat_result(values)
+            return info
+
+        with mock.patch.object(pathlib.Path, 'lstat', lstat), \
                 mock.patch.object(os, 'fstat', lambda fd: self.controlled_stat(actual_fstat(fd))), \
                 mock.patch.dict(sys.modules, {'fcntl': self.fcntl}), contextlib.redirect_stdout(output):
             self.ns['installation_diagnostic_main']([verb, self.request['operationId'], hashlib.sha256(raw).hexdigest()], raw)
@@ -267,6 +276,80 @@ class ToolchainDiagnosticsTest(unittest.TestCase):
         self.assertIsNone(self.ns['PREPARE_LOCK'])
         self.assertEqual('TOOLCHAIN=' + '|'.join(record.values()) + '\n', output)
         self.assertEqual('SUCCEEDED', json.loads(self.invoke('diagnose-only'))['preparationStatus'])
+
+    def test_diagnosed_kotlin_requires_original_managed_java_before_preparation(self):
+        self.ns['SHIPPED_CATALOG'] = {'KOTLIN': ['2.0']}
+        java_version, java_digest = '21.0.13+9', 'a' * 64
+        java_key = hashlib.sha256(('JAVA\n' + java_version + '\n' + java_digest).encode()).hexdigest()
+        java = self.root / 'versions' / ('java-' + java_key)
+        (java / 'bin').mkdir(parents=True)
+        launcher = java / 'bin' / 'java'
+        compiler = java / 'bin' / 'javac'
+        marker = java / '.w2l-toolchain.json'
+        record = {'ecosystem': 'JAVA', 'origin': 'MANAGED', 'version': java_version, 'directory': str(java),
+                  'source': 'https://example.invalid/java.tar.gz', 'sha256': java_digest,
+                  'official_algorithm': 'sha256', 'official_digest': java_digest, 'dependencies': {}}
+        for program in (launcher, compiler):
+            program.write_bytes(b'fixture launcher data')
+        kotlin = {'ecosystem': 'KOTLIN', 'version': '2.0.1', 'directory': '/fixture', 'origin': 'MANAGED',
+                  'source': 'https://example.invalid/kotlin.zip', 'sha256': 'b' * 64}
+        release = self.ns['release'] = mock.Mock(return_value=(kotlin['version'], kotlin['source'], 'sha256', kotlin['sha256'], 'archive'))
+        self.ns['reuse_system'] = mock.Mock(return_value=None)
+        install = self.ns['install'] = mock.Mock(return_value=kotlin)
+        run = self.ns['run'] = mock.Mock()
+        probe_output = self.ns['probe_output'] = mock.Mock()
+
+        def observe(arguments):
+            self.assertEqual([str(launcher), '-version'], arguments)
+            self.assertEqual('before-java', os.environ.get('JAVA_HOME'))
+            self.assertIsNotNone(self.ns['PREPARE_LOCK'])
+            self.assertGreater(self.ns['remaining'](), 0)
+            return 0, reported_version + '\n'
+
+        probe_output.side_effect = observe
+        protected = {marker: (stat.S_IFREG | 0o444, 0), launcher: (stat.S_IFREG | 0o755, 0),
+                     compiler: (stat.S_IFREG | 0o755, 0)}
+        for fault in ('foreign marker', 'writable marker', 'symlink marker', 'oversized marker', 'archive identity',
+                      'release identity', 'unsafe launcher', 'wrong build', 'valid R37 record'):
+            with self.subTest(fault=fault), mock.patch.dict(os.environ, {'JAVA_HOME': 'before-java'}):
+                probe_output.reset_mock()
+                install.reset_mock()
+                release.reset_mock()
+                run.reset_mock()
+                metadata, saved = protected.copy(), record.copy()
+                reported_version = 'openjdk 21.0.13+8' if fault == 'wrong build' else 'openjdk 21.0.13+9'
+                if fault == 'foreign marker':
+                    metadata[marker] = stat.S_IFREG | 0o444, 101
+                if fault == 'writable marker':
+                    metadata[marker] = stat.S_IFREG | 0o644, 0
+                if fault == 'symlink marker':
+                    metadata[marker] = stat.S_IFLNK | 0o777, 0
+                if fault == 'archive identity':
+                    saved['official_digest'] = 'c' * 64
+                if fault == 'release identity':
+                    saved['version'] = '21.0.14+9'
+                if fault == 'unsafe launcher':
+                    metadata[launcher] = stat.S_IFREG | 0o777, 0
+                marker.write_text(json.dumps(saved) + (' ' * 65536 if fault == 'oversized marker' else ''))
+                self.request['operationId'] = str(uuid.uuid4())
+                self.request['arguments'] = ['prepare', 'KOTLIN', '2.0', '-', '120', str(java)]
+                raw = json.dumps(self.request, separators=(',', ':')).encode()
+                if fault != 'valid R37 record':
+                    with self.assertRaises(self.ns['PreparationFailure']):
+                        self.invoke('prepare-diagnosed', raw, metadata)
+                    self.assertEqual('before-java', os.environ.get('JAVA_HOME'))
+                    release.assert_not_called()
+                    install.assert_not_called()
+                    run.assert_not_called()
+                    self.assertEqual(int(fault == 'wrong build'), probe_output.call_count)
+                else:
+                    output = self.invoke('prepare-diagnosed', raw, metadata)
+                    self.assertEqual('TOOLCHAIN=' + '|'.join(kotlin.values()) + '\n', output)
+                    self.assertEqual(str(java), os.environ.get('JAVA_HOME'))
+                    probe_output.assert_called_once()
+                    run.assert_called_once_with([str(compiler), '-version'])
+                    release.assert_called_once_with('KOTLIN', '2.0', '')
+                    install.assert_called_once()
 
     def test_invalid_lock_records_failure_without_execution_or_replay(self):
         lock = self.root / '.prepare.lock'

@@ -296,6 +296,73 @@ def main(args):
         prepare(args)
 
 
+def require_java_executable(path):
+    owned_directory(path.parent)
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o7022
+            or not info.st_mode & 0o111):
+        fail('ownership', 'prepared Java launcher must be a protected executable')
+
+
+def require_system_java_record(record, directory):
+    files = record.get('system_files')
+    if not isinstance(files, list) or len(files) not in (3, 4):
+        fail('integrity', 'invalid prepared system Java file identities')
+    for name, file in zip(('java', 'javac', 'jar', 'javadoc'), files):
+        if (not isinstance(file, dict) or set(file) != {'name', 'path', 'sha256'}
+                or file['name'] != name or not tracked_digest(file['sha256'])
+                or not isinstance(file['path'], str) or not pathlib.Path(file['path']).is_absolute()):
+            fail('integrity', 'invalid prepared system Java file identity')
+    digest = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
+    key = hashlib.sha256(('JAVA\n' + record['version'] + '\nsystem\n' + digest).encode()).hexdigest()
+    if (digest != record['sha256'] or directory.name != 'java-' + key
+            or record['source'] != 'system:' + files[0]['path']):
+        fail('integrity', 'prepared system Java marker differs from its original selection')
+    for file in files:
+        launcher = directory / 'bin' / file['name']
+        info = launcher.lstat()
+        if info.st_uid != 0 or not stat.S_ISLNK(info.st_mode) or os.readlink(launcher) != file['path']:
+            fail('integrity', 'prepared system Java launcher differs from its pinned target')
+        require_java_executable(pathlib.Path(file['path']))
+    verify_system(record)
+
+
+def require_prepared_java(value):
+    directory = pathlib.Path(value)
+    if directory.parent != ROOT / 'versions' or not re.fullmatch('java-[a-f0-9]{64}', directory.name):
+        fail('request', 'invalid managed Java selection')
+    marker = saved_installation_marker(directory)
+    if marker is None or marker.lstat().st_mode & 0o222:
+        fail('ownership', 'prepared Java requires a sealed completion marker')
+    record = tracked_json(tracked_regular(marker, 65536))
+    if not isinstance(record, dict):
+        fail('integrity', 'invalid prepared Java completion marker')
+    origin, version, source, digest = (record.get(field) for field in ('origin', 'version', 'source', 'sha256'))
+    if (record.get('ecosystem') != 'JAVA' or record.get('directory') != str(directory)
+            or origin not in ('MANAGED', 'SYSTEM') or not isinstance(version, str)
+            or not re.fullmatch(r'[0-9][0-9.u+b_-]{0,95}', version) or version_key(version) is None
+            or not isinstance(source, str) or not tracked_digest(digest)):
+        fail('integrity', 'prepared Java marker differs from its original selection')
+    owned_directory(directory / 'bin')
+    if origin == 'SYSTEM':
+        require_system_java_record(record, directory)
+    else:
+        if (record.get('official_algorithm') != 'sha256' or record.get('official_digest') != digest
+                or directory.name != 'java-' + installation_key('JAVA', version, digest)):
+            fail('integrity', 'prepared Java marker differs from its official archive identity')
+        official_url(source, historical=True)
+        for name in ('java', 'javac'):
+            launcher = directory / 'bin' / name
+            if launcher.lstat().st_uid != 0:
+                fail('ownership', 'prepared Java launcher must be root-owned')
+            resolved = launcher.resolve(strict=True)
+            if directory not in resolved.parents:
+                fail('ownership', 'prepared Java launcher is outside its selected installation')
+            require_java_executable(resolved)
+    probe('JAVA', directory, version)
+    return directory
+
+
 def prepare(args):
     global DEADLINE
     if (
@@ -307,19 +374,12 @@ def prepare(args):
         fail('request', 'invalid preparation arguments')
     if not admitted(args[1], args[2]):
         fail('unavailable', 'branch is outside the shipped catalog')
-    if args[5] != '-':
-        java = pathlib.Path(args[5])
-        if java.parent != ROOT / 'versions' or not re.fullmatch('java-[a-f0-9]{64}', java.name):
-            fail('request', 'invalid managed Java selection')
-        owned_directory(java)
-        record = json.loads((java / '.w2l-toolchain.json').read_text())
-        if record['ecosystem'] != 'JAVA':
-            fail('request', 'managed Java selection has the wrong ecosystem')
-        os.environ['JAVA_HOME'] = str(java)
     seconds = int(args[4])
     if not 30 <= seconds <= 7200:
         fail('request', 'invalid preparation timeout')
     DEADLINE = time.monotonic() + seconds
+    if args[5] != '-':
+        os.environ['JAVA_HOME'] = str(require_prepared_java(args[5]))
     identity, url, algorithm, digest, layout = release(args[1], args[2], '' if args[3] == '-' else args[3])
     record = reuse_system(args[1], identity)
     if record is None:

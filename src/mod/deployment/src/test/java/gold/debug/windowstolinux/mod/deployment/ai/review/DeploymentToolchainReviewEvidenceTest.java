@@ -1548,9 +1548,8 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"R32", "R33"})
+    @ValueSource(strings = {"R32", "R33", "R49"})
     void aptReviewIncludesCompleteSupervisorAtObservedBudgets(String round) throws Exception {
-        boolean r33 = round.equals("R33");
         try (var fixture = new MirroredInstallerTestFixture();
              var command = request("dependencies", fixture);
              var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture)) {
@@ -1571,21 +1570,36 @@ class DeploymentToolchainReviewEvidenceTest {
             var workerDescriptor = manifest.path("dependencyWorker");
             String worker = collect(evidence, workerDescriptor, PHASE);
             assertIdentity(workerDescriptor, worker);
+            var systemShell = manifest.path("dependencySystemShell");
+            String shell = collect(evidence, systemShell, PHASE);
+            assertIdentity(systemShell, shell);
             assertArrayEquals(command.stdin(), restoreValue(projected.path("completeExecutableInput"),
                 Map.of(workerDescriptor.path("sourcePointer").asText(), worker)).getBytes(StandardCharsets.UTF_8));
             var aptFrame = manifest.path("dependencyAptSelection");
-            String selected = evidence.messages().get(aptFrame.path("ordinal").asInt()).text()
-                .substring(aptFrame.path("headerCharacters").asInt());
+            String selectionFrame = evidence.messages().get(aptFrame.path("ordinal").asInt()).text();
+            String selected = selectionFrame.substring(aptFrame.path("headerCharacters").asInt());
             var coverage = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
             String workerPointer = workerDescriptor.path("sourcePointer").asText();
+            String shellPointer = systemShell.path("sourcePointer").asText();
+            var exactSources = Map.of(workerPointer, worker, shellPointer, shell);
             for (var section : manifest.path("selectedAptRanges")) {
                 String pointer = section.path("sourcePointer").asText();
                 int offset = section.path("offset").asInt(), next = section.path("next").asInt();
                 int start = section.path("startCharacter").asInt();
-                if (workerPointer.equals(pointer))
-                    assertEquals(worker.substring(offset, next), selected.substring(start, start + next - offset));
+                if (exactSources.containsKey(pointer))
+                    assertEquals(exactSources.get(pointer).substring(offset, next), selected.substring(start, start + next - offset));
                 addR24Range(coverage, pointer, offset, next);
             }
+            var sourceAuthentication = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+            for (String anchor : List.of("def dependency_url(", "def dependency_key(")) {
+                var body = PreparationSourceRange.python(worker, anchor);
+                addR24Range(sourceAuthentication, workerPointer, body.offset(), body.next());
+            }
+            int uriStart = shell.indexOf("wtl_apt_source_security() {\n");
+            int uriEnd = shell.indexOf("\nwtl_apt_sandbox_identity() {", uriStart);
+            assertTrue(uriStart >= 0 && uriEnd > uriStart);
+            addR24Range(sourceAuthentication, shellPointer, uriStart, uriEnd);
+            assertR24Coverage(sourceAuthentication, coverage);
             var required = manifest.path("requiredAptRanges");
             assertTrue(required.isArray() && !required.isEmpty());
             var allAptEvidence = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
@@ -1594,6 +1608,8 @@ class DeploymentToolchainReviewEvidenceTest {
                 addR24Range(allAptEvidence, section.path("pointer").asText(), section.path("offset").asInt(), section.path("next").asInt());
             var supervisor = PreparationSourceRange.python(worker, "def dependency_supervise(");
             assertTrue(coverage.get(workerPointer).floorEntry(supervisor.offset()).getValue() >= supervisor.next());
+            var decoder = PreparationSourceRange.python(worker, "def dependency_text(");
+            assertR24Coverage(Map.of(workerPointer, new TreeMap<>(Map.of(decoder.offset(), decoder.next()))), allAptEvidence);
             for (String function : List.of("dependency_bytes", "dependency_registered", "dependency_apt_hook_owners",
                 "dependency_apt_binaries", "dependency_apt_options", "dependency_validate_dpkg", "dependency_validate_apt",
                 "dependency_supervise", "dependency_static_identity", "dependency_stop_owned", "dependency_manifest",
@@ -1622,17 +1638,27 @@ class DeploymentToolchainReviewEvidenceTest {
             }
             var sources = r24Sources(initial, projected, fixture);
             addReplaySource(sources, workerDescriptor, worker);
-            var systemShell = manifest.path("dependencySystemShell");
-            String shell = collect(evidence, systemShell, PHASE);
             addReplaySource(sources, systemShell, shell);
-            String coordinates = r33
-                ? "46/0/8000 46/8000/8000 46/16000/8000 46/24000/8000 45/11000/8000 45/19000/8000 45/27000/8000 45/34000/4159"
-                : "46/0/8000 46/8000/8000 46/16000/8000 46/24000/8000 46/32000/2019 41/53618/8000 41/59371/8000 41/68426/8000";
-            int factsSize = r33 ? 40923 : 39876, initialCap = r33 ? 1031205 : 1048576, cap = r33 ? 999301 : 1048576;
+            String coordinates = switch (round) {
+                case "R32" -> "46/0/8000 46/8000/8000 46/16000/8000 46/24000/8000 46/32000/2019 41/53618/8000 41/59371/8000 41/68426/8000";
+                case "R33" -> "46/0/8000 46/8000/8000 46/16000/8000 46/24000/8000 45/11000/8000 45/19000/8000 45/27000/8000 45/34000/4159";
+                // Binary Inspector's first eight reads skipped both identity guards and the shell pointer.
+                case "R49" -> "41/13199/580 41/18100/1505 41/24509/968 41/29684/1056 41/49486/751 41/50316/8000 41/58316/1055 41/61669/8000";
+                default -> throw new AssertionError(round);
+            };
             var calls = new R24Turn(0, 0, 0, 0, 0, coordinates).calls(snapshot, sources, 0);
             var messages = new ArrayList<>(initial.messages());
+            int selectionIndex = 1 + aptFrame.path("ordinal").asInt();
+            assertTrue(messages.get(selectionIndex).text().endsWith(selected), "The product request must include the exact APT selection");
+            // Use the same snapshot in the fixture frame header, current facts, and replayed tool calls.
+            messages.set(selectionIndex, new AiMessage(AiRole.USER, selectionFrame, List.of()));
             messages.set(messages.size() - 1, evidence.messages().getLast());
-            int fixed = wireWithR24FactsSize(copy(initial, messages, initialCap), factsSize, initialCap, Map.of()).length;
+            boolean r33 = round.equals("R33"), r49 = round.equals("R49");
+            int initialCap = r49 ? 988706 : r33 ? 1031205 : 1048576;
+            int cap = r49 ? 955702 : r33 ? 999301 : 1048576;
+            int factsSize = r49 ? 41855 : r33 ? 40923 : 39876;
+            byte[] firstEncoded = wireWithR24FactsSize(copy(initial, messages, initialCap), factsSize, initialCap, Map.of());
+            assertTrue(JSON.readTree(firstEncoded).path("input").findValuesAsText("text").contains(selectionFrame));
             var reader = evidence.reader(16);
             Map<UUID, String> continuations = new LinkedHashMap<>();
             var nativeCalls = calls.toArray(AiToolCall[]::new);
@@ -1643,12 +1669,13 @@ class DeploymentToolchainReviewEvidenceTest {
             assertTrue(results.stream().noneMatch(AiToolResult::error));
             reader.continueReview(messages, reads, results);
             byte[] encoded = wireWithR24FactsSize(copy(initial, messages, cap), factsSize, cap, continuations);
+            assertTrue(JSON.readTree(encoded).path("input").findValuesAsText("text").contains(selectionFrame));
             seedInlineSourceRanges(projected, coverage);
             assertR24VisiblePages(encoded, snapshot, calls, true, coverage, sources);
             var requested = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
             collectRequestedCoverage(requested, calls, sources);
             assertR24Coverage(requested, coverage);
-            System.out.printf("%s_APT_REPLAY fixedEncoded=%d continuationEncoded=%d cap=%d%n", round, fixed, encoded.length, cap);
+            System.out.printf("%s_APT_REPLAY fixedEncoded=%d continuationEncoded=%d cap=%d%n", round, firstEncoded.length, encoded.length, cap);
         }
     }
 
@@ -3202,6 +3229,50 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     @Test
+    void kotlinPreparationIncludesExactJavaPrerequisiteChecksInTheIndependentRequest() throws Exception {
+        int maximum = 1048576;
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.KOTLIN_DISTRIBUTION);
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = diagnosedPreparation(fixture, "KOTLIN", "2.3", fixture.layout.toolchains() + "/versions/java-" + "c".repeat(64))) {
+            var action = intent("prepare", fixture, command);
+            var facts = new LinkedHashMap<String, Object>(
+                new DeploymentFixedCommandProtocol(fixture.context).inspect(action, command, fixture.layout, fixture.task));
+            facts.put("currentCommandEvidence", assisted.scope.effectFacts(action, fixture.task));
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, maximum), action, command,
+                fixture.layout).orElseThrow();
+            var initial = r31DeniedApproval(fixture, assisted, facts, action, command);
+            var manifest = JSON.readTree(evidence.messages().getLast().text()).path(PHASE);
+            var selection = manifest.path("preparationSelection");
+            var required = manifest.path("requiredPreparationRanges");
+            String body = evidence.messages().get(selection.path("ordinal").asInt()).text()
+                .substring(selection.path("headerCharacters").asInt());
+            String source = DeploymentManagedHelperBundle.renderScript(fixture.layout);
+            var selected = new LinkedHashMap<String, JsonNode>();
+            for (var range : manifest.path("selectedPreparationRanges")) {
+                selected.put(range.path("section").asText(), range);
+            }
+            assertEquals(15, required.size());
+            for (var range : required) {
+                var inline = selected.get(range.path("section").asText());
+                assertNotNull(inline);
+                assertEquals(range.path("sourcePointer"), inline.path("sourcePointer"));
+                int start = inline.path("startCharacter").asInt(), offset = range.path("offset").asInt(),
+                    next = range.path("next").asInt();
+                assertEquals(source.substring(offset, next), body.substring(start, start + next - offset));
+            }
+            for (String original : List.of("def require_java_executable(", "def require_system_java_record(",
+                    "def require_prepared_java(", "probe('JAVA', directory, version)", "str(require_prepared_java(args[5]))")) {
+                assertTrue(body.contains(original), original);
+            }
+            assertTrue(evidence.instructions().contains("requiredPreparationRanges"));
+            byte[] encoded = wire(initial, maximum, Map.of());
+            assertTrue(encoded.length <= maximum);
+            System.out.printf("R50_KOTLIN_JAVA_REVIEW required=%d firstEncoded=%d max=%d%n",
+                required.size(), encoded.length, maximum);
+        }
+    }
+
+    @Test
     void sourceBuiltRubyReviewBindsFrozenMakeToTheOriginalIsolatedWorkerAndRequiresItsRoute() throws Exception {
         int maximum = 1048576;
         try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.APT_UBUNTU, DownloadPoint.RUBY_DISTRIBUTION);
@@ -3801,9 +3872,14 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     private static CommandRequest diagnosedPreparation(MirroredInstallerTestFixture fixture, String ecosystem, String branch) {
+        return diagnosedPreparation(fixture, ecosystem, branch, "-");
+    }
+
+    private static CommandRequest diagnosedPreparation(MirroredInstallerTestFixture fixture, String ecosystem, String branch,
+                                                        String javaPrerequisite) {
         long seconds = 135;
         var input = new DeploymentToolchainDiagnostics.Request(fixture.operation, fixture.task.id().toString(), fixture.server.id(),
-            "a".repeat(64), "a".repeat(64), fixture.layout, List.of("prepare", ecosystem, branch, "-", "120", "-"));
+            "a".repeat(64), "a".repeat(64), fixture.layout, List.of("prepare", ecosystem, branch, "-", "120", javaPrerequisite));
         String invocation = DeploymentToolchainDiagnostics.command("prepare-diagnosed", input);
         String guarded = DeploymentManagedHelperBundle.verifiedCommand(invocation, fixture.layout);
         String wrapped = DeploymentMirrorTasks.preparationCommand(guarded, fixture.task, seconds);

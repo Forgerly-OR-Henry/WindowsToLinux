@@ -456,7 +456,7 @@ class DeploymentAgentApprovalTest {
                 assertTrue(phase.at("/postconditions/buildEntry").asText().startsWith("Not called by agent-open"));
                 assertEquals("NONE", phase.path("authority").asText());
                 assertEquals(layout.digest(), phase.at("/implementation/layoutSha256").asText());
-                assertEquals("4c81aa13d783567773f79a2bc2aadced4e3f497fa1e6eb2520fb490cf1198696", phase.at("/implementation/reviewedDefaultHelperSha256").asText());
+                assertEquals("d1b0b2837faa6e930404a774fab9dd53227a7361a4d1d03b237d5694393588b6", phase.at("/implementation/reviewedDefaultHelperSha256").asText());
                 assertEquals(workspace.candidateId(), phase.at("/arguments/candidate").asText());
                 assertEquals("b".repeat(64), phase.at("/arguments/compressedArchiveSha256").asText());
                 assertEquals(f.task.id().toString(), phase.at("/arguments/task").asText());
@@ -503,7 +503,7 @@ class DeploymentAgentApprovalTest {
         if (changed.equals("append")) script += "\nprintf extra";
         if (changed.equals("guard")) script = script.replace("-perm /022", "-perm /000");
         if (changed.equals("pin"))
-            script = script.replace("4c81aa13d783567773f79a2bc2aadced4e3f497fa1e6eb2520fb490cf1198696", "a".repeat(64));
+            script = script.replace("d1b0b2837faa6e930404a774fab9dd53227a7361a4d1d03b237d5694393588b6", "a".repeat(64));
         if (changed.equals("candidate"))
             script = script.replace("first-app-bbbbbbbbbbbbbbbb", "first-app-cccccccccccccccc");
         if (changed.equals("verb")) script = script.replace("'agent-open'", "'agent-read'");

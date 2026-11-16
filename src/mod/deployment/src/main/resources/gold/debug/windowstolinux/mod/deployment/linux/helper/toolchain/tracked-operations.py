@@ -360,12 +360,7 @@ def tracked_prepare(operation):
         fail('unavailable', 'branch is outside the shipped catalog')
     DEADLINE = time.monotonic() + parameters['seconds']
     if parameters['javaHome'] != '-':
-        directory = pathlib.Path(parameters['javaHome'])
-        record = tracked_json(tracked_regular(directory / '.w2l-toolchain.json', 65536))
-        if record.get('ecosystem') != 'JAVA' or record.get('directory') != str(directory):
-            fail('integrity', 'original Java selection changed')
-        verify_system(record)
-        os.environ['JAVA_HOME'] = str(directory)
+        os.environ['JAVA_HOME'] = str(require_prepared_java(parameters['javaHome']))
     identity, url, algorithm, digest, archive_layout = release(ecosystem, branch, '' if exact == '-' else exact)
     url = official_url(url)
     discovered = discover_system(ecosystem, identity)
