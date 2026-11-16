@@ -699,7 +699,8 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         if (operation.equals(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper.PREREQUISITE_OBSERVATION))
             return """
                 Review the read-only package and runtime observation against the complete source, fixed limits and exact targets.
-                This review precedes the observation. A future install requires its own independent review and exact host grant.
+                The pending observation has not run. The successContract defines two mutually exclusive stdout cases for a future execution.
+                The complete stdout from one successful execution must match exactly one case. A future install requires its own independent review and exact host grant.
                 """;
         if (operation.equals(DeploymentAssistedCandidateReview.VERIFY) && facts.containsKey("candidateObservation"))
             return DeploymentAssistedCandidateReview.verificationInstructions();

@@ -244,8 +244,21 @@ class DeploymentNativeHelperPackageImpactTest {
             assertEquals("perl-base", observationFacts.at("/helperPrerequisiteObservation/metadataToolGuard/bootstrapPackage").asText());
             assertEquals(SshCommandFrameProtocol.HELPER_PERL_STARTUP_HEADER.stripTrailing(),
                 observationFacts.at("/helperPrerequisiteObservation/metadataToolGuard/startupAdmission/marker").asText());
-            assertEquals("APT_PREREQUISITES=READY\n", observationFacts.at("/helperPrerequisiteObservation/acceptedResult/stdout/0").asText());
-            assertEquals("APT_PREREQUISITES=MISSING\n", observationFacts.at("/helperPrerequisiteObservation/acceptedResult/stdout/1").asText());
+            var prerequisiteFacts = observationFacts.path("helperPrerequisiteObservation");
+            assertEquals("BEFORE_REMOTE_EXECUTION", prerequisiteFacts.path("reviewPhase").asText());
+            assertFalse(prerequisiteFacts.has("acceptedResult"));
+            var contract = prerequisiteFacts.path("successContract");
+            assertEquals("EXACTLY_ONE_COMPLETE_CASE", contract.path("stdoutMatch").asText());
+            assertEquals(0, contract.path("requiredExitCode").asInt(-1));
+            assertEquals("", contract.path("requiredStderr").asText(null));
+            assertTrue(contract.path("requiresUntruncatedStreams").asBoolean());
+            var cases = contract.path("allowedCompleteStdoutByState");
+            assertTrue(cases.isObject());
+            assertEquals(2, cases.size());
+            assertEquals("APT_PREREQUISITES=READY\n", cases.path("READY").asText());
+            assertEquals("APT_PREREQUISITES=MISSING\n", cases.path("MISSING").asText());
+            assertTrue(fixture.model.requests.getFirst().messages().stream()
+                .anyMatch(message -> message.text().contains("The pending observation has not run.")));
             assertEquals(MirroredInstallerTestFixture.sha(sent.getFirst()),
                 observationFacts.at("/helperPrerequisiteObservation/stdinSha256").asText());
             var installIntent = assisted.grantedIntents.getLast();
@@ -279,6 +292,37 @@ class DeploymentNativeHelperPackageImpactTest {
                 bodyDigest, DeploymentHelperInstallerScript.readyRequestDigest(ready), fixture.layout, true));
             assertFalse(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, fixture.operation, serverDigest,
                 bodyDigest, DeploymentMirrorTasks.installerRequestDigest(ready, fixture.task), fixture.layout, true));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"APT_PREREQUISITES=MISSING\n", "APT_PREREQUISITES=READY\nAPT_PREREQUISITES=MISSING\n",
+        "APT_PREREQUISITES=MISSING\nAPT_PREREQUISITES=READY\n"})
+    void prerequisiteObservationAcceptsOnlyOneCompleteStdoutCase(String stdout) throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(); var assisted = new Assisted(fixture)) {
+            var session = (RemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{RemoteSession.class}, (p, m, a) -> {
+                assertEquals("execute", m.getName());
+                assertTrue(assisted.grants.contains(((ApprovalGrant) a[1]).id()));
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new CommandResult(Optional.of(0), stdout, "", false)),
+                    Optional.empty());
+            });
+            var ai = new DeploymentAiJson(assisted.context, fixture.conversation());
+            var helper = new DeploymentManagedHelper(session, assisted.host, fixture.server, fixture.task, fixture.model.configurationRevision,
+                gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard.NONE,
+                (intent, request, task) -> DeploymentFixedCommandApproval.approve(assisted.context, assisted.host, intent, request, task,
+                    fixture.model.configurationRevision, "AUTOMATIC", false, DeploymentCommandReviewModel.submission(ai), assisted.scope, true));
+            fixture.model.nativeReply(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("observe", "submit_result",
+                "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled independent verdict\"}"));
+            var result = helper.observeAptPrerequisites(DownloadPoint.APT_UBUNTU);
+            assertEquals(1, assisted.hosts.get());
+            if (stdout.equals("APT_PREREQUISITES=MISSING\n")) {
+                assertEquals(TaskResult.SUCCEEDED, result.outcome());
+                assertEquals(DeploymentManagedHelper.PrerequisiteState.MISSING, result.value().orElseThrow());
+            } else {
+                assertEquals(TaskResult.UNKNOWN, result.outcome());
+                assertTrue(result.value().isEmpty());
+                assertEquals("DEPLOYMENT_HELPER_PREREQUISITES_UNCONFIRMED", result.problem().orElseThrow().eventCode());
+            }
         }
     }
 

@@ -336,12 +336,15 @@ public final class DeploymentManagedHelper {
                 String expected = DeploymentHelperInstallerScript.renderPrerequisiteObservation(point);
                 if (Arrays.equals(input, expected.getBytes(StandardCharsets.UTF_8)))
                     return Map.of("expectedRepositoryPoint", point.name(), "packages", DeploymentHelperInstallerScript.APT_PACKAGES,
-                        "observation", "PROTECTED_EXISTING_OS_PACKAGE_DATABASE_AND_RUNTIME_PATHS",
+                        "reviewPhase", "BEFORE_REMOTE_EXECUTION",
+                        "observationScope", "PROTECTED_EXISTING_OS_PACKAGE_DATABASE_AND_RUNTIME_PATHS",
                         "stdinSha256", DeploymentHelperInstallerScript.sha256(expected),
                         "metadataToolGuard", prerequisiteMetadataToolFacts(),
                         "executionOrder", java.util.List.of("apt_prerequisite_metadata", "apt_prerequisites_observe"),
-                        "acceptedResult", Map.of("stdout", Arrays.stream(PrerequisiteState.values()).map(PrerequisiteState::stdout).toList(),
-                            "exitCode", 0, "stderr", "", "truncated", false));
+                        "successContract", Map.of("stdoutMatch", "EXACTLY_ONE_COMPLETE_CASE",
+                            "allowedCompleteStdoutByState", Map.of("READY", PrerequisiteState.READY.stdout(),
+                                "MISSING", PrerequisiteState.MISSING.stdout()),
+                            "requiredExitCode", 0, "requiredStderr", "", "requiresUntruncatedStreams", true));
             }
         } finally {
             Arrays.fill(input, (byte) 0);
