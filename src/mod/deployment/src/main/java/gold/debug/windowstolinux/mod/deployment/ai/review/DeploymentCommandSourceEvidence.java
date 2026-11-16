@@ -198,6 +198,12 @@ public final class DeploymentCommandSourceEvidence {
         A source descriptor's characters gives the end in UTF-16 code units. Stop when next reaches that value. Do not request a larger offset. A WTL-COMMAND-EVIDENCE-PAGE-1 result and a WTL-COMMAND-RETAINED-SOURCE-1 USER frame contain a JSON header then exact source text in header order. Each range spans next minus offset code units. newRanges in a page omits bytes already in visible frames or results. The retained frame may omit older bytes; they remain available from the original snapshot. latestReads reports successful or rejected requests. If latestBatchRejected is present, no page from that oversized batch was read; resubmit only the missing ranges in groups of at most eight. Review current evidence independently; missing evidence or unsafe effects require DENY. Submit exactly one fresh native submit_result alone.
         """;
 
+    private static final String LOCAL_NODE_BIND_INSTRUCTION = """
+        Review the complete exactAction for the current managed Node binding. Check the original task and server, empty stdin, fixed launch environment and root guard, pinned helper, limits, and authorized target. Compare decodedToolchainBinding with currentToolchainBindingStage when supplied. A catalog binding does not satisfy deferred native prerequisites or establish candidate readiness.
+        Inspect the exact installed helper source in selectedRangeFrame. selectedRanges maps each excerpt to its original UTF-16 interval; startCharacter is relative to the end of the frame header. Check the admitted Node branch, path and marker ownership, lock, version probe and its execution environment, existing binding comparison, and protected write. The actual command and source determine its effects.
+        Read only missing decision-relevant source with evidence using pointer, offset and limit in this fixed snapshot. Use at most eight ranges of up to 8000 UTF-16 code units before a separate verdict. A retained frame's exact source follows its JSON ranges in order. Do not request bytes already present. Deny unsafe effects or missing material evidence. Submit one fresh native submit_result.
+        """;
+
     public static final AiToolDefinition TOOL = new AiToolDefinition("evidence",
         "Read an original fact from this exact snapshot. At most eight evidence calls per response, separate from the verdict. "
             + "An empty pointer selects all original facts. Review exact source already visible before requesting more. In retained frames, "
@@ -271,7 +277,10 @@ public final class DeploymentCommandSourceEvidence {
         if (!OPERATIONS.contains(operation)) return Optional.empty();
         var mirror = DeploymentMirrorTasks.preparation(request.script());
         boolean dependency = DeploymentToolchainDependencies.OPERATION.equals(operation);
-        if (mirror.isEmpty() && !dependency) return Optional.empty();
+        var localNode = BIND.equals(operation)
+            ? DeploymentManagedHelperBundle.unwrapLocalNodeBinding(request.script(), layout)
+            : Optional.<DeploymentManagedHelperBundle.LocalNodeBinding>empty();
+        if (mirror.isEmpty() && localNode.isEmpty() && !dependency) return Optional.empty();
 
         var current = (ObjectNode) JSON.readTree(original);
         String exact = requiredText(current, "exactAction");
@@ -279,6 +288,23 @@ public final class DeploymentCommandSourceEvidence {
         if (!operation.equals(current.path("operation").asText()) || !intent.exactAction().equals(exact)
             || !exact.endsWith("\nscript:\n" + script) || current.has(PROJECTION))
             throw new IOException("Original toolchain evidence changed before projection");
+        if (current.has("localNodeBinding") != localNode.isPresent())
+            throw new IOException("Local Node binding evidence differs from the original launcher");
+        if (localNode.isPresent()) {
+            var launcher = localNode.orElseThrow();
+            var facts = current.path("localNodeBinding");
+            var binding = current.path("decodedToolchainBinding");
+            if (!facts.path("task").asText().equals(launcher.task().toString())
+                || !facts.path("serverSha256").asText().equals(launcher.serverSha256())
+                || facts.path("budgetSeconds").asLong(-1) != launcher.budgetSeconds()
+                || facts.path("materialStaging").asBoolean(true)
+                || !facts.path("bindingSha256").equals(binding.path("bindingSha256"))
+                || !binding.at("/literalValidation/canonicalTypedBinding").asBoolean()
+                || binding.path("toolchains").size() != 1
+                || !"NODE".equals(binding.at("/toolchains/0/ecosystem").asText())
+                || !"MANAGED".equals(binding.at("/toolchains/0/origin").asText()))
+                throw new IOException("Local Node binding evidence differs from the original arguments");
+        }
 
         var projected = current.deepCopy();
         String snapshot = sha256(original);
@@ -318,10 +344,12 @@ public final class DeploymentCommandSourceEvidence {
             if (binding) {
                 boolean managedDotnet = current.at("/decodedToolchainBinding/toolchains").findValues("ecosystem").stream()
                     .anyMatch(value -> value.asText().equals("DOTNET"));
-                var bindingRanges = BindingSourceRange.select(helper, managedDotnet);
+                var bindingRanges = BindingSourceRange.select(helper, managedDotnet, localNode.isPresent());
                 String selected = bindingSelection(descriptor, helper, bindingRanges, initialRanges);
                 sourceBodies.put(BINDING_SELECTION, selected);
                 frames.add(sourceFrame(messages, snapshot, BINDING_SELECTION, selected));
+                if (localNode.isPresent())
+                    requiredRanges.put(INSTALLED_HELPER_SOURCE, new TreeMap<>(initialRanges.get(INSTALLED_HELPER_SOURCE)));
             }
             manifest.set("installedHelperSource", descriptor);
             sourceBodies.put(INSTALLED_HELPER_SOURCE, helper);
@@ -2000,6 +2028,7 @@ public final class DeploymentCommandSourceEvidence {
         }
         if (dependencyReview() && sourceBodies.containsKey(DEPENDENCY_APT_SELECTION)) return DEPENDENCY_APT_INSTRUCTION;
         if (dependencyReview()) return INSTRUCTION + DEPENDENCY_INSTRUCTION;
+        if (bindingReview() && current.has("localNodeBinding")) return LOCAL_NODE_BIND_INSTRUCTION;
         if (boundBindingEvidence()) return BIND_INSTRUCTION.replace("by its snapshotSha256 and sourcePointer.",
             "by sourcePointer in this request's fixed snapshot. Call evidence with pointer, offset and limit only. No snapshot argument is needed.");
         return bindingReview() ? BIND_INSTRUCTION : INSTRUCTION;

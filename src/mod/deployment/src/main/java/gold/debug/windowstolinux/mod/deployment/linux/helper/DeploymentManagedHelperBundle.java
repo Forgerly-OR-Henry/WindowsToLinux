@@ -9,11 +9,18 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.regex.Pattern;
 
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTemplate;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
 
 /**
  * Assembles the root-owned managed helper from fixed responsibility fragments and rejects protocol drift. / 从固定职责片段拼装 root 持有的受管 helper 并拒绝协议漂移。
@@ -23,6 +30,11 @@ public final class DeploymentManagedHelperBundle {
      * Protocol version printed by this exact helper bundle. / 此精确 helper 包输出的协议版本。
      */
     public static final int PROTOCOL_VERSION = 16;
+    private static final String LOCAL_NODE_BINDING_HEADER = "# WTL_LOCAL_NODE_BINDING";
+    private static final String LOCAL_NODE_BINDING_DELIMITER = "WTL_LOCAL_NODE_BINDING_BODY";
+    private static final Pattern LOCAL_NODE_BINDING_IDENTITY = Pattern.compile(
+        "\\A# WTL_LOCAL_NODE_BINDING=([a-f0-9-]{36})\\n# WTL_LOCAL_NODE_BINDING_SERVER_SHA256=([a-f0-9]{64})"
+        + "\\n# WTL_LOCAL_NODE_BINDING_BUDGET=([1-9][0-9]{0,2})\\n");
 
     /**
      * Platform-owned helper installation directory. / 平台持有的 helper 安装目录。
@@ -185,6 +197,82 @@ public final class DeploymentManagedHelperBundle {
         return guard + script;
     }
 
+    /** Identifies the single prepared Node selection eligible for the material-free invocation. */
+    public static boolean supportsLocalNodeBinding(DeploymentResolvedToolchains tools, DeploymentRemoteLayout layout) {
+        if (tools.selections().size() != 1) return false;
+        var selection = tools.selections().getFirst();
+        return selection.requirement().ecosystem() == DeploymentToolchainType.NODE
+            && selection.origin() == DeploymentResolvedToolchains.OriginType.MANAGED
+            && selection.directory().matches(Pattern.quote(layout.toolchains()) + "/versions/node-[a-f0-9]{64}");
+    }
+
+    public record LocalNodeBinding(UUID task, String serverSha256, long budgetSeconds, String original, String encoded) { }
+
+    /** Renders the exact privileged Node bind with no staged mirror material. */
+    public static String renderLocalNodeBinding(String encoded, UUID task, ServerId server, long seconds,
+            DeploymentRemoteLayout layout) {
+        requireLocalNodeInput(encoded, layout);
+        return localNodeBindingCommand(encoded, task, sha256(server.id().getBytes(StandardCharsets.UTF_8)), seconds, layout);
+    }
+
+    private static String localNodeBindingCommand(String encoded, UUID task, String serverSha256, long seconds,
+            DeploymentRemoteLayout layout) {
+        java.util.Objects.requireNonNull(task);
+        if (seconds < 1 || seconds > 180) throw new IllegalArgumentException("Invalid local Node binding deadline");
+        return LOCAL_NODE_BINDING_HEADER + "=" + task + "\n# WTL_LOCAL_NODE_BINDING_SERVER_SHA256=" + serverSha256
+            + "\n# WTL_LOCAL_NODE_BINDING_BUDGET=" + seconds + "\n"
+            + "builtin unset -v TMPDIR || exit 64\n" + DeploymentMirrorTasks.PRIVILEGED_LAUNCHER
+            + "/bin/bash --noprofile --norc -p /dev/fd/4 4<<'" + LOCAL_NODE_BINDING_DELIMITER + "'\n"
+            + "builtin exec 4<&-\nset -eu\n[ \"$EUID\" -eq 0 ] || { printf 'MIRROR_REJECT=root-preparation-required\\n' >&2; exit 64; }\n(\n"
+            + verifiedCommand(localNodeBindingPrefix(layout) + encoded + "'", layout)
+            + "\n)\n" + LOCAL_NODE_BINDING_DELIMITER + "\n";
+    }
+
+    /** Rejects changes to the local wrapper, typed binding, or integrity guard before exposing the invocation. */
+    public static Optional<LocalNodeBinding> unwrapLocalNodeBinding(String command, DeploymentRemoteLayout layout) {
+        if (command == null || !command.startsWith(LOCAL_NODE_BINDING_HEADER)) return Optional.empty();
+        var identity = LOCAL_NODE_BINDING_IDENTITY.matcher(command);
+        if (!identity.find()) throw new IllegalArgumentException("Local Node binding identity missing");
+        UUID task = UUID.fromString(identity.group(1));
+        String serverSha256 = identity.group(2);
+        long seconds = Long.parseLong(identity.group(3));
+        String prefix = localNodeBindingPrefix(layout);
+        int from = command.indexOf(prefix, identity.end());
+        int to = from < 0 ? -1 : command.indexOf("'", from + prefix.length());
+        if (to < 0) throw new IllegalArgumentException("Local Node binding invocation missing");
+        String encoded = command.substring(from + prefix.length(), to);
+        requireLocalNodeInput(encoded, layout);
+        if (!command.equals(localNodeBindingCommand(encoded, task, serverSha256, seconds, layout)))
+            throw new IllegalArgumentException("Local Node binding source changed");
+        return Optional.of(new LocalNodeBinding(task, serverSha256, seconds, executionGuard(layout) + prefix + encoded + "'", encoded));
+    }
+
+    public static boolean isLocalNodeBinding(String command, DeploymentRemoteLayout layout) {
+        return unwrapLocalNodeBinding(command, layout).isPresent();
+    }
+
+    private static String localNodeBindingPrefix(DeploymentRemoteLayout layout) {
+        return DeploymentHelperInstallerScript.quote(layout.helperPath()) + " prepare-toolchains 'bind' '";
+    }
+
+    private static void requireLocalNodeInput(String encoded, DeploymentRemoteLayout layout) {
+        if (encoded == null || !encoded.matches("[A-Za-z0-9+/=]{8,87384}"))
+            throw new IllegalArgumentException("Invalid local Node binding encoding");
+        byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
+        try {
+            if (bytes.length > 65536) throw new IllegalArgumentException("Local Node binding exceeds input budget");
+            var tools = DeploymentToolchainBindingCodec.decode(new String(bytes, StandardCharsets.UTF_8));
+            String canonical = java.util.Base64.getEncoder().encodeToString(
+                DeploymentToolchainBindingCodec.encode(tools).getBytes(StandardCharsets.UTF_8));
+            if (!encoded.equals(canonical) || !supportsLocalNodeBinding(tools, layout))
+                throw new IllegalArgumentException("Local Node binding requires canonical prepared Node input");
+        } catch (java.util.NoSuchElementException invalid) {
+            throw new IllegalArgumentException("Local Node binding has an invalid version", invalid);
+        } finally {
+            java.util.Arrays.fill(bytes, (byte) 0);
+        }
+    }
+
     /** Extracts the invocation only after matching the complete current integrity guard. / 仅匹配完整当前完整性守卫后提取调用。
      * @param script complete actual executable command / 完整实际可执行命令
      * @return guarded invocation for typed argument decoding / 用于类型化参数解码的受保护调用 */
@@ -193,7 +281,8 @@ public final class DeploymentManagedHelperBundle {
     }
 
     public static String verifiedBody(String script, DeploymentRemoteLayout layout) {
-        script = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.preparation(script)
+        script = unwrapLocalNodeBinding(script, layout).map(LocalNodeBinding::original).orElse(script);
+        script = DeploymentMirrorTasks.preparation(script)
             .map(gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.Preparation::original).orElse(script);
         String guard = executionGuard(layout);
         if (script == null || !script.startsWith(guard))

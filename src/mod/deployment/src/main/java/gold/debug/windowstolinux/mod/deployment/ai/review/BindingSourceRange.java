@@ -9,7 +9,7 @@ record BindingSourceRange(String section, int offset, int next, String text) {
     private static final String PYTHON_OPEN = "\nprepare_official_toolchains() {\n";
     private static final String PYTHON_CLOSE = "\nWTL_OFFICIAL_TOOLCHAINS\n  )\n}\n";
 
-    static List<BindingSourceRange> select(String helper, boolean managedDotnet) throws IOException {
+    static List<BindingSourceRange> select(String helper, boolean managedDotnet, boolean localNode) throws IOException {
         int start = anchor(helper, PYTHON_OPEN) + 1;
         int end = anchor(helper, PYTHON_CLOSE) + PYTHON_CLOSE.length();
         if (end <= start) throw new IOException("Pinned binding receiver boundaries changed");
@@ -32,6 +32,9 @@ record BindingSourceRange(String section, int offset, int next, String text) {
             range(python, start, "literalBindBranch", "\n        if len(args) == 2 and args[0] == 'bind':\n",
                 "\n        if len(args) == 2 and args[0] == 'restore':\n")
         ));
+        if (localNode) {
+            ranges.add(range(python, start, "shippedCatalogAndRoot", "\nSHIPPED_CATALOG = {\n", "\nMAX_METADATA = "));
+        }
         if (managedDotnet) {
             for (var range : PreparationSourceRange.dotnetProbe(helper)) {
                 ranges.add(new BindingSourceRange(range.section(), range.offset(), range.next(),

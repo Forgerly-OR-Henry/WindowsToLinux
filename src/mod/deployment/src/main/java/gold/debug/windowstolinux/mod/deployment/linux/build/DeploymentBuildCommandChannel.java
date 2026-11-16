@@ -32,8 +32,10 @@ import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.Deploymen
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentBuildLimits;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainVersion;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
 
 /** Sends only fixed managed-helper build verbs through one borrowed, host-reviewed session. / 仅通过借用且经宿主审核的会话发送固定 helper 构建动作。 */
 public final class DeploymentBuildCommandChannel {
@@ -67,6 +69,7 @@ public final class DeploymentBuildCommandChannel {
     private final java.util.ArrayDeque<String> preparationReceipts = new java.util.ArrayDeque<>();
 
     private final java.util.ArrayList<DeploymentTrackedToolchains.Selection> trackedPreparationReceipts = new java.util.ArrayList<>();
+    private String preparedLocalNodeBinding;
 
     private DeploymentToolchainDiagnostics.Request lastPreparationDiagnosticRequest;
 
@@ -258,6 +261,7 @@ public final class DeploymentBuildCommandChannel {
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     public OperationResult<CommandResult> prepare(DeploymentToolchainType ecosystem, String branch, String exact,
                                                   int seconds, String javaHome) throws ApiException {
+        preparedLocalNodeBinding = null;
         long available = budget.remainingSeconds();
         if (available < 45)
             return timeout();
@@ -339,6 +343,7 @@ public final class DeploymentBuildCommandChannel {
 
     /** Matches validated typed selections to this channel's actual complete successful preparation receipts. */
     public void toolchainsPrepared(gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools) throws ApiException {
+        preparedLocalNodeBinding = null;
         if (tools.selections().isEmpty()) return;
         for (var selection : tools.selections()) {
             if (trackedSession != null) {
@@ -356,6 +361,9 @@ public final class DeploymentBuildCommandChannel {
         preparationReceipts.clear();
         trackedPreparationReceipts.clear();
         preparationObserver.toolsPrepared(server, tools, task);
+        if (trackedSession == null && DeploymentManagedHelperBundle.supportsLocalNodeBinding(tools, layout))
+            preparedLocalNodeBinding = java.util.Base64.getEncoder().encodeToString(
+                DeploymentToolchainBindingCodec.encode(tools).getBytes(StandardCharsets.UTF_8));
     }
 
     /** Seals and re-probes the exact prepared binding. / 封存并回探精确已准备绑定。
@@ -368,9 +376,14 @@ public final class DeploymentBuildCommandChannel {
             return timeout();
         if (encoded == null || !encoded.matches("[A-Za-z0-9+/=]{1,90000}"))
             throw new IllegalArgumentException("Invalid encoded binding");
-        return send("deployment.toolchain.bind.v1", layout.toolchains(),
-            helper("prepare-toolchains", List.of("bind", encoded)), new byte[0],
-            Duration.ofSeconds(Math.min(180, available)), 65536);
+        String operation = "deployment.toolchain.bind.v1";
+        String script = helper("prepare-toolchains", List.of("bind", encoded));
+        var timeout = Duration.ofSeconds(Math.min(180, available));
+        if (encoded.equals(preparedLocalNodeBinding)) {
+            var targets = Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains()));
+            return sendWithBoundary(operation, targets, script, new byte[0], timeout, 65536, () -> { }, encoded);
+        }
+        return send(operation, layout.toolchains(), script, new byte[0], timeout, 65536);
     }
 
     /** Checks isolation before a source candidate is built. / 构建来源候选前检查隔离能力。
@@ -499,6 +512,11 @@ public final class DeploymentBuildCommandChannel {
 
     private OperationResult<CommandResult> sendWithBoundary(String operation, Set<ActionTarget> targets, String script, byte[] input,
                                                Duration timeout, long output, DispatchBoundary dispatchBoundary) throws ApiException {
+        return sendWithBoundary(operation, targets, script, input, timeout, output, dispatchBoundary, null);
+    }
+
+    private OperationResult<CommandResult> sendWithBoundary(String operation, Set<ActionTarget> targets, String script, byte[] input,
+            Duration timeout, long output, DispatchBoundary dispatchBoundary, String localNodeBinding) throws ApiException {
         Objects.requireNonNull(dispatchBoundary);
         targets = Set.copyOf(targets);
         if (targets.isEmpty() || targets.stream().anyMatch(target -> !target.serverId().equals(server.id())))
@@ -508,15 +526,21 @@ public final class DeploymentBuildCommandChannel {
             return timeout();
         if (!layout.helperPath().equals(DeploymentManagedHelperBundle.PATH) && script.contains(DeploymentManagedHelperBundle.PATH))
             throw new IllegalArgumentException("Helper invocation differs from the captured layout");
-        String executable = script.contains(layout.helperPath())
-            ? DeploymentManagedHelperBundle.verifiedCommand(script, layout) : script;
-        if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION)
-            || script.contains(layout.helperPath()) && operation.contains("toolchain") && !operation.contains("observe") && !operation.contains("cleanup")
-            && !operation.contains("diagnostic"))
-            executable = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.preparationCommand(executable, task,
-                Math.min(timeout.toSeconds(), available));
-        CommandRequest request = new CommandRequest(executable, input,
-            Duration.ofSeconds(Math.min(timeout.toSeconds(), available)), output);
+        long seconds = Math.min(timeout.toSeconds(), available);
+        String executable;
+        if (localNodeBinding != null) {
+            DeploymentMirrorTasks.requireCaptured(task.id());
+            executable = DeploymentManagedHelperBundle.renderLocalNodeBinding(localNodeBinding, task.id(), server, seconds, layout);
+        } else {
+            if (DeploymentManagedHelperBundle.isLocalNodeBinding(script, layout))
+                throw new IllegalArgumentException("Local Node binding requires its observed preparation on this channel");
+            executable = script.contains(layout.helperPath()) ? DeploymentManagedHelperBundle.verifiedCommand(script, layout) : script;
+            if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION)
+                || script.contains(layout.helperPath()) && operation.contains("toolchain") && !operation.contains("observe") && !operation.contains("cleanup")
+                && !operation.contains("diagnostic"))
+                executable = DeploymentMirrorTasks.preparationCommand(executable, task, seconds);
+        }
+        CommandRequest request = new CommandRequest(executable, input, Duration.ofSeconds(seconds), output);
         boolean dependencies = operation.equals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION)
             || operation.equals("deployment.agent.toolchain.dependencies.v1");
         if (dependencies)

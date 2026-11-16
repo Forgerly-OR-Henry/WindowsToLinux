@@ -7,13 +7,17 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import gold.debug.windowstolinux.appapi.linux.command.*;
+import gold.debug.windowstolinux.appapi.ai.model.AiToolCall;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.*;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.ui.UiService;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentFixedCommandApproval;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.linux.build.*;
@@ -21,6 +25,11 @@ import gold.debug.windowstolinux.mod.deployment.linux.command.contract.Deploymen
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.*;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainSetup;
+import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.plan.ReviewedPlanIdentity;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -37,6 +46,12 @@ class DeploymentToolchainPreparationObservationRegressionTest {
     private static final String SOURCE = "https://fixture.invalid/go.tar.gz";
 
     private static final String RECEIPT = "TOOLCHAIN=GO|1.27.0|" + DIRECTORY + "|MANAGED|" + SOURCE + "|" + "b".repeat(64) + "\n";
+    private static final ToolchainRequirement NODE_REQUIREMENT = ToolchainRequirement.declared(
+        DeploymentToolchainType.NODE, "24", "package.json", ToolchainRequirement.PurposeType.BUILD);
+    private static final String NODE_DIRECTORY = LAYOUT.toolchains() + "/versions/node-" + "a".repeat(64);
+    private static final String NODE_SOURCE = "https://nodejs.org/dist/v24.22.3/node-v24.22.3-linux-x64.tar.gz";
+    private static final String NODE_RECEIPT = "TOOLCHAIN=NODE|24.22.3|" + NODE_DIRECTORY + "|MANAGED|" + NODE_SOURCE
+        + "|" + "d".repeat(64) + "\n";
 
     @Test
     void standardSetupRecordsMatchedReceiptsBeforeTheFreshBindingReview() throws Exception {
@@ -60,6 +75,39 @@ class DeploymentToolchainPreparationObservationRegressionTest {
             assertEquals(0, h.observations.get());
             assertEquals(mutation.equals("NONZERO") ? 2 : 1, h.sends.get());
             assertTrue(h.bindings().isEmpty());
+        }
+    }
+
+    @Test
+    void managedNodeLocalBindingRequiresObservedReceiptsAndFreshExactApproval() throws Exception {
+        try (var h = new Harness("VALID", true)) {
+            var expected = new DeploymentResolvedToolchains(DeploymentToolchainCatalog.defaults().revision(),
+                List.of(new DeploymentResolvedToolchains.Selection(NODE_REQUIREMENT,
+                    DeploymentToolchainVersion.parse(DeploymentToolchainType.NODE, "24.22.3").orElseThrow(),
+                    NODE_DIRECTORY, DeploymentResolvedToolchains.OriginType.MANAGED, NODE_SOURCE, "d".repeat(64))));
+            String encoded = Base64.getEncoder().encodeToString(DeploymentToolchainBindingCodec.encode(expected).getBytes(StandardCharsets.UTF_8));
+            assertThrows(IllegalArgumentException.class, () -> h.channel.bind(encoded));
+            assertFalse(DeploymentManagedHelperBundle.isLocalNodeBinding(h.bindingRequests.getFirst(), LAYOUT));
+            assertTrue(h.fixture.requests.isEmpty());
+            assertEquals(0, h.sends.get());
+            String forged = DeploymentManagedHelperBundle.renderLocalNodeBinding(encoded, h.fixture.task.id(), h.server, 180, LAYOUT);
+            assertThrows(IllegalArgumentException.class, () -> h.channel.send("deployment.toolchain.bind.v1", LAYOUT.toolchains(),
+                forged, new byte[0], java.time.Duration.ofSeconds(180), 65536));
+            assertEquals(1, h.bindingRequests.size(), "Generic send must stop before approval");
+            h.fixture.nativeReply(new AiToolCall("managed-node-bind-verdict", "submit_result",
+                "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Reviewed exact local Node binding fixture\"}"));
+            var result = new DeploymentToolchainSetup(h.channel, DeploymentToolchainCatalog.defaults()).prepare(List.of(NODE_REQUIREMENT), 0, 120);
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result::toString);
+            assertEquals(expected, result.value().orElseThrow());
+            assertEquals(1, h.observations.get());
+            assertEquals(2, h.grants.get());
+            assertEquals(2, h.sends.get());
+            assertEquals(1, h.fixture.requests.size());
+            assertEquals(h.bindingRequests.getLast(), h.bindingGrantedScript);
+            var binding = DeploymentManagedHelperBundle.unwrapLocalNodeBinding(h.bindingGrantedScript, LAYOUT).orElseThrow();
+            assertEquals(encoded, binding.encoded());
+            assertEquals(h.fixture.task.id(), binding.task());
+            assertEquals(DeploymentToolchainBindingCodec.identity(expected), h.bindingStage.get("bindingSha256"));
         }
     }
 
@@ -128,16 +176,41 @@ class DeploymentToolchainPreparationObservationRegressionTest {
         final WorkflowGrant permission;
 
         final DeploymentBuildCommandChannel channel;
+        final List<String> bindingRequests = new ArrayList<>();
+        String bindingGrantedScript;
+        ApprovalGrant bindingGrant;
+        Map<?, ?> bindingStage;
 
         final Path temporary = Files.createTempDirectory("prepared-observation-");
 
         Harness(String mutation) throws Exception {
+            this(mutation, false);
+        }
+
+        Harness(String mutation, boolean node) throws Exception {
             var host = proxy(InteractionService.class, (p, m, a) -> {
+                if (node && m.getName().equals("approveReviewedAction")) {
+                    assertSame(fixture.task, a[4]);
+                    assertEquals(1, fixture.requests.size(), "The independent fixture verdict must precede the host grant");
+                    assertNull(bindingGrant);
+                    bindingGrantedScript = ((CommandRequest) ((Optional<?>) a[1]).orElseThrow()).script();
+                    bindingGrant = new ApprovalGrant(UUID.randomUUID());
+                    grants.incrementAndGet();
+                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(bindingGrant), Optional.empty());
+                }
                 assertEquals("openReviewedWorkflow", m.getName());
                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of((WorkflowGrant) () -> {
                 }), Optional.empty());
             });
-            var context = proxy(ModContext.class, (p, m, a) -> m.getName().equals("interaction") ? host : invoke(fixture.context, m, a));
+            var ui = proxy(UiService.class, (p, m, a) -> {
+                assertEquals("environment", m.getName());
+                return new UiEnvironment(Locale.ENGLISH, "LIGHT", false);
+            });
+            var context = proxy(ModContext.class, (p, m, a) -> switch (m.getName()) {
+                case "interaction" -> host;
+                case "ui" -> ui;
+                default -> invoke(fixture.context, m, a);
+            });
             scope = new DeploymentAssistedScope(context, fixture.task, fixture.configurationRevision, "AUTOMATIC", true);
             permission = DeploymentWorkflowAuthorization.open(context, fixture.task, server, fixture.configurationRevision, "AUTOMATIC", true, "original source deployment");
             scope.workflowOpened(permission);
@@ -148,22 +221,34 @@ class DeploymentToolchainPreparationObservationRegressionTest {
                     case "directory" -> temporary;
                     default -> throw new AssertionError(m.getName());
                 });
-            Files.writeString(temporary.resolve("go.mod"), "module fixture\ngo 1.27\n");
-            Files.writeString(temporary.resolve("main.go"), "package main\nfunc main() {}\n");
-            var material = new gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial("fixture", snapshot, List.of("go.mod", "main.go"), List.of());
+            List<String> files;
+            if (node) {
+                Files.writeString(temporary.resolve("package.json"), "{\"name\":\"fixture\",\"version\":\"1.0.0\",\"scripts\":{\"start\":\"node server.mjs\"}}");
+                Files.writeString(temporary.resolve("package-lock.json"), "{\"name\":\"fixture\",\"version\":\"1.0.0\",\"lockfileVersion\":3,\"packages\":{\"\":{\"name\":\"fixture\",\"version\":\"1.0.0\"}}}");
+                Files.writeString(temporary.resolve("server.mjs"), "export {};\n");
+                files = List.of("package.json", "package-lock.json", "server.mjs");
+            } else {
+                Files.writeString(temporary.resolve("go.mod"), "module fixture\ngo 1.27\n");
+                Files.writeString(temporary.resolve("main.go"), "package main\nfunc main() {}\n");
+                files = List.of("go.mod", "main.go");
+            }
+            var requirement = node ? NODE_REQUIREMENT : REQUIREMENT;
+            var material = new gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial("fixture", snapshot, files, List.of());
             var archive = new gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive(snapshot, "b".repeat(64), 1, 1, snapshot.id(), snapshot.sha256(), "");
             var facts = new gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts(temporary, "fixture",
-                gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind.GO_SERVICE,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType.GO_MODULE, List.of(), List.of(), List.of()).withToolchains(List.of(REQUIREMENT));
+                node ? DeploymentProjectKind.NODE_SERVICE : DeploymentProjectKind.GO_SERVICE,
+                node ? DeploymentBuildToolType.NPM : DeploymentBuildToolType.GO_MODULE, List.of(), List.of(), List.of()).withToolchains(List.of(requirement));
+            var health = new DeploymentHealthCheck.Process(5, 1);
+            DeploymentRuntimeDefinition runtime = node ? new DeploymentRuntimeDefinition.NodeService(24, health)
+                : new DeploymentRuntimeDefinition.GoService("1.27", "app", "main.go", health);
             var request = new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentRequest(server, facts, material, archive,
                 gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot.create("fixture", 1, "fixture", java.time.Instant.EPOCH, List.of()),
                 List.of(), new gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings(List.of(), Optional.of(List.of())),
-                new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition.GoService("1.27", "app", "main.go",
-                    new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck.Process(5, 1)),
+                runtime,
                 Optional.empty(), gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().limits(),
                 new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.DeploymentReviewConsent("fixture", server.id(), snapshot.sha256(), archive.sha256(), java.time.Instant.EPOCH), false, true, LAYOUT);
             scope.sourceCaptured(server, material, fixture.task);
-            scope.archiveCaptured(material, archive, List.of(REQUIREMENT), fixture.task);
+            scope.archiveCaptured(material, archive, List.of(requirement), fixture.task);
             var plan = new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan(request, List.of(
                 gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.DeploymentPlanAction.VERIFY_SOURCE_IDENTITY,
                 gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.DeploymentPlanAction.CHECK_HEALTH,
@@ -173,17 +258,26 @@ class DeploymentToolchainPreparationObservationRegressionTest {
             var grant = new ApprovalGrant(UUID.randomUUID());
             var review = proxy(DeploymentCommandReview.class, (p, m, a) -> {
                 assertEquals("approveCommand", m.getName());
-                if (((ActionIntent) a[0]).semantics().orElseThrow().operation().equals("deployment.toolchain.bind.v1"))
+                var intent = (ActionIntent) a[0];
+                if (intent.semantics().orElseThrow().operation().equals("deployment.toolchain.bind.v1")) {
+                    var command = (CommandRequest) a[1];
+                    bindingRequests.add(command.script());
+                    if (node) {
+                        bindingStage = (Map<?, ?>) scope.facts(intent, command, fixture.task).get("currentToolchainBindingStage");
+                        return DeploymentFixedCommandApproval.approveWithEvidence(context, host, intent, command, fixture.task,
+                            fixture.configurationRevision, "AUTOMATIC", true, scope);
+                    }
                     assertFalse(bindings().isEmpty(), "Prior actual receipts must be available before the new binding grant");
+                }
                 grants.incrementAndGet();
                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(grant), Optional.empty());
             });
             var session = proxy(RemoteSession.class, (p, m, a) -> {
                 if (m.getName().equals("facts")) return new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("linux", "amd64", "SHA256:controlled");
                 assertEquals("execute", m.getName());
-                assertSame(grant, a[1]);
                 sends.incrementAndGet();
                 String script = DeploymentManagedHelperBundle.verifiedBody(((CommandRequest) a[0]).script());
+                assertSame(node && script.contains("'bind' '") ? bindingGrant : grant, a[1]);
                 if (script.contains("'diagnose-only'"))
                     return new OperationResult<CommandResult>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
                         "FIXTURE_DIAGNOSTIC_UNAVAILABLE", "Controlled diagnostic read is unavailable", Map.of(), Optional.empty())));
@@ -193,9 +287,11 @@ class DeploymentToolchainPreparationObservationRegressionTest {
                     var set = DeploymentToolchainBindingCodec.decode(new String(Base64.getDecoder().decode(match.group(1)), StandardCharsets.UTF_8));
                     return reply(0, "TOOLCHAIN_BINDING=" + DeploymentToolchainBindingCodec.identity(set) + "\n", false);
                 }
-                return reply(mutation.equals("NONZERO") ? 1 : 0, mutation.equals("MALFORMED") ? "TOOLCHAIN=GO|broken\n" : RECEIPT, mutation.equals("TRUNCATED"));
+                return reply(mutation.equals("NONZERO") ? 1 : 0, mutation.equals("MALFORMED") ? "TOOLCHAIN=GO|broken\n"
+                    : node ? NODE_RECEIPT : RECEIPT, mutation.equals("TRUNCATED"));
             });
-            channel = new DeploymentBuildCommandChannel(session, review, server, fixture.task, "c".repeat(64), new DeploymentBuildBudget(3600),
+            channel = new DeploymentBuildCommandChannel(session, review, server, fixture.task,
+                node ? ReviewedPlanIdentity.from(request) : "c".repeat(64), new DeploymentBuildBudget(3600),
                 gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard.NONE, LAYOUT,
                 new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentPreparationObserver() {
                     @Override

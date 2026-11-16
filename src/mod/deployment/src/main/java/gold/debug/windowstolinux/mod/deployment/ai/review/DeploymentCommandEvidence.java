@@ -4,6 +4,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HexFormat;
@@ -14,8 +15,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
@@ -53,6 +56,8 @@ public final class DeploymentCommandEvidence {
         String operation = intent.semantics().orElseThrow().operation();
         if (!DeploymentFixedCommandProtocol.registeredOperation(operation))
             throw new IllegalArgumentException("Unsupported common command operation");
+        var localNodeBinding = DeploymentManagedHelperBundle.unwrapLocalNodeBinding(request.script(), layout);
+        if (localNodeBinding.isPresent()) requireLocalNodeBindingIntent(intent, request, layout, localNodeBinding.orElseThrow());
         boolean installedHelper = !Set.of("deployment.helper.install.v1", "deployment.helper.install.tracked.v1",
             "deployment.helper.install.files.v1").contains(operation) && request.script().contains(layout.helperPath());
         var facts = new LinkedHashMap<String, Object>(baseFacts(intent, request, layout, installedHelper));
@@ -77,8 +82,12 @@ public final class DeploymentCommandEvidence {
             }
         }
         if (operation.equals("deployment.toolchain.bind.v1")) {
-            facts.put("decodedToolchainBinding", binding(invocation, layout));
+            var decoded = binding(invocation, layout);
+            facts.put("decodedToolchainBinding", decoded);
             facts.put("toolchainSubcommand", "bind");
+            localNodeBinding.ifPresent(local -> facts.put("localNodeBinding", Map.of(
+                "task", local.task().toString(), "serverSha256", local.serverSha256(), "budgetSeconds", local.budgetSeconds(),
+                "bindingSha256", decoded.get("bindingSha256"), "materialStaging", false)));
         }
         if (operation.equals("deployment.toolchain.prepare.v1"))
             gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentToolchainPreparationEvidence.decode(invocation, layout).ifPresent(value -> facts.put("toolchainPreparation", value));
@@ -523,6 +532,27 @@ public final class DeploymentCommandEvidence {
             throw new IllegalArgumentException("Toolchain binding command must use the exact literal protocol");
         String encoded = script.substring(prefix.length(), script.length() - 1);
         return decodeBinding(encoded, layout);
+    }
+
+    private static void requireLocalNodeBindingIntent(ActionIntent intent, CommandRequest request, DeploymentRemoteLayout layout,
+            DeploymentManagedHelperBundle.LocalNodeBinding local) {
+        if (intent.serverIds().size() != 1
+            || !intent.semantics().orElseThrow().operation().equals("deployment.toolchain.bind.v1"))
+            throw new IllegalArgumentException("Local Node binding requires its original fixed operation and server");
+        var server = new ServerId(intent.serverIds().getFirst());
+        var targets = Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains()));
+        var semantics = intent.semantics().orElseThrow();
+        byte[] input = request.stdin();
+        try {
+            if (!targets.equals(semantics.targets()) || input.length != 0 || request.outputLimitBytes() != 65536
+                || !request.timeout().equals(Duration.ofSeconds(local.budgetSeconds()))
+                || !request.script().equals(DeploymentManagedHelperBundle.renderLocalNodeBinding(
+                    local.encoded(), local.task(), server, local.budgetSeconds(), layout))
+                || !intent.equals(RemoteActions.command(server, intent.revision(), request).withSemantics(semantics)))
+                throw new IllegalArgumentException("Local Node binding differs from the original command boundary");
+        } finally {
+            Arrays.fill(input, (byte) 0);
+        }
     }
 
     /** Extracts the reviewed build binding from its exact command frame. / 从精确命令帧提取已审阅构建绑定。

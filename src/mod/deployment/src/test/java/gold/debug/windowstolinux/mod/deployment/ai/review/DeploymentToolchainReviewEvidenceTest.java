@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -3293,6 +3294,109 @@ class DeploymentToolchainReviewEvidenceTest {
             assertTrue(invalid.getLast().text().contains("CURSOR_INVALID"));
             assertEquals(Optional.of("READ_REJECTED"), reader.approvalEvidenceBlock());
         }
+    }
+
+    @Test
+    void r49AssetLendingLocalNodeBindingFitsOriginalTerminalCeilingWithExactEvidence() throws Exception {
+        int cap = 70049;
+        int factsFloor = 35758;
+        String helperPointer = "/toolchainReviewEvidence/installedHelperSource";
+        String shellPointer = "/toolchainReviewEvidence/mirrorBootstrapShell";
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.values());
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var mirrored = r26Binding(fixture, "NODE", "24.22.3")) {
+            var original = DeploymentManagedHelperBundle.verifiedBody(mirrored.script(), fixture.layout);
+            String prefix = "'" + fixture.layout.helperPath() + "' prepare-toolchains 'bind' '";
+            assertTrue(original.startsWith(prefix));
+            String encoded = original.substring(prefix.length(), original.length() - 1);
+            String launcher = DeploymentManagedHelperBundle.renderLocalNodeBinding(encoded, fixture.task.id(),
+                fixture.server, 180, fixture.layout);
+            try (var request = new CommandRequest(launcher, new byte[0], Duration.ofSeconds(180), 65536)) {
+                var protocol = new DeploymentFixedCommandProtocol(fixture.context);
+                var oldAction = intent("bind", fixture, mirrored);
+                var oldFacts = protocol.inspect(oldAction, mirrored, fixture.layout, fixture.task);
+                var oldEvidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(oldFacts, 1048576),
+                    oldAction, mirrored, fixture.layout).orElseThrow();
+                var oldManifest = JSON.readTree(oldEvidence.messages().getLast().text()).path(PHASE);
+                assertFalse(oldManifest.path("mirrorBootstrapShell").isMissingNode());
+                var oldReader = oldEvidence.reader(8);
+                var invalidLimit = oldReader.read(mockResponses(boundBindingRead("old-8500", shellPointer, 16500, 8500))).getFirst();
+                assertTrue(invalidLimit.error());
+                assertEquals(Optional.of("READ_REJECTED"), oldReader.approvalEvidenceBlock());
+
+                var action = intent("bind", fixture, request);
+                var facts = new LinkedHashMap<String, Object>(protocol.inspect(action, request, fixture.layout, fixture.task));
+                assertEquals(oldFacts.get("decodedToolchainBinding"), facts.get("decodedToolchainBinding"));
+                facts.put("currentCommandEvidence", assisted.scope.effectFacts(action, fixture.task));
+                var sourceEvidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576),
+                    action, request, fixture.layout).orElseThrow();
+                var projected = JSON.readTree(sourceEvidence.messages().getLast().text());
+                String ownSnapshot = projected.at("/" + PHASE + "/snapshotSha256").asText();
+                assertNotEquals(oldManifest.path("snapshotSha256").asText(), ownSnapshot);
+                assertEquals(action.exactAction(), projected.path("exactAction").asText());
+                assertFalse(projected.at("/localNodeBinding/materialStaging").asBoolean(true));
+                assertTrue(projected.path("mirrorTransport").isMissingNode());
+                assertTrue(projected.at("/" + PHASE + "/mirrorBootstrapShell").isMissingNode());
+
+                var stale = sourceEvidence.reader(8);
+                assertTrue(stale.read(mockResponses(read("old-binding-snapshot", oldManifest.path("snapshotSha256").asText(),
+                    helperPointer, 0, 1))).getFirst().text().contains("SNAPSHOT_MISMATCH"));
+                assertEquals(Optional.of("READ_REJECTED"), stale.approvalEvidenceBlock());
+                var missing = sourceEvidence.reader(8);
+                assertTrue(missing.read(mockResponses(boundBindingRead("old-shell-pointer", shellPointer, 0, 7000))).getFirst().error());
+                assertEquals(Optional.of("READ_REJECTED"), missing.approvalEvidenceBlock());
+
+                int[][] helpingRanges = {{343500, 300}, {146000, 250}, {147500, 500}};
+                var calls = new ArrayList<AiToolCall>();
+                var requested = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
+                String helper = DeploymentManagedHelperBundle.renderScript(fixture.layout);
+                for (int[] range : helpingRanges) {
+                    int start = range[0], limit = range[1];
+                    assertTrue(start + limit <= helper.length());
+                    calls.add(boundBindingRead("asset-node-source-" + start, helperPointer, start, limit));
+                    addR24Range(requested, helperPointer, start, start + limit);
+                }
+                fixture.model.replies.add(success(mockResponses(calls.toArray(AiToolCall[]::new))));
+                reply(fixture, verdict("asset-node-denial", "DENY"));
+                var bounded = wireBudgetContext(assisted.context, Map.of(), factsFloor, () -> cap);
+                var result = new DeploymentAiJson(bounded).askCommand(
+                    "Inspect the exact Node binding. " + DeploymentFixedCommandApproval.commandReviewInstructions(false),
+                    facts, fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed, action, request);
+                assertEquals("DENY", result.path("decision").asText());
+                assertEquals(2, fixture.model.requests.size());
+                var first = fixture.model.requests.getFirst();
+                var terminal = fixture.model.requests.getLast();
+                byte[] firstWire = wireWithR24FactsSize(first, factsFloor, cap, Map.of());
+                byte[] terminalWire = wireWithR24FactsSize(terminal, factsFloor, cap, Map.of());
+                var terminalFacts = JSON.readTree(terminal.messages().getLast().text());
+                var selectedHelper = terminalFacts.at("/" + PHASE + "/installedHelperSource");
+                assertIdentity(selectedHelper, helper);
+                var descriptor = terminalFacts.at("/" + PHASE + "/frames/0");
+                var frame = terminal.messages().get(descriptor.path("ordinal").asInt() + 1);
+                int header = descriptor.path("headerCharacters").asInt();
+                assertIdentity(descriptor, frame.text().substring(header));
+                var sections = new LinkedHashSet<String>();
+                for (var range : selectedHelper.path("selectedRanges")) {
+                    sections.add(range.path("section").asText());
+                    int offset = range.path("offset").asInt(), next = range.path("next").asInt();
+                    int start = header + range.path("startCharacter").asInt();
+                    assertEquals(helper.substring(offset, next), frame.text().substring(start, start + next - offset));
+                }
+                assertTrue(sections.containsAll(Set.of("shippedCatalogAndRoot", "mainAdmissionAndLock", "literalBindBranch",
+                    "processProbe", "ownedDirectory", "installedToolProbes", "validateAndSeal")));
+                var visible = replayRetainedRanges(terminalWire, terminalFacts.at("/" + PHASE + "/snapshotSha256").asText(),
+                    Map.of(helperPointer, helper)).orElseThrow();
+                assertReplayRangesPresent(requested, visible, terminalFacts);
+                assertEquals(0, assisted.hosts.get());
+                System.out.printf("R54_ASSET_NODE_BIND_RESPONSES launcher=%d factsFloor=%d first=%d terminal=%d cap=%d helperRanges=%d verdict=DENY%n",
+                    launcher.getBytes(StandardCharsets.UTF_8).length, factsFloor, firstWire.length, terminalWire.length, cap, sections.size());
+            }
+        }
+    }
+
+    private static AiToolCall boundBindingRead(String id, String pointer, int offset, int limit) {
+        return new AiToolCall(id, "evidence", JSON.createObjectNode().put("pointer", pointer)
+            .put("offset", offset).put("limit", limit).toString());
     }
 
     @Test
