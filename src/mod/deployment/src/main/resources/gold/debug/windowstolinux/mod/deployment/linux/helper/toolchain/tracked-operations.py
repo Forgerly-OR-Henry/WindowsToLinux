@@ -83,7 +83,10 @@ def tracked_request(args, raw):
     tracked_layout(value['remoteLayout'])
     parameters = value['parameters']
     if value['kind'] == 'PREPARE':
-        tracked_fields(parameters, {'ecosystem', 'branch', 'exact', 'seconds', 'javaHome'})
+        fields = {'ecosystem', 'branch', 'exact', 'seconds', 'javaHome'}
+        if isinstance(parameters, dict) and 'javaRequirement' in parameters:
+            fields.add('javaRequirement')
+        tracked_fields(parameters, fields)
         if (parameters['ecosystem'] not in ('JAVA', 'NODE', 'PYTHON', 'DOTNET', 'KOTLIN', 'GO', 'RUST', 'PHP', 'RUBY')
                 or not isinstance(parameters['branch'], str)
                 or not re.fullmatch(r'[0-9]{1,3}(?:\.[0-9]{1,3})?', parameters['branch'])
@@ -96,6 +99,7 @@ def tracked_request(args, raw):
             directory = pathlib.Path(parameters['javaHome'])
             if directory.parent != ROOT / 'versions' or not re.fullmatch('java-[a-f0-9]{64}', directory.name):
                 fail('request', 'invalid tracked Java selection')
+        require_typed_java_preparation(parameters['ecosystem'], parameters['javaHome'], parameters, args[0] == 'prepare-tracked')
     elif value['kind'] == 'BIND':
         tracked_fields(parameters, {'bindingBase64'})
         if not isinstance(parameters['bindingBase64'], str) or len(parameters['bindingBase64']) > 90000:
@@ -154,7 +158,10 @@ def installation_diagnostic_request(args, raw):
             or not raw or len(raw) > 16384 or hashlib.sha256(raw).hexdigest() != args[2]):
         fail('request', 'invalid installation diagnostic request identity')
     request = tracked_json(raw)
-    tracked_fields(request, DIAGNOSTIC_REQUEST_FIELDS)
+    fields = DIAGNOSTIC_REQUEST_FIELDS
+    if isinstance(request, dict) and 'javaRequirement' in request:
+        fields = fields | {'javaRequirement'}
+    tracked_fields(request, fields)
     if (type(request['formatVersion']) is not int or request['formatVersion'] != 1
             or request['operationId'] != args[1] or not tracked_uuid(request['taskId'])
             or not tracked_digest(request['fingerprintSha256']) or not tracked_digest(request['planRevision'])
@@ -171,7 +178,17 @@ def installation_diagnostic_request(args, raw):
             or not re.fullmatch('[1-9][0-9]{1,3}', arguments[4]) or not 30 <= int(arguments[4]) <= 7200
             or not (arguments[5] == '-' or re.fullmatch(re.escape(str(ROOT / 'versions' / 'java-')) + '[a-f0-9]{64}', arguments[5]))):
         fail('request', 'invalid installation diagnostic preparation arguments')
+    require_typed_java_preparation(arguments[1], arguments[5], request, args[0] == 'prepare-diagnosed')
     return request
+
+
+def require_typed_java_preparation(ecosystem, java_home, value, executing):
+    if 'javaRequirement' in value:
+        tracked_fields(value['javaRequirement'], {'constraint', 'version', 'selectedVersion'})
+        if ecosystem != 'KOTLIN' or java_home == '-':
+            fail('request', 'Java prerequisite is only valid for Kotlin with a protected Java directory')
+    elif executing and ecosystem == 'KOTLIN':
+        fail('request', 'Kotlin preparation requires its planned Java constraint and exact selected release')
 
 
 def record_installation_diagnostic(command):
@@ -183,7 +200,6 @@ def record_installation_diagnostic(command):
 
 
 def installation_diagnostic_main(args, raw=None):
-    global INSTALLATION_DIAGNOSTIC
     if raw is None:
         with os.fdopen(os.dup(3), 'rb') as source:
             raw = source.read(16385)
@@ -192,33 +208,16 @@ def installation_diagnostic_main(args, raw=None):
     directory = parent / request['operationId']
     creating = args[0] == 'prepare-diagnosed'
     if creating:
-        prepare_root()
-        owned_directory(parent)
-        parent.mkdir(mode=0o700, exist_ok=True)
-        owned_directory(directory)
-        directory.mkdir(mode=0o700)  # An original operation is never re-executed.
-        tracked_atomic_bytes(directory / 'request.json', raw)
-        diagnostic = {key: request[key] for key in ('formatVersion', 'operationId', 'taskId', 'serverId',
-                                                   'fingerprintSha256', 'planRevision')}
-        diagnostic.update(requestSha256=args[2], preparationStatus='UNKNOWN', failureCategory=None,
-                          stage='preparation-start', executable='', actualExitCode=None, timedOut=False,
-                          cancelled=False, stdout='', stderr='', stdoutTruncated=False, stderrTruncated=False)
-        INSTALLATION_DIAGNOSTIC = (directory, diagnostic)
-        tracked_atomic_json(directory / 'diagnostic.json', diagnostic)
-        try:
-            with preparation_lock(verifying=False):
-                prepare(request['arguments'])
-            diagnostic['preparationStatus'] = 'SUCCEEDED'
-        except BaseException as error:
-            diagnostic['preparationStatus'] = 'FAILED'
-            diagnostic['failureCategory'] = (error.category if isinstance(error, PreparationFailure)
-                                             else 'timeout' if isinstance(error, subprocess.TimeoutExpired) else 'installation')
-            raise
-        finally:
-            try:
-                tracked_atomic_json(directory / 'diagnostic.json', diagnostic)
-            finally:
-                INSTALLATION_DIAGNOSTIC = None
+        java = None
+        if request['arguments'][1] == 'KOTLIN':
+            def check_java():
+                nonlocal java
+                java = kotlin_preparation_java(request['arguments'][5], request['javaRequirement'], int(request['arguments'][4]))
+            with preparation_lock(verifying=False, before_setup=check_java):
+                start_installation_diagnostic(request, args[2], raw, directory, java)
+        else:
+            prepare_root()
+            start_installation_diagnostic(request, args[2], raw, directory)
         return
     owned_directory(ROOT)
     owned_directory(parent)
@@ -233,6 +232,40 @@ def installation_diagnostic_main(args, raw=None):
     if any(diagnostic.get(key) != value for key, value in expected.items()):
         fail('integrity', 'installation diagnostic identity differs from its original request')
     print(payload.decode('utf-8'))
+
+
+def start_installation_diagnostic(request, request_sha, raw, directory, java=None):
+    global INSTALLATION_DIAGNOSTIC
+    parent = directory.parent
+    owned_directory(parent)
+    parent.mkdir(mode=0o700, exist_ok=True)
+    owned_directory(directory)
+    directory.mkdir(mode=0o700)  # An original operation is never re-executed.
+    tracked_atomic_bytes(directory / 'request.json', raw)
+    diagnostic = {key: request[key] for key in ('formatVersion', 'operationId', 'taskId', 'serverId',
+                                               'fingerprintSha256', 'planRevision')}
+    diagnostic.update(requestSha256=request_sha, preparationStatus='UNKNOWN', failureCategory=None,
+                      stage='preparation-start', executable='', actualExitCode=None, timedOut=False,
+                      cancelled=False, stdout='', stderr='', stdoutTruncated=False, stderrTruncated=False)
+    INSTALLATION_DIAGNOSTIC = (directory, diagnostic)
+    tracked_atomic_json(directory / 'diagnostic.json', diagnostic)
+    try:
+        if java is None:
+            with preparation_lock(verifying=False):
+                prepare(request['arguments'])
+        else:
+            prepare(request['arguments'], java)
+        diagnostic['preparationStatus'] = 'SUCCEEDED'
+    except BaseException as error:
+        diagnostic['preparationStatus'] = 'FAILED'
+        diagnostic['failureCategory'] = (error.category if isinstance(error, PreparationFailure)
+                                         else 'timeout' if isinstance(error, subprocess.TimeoutExpired) else 'installation')
+        raise
+    finally:
+        try:
+            tracked_atomic_json(directory / 'diagnostic.json', diagnostic)
+        finally:
+            INSTALLATION_DIAGNOSTIC = None
 
 
 def tracked_process_identity(pid):
@@ -352,15 +385,20 @@ def tracked_open_operation(request, raw, request_sha, create):
     return TrackedToolchainOperation(request, raw, request_sha, directory, state), False
 
 
-def tracked_prepare(operation):
+def tracked_prepare(operation, java=None):
     global DEADLINE
     parameters = operation.request['parameters']
     ecosystem, branch, exact = (parameters[k] for k in ('ecosystem', 'branch', 'exact'))
     if not admitted(ecosystem, branch):
         fail('unavailable', 'branch is outside the shipped catalog')
-    DEADLINE = time.monotonic() + parameters['seconds']
-    if parameters['javaHome'] != '-':
-        os.environ['JAVA_HOME'] = str(require_prepared_java(parameters['javaHome']))
+    if ecosystem == 'KOTLIN':
+        if java is None:
+            fail('request', 'Kotlin preparation requires its verified Java prerequisite')
+        os.environ['JAVA_HOME'] = str(java)
+    else:
+        DEADLINE = time.monotonic() + parameters['seconds']
+        if parameters['javaHome'] != '-':
+            os.environ['JAVA_HOME'] = str(require_prepared_java(parameters['javaHome']))
     identity, url, algorithm, digest, archive_layout = release(ecosystem, branch, '' if exact == '-' else exact)
     url = official_url(url)
     discovered = discover_system(ecosystem, identity)
@@ -552,18 +590,21 @@ def tracked_main(args, raw=None):
             raw = source.read(131073)
     request = tracked_request(args, raw)
     creating = args[0] in ('prepare-tracked', 'bind-tracked')
+    kotlin = creating and request['kind'] == 'PREPARE' and request['parameters']['ecosystem'] == 'KOTLIN'
     cleaning = args[0] == 'cleanup-tracked'
-    if creating:
+    if creating and not kotlin:
         prepare_root()
     else:
         owned_directory(ROOT)
         if not ROOT.is_dir():
+            if kotlin:
+                fail('integrity', 'prepared Java directory is missing')
             print(json.dumps(tracked_observation(request, args[2], None), separators=(',', ':')))
             return
     path = ROOT / '.prepare.lock'
-    if not creating:
+    if not creating or kotlin:
         tracked_regular(path, 1024)
-    with open_preparation_lock(path, creating) as descriptor:
+    with open_preparation_lock(path, creating and not kotlin) as descriptor:
         try:
             fcntl.flock(descriptor, (fcntl.LOCK_EX if creating or cleaning else fcntl.LOCK_SH) | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -571,15 +612,23 @@ def tracked_main(args, raw=None):
             return
         PREPARE_LOCK = descriptor
         try:
+            java = None
+            if kotlin:
+                parameters = request['parameters']
+                java = kotlin_preparation_java(parameters['javaHome'], parameters['javaRequirement'], parameters['seconds'])
             if creating:
                 prepare_shared_directories()
-            DEADLINE = time.monotonic() + (request['parameters']['seconds'] if creating and request['kind'] == 'PREPARE' else 180)
+            if not kotlin:
+                DEADLINE = time.monotonic() + (request['parameters']['seconds'] if creating and request['kind'] == 'PREPARE' else 180)
             operation, fresh = tracked_open_operation(request, raw, args[2], creating)
             if fresh:
                 TRACKED_OPERATION = operation
                 try:
                     if request['kind'] == 'PREPARE':
-                        tracked_prepare(operation)
+                        if kotlin:
+                            tracked_prepare(operation, java)
+                        else:
+                            tracked_prepare(operation)
                     else:
                         tracked_bind(operation)
                 except (PreparationFailure, subprocess.TimeoutExpired, OSError, ValueError, KeyError, StopIteration) as error:

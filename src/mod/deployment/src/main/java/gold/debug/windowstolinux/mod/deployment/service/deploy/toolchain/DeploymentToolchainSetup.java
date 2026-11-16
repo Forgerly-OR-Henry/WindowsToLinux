@@ -15,6 +15,7 @@ import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildCommandChannel;
+import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentKotlinJavaRequirement;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog;
@@ -58,7 +59,7 @@ public final class DeploymentToolchainSetup {
 
     private final PreparedObserver preparedObserver;
 
-    private final DeploymentBuildCommandChannel trackedCommands;
+    private final DeploymentBuildCommandChannel standardCommands;
 
     private final VerifiedCommands verifiedCommands;
 
@@ -77,7 +78,7 @@ public final class DeploymentToolchainSetup {
             public OperationResult<CommandResult> bind(String encoded) throws ApiException {
                 return commands.bind(encoded);
             }
-        }, catalog, commands::toolchainsPrepared, commands.trackedToolchains() ? commands : null);
+        }, catalog, commands::toolchainsPrepared, commands);
         Objects.requireNonNull(commands);
     }
 
@@ -88,11 +89,11 @@ public final class DeploymentToolchainSetup {
     }
 
     private DeploymentToolchainSetup(Commands commands, DeploymentToolchainCatalog catalog, PreparedObserver preparedObserver,
-                                     DeploymentBuildCommandChannel trackedCommands) {
+                                     DeploymentBuildCommandChannel standardCommands) {
         this.commands = Objects.requireNonNull(commands);
         this.catalog = Objects.requireNonNull(catalog);
         this.preparedObserver = Objects.requireNonNull(preparedObserver);
-        this.trackedCommands = trackedCommands;
+        this.standardCommands = standardCommands;
         this.verifiedCommands = commands instanceof VerifiedCommands verified ? verified : null;
     }
 
@@ -106,6 +107,8 @@ public final class DeploymentToolchainSetup {
                                                                  int seconds) throws ApiException {
         if (attempt < 0 || attempt > 1)
             throw new IllegalArgumentException("Only two catalog candidates are allowed");
+        boolean tracked = standardCommands != null && standardCommands.trackedToolchains();
+        int preparationSeconds = Math.max(30, Math.min(7200, seconds));
         var selections = new ArrayList<DeploymentResolvedToolchains.Selection>();
         for (ToolchainRequirement requirement : List.copyOf(requirements)) {
             var candidates = catalog.candidates(requirement);
@@ -119,12 +122,18 @@ public final class DeploymentToolchainSetup {
                 && requirement.version().orElseThrow().branch().equals(branch.version())
                 ? requirement.version().orElseThrow().text()
                 : "-";
-            String javaHome = selections.stream().filter(s -> s.version().ecosystem() == DeploymentToolchainType.JAVA)
-                .map(DeploymentResolvedToolchains.Selection::directory).findFirst().orElse("-");
+            var java = selections.stream().filter(s -> s.version().ecosystem() == DeploymentToolchainType.JAVA).findFirst();
+            String javaHome = java.map(DeploymentResolvedToolchains.Selection::directory).orElse("-");
+            DeploymentKotlinJavaRequirement javaRequirement = null;
+            if (standardCommands != null && requirement.ecosystem() == DeploymentToolchainType.KOTLIN) {
+                if (java.isEmpty() || !java.orElseThrow().requirement().accepts(java.orElseThrow().version()))
+                    return failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_KOTLIN_JAVA_PREREQUISITE_UNCONFIRMED");
+                javaRequirement = DeploymentKotlinJavaRequirement.from(java.orElseThrow());
+            }
             String[] fields;
-            if (trackedCommands != null) {
-                var observed = trackedCommands.prepareTracked(requirement.ecosystem(), branch.version(), exact,
-                    Math.max(30, Math.min(7200, seconds)), javaHome);
+            if (tracked) {
+                var observed = standardCommands.prepareTracked(requirement.ecosystem(), branch.version(), exact,
+                    preparationSeconds, javaHome, javaRequirement);
                 if (observed.outcome() != TaskResult.SUCCEEDED)
                     return observed.outcome() == TaskResult.FAILED && observed.value().isPresent()
                         && "unavailable".equals(observed.value().orElseThrow().failureCategory())
@@ -137,15 +146,16 @@ public final class DeploymentToolchainSetup {
                     selection.origin().name(), selection.source(), selection.sha256()};
             } else if (verifiedCommands != null) {
                 var observed = verifiedCommands.prepareVerified(requirement.ecosystem(), branch.version(), exact,
-                    Math.max(30, Math.min(7200, seconds)), javaHome);
+                    preparationSeconds, javaHome);
                 if (observed.outcome() != TaskResult.SUCCEEDED) return withoutValue(observed);
                 if (observed.value().isEmpty()) return unknown("DEPLOYMENT_TOOLCHAIN_RECEIPT_UNCONFIRMED");
                 var selection = observed.value().orElseThrow();
                 fields = new String[]{selection.ecosystem().name(), selection.version(), selection.directory(),
                     selection.origin().name(), selection.source(), selection.sha256()};
             } else {
-            var observed = commands.prepare(requirement.ecosystem(), branch.version(), exact,
-                Math.max(30, Math.min(7200, seconds)), javaHome);
+            var observed = javaRequirement == null
+                ? commands.prepare(requirement.ecosystem(), branch.version(), exact, preparationSeconds, javaHome)
+                : standardCommands.prepare(requirement.ecosystem(), branch.version(), exact, preparationSeconds, javaHome, javaRequirement);
             if (observed.outcome() == TaskResult.UNKNOWN || observed.outcome() == TaskResult.CANCELLED)
                 return withoutValue(observed);
             if (observed.outcome() == TaskResult.FAILED && observed.value().isEmpty())
@@ -185,8 +195,8 @@ public final class DeploymentToolchainSetup {
             preparedObserver.record(set);
             String encoded = Base64.getEncoder()
                 .encodeToString(DeploymentToolchainBindingCodec.encode(set).getBytes(StandardCharsets.UTF_8));
-            if (trackedCommands != null) {
-                var bound = trackedCommands.bindTracked(encoded);
+            if (tracked) {
+                var bound = standardCommands.bindTracked(encoded);
                 if (bound.outcome() != TaskResult.SUCCEEDED) return withoutValue(bound);
                 if (bound.value().isEmpty() || !bound.value().orElseThrow().bound()
                     || bound.value().orElseThrow().cleanupState() == gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.CleanupState.REQUIRED

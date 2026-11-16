@@ -419,6 +419,27 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             "derivation", declared ? "SOURCE_DECLARATION" : "REVIEWED_RUNTIME");
     }
 
+    private static void requireKotlinJavaPlan(ActionIntent intent, ToolchainPlan planned, Map<?, ?> javaRequirement) {
+        if (javaRequirement == null || planned == null || !planned.identity().equals(intent.revision())
+            || !intent.serverIds().equals(List.of(planned.server()))
+            || planned.requirements().stream().noneMatch(requirement -> "JAVA".equals(requirement.ecosystem().name())
+                && requirement.constraint().name().equals(javaRequirement.get("constraint"))
+                && requirement.version().filter(version -> version.text().equals(javaRequirement.get("version"))).isPresent()))
+            throw new IllegalArgumentException("Kotlin Java constraint differs from the current reviewed toolchain plan");
+    }
+
+    private static boolean plannedPreparationMatches(ToolchainPlan planned, Object ecosystem, Object requestedBranch, Object requestedExact) {
+        return planned.requirements().stream().anyMatch(requirement -> requirement.ecosystem().name().equals(ecosystem)
+            && gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.defaults()
+            .candidates(requirement).stream().anyMatch(branch -> {
+                String exact = requirement.constraint() == ToolchainRequirement.ConstraintType.EXACT
+                    && requirement.version().isPresent() && !requirement.version().orElseThrow().preview()
+                    && requirement.version().orElseThrow().branch().equals(branch.version())
+                    ? requirement.version().orElseThrow().text() : "-";
+                return branch.version().equals(requestedBranch) && exact.equals(requestedExact);
+            }));
+    }
+
     private static List<ToolchainRequirement> requirementsForStage(ToolchainPlan planned, boolean systemCompiler) {
         var catalog = DeploymentToolchainCatalog.defaults();
         return planned.requirements().stream().filter(requirement -> {
@@ -615,20 +636,12 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied));
             facts.put("toolchainPreparationContract", contract);
             var planned = toolchainPlan;
+            var arguments = (Map<?, ?>) contract.get("arguments");
+            if ("KOTLIN".equals(arguments.get("ecosystem")))
+                requireKotlinJavaPlan(intent, planned, (Map<?, ?>) arguments.get("javaRequirement"));
             if (planned != null && planned.identity().equals(intent.revision())
                 && intent.serverIds().equals(List.of(planned.server()))) {
-                var arguments = (Map<?, ?>) contract.get("arguments");
-                boolean matched = planned.requirements().stream().anyMatch(requirement ->
-                    requirement.ecosystem().name().equals(arguments.get("ecosystem"))
-                        && gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.defaults()
-                        .candidates(requirement).stream().anyMatch(branch -> {
-                            String exact = requirement.constraint() == gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement.ConstraintType.EXACT
-                                && requirement.version().isPresent() && !requirement.version().orElseThrow().preview()
-                                && requirement.version().orElseThrow().branch().equals(branch.version())
-                                ? requirement.version().orElseThrow().text() : "-";
-                            return branch.version().equals(arguments.get("catalogBranch")) && exact.equals(arguments.get("requestedExact"));
-                        }));
-                if (!matched)
+                if (!plannedPreparationMatches(planned, arguments.get("ecosystem"), arguments.get("catalogBranch"), arguments.get("requestedExact")))
                     throw new IllegalArgumentException("Preparation differs from reviewed runtime requirements");
                 facts.put("currentToolchainPlan", planned.evidence());
                 // The matching plan already binds the selected application's exact source archive.
@@ -641,6 +654,17 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 var host = prePreparationHost;
                 if (host != null && planned.identity().equals(host.get("reviewedPlanSha256")))
                     facts.put("currentPrePreparationHost", host);
+            }
+        }
+        if (operation.equals("deployment.toolchain.prepare.tracked.v1")) {
+            var tracked = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains.decode(request.stdin());
+            var parameters = tracked.parameters();
+            if ("KOTLIN".equals(parameters.get("ecosystem"))) {
+                var planned = toolchainPlan;
+                requireKotlinJavaPlan(intent, planned, (Map<?, ?>) parameters.get("javaRequirement"));
+                if (!plannedPreparationMatches(planned, parameters.get("ecosystem"), parameters.get("branch"), parameters.get("exact")))
+                    throw new IllegalArgumentException("Tracked preparation differs from reviewed runtime requirements");
+                facts.put("currentToolchainPlan", planned.evidence());
             }
         }
         if (intent.semantics().filter(value -> value.operation().equals("deployment.publication.publish.v1")).isPresent()) {

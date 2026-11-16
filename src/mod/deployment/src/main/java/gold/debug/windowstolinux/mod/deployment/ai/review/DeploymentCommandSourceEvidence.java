@@ -158,7 +158,7 @@ public final class DeploymentCommandSourceEvidence {
         """;
 
     private static final String KOTLIN_JAVA_PREPARE_INSTRUCTION = """
-        Follow the actual configured Java prerequisite before Kotlin installation or probing. The requiredPreparationRanges identify the protected directory, bounded marker, original installation key, executable identities and exact Java version probe. For MANAGED records the official SHA-256 identifies the archive. For SYSTEM records inspect the protected launch links, target files and their saved hashes. Check the actual request path and every reached branch before the independent verdict.
+        Compare javaHome and javaRequirement in the exact request with the current plan's Java constraint and the prior selected release. The requiredPreparationRanges identify the protected directory and marker, original installation key, release comparison and exact Java executable probe before Kotlin effects. For MANAGED records the official SHA-256 identifies the archive. For SYSTEM records inspect the protected launch links, target files and their saved hashes. Check the actual request path and every reached branch before the independent verdict.
         """;
 
     private static final String DEPENDENCY_INSTRUCTION = """
@@ -538,7 +538,9 @@ public final class DeploymentCommandSourceEvidence {
 
     private static List<PreparationSourceRange> kotlinJavaPrerequisite(String helper) throws IOException {
         var ranges = new ArrayList<PreparationSourceRange>();
-        for (String name : List.of("prepare", "require_prepared_java", "require_java_executable", "require_system_java_record",
+        for (String name : List.of("prepare", "kotlin_preparation_java", "kotlin_java_release_identity", "verify_kotlin_java_requirement",
+                "installation_diagnostic_request", "require_typed_java_preparation", "installation_diagnostic_main", "start_installation_diagnostic",
+                "preparation_lock", "require_prepared_java", "require_java_executable", "require_system_java_record",
                 "owned_directory", "saved_installation_marker", "tracked_regular", "tracked_json", "tracked_digest",
                 "installation_key", "official_url", "verify_system", "probe", "version_key", "release_build")) {
             ranges.add(PreparationSourceRange.python(helper, "def " + name + "("));

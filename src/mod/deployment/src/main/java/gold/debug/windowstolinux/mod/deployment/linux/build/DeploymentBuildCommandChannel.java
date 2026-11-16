@@ -160,12 +160,18 @@ public final class DeploymentBuildCommandChannel {
 
     public OperationResult<DeploymentTrackedToolchains.Observation> prepareTracked(DeploymentToolchainType ecosystem,
             String branch, String exact, int seconds, String javaHome) throws ApiException {
+        return prepareTracked(ecosystem, branch, exact, seconds, javaHome, null);
+    }
+
+    public OperationResult<DeploymentTrackedToolchains.Observation> prepareTracked(DeploymentToolchainType ecosystem,
+            String branch, String exact, int seconds, String javaHome, DeploymentKotlinJavaRequirement javaRequirement) throws ApiException {
+        requireKotlinJavaReceipt(ecosystem, javaHome, javaRequirement);
         requireTrackedIdentity();
         long available = budget.remainingSeconds();
         if (available < 45) return trackedWithoutValue(timeout());
         seconds = (int) Math.min(seconds, available - 15);
         var request = DeploymentTrackedToolchains.prepare(java.util.UUID.randomUUID(), task.id().toString(),
-            trackedSession.identity(), server.id(), layout, ecosystem, branch, exact, seconds, javaHome);
+            trackedSession.identity(), server.id(), layout, ecosystem, branch, exact, seconds, javaHome, javaRequirement);
         var observed = tracked("prepare-tracked", request, Duration.ofSeconds(seconds + 15L));
         if (observed.outcome() == TaskResult.SUCCEEDED && observed.value().isPresent() && observed.value().orElseThrow().prepared())
             trackedPreparationReceipts.add(observed.value().orElseThrow().selection());
@@ -261,6 +267,12 @@ public final class DeploymentBuildCommandChannel {
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     public OperationResult<CommandResult> prepare(DeploymentToolchainType ecosystem, String branch, String exact,
                                                   int seconds, String javaHome) throws ApiException {
+        return prepare(ecosystem, branch, exact, seconds, javaHome, null);
+    }
+
+    public OperationResult<CommandResult> prepare(DeploymentToolchainType ecosystem, String branch, String exact,
+                                                  int seconds, String javaHome, DeploymentKotlinJavaRequirement javaRequirement) throws ApiException {
+        requireKotlinJavaReceipt(ecosystem, javaHome, javaRequirement);
         preparedLocalNodeBinding = null;
         long available = budget.remainingSeconds();
         if (available < 45)
@@ -276,7 +288,7 @@ public final class DeploymentBuildCommandChannel {
         var original = new DeploymentToolchainDiagnostics.Request(java.util.UUID.randomUUID(), task.id().toString(),
             server.id(), DeploymentTrackedToolchains.sha256(session.facts().fingerprint().getBytes(StandardCharsets.UTF_8)),
             planRevision, layout, List.of("prepare", Objects.requireNonNull(ecosystem).name(), branch, exact,
-                Integer.toString(seconds), javaHome));
+                Integer.toString(seconds), javaHome), javaRequirement);
         lastPreparationDiagnosticRequest = original;
         preparationObserver.diagnosticRequested(original, task);
         var observed = send("deployment.toolchain.prepare.v1", layout.toolchains(),
@@ -339,6 +351,19 @@ public final class DeploymentBuildCommandChannel {
             return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
                 "DEPLOYMENT_TOOLCHAIN_DIAGNOSTIC_UNCONFIRMED", "Original toolchain diagnostic is unconfirmed", Map.of(), Optional.empty())));
         }
+    }
+
+    private void requireKotlinJavaReceipt(DeploymentToolchainType ecosystem, String javaHome,
+                                          DeploymentKotlinJavaRequirement javaRequirement) {
+        DeploymentKotlinJavaRequirement.verifyApplicability(ecosystem.name(), javaHome, javaRequirement);
+        DeploymentKotlinJavaRequirement.requireForExecution(ecosystem.name(), javaRequirement);
+        if (javaRequirement == null) return;
+        String version = javaRequirement.selectedVersion();
+        boolean present = trackedSession != null
+            ? trackedPreparationReceipts.stream().anyMatch(receipt -> receipt.ecosystem() == DeploymentToolchainType.JAVA
+                && receipt.version().equals(version) && receipt.directory().equals(javaHome))
+            : preparationReceipts.stream().anyMatch(receipt -> receipt.startsWith("TOOLCHAIN=JAVA|" + version + "|" + javaHome + "|"));
+        if (!present) throw new IllegalArgumentException("Kotlin Java prerequisite differs from this channel's successful preparation receipt");
     }
 
     /** Matches validated typed selections to this channel's actual complete successful preparation receipts. */

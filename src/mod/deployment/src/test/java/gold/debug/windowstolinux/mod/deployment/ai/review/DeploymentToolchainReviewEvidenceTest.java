@@ -4070,7 +4070,7 @@ class DeploymentToolchainReviewEvidenceTest {
             for (var range : manifest.path("selectedPreparationRanges")) {
                 selected.put(range.path("section").asText(), range);
             }
-            assertEquals(15, required.size());
+            assertEquals(23, required.size());
             for (var range : required) {
                 var inline = selected.get(range.path("section").asText());
                 assertNotNull(inline);
@@ -4080,10 +4080,13 @@ class DeploymentToolchainReviewEvidenceTest {
                 assertEquals(source.substring(offset, next), body.substring(start, start + next - offset));
             }
             for (String original : List.of("def require_java_executable(", "def require_system_java_record(",
-                    "def require_prepared_java(", "probe('JAVA', directory, version)", "str(require_prepared_java(args[5]))")) {
+                    "def require_prepared_java(", "probe('JAVA', directory, version)", "verify_kotlin_java_requirement(version, requirement)",
+                    "with preparation_lock(verifying=False, before_setup=check_java)")) {
                 assertTrue(body.contains(original), original);
             }
             assertTrue(evidence.instructions().contains("requiredPreparationRanges"));
+            assertEquals("21.0.13+9", JSON.readTree(initial.messages().getLast().text())
+                .at("/originalToolchainPreparation/javaRequirement/selectedVersion").asText());
             byte[] encoded = wire(initial, maximum, Map.of());
             assertTrue(encoded.length <= maximum);
             System.out.printf("R50_KOTLIN_JAVA_REVIEW required=%d firstEncoded=%d max=%d%n",
@@ -4705,7 +4708,10 @@ class DeploymentToolchainReviewEvidenceTest {
                                                         String javaPrerequisite) {
         long seconds = 135;
         var input = new DeploymentToolchainDiagnostics.Request(fixture.operation, fixture.task.id().toString(), fixture.server.id(),
-            "a".repeat(64), "a".repeat(64), fixture.layout, List.of("prepare", ecosystem, branch, "-", "120", javaPrerequisite));
+            "a".repeat(64), "a".repeat(64), fixture.layout, List.of("prepare", ecosystem, branch, "-", "120", javaPrerequisite),
+            "KOTLIN".equals(ecosystem) ? new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentKotlinJavaRequirement(
+                gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement.ConstraintType.SERIES,
+                "21", "21.0.13+9") : null);
         String invocation = DeploymentToolchainDiagnostics.command("prepare-diagnosed", input);
         String guarded = DeploymentManagedHelperBundle.verifiedCommand(invocation, fixture.layout);
         String wrapped = DeploymentMirrorTasks.preparationCommand(guarded, fixture.task, seconds);

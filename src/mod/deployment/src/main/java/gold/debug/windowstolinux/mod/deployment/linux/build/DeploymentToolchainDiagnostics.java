@@ -43,7 +43,13 @@ public final class DeploymentToolchainDiagnostics {
     }
 
     public record Request(UUID operationId, String taskId, String serverId, String fingerprintSha256,
-                          String planRevision, DeploymentRemoteLayout layout, List<String> arguments) {
+                          String planRevision, DeploymentRemoteLayout layout, List<String> arguments,
+                          DeploymentKotlinJavaRequirement javaRequirement) {
+        public Request(UUID operationId, String taskId, String serverId, String fingerprintSha256,
+                       String planRevision, DeploymentRemoteLayout layout, List<String> arguments) {
+            this(operationId, taskId, serverId, fingerprintSha256, planRevision, layout, arguments, null);
+        }
+
         public Request {
             java.util.Objects.requireNonNull(operationId); uuid(taskId); digest(fingerprintSha256); digest(planRevision);
             if (serverId == null || serverId.isEmpty() || serverId.length() > 512 || serverId.chars().anyMatch(c -> c < 32 || c == 127)) throw invalid();
@@ -51,23 +57,32 @@ public final class DeploymentToolchainDiagnostics {
             if (arguments.size() != 6 || !arguments.getFirst().equals("prepare")) throw invalid();
             DeploymentToolchainPreparationEvidence.decode(legacyCommand(layout, arguments), layout).orElseThrow(DeploymentToolchainDiagnostics::invalid);
             if (!arguments.get(5).equals("-") && !arguments.get(5).matches(java.util.regex.Pattern.quote(layout.toolchains() + "/versions/java-") + "[a-f0-9]{64}")) throw invalid();
+            DeploymentKotlinJavaRequirement.verifyApplicability(arguments.get(1), arguments.get(5), javaRequirement);
         }
         public byte[] bytes() {
             var root = JSON.createObjectNode().put("formatVersion", 1).put("operationId", operationId.toString())
                 .put("taskId", taskId).put("serverId", serverId).put("fingerprintSha256", fingerprintSha256)
                 .put("planRevision", planRevision).put("remoteLayout", layout.canonical());
             root.set("arguments", JSON.valueToTree(arguments));
+            if (javaRequirement != null) root.putObject("javaRequirement").put("constraint", javaRequirement.constraint().name())
+                .put("version", javaRequirement.version()).put("selectedVersion", javaRequirement.selectedVersion());
             return root.toString().getBytes(StandardCharsets.UTF_8);
         }
         public String sha256() { return DeploymentTrackedToolchains.sha256(bytes()); }
         public String target() { return layout.toolchains() + "/diagnostics/" + operationId; }
         public Map<String, Object> preparationArguments() {
-            return DeploymentToolchainPreparationEvidence.decode(legacyCommand(layout, arguments), layout).orElseThrow(DeploymentToolchainDiagnostics::invalid);
+            var decoded = DeploymentToolchainPreparationEvidence.decode(legacyCommand(layout, arguments), layout).orElseThrow(DeploymentToolchainDiagnostics::invalid);
+            if (javaRequirement == null) return decoded;
+            var evidence = new java.util.LinkedHashMap<String, Object>(decoded);
+            evidence.put("javaRequirement", javaRequirement.facts());
+            return Map.copyOf(evidence);
         }
     }
 
     public static String command(String verb, Request request) {
         if (!Set.of("prepare-diagnosed", "diagnose-only").contains(verb)) throw invalid();
+        if (verb.equals("prepare-diagnosed"))
+            DeploymentKotlinJavaRequirement.requireForExecution(request.arguments().get(1), request.javaRequirement());
         return DeploymentBuildCommandChannel.shellQuote(request.layout().helperPath()) + " prepare-toolchains "
             + DeploymentBuildCommandChannel.shellQuote(verb) + " " + DeploymentBuildCommandChannel.shellQuote(request.operationId().toString())
             + " " + DeploymentBuildCommandChannel.shellQuote(request.sha256());
@@ -79,13 +94,17 @@ public final class DeploymentToolchainDiagnostics {
     }
 
     public static Request decode(byte[] bytes) {
-        var value = parse(bytes, 16384); fields(value, REQUEST_FIELDS); version(value);
+        var value = parse(bytes, 16384);
+        var expected = new java.util.HashSet<>(REQUEST_FIELDS);
+        if (value != null && value.has("javaRequirement")) expected.add("javaRequirement");
+        fields(value, expected); version(value);
         var arguments = value.get("arguments");
         if (!arguments.isArray() || arguments.size() != 6) throw invalid();
         var list = new java.util.ArrayList<String>();
         for (var argument : arguments) { if (!argument.isTextual()) throw invalid(); list.add(argument.textValue()); }
         var request = new Request(uuid(text(value, "operationId")), text(value, "taskId"), text(value, "serverId"),
-            text(value, "fingerprintSha256"), text(value, "planRevision"), DeploymentRemoteLayout.decode(text(value, "remoteLayout")), list);
+            text(value, "fingerprintSha256"), text(value, "planRevision"), DeploymentRemoteLayout.decode(text(value, "remoteLayout")), list,
+            DeploymentKotlinJavaRequirement.decode(value.get("javaRequirement")));
         // This dedicated wire format has one canonical encoding, including the digest's exact byte scope.
         if (!java.util.Arrays.equals(bytes, request.bytes())) throw invalid();
         return request;

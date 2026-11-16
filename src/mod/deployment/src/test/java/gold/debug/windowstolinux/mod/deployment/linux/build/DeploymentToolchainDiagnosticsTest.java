@@ -30,6 +30,9 @@ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement;
+import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainSetup;
 import gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedPreparationReview;
 import org.junit.jupiter.api.Test;
 
@@ -38,6 +41,7 @@ class DeploymentToolchainDiagnosticsTest {
     private static final UUID TASK = UUID.fromString("22222222-2222-2222-2222-222222222222");
     private static final DeploymentRemoteLayout LAYOUT = DeploymentRemoteLayout.original();
     private static final String FINGERPRINT = "controlled-fingerprint";
+    private static final String JAVA_HOME = LAYOUT.toolchains() + "/versions/java-" + "c".repeat(64);
 
     private static DeploymentToolchainDiagnostics.Request original() {
         return new DeploymentToolchainDiagnostics.Request(UUID.fromString("11111111-1111-1111-1111-111111111111"),
@@ -86,6 +90,44 @@ class DeploymentToolchainDiagnosticsTest {
         assertEquals("PHP", ((Map<?, ?>) facts.get("arguments")).get("ecosystem"));
         assertEquals("8.3", ((Map<?, ?>) facts.get("arguments")).get("catalogBranch"));
         assertEquals(original.sha256(), ((Map<?, ?>) facts.get("diagnostic")).get("requestSha256"));
+    }
+
+    @Test
+    void standardPreparationBindsKotlinToTheAdmittedJavaReceiptAndExactReviewedInput() throws Exception {
+        for (String feature : List.of("17", "21")) {
+            String javaVersion = feature + ".0.13+9";
+            var fixture = new Fixture(false);
+            fixture.installedJava = javaVersion;
+            var channel = fixture.channel();
+            var expected = new DeploymentKotlinJavaRequirement(ToolchainRequirement.ConstraintType.SERIES, feature, javaVersion);
+            assertThrows(IllegalArgumentException.class, () ->
+                channel.prepare(DeploymentToolchainType.KOTLIN, "2.3", "-", 120, JAVA_HOME, expected));
+            assertTrue(fixture.grants.isEmpty());
+            var setup = new DeploymentToolchainSetup(channel, DeploymentToolchainCatalog.defaults());
+            var result = setup.prepare(List.of(
+                ToolchainRequirement.declared(DeploymentToolchainType.JAVA, feature, "reviewed-runtime", ToolchainRequirement.PurposeType.BUILD),
+                ToolchainRequirement.declared(DeploymentToolchainType.KOTLIN, "2.3", "reviewed-runtime", ToolchainRequirement.PurposeType.BUILD)), 0, 120);
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
+            assertEquals(3, fixture.grants.size());
+            assertEquals(JAVA_HOME, result.value().orElseThrow().selections().getFirst().directory());
+            var actual = DeploymentToolchainDiagnostics.decode(fixture.commands.get(1).stdin());
+            assertEquals(JAVA_HOME, actual.arguments().get(5));
+            assertEquals(expected, actual.javaRequirement());
+            assertEquals(expected.facts(), fixture.kotlinFacts.get("javaRequirement"));
+        }
+    }
+
+    @Test
+    void legacyKotlinPreparationCanBeReadButCannotBeDispatched() {
+        var prior = new DeploymentToolchainDiagnostics.Request(UUID.randomUUID(), TASK.toString(), "fixture-server",
+            "a".repeat(64), "b".repeat(64), LAYOUT, List.of("prepare", "KOTLIN", "2.3", "-", "120", JAVA_HOME));
+        assertArrayEquals(prior.bytes(), DeploymentToolchainDiagnostics.decode(prior.bytes()).bytes());
+        assertTrue(DeploymentToolchainDiagnostics.command("diagnose-only", prior).contains(prior.sha256()));
+        assertThrows(IllegalArgumentException.class, () -> DeploymentToolchainDiagnostics.command("prepare-diagnosed", prior));
+        assertThrows(IllegalArgumentException.class, () ->
+            new DeploymentKotlinJavaRequirement(ToolchainRequirement.ConstraintType.SERIES, "21", "17.0.13+9"));
+        assertThrows(IllegalArgumentException.class, () ->
+            new DeploymentKotlinJavaRequirement(ToolchainRequirement.ConstraintType.EXACT, "21.0.13+9", "21.0.13+10"));
     }
 
     @Test
@@ -169,6 +211,8 @@ class DeploymentToolchainDiagnosticsTest {
         final List<String> events = new ArrayList<>();
         boolean failPersistence;
         boolean unknownPrepare;
+        String installedJava;
+        Map<?, ?> kotlinFacts;
         Fixture(boolean denyDiagnostic) { this.denyDiagnostic = denyDiagnostic; }
         DeploymentBuildCommandChannel channel() {
             var task = (TaskContext) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{TaskContext.class}, (p, method, a) -> {
@@ -179,7 +223,19 @@ class DeploymentToolchainDiagnosticsTest {
                 if (method.getName().equals("facts")) return new RemoteFacts("linux", "amd64", FINGERPRINT);
                 if (!method.getName().equals("execute")) throw new AssertionError(method.getName());
                 var command = (CommandRequest) a[0]; commands.add(command); events.add("execute");
+                if (installedJava != null && command.script().contains("'bind'")) {
+                    String script = DeploymentManagedHelperBundle.verifiedBody(command.script(), LAYOUT);
+                    var binding = java.util.regex.Pattern.compile("'bind' '([A-Za-z0-9+/=]+)'").matcher(script);
+                    assertTrue(binding.find());
+                    return success("TOOLCHAIN_BINDING=" + DeploymentTrackedToolchains.sha256(java.util.Base64.getDecoder().decode(binding.group(1))) + "\n");
+                }
                 var request = DeploymentToolchainDiagnostics.decode(command.stdin());
+                if (installedJava != null) {
+                    boolean java = request.arguments().get(1).equals("JAVA");
+                    return success("TOOLCHAIN=" + (java ? "JAVA|" + installedJava + "|" + JAVA_HOME
+                        : "KOTLIN|2.3.10|" + LAYOUT.toolchains() + "/versions/kotlin-" + "d".repeat(64))
+                        + "|MANAGED|https://fixture.invalid/release|" + "a".repeat(64) + "\n");
+                }
                 if (command.script().contains("'diagnose-only'")) return new OperationResult<>(TaskResult.SUCCEEDED,
                     Optional.of(new CommandResult(Optional.of(0), new String(attachment(request), StandardCharsets.UTF_8), "", false)), Optional.empty());
                 if (unknownPrepare) return new OperationResult<>(TaskResult.UNKNOWN,
@@ -190,8 +246,15 @@ class DeploymentToolchainDiagnosticsTest {
                     "TOOLCHAIN_FAILURE=installation:official toolchain installation command failed: apt-get\n", "", false)),
                     Optional.of(new Problem(ProblemCode.IO_FAILURE, "ORIGINAL_EXIT_NONZERO", "original failure", Map.of(), Optional.empty())));
             });
-            var interaction = (InteractionService) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{InteractionService.class}, (p, method, a) -> {
-                if (!method.getName().equals("approve")) throw new AssertionError(method.getName());
+            var ports = installedJava == null ? new Class<?>[]{InteractionService.class}
+                : new Class<?>[]{InteractionService.class, gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview.class};
+            var interaction = (InteractionService) Proxy.newProxyInstance(getClass().getClassLoader(), ports, (p, method, a) -> {
+                if (!Set.of("approve", "approveCommand").contains(method.getName())) throw new AssertionError(method.getName());
+                if (installedJava != null && grants.size() == 1) {
+                    var intent = (gold.debug.windowstolinux.appapi.task.action.ActionIntent) a[0];
+                    var command = (CommandRequest) a[1];
+                    kotlinFacts = (Map<?, ?>) DeploymentAssistedPreparationReview.facts(intent, command, LAYOUT).get("arguments");
+                }
                 var grant = UUID.randomUUID(); grants.add(grant); events.add("review");
                 if (denyDiagnostic && grants.size() == 2) return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
                     Optional.of(new Problem(ProblemCode.ACCESS_DENIED, "DIAGNOSTIC_DENIED", "controlled", Map.of(), Optional.empty())));
@@ -207,5 +270,9 @@ class DeploymentToolchainDiagnosticsTest {
                     }
                 });
         }
+    }
+
+    private static OperationResult<CommandResult> success(String output) {
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new CommandResult(Optional.of(0), output, "", false)), Optional.empty());
     }
 }

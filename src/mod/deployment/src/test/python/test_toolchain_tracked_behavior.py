@@ -42,6 +42,7 @@ class TrackedToolchainBehaviorTest(unittest.TestCase):
         self.ns['SHIPPED_CATALOG'] = {'NODE': ['22'], 'JAVA': ['21']}
         self.ns['owned_directory'] = mock.Mock(side_effect=self.owned)
         self.ns['tracked_sync_directory'] = mock.Mock()
+        self.actual_probe = self.ns['probe']
         self.ns['probe'] = mock.Mock()
         self.ns['release'] = mock.Mock(return_value=('22.0.0', 'https://nodejs.org/dist/v22.0.0/node.tar.xz', 'sha256', 'a' * 64, 'archive'))
         self.ns['discover_system'] = mock.Mock(return_value=None)
@@ -143,6 +144,9 @@ class TrackedToolchainBehaviorTest(unittest.TestCase):
                 stack.enter_context(mock.patch.object(shutil, 'rmtree', controlled_rmtree))
             output = io.StringIO()
             stack.enter_context(contextlib.redirect_stdout(output))
+            if verb in ('prepare-diagnosed', 'diagnose-only'):
+                self.ns['installation_diagnostic_main'](args, raw)
+                return output.getvalue()
             self.ns['tracked_main'](args, raw)
         lines = output.getvalue().splitlines()
         self.assertEqual(1, len(lines), 'Tracked protocol emits exactly one JSON receipt')
@@ -211,6 +215,8 @@ class TrackedToolchainBehaviorTest(unittest.TestCase):
     def test_tracked_kotlin_rechecks_legacy_system_java_files_and_launcher_links(self):
         self.ns['SHIPPED_CATALOG']['KOTLIN'] = ['2.0']
         version = '8u412-b08'
+        selected_version = '8.0.412-b08'
+        (self.root / '.prepare.lock').touch()
         system = self.root / 'system-java' / 'bin'
         system.mkdir(parents=True)
         files = []
@@ -240,7 +246,7 @@ class TrackedToolchainBehaviorTest(unittest.TestCase):
         install = self.ns['install'] = mock.Mock()
 
         def probe(ecosystem, directory, exact):
-            self.assertEqual(('JAVA', java, version), (ecosystem, directory, exact))
+            self.assertEqual(('JAVA', java, selected_version), (ecosystem, directory, exact))
             self.assertEqual('before-java', os.environ.get('JAVA_HOME'))
             self.assertGreater(self.ns['remaining'](), 0)
             self.assertIsNotNone(self.ns['PREPARE_LOCK'])
@@ -252,17 +258,22 @@ class TrackedToolchainBehaviorTest(unittest.TestCase):
                 self.ns['release'].reset_mock()
                 install.reset_mock()
                 request = self.prepare_request()
-                request['parameters'].update(ecosystem='KOTLIN', branch='2.0', javaHome=str(java))
+                request['parameters'].update(ecosystem='KOTLIN', branch='2.0', javaHome=str(java),
+                                             javaRequirement={'constraint': 'SERIES', 'version': '8', 'selectedVersion': selected_version})
                 observed = targets.copy()
                 if fault == 'different link':
                     observed[launcher] = files[1]['path']
                 (system / 'java').write_bytes(b'changed' if fault == 'changed binary' else b'java')
                 with mock.patch.object(os, 'readlink', side_effect=lambda path: observed[pathlib.Path(path)]):
-                    result = self.invoke('prepare-tracked', request, file_modes=modes)
+                    if fault == 'valid R37 record':
+                        result = self.invoke('prepare-tracked', request, file_modes=modes)
+                    else:
+                        with self.assertRaises(self.ns['PreparationFailure']) as rejected:
+                            self.invoke('prepare-tracked', request, file_modes=modes)
+                        self.assertEqual('integrity', rejected.exception.category)
+                        self.assertFalse(self.state_path(request).exists())
                 self.assertEqual(original, marker.read_bytes())
                 if fault != 'valid R37 record':
-                    self.assertEqual('FAILED', result['executionStatus'])
-                    self.assertEqual('integrity', result['failureCategory'])
                     self.assertEqual('before-java', os.environ.get('JAVA_HOME'))
                     self.ns['probe'].assert_not_called()
                     self.ns['release'].assert_not_called()
@@ -270,9 +281,82 @@ class TrackedToolchainBehaviorTest(unittest.TestCase):
                 else:
                     self.assertEqual('SUCCEEDED', result['executionStatus'], result)
                     self.assertEqual(str(java), os.environ.get('JAVA_HOME'))
-                    self.ns['probe'].assert_called_once_with('JAVA', java, version)
+                    self.ns['probe'].assert_called_once_with('JAVA', java, selected_version)
                     self.ns['release'].assert_called_once_with('KOTLIN', '2.0', '')
                     install.assert_called_once()
+
+    def exercise_managed_kotlin_java(self, planned, installed, reported, verb, blocked=None):
+        self.ns['SHIPPED_CATALOG']['KOTLIN'] = ['2.0']
+        (self.root / '.prepare.lock').touch()
+        expected = planned + '.0.13+9'
+        version = installed + '.0.13+9'
+        digest = 'a' * 64
+        java = self.root / 'versions' / ('java-' + self.ns['installation_key']('JAVA', version, digest))
+        (java / 'bin').mkdir(parents=True)
+        modes = {}
+        for name in ('java', 'javac'):
+            executable = java / 'bin' / name
+            executable.write_text('fixed fixture executable')
+            modes[executable] = stat.S_IFREG | 0o755
+        source = 'https://nodejs.org/official-java-fixture.tar.gz'
+        marker = {'ecosystem': 'JAVA', 'version': version, 'directory': str(java), 'origin': 'MANAGED',
+                  'source': source, 'sha256': digest, 'official_algorithm': 'sha256', 'official_digest': digest}
+        (java / '.w2l-toolchain.json').write_text(json.dumps(marker))
+        self.ns['probe'] = self.actual_probe
+        java_probe = self.ns['probe_output'] = mock.Mock(return_value=(0, 'openjdk version "' + reported + '.0.13+9"'))
+        self.ns['run'] = mock.Mock()
+        kotlin = self.root / 'versions' / ('kotlin-' + 'd' * 64)
+        self.ns['release'].return_value = ('2.0.1', source, 'sha256', digest, 'archive')
+        install = self.ns['install'] = mock.Mock(return_value={
+            'ecosystem': 'KOTLIN', 'version': '2.0.1', 'directory': str(kotlin), 'origin': 'MANAGED',
+            'source': source, 'sha256': digest})
+        requirement = {'constraint': 'SERIES', 'version': planned, 'selectedVersion': expected}
+        request = self.prepare_request()
+        if verb == 'prepare-tracked':
+            request['parameters'].update(ecosystem='KOTLIN', branch='2.0', javaHome=str(java), javaRequirement=requirement)
+        else:
+            request = {key: request[key] for key in ('formatVersion', 'operationId', 'taskId', 'serverId', 'fingerprintSha256', 'remoteLayout')}
+            request.update(planRevision='c' * 64, arguments=['prepare', 'KOTLIN', '2.0', '-', '120', str(java)], javaRequirement=requirement)
+        with mock.patch.dict(os.environ, {'JAVA_HOME': 'before-java'}):
+            if blocked is not None:
+                with self.assertRaises(self.ns['PreparationFailure']) as failure:
+                    self.invoke(verb, request, file_modes=modes)
+                self.assertEqual(blocked, failure.exception.category)
+                self.assertEqual('before-java', os.environ.get('JAVA_HOME'))
+                self.assertFalse((self.root / 'diagnostics').exists())
+                self.assertFalse((self.root / 'operations').exists())
+                self.assertFalse((self.root / 'scratch').exists())
+                self.ns['release'].assert_not_called()
+                install.assert_not_called()
+                if blocked == 'integrity':
+                    java_probe.assert_not_called()
+                else:
+                    java_probe.assert_called_once_with([str(java / 'bin' / 'java'), '-version'])
+            else:
+                outcome = self.invoke(verb, request, file_modes=modes)
+                if verb == 'prepare-tracked':
+                    self.assertEqual('SUCCEEDED', outcome['executionStatus'])
+                else:
+                    self.assertTrue(outcome.startswith('TOOLCHAIN=KOTLIN|2.0.1|'))
+                self.assertEqual(str(java), os.environ.get('JAVA_HOME'))
+                java_probe.assert_called_once_with([str(java / 'bin' / 'java'), '-version'])
+                self.ns['release'].assert_called_once_with('KOTLIN', '2.0', '')
+                install.assert_called_once()
+
+    def test_tracked_kotlin_uses_its_verified_managed_java_21(self):
+        self.exercise_managed_kotlin_java('21', '21', '21', 'prepare-tracked')
+
+    def test_java_release_metadata_keeps_the_adoptium_identity_decoder(self):
+        self.assertEqual('21.0.13+9', self.ns['java_release_identity']({'openjdk_version': '21.0.13+9-LTS'}))
+
+    def test_diagnosed_kotlin_uses_its_verified_managed_java_17(self):
+        self.exercise_managed_kotlin_java('17', '17', '17', 'prepare-diagnosed')
+
+    def test_tracked_kotlin_rejects_another_sealed_java_major_before_effects(self):
+        self.exercise_managed_kotlin_java('21', '17', '17', 'prepare-tracked', 'integrity')
+
+    def test_diagnosed_kotlin_rejects_a_java_executable_that_disagrees_with_the_marker(self):
+        self.exercise_managed_kotlin_java('21', '21', '17', 'prepare-diagnosed', 'probe')
 
     def test_actual_installation_marker_recovers_without_terminal_receipt_or_another_install(self):
         with self.crash_before_terminal(), self.assertRaises(Crash):

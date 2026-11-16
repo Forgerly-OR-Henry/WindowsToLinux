@@ -102,6 +102,10 @@ public final class DeploymentTrackedToolchains {
         public DeploymentRemoteLayout layout() { return layout; }
         public Kind kind() { return kind; }
         public Map<String, Object> parameters() { return parameters; }
+        public DeploymentKotlinJavaRequirement javaRequirement() {
+            var requirement = parameters.get("javaRequirement");
+            return requirement == null ? null : DeploymentKotlinJavaRequirement.decode(JSON.valueToTree(requirement));
+        }
         public String sha256() { return sha256; }
         public DeploymentResolvedToolchains binding() {
             if (kind != Kind.BIND) throw invalid();
@@ -133,9 +137,16 @@ public final class DeploymentTrackedToolchains {
 
     public static Request prepare(UUID operation, String task, Identity identity, String server, DeploymentRemoteLayout layout,
                                   DeploymentToolchainType ecosystem, String branch, String exact, int seconds, String javaHome) {
+        return prepare(operation, task, identity, server, layout, ecosystem, branch, exact, seconds, javaHome, null);
+    }
+
+    public static Request prepare(UUID operation, String task, Identity identity, String server, DeploymentRemoteLayout layout,
+                                  DeploymentToolchainType ecosystem, String branch, String exact, int seconds, String javaHome,
+                                  DeploymentKotlinJavaRequirement javaRequirement) {
         var values = new LinkedHashMap<String, Object>();
         values.put("ecosystem", ecosystem.name()); values.put("branch", branch); values.put("exact", exact);
         values.put("seconds", seconds); values.put("javaHome", javaHome);
+        if (javaRequirement != null) values.put("javaRequirement", javaRequirement.facts());
         return create(operation, task, identity, server, layout, Kind.PREPARE, values);
     }
     public static Request bind(UUID operation, String task, Identity identity, String server, DeploymentRemoteLayout layout,
@@ -162,7 +173,9 @@ public final class DeploymentTrackedToolchains {
         var kind = Kind.valueOf(text(root, "kind")); var parameters = root.get("parameters");
         var values = new LinkedHashMap<String, Object>();
         if (kind == Kind.PREPARE) {
-            fields(parameters, Set.of("ecosystem", "branch", "exact", "seconds", "javaHome"));
+            var expected = new HashSet<>(Set.of("ecosystem", "branch", "exact", "seconds", "javaHome"));
+            if (parameters != null && parameters.has("javaRequirement")) expected.add("javaRequirement");
+            fields(parameters, expected);
             var ecosystem = DeploymentToolchainType.valueOf(text(parameters, "ecosystem"));
             String branch = text(parameters, "branch"), exact = text(parameters, "exact"), javaHome = text(parameters, "javaHome");
             int seconds = integer(parameters, "seconds");
@@ -173,6 +186,9 @@ public final class DeploymentTrackedToolchains {
                 || javaHome.length() > 2048) throw invalid();
             values.put("ecosystem", ecosystem.name()); values.put("branch", branch); values.put("exact", exact);
             values.put("seconds", seconds); values.put("javaHome", javaHome);
+            var javaRequirement = DeploymentKotlinJavaRequirement.decode(parameters.get("javaRequirement"));
+            DeploymentKotlinJavaRequirement.verifyApplicability(ecosystem.name(), javaHome, javaRequirement);
+            if (javaRequirement != null) values.put("javaRequirement", javaRequirement.facts());
         } else {
             fields(parameters, Set.of("bindingBase64")); String encoded = text(parameters, "bindingBase64");
             bindingValue(encoded); values.put("bindingBase64", encoded);
@@ -248,6 +264,8 @@ public final class DeploymentTrackedToolchains {
     public static String command(String verb, Request request) {
         operation(verb);
         if (verb.equals("prepare-tracked") && request.kind() != Kind.PREPARE || verb.equals("bind-tracked") && request.kind() != Kind.BIND) throw invalid();
+        if (verb.equals("prepare-tracked"))
+            DeploymentKotlinJavaRequirement.requireForExecution((String) request.parameters().get("ecosystem"), request.javaRequirement());
         return DeploymentBuildCommandChannel.shellQuote(request.layout().helperPath()) + " prepare-toolchains "
             + DeploymentBuildCommandChannel.shellQuote(verb) + " " + DeploymentBuildCommandChannel.shellQuote(request.operationId().toString())
             + " " + DeploymentBuildCommandChannel.shellQuote(request.sha256());

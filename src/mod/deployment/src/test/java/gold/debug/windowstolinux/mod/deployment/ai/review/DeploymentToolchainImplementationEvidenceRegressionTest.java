@@ -33,7 +33,8 @@ class DeploymentToolchainImplementationEvidenceRegressionTest {
         var layout = layout(custom);
         var server = new ServerId("fixture");
         String javaHome = values[0].equals("KOTLIN") ? layout.toolchains() + "/versions/java-" + "a".repeat(64) : "-";
-        try (var request = request(layout, values[0], values[1], values[2], javaHome)) {
+        try (var request = values[0].equals("KOTLIN") ? kotlinRequest(layout, values[1], values[2], javaHome)
+            : request(layout, values[0], values[1], values[2], javaHome)) {
             var intent = intent(server, request, layout.toolchains());
             var shared = DeploymentCommandEvidence.facts(intent, request, layout);
             var compact = DeploymentAssistedPreparationReview.facts(intent, request, layout);
@@ -42,7 +43,7 @@ class DeploymentToolchainImplementationEvidenceRegressionTest {
             assertEquals(DeploymentManagedHelperBundle.helperSha256(layout), json.path("helperSha256").asText());
             assertTrue(contract.contains(json.path("helperSha256").asText()));
             assertEquals(layout.canonical(), json.path("remoteLayout").asText());
-            assertEquals(shared.get("toolchainPreparation"), compact.get("arguments"));
+            assertEquals(shared.get(values[0].equals("KOTLIN") ? "originalToolchainPreparation" : "toolchainPreparation"), compact.get("arguments"));
             assertEquals(values[0], json.at("/arguments/ecosystem").asText());
             assertEquals(values[2], json.at("/arguments/requestedExact").asText());
             assertEquals(javaHome, json.at("/arguments/javaHome").asText());
@@ -96,6 +97,17 @@ class DeploymentToolchainImplementationEvidenceRegressionTest {
             "/fixture/helper", "/fixture/apps", "/fixture/state", "/fixture/config", "/fixture/data")) : DeploymentRemoteLayout.original();
     }
 
+    private static CommandRequest kotlinRequest(DeploymentRemoteLayout layout, String branch, String exact, String javaHome) {
+        var java = new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentKotlinJavaRequirement(
+            gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement.ConstraintType.SERIES, "21", "21.0.13+9");
+        var input = new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.Request(
+            UUID.randomUUID(), UUID.randomUUID().toString(), "fixture", "b".repeat(64), "a".repeat(64), layout,
+            List.of("prepare", "KOTLIN", branch, exact, "120", javaHome), java);
+        return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(
+            gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics.command("prepare-diagnosed", input), layout),
+            input.bytes(), Duration.ofSeconds(135), 65536);
+    }
+
     static CommandRequest request(DeploymentRemoteLayout layout, String ecosystem, String branch, String exact, String javaHome) {
         return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand("'" + layout.helperPath()
             + "' prepare-toolchains 'prepare' '" + ecosystem + "' '" + branch + "' '" + exact + "' '120' '" + javaHome + "'", layout),
@@ -103,7 +115,7 @@ class DeploymentToolchainImplementationEvidenceRegressionTest {
     }
 
     static ActionIntent intent(ServerId server, CommandRequest request, String target) {
-        return RemoteActions.command(server, "model-revision", request).withSemantics(new ActionSemantics(
+        return RemoteActions.command(server, "a".repeat(64), request).withSemantics(new ActionSemantics(
             "deployment.toolchain.prepare.v1", Set.of(new ActionTarget(server.id(), "deployment-build", target))));
     }
 }

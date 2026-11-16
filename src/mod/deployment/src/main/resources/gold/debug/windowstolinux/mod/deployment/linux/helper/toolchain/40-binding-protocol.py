@@ -199,13 +199,13 @@ def prepare_root():
 
 
 @contextlib.contextmanager
-def preparation_lock(verifying):
+def preparation_lock(verifying, before_setup=None):
     global DEADLINE, PREPARE_LOCK
     import fcntl
 
     lock_path = ROOT / '.prepare.lock'
     DEADLINE = time.monotonic() + 7200
-    with open_preparation_lock(lock_path, creating=not verifying) as lock:
+    with open_preparation_lock(lock_path, creating=not verifying and before_setup is None) as lock:
         while True:
             try:
                 fcntl.flock(lock, (fcntl.LOCK_SH if verifying else fcntl.LOCK_EX) | fcntl.LOCK_NB)
@@ -217,6 +217,8 @@ def preparation_lock(verifying):
             PREPARE_LOCK = lock
         try:
             if not verifying:
+                if before_setup is not None:
+                    before_setup()
                 prepare_shared_directories()
             yield
         finally:
@@ -235,6 +237,8 @@ def main(args):
     if args and args[0] in ('prepare-tracked', 'bind-tracked', 'observe-tracked', 'cleanup-tracked'):
         tracked_main(args)
         return
+    if len(args) > 1 and args[0] == 'prepare' and args[1] == 'KOTLIN':
+        fail('request', 'Kotlin preparation requires its typed Java prerequisite')
     verifying = bool(args and args[0] == 'verify')
     if verifying:
         if len(args) != 2 or not re.fullmatch('[a-f0-9]{64}', args[1]):
@@ -327,7 +331,42 @@ def require_system_java_record(record, directory):
     verify_system(record)
 
 
-def require_prepared_java(value):
+def kotlin_java_release_identity(value):
+    if not isinstance(value, str) or not re.fullmatch(r'[0-9][0-9.u+b_-]{0,95}', value):
+        return None
+    value = value.replace('_', '.')
+    if re.fullmatch(r'1\.[0-8](?:\..*)?', value):
+        value = value[2:]
+    value = re.sub(r'^(\d+)u(\d+)', r'\1.0.\2', value)
+    if not re.fullmatch(r'\d{1,9}(?:\.\d{1,9}){0,4}(?:\+\d+(?:\.\d+)*|-b\d+)?', value):
+        return None
+    numbers = version_key(value)
+    return numbers + (0,) * (5 - len(numbers)), release_build(value)
+
+
+def verify_kotlin_java_requirement(version, requirement):
+    tracked_fields(requirement, {'constraint', 'version', 'selectedVersion'})
+    planned = kotlin_java_release_identity(requirement['version'])
+    selected = kotlin_java_release_identity(requirement['selectedVersion'])
+    actual = kotlin_java_release_identity(version)
+    constraint = requirement['constraint']
+    if planned is None or selected is None or constraint not in ('SERIES', 'EXACT', 'MINIMUM'):
+        fail('request', 'invalid planned Java constraint for Kotlin')
+    if (actual != selected or constraint == 'SERIES' and actual[0][0] != planned[0][0]
+            or constraint == 'EXACT' and actual != planned
+            or constraint == 'MINIMUM' and actual[0] < planned[0]):
+        fail('integrity', 'prepared Java release differs from the reviewed Kotlin prerequisite')
+
+
+def kotlin_preparation_java(value, requirement, seconds):
+    global DEADLINE
+    if value == '-' or requirement is None:
+        fail('request', 'Kotlin preparation requires its planned Java constraint and exact selected release')
+    DEADLINE = time.monotonic() + seconds
+    return require_prepared_java(value, requirement)
+
+
+def require_prepared_java(value, requirement=None):
     directory = pathlib.Path(value)
     if directory.parent != ROOT / 'versions' or not re.fullmatch('java-[a-f0-9]{64}', directory.name):
         fail('request', 'invalid managed Java selection')
@@ -359,11 +398,14 @@ def require_prepared_java(value):
             if directory not in resolved.parents:
                 fail('ownership', 'prepared Java launcher is outside its selected installation')
             require_java_executable(resolved)
+    if requirement is not None:
+        verify_kotlin_java_requirement(version, requirement)
+        version = requirement['selectedVersion']
     probe('JAVA', directory, version)
     return directory
 
 
-def prepare(args):
+def prepare(args, java=None):
     global DEADLINE
     if (
         len(args) != 6
@@ -377,9 +419,14 @@ def prepare(args):
     seconds = int(args[4])
     if not 30 <= seconds <= 7200:
         fail('request', 'invalid preparation timeout')
-    DEADLINE = time.monotonic() + seconds
-    if args[5] != '-':
-        os.environ['JAVA_HOME'] = str(require_prepared_java(args[5]))
+    if args[1] == 'KOTLIN':
+        if java is None:
+            fail('request', 'Kotlin preparation requires its verified Java prerequisite')
+        os.environ['JAVA_HOME'] = str(java)
+    else:
+        DEADLINE = time.monotonic() + seconds
+        if args[5] != '-':
+            os.environ['JAVA_HOME'] = str(require_prepared_java(args[5]))
     identity, url, algorithm, digest, layout = release(args[1], args[2], '' if args[3] == '-' else args[3])
     record = reuse_system(args[1], identity)
     if record is None:

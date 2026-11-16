@@ -41,6 +41,8 @@ public final class DeploymentAssistedPreparationReview {
         }
         var arguments = legacy.isPresent() ? legacy.orElseThrow() : diagnosticRequest.preparationArguments();
         var ecosystem = DeploymentToolchainType.valueOf(arguments.get("ecosystem").toString());
+        if (ecosystem == DeploymentToolchainType.KOTLIN && !arguments.containsKey("javaRequirement"))
+            throw new IllegalArgumentException("Kotlin preparation requires its planned Java constraint and exact selected release");
         if (ecosystem == DeploymentToolchainType.C || ecosystem == DeploymentToolchainType.CPP
             || DeploymentToolchainCatalog.defaults().branches(ecosystem).stream()
             .noneMatch(branch -> branch.version().equals(arguments.get("catalogBranch"))))
@@ -85,7 +87,7 @@ public final class DeploymentAssistedPreparationReview {
             case DOTNET ->
                 "Microsoft .NET release metadata selects Linux-x64 SDK and SHA512; extract the checked flat archive.";
             case KOTLIN ->
-                "JetBrains/kotlin official GitHub tags/releases select the compiler ZIP and unambiguous official SHA256 metadata; extract the checked archive. A supplied managed Java directory is ownership/marker/ecosystem checked before JAVA_HOME is set.";
+                "JetBrains/kotlin official GitHub tags/releases select the compiler ZIP and unambiguous official SHA256 metadata. The exact prior Java directory and selected release must satisfy the task's Java constraint. For either MANAGED or SYSTEM Java, verify the protected marker identity, executable evidence and exact version before setting JAVA_HOME or selecting the Kotlin release.";
             case RUST ->
                 "Official Rust metadata and SHA256 bind the exact archive. The fixed helper treats component manifests as data, validates the compiler, target standard library and Cargo paths and file types, and copies admitted files into the owned managed version directory. It does not invoke upstream install.sh. The selected managed rustc version probe drops privileges and clears its environment. Review the mirror transport, extraction, controlled copy, existing SYSTEM reuse branch, cleanup and original authority independently.";
             case PYTHON ->
