@@ -339,7 +339,8 @@ record PreparationSourceRange(String section, int offset, int next) {
                                                   boolean packageManager) throws IOException {
         var ranges = new ArrayList<PreparationSourceRange>();
         boolean fullTransport = ecosystem.equals("RUST");
-        boolean routeExcerpt = fullTransport || ecosystem.equals("DOTNET") || ecosystem.equals("GO") || packageManager;
+        boolean routeExcerpt = fullTransport || ecosystem.equals("DOTNET") || ecosystem.equals("GO")
+            || ecosystem.equals("KOTLIN") || packageManager;
         if (fullTransport) {
             ranges.add(python(runtime, "class MirrorTransferLedger:"));
             ranges.add(python(runtime, "class MirrorPolicy:"));

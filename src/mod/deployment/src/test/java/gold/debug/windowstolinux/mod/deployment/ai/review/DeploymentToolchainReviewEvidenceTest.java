@@ -4433,8 +4433,13 @@ class DeploymentToolchainReviewEvidenceTest {
                 List.of(read("r38-python-10", snapshot, policy, 0, 8000), read("r38-python-11", snapshot, policy, 8000, 1272),
                     read("r38-python-12", snapshot, shell, 13709, 1118), read("r38-python-13", snapshot, runtime, 3984, 3157)));
             byte[] encoded = wire(copy(initial, messages, 1048576), 1048576, Map.of());
+            int offered = encoded.length;
+            if (offered > cap) {
+                assertTrue(reader.repackBeforeSend(messages, exactBudgetProblem(offered, cap)));
+                encoded = wire(copy(initial, messages, cap), cap, Map.of());
+            }
             int first = encoded.length;
-            assertTrue(first < cap, "first request " + first);
+            assertTrue(first <= cap, "first request " + first);
             for (var batch : batches) {
                 var reply = mockResponses(batch.toArray(AiToolCall[]::new));
                 var results = reader.read(reply);
@@ -4454,6 +4459,49 @@ class DeploymentToolchainReviewEvidenceTest {
             String header = messages.get(messages.size() - 2).text().lines().skip(1).findFirst().orElseThrow();
             var deferred = JSON.readTree(header).path("previouslyDeferred");
             assertTrue(reader.approvalEvidenceBlock().isEmpty(), () -> reader.approvalEvidenceBlock() + " " + deferred);
+        }
+    }
+
+    @Test
+    void pythonPreparationOffersEverySelectedExactRangeBeforeItsFirstReview() throws Exception {
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.APT_UBUNTU, DownloadPoint.PYTHON_METADATA,
+                 DownloadPoint.PYTHON_DISTRIBUTION, DownloadPoint.GNU_MAKE_SOURCE);
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = diagnosedPreparation(fixture, "PYTHON", "3.12")) {
+            var action = intent("prepare", fixture, command);
+            var facts = new LinkedHashMap<String, Object>(
+                new DeploymentFixedCommandProtocol(fixture.context).inspect(action, command, fixture.layout, fixture.task));
+            facts.put("currentCommandEvidence", assisted.scope.effectFacts(action, fixture.task));
+            r31DeniedApproval(fixture, assisted, facts, action, command);
+            var request = fixture.model.requests.getFirst();
+            var projected = JSON.readTree(request.messages().getLast().text());
+            var manifest = projected.path(PHASE);
+            String snapshot = manifest.path("snapshotSha256").asText();
+            String policy = manifest.at("/mirrorPolicySource/sourcePointer").asText();
+            var descriptors = List.of(manifest.path("installedHelperSource"), manifest.path("mirrorBootstrapShell"),
+                projected.at("/mirrorTransport/runtimeSource"));
+            var sources = Map.of(policy, DeploymentMirrorTasks.policy(fixture.task),
+                descriptors.get(0).path("sourcePointer").asText(), DeploymentManagedHelperBundle.renderScript(fixture.layout),
+                descriptors.get(1).path("sourcePointer").asText(), r24Shell(fixture),
+                descriptors.get(2).path("sourcePointer").asText(), DeploymentMirrorRuntime.runtimeSource());
+            byte[] encoded = wire(request, 1_048_576, Map.of());
+            var visible = replayRetainedRanges(encoded, snapshot, sources).orElseThrow();
+            seedInlineSourceRanges(projected, visible);
+            assertEquals(Integer.valueOf(sources.get(policy).length()), visible.get(policy).get(0));
+            int additionalSections = 0;
+            for (var descriptor : descriptors) {
+                var ranges = visible.get(descriptor.path("sourcePointer").asText());
+                for (var range : descriptor.path("namedRanges")) {
+                    int start = range.get(0).asInt(), next = range.get(1).asInt();
+                    var covered = ranges.floorEntry(start);
+                    assertNotNull(covered, range::toString);
+                    assertTrue(covered.getValue() >= next, range::toString);
+                    additionalSections++;
+                }
+            }
+            assertTrue(additionalSections > 0);
+            assertTrue(encoded.length > 110_000, "Fixture should exceed the previous preference");
+            System.out.printf("R89_PYTHON_PREPARE initialEncoded=%d additionalExactSections=%d%n", encoded.length, additionalSections);
         }
     }
 

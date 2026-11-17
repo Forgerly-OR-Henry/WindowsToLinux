@@ -105,7 +105,7 @@ public final class DeploymentCommandSourceEvidence {
     private static final int MAX_CORRECTABLE_BATCH = 16;
     private static final int NATIVE_REQUEST_TEXT_BYTES = 1024 * 1024;
     private static final int NATIVE_TOOL_ENVELOPE_BYTES = 4096;
-    private static final int ISOLATED_SOURCE_INITIAL_WIRE_TARGET = 110_000;
+    private static final int PHP_SOURCE_INITIAL_WIRE_TARGET = 110_000;
     private static final int APT_INITIAL_WIRE_TARGET = 145_000;
     private static final Set<String> OPERATIONS = Set.of(PREPARE, BIND,
         DeploymentToolchainDependencies.OPERATION);
@@ -486,16 +486,19 @@ public final class DeploymentCommandSourceEvidence {
                                                 Map<String, NavigableMap<Integer, Integer>> requiredRanges) throws IOException {
         boolean diagnosed = current.has("originalToolchainPreparation");
         String ecosystem = preparationEcosystem(current);
-        if (ecosystem.equals("NODE")) {
+        if (ecosystem.equals("NODE") || ecosystem.equals("KOTLIN")) {
             String policy = sources.get(MIRROR_POLICY_SOURCE);
-            if (policy == null || policy.isEmpty()) throw new IOException("Original Node mirror policy is missing");
+            if (policy == null || policy.isEmpty()) throw new IOException("Original toolchain mirror policy is missing");
             var policyRange = new TreeMap<>(Map.of(0, policy.length()));
             requiredRanges.put(MIRROR_POLICY_SOURCE, policyRange);
             initialSourceRanges.put(MIRROR_POLICY_SOURCE, policyRange);
             manifest.putArray("requiredPreparationSources").add(MIRROR_POLICY_SOURCE);
+        }
+        if (ecosystem.equals("NODE")) {
             // Preserve the broader view and its exact page coordinates while sending a smaller execution slice.
             var parts = new ArrayList<ViewPart>();
-            String broad = preparationSelection(current, sources, new LinkedHashMap<>(),
+            var broadRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
+            String broad = preparationSelection(current, sources, broadRanges,
                 JSON.createArrayNode(), ecosystem, diagnosed, List.of(), Optional.of(parts));
             var view = SourceSelectionView.exact(broad, parts, sources);
             sources.put(PREPARATION_SELECTION, broad);
@@ -521,17 +524,28 @@ public final class DeploymentCommandSourceEvidence {
             addNamedRanges((ObjectNode) projected.at(MIRROR_RUNTIME), runtimeRanges, initialRuntime);
             appendSelection(body, selected, initialRanges, MIRROR_RUNTIME, runtime, initialRuntime);
             initialSourceRanges.put(MIRROR_RUNTIME, mergeRanges(PreparationSourceRange.nodeTransferSupplement(runtimeRanges)));
+            broadRanges.forEach((pointer, ranges) -> {
+                var offered = initialSourceRanges.computeIfAbsent(pointer, ignored -> new TreeMap<>());
+                ranges.forEach((start, end) -> DeploymentEvidencePages.remember(offered, start, end));
+            });
             putSelectionFrame(manifest, messages, snapshot, sources, NODE_PREPARATION_SELECTION, "nodePreparationSelection", body);
             return Optional.of(view);
         }
         if (isolatedSourcePreparation(ecosystem)) {
-            addSourceBuildPreparationSelection(current, projected, manifest, messages, snapshot, sources, initialRanges,
-                initialSourceRanges, requiredRanges, ecosystem, diagnosed);
-            return Optional.empty();
+            return Optional.of(addSourceBuildPreparationSelection(current, projected, manifest, messages, snapshot,
+                sources, initialRanges, initialSourceRanges, requiredRanges, ecosystem, diagnosed));
         }
         var prerequisites = ecosystem.equals("KOTLIN")
             ? kotlinJavaPrerequisite(sources.get(INSTALLED_HELPER_SOURCE)) : List.<PreparationSourceRange>of();
         if (!prerequisites.isEmpty()) recordRequiredPreparation(manifest, requiredRanges, prerequisites);
+        if (ecosystem.equals("KOTLIN")) {
+            var runtime = sources.get(MIRROR_RUNTIME);
+            boolean credentials = current.at(PUBLIC_MIRROR_POLICY + "/points").findValues("credentialManaged").stream()
+                .anyMatch(JsonNode::asBoolean);
+            var transfer = PreparationSourceRange.transfer(runtime, ecosystem, credentials, false);
+            addNamedRanges((ObjectNode) projected.at(MIRROR_RUNTIME), transfer, List.of());
+            initialSourceRanges.put(MIRROR_RUNTIME, mergeRanges(transfer));
+        }
         var parts = new ArrayList<ViewPart>();
         String source = preparationSelection(current, sources, initialRanges,
             manifest.putArray("selectedPreparationRanges"), ecosystem, diagnosed, prerequisites, Optional.of(parts));
@@ -542,12 +556,13 @@ public final class DeploymentCommandSourceEvidence {
         return Optional.of(SourceSelectionView.exact(source, parts, sources));
     }
 
-    private static void addSourceBuildPreparationSelection(ObjectNode current, ObjectNode projected, ObjectNode manifest,
+    private static SourceSelectionView addSourceBuildPreparationSelection(ObjectNode current, ObjectNode projected, ObjectNode manifest,
             List<AiMessage> messages, String snapshot, Map<String, String> sources,
             Map<String, NavigableMap<Integer, Integer>> initialRanges,
             Map<String, NavigableMap<Integer, Integer>> initialSourceRanges,
             Map<String, NavigableMap<Integer, Integer>> requiredRanges, String ecosystem, boolean diagnosed) throws IOException {
         var body = new StringBuilder();
+        var parts = new ArrayList<ViewPart>();
         var selected = manifest.putArray("selectedPreparationRanges");
         String policy = sources.get(MIRROR_POLICY_SOURCE);
         initialSourceRanges.put(MIRROR_POLICY_SOURCE, new TreeMap<>(Map.of(0, policy.length())));
@@ -563,18 +578,19 @@ public final class DeploymentCommandSourceEvidence {
         }
         selectSourceBuildPreparationSource(body, selected, initialRanges, initialSourceRanges, ecosystem,
             (ObjectNode) manifest.path("installedHelperSource"), INSTALLED_HELPER_SOURCE, helper,
-            helperRanges);
+            helperRanges, parts);
         var endpointPolicy = current.at(PUBLIC_MIRROR_POLICY + "/points");
         boolean credentials = endpointPolicy.findValues("credentialManaged").stream().anyMatch(JsonNode::asBoolean);
         String shell = sources.get(MIRROR_BOOTSTRAP_SHELL);
         selectSourceBuildPreparationSource(body, selected, initialRanges, initialSourceRanges, ecosystem,
             (ObjectNode) manifest.path("mirrorBootstrapShell"), MIRROR_BOOTSTRAP_SHELL, shell,
-            PreparationSourceRange.sourceBuildPreparationShell(shell, credentials));
+            PreparationSourceRange.sourceBuildPreparationShell(shell, credentials), parts);
         String runtime = sources.get(MIRROR_RUNTIME);
         selectSourceBuildPreparationSource(body, selected, initialRanges, initialSourceRanges, ecosystem,
             (ObjectNode) projected.at(MIRROR_RUNTIME), MIRROR_RUNTIME, runtime,
-            PreparationSourceRange.sourceBuildPreparationTransport(runtime, ecosystem, credentials));
+            PreparationSourceRange.sourceBuildPreparationTransport(runtime, ecosystem, credentials), parts);
         putSelectionFrame(manifest, messages, snapshot, sources, PREPARATION_SELECTION, "preparationSelection", body);
+        return SourceSelectionView.exact(body.toString(), parts, sources);
     }
 
     private static void recordRequiredPreparation(ObjectNode manifest,
@@ -600,10 +616,10 @@ public final class DeploymentCommandSourceEvidence {
     private static void selectSourceBuildPreparationSource(StringBuilder body, ArrayNode selected,
             Map<String, NavigableMap<Integer, Integer>> initialRanges,
             Map<String, NavigableMap<Integer, Integer>> initialSourceRanges, String ecosystem, ObjectNode descriptor,
-            String pointer, String source, List<PreparationSourceRange> ranges) {
+            String pointer, String source, List<PreparationSourceRange> ranges, List<ViewPart> parts) {
         var initial = ranges.stream()
             .filter(range -> PreparationSourceRange.sourceBuildPreparationInitial(ecosystem, range)).toList();
-        appendSelection(body, selected, initialRanges, pointer, source, initial);
+        appendSelection(body, selected, initialRanges, pointer, source, initial, Optional.of(parts));
         addNamedRanges(descriptor, ranges, initial);
         initialSourceRanges.put(pointer, mergeRanges(ranges));
     }
@@ -646,8 +662,10 @@ public final class DeploymentCommandSourceEvidence {
         String runtime = sources.get(MIRROR_RUNTIME);
         boolean credentials = current.at(PUBLIC_MIRROR_POLICY + "/points").findValues("credentialManaged").stream()
             .anyMatch(JsonNode::asBoolean);
-        appendSelection(body, selected, initialRanges, MIRROR_RUNTIME, runtime,
-            PreparationSourceRange.transfer(runtime, ecosystem, credentials, packageManager), view);
+        if (!ecosystem.equals("KOTLIN")) {
+            appendSelection(body, selected, initialRanges, MIRROR_RUNTIME, runtime,
+                PreparationSourceRange.transfer(runtime, ecosystem, credentials, packageManager), view);
+        }
         return body.toString();
     }
 
@@ -1514,6 +1532,7 @@ public final class DeploymentCommandSourceEvidence {
         private final Map<String, NavigableMap<Integer, Integer>> requested = new LinkedHashMap<>();
         private final Map<String, NavigableMap<Integer, Integer>> confirmed = new LinkedHashMap<>();
         private final boolean nodePreparation = nodePreparationReview();
+        private final boolean preparationPolicyRequired = preparationReview() && requiredRanges.containsKey(MIRROR_POLICY_SOURCE);
         private final boolean initialMirror = initialMirrorReview();
         private final boolean phpBinding = phpMirrorBindingReview();
         private Optional<AiMessage> priorEvidence = Optional.empty();
@@ -1573,7 +1592,7 @@ public final class DeploymentCommandSourceEvidence {
 
         private int initialSourceBudget(List<AiMessage> messages) throws IOException {
             int bound = sourceBodies.containsKey(DEPENDENCY_APT_SELECTION) && !nativeAptInitialSource() ? APT_INITIAL_WIRE_TARGET
-                : isolatedSourcePreparationReview() ? ISOLATED_SOURCE_INITIAL_WIRE_TARGET : 0;
+                : preparationReview() && reviewEcosystem().equals("PHP") ? PHP_SOURCE_INITIAL_WIRE_TARGET : 0;
             if (bound == 0) return nativeFrameBudget(messages);
             int remaining = bound - NATIVE_TOOL_ENVELOPE_BYTES;
             for (var message : messages) remaining -= quotedBytes(message);
@@ -1637,7 +1656,7 @@ public final class DeploymentCommandSourceEvidence {
             boolean nativeApt = nativeAptInitialSource();
             if (nativeApt) header.put("nativeAptRequiredSource", true);
             boolean showPending = completeInstallerReview() || isolatedSourcePreparationReview() || packedBuildReview()
-                || nodePreparation || phpBinding || nativeApt;
+                || requiredRanges.containsKey(MIRROR_POLICY_SOURCE) || phpBinding || nativeApt;
             if (showPending) appendRequiredCoverage(header, visible);
             int bodyBudget = available - quotedBytes(RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n");
             if (bodyBudget <= 0) return Optional.empty();
@@ -1896,7 +1915,7 @@ public final class DeploymentCommandSourceEvidence {
             int position = messages.indexOf(original);
             if (position < 0) return false;
             int available = frameBudget(original, problem);
-            if (nodePreparation || completeInstallerReview() || packedBuildReview() || isolatedSourcePreparationReview()) {
+            if (preparationReview() || completeInstallerReview() || packedBuildReview()) {
                 measuredFrameBudget = Math.min(measuredFrameBudget, available);
                 available = measuredFrameBudget;
             }
@@ -1916,7 +1935,8 @@ public final class DeploymentCommandSourceEvidence {
             int position = messages.indexOf(original);
             if (position < 0) return false;
             int available = frameBudget(original, problem);
-            if (completeInstallerReview() || packedBuildReview()) measuredFrameBudget = Math.min(measuredFrameBudget, available);
+            if (preparationReview() || completeInstallerReview() || packedBuildReview())
+                measuredFrameBudget = Math.min(measuredFrameBudget, available);
             var fitted = fittedInitialSource(available, false);
             if (fitted.isPresent()) messages.set(position, fitted.orElseThrow().message());
             else messages.remove(position);
@@ -1945,24 +1965,24 @@ public final class DeploymentCommandSourceEvidence {
                 cumulative = retainedSource(latestReads, false, Math.max(0, spare - exceeded));
                 return Optional.of(quotedBytes(cumulative.message()) <= available ? cumulative : latest);
             }
-            if (nodePreparation) {
+            if (preparationPolicyRequired) {
                 var withPolicy = fittedLatestReads(available, true);
                 if (withPolicy.isPresent()) return withPolicy;
             }
             return fittedLatestReads(available, false);
         }
 
-        private Optional<RetainedFrame> fittedLatestReads(int available, boolean keepNodePolicy) throws IOException {
-            var smallest = retainedSource(boundedLatestReads(2), true, 0, keepNodePolicy);
+        private Optional<RetainedFrame> fittedLatestReads(int available, boolean keepPreparationPolicy) throws IOException {
+            var smallest = retainedSource(boundedLatestReads(2), true, 0, keepPreparationPolicy);
             if (quotedBytes(smallest.message()) > available) return Optional.empty();
             int low = 2, high = MAX_READ_CHARACTERS + 1;
             while (high - low > 1) {
                 int candidate = (high + low) / 2;
-                var probe = retainedSource(boundedLatestReads(candidate), true, 0, keepNodePolicy);
+                var probe = retainedSource(boundedLatestReads(candidate), true, 0, keepPreparationPolicy);
                 if (quotedBytes(probe.message()) <= available) low = candidate;
                 else high = candidate;
             }
-            return Optional.of(retainedSource(boundedLatestReads(low), true, 0, keepNodePolicy));
+            return Optional.of(retainedSource(boundedLatestReads(low), true, 0, keepPreparationPolicy));
         }
 
         private boolean exactBudgetRefusal(Problem problem) {
@@ -1999,10 +2019,10 @@ public final class DeploymentCommandSourceEvidence {
         }
 
         private RetainedFrame retainedSource(List<ReadReceipt> offered, boolean compacted, int historyBytes) throws IOException {
-            return retainedSource(offered, compacted, historyBytes, nodePreparation && !compacted);
+            return retainedSource(offered, compacted, historyBytes, preparationPolicyRequired && !compacted);
         }
 
-        private RetainedFrame retainedSource(List<ReadReceipt> offered, boolean compacted, int historyBytes, boolean keepNodePolicy)
+        private RetainedFrame retainedSource(List<ReadReceipt> offered, boolean compacted, int historyBytes, boolean keepPreparationPolicy)
             throws IOException {
             var header = JSON.createObjectNode().put("snapshotSha256", snapshot).put("trust", "UNTRUSTED_DATA");
             if (latestBatchRejected) header.put("latestBatchRejected", "NO_PAGES_READ_MAX_EIGHT_PER_RESPONSE");
@@ -2043,7 +2063,7 @@ public final class DeploymentCommandSourceEvidence {
                     ranges.forEach((start, end) -> rememberRange(exact, pointer, start, end)));
                 retainHistory(exact, visible, entries, body, historyBytes);
             } else {
-                if (keepNodePolicy) {
+                if (keepPreparationPolicy) {
                     String policy = sourceText(MIRROR_POLICY_SOURCE);
                     appendVisibleRange(MIRROR_POLICY_SOURCE, 0, policy.length(), visible, entries, body);
                 }

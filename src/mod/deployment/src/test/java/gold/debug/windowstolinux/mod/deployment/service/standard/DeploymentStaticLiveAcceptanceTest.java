@@ -6417,8 +6417,10 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                     System.out.println("AI_LIVE_TOOL_CATALOG " + value.tools().stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition::name).sorted().toList());
                     System.out.println("AI_LIVE_CONTEXT_BYTES continuation=" + value.messages().stream().flatMap(m -> m.continuation().stream())
                         .mapToLong(gold.debug.windowstolinux.appapi.ai.model.AiContinuation::payloadBytes).sum());
-                    if (value.purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL)
+                    if (value.purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL) {
                         logTrackedInstallerCoverage(value, evidence);
+                        logBuildAndPreparationCoverage(supervisedRequest, evidence);
+                    }
                     var binding = evidence.path("decodedToolchainBinding");
                     if (binding.isObject())
                         System.out.println("AI_LIVE_BINDING_INPUT operation=" + evidence.path("operation").asText()
@@ -7252,6 +7254,66 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             result.addArray().add(pointer).add(offset).add(next);
         }
         return result;
+    }
+
+    /** Records the current evidence layout without archiving model messages or source text. */
+    private static void logBuildAndPreparationCoverage(gold.debug.windowstolinux.appapi.ai.model.AiRequest request,
+                                                       com.fasterxml.jackson.databind.JsonNode facts) {
+        String operation = facts.path("operation").asText();
+        var manifest = switch (operation) {
+            case "deployment.build.run.v1" -> facts.path("buildReviewEvidence");
+            case "deployment.toolchain.prepare.v1" -> facts.path("toolchainReviewEvidence");
+            default -> null;
+        };
+        if (manifest == null || !manifest.isObject()) return;
+        String snapshot = manifest.path("snapshotSha256").asText();
+        var frames = request.messages().stream().map(message -> message.text())
+            .filter(text -> text.startsWith("WTL-COMMAND-RETAINED-SOURCE-1\n")).toList();
+        try {
+            if (!snapshot.matches("[0-9a-f]{64}") || frames.size() > 1)
+                throw new IllegalArgumentException("Invalid source frame identity");
+            long fixedBytes = request.messages().stream().map(message -> message.text())
+                .filter(message -> !frames.contains(message))
+                .mapToLong(message -> message.getBytes(java.nio.charset.StandardCharsets.UTF_8).length).sum();
+            var coverage = JSON.createObjectNode().put("operation", operation).put("snapshotSha256", snapshot)
+                .put("fixedMessageUtf8", fixedBytes).put("maximumRequestBytes", request.maxRequestBytes());
+            if (frames.isEmpty()) {
+                coverage.put("frame", "SELECTION_ONLY");
+            } else {
+                String frame = frames.getFirst();
+                int start = frame.indexOf('\n') + 1;
+                int end = frame.indexOf('\n', start);
+                if (end < start) throw new IllegalArgumentException("Source frame has no header");
+                var header = JSON.readTree(frame.substring(start, end));
+                if (!snapshot.equals(header.path("snapshotSha256").asText()))
+                    throw new IllegalArgumentException("Source frame is outside the current snapshot");
+                var rows = header.path("ranges");
+                if (!rows.isArray() || rows.size() > 4096)
+                    throw new IllegalArgumentException("Invalid source range layout");
+                long originalCharacters = 0;
+                for (var row : rows) {
+                    int offset = row.path("offset").asInt(-1), next = row.path("next").asInt(-1);
+                    if (offset < 0 || next < offset || next > 2_000_000)
+                        throw new IllegalArgumentException("Invalid source range");
+                    originalCharacters += next - offset;
+                }
+                var blocks = header.path("repeatedOriginalBlocks");
+                long displayed = originalCharacters - blocks.path("originalCharacters").asInt()
+                    + blocks.path("displayCharacters").asInt();
+                if (displayed != frame.length() - end - 1L)
+                    throw new IllegalArgumentException("Source frame differs from its declared layout");
+                coverage.put("frame", header.path("initialSupplement").asBoolean() ? "INITIAL" : "RETAINED")
+                    .put("frameUtf8", frame.getBytes(java.nio.charset.StandardCharsets.UTF_8).length)
+                    .put("sourceCharacters", originalCharacters)
+                    .put("rangeCount", rows.size())
+                    .put("missingRequiredRanges", header.path("pendingRequired").size())
+                    .put("deferredReadRanges", header.path("omittedRanges").asInt())
+                    .put("literalBlockReferences", blocks.path("references").asInt());
+            }
+            System.out.println("AI_LIVE_REVIEW_SOURCE_COVERAGE beforeSend=true " + coverage);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException | IllegalArgumentException invalid) {
+            System.out.println("AI_LIVE_REVIEW_SOURCE_COVERAGE beforeSend=true operation=" + operation + " state=UNAVAILABLE");
+        }
     }
 
     private static void agentContextMetadata(gold.debug.windowstolinux.appapi.ai.model.AiRequest request,
