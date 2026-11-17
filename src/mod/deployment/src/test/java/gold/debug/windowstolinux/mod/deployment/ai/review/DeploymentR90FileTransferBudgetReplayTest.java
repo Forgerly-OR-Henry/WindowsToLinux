@@ -3,6 +3,8 @@ package gold.debug.windowstolinux.mod.deployment.ai.review;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.OutputStream;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,7 +26,11 @@ import gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec;
 import gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel;
 import gold.debug.windowstolinux.app.ai.model.ModelRequestBudgetException;
 import gold.debug.windowstolinux.appapi.ai.model.*;
+import gold.debug.windowstolinux.appapi.ai.AiService;
 import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot;
+import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
@@ -34,6 +40,7 @@ import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchiveReview;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget;
+import gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentBuildEnvironment;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentBuildLimits;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
@@ -45,6 +52,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.*;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.DeploymentStandardAnalyzer;
 import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentProjectToolchainRequirements;
 import gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint;
+import gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks;
 import gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.DeploymentStandardPlanner;
 import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.DeploymentStandardReviewAnswers;
@@ -55,7 +63,7 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.c
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** R90 archive and Go binding, with a reconstructed public routing policy, task, and Responses request. */
+/** Original R90 archive/binding and controlled R97 facts pressure, not an archived R97 wire/tool transcript. */
 class DeploymentR90FileTransferBudgetReplayTest {
     private static final String APP = "wtl-assisted-file-transfer-ukpgbgu6g-backend";
     private static final String ARCHIVE = "9d294372013e53015ab7543d8c8a9cc84bd61d65dd48fced98aa12a0035a3180";
@@ -63,10 +71,14 @@ class DeploymentR90FileTransferBudgetReplayTest {
     private static final String FRAME = "WTL-COMMAND-RETAINED-SOURCE-1\n";
     private static final String RUNTIME = "/mirrorTransport/runtimeSource";
     private static final String SHELL = "/buildReviewEvidence/mirrorBootstrapShell";
+    private static final String POLICY = "/buildReviewEvidence/stagedMirrorPolicy";
+    private static final String HISTORY = "/currentCommandEvidence/sourceArchiveObservations";
     private static final String BUILD_PACKAGE = "gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.build.";
     private static final int PHYSICAL_LIMIT = 1_048_576;
     private static final int OUTPUT_RESERVE = 65_536;
     private static final int ORIGINAL_FIXED_UTF8 = 74_848;
+    private static final int R97_FIXED_UTF8 = 76_715;
+    private static final int R97_FIRST_CAP = 497_463;
     private static final ObjectMapper JSON = new ObjectMapper();
     @TempDir Path scratch;
 
@@ -91,8 +103,13 @@ class DeploymentR90FileTransferBudgetReplayTest {
             try (var command = build(fixture, material, archive)) {
                 var facts = new LinkedHashMap<>(new DeploymentFixedCommandProtocol(fixture.context)
                     .inspect(command.intent(), command.request(), fixture.layout, fixture.task));
-                facts.put("currentCommandEvidence", Map.of("currentBuildArchive", archiveFacts(fixture, archive, names, command),
-                    "currentBuildArchiveSource", sources));
+                var boundArchive = archiveFacts(fixture, archive, names, command);
+                // Same product shape and meaning, with public fixture identities. The original R97 replies were not saved.
+                var history = Map.of("archives", List.of(boundArchive.get("archive")), "meaning",
+                    "Archiver-produced frozen source/subtree associations captured before final confirmation under this original task/server. sourceToolchainRequirements preserve the deterministic selected component declarations/constraints/source files, independent of the initial draft URI/git field; they are not a resolved future installer result or installation proof. Source manifest and compressed archive hashes identify different objects; match the build envelope's expected archive SHA to its association and declared candidate. Listed companion files belong to that archived subtree; file lists and recent history (32 archives) are explicitly bounded, not a complete content/safety review. The deterministic build body is separately reviewed, not required to be a file or signature of the source manifest. It verifies actual compressed archive bytes before extraction; project hooks still require non-root candidate isolation, complete executable input and fresh independent host permission. These observations do not prove live remote state, safe content or authorization.");
+                var current = Map.<String, Object>of("currentBuildArchive", boundArchive,
+                    "currentBuildArchiveSource", sources, "sourceArchiveObservations", history);
+                facts.put("currentCommandEvidence", current);
                 fixture.model.nativeReply(deny());
                 var decision = new DeploymentAiJson(assisted.context).askCommand(
                     DeploymentFixedCommandApproval.commandReviewInstructions(true) + DeploymentAssistedScope.standardBuildReviewInstructions(),
@@ -100,37 +117,74 @@ class DeploymentR90FileTransferBudgetReplayTest {
                     command.intent(), command.request());
                 assertEquals("DENY", decision.path("decision").asText());
                 assertEquals(0, assisted.hosts.get());
-                var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, PHYSICAL_LIMIT),
+                String original = DeploymentAiJson.facts(facts, PHYSICAL_LIMIT);
+                var evidence = DeploymentCommandSourceEvidence.project(original,
                     command.intent(), command.request(), fixture.layout, Optional.of(sources)).orElseThrow();
-                assertCeilings(fixture.model.requests.getFirst(), evidence);
+                var manifest = JSON.readTree(evidence.messages().getLast().text()).path("buildReviewEvidence");
+                String policy = DeploymentMirrorTasks.policy(fixture.task);
+                var expected = new LinkedHashMap<String, String>();
+                expected.put(RUNTIME, DeploymentMirrorRuntime.runtimeSource());
+                expected.put(SHELL, DeploymentMirrorRuntime.bootstrap(policy).shell());
+                expected.put(POLICY, policy);
+                expected.put(HISTORY, JSON.writeValueAsString(JSON.readTree(original).at(HISTORY)));
+                for (var member : manifest.at("/projectArchive/members"))
+                    expected.put(member.path("sourcePointer").asText(), Files.readString(root.resolve("backend").resolve(member.path("path").asText())));
+                assertEquals(List.of(new DeploymentSourceArchiveReview.Omitted("go.sum", 3_926, "PROTECTED_CONTENT")), sources.omitted());
+                assertEquals(JSON.readTree(JSON.writeValueAsBytes(sources.omitted())), manifest.at("/projectArchive/omitted"));
+                assertEquals(13, manifest.at("/projectArchive/members").size() + sources.omitted().size());
+                assertCeilings(fixture.model.requests.getFirst(), evidence, expected);
+                assertNoHostGrantForIncompleteOrRejectedEvidence(fixture, assisted, command, current, expected);
+                var sent = new ArrayList<byte[]>();
+                var approved = DeploymentFixedCommandApproval.approveWithEvidence(
+                    reviewContext(fixture, assisted.context, "COMPLETE", sent), assisted.host, command.intent(), command.request(),
+                    fixture.task, fixture.model.configurationRevision, "AUTOMATIC", false, (action, request, task) -> current);
+                assertEquals(TaskResult.SUCCEEDED, approved.outcome());
+                assertEquals(1, sent.size());
+                String frame = retainedFrame(sent.getFirst());
+                int end = frame.indexOf('\n', FRAME.length());
+                assertCompleteSource(sent.getFirst(), JSON.readTree(frame.substring(FRAME.length(), end)).path("snapshotSha256").asText(), expected);
+                assertEquals(1, assisted.hosts.get());
+                assertEquals(java.util.Set.of(approved.value().orElseThrow().id()), assisted.grants);
+                assertEquals(List.of(command.intent()), assisted.grantedIntents);
+                System.out.printf("R99_FILE_TRANSFER_HOST_APPROVE wire=%d cap=%d grants=%d%n", sent.getFirst().length, R97_FIRST_CAP, assisted.hosts.get());
             }
         }
     }
 
-    private static void assertCeilings(AiRequest template, DeploymentCommandSourceEvidence evidence) throws Exception {
+    private static void assertCeilings(AiRequest template, DeploymentCommandSourceEvidence evidence,
+                                       Map<String, String> expected) throws Exception {
         var fixed = new ArrayList<>(evidence.messages());
         fixed.addFirst(template.messages().getFirst());
+        int unpaddedFixed = utf8(fixed);
+        assertTrue(unpaddedFixed < R97_FIXED_UTF8);
+        fixed.add(fixed.size() - 1, new AiMessage(AiRole.USER, "x".repeat(R97_FIXED_UTF8 - unpaddedFixed), List.of()));
+        assertEquals(R97_FIXED_UTF8, utf8(fixed));
         var manifest = JSON.readTree(fixed.getLast().text()).path("buildReviewEvidence");
         String snapshot = manifest.path("snapshotSha256").textValue();
         assertNotNull(snapshot);
         assertEquals(ARCHIVE, manifest.at("/projectArchive/archiveSha256").asText());
         assertTrue(manifest.path("selectedRuntimeRanges").findValuesAsText("section").contains("goDependencyEnvironment"));
+        assertFalse(manifest.has("bootstrapShellLiteral"));
+        assertEquals(JSON.valueToTree(List.of(RUNTIME, SHELL, POLICY, HISTORY)), manifest.path("requiredBuildSources"));
+        for (String pointer : List.of(RUNTIME, SHELL, POLICY, HISTORY)) {
+            var descriptor = pointer.equals(RUNTIME) ? JSON.readTree(fixed.getLast().text()).at(RUNTIME)
+                : manifest.path(pointer.equals(SHELL) ? "mirrorBootstrapShell" : pointer.equals(POLICY) ? "stagedMirrorPolicy" : "sourceArchiveHistory");
+            assertEquals(pointer, descriptor.path("sourcePointer").asText());
+            assertEquals(DeploymentEvidencePages.sha256(expected.get(pointer)), descriptor.path("sha256").asText());
+        }
         var paged = new ArrayList<JsonNode>();
         manifest.at("/projectArchive/members").forEach(member -> {
             if (member.path("initiallyPaged").asBoolean()) paged.add(member);
         });
         assertEquals(1, paged.size());
         var member = paged.getFirst();
-        var initial = template.messages().stream().map(AiMessage::text).filter(body -> body.startsWith(FRAME))
-            .findFirst().orElseThrow();
-        int initialEnd = initial.indexOf('\n', FRAME.length());
-        var initialHeader = JSON.readTree(initial.substring(FRAME.length(), initialEnd));
-        var sentManifest = JSON.readTree(template.messages().getLast().text()).path("buildReviewEvidence");
-        assertEquals(ARCHIVE, sentManifest.at("/projectArchive/archiveSha256").asText());
-        assertEquals(sentManifest.path("snapshotSha256").asText(), initialHeader.path("snapshotSha256").asText());
-        assertTrue(initialHeader.path("pendingRequired").isEmpty());
-        assertMemberIdentity(initial, initialEnd + 1, initialHeader.path("ranges"), member);
-        int initialWire = wire(template, template.messages(), 194_756);
+        var initialMessages = new ArrayList<>(fixed);
+        var initialReader = evidence.reader(32);
+        initialReader.offerInitialSource(initialMessages);
+        byte[] initialWire = encode(template, initialMessages, R97_FIRST_CAP);
+        assertCompleteSource(initialWire, snapshot, expected);
+        initialReader.read(responses(List.of(approve())));
+        assertTrue(initialReader.approvalEvidenceBlock().isEmpty());
         String memberPointer = member.path("sourcePointer").asText();
         int size = member.path("characters").asInt();
         var reads = new ArrayList<Cursor>();
@@ -143,29 +197,28 @@ class DeploymentR90FileTransferBudgetReplayTest {
         reads.add(new Cursor(RUNTIME, 199_929, 105));
         assertTrue(reads.size() <= 8);
         int fixedWire = wire(template, fixed, PHYSICAL_LIMIT);
-        int rawFixed = fixed.stream().mapToInt(message -> message.text().getBytes(StandardCharsets.UTF_8).length).sum();
-        var required = replay(template, evidence, fixed, snapshot, member, memberReads, PHYSICAL_LIMIT);
+        int rawFixed = utf8(fixed);
+        var required = replay(template, evidence, fixed, snapshot, expected, memberReads, R97_FIRST_CAP);
         assertTrue(required.complete());
-        if (required.wireBytes() <= 194_756)
-            assertTrue(replay(template, evidence, fixed, snapshot, member, memberReads, 194_756).complete());
-        var full = replay(template, evidence, fixed, snapshot, member, reads, PHYSICAL_LIMIT);
+        var full = replay(template, evidence, fixed, snapshot, expected, reads, R97_FIRST_CAP);
         assertTrue(full.complete());
         assertTrue(full.wireBytes() > fixedWire);
         var observed = List.of(new Observed(260_596, 257_995, 0), new Observed(194_756, 193_196, 1), new Observed(146_377, 145_927, 20));
-        assertTrue(full.wireBytes() <= 194_756);
+        assertTrue(full.wireBytes() > 194_756);
         for (var limit : observed) {
-            var sent = replay(template, evidence, fixed, snapshot, member, reads, limit.cap());
+            var sent = replay(template, evidence, fixed, snapshot, expected, reads, limit.cap());
             if (full.wireBytes() <= limit.cap()) assertTrue(sent.complete());
-            System.out.printf("R90_FILE_TRANSFER_REPLAY cap=%d archive=%s fixedUtf8=%d r90FixedUtf8=%d fixedWire=%d initialWire=%d requiredWire=%d uncappedCompleteWire=%d "
+            else assertFalse(sent.complete());
+            System.out.printf("R99_FILE_TRANSFER_REPLAY cap=%d archive=%s fixedUtf8=%d unpaddedFixedUtf8=%d r90FixedUtf8=%d fixedWire=%d initialWire=%d requiredWire=%d uncappedCompleteWire=%d "
                     + "sent=%d missing=%d complete=%s originalSent=%d originalMissing=%d%n",
-                limit.cap(), ARCHIVE, rawFixed, ORIGINAL_FIXED_UTF8, fixedWire, initialWire, required.wireBytes(), full.wireBytes(), sent.wireBytes(), sent.missing(),
+                limit.cap(), ARCHIVE, rawFixed, unpaddedFixed, ORIGINAL_FIXED_UTF8, fixedWire, initialWire.length, required.wireBytes(), full.wireBytes(), sent.wireBytes(), sent.missing(),
                 sent.complete(), limit.sent(), limit.missing());
         }
-        assertFalse(replay(template, evidence, fixed, snapshot, member, reads, fixedWire + 4_000).complete());
+        assertFalse(replay(template, evidence, fixed, snapshot, expected, reads, fixedWire + 4_000).complete());
     }
 
     private static Replay replay(AiRequest template, DeploymentCommandSourceEvidence evidence, List<AiMessage> fixed,
-                                 String snapshot, JsonNode member, List<Cursor> reads, int cap) throws Exception {
+                                 String snapshot, Map<String, String> expected, List<Cursor> reads, int cap) throws Exception {
         var messages = new ArrayList<>(fixed);
         var reader = evidence.reader(32);
         reader.offerInitialSource(messages);
@@ -199,36 +252,124 @@ class DeploymentR90FileTransferBudgetReplayTest {
         boolean complete = reader.approvalEvidenceBlock().isEmpty();
         if (complete) {
             assertEquals(0, header.path("pendingRequired").size());
-            assertMemberIdentity(frame, headerEnd + 1, header.path("ranges"), member);
+            assertCompleteSource(encode(template, messages, cap), snapshot, expected);
         }
         assertTrue(sent <= cap);
         return new Replay(sent, header.path("pendingRequired").size(), complete);
     }
 
-    private static void assertMemberIdentity(String frame, int position, JsonNode ranges, JsonNode member) {
-        var pieces = new java.util.TreeMap<Integer, String>();
-        for (var range : ranges) {
+    private static JsonNode assertCompleteSource(byte[] wire, String snapshot, Map<String, String> expected) throws Exception {
+        String frame = retainedFrame(wire);
+        int headerEnd = frame.indexOf('\n', FRAME.length());
+        var header = JSON.readTree(frame.substring(FRAME.length(), headerEnd));
+        assertEquals(snapshot, header.path("snapshotSha256").asText());
+        var pieces = new LinkedHashMap<String, java.util.TreeMap<Integer, String>>();
+        int position = headerEnd + 1;
+        for (var range : header.path("ranges")) {
             int offset = range.path("offset").asInt(), length = range.path("next").asInt() - offset;
-            if (member.path("sourcePointer").equals(range.path("pointer")))
-                assertNull(pieces.put(offset, frame.substring(position, position + length)));
+            String pointer = range.path("pointer").asText();
+            assertTrue(expected.containsKey(pointer), pointer);
+            String text = frame.substring(position, position + length);
+            assertEquals(expected.get(pointer).substring(offset, offset + length), text, pointer);
+            assertNull(pieces.computeIfAbsent(pointer, ignored -> new java.util.TreeMap<>()).put(offset, text));
             position += length;
         }
         assertEquals(frame.length(), position);
-        var assembled = new StringBuilder();
-        for (var piece : pieces.entrySet()) {
-            assertEquals(assembled.length(), piece.getKey());
-            assembled.append(piece.getValue());
+        for (var source : expected.entrySet()) {
+            var assembled = new StringBuilder();
+            for (var piece : pieces.getOrDefault(source.getKey(), new java.util.TreeMap<>()).entrySet()) {
+                assertEquals(assembled.length(), piece.getKey(), source.getKey());
+                assembled.append(piece.getValue());
+            }
+            assertEquals(source.getValue(), assembled.toString(), source.getKey());
+            assertEquals(DeploymentEvidencePages.sha256(source.getValue()), DeploymentEvidencePages.sha256(assembled.toString()), source.getKey());
         }
-        assertEquals(member.path("characters").asInt(), assembled.length());
-        assertEquals(member.path("sha256").asText(), DeploymentEvidencePages.sha256(assembled.toString()));
+        return header;
+    }
+
+    private static String retainedFrame(byte[] wire) throws Exception {
+        for (var message : JSON.readTree(wire).path("input")) {
+            String text = message.at("/content/0/text").asText();
+            if (text.startsWith(FRAME)) return text;
+        }
+        throw new AssertionError("Native request has no current source frame");
+    }
+
+    private static int utf8(List<AiMessage> messages) {
+        return messages.stream().mapToInt(message -> message.text().getBytes(StandardCharsets.UTF_8).length).sum();
+    }
+
+    private static void assertNoHostGrantForIncompleteOrRejectedEvidence(MirroredInstallerTestFixture fixture,
+            DeploymentNativeHelperPackageImpactTest.Assisted assisted, AssetLendingBuildReviewFixture.Captured command,
+            Map<String, Object> current, Map<String, String> expected) throws Exception {
+        for (String failure : List.of("INCOMPLETE", "AGED_OUT", "SNAPSHOT", "POINTER")) {
+            var sent = new ArrayList<byte[]>();
+            var context = reviewContext(fixture, assisted.context, failure, sent);
+            var denied = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approveWithEvidence(
+                context, assisted.host, command.intent(), command.request(), fixture.task, fixture.model.configurationRevision,
+                "AUTOMATIC", false, (action, request, task) -> current), failure);
+            assertTrue(denied.problem().eventCode().contains("REVIEW"), denied.problem().toString());
+            assertEquals(failure.equals("INCOMPLETE") ? 1 : 2, sent.size(), failure);
+            assertEquals(0, assisted.hosts.get(), failure);
+            assertTrue(assisted.grants.isEmpty(), failure);
+            if (failure.equals("AGED_OUT")) {
+                String firstFrame = retainedFrame(sent.getFirst());
+                int end = firstFrame.indexOf('\n', FRAME.length());
+                String snapshot = JSON.readTree(firstFrame.substring(FRAME.length(), end)).path("snapshotSha256").asText();
+                assertCompleteSource(sent.getFirst(), snapshot, expected);
+                String lastFrame = retainedFrame(sent.getLast());
+                int lastEnd = lastFrame.indexOf('\n', FRAME.length());
+                assertFalse(JSON.readTree(lastFrame.substring(FRAME.length(), lastEnd)).path("pendingRequired").isEmpty());
+            }
+            System.out.printf("R99_FILE_TRANSFER_HOST_BLOCK case=%s sent=%d firstWire=%d lastWire=%d event=%s grants=%d%n",
+                failure, sent.size(), sent.getFirst().length, sent.getLast().length, denied.problem().eventCode(), assisted.hosts.get());
+        }
+    }
+
+    private static ModContext reviewContext(MirroredInstallerTestFixture fixture, ModContext original,
+                                            String failure, List<byte[]> sent) {
+        var loader = DeploymentR90FileTransferBudgetReplayTest.class.getClassLoader();
+        var service = Proxy.newProxyInstance(loader, new Class<?>[]{AiService.class}, (proxy, method, args) -> {
+            if (method.getName().equals("call")) {
+                var request = (AiRequest) args[0];
+                int cap = failure.equals("INCOMPLETE") || failure.equals("AGED_OUT") && !sent.isEmpty() ? 194_756 : R97_FIRST_CAP;
+                byte[] encoded;
+                try {
+                    encoded = encode(request, request.messages(), cap);
+                } catch (ModelRequestBudgetException exceeded) {
+                    throw new ApiException(new Problem(ProblemCode.INVALID_INPUT, "AI_REQUEST_BUDGET", "Controlled native encoder bound",
+                        Map.of("maximumRequestBytes", Integer.toString(cap), "encodedRequestBytes", Integer.toString(exceeded.encodedBytes())), Optional.empty()));
+                }
+                var manifest = JSON.readTree(request.messages().getLast().text()).path("buildReviewEvidence");
+                String snapshot = manifest.path("snapshotSha256").asText();
+                AiToolCall call;
+                if (failure.equals("COMPLETE") || failure.equals("INCOMPLETE") || !sent.isEmpty()) call = approve();
+                else call = new AiToolCall("controlled-" + failure, "evidence", JSON.writeValueAsString(Map.of(
+                    "snapshotSha256", failure.equals("SNAPSHOT") ? "0".repeat(64) : snapshot,
+                    "pointer", failure.equals("POINTER") ? HISTORY + "/missing" : HISTORY, "offset", 0, "limit", 100)));
+                sent.add(encoded);
+                fixture.model.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(responses(List.of(call))), Optional.empty()));
+            }
+            try { return method.invoke(original.ai(), args); }
+            catch (InvocationTargetException rejected) { throw rejected.getCause(); }
+        });
+        return (ModContext) Proxy.newProxyInstance(loader, new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+            if (method.getName().equals("ai")) return service;
+            try { return method.invoke(original, args); }
+            catch (InvocationTargetException rejected) { throw rejected.getCause(); }
+        });
     }
 
     private static int wire(AiRequest template, List<AiMessage> messages, int cap) throws Exception {
+        return encode(template, messages, cap).length;
+    }
+
+    private static byte[] encode(AiRequest template, List<AiMessage> messages, int cap) throws Exception {
         var request = new AiRequest(template.purpose(), messages, template.maxOutputTokens(), template.timeout(),
             template.jsonObjectResponse(), template.tools(), cap, template.requiredToolName(), template.generationRecoveryAttempts(),
             Optional.of("gpt-6-luna"), Optional.of(AiReasoningMode.HIGH));
         return ModelProtocolCodec.forProtocol(ModelProtocol.OPENAI_RESPONSES)
-            .encode("gpt-6-luna", request, OUTPUT_RESERVE, ModelReasoningLevel.HIGH, Map.of()).length;
+            .encode("gpt-6-luna", request, OUTPUT_RESERVE, ModelReasoningLevel.HIGH, Map.of());
     }
 
     private static AiResponse responses(List<AiToolCall> calls) {
@@ -242,6 +383,11 @@ class DeploymentR90FileTransferBudgetReplayTest {
     private static AiToolCall deny() {
         return new AiToolCall("offline-denial", "submit_result",
             "{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Offline test decision\"}");
+    }
+
+    private static AiToolCall approve() {
+        return new AiToolCall("offline-approval", "submit_result",
+            "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled independent verdict\"}");
     }
 
     private record Cursor(String pointer, int offset, int limit) { }

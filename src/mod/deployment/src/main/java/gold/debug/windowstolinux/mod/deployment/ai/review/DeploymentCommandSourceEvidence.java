@@ -96,6 +96,7 @@ public final class DeploymentCommandSourceEvidence {
     private static final String BUILD_ENTRY_PREFETCH = "/standardBuildEntry/buildEntrySource/cargoPrefetch";
     private static final String BUILD_RUNTIME_SELECTION = "/" + BUILD_PROJECTION + "/runtimeSelection";
     private static final String BUILD_ARCHIVE_MEMBERS = "/" + BUILD_PROJECTION + "/projectArchive/members/";
+    private static final String BUILD_ARCHIVE_HISTORY = "/currentCommandEvidence/sourceArchiveObservations";
     private static final String ARCHIVE_SOURCE_FACTS = "/currentCommandEvidence/currentBuildArchiveSource";
     private static final Pattern ORIGINAL_BUILD_MEMBER =
         Pattern.compile("/currentCommandEvidence/currentBuildArchiveSource/members/(0|[1-9][0-9]*)/text");
@@ -951,16 +952,26 @@ public final class DeploymentCommandSourceEvidence {
         if (packed) {
             var transport = (ObjectNode) projected.path("mirrorTransport");
             transport.set("runtimeSource", pagedSource(MIRROR_RUNTIME, runtime, buildRuntimeLocations(wrapper.original())));
-            projectBuildContext(projected, manifest);
+            projectBuildContext(projected, manifest, sources);
             projectBuildEntry(projected, sources, BUILD_ENTRY_PREFETCH);
             requiredRanges.putAll(selectedRanges);
-            if (cargo) {
+            if (go) {
+                var complete = manifest.putArray("requiredBuildSources");
+                for (String pointer : List.of(MIRROR_RUNTIME, BUILD_SHELL, BUILD_POLICY)) {
+                    requireWholeSource(sources, initialSourceRanges, requiredRanges, pointer);
+                    complete.add(pointer);
+                }
+                if (sources.containsKey(BUILD_ARCHIVE_HISTORY)) {
+                    requireWholeSource(sources, initialSourceRanges, requiredRanges, BUILD_ARCHIVE_HISTORY);
+                    complete.add(BUILD_ARCHIVE_HISTORY);
+                }
+            } else if (cargo) {
                 var policy = new TreeMap<>(Map.of(0, wrapper.policy().length()));
                 requiredRanges.put(BUILD_POLICY, policy);
                 initialSourceRanges.put(BUILD_POLICY, policy);
                 manifest.putArray("requiredBuildSources").add(BUILD_POLICY);
             }
-            describeBuildBootstrapLiteral(manifest, runtime, shell, requiredRanges.get(MIRROR_RUNTIME));
+            if (!go) describeBuildBootstrapLiteral(manifest, runtime, shell, requiredRanges.get(MIRROR_RUNTIME));
             selectedRanges.keySet().forEach(pointer -> initialSourceRanges.put(pointer, requiredRanges.get(pointer)));
             String view = selection.toString();
             sources.put(BUILD_RUNTIME_SELECTION, view);
@@ -1032,7 +1043,7 @@ public final class DeploymentCommandSourceEvidence {
         boolean lockCaptured = java.util.stream.StreamSupport.stream(manifest.path("projectArchive").path("members").spliterator(), false)
             .anyMatch(member -> prefetch.lockMember().equals(member.path("path").asText()));
         if (!lockCaptured) throw new IOException("Cargo lock evidence is missing from the project archive");
-        projectBuildContext(projected, manifest);
+        projectBuildContext(projected, manifest, sources);
         var selection = new StringBuilder();
         var selected = manifest.putArray("selectedRuntimeRanges");
         var viewParts = new ArrayList<ViewPart>();
@@ -1096,7 +1107,7 @@ public final class DeploymentCommandSourceEvidence {
     }
 
     /** Keep the exact selected archive inline and make the duplicate archive history available via the original snapshot. */
-    private static void projectBuildContext(ObjectNode projected, ObjectNode manifest) throws IOException {
+    private static void projectBuildContext(ObjectNode projected, ObjectNode manifest, Map<String, String> sources) throws IOException {
         if (!(projected.path("currentCommandEvidence") instanceof ObjectNode evidence)) return;
         var history = evidence.path("sourceArchiveObservations");
         var rows = history.path("archives");
@@ -1105,8 +1116,9 @@ public final class DeploymentCommandSourceEvidence {
         int matches = 0;
         for (var row : rows) if (row.equals(selected)) matches++;
         if (matches != 1) return;
-        String pointer = "/currentCommandEvidence/sourceArchiveObservations";
-        var description = pagedSource(pointer, JSON.writeValueAsString(history), List.of());
+        String source = JSON.writeValueAsString(history);
+        sources.put(BUILD_ARCHIVE_HISTORY, source);
+        var description = pagedSource(BUILD_ARCHIVE_HISTORY, source, List.of());
         description.put("selectedArchivePointer", "/currentCommandEvidence/currentBuildArchive/archive");
         manifest.set("sourceArchiveHistory", description);
         evidence.remove("sourceArchiveObservations");
