@@ -4548,6 +4548,91 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     @Test
+    void phpPreparationRequiresTheWholeActualBootstrapShellWithinTheOriginalBudget() throws Exception {
+        int ceiling = 604365;
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.APT_UBUNTU, DownloadPoint.PHP_METADATA,
+                 DownloadPoint.PHP_DISTRIBUTION, DownloadPoint.GNU_MAKE_SOURCE);
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = diagnosedPreparation(fixture, "PHP", "8.3")) {
+            var action = intent("prepare", fixture, command);
+            var facts = new LinkedHashMap<String, Object>(new DeploymentFixedCommandProtocol(fixture.context)
+                .inspect(action, command, fixture.layout, fixture.task));
+            facts.put("currentCommandEvidence", assisted.scope.effectFacts(action, fixture.task));
+            var model = new DeploymentAiJson(wireBudgetContext(assisted.context, Map.of(), 28986, () -> ceiling));
+            reply(fixture, verdict("php-whole-shell", "APPROVE"));
+            assertEquals("APPROVE", model.askCommand("Inspect the exact PHP preparation", facts,
+                fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed,
+                action, command).path("decision").asText());
+            var request = fixture.model.requests.getFirst();
+            byte[] encoded = wireWithR24FactsSize(request, 28986, ceiling, Map.of());
+            var projected = JSON.readTree(request.messages().getLast().text());
+            var manifest = projected.path(PHASE);
+            var shell = manifest.path("mirrorBootstrapShell");
+            String originalShell = r24Shell(fixture);
+            assertIdentity(shell, originalShell);
+            assertWholeCurrentSource(request, manifest, "selectedPreparationRanges", "preparationSelection",
+                shell.path("sourcePointer").asText(), originalShell);
+
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576),
+                action, command, fixture.layout).orElseThrow();
+            var reader = evidence.reader(16);
+            var messages = new ArrayList<>(evidence.messages());
+            reader.offerInitialSource(messages);
+            int full = wire(copy(request, messages, 1048576), 1048576, Map.of()).length;
+            int fixed = wire(copy(request, evidence.messages(), 1048576), 1048576, Map.of()).length;
+            assertTrue(reader.repackBeforeSend(messages, exactBudgetProblem(full, fixed + 500)));
+            reader.read(mockResponses(verdict("php-omitted-shell", "APPROVE")));
+            assertEquals(Optional.of("REQUIRED_SOURCE_MISSING"), reader.approvalEvidenceBlock());
+            String pointer = shell.path("sourcePointer").asText();
+            String snapshot = JSON.readTree(evidence.messages().getLast().text()).at("/" + PHASE + "/snapshotSha256").asText();
+            var reread = mockResponses(read("php-reread-actual-shell", snapshot, pointer, 0, 8000));
+            var page = reader.read(reread).getFirst();
+            assertFalse(page.error());
+            var returned = pagePayload(page.text()).path("value");
+            assertPageRanges(originalShell, returned);
+            assertTrue(returned.has("text") || !returned.path("newRanges").isEmpty());
+            assertEquals(0, returned.path("offset").asInt());
+            assertEquals(8000, returned.path("next").asInt());
+            assertEquals(0, assisted.hosts.get());
+            System.out.printf("R96_PHP_RECONSTRUCTION encoded=%d cap=%d shellSha=%s%n", encoded.length, ceiling,
+                shell.path("sha256").asText());
+        }
+    }
+
+    private static void assertWholeCurrentSource(AiRequest request, JsonNode manifest, String selectedName,
+            String selectionName, String pointer, String expected) throws Exception {
+        char[] restored = new char[expected.length()];
+        var descriptor = manifest.path(selectionName);
+        String sourcePointer = descriptor.path("sourcePointer").asText();
+        String selection = request.messages().stream().map(AiMessage::text)
+            .filter(text -> text.startsWith("WTL-TOOLCHAIN-REVIEW-SOURCE-1\n")
+                && text.substring(0, descriptor.path("headerCharacters").asInt()).contains(sourcePointer))
+            .findFirst().orElseThrow().substring(descriptor.path("headerCharacters").asInt());
+        for (var range : manifest.path(selectedName)) {
+            if (!pointer.equals(range.path("sourcePointer").asText())) continue;
+            int offset = range.path("offset").asInt(), next = range.path("next").asInt();
+            int start = range.path("startCharacter").asInt();
+            selection.getChars(start, start + next - offset, restored, offset);
+        }
+        for (var message : request.messages()) {
+            String text = message.text();
+            if (!nodeInitialSupplement(text)) continue;
+            int headerEnd = text.indexOf('\n', text.indexOf('\n') + 1);
+            var header = JSON.readTree(text.substring(text.indexOf('\n') + 1, headerEnd));
+            assertEquals(manifest.path("snapshotSha256"), header.path("snapshotSha256"));
+            int position = headerEnd + 1;
+            for (var range : header.path("ranges")) {
+                int offset = range.path("offset").asInt(), next = range.path("next").asInt();
+                if (pointer.equals(range.path("pointer").asText())) text.getChars(position, position + next - offset, restored, offset);
+                position += next - offset;
+            }
+            assertEquals(text.length(), position);
+        }
+        assertArrayEquals(expected.getBytes(StandardCharsets.UTF_8), new String(restored).getBytes(StandardCharsets.UTF_8));
+        assertEquals(DeploymentEvidencePages.sha256(expected), DeploymentEvidencePages.sha256(new String(restored)));
+    }
+
+    @Test
     void javaPreparationSuppliesTheOriginalMirrorPolicyBeforeEvidenceReads() throws Exception {
         int maximum = 1_048_576;
         try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.JAVA_METADATA, DownloadPoint.JAVA_JDK);
@@ -4690,6 +4775,14 @@ class DeploymentToolchainReviewEvidenceTest {
             assertFalse(pages.getFirst().error());
             assertEquals(source.substring(offset, next), pagePayload(pages.getFirst().text()).at("/value/text").asText());
             reader.continueReview(messages, reply, pages);
+            String shellPointer = manifest.at("/mirrorBootstrapShell/sourcePointer").asText();
+            String shellSource = sources.get(shellPointer);
+            var shellReads = new ArrayList<AiToolCall>();
+            for (int start = 0; start < shellSource.length(); start += 8000)
+                shellReads.add(read("ruby-actual-shell-" + start, snapshot, shellPointer, start,
+                    Math.min(8000, shellSource.length() - start)));
+            var shellReply = mockResponses(shellReads.toArray(AiToolCall[]::new));
+            reader.continueReview(messages, shellReply, reader.read(shellReply));
             byte[] retained = wire(copy(initial, messages, maximum), maximum, Map.of());
             assertTrue(replayRetainedRanges(retained, snapshot, sources).isPresent());
             reader.read(response(Optional.empty(), verdict("ruby-complete-approval", "APPROVE")));
@@ -5266,10 +5359,10 @@ class DeploymentToolchainReviewEvidenceTest {
         return new CommandRequest(wrapped, new byte[0], Duration.ofSeconds(seconds), 65536);
     }
 
-    @Test
-    void r58NativeAptFirstRequestProvidesExactRequiredEvidenceAndFailsClosedWhenRepacked() throws Exception {
+    @ParameterizedTest
+    @ValueSource(ints = {987753, 684523})
+    void r58NativeAptFirstRequestProvidesExactRequiredEvidenceAndFailsClosedWhenRepacked(int historicalLimit) throws Exception {
         String profile = "NATIVE_BUILD_APT_3";
-        int historicalLimit = 987753;
         int historicalFactsCharacters = 42064;
         try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.values());
              var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
@@ -5298,7 +5391,7 @@ class DeploymentToolchainReviewEvidenceTest {
             var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(facts, 1048576), action,
                 command, fixture.layout).orElseThrow();
             var exact = new LinkedHashMap<String, String>();
-            for (String name : List.of("dependencyWorker", "dependencySystemShell", "mirrorRuntime")) {
+            for (String name : List.of("dependencyWorker", "dependencySystemShell", "mirrorRuntime", "mirrorBootstrapShell")) {
                 var descriptor = manifest.path(name);
                 String source = collect(evidence, descriptor, PHASE);
                 assertIdentity(descriptor, source);
@@ -5310,6 +5403,11 @@ class DeploymentToolchainReviewEvidenceTest {
                 projection.at("/toolchainDependencies/nativeTransaction/requestedPackages/APT"));
             byte[] original = wireWithR24FactsSize(first, historicalFactsCharacters, historicalLimit, Map.of());
             var visible = replayRetainedRanges(original, snapshot, exact).orElseThrow();
+            String actualShell = manifest.at("/mirrorBootstrapShell/sourcePointer").asText();
+            assertEquals(r24Shell(fixture), exact.get(actualShell));
+            assertEquals(Integer.valueOf(exact.get(actualShell).length()), visible.get(actualShell).get(0));
+            assertNotEquals(exact.get(actualShell), exact.get(manifest.at("/dependencySystemShell/sourcePointer").asText()));
+            assertWholeCurrentSource(first, manifest, "selectedAptRanges", "dependencyAptSelection", actualShell, r24Shell(fixture));
             var required = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
             for (var range : manifest.path("requiredAptRanges"))
                 addR24Range(required, range.path("pointer").asText(), range.path("offset").asInt(), range.path("next").asInt());

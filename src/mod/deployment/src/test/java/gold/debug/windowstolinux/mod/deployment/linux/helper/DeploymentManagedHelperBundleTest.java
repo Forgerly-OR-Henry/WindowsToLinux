@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.linux.helper;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -93,10 +94,14 @@ class DeploymentManagedHelperBundleTest {
 
     @Test
     void assemblesTheAllowlistedProtocolByteForByte() throws Exception {
-        byte[] bytes = DeploymentManagedHelperBundle.renderScript().getBytes(StandardCharsets.UTF_8);
+        byte[] bytes = DeploymentManagedHelperBundle.assemble();
         String sha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        byte[] entry = DeploymentManagedHelperBundle.renderBuildEntry().getBytes(StandardCharsets.UTF_8);
+        System.out.printf("R96_HELPER_IDENTITY helperBytes=%d helperSha=%s entryBytes=%d entrySha=%s%n", bytes.length,
+            sha256, entry.length, HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(entry)));
 
         assertEquals(DeploymentManagedHelperBundle.EXPECTED_SHA256, sha256);
+        assertArrayEquals(bytes, DeploymentManagedHelperBundle.renderScript().getBytes(StandardCharsets.UTF_8));
         assertFalse(DeploymentManagedHelperBundle.renderScript().contains("# @compat:"));
         assertTrue(DeploymentManagedHelperBundle.renderScript().startsWith("#!/bin/bash -p\n"));
         assertTrue(DeploymentManagedHelperBundle.renderScript().endsWith("esac\n"));

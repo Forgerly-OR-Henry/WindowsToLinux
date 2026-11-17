@@ -146,7 +146,11 @@ public final class DeploymentCommandEvidence {
                     DeploymentCommandStaticGate.requireFixedAllowed(phases.build());
                     facts.put("cargoBuildPrefetch", DeploymentManagedHelperBundle.cargoBuildPrefetchFacts(layout));
                     facts.put("mirrorInputTask", prefetch.task().toString());
-                    if (!prefetch.policy().isEmpty()) facts.put("mirrorTransport", DeploymentMirrorTasks.reviewMaterial(prefetch.policy()));
+                    var transport = new LinkedHashMap<String, Object>();
+                    if (!prefetch.policy().isEmpty()) transport.putAll(DeploymentMirrorTasks.reviewMaterial(prefetch.policy()));
+                    transport.put("runtimeSource", prefetch.runtime());
+                    transport.put("runtimeSha256", gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.cargoRuntimeSha256());
+                    facts.put("mirrorTransport", Collections.unmodifiableMap(transport));
                 } else if (!executable.isBlank()) DeploymentCommandStaticGate.requireFixedAllowed(executable);
                 if (operation.equals("deployment.build.run.v1"))
                     gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem.java.MavenBuildWriter.bootstrapEvidence(executable)
@@ -329,7 +333,7 @@ public final class DeploymentCommandEvidence {
                 throw new IllegalArgumentException("Original mirror snapshot missing");
             result.put("mirrorPolicy", Map.of("task", task.id().toString(), "catalogVersion", root.path("catalogVersion").asText(),
                 "country", root.path("country").asText(), "meaning", "Frozen task sources. Complete executable bootstrap and original helper integrity guard remain subject to review; arbitrary project network scripts and Git are not rewritten."));
-            if (preparation.isPresent() || result.containsKey("mirrorInputTask"))
+            if ((preparation.isPresent() || result.containsKey("mirrorInputTask")) && !result.containsKey("cargoBuildPrefetch"))
                 result.put("mirrorTransport", gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.reviewMaterial(mirrorPolicy, result.get("completeExecutableInput")));
         }
         if (result.get("publicationSnapshot") instanceof Map<?, ?> snapshot) {

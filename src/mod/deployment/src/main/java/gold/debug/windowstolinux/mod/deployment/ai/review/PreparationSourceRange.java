@@ -432,13 +432,6 @@ record PreparationSourceRange(String section, int offset, int next) {
         return ranges;
     }
 
-    static List<PreparationSourceRange> cargoPrefetchRuntime(String runtime) throws IOException {
-        var ranges = new ArrayList<>(transfer(runtime, "RUST", false, true));
-        ranges.addAll(List.of(python(runtime, "class MirrorTransferLedger:"), python(runtime, "class MirrorRedirect("),
-            python(runtime, "def mirror_transfer("), python(runtime, "def _mirror_transfer(")));
-        return List.copyOf(ranges);
-    }
-
     static List<PreparationSourceRange> goBuildRuntime(String runtime) throws IOException {
         var ranges = new ArrayList<>(List.of(
             python(runtime, "class MirrorPolicy:"),

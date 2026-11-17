@@ -53,7 +53,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "b9676f872245c5b6aa5234bdc1cc56840613815d25bb789fd5f90b4302a71571";
+    public static final String EXPECTED_SHA256 = "de348d40b921bbd641bfe1957a85ad60c9287cdd88429a2b78b4307323ca9fb7";
     private static final String RUBY_SOURCE_SHA256 = "8accc7b83ccfc2bf84396bd3fe3012f0138e4da777700103a373137e92f134b9";
     private static final String GNU_MAKE_SOURCE_SHA256 = "fabf9252d95b17e8a15e0d7e80a826824b02b45f291e14d1ca0fb65b577a44a4";
     private static final String PYTHON_SOURCE_SHA256 = "ac309b1d2fc1549089444886f3503221e45eaaf86e95358409f18ed5634d1e39";
@@ -171,7 +171,7 @@ public final class DeploymentManagedHelperBundle {
                     %s
                     WTL_CARGO_PREFETCH
                     fi
-                    """.formatted(DeploymentMirrorRuntime.runtimeSha256(), worker.stripTrailing()));
+                    """.formatted(DeploymentMirrorRuntime.cargoRuntimeSha256(), worker.stripTrailing()));
             }
             return DeploymentRemoteLayoutTemplate.render(source, layout);
         } catch (IOException failure) {

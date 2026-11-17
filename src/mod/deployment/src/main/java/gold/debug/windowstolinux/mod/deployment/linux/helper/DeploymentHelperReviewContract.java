@@ -11,10 +11,10 @@ public final class DeploymentHelperReviewContract {
     public static final String REVISION = "managed-helper-review.v2";
 
     /** Independently pinned helper source identity. / 独立固定的 helper 源码身份。 */
-    private static final String HELPER_SHA = "b9676f872245c5b6aa5234bdc1cc56840613815d25bb789fd5f90b4302a71571";
+    private static final String HELPER_SHA = "de348d40b921bbd641bfe1957a85ad60c9287cdd88429a2b78b4307323ca9fb7";
 
     /** Independently pinned non-root build entry identity. / 独立固定的非 root 构建入口身份。 */
-    private static final String BUILD_SHA = "d4d4aec9ff09af52e67924370fb69eb19714cd1ef4a1d01930b4aa9d899c6646";
+    private static final String BUILD_SHA = "e46899f9ef01f85117d74d4688bbf7fdce1a2e9451aecc40ff26c80fb88ea305";
 
     /** Exact public dispatch verbs covered by this source-bound contract. / 本源码绑定契约覆盖的精确公开分发动作。 */
     private static final java.util.Set<String> VERBS = java.util.Set.of(

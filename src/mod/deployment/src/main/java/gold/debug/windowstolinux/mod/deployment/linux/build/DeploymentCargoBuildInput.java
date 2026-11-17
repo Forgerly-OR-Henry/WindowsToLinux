@@ -29,7 +29,7 @@ public final class DeploymentCargoBuildInput {
             || !lockMember.matches("(?:[^\\p{Cntrl}/]+/)*Cargo[.]lock")
             || java.util.Arrays.stream(lockMember.split("/")).anyMatch(part -> part.equals(".") || part.equals("..")))
             throw new IllegalArgumentException("Invalid source-bound Cargo.lock");
-        var value = new Prefetch(task, archiveSha256, lockMember, policy, DeploymentMirrorRuntime.runtimeSource());
+        var value = new Prefetch(task, archiveSha256, lockMember, policy, DeploymentMirrorRuntime.cargoRuntimeSource());
         String material = DeploymentMirrorTasks.materialPrefix(task);
         String prefetch;
         try {

@@ -32,12 +32,16 @@ public final class DeploymentMirrorRuntime {
     }
 
     public static String runtimeSha256() {
-        try {
-            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
-                .digest(runtimeSource().getBytes(StandardCharsets.UTF_8)));
-        } catch (java.security.NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException(impossible);
-        }
+        return sha256(runtimeSource());
+    }
+
+    /** Complete runtime executed by Cargo's separate, data-only prefetch phase. */
+    public static String cargoRuntimeSource() {
+        return resource("10-transfer.py") + "\nimport ssl\n" + resource("locked/20-credentials.py");
+    }
+
+    public static String cargoRuntimeSha256() {
+        return sha256(cargoRuntimeSource());
     }
 
     /** Toolchain URL roots and redirect trust come from the Mod catalog, including older tasks. */

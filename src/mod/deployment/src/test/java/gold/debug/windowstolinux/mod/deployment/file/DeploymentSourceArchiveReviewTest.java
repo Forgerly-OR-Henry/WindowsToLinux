@@ -495,6 +495,16 @@ class DeploymentSourceArchiveReviewTest {
             DeploymentSourceMaterial material, DeploymentSourceArchive archive, DeploymentSourceArchiveReview.Evidence captured,
             String header) throws Exception {
         try (var build = LogAnalyzerBuildReviewFixture.render(fixture, material, archive, captured)) {
+            var phases = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentCargoBuildInput
+                .phases(new String(build.request().stdin(), StandardCharsets.UTF_8)).orElseThrow();
+            var prefetch = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentCargoBuildInput.prefetch(phases);
+            assertEquals(DeploymentMirrorRuntime.cargoRuntimeSource(), prefetch.runtime());
+            var commandFacts = JSON.valueToTree(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandEvidence
+                .facts(build.intent(), build.request(), fixture.layout, fixture.context, fixture.task));
+            assertEquals(prefetch.runtime(), commandFacts.at("/mirrorTransport/runtimeSource").asText());
+            assertEquals(digest(prefetch.runtime().getBytes(StandardCharsets.UTF_8)), commandFacts.at("/mirrorTransport/runtimeSha256").asText());
+            assertTrue(commandFacts.at("/cargoBuildPrefetch/prefetchEntrySource").asText()
+                .contains(DeploymentMirrorRuntime.cargoRuntimeSha256()));
             int r90WireLimit = 982_900;
             var nativeReview = nativeReview(fixture, r90WireLimit);
             fixture.model.nativeReply(verdict("APPROVE"));
@@ -525,6 +535,33 @@ class DeploymentSourceArchiveReviewTest {
             int headerWireBytes = JSON.writeValueAsBytes(frame.texts().get(descriptor.path("pointer").asText())).length;
             assertTrue(838_020 - headerWireBytes >= 1_023_588 - r90WireLimit);
             verifyCargoPrefetchRanges(frame, manifest, build.request());
+            var evidence = DeploymentCommandSourceEvidence.project(DeploymentAiJson.facts(build.facts(), REVIEW_CEILING),
+                build.intent(), build.request(), fixture.layout, Optional.of(captured)).orElseThrow();
+            var aliasReader = evidence.reader(8);
+            var messages = new ArrayList<>(evidence.messages());
+            aliasReader.offerInitialSource(messages);
+            var aliasSource = new StringBuilder();
+            String aliasSnapshot = JSON.readTree(evidence.messages().getLast().text()).at("/buildReviewEvidence/snapshotSha256").asText();
+            var calls = new ArrayList<AiToolCall>();
+            for (int offset = 0; offset < prefetch.runtime().length(); offset += 8000)
+                calls.add(evidenceCall("cargo-runtime-alias-" + offset, aliasSnapshot,
+                    "/buildReviewEvidence/runtimeSelection", offset, 8000));
+            assertTrue(calls.size() <= 8);
+            var response = responses(calls);
+            var pages = aliasReader.read(response);
+            for (int index = 0; index < pages.size(); index++) {
+                int offset = index * 8000;
+                assertFalse(pages.get(index).error(), pages.get(index)::text);
+                var parts = pages.get(index).text().split("\n", 3);
+                assertEquals(prefetch.runtime().substring(offset, Math.min(offset + 8000, prefetch.runtime().length())), parts[2]);
+                aliasSource.append(parts[2]);
+            }
+            aliasReader.continueReview(messages, response, pages);
+            assertArrayEquals(prefetch.runtime().getBytes(StandardCharsets.UTF_8), aliasSource.toString().getBytes(StandardCharsets.UTF_8));
+            assertEquals(DeploymentMirrorRuntime.cargoRuntimeSha256(), digest(aliasSource.toString().getBytes(StandardCharsets.UTF_8)));
+            aliasReader.read(responses(verdict("APPROVE")));
+            assertEquals(Optional.of("REQUIRED_SOURCE_MISSING"), aliasReader.approvalEvidenceBlock(),
+                "Raw runtime rereads cannot retain an absent complete archive from an earlier request");
             verifyRenderedBuildBody(input, manifest.path("buildBody"), build);
             assertEquals(392, build.bindingBytes());
             assertEquals("d16b3b4efd86b4c33c5b3018bca667d4cb644712091d51c39f3f8089af4fb7ea", build.bindingSha256());
@@ -584,18 +621,26 @@ class DeploymentSourceArchiveReviewTest {
         });
         sources.put(manifest.at("/stagedMirrorPolicy/sourcePointer").asText(), data.policy());
         var delivered = new LinkedHashMap<String, Integer>();
+        var restored = new LinkedHashMap<String, char[]>();
+        sources.forEach((pointer, source) -> restored.put(pointer, new char[source.length()]));
         for (var range : frame.ranges()) {
             if (!sources.containsKey(range.pointer())) continue;
             assertEquals(sources.get(range.pointer()).substring(range.offset(), range.next()), range.body());
+            range.body().getChars(0, range.body().length(), restored.get(range.pointer()), range.offset());
             delivered.merge(range.pointer(), range.next() - range.offset(), Integer::sum);
         }
         for (var source : sources.entrySet()) {
-            if (source.getKey().equals("/mirrorTransport/runtimeSource")) {
-                assertTrue(delivered.getOrDefault(source.getKey(), 0) > 0);
-            } else {
-                assertEquals(source.getValue().length(), delivered.get(source.getKey()), source.getKey());
-            }
+            assertEquals(source.getValue().length(), delivered.get(source.getKey()), source.getKey());
+            byte[] original = source.getValue().getBytes(StandardCharsets.UTF_8);
+            byte[] current = new String(restored.get(source.getKey())).getBytes(StandardCharsets.UTF_8);
+            assertArrayEquals(original, current, source.getKey());
+            assertEquals(digest(original), digest(current), source.getKey());
         }
+        var runtimeRange = manifest.path("selectedRuntimeRanges").get(0);
+        assertEquals("/mirrorTransport/runtimeSource", runtimeRange.path("sourcePointer").asText());
+        assertEquals(0, runtimeRange.path("offset").asInt());
+        assertEquals(data.runtime().length(), runtimeRange.path("next").asInt());
+        assertEquals(digest(data.runtime().getBytes(StandardCharsets.UTF_8)), DeploymentMirrorRuntime.cargoRuntimeSha256());
     }
 
     private static void verifyRepeatedOriginalBlocks(RetainedSource frame, JsonNode descriptor, String display, String header)
@@ -1004,10 +1049,14 @@ class DeploymentSourceArchiveReviewTest {
     }
 
     private static AiResponse responses(AiToolCall call) {
-        var base = reply(call);
+        return responses(List.of(call));
+    }
+
+    private static AiResponse responses(List<AiToolCall> calls) {
+        var base = reply(calls.getFirst());
         var attempt = new AiGenerationAttempt(UUID.randomUUID(), 1, base.modelId(), "OPENAI_RESPONSES",
             TaskResult.SUCCEEDED, "AI_GENERATION_COMPLETE", "NONE", 0L, base.usage(), 1, 65536);
-        return new AiResponse(base.text(), base.modelId(), base.finishReason(), base.usage(), base.toolCalls(),
+        return new AiResponse(base.text(), base.modelId(), base.finishReason(), base.usage(), calls,
             Optional.of(new AiContinuation(UUID.randomUUID(), 64)), Optional.empty(), Optional.empty(), List.of(attempt));
     }
 

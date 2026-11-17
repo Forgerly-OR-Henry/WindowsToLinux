@@ -377,6 +377,7 @@ public final class DeploymentCommandSourceEvidence {
                 boolean nativeApt = verifiedNativeAptObservation(current, intent, request, layout);
                 projectAptDependency(projected, manifest, messages, snapshot, sourceBodies, initialRanges, requiredRanges,
                     mirror.orElseThrow().policy(), scopedNativeAptDependency(current), nativeApt);
+                requireWholeSource(sourceBodies, initialSourceRanges, requiredRanges, MIRROR_BOOTSTRAP_SHELL);
                 if (nativeApt) {
                     initialSourceRanges.putAll(requiredRanges);
                 } else {
@@ -581,12 +582,23 @@ public final class DeploymentCommandSourceEvidence {
         selectSourceBuildPreparationSource(body, selected, initialRanges, initialSourceRanges, ecosystem,
             (ObjectNode) manifest.path("mirrorBootstrapShell"), MIRROR_BOOTSTRAP_SHELL, shell,
             PreparationSourceRange.sourceBuildPreparationShell(shell, credentials), parts);
+        requireWholeSource(sources, initialSourceRanges, requiredRanges, MIRROR_BOOTSTRAP_SHELL);
         String runtime = sources.get(MIRROR_RUNTIME);
         selectSourceBuildPreparationSource(body, selected, initialRanges, initialSourceRanges, ecosystem,
             (ObjectNode) projected.at(MIRROR_RUNTIME), MIRROR_RUNTIME, runtime,
             PreparationSourceRange.sourceBuildPreparationTransport(runtime, ecosystem, credentials), parts);
         putSelectionFrame(manifest, messages, snapshot, sources, PREPARATION_SELECTION, "preparationSelection", body);
         return SourceSelectionView.exact(body.toString(), parts, sources);
+    }
+
+    private static void requireWholeSource(Map<String, String> sources,
+            Map<String, NavigableMap<Integer, Integer>> initial,
+            Map<String, NavigableMap<Integer, Integer>> required, String pointer) throws IOException {
+        String source = sources.get(pointer);
+        if (source == null || source.isEmpty()) throw new IOException("Required executable source unavailable: " + pointer);
+        var range = new TreeMap<>(Map.of(0, source.length()));
+        initial.put(pointer, range);
+        required.put(pointer, range);
     }
 
     private static void recordRequiredPreparation(ObjectNode manifest,
@@ -880,7 +892,7 @@ public final class DeploymentCommandSourceEvidence {
             return Optional.of(cargoBuild(original, current, input, cargoPhases.orElseThrow(), intent, request, layout, archive));
         var wrapper = DeploymentMirrorTasks.buildInput(input)
             .orElseThrow(() -> new IOException("Original mirrored build input unavailable"));
-        verifyBuild(current, input, wrapper.task(), intent, request);
+        verifyBuild(current, input, wrapper.task(), DeploymentMirrorRuntime.runtimeSource(), intent, request);
         var projected = current.deepCopy();
         String snapshot = sha256(original);
         var manifest = projected.putObject(BUILD_PROJECTION).put("snapshotSha256", snapshot);
@@ -968,7 +980,7 @@ public final class DeploymentCommandSourceEvidence {
             DeploymentCargoBuildInput.Phases phases, ActionIntent intent, CommandRequest request, DeploymentRemoteLayout layout,
             Optional<DeploymentSourceArchiveReview.Evidence> archive) throws IOException {
         var prefetch = DeploymentCargoBuildInput.prefetch(phases);
-        verifyBuild(current, input, prefetch.task(), intent, request);
+        verifyBuild(current, input, prefetch.task(), prefetch.runtime(), intent, request);
         var boundArchive = current.at("/currentCommandEvidence/currentBuildArchive/archive");
         if (!prefetch.archiveSha256().equals(requiredText(boundArchive, "archiveSha256"))
                 || (!prefetch.policy().isEmpty()
@@ -1035,7 +1047,8 @@ public final class DeploymentCommandSourceEvidence {
         projectBuildEntry(projected, sources, BUILD_CARGO_WORKER + "prefetchEntrySource");
         if (!prefetch.policy().isEmpty()) required.put(BUILD_POLICY, new TreeMap<>(Map.of(0, prefetch.policy().length())));
         appendSelection(selection, selected, required, MIRROR_RUNTIME, prefetch.runtime(),
-            PreparationSourceRange.cargoPrefetchRuntime(prefetch.runtime()), Optional.of(viewParts));
+            List.of(new PreparationSourceRange("cargoPrefetchRuntime", 0, prefetch.runtime().length())), Optional.of(viewParts));
+        requireWholeSource(sources, initial, required, MIRROR_RUNTIME);
         required.forEach((pointer, range) -> {
             if (!digests.containsKey(pointer)) initial.putIfAbsent(pointer, range);
         });
@@ -1225,14 +1238,15 @@ public final class DeploymentCommandSourceEvidence {
         return source;
     }
 
-    private static void verifyBuild(ObjectNode current, String input, UUID task,
+    private static void verifyBuild(ObjectNode current, String input, UUID task, String runtime,
                                     ActionIntent intent, CommandRequest request) throws IOException {
         byte[] actual = request.stdin();
         try {
             if (current.has(BUILD_PROJECTION) || !BUILD.equals(requiredText(current, "operation"))
                 || !intent.exactAction().equals(requiredText(current, "exactAction"))
                 || !task.toString().equals(requiredText(current, "mirrorInputTask"))
-                || !DeploymentMirrorRuntime.runtimeSource().equals(current.at(MIRROR_RUNTIME).textValue())
+                || !runtime.equals(current.at(MIRROR_RUNTIME).textValue())
+                || !sha256(runtime).equals(current.at("/mirrorTransport/runtimeSha256").asText())
                 || !Arrays.equals(actual, input.getBytes(StandardCharsets.UTF_8)))
                 throw new IOException("Original mirrored build evidence changed before projection");
         } finally {
@@ -1705,10 +1719,22 @@ public final class DeploymentCommandSourceEvidence {
             if (bound == 0) return nativeFrameBudget(messages);
             int remaining = bound - NATIVE_TOOL_ENVELOPE_BYTES;
             for (var message : messages) remaining -= quotedBytes(message);
+            if (isolatedSourcePreparationReview()) {
+                var mandatory = initialSource(Integer.MAX_VALUE, requiredRanges);
+                if (mandatory.isPresent()) remaining = Math.max(remaining, quotedBytes(mandatory.orElseThrow().message()));
+                remaining = Math.min(remaining, nativeFrameBudget(messages));
+            }
             return remaining;
         }
 
         private Optional<RetainedFrame> fittedInitialSource(int available, boolean offerBlocks) throws IOException {
+            if (isolatedSourcePreparationReview()) {
+                var mandatory = initialSource(Integer.MAX_VALUE, requiredRanges);
+                var offered = initialSource(available, initialSourceRanges);
+                if (mandatory.isPresent() && quotedBytes(mandatory.orElseThrow().message()) <= available
+                        && (offered.isEmpty() || unconfirmed(requiredRanges, offered.orElseThrow().visible()))) return mandatory;
+                return offered;
+            }
             if (packedBuildReview()) {
                 if (offerBlocks && !buildArchiveSourceUnavailable()) {
                     var pointer = publishedBuildHeader();
@@ -1771,6 +1797,7 @@ public final class DeploymentCommandSourceEvidence {
             int bodyBudget = available - quotedBytes(RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n");
             if (bodyBudget <= 0) return Optional.empty();
             var body = new StringBuilder();
+            if (isolatedSourcePreparationReview()) bodyBudget = retainHistory(requiredRanges, visible, entries, body, bodyBudget);
             retainHistory(included, visible, entries, body, bodyBudget);
             if (entries.isEmpty()) return Optional.empty();
             if (reconstructRuntimeShell(visible)) header.put("runtimeShellReconstructible", true);
