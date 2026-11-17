@@ -112,8 +112,7 @@ public final class DeploymentEcosystemCapabilityProbe {
               )" || pip_version=
               printf '%s\\n' "$pip_version"
             else printf '\\n'; fi
-            if probe_tool pipenv >/dev/null 2>&1; then printf 'TOOL_PIPENV='; probe_tool_run pipenv --version | /usr/bin/awk '{print $3}'; else printf 'TOOL_PIPENV=\\n'; fi
-            """ + poetryVersionProbe() + """
+            """ + pythonManagerMetadataProbe() + """
             if probe_tool uv >/dev/null 2>&1; then printf 'TOOL_UV='; probe_tool_run uv --version | /usr/bin/awk '{print $2}'; else printf 'TOOL_UV=\\n'; fi
             if probe_tool dotnet >/dev/null 2>&1; then printf 'TOOL_DOTNET='; probe_tool_run dotnet --list-sdks | /usr/bin/awk '{print $1}' | /usr/bin/tail -n 1; else printf 'TOOL_DOTNET=\\n'; fi
             if probe_tool kotlinc >/dev/null 2>&1; then printf 'TOOL_KOTLINC='; probe_tool_run kotlinc -version 2>&1 | /usr/bin/sed -nE 's/.*kotlinc-jvm ([0-9][0-9A-Za-z.+_-]*).*/\\1/p'; else printf 'TOOL_KOTLINC=\\n'; fi
@@ -158,11 +157,109 @@ public final class DeploymentEcosystemCapabilityProbe {
             """;
     }
 
-    static String poetryVersionProbe() {
+    static String pythonManagerMetadataProbe() {
         return """
-            poetry_output="$(probe_tool_run poetry --no-plugins --no-interaction --version </dev/null 2>/dev/null)" || poetry_output=
-            poetry_version="$(printf '%s\\n' "$poetry_output" | /usr/bin/sed -nE 's/^Poetry \\(version ([0-9]+[.][0-9]+[0-9A-Za-z.+_-]*)\\)$/\\1/p')"
-            printf 'TOOL_POETRY=%s\\n' "$poetry_version"
+            python_manager_metadata() {
+              local name="$1" launcher python magic
+              launcher="$(probe_tool "$name")" || return 1
+              launcher="$(/usr/bin/readlink -e -- "$launcher")" || return 1
+              python="$(probe_tool /usr/bin/python3)" || return 1
+              # Inspect launchers as data. A checked native system reader never follows their shebang to execute it.
+              IFS= read -r -N 4 magic <"$python" && [ "$magic" = $'\\177ELF' ] || return 1
+              probe_tool_run "$python" -I -S -B - "$name" "$launcher" <<'WTL_PYTHON_MANAGER_METADATA'
+            from email.parser import BytesHeaderParser
+            from pathlib import Path
+            import os
+            import re
+            import site
+            import stat
+            import sys
+
+            def protected(path, kind):
+                for node in (path, *path.parents):
+                    identity = node.lstat()
+                    expected = kind if node == path else stat.S_ISDIR
+                    if identity.st_uid != 0 or identity.st_mode & 0o022 or not expected(identity.st_mode):
+                        raise ValueError("Unprotected metadata path")
+
+            def read_data(path, limit):
+                protected(path, stat.S_ISREG)
+                with path.open("rb") as source:
+                    data = source.read(limit + 1)
+                if len(data) > limit:
+                    raise ValueError("Metadata exceeds inspection limit")
+                return data
+
+            def uses_system_python(interpreter):
+                expected = Path(sys.executable).resolve(strict=True)
+                for _ in range(8):
+                    if ".." in interpreter.parts:
+                        return False
+                    protected(interpreter.parent, stat.S_ISDIR)
+                    identity = interpreter.lstat()
+                    if identity.st_uid != 0:
+                        return False
+                    if not stat.S_ISLNK(identity.st_mode):
+                        protected(interpreter, stat.S_ISREG)
+                        return interpreter == expected
+                    interpreter = interpreter.parent / os.readlink(interpreter)
+                return False
+
+            def version(name, launcher):
+                entry, module = {"poetry": (b"from poetry.console.application import main", "poetry/console/application.py"),
+                                 "pipenv": (b"from pipenv import cli", "pipenv/__init__.py")}[name]
+                lines = read_data(launcher, 4096).splitlines()
+                if not lines or entry not in lines:
+                    return None
+                header = re.fullmatch(rb"#!(/[A-Za-z0-9_./+-]+/python(?:3(?:[.][0-9]+)?)?)", lines[0])
+                if header is None:
+                    return None
+                interpreter = Path(header[1].decode("ascii"))
+                if not uses_system_python(interpreter):
+                    return None
+                if launcher.parent in (Path("/usr/bin"), Path("/usr/local/bin")) and interpreter.parent == Path("/usr/bin"):
+                    sites = [Path(path) for path in site.getsitepackages()]
+                elif launcher.parent.name == "bin" and interpreter.parent == launcher.parent:
+                    prefix = launcher.parent.parent
+                    config = read_data(prefix / "pyvenv.cfg", 4096).splitlines()
+                    inherited = [line.partition(b"=")[2].strip().lower() for line in config
+                                 if line.partition(b"=")[0].strip().lower() == b"include-system-site-packages"]
+                    if inherited != [b"false"]:
+                        return None
+                    minor = f"python{sys.version_info.major}.{sys.version_info.minor}"
+                    sites = [prefix / "lib" / minor / "site-packages"]
+                else:
+                    return None
+                versions = []
+                for directory in dict.fromkeys(sites):
+                    try:
+                        protected(directory, stat.S_ISDIR)
+                    except FileNotFoundError:
+                        continue
+                    for pattern, member in ((f"{name}-*.dist-info", "METADATA"), (f"{name}-*.egg-info", "PKG-INFO")):
+                        for installation in directory.glob(pattern):
+                            protected(directory / module, stat.S_ISREG)
+                            headers = BytesHeaderParser().parsebytes(read_data(installation / member, 65536))
+                            observed = headers.get_all("Version", [])
+                            if headers.get_all("Name", []) != [name] or len(observed) != 1:
+                                return None
+                            if not isinstance(observed[0], str) or not re.fullmatch(r"[0-9][0-9A-Za-z.+_-]{0,127}", observed[0]):
+                                return None
+                            versions.append(observed[0])
+                return versions[0] if len(versions) == 1 else None
+
+            try:
+                result = version(sys.argv[1], Path(sys.argv[2]))
+                if result is not None:
+                    print(result)
+            except (OSError, ValueError):
+                pass
+            WTL_PYTHON_MANAGER_METADATA
+            }
+            for python_manager in pipenv poetry; do
+              python_manager_version="$(python_manager_metadata "$python_manager" 2>/dev/null)" || python_manager_version=
+              printf 'TOOL_%s=%s\\n' "${python_manager^^}" "$python_manager_version"
+            done
             """;
     }
 

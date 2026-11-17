@@ -309,19 +309,32 @@ class DeploymentPlatformCapabilityParserTest {
     }
 
     @Test
-    void poetryRequiresPluginFreeNoninteractiveSuccessfulVersion() throws Exception {
+    void pythonManagerProbesUseOnlyTheAdmittedNativeMetadataReader(@TempDir Path directory) throws Exception {
         String bash = System.getProperty("managed.test.bash", "/bin/bash");
         org.junit.jupiter.api.Assumptions.assumeTrue(Files.isExecutable(Path.of(bash)));
-        String fixture = """
+        Path python = directory.resolve("python3");
+        String fixture = "fixture_python=" + bashPath(python) + "\n" + """
             set -eu
-            probe_tool_run() {
-              [ "$*" = 'poetry --no-plugins --no-interaction --version' ] || return 91
-              if [ "$scenario" = malformed ]; then printf 'unrelated 2.2.1\\n'; else printf 'Poetry (version 2.2.1)\\n'; fi
-              [ "$scenario" != failed ]
+            probe_tool() {
+              case "$1" in
+                /usr/bin/python3) printf '%s\\n' "$fixture_python" ;;
+                poetry | pipenv) [ "$scenario" != absent ] && printf '/fixture/bin/%s\\n' "$1" ;;
+                *) return 91 ;;
+              esac
             }
-            """ + DeploymentEcosystemCapabilityProbe.poetryVersionProbe();
-        for (String scenario : java.util.List.of("valid", "malformed", "failed")) {
-            assertEquals(scenario.equals("valid") ? "TOOL_POETRY=2.2.1\n" : "TOOL_POETRY=\n",
+            fixture_readlink() { printf '%s\\n' "$3"; }
+            probe_tool_run() {
+              if [ "$1" != "$fixture_python" ]; then printf 'UNEXPECTED_LAUNCHER\\n' >&3; return 91; fi
+              [ "$#" -eq 7 ] && [ "$2 $3 $4 $5" = '-I -S -B -' ] && [ "$7" = "/fixture/bin/$6" ] || return 92
+              local first
+              IFS= read -r first && [ "$first" = 'from email.parser import BytesHeaderParser' ] || return 93
+              case "$6" in pipenv) printf '2026.8.0\\n' ;; poetry) printf '2.4.3\\n' ;; *) return 94 ;; esac
+            }
+            exec 3>&1
+            """ + DeploymentEcosystemCapabilityProbe.pythonManagerMetadataProbe().replace("/usr/bin/readlink", "fixture_readlink");
+        for (String scenario : java.util.List.of("native", "wrapper", "absent")) {
+            Files.writeString(python, scenario.equals("wrapper") ? "#!/bin/sh\n" : "\177ELF");
+            assertEquals(scenario.equals("native") ? "TOOL_PIPENV=2026.8.0\nTOOL_POETRY=2.4.3\n" : "TOOL_PIPENV=\nTOOL_POETRY=\n",
                 runProbeFixture(bash, "scenario=" + scenario + "\n" + fixture), scenario);
         }
     }

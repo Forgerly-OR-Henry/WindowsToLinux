@@ -65,7 +65,14 @@ public final class CargoBuildWriter implements DeploymentBuildWriter {
             test -f ./Cargo.toml
             test -f ./Cargo.lock
             test -f ./rust-toolchain.toml
-            if [ -n "${WTL_MIRROR_POLICY:-}" ]; then
+            if [ -z "${WTL_AGENT_SOURCE:-}" ]; then
+              registry="$mutable/home/wtl-cargo-registry"
+              test -d "$registry/index" && test ! -L "$registry"
+              export CARGO_HOME="$mutable/home/cargo"
+              run cargo build --offline --locked --release \\
+                --config 'source.crates-io.replace-with="wtl-local-registry"' \\
+                --config "source.wtl-local-registry.local-registry='$registry'"
+            elif [ -n "${WTL_MIRROR_POLICY:-}" ]; then
               export CARGO_HOME="$mutable/home/mirror-cargo"
               wtl_dependency RUST_CRATE cargo fetch --locked
               run cargo build --offline --locked --release

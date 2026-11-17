@@ -4506,6 +4506,32 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     @Test
+    void javaPreparationSuppliesTheOriginalMirrorPolicyBeforeEvidenceReads() throws Exception {
+        int maximum = 1_048_576;
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.JAVA_METADATA, DownloadPoint.JAVA_JDK);
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var command = diagnosedPreparation(fixture, "JAVA", "21")) {
+            var action = intent("prepare", fixture, command);
+            var facts = new LinkedHashMap<String, Object>(
+                new DeploymentFixedCommandProtocol(fixture.context).inspect(action, command, fixture.layout, fixture.task));
+            facts.put("currentCommandEvidence", assisted.scope.effectFacts(action, fixture.task));
+            r31DeniedApproval(fixture, assisted, facts, action, command);
+            var initial = fixture.model.requests.getFirst();
+            var retained = initial.messages().stream()
+                .filter(message -> message.text().startsWith("WTL-COMMAND-RETAINED-SOURCE-1\n")).findFirst().orElseThrow();
+            var lines = retained.text().split("\n", 3);
+            var header = JSON.readTree(lines[1]);
+            assertTrue(header.path("pendingRequired").isEmpty());
+            String policy = DeploymentMirrorTasks.policy(fixture.task);
+            assertEquals(policy, lines[2]);
+            int firstWireBytes = wire(initial, maximum, Map.of()).length;
+            assertTrue(firstWireBytes < 152_959, () -> "Java preparation encoded to " + firstWireBytes);
+            System.out.printf("R92_JAVA_PREPARE_FIRST originalPolicyCharacters=%d encoded=%d initialR90RefusalCeiling=152959%n",
+                policy.length(), firstWireBytes);
+        }
+    }
+
+    @Test
     void kotlinPreparationIncludesExactJavaPrerequisiteChecksInTheIndependentRequest() throws Exception {
         int maximum = 1048576;
         try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.KOTLIN_DISTRIBUTION);

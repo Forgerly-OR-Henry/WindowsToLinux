@@ -1,20 +1,25 @@
 # A root-owned controller launches project code only under a temporary identity.
 build_unit_name() { printf 'windowstolinux-build-%s.service' "$1"; }
+cargo_prefetch_unit_name() { printf 'windowstolinux-build-%s-cargo.service' "$1"; }
 build_identity_name() { printf 'wtlb-%s' "$(printf %s "$1" | sha256sum | cut -c1-16)"; }
 prepare_build_identity() {
-    [ "$#" -eq 2 ] || reject build-identity-arguments
+    [ "$#" -eq 2 ] || { [ "$#" -eq 3 ] && [ "$3" = cargo-prefetch ]; } || reject build-identity-arguments
     require_app "$1"
     require_candidate "$1" "$2"
-    local candidate="$(candidate_root "$2")" user uid gid
+    local candidate="$(candidate_root "$2")" user uid gid script=.build-script started=.build-started
+    if [ "${3:-}" = cargo-prefetch ]; then
+        script=.build-prefetch
+        started=.build-prefetch-started
+    fi
     assert_workspace_volume "$candidate"
     user="$(build_identity_name "$2")"
     uid="$(id -u "$user")"
     gid="$(id -g "$user")"
     [ "$uid" -gt 0 ] && [ "$gid" -gt 0 ] || reject build-identity-root
     # A manager restart must not execute this invocation's author script twice.
-    [ ! -e "$candidate/.build-started" ] && [ ! -L "$candidate/.build-started" ] || reject build-already-started
-    (set -C; : > "$candidate/.build-started") || reject build-already-started
-    chmod 400 -- "$candidate/.build-started"
+    [ ! -e "$candidate/$started" ] && [ ! -L "$candidate/$started" ] || reject build-already-started
+    (set -C; : > "$candidate/$started") || reject build-already-started
+    chmod 400 -- "$candidate/$started"
     mount -o remount,rw,nodev,nosuid -- "$candidate/mutable" || reject workspace-remount
     chown -hR "$uid:$gid" -- "$candidate/mutable"
     chmod 700 -- "$candidate/mutable"
@@ -24,15 +29,19 @@ prepare_build_identity() {
         find -P "$candidate/mutable/input-source" -type d -exec chmod 555 -- {} +
         find -P "$candidate/mutable/input-source" -type f -exec chmod 444 -- {} +
     fi
-    chown "$uid:$gid" -- "$candidate/.build-script"
-    chmod 400 -- "$candidate/.build-script"
-    prepare_build_mirror_material "$candidate" "$uid" "$gid"
+    chown "$uid:$gid" -- "$candidate/$script"
+    chmod 400 -- "$candidate/$script"
+    prepare_build_mirror_material "$candidate" "$uid" "$gid" "$script"
 }
 stop_candidate_build() {
-    local app="$1" candidate_id="$2" unit state
+    local app="$1" candidate_id="$2"
     require_app "$app"
     require_candidate "$app" "$candidate_id"
-    unit="$(build_unit_name "$candidate_id")"
+    stop_build_unit "$(cargo_prefetch_unit_name "$candidate_id")"
+    stop_build_unit "$(build_unit_name "$candidate_id")"
+}
+stop_build_unit() {
+    local unit="$1" state
     state="$(systemctl show --value --property LoadState "$unit" 2>/dev/null || true)"
     [ "$state" != not-found ] && [ -n "$state" ] || return 0
     systemctl stop "$unit" || reject build-stop-failed
@@ -62,6 +71,7 @@ run_restricted_build() {
         parse_toolchain_binding tools-v1 "$binding" build
     fi
     local candidate="$(candidate_root "$candidate_id")" mutable unit user status=0
+    local started=$SECONDS phase_header cargo_bytes=0 cargo_unit controller_lock
     mutable="$candidate/mutable"
     unit="$(build_unit_name "$candidate_id")"
     user="$(build_identity_name "$candidate_id")"
@@ -70,8 +80,15 @@ run_restricted_build() {
     [ "$(sha256sum -- "$helper_directory/build-entry" | awk '{print $1}')" = "$build_entry_sha256" ] || reject build-entry-identity
     assert_candidate_for_deployer "$candidate"
     assert_workspace_volume "$candidate"
+    cargo_unit="$(cargo_prefetch_unit_name "$candidate_id")"
+    if [ -e "$candidate/.build-controller-lock" ] || [ -L "$candidate/.build-controller-lock" ]; then
+        assert_root_owned_regular "$candidate/.build-controller-lock"
+    fi
+    exec {controller_lock}>>"$candidate/.build-controller-lock"
+    flock -n "$controller_lock" || reject build-already-running
     [ ! -e "$candidate/.sealed" ] || reject build-already-sealed
     [ "$(systemctl show --value --property LoadState "$unit" 2>/dev/null || true)" != loaded ] || reject build-already-running
+    [ "$(systemctl show --value --property LoadState "$cargo_unit" 2>/dev/null || true)" != loaded ] || reject cargo-prefetch-running
     if [ -e "$candidate/.build-started" ] || [ -L "$candidate/.build-started" ]; then
         assert_root_owned_regular "$candidate/.build-started"
         rm -- "$candidate/.build-started"
@@ -85,6 +102,21 @@ run_restricted_build() {
     chmod 400 -- "$candidate/.build-script"
     trap 'stop_candidate_build "$app" "$candidate_id"; freeze_candidate_build "$app" "$candidate_id"; cleanup_container_builder "$candidate"' EXIT
     trap 'exit 130' HUP INT TERM
+    IFS= read -r phase_header <"$candidate/.build-script" || phase_header=
+    if [[ "$phase_header" == '# WTL_CARGO_PREFETCH_BYTES='* ]]; then
+        [ "$engine" = ordinary-offline ] && [ ! -e "$candidate/.agent-mode" ] || reject cargo-prefetch-engine
+        assert_root_owned_regular "$candidate/.agent-task"
+        cargo_bytes="${phase_header#*=}"
+        [[ "$cargo_bytes" =~ ^[1-9][0-9]{0,5}$ ]] || reject cargo-prefetch-length
+        local offset=$(("${#phase_header}" + 1)) length
+        length="$(stat -c %s -- "$candidate/.build-script")"
+        [ "$((offset + cargo_bytes))" -lt "$length" ] || reject cargo-prefetch-length
+        if [ -e "$candidate/.build-prefetch-started" ] || [ -L "$candidate/.build-prefetch-started" ]; then
+            assert_root_owned_regular "$candidate/.build-prefetch-started"
+            rm -- "$candidate/.build-prefetch-started"
+        fi
+        stage_cargo_build_data "$candidate" "$offset" "$cargo_bytes"
+    fi
     mount -o remount,rw,nodev,nosuid -- "$mutable" || reject workspace-remount
     # No project configuration is read while creating the execution identity.
     if [ "$engine" = ordinary ] || [ "$engine" = ordinary-offline ]; then
@@ -95,13 +127,12 @@ run_restricted_build() {
     fi
     install -d -o root -g root -m 700 -- "$mutable/home" "$mutable/tmp" "$mutable/run"
     local -a properties
-    properties=(--property="User=$user" --property="Group=$user" --property="RuntimeMaxSec=$seconds"
+    properties=(--property="User=$user" --property="Group=$user"
         --property="TimeoutStopSec=5s" --property=KillMode=control-group --property=SendSIGKILL=yes
         --property="MemoryMax=${memory}M" --property=MemorySwapMax=0 --property="TasksMax=$processes"
         --property=ProtectSystem=strict --property=ProtectHome=yes
         --property=ProtectProc=invisible --property=PrivateTmp=no --property=RemoveIPC=yes
         --property="ReadWritePaths=$mutable" --property="BindPaths=$mutable/tmp:/tmp $mutable/tmp:/var/tmp $mutable/tmp:/dev/shm"
-        --property="ExecStartPre=+$helper_path build-identity $app $candidate_id"
         --property="ExecStopPost=+$helper_path build-freeze $app $candidate_id"
         --property="WorkingDirectory=$mutable" --property=UMask=0077)
     if [ -e "$candidate/.agent-mode" ]; then
@@ -115,6 +146,26 @@ run_restricted_build() {
         properties+=(--property=DynamicUser=yes --property=NoNewPrivileges=yes --property=CapabilityBoundingSet= --property=ProcSubset=pid
             --property=RestrictNamespaces=yes --property=RestrictSUIDSGID=yes --property=ProtectControlGroups=yes
             --property=PrivateDevices=yes --property=ProtectKernelTunables=yes --property=ProtectKernelModules=yes --property=ProtectKernelLogs=yes)
+        if [ "$cargo_bytes" -gt 0 ]; then
+            local remaining=$((seconds - (SECONDS - started)))
+            [ "$remaining" -gt 0 ] || reject cargo-prefetch-time
+            # This unit starts only the installed data reader and pinned transport. The offline unit is separate.
+            monitor_build_output "$candidate" "$output" systemd-run --quiet --wait --pipe --collect --unit="$cargo_unit" \
+                "${properties[@]}" --property="RuntimeMaxSec=$remaining" \
+                --property="ExecStartPre=+$helper_path build-identity $app $candidate_id cargo-prefetch" \
+                /usr/bin/env -i PATH=/usr/bin:/bin HOME="$mutable/home" TMPDIR="$mutable/tmp" \
+                /bin/bash "$helper_directory/build-entry" "$candidate" cargo-prefetch "$remaining" || status=$?
+            stop_build_unit "$cargo_unit"
+            if [ "$status" -ne 0 ]; then
+                printf 'CARGO_PREFETCH_FAILED=1\n'
+                exit "$status"
+            fi
+            freeze_candidate_build "$app" "$candidate_id"
+            remaining=$((seconds - (SECONDS - started)))
+            [ "$remaining" -gt 0 ] || reject cargo-prefetch-time
+            seconds="$remaining"
+            mount -o remount,rw,nodev,nosuid -- "$mutable" || reject workspace-remount
+        fi
         if [ "$engine" = ordinary-offline ]; then
             properties+=("${offline_build_properties[@]}")
         fi
@@ -126,6 +177,7 @@ run_restricted_build() {
             --property="ReadOnlyPaths=/sys -/proc/sys -/proc/sysrq-trigger"
             --property="InaccessiblePaths=-/dev/kmsg -/dev/mem -/dev/kmem -/proc/kcore")
     fi
+    properties+=(--property="RuntimeMaxSec=$seconds" --property="ExecStartPre=+$helper_path build-identity $app $candidate_id")
     monitor_build_output "$candidate" "$output" systemd-run --quiet --wait --pipe --collect --unit="$unit" "${properties[@]}" /usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$mutable/home" TMPDIR="$mutable/tmp" XDG_RUNTIME_DIR="$mutable/run" /bin/bash "$helper_directory/build-entry" "$candidate" "$engine" || status=$?
     trap - HUP INT TERM
     stop_candidate_build "$app" "$candidate_id"
@@ -137,6 +189,21 @@ run_restricted_build() {
     fi
     trap - EXIT
     return "$status"
+}
+
+stage_cargo_build_data() {
+    local candidate="$1" offset="$2" bytes="$3" source="$1/.build-script" prefetch="$1/.build-prefetch" remainder="$1/.build-offline" path
+    # Root writes only private candidate files. The payload's first phase is never a shell program.
+    for path in "$prefetch" "$remainder"; do
+        if [ -e "$path" ] || [ -L "$path" ]; then
+            assert_root_owned_regular "$path"
+        fi
+    done
+    /usr/bin/dd if="$source" of="$prefetch" iflag=skip_bytes,count_bytes skip="$offset" count="$bytes" status=none || reject cargo-prefetch-split
+    [ "$(stat -c %s -- "$prefetch")" -eq "$bytes" ] || reject cargo-prefetch-split
+    /usr/bin/tail -c "+$((offset + bytes + 1))" -- "$source" >"$remainder" || reject cargo-prefetch-split
+    chmod 400 -- "$prefetch" "$remainder" || reject cargo-prefetch-split
+    mv -fT -- "$remainder" "$source" || reject cargo-prefetch-split
 }
 
 freeze_candidate_build() {
@@ -153,6 +220,10 @@ freeze_candidate_build() {
     chown root:root -- "$candidate/mutable"
     chmod 700 -- "$candidate/mutable"
     cleanup_build_mirror_material "$candidate"
+    if [ -f "$candidate/.build-prefetch" ]; then
+        chown root:root -- "$candidate/.build-prefetch"
+        chmod 400 -- "$candidate/.build-prefetch"
+    fi
     if [ -f "$candidate/.build-script" ]; then
         chown root:root -- "$candidate/.build-script"
         chmod 400 -- "$candidate/.build-script"

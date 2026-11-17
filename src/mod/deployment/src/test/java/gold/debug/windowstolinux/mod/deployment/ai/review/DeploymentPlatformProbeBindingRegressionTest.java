@@ -55,7 +55,10 @@ class DeploymentPlatformProbeBindingRegressionTest {
         assertEquals("/dev/null", binding.at("/rust/environment/RUSTUP_TOOLCHAIN").asText());
         assertEquals("0", binding.at("/rust/environment/RUSTUP_AUTO_INSTALL").asText());
         assertEquals("-n", binding.at("/composer/interpreterArguments/0").asText());
-        assertEquals("[\"--no-plugins\",\"--no-interaction\",\"--version\"]", binding.at("/poetry/arguments").toString());
+        for (String manager : java.util.List.of("/poetry", "/pipenv")) {
+            assertEquals("/usr/bin/python3", binding.at(manager + "/reader").asText());
+            assertEquals("[\"-I\",\"-S\",\"-B\",\"-\"]", binding.at(manager + "/arguments").toString());
+        }
         var npmArguments = binding.at("/npm/arguments");
         assertEquals("--offline", npmArguments.path(0).asText());
         assertEquals("--no-update-notifier", npmArguments.path(1).asText());
@@ -75,7 +78,7 @@ class DeploymentPlatformProbeBindingRegressionTest {
             original.replace(SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER, SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER),
             original.replace("env -i", "env"), original.replace("cd -- /", "cd -- /tmp"),
             original.replace("--no-plugins", ""), original.replace("-I -S -B", "-I"),
-            original.replace("poetry --no-plugins --no-interaction", "poetry --no-interaction"),
+            original.replace("python_manager_metadata \"$python_manager\"", "probe_tool_run \"$python_manager\" --version"),
             original.replace("--offline ", ""), original.replace("--no-update-notifier ", ""),
             original.replace("--no-new-privs", ""), original.replace("-n -f", "-f"),
             original.replace("GOTOOLCHAIN=local", "GOTOOLCHAIN=auto"), original.replace("RUSTUP_AUTO_INSTALL=0", "RUSTUP_AUTO_INSTALL=1"),

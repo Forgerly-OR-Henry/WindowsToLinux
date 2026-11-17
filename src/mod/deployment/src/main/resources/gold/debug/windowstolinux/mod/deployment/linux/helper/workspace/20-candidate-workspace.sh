@@ -109,13 +109,18 @@ assert_task_candidate() {
 query_task_candidate() {
     [ "$#" -eq 3 ] || reject task-query-arguments
     assert_task_candidate "$@"
-    local candidate unit state
+    local candidate unit state active=no
     candidate="$(candidate_root "$2")"
     unit="$(build_unit_name "$2")"
     state="$(systemctl show --value --property=ActiveState "$unit")" || reject task-build-query
-    case "$state" in active | activating | deactivating | reloading) state=yes ;; inactive | failed | '') state=no ;; *) reject task-build-state ;; esac
+    case "$state" in active | activating | deactivating | reloading) active=yes ;; inactive | failed | '') ;; *) reject task-build-state ;; esac
+    if [ "$active" = no ] && [ -e "$candidate/.build-prefetch" ]; then
+        unit="$(cargo_prefetch_unit_name "$2")"
+        state="$(systemctl show --value --property=ActiveState "$unit")" || reject task-build-query
+        case "$state" in active | activating | deactivating | reloading) active=yes ;; inactive | failed | '') ;; *) reject task-build-state ;; esac
+    fi
     if [ -e "$candidate" ]; then printf 'CANDIDATE_STATE=owned\n'; else printf 'CANDIDATE_STATE=absent\n'; fi
-    printf 'BUILD_ACTIVE=%s\n' "$state"
+    printf 'BUILD_ACTIVE=%s\n' "$active"
 }
 cleanup_task_candidate() {
     [ "$#" -eq 3 ] || reject task-cleanup-arguments

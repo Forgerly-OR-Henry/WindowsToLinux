@@ -439,6 +439,14 @@ public final class DeploymentBuildCommandChannel {
                                                 long seconds, String engine, String buildScript, String toolchainBinding,
                                                 List<List<String>> compatibilityGroups)
         throws ApiException {
+        return build(workspace, limits, seconds, engine, buildScript, toolchainBinding, compatibilityGroups, Optional.empty());
+    }
+
+    /** Cargo stages its bound lock before the ordinary-offline project unit is allowed to start. */
+    public OperationResult<CommandResult> build(DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits,
+                                                long seconds, String engine, String buildScript, String toolchainBinding,
+                                                List<List<String>> compatibilityGroups, Optional<String> cargoLockMember)
+        throws ApiException {
         gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.requireCaptured(task.id());
         Objects.requireNonNull(workspace);
         if (!workspace.layout().equals(layout))
@@ -447,10 +455,18 @@ public final class DeploymentBuildCommandChannel {
         requireEngine(engine);
         if (seconds < 1 || seconds > 7200 || seconds + 15 > budget.remainingSeconds())
             throw new IllegalArgumentException("Invalid remaining build deadline");
-        byte[] input = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.withMaterials(
-            gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.wrapBuild(Objects.requireNonNull(buildScript),
-            gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task), seconds), task.id())
-            .getBytes(StandardCharsets.UTF_8);
+        String policy = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.policy(task);
+        String payload;
+        if (cargoLockMember.isPresent()) {
+            if (!engine.equals("ordinary-offline")) throw new IllegalArgumentException("Cargo prefetch needs an offline build engine");
+            payload = DeploymentCargoBuildInput.render(Objects.requireNonNull(buildScript), workspace.archiveSha256(),
+                cargoLockMember.orElseThrow(), policy, task.id());
+        } else {
+            payload = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.withMaterials(
+                gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime.wrapBuild(Objects.requireNonNull(buildScript),
+                policy, seconds), task.id());
+        }
+        byte[] input = payload.getBytes(StandardCharsets.UTF_8);
         try {
             if (input.length > 1048576)
                 throw new IllegalArgumentException("Fixed build script exceeds helper limit");

@@ -1,7 +1,7 @@
 # Copy only the current reviewed task binding; project code never chooses a root input path.
 prepare_build_mirror_material() {
-    local candidate="$1" uid="$2" gid="$3" marker binding task source destination file path
-    marker="$(sed -n 's/^# WTL_MIRROR_BINDING=//p' "$candidate/.build-script")"
+    local candidate="$1" uid="$2" gid="$3" script="${4:-.build-script}" marker binding task source destination file path
+    marker="$(sed -n 's/^# WTL_MIRROR_BINDING=//p' "$candidate/$script")"
     [ -n "$marker" ] || return 0
     [[ "$marker" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{64}/[0-9a-f]{64}$ ]] || reject mirror-material-binding
     binding="$marker"; task="${binding%%/*}"

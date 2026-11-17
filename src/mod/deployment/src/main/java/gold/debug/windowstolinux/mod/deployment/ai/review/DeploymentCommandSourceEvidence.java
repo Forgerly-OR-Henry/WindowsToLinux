@@ -16,6 +16,7 @@ import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -36,6 +37,7 @@ import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 import gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolSchemas;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchiveReview;
+import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentCargoBuildInput;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
@@ -90,6 +92,7 @@ public final class DeploymentCommandSourceEvidence {
     private static final String BUILD_POLICY = "/" + BUILD_PROJECTION + "/stagedMirrorPolicy";
     private static final String BUILD_SHELL = "/" + BUILD_PROJECTION + "/mirrorBootstrapShell";
     private static final String BUILD_BODY = "/" + BUILD_PROJECTION + "/buildBody";
+    private static final String BUILD_CARGO_WORKER = "/" + BUILD_PROJECTION + "/cargoPrefetchImplementation/";
     private static final String BUILD_RUNTIME_SELECTION = "/" + BUILD_PROJECTION + "/runtimeSelection";
     private static final String BUILD_ARCHIVE_MEMBERS = "/" + BUILD_PROJECTION + "/projectArchive/members/";
     private static final String ARCHIVE_SOURCE_FACTS = "/currentCommandEvidence/currentBuildArchiveSource";
@@ -308,7 +311,7 @@ public final class DeploymentCommandSourceEvidence {
             DeploymentRemoteLayout layout, Optional<DeploymentSourceArchiveReview.Evidence> archive) throws IOException {
         String operation = intent.semantics().orElseThrow().operation();
         if (INSTALLERS.contains(operation)) return Optional.of(installer(original, intent, request, layout));
-        if (BUILD.equals(operation)) return build(original, intent, request, archive);
+        if (BUILD.equals(operation)) return build(original, intent, request, layout, archive);
         if (!OPERATIONS.contains(operation)) return Optional.empty();
         var mirror = DeploymentMirrorTasks.preparation(request.script());
         boolean dependency = DeploymentToolchainDependencies.OPERATION.equals(operation);
@@ -486,7 +489,7 @@ public final class DeploymentCommandSourceEvidence {
                                                 Map<String, NavigableMap<Integer, Integer>> requiredRanges) throws IOException {
         boolean diagnosed = current.has("originalToolchainPreparation");
         String ecosystem = preparationEcosystem(current);
-        if (ecosystem.equals("NODE") || ecosystem.equals("KOTLIN")) {
+        if (ecosystem.equals("NODE") || ecosystem.equals("KOTLIN") || ecosystem.equals("JAVA")) {
             String policy = sources.get(MIRROR_POLICY_SOURCE);
             if (policy == null || policy.isEmpty()) throw new IOException("Original toolchain mirror policy is missing");
             var policyRange = new TreeMap<>(Map.of(0, policy.length()));
@@ -875,13 +878,16 @@ public final class DeploymentCommandSourceEvidence {
     }
 
     private static Optional<DeploymentCommandSourceEvidence> build(String original, ActionIntent intent, CommandRequest request,
-            Optional<DeploymentSourceArchiveReview.Evidence> archive) throws IOException {
+            DeploymentRemoteLayout layout, Optional<DeploymentSourceArchiveReview.Evidence> archive) throws IOException {
         var current = (ObjectNode) JSON.readTree(original);
         if (!current.has("mirrorInputTask")) return Optional.empty();
         String input = requiredText(current, "completeExecutableInput");
+        var cargoPhases = DeploymentCargoBuildInput.phases(input);
+        if (cargoPhases.isPresent())
+            return Optional.of(cargoBuild(original, current, input, cargoPhases.orElseThrow(), intent, request, layout, archive));
         var wrapper = DeploymentMirrorTasks.buildInput(input)
             .orElseThrow(() -> new IOException("Original mirrored build input unavailable"));
-        verifyBuild(current, input, wrapper, intent, request);
+        verifyBuild(current, input, wrapper.task(), intent, request);
         var projected = current.deepCopy();
         String snapshot = sha256(original);
         var manifest = projected.putObject(BUILD_PROJECTION).put("snapshotSha256", snapshot);
@@ -962,6 +968,90 @@ public final class DeploymentCommandSourceEvidence {
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
         return Optional.of(new DeploymentCommandSourceEvidence(current, original, snapshot, messages, sources,
             packed ? Map.of() : selectedRanges, requiredRanges, initialSourceRanges, Optional.empty(), selectionView, pagedDigests));
+    }
+
+    private static DeploymentCommandSourceEvidence cargoBuild(String original, ObjectNode current, String input,
+            DeploymentCargoBuildInput.Phases phases, ActionIntent intent, CommandRequest request, DeploymentRemoteLayout layout,
+            Optional<DeploymentSourceArchiveReview.Evidence> archive) throws IOException {
+        var prefetch = DeploymentCargoBuildInput.prefetch(phases);
+        verifyBuild(current, input, prefetch.task(), intent, request);
+        var boundArchive = current.at("/currentCommandEvidence/currentBuildArchive/archive");
+        if (!prefetch.archiveSha256().equals(requiredText(boundArchive, "archiveSha256"))
+                || (!prefetch.policy().isEmpty()
+                    && !current.at("/mirrorTransport/frozenPolicy/server").asText().equals(intent.serverIds().getFirst()))
+                || !"ordinary-offline".equals(current.at("/buildCollector/engine").asText())
+                || !JSON.valueToTree(DeploymentManagedHelperBundle.cargoBuildPrefetchFacts(layout)).equals(current.path("cargoBuildPrefetch")))
+            throw new IOException("Cargo prefetch must use the selected archive, server and pinned offline build helper");
+
+        var projected = current.deepCopy();
+        var implementation = (ObjectNode) projected.remove("cargoBuildPrefetch");
+        String snapshot = sha256(original);
+        var manifest = projected.putObject(BUILD_PROJECTION).put("snapshotSha256", snapshot);
+        manifest.put("cargoPrefetch", true).put("lockMember", prefetch.lockMember());
+        manifest.set("cargoPrefetchImplementation", implementation);
+        var messages = new ArrayList<AiMessage>();
+        var sources = new LinkedHashMap<String, String>();
+        var frames = manifest.putArray("frames");
+        var bodyFrame = sourceFrame(messages, snapshot, BUILD_BODY, phases.build());
+        frames.add(bodyFrame);
+        manifest.set("buildBody", bodyFrame);
+        sources.put(BUILD_BODY, phases.build());
+        sources.put(BUILD_POLICY, prefetch.policy());
+        sources.put(MIRROR_RUNTIME, prefetch.runtime());
+        manifest.set("stagedMirrorPolicy", pagedSource(BUILD_POLICY, prefetch.policy(), List.of()));
+        projected.withObject("/mirrorTransport").set("runtimeSource", pagedSource(MIRROR_RUNTIME, prefetch.runtime(),
+            List.of("class MirrorPolicy:", "class MirrorRedirect(", "def mirror_transfer(", "def _mirror_transfer(")));
+        var parts = new ArrayList<Map<String, String>>();
+        int cursor = 0;
+        for (String field : List.of("policy", "runtime")) {
+            String pointer = "policy".equals(field) ? BUILD_POLICY : MIRROR_RUNTIME;
+            String quoted = JSON.writeValueAsString(sources.get(pointer));
+            String key = JSON.writeValueAsString(field) + ":";
+            int start = uniqueIndex(phases.prefetch(), key + quoted) + key.length();
+            parts.add(literal(phases.prefetch().substring(cursor, start)));
+            parts.add(reference("JSON_STRING", pointer));
+            cursor = start + quoted.length();
+        }
+        parts.addFirst(literal(phases.header()));
+        parts.add(literal(phases.prefetch().substring(cursor)));
+        parts.add(reference("SOURCE_TEXT", BUILD_BODY));
+        if (!input.equals(restoreSegments(parts, sources))) throw new IOException("Cargo build stdin cannot be restored");
+        projected.set("completeExecutableInput", segments(input, parts));
+
+        var required = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
+        var initial = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
+        var digests = new LinkedHashMap<String, String>();
+        if (!projectBuildArchive(projected, manifest, sources, required, initial, digests, archive))
+            throw new IOException("Cargo prefetch requires the captured build archive");
+        boolean lockCaptured = java.util.stream.StreamSupport.stream(manifest.path("projectArchive").path("members").spliterator(), false)
+            .anyMatch(member -> prefetch.lockMember().equals(member.path("path").asText()));
+        if (!lockCaptured) throw new IOException("Cargo lock evidence is missing from the project archive");
+        projectBuildContext(projected, manifest);
+        var selection = new StringBuilder();
+        var selected = manifest.putArray("selectedRuntimeRanges");
+        var viewParts = new ArrayList<ViewPart>();
+        for (String field : List.of("dataSplitSource", "phaseDispatchSource", "unitLaunchSource", "prefetchEntrySource")) {
+            String source = requiredText(implementation, field);
+            String pointer = BUILD_CARGO_WORKER + field;
+            sources.put(pointer, source);
+            implementation.set(field, pagedSource(pointer, source, List.of()));
+            required.put(pointer, new TreeMap<>(Map.of(0, source.length())));
+        }
+        if (!prefetch.policy().isEmpty()) required.put(BUILD_POLICY, new TreeMap<>(Map.of(0, prefetch.policy().length())));
+        appendSelection(selection, selected, required, MIRROR_RUNTIME, prefetch.runtime(),
+            PreparationSourceRange.cargoPrefetchRuntime(prefetch.runtime()), Optional.of(viewParts));
+        required.forEach((pointer, range) -> {
+            if (!digests.containsKey(pointer)) initial.putIfAbsent(pointer, range);
+        });
+        String view = selection.toString();
+        sources.put(BUILD_RUNTIME_SELECTION, view);
+        var descriptor = pagedSource(BUILD_RUNTIME_SELECTION, view, List.of());
+        var mapping = SourceSelectionView.exact(view, viewParts, sources);
+        mapping.describe(descriptor);
+        manifest.set("runtimeSelection", descriptor);
+        messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
+        return new DeploymentCommandSourceEvidence(current, original, snapshot, messages, sources, Map.of(), required, initial,
+            Optional.empty(), Optional.of(mapping), digests);
     }
 
     private static List<String> buildRuntimeLocations(String body) {
@@ -1104,6 +1194,7 @@ public final class DeploymentCommandSourceEvidence {
                 case "LITERAL" -> part.get("text");
                 case "SOURCE_TEXT" -> requiredSource(part, sources);
                 case "SHELL_SINGLE_QUOTE" -> DeploymentHelperInstallerScript.quote(requiredSource(part, sources));
+                case "JSON_STRING" -> JSON.writeValueAsString(requiredSource(part, sources));
                 default -> throw new IOException("Unknown command evidence segment");
             });
         }
@@ -1116,13 +1207,13 @@ public final class DeploymentCommandSourceEvidence {
         return source;
     }
 
-    private static void verifyBuild(ObjectNode current, String input, DeploymentMirrorTasks.Preparation wrapper,
+    private static void verifyBuild(ObjectNode current, String input, UUID task,
                                     ActionIntent intent, CommandRequest request) throws IOException {
         byte[] actual = request.stdin();
         try {
             if (current.has(BUILD_PROJECTION) || !BUILD.equals(requiredText(current, "operation"))
                 || !intent.exactAction().equals(requiredText(current, "exactAction"))
-                || !wrapper.task().toString().equals(requiredText(current, "mirrorInputTask"))
+                || !task.toString().equals(requiredText(current, "mirrorInputTask"))
                 || !DeploymentMirrorRuntime.runtimeSource().equals(current.at(MIRROR_RUNTIME).textValue())
                 || !Arrays.equals(actual, input.getBytes(StandardCharsets.UTF_8)))
                 throw new IOException("Original mirrored build evidence changed before projection");
@@ -2095,12 +2186,13 @@ public final class DeploymentCommandSourceEvidence {
         private void retainPriorSource(Map<String, NavigableMap<Integer, Integer>> visible, ArrayNode entries,
                                        StringBuilder body, int historyBytes) throws IOException {
             if (phpBinding) {
-                int remaining = retainHistory(requested, visible, entries, body, historyBytes);
-                retainHistory(requiredRanges, visible, entries, body, remaining);
+                int remaining = retainHistory(requiredRanges, visible, entries, body, historyBytes);
+                retainHistory(requested, visible, entries, body, remaining);
                 return;
             }
             if (packedBuildReview()) {
-                int remaining = retainHistory(initialSourceRanges, visible, entries, body, historyBytes);
+                int remaining = retainHistory(confirmedRequired(), visible, entries, body, historyBytes);
+                remaining = retainHistory(initialSourceRanges, visible, entries, body, remaining);
                 retainHistory(requested, visible, entries, body, remaining);
                 return;
             }
@@ -2433,8 +2525,11 @@ public final class DeploymentCommandSourceEvidence {
                 Runtime locations navigate the current build. All original ranges remain readable. Check the reached dependency path and request source still needed for the verdict.
                 If sourceArchiveHistory is present, the selected archive is already inline at selectedArchivePointer. The original history remains readable at sourcePointer.
                 """;
+            if (current.has("cargoBuildPrefetch")) instructions += """
+                For this Cargo build, completeExecutableInput contains a length line, a data document, and the offline script in that order. In its segments, JSON_STRING is the exact JSON string including double quotes. Evaluate the original lock member, exact policy, runtime transfer and helper data reader for prefetch, and the offline Cargo/CMake source and isolation for project execution.
+                """;
             if (publishedBuildHeader().isPresent()) instructions += """
-                If the current retained frame has repeatedOriginalBlocks, use its displayCharacters for that one member; the range and other coordinates still refer to original UTF-16. @WTL_BLOCK n k labels the next k literal lines with their original one-based line number n. @WTL_COPY n k repeats those exact earlier lines here, including spaces and newlines. Omit marker lines from the source and inspect each copy in its surrounding context. All anchors must be in the current frame. Original raw pages are available through evidence; if the representation is insufficient, read the exact ranges or deny.
+                If the current retained frame has repeatedOriginalBlocks, use its displayCharacters for that one member; the range and other coordinates still refer to original UTF-16. On a literal line, @>n followed by a single space represents n original leading ASCII spaces; preserve the rest of that line unchanged. @WTL_BLOCK n k labels the next k literal lines with their original one-based line number n. @WTL_COPY n k repeats those exact decoded earlier lines here, including spaces and newlines. Omit marker lines from the source and inspect each copy in its surrounding context. All anchors must be in the current frame. Original raw pages are available through evidence; if the representation is insufficient, read the exact ranges or deny.
                 """;
             return instructions;
         }

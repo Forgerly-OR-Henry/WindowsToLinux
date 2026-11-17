@@ -30,7 +30,23 @@ class DeploymentReviewSourceBlocksTest {
         assertEquals(1, DeploymentReviewSourceBlocks.encode(escaped.repeat(2)).orElseThrow().references());
         assertTrue(DeploymentReviewSourceBlocks.encode(escaped.repeat(2) + "@WTL_BLOCK 1 1\n").isEmpty());
         assertTrue(DeploymentReviewSourceBlocks.encode(escaped.repeat(2) + "  // @WTL_COPY\n").isEmpty());
+        assertTrue(DeploymentReviewSourceBlocks.encode(escaped.repeat(2) + "// @>12 value\n").isEmpty());
         assertTrue(DeploymentReviewSourceBlocks.encode(escaped.repeat(2) + "\ud800").isEmpty());
+    }
+
+    @Test
+    void restoresLeadingSpacesInAnchorsAndTheirCopies() throws Exception {
+        String repeated = " ".repeat(24) + "function(\"verbatim 世界\");\r\n" + " ".repeat(17) + "\treturn 1;\n";
+        String original = repeated + " ".repeat(12) + "\nseparator\n" + repeated + " ".repeat(999) + "tail";
+        var encoded = DeploymentReviewSourceBlocks.encode(original).orElseThrow();
+
+        assertTrue(encoded.text().contains("@>24 function"));
+        assertTrue(encoded.text().contains("@>17 \treturn"));
+        assertTrue(encoded.text().contains("@>999 tail"));
+        assertEquals(original, DeploymentReviewSourceBlocks.expand(encoded.text(), original.length()));
+
+        String invalid = encoded.text().replace("@>24 ", "@>02 ");
+        assertThrows(IOException.class, () -> DeploymentReviewSourceBlocks.expand(invalid, original.length()));
     }
 
     @Test

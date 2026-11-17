@@ -495,7 +495,8 @@ class DeploymentSourceArchiveReviewTest {
             DeploymentSourceMaterial material, DeploymentSourceArchive archive, DeploymentSourceArchiveReview.Evidence captured,
             String header) throws Exception {
         try (var build = LogAnalyzerBuildReviewFixture.render(fixture, material, archive, captured)) {
-            var nativeReview = nativeReview(fixture, 1_024_545);
+            int r90WireLimit = 982_900;
+            var nativeReview = nativeReview(fixture, r90WireLimit);
             fixture.model.nativeReply(verdict("APPROVE"));
             String instructions = DeploymentAssistedScope.standardBuildReviewInstructions();
             JsonNode decision;
@@ -510,6 +511,7 @@ class DeploymentSourceArchiveReviewTest {
             assertTrue(nativeReview.refusedSizes().isEmpty());
             assertEquals(1, nativeReview.sent().size());
             byte[] wire = nativeReview.sent().getFirst();
+            assertTrue(wire.length <= r90WireLimit);
             int historicalFactsWire = encodedAtLogAnalyzerFactsFloor(fixture.model.requests.getLast());
             assertTrue(historicalFactsWire < REVIEW_CEILING);
             var input = JSON.readTree(wire).path("input");
@@ -520,7 +522,9 @@ class DeploymentSourceArchiveReviewTest {
             assertEquals(captured.members().size(), frame.texts().size());
             var descriptor = frame.header().path("repeatedOriginalBlocks");
             verifyRepeatedOriginalBlocks(frame, descriptor, frame.texts().get(descriptor.path("pointer").asText()), header);
-            verifyBuildRuntimeRanges(frame, manifest, build.request());
+            int headerWireBytes = JSON.writeValueAsBytes(frame.texts().get(descriptor.path("pointer").asText())).length;
+            assertTrue(838_020 - headerWireBytes >= 1_023_588 - r90WireLimit);
+            verifyCargoPrefetchRanges(frame, manifest, build.request());
             verifyRenderedBuildBody(input, manifest.path("buildBody"), build);
             assertEquals(392, build.bindingBytes());
             assertEquals("d16b3b4efd86b4c33c5b3018bca667d4cb644712091d51c39f3f8089af4fb7ea", build.bindingSha256());
@@ -558,8 +562,40 @@ class DeploymentSourceArchiveReviewTest {
         byte[] bytes = source.getBytes(StandardCharsets.UTF_8);
         assertEquals(build.buildBodyBytes(), bytes.length);
         assertEquals(build.buildBodySha256(), digest(bytes));
-        assertTrue(source.contains("wtl_dependency RUST_CRATE cargo fetch --locked"));
+        assertTrue(source.contains("source.wtl-local-registry.local-registry"));
+        assertTrue(source.contains("run cargo build --offline --locked --release"));
         assertTrue(source.contains("cmake") && source.contains("log-worker"));
+    }
+
+    private static void verifyCargoPrefetchRanges(RetainedSource frame, JsonNode manifest, CommandRequest request) throws Exception {
+        assertTrue(manifest.path("cargoPrefetch").asBoolean());
+        assertEquals("cli/Cargo.lock", manifest.path("lockMember").asText());
+        var phases = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentCargoBuildInput
+            .phases(new String(request.stdin(), StandardCharsets.UTF_8)).orElseThrow();
+        var data = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentCargoBuildInput.prefetch(phases);
+        var sources = new LinkedHashMap<String, String>();
+        sources.put("/mirrorTransport/runtimeSource", data.runtime());
+        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+        var implementation = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle
+            .cargoBuildPrefetchFacts(layout);
+        manifest.path("cargoPrefetchImplementation").fields().forEachRemaining(entry -> {
+            if (entry.getValue().has("sourcePointer"))
+                sources.put(entry.getValue().path("sourcePointer").asText(), implementation.get(entry.getKey()).toString());
+        });
+        sources.put(manifest.at("/stagedMirrorPolicy/sourcePointer").asText(), data.policy());
+        var delivered = new LinkedHashMap<String, Integer>();
+        for (var range : frame.ranges()) {
+            if (!sources.containsKey(range.pointer())) continue;
+            assertEquals(sources.get(range.pointer()).substring(range.offset(), range.next()), range.body());
+            delivered.merge(range.pointer(), range.next() - range.offset(), Integer::sum);
+        }
+        for (var source : sources.entrySet()) {
+            if (source.getKey().equals("/mirrorTransport/runtimeSource")) {
+                assertTrue(delivered.getOrDefault(source.getKey(), 0) > 0);
+            } else {
+                assertEquals(source.getValue().length(), delivered.get(source.getKey()), source.getKey());
+            }
+        }
     }
 
     private static void verifyRepeatedOriginalBlocks(RetainedSource frame, JsonNode descriptor, String display, String header)
@@ -573,7 +609,8 @@ class DeploymentSourceArchiveReviewTest {
         assertTrue(display.length() < header.length());
         assertEquals(LOG_ANALYZER_HEADER_SHA256, descriptor.path("sha256").asText());
 
-        var displayedLines = Pattern.compile("[^\n]*\n|[^\n]+\\z").matcher(display).results().map(MatchResult::group).toList();
+        var displayedLines = Pattern.compile("[^\n]*\n|[^\n]+\\z").matcher(display).results().map(MatchResult::group)
+            .map(DeploymentDirectoryDiffBuildReviewReplayTest::decodeLeadingSpaces).toList();
         var originalLines = new ArrayList<String>();
         var anchors = new LinkedHashMap<Integer, List<String>>();
         int references = 0;

@@ -385,8 +385,13 @@ final class DeploymentStandardBuildRunner {
         String script = script(base, request, environment, tools);
         String toolchainBinding = tools.selections().isEmpty() ? "-" : java.util.Base64.getEncoder().encodeToString(
             DeploymentToolchainBindingCodec.encode(tools).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        boolean cargo = request.facts().buildTool() == DeploymentBuildToolType.CARGO_LOCKED;
+        String buildDirectory = request.facts().buildDirectory();
+        Optional<String> cargoLock = cargo
+            ? Optional.of(buildDirectory.isEmpty() ? "Cargo.lock" : buildDirectory + "/Cargo.lock")
+            : Optional.empty();
         var observed = commands.build(workspace, request.limits(), remaining - 15, engine, script,
-            toolchainBinding, BuildMatchPolicy.groups());
+            toolchainBinding, BuildMatchPolicy.groups(), cargoLock);
         if (observed.outcome() == TaskResult.UNKNOWN || observed.outcome() == TaskResult.CANCELLED)
             return withoutValue(observed);
         if (observed.outcome() == TaskResult.FAILED && observed.value().isEmpty())
@@ -403,6 +408,9 @@ final class DeploymentStandardBuildRunner {
         }
         if (receipt.conflicting() || receipt.exit() < 0 || receipt.bytes() > request.limits().maxOutputBytes() + 65536L)
             return unknown("DEPLOYMENT_BUILD_EVIDENCE_CONFLICT");
+        if (cargo && receipt.exit() != 0 && receipt.uid().equals("-") && receipt.engine().equals("-")
+            && receipt.tool().equals("-") && receipt.tail().lines().anyMatch("CARGO_PREFETCH_FAILED=1"::equals))
+            return failedBuild(receipt, "DEPLOYMENT_CARGO_PREFETCH_FAILED");
         if (!receipt.uid().matches("[1-9][0-9]{0,9}") || !engine.equals(receipt.engine())
             || !request.facts().buildTool().name().equals(receipt.tool()))
             return unknown("DEPLOYMENT_BUILD_IDENTITY_UNCONFIRMED");
@@ -423,7 +431,8 @@ final class DeploymentStandardBuildRunner {
             return container.engine().name().toLowerCase(java.util.Locale.ROOT);
         boolean stdlibWithCmake = tool == DeploymentBuildToolType.PYTHON_STDLIB && runtime.workload().companions().stream()
             .anyMatch(unit -> unit.projectType() == DeploymentCompanion.BuildType.CMAKE_SERVICE);
-        return tool == DeploymentBuildToolType.CMAKE || stdlibWithCmake ? "ordinary-offline" : "ordinary";
+        return tool == DeploymentBuildToolType.CMAKE || tool == DeploymentBuildToolType.CARGO_LOCKED
+            || stdlibWithCmake ? "ordinary-offline" : "ordinary";
     }
 
     /** Reconstructs only the exact fixed script sent with a confirmed tool selection. / 仅重建随已确认工具选择发送的精确固定脚本。

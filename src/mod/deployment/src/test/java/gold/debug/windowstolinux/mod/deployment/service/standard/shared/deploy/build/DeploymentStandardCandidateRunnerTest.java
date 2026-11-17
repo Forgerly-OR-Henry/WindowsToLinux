@@ -315,7 +315,8 @@ class DeploymentStandardCandidateRunnerTest extends DeploymentRuntimeFixture {
                     assertTrue(script.startsWith("exec /usr/bin/python3 -I -c "), script);
                     actions.add("build");
                     return reply("WTL_BUILD_REPORT=1\nEXIT=0\nBYTES=0\nSHA256=" + "c".repeat(64)
-                        + "\nUID=1001\nENGINE=ordinary\nTOOL=" + (rust ? "CARGO_LOCKED" : "GO_MODULE") + "\nCOMPAT=0\nLIMIT=-\n"
+                        + "\nUID=1001\nENGINE=" + (rust ? "ordinary-offline" : "ordinary")
+                        + "\nTOOL=" + (rust ? "CARGO_LOCKED" : "GO_MODULE") + "\nCOMPAT=0\nLIMIT=-\n"
                         + "CONFLICT=0\nHEAD=\nTAIL=\n");
                 });
             var context = runtime.modContexts().get(OWNER).context();

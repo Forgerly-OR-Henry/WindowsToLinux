@@ -16,6 +16,7 @@ import java.util.regex.Pattern;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTemplate;
+import gold.debug.windowstolinux.mod.deployment.linux.mirror.DeploymentMirrorRuntime;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog;
@@ -52,7 +53,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "ddd264a97b024a39dfd4b89fd55655a0df0f863831f83295a7a0539ac801511f";
+    public static final String EXPECTED_SHA256 = "2686b4f44b508812ee48328494be254bc99914e23c4f0709ce8cbfaa320e0fae";
     private static final String RUBY_SOURCE_SHA256 = "8accc7b83ccfc2bf84396bd3fe3012f0138e4da777700103a373137e92f134b9";
     private static final String GNU_MAKE_SOURCE_SHA256 = "fabf9252d95b17e8a15e0d7e80a826824b02b45f291e14d1ca0fb65b577a44a4";
     private static final String PYTHON_SOURCE_SHA256 = "ac309b1d2fc1549089444886f3503221e45eaaf86e95358409f18ed5634d1e39";
@@ -159,10 +160,29 @@ public final class DeploymentManagedHelperBundle {
                 String ordinary = "if [ \"$engine\" = ordinary ]; then exec /usr/bin/setpriv --no-new-privs /bin/bash \"$candidate/.build-script\"; fi";
                 source = insertBefore(source, ordinary,
                     "if [ \"$engine\" = ordinary-offline ]; then exec /usr/bin/setpriv --no-new-privs /bin/bash \"$candidate/.build-script\"; fi\n");
+                source = source.replace("[ \"$#\" -eq 2 ] || exit 64",
+                    "[ \"$#\" -eq 2 ] || { [ \"$#\" -eq 3 ] && [ \"$2\" = cargo-prefetch ]; } || exit 64");
+                String worker = buildEntryResource("workspace/cargo-local-registry.py") + "\n"
+                    + buildEntryResource("workspace/cargo-prefetch.py");
+                source = insertBefore(source, "if [ -e \"$candidate/.agent-mode\" ]; then\n", """
+                    if [ "$engine" = cargo-prefetch ]; then
+                        [ "$#" -eq 3 ] && [ ! -e "$candidate/.agent-mode" ] && [ ! -L "$candidate/.build-prefetch" ] || exit 64
+                        exec /usr/bin/python3 -I -S -B - "$candidate" '%s' "$3" <<'WTL_CARGO_PREFETCH'
+                    %s
+                    WTL_CARGO_PREFETCH
+                    fi
+                    """.formatted(DeploymentMirrorRuntime.runtimeSha256(), worker.stripTrailing()));
             }
             return DeploymentRemoteLayoutTemplate.render(source, layout);
         } catch (IOException failure) {
             throw new IllegalStateException("Build entry resource unreadable", failure);
+        }
+    }
+
+    private static String buildEntryResource(String resource) throws IOException {
+        try (InputStream stream = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + resource)) {
+            if (stream == null) throw new IllegalStateException("Missing build entry resource " + resource);
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
         }
     }
 
@@ -389,7 +409,7 @@ public final class DeploymentManagedHelperBundle {
             "candidateSourceMounts", exactRange(helper,
                 "    if [ -e \"$candidate/.agent-mode\" ]; then\n        assert_root_owned_regular \"$candidate/.agent-mode\"\n        properties+=",
                 "    fi\n"),
-            "cleanEnvironmentLaunch", exactRange(helper, "    monitor_build_output \"$candidate\" \"$output\" systemd-run",
+            "cleanEnvironmentLaunch", exactRange(helper, "\n    monitor_build_output \"$candidate\" \"$output\" systemd-run",
                 " || status=$?\n"),
             "buildEntrySource", entry,
             "meaning", "Exact installed controller ranges and complete build entry tied to the guarded helper and entry digests. The launcher clears inherited environment; entry exports Agent source paths only for its checked candidate mode. Review the actual executable stdin for configuration exports, the standard source-variable clear and bound archive extraction. These bytes are implementation evidence; live state and authority have their own checks.");
@@ -406,6 +426,18 @@ public final class DeploymentManagedHelperBundle {
         return Map.of("helperSha256", helperSha256(layout), "buildEntrySha256", buildEntrySha256(layout),
             "propertiesSource", controls, "preflightSource", preflight, "applicationSource", use,
             "meaning", "The pinned ordinary-offline branch applies these exact systemd properties to the same non-root build unit. The fixed preflight checks a separate network namespace and socket denial. This is the selected enforced implementation, not a live probe result or authority.");
+    }
+
+    /** Exact root-side data split and bounded two-unit handoff, tied to the current installed bytes. */
+    public static Map<String, Object> cargoBuildPrefetchFacts(DeploymentRemoteLayout layout) {
+        String helper = renderScript(layout);
+        String entry = renderBuildEntry(layout);
+        return Map.of("helperSha256", helperSha256(layout), "buildEntrySha256", buildEntrySha256(layout),
+            "dataSplitSource", exactRange(helper, "stage_cargo_build_data() {\n", "\n}\n"),
+            "phaseDispatchSource", exactRange(helper, "    IFS= read -r phase_header", "    mount -o remount,rw,nodev,nosuid -- \"$mutable\""),
+            "unitLaunchSource", exactRange(helper, "        if [ \"$cargo_bytes\" -gt 0 ]; then", "        if [ \"$engine\" = ordinary-offline ]; then"),
+            "prefetchEntrySource", exactRange(entry, "if [ \"$engine\" = cargo-prefetch ]; then\n", "\nWTL_CARGO_PREFETCH\nfi\n"),
+            "meaning", "The networked stage runs the fixed installed data reader with the pinned mirror runtime and original lock. Successful completion and a remaining budget precede the separate ordinary-offline project build. Evaluate these ranges with the original build identity, resource and socket limits.");
     }
 
     private static String exactRange(String source, String start, String end) {

@@ -13,18 +13,22 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-/** Displays repeated source lines as references to earlier, literal source lines in the same member. */
+/** Displays repeated source as references to earlier literal lines and encodes long runs of leading spaces. */
 final class DeploymentReviewSourceBlocks {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String BLOCK = "@WTL_BLOCK";
     private static final String COPY = "@WTL_COPY";
+    private static final String INDENT = "@>";
     private static final Pattern DIRECTIVE = Pattern.compile("@WTL_(BLOCK|COPY) ([1-9][0-9]{0,4}) ([1-9][0-9]?)\n");
+    private static final Pattern INDENTED_LINE = Pattern.compile("@>([1-9][0-9]{1,2}) (?=[^ \r\n])");
     private static final List<Integer> BLOCK_LENGTHS = List.of(16, 12, 8, 6, 4, 3, 2, 1);
     private static final int MINIMUM_BLOCK_WIRE_BYTES = 64;
     private static final int MAX_ORIGINAL_CHARACTERS = 1024 * 1024;
     private static final int MAX_ORIGINAL_LINES = 65_536;
     private static final int MAX_REFERENCES = 2048;
     private static final int MAX_DIRECTIVE_CHARACTERS = 20;
+    private static final int MINIMUM_INDENT = 12;
+    private static final int MAXIMUM_INDENT = 999;
 
     private DeploymentReviewSourceBlocks() {
     }
@@ -85,7 +89,7 @@ final class DeploymentReviewSourceBlocks {
             var anchor = anchors.get(line);
             if (anchor != null) represented.append(anchor.directive(BLOCK));
             var copy = copies.get(line);
-            if (copy == null) represented.append(lines.get(line++));
+            if (copy == null) appendLiteral(represented, lines.get(line++));
             else {
                 represented.append(copy.directive(COPY));
                 line += copy.count();
@@ -138,10 +142,10 @@ final class DeploymentReviewSourceBlocks {
             int end = lineEnd(represented, offset);
             String line = represented.substring(offset, end);
             offset = end;
-            if (!reservedMarker(line)) {
+            if (!line.contains(BLOCK) && !line.contains(COPY)) {
                 if (++originalLines > MAX_ORIGINAL_LINES)
                     throw new IOException("Repeated source blocks exceed their line limit");
-                append(expanded, line, originalCharacters);
+                append(expanded, literalLine(line), originalCharacters);
                 if (pending != null && originalLines == pending.endLine()) {
                     anchors.put(pending, expanded.substring(pendingOffset));
                     pending = null;
@@ -181,8 +185,29 @@ final class DeploymentReviewSourceBlocks {
         expanded.append(literal);
     }
 
+    private static void appendLiteral(StringBuilder represented, String line) {
+        int indent = 0;
+        while (indent < line.length() && line.charAt(indent) == ' ') indent++;
+        if (indent >= MINIMUM_INDENT && indent <= MAXIMUM_INDENT && indent < line.length()
+                && line.charAt(indent) != '\r' && line.charAt(indent) != '\n') {
+            represented.append(INDENT).append(indent).append(' ').append(line, indent, line.length());
+        } else {
+            represented.append(line);
+        }
+    }
+
+    private static String literalLine(String line) throws IOException {
+        if (!line.contains(INDENT)) return line;
+        var marker = INDENTED_LINE.matcher(line);
+        if (!marker.lookingAt() || line.indexOf(INDENT, marker.end()) >= 0)
+            throw new IOException("Invalid leading-space source directive");
+        int indent = Integer.parseInt(marker.group(1));
+        if (indent < MINIMUM_INDENT) throw new IOException("Leading-space source directive is below its minimum length");
+        return " ".repeat(indent) + line.substring(marker.end());
+    }
+
     private static boolean reservedMarker(String text) {
-        return text.contains(BLOCK) || text.contains(COPY);
+        return text.contains(BLOCK) || text.contains(COPY) || text.contains(INDENT);
     }
 
     private static int lineEnd(String text, int start) {

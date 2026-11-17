@@ -618,7 +618,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                     var association = buildArchiveFacts(archiveObservations(), Map.copyOf(reviewedApplicationSources),
                         intent, request, layout);
                     facts.put("currentBuildArchive", association);
-                    if (mirroredBuildInput(request)) {
+                    if (mirroredBuildInput(request, supplied.id())) {
                         var archive = (Map<?, ?>) association.get("archive");
                         var captured = Objects.requireNonNull(sourceArchives.get(archiveKey(
                             archive.get("relativeRoot").toString(), archive.get("archiveSha256").toString())));
@@ -836,11 +836,18 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         return Map.of("currentToolchainPlan", planned.evidence(), "observedGap", observation, "fixedTransaction", binding);
     }
 
-    private static boolean mirroredBuildInput(gold.debug.windowstolinux.appapi.linux.command.CommandRequest request) {
+    private static boolean mirroredBuildInput(gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, UUID task) {
         byte[] input = request.stdin();
         try {
-            return gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.buildInput(
-                new String(input, java.nio.charset.StandardCharsets.UTF_8)).isPresent();
+            String executable = new String(input, java.nio.charset.StandardCharsets.UTF_8);
+            var cargo = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentCargoBuildInput.phases(executable);
+            if (cargo.isPresent()) {
+                if (!task.equals(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentCargoBuildInput
+                    .prefetch(cargo.orElseThrow()).task()))
+                    throw new IllegalArgumentException("Cargo prefetch task differs from the original task");
+                return true;
+            }
+            return gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.buildInput(executable).isPresent();
         } finally {
             Arrays.fill(input, (byte) 0);
         }

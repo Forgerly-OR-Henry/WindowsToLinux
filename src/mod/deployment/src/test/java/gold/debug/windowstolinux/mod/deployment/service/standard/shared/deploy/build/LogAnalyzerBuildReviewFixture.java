@@ -105,9 +105,10 @@ public final class LogAnalyzerBuildReviewFixture {
         assertTrue(body.contains("run cargo build --offline --locked --release"));
         assertTrue(body.contains("run cmake --build .w2l/cmake-build --target 'log-worker' --parallel 1"));
         String engine = DeploymentStandardBuildRunner.buildEngine(reviewed.facts().buildTool(), reviewed.runtime());
-        assertEquals("ordinary", engine);
+        assertEquals("ordinary-offline", engine);
 
-        var command = captureCommand(fixture, archive, rendered, limits, engine, body, bindingBase64);
+        var command = captureCommand(fixture, archive, rendered, limits, engine, body, bindingBase64,
+            reviewed.facts().buildDirectory() + "/Cargo.lock");
         try {
             var facts = new LinkedHashMap<>(new DeploymentFixedCommandProtocol(fixture.context)
                 .inspect(command.intent(), command.request(), fixture.layout, fixture.task));
@@ -138,7 +139,7 @@ public final class LogAnalyzerBuildReviewFixture {
 
     private static CapturedCommand captureCommand(MirroredInstallerTestFixture fixture, DeploymentSourceArchive archive,
             DeploymentStandardPlanner.RenderedPlan rendered, DeploymentBuildLimits limits, String engine, String body,
-            String bindingBase64) throws Exception {
+            String bindingBase64, String lock) throws Exception {
         var intercepted = new AtomicReference<CapturedCommand>();
         var loader = LogAnalyzerBuildReviewFixture.class.getClassLoader();
         var review = (DeploymentCommandReview) Proxy.newProxyInstance(loader, new Class<?>[]{DeploymentCommandReview.class},
@@ -156,7 +157,8 @@ public final class LogAnalyzerBuildReviewFixture {
             budget, fixture.layout);
         var workspace = new DeploymentRemoteWorkspace(APPLICATION, archive.sha256(), fixture.layout);
         // The fixture has no prior remote elapsed time. The original total limit still bounds this command.
-        var result = channel.build(workspace, limits, budget.remainingSeconds() - 15, engine, body, bindingBase64, BuildMatchPolicy.groups());
+        var result = channel.build(workspace, limits, budget.remainingSeconds() - 15, engine, body, bindingBase64,
+            BuildMatchPolicy.groups(), Optional.of(lock));
         assertEquals(TaskResult.FAILED, result.outcome());
         assertEquals("OFFLINE_BUILD_FIXTURE", result.problem().orElseThrow().eventCode());
         return Optional.ofNullable(intercepted.get()).orElseThrow();

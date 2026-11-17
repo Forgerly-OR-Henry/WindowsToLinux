@@ -39,6 +39,7 @@ class DeploymentBuildStartGuardTest {
             mount() { :; }
             chown() { printf 'identity-effect\\n' >> "$candidate/effects"; }
             chmod() { :; }
+            prepare_build_mirror_material() { :; }
             reject() { printf 'REJECT=%%s\\n' "$1"; exit 64; }
             assert_root_owned_regular() { [ -f "$1" ] && [ ! -L "$1" ] || reject marker-identity; }
             %s
@@ -49,6 +50,10 @@ class DeploymentBuildStartGuardTest {
             %s
             prepare_build_identity demo candidate
             [ "$(wc -l < "$candidate/effects")" -eq 4 ]
+            prepare_build_identity demo candidate cargo-prefetch
+            [ "$(wc -l < "$candidate/effects")" -eq 6 ]
+            if (prepare_build_identity demo candidate cargo-prefetch); then exit 93; else [ "$?" -eq 64 ]; fi
+            [ "$(wc -l < "$candidate/effects")" -eq 6 ]
             rm -- "$candidate/.build-started"
             mkdir -- "$candidate/.build-started"
             if (prepare_build_identity demo candidate); then exit 91; else [ "$?" -eq 64 ]; fi
@@ -57,11 +62,15 @@ class DeploymentBuildStartGuardTest {
             """.formatted(SafeBuildScriptEnvelope.shellQuote(directory.toString().replace('\\', '/')), prepare, reset, reset);
         Path script = directory.resolve("guard.sh");
         Files.writeString(script, fixture);
-        Process process = new ProcessBuilder(bash, script.toString()).redirectErrorStream(true).start();
-        assertTrue(process.waitFor(15, TimeUnit.SECONDS));
-        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertEquals(0, process.exitValue(), output);
-        assertTrue(output.contains("GUARD_PASS"), output);
-        assertEquals(2, output.lines().filter(line -> line.equals("REJECT=build-already-started")).count());
+        Process process = new ProcessBuilder(bash, script.toString()).directory(directory.toFile()).redirectErrorStream(true).start();
+        try {
+            assertTrue(process.waitFor(15, TimeUnit.SECONDS));
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            assertEquals(0, process.exitValue(), output);
+            assertTrue(output.contains("GUARD_PASS"), output);
+            assertEquals(3, output.lines().filter(line -> line.equals("REJECT=build-already-started")).count());
+        } finally {
+            if (process.isAlive()) process.destroyForcibly().waitFor();
+        }
     }
 }

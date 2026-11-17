@@ -22,6 +22,7 @@ import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentCargoBuildInput;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentToolchainDiagnostics;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentTrackedToolchains;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
@@ -134,12 +135,25 @@ public final class DeploymentCommandEvidence {
             if (SCRIPT_INPUT.contains(operation)) {
                 String executable = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                     .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(input)).toString();
-                if (!executable.isBlank()) DeploymentCommandStaticGate.requireFixedAllowed(executable);
+                var cargo = operation.equals("deployment.build.run.v1") ? DeploymentCargoBuildInput.phases(executable)
+                    : Optional.<DeploymentCargoBuildInput.Phases>empty();
+                if (cargo.isPresent()) {
+                    var phases = cargo.orElseThrow();
+                    var prefetch = DeploymentCargoBuildInput.prefetch(phases);
+                    if (!(facts.get("buildCollector") instanceof Map<?, ?> collector)
+                        || !"ordinary-offline".equals(collector.get("engine")))
+                        throw new IllegalArgumentException("Cargo dependency prefetch requires an isolated project build");
+                    DeploymentCommandStaticGate.requireFixedAllowed(phases.build());
+                    facts.put("cargoBuildPrefetch", DeploymentManagedHelperBundle.cargoBuildPrefetchFacts(layout));
+                    facts.put("mirrorInputTask", prefetch.task().toString());
+                    if (!prefetch.policy().isEmpty()) facts.put("mirrorTransport", DeploymentMirrorTasks.reviewMaterial(prefetch.policy()));
+                } else if (!executable.isBlank()) DeploymentCommandStaticGate.requireFixedAllowed(executable);
                 if (operation.equals("deployment.build.run.v1"))
                     gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem.java.MavenBuildWriter.bootstrapEvidence(executable)
                         .ifPresent(value -> facts.put("candidateMavenBootstrap", value));
-                facts.put("inputKind", "EXECUTABLE_SCRIPT");
-                var mirrorInput = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.executable(executable);
+                facts.put("inputKind", cargo.isPresent() ? "CARGO_PREFETCH_DATA_AND_OFFLINE_SCRIPT" : "EXECUTABLE_SCRIPT");
+                var mirrorInput = cargo.isPresent() ? Optional.<DeploymentMirrorTasks.Preparation>empty()
+                    : DeploymentMirrorTasks.executable(executable);
                 Object described = switch (operation) {
                     case "deployment.helper.install.files.v1" -> DeploymentInstallerEvidence.describeFiles(executable, layout);
                     case "deployment.helper.install.v1" -> DeploymentInstallerEvidence.describe(executable, layout);
@@ -646,8 +660,8 @@ public final class DeploymentCommandEvidence {
                 Map.entry("python", Map.of("discoveryNamePattern", "^python[0-9]+[.][0-9]+$", "venvArguments", java.util.List.of("-I", "-S", "-B", "-m", "venv", "--help"), "pipArguments", java.util.List.of("-I", "-S", "-B", "-"))),
                 Map.entry("npm", Map.of("arguments", java.util.List.of("--offline", "--no-update-notifier", "--version"),
                     "configuration", "The probe supplies /dev/null for user and global npm config and skips package-manager version queries when root project configuration exists. These are npm CLI settings.")),
-                Map.entry("poetry", Map.of("arguments", java.util.List.of("--no-plugins", "--no-interaction", "--version"),
-                    "admission", "Uses probe_tool_run for the checked command. Requires successful version output with plugins and interaction disabled.")),
+                Map.entry("poetry", pythonManagerProbe()),
+                Map.entry("pipenv", pythonManagerProbe()),
                 Map.entry("composer", Map.of("interpreterArguments", java.util.List.of("-n", "-f", "<checked Composer PHP entry>", "--"),
                     "arguments", java.util.List.of("--no-plugins", "--no-scripts", "--no-cache", "--no-interaction", "--version"),
                     "admission", "Requires a checked native PHP executable and a checked Composer PHP entry. -n disables PHP ini loading. COMPOSER_DISABLE_NETWORK=1 is set for this probe.")),
@@ -655,6 +669,13 @@ public final class DeploymentCommandEvidence {
         } catch (java.security.NoSuchAlgorithmException impossible) {
             throw new IllegalStateException(impossible);
         }
+    }
+
+    private static Map<String, Object> pythonManagerProbe() {
+        return Map.of("reader", "/usr/bin/python3", "arguments", java.util.List.of("-I", "-S", "-B", "-"),
+            "admission", "Runs the protected native ELF reader with no-new-privileges. The launcher is read as data. "
+                + "Its interpreter must resolve through protected paths to the admitted native reader. "
+                + "Only supported system installs and private virtual environments with protected paths and one matching metadata version report a version.");
     }
 
     private static Map<String, Object> platformProbeStartup(boolean privilegeChecked) {

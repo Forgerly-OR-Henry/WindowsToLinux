@@ -45,6 +45,7 @@ class DeploymentDirectoryDiffBuildReviewReplayTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final int RAW_CAP = 1_048_576;
     private static final int HISTORICAL_CEILING = 740_893;
+    private static final int R90_CEILING = 967_329;
     private static final int HISTORICAL_FACTS_CHARACTERS = 52_316;
     private static final int HISTORICAL_FIRST_WIRE_BYTES = 153_716;
     private static final String ARCHIVE_SHA256 = "7a7a7148838dc23be934c81d8b7caa6416bf8ad4ffe8c7b4a71877cff55a72a2";
@@ -109,6 +110,13 @@ class DeploymentDirectoryDiffBuildReviewReplayTest {
                 int calibratedBudget = Math.max(encoded.length, HISTORICAL_FIRST_WIRE_BYTES + completionBytes)
                     + factsDeficitMaxBytes;
                 assertTrue(calibratedBudget <= RAW_CAP, () -> "Calibrated reconstruction exceeding raw limit: " + calibratedBudget);
+                int r90MinimumSaving = 991_990 - R90_CEILING;
+                assertTrue(838_020 - headerJsonBytes >= r90MinimumSaving, () -> "Lossless header wire bytes: " + headerJsonBytes);
+                var r90 = new EncodingReview(fixture, R90_CEILING);
+                assertEquals("APPROVE", approve(r90, fixture, build).path("decision").asText());
+                assertTrue(r90.refused.isEmpty());
+                assertEquals(1, r90.sent.size());
+                assertTrue(r90.sent.getFirst().length <= R90_CEILING);
                 var covered = new EncodingReview(fixture, calibratedBudget);
                 assertEquals("APPROVE", approve(covered, fixture, build).path("decision").asText());
                 assertEquals(List.of(), covered.refused);
@@ -195,7 +203,8 @@ class DeploymentDirectoryDiffBuildReviewReplayTest {
     }
 
     private static String reconstruct(String display) {
-        var lines = Pattern.compile("[^\n]*\n|[^\n]+\\z").matcher(display).results().map(MatchResult::group).toList();
+        var lines = Pattern.compile("[^\n]*\n|[^\n]+\\z").matcher(display).results().map(MatchResult::group)
+            .map(DeploymentDirectoryDiffBuildReviewReplayTest::decodeLeadingSpaces).toList();
         var declared = new HashMap<Integer, List<String>>();
         var original = new ArrayList<String>();
         for (int i = 0; i < lines.size(); i++) {
@@ -220,6 +229,15 @@ class DeploymentDirectoryDiffBuildReviewReplayTest {
             } else original.add(line);
         }
         return String.join("", original);
+    }
+
+    static String decodeLeadingSpaces(String line) {
+        if (!line.startsWith("@>")) return line;
+        int separator = line.indexOf(' ');
+        assertTrue(separator > 2 && separator < 6);
+        int count = Integer.parseInt(line.substring(2, separator));
+        assertTrue(count >= 12 && count <= 999);
+        return " ".repeat(count) + line.substring(separator + 1);
     }
 
     private record Frame(JsonNode metadata, Map<String, String> texts) { }
