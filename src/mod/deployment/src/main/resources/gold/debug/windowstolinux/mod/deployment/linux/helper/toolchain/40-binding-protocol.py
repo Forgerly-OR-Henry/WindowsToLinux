@@ -25,7 +25,10 @@ def validated_binding(encoded, restoring=False):
         marker = directory / '.w2l-toolchain.json'
         if marker.is_symlink() or marker.stat().st_uid != 0 or marker.stat().st_mode & 0o022:
             fail('ownership', 'binding marker must be root-owned')
-        record = load_managed_dotnet_marker(directory) if f[0] == 'DOTNET' else json.loads(marker.read_text())
+        if f[0] == 'PHP':
+            record = tracked_json(tracked_regular(marker, 65536))
+        else:
+            record = load_managed_dotnet_marker(directory) if f[0] == 'DOTNET' else json.loads(marker.read_text())
         if record.get('origin') != f[8]:
             fail('integrity', 'prepared binding has the wrong origin')
         if f[0] != 'DOTNET':
@@ -40,6 +43,8 @@ def validated_binding(encoded, restoring=False):
             if f[8] != 'MANAGED':
                 fail('integrity', 'managed .NET binding has the wrong origin')
             probe_managed_dotnet(record, directory, f[6])
+        elif f[0] == 'PHP':
+            php_record_probe(record, directory, f[6])
         else:
             probe(f[0], directory, f[6])
         if f[0] == 'JAVA':
@@ -79,7 +84,10 @@ def existing_installation(fields):
     owned_directory(directory)
     if marker.is_symlink() or marker.stat().st_uid != 0 or marker.stat().st_mode & 0o022:
         fail('ownership', 'saved installation marker must be root-owned')
-    record = load_managed_dotnet_marker(directory) if fields[0] == 'DOTNET' else json.loads(marker.read_text())
+    if fields[0] == 'PHP':
+        record = tracked_json(tracked_regular(marker, 65536))
+    else:
+        record = load_managed_dotnet_marker(directory) if fields[0] == 'DOTNET' else json.loads(marker.read_text())
     if [record[k] for k in ('ecosystem', 'version', 'directory', 'origin', 'sha256')] != [
         fields[0],
         fields[6],
@@ -104,7 +112,10 @@ def existing_installation(fields):
         if record['origin'] == 'SYSTEM':
             return None
         raise
-    probe(fields[0], directory, fields[6])
+    if fields[0] == 'PHP':
+        php_record_probe(record, directory, fields[6])
+    else:
+        probe(fields[0], directory, fields[6])
     if record['origin'] == 'MANAGED':
         seal_installation(directory)
     return record
@@ -276,7 +287,10 @@ def main(args):
                     fail('ownership', 'toolchain completion marker must be root-owned')
                 if marker.stat().st_size > 65536:
                     fail('integrity', 'toolchain completion marker exceeds budget')
-                record = load_managed_dotnet_marker(directory) if fields[0] == 'DOTNET' else json.loads(marker.read_text())
+                if fields[0] == 'PHP':
+                    record = tracked_json(tracked_regular(marker, 65536))
+                else:
+                    record = load_managed_dotnet_marker(directory) if fields[0] == 'DOTNET' else json.loads(marker.read_text())
                 if [record.get(key) for key in ('ecosystem', 'version', 'directory', 'origin', 'sha256')] != [
                     fields[0], fields[6], fields[7], fields[8], fields[10],
                 ] or record.get('source') != base64.b64decode(fields[9], validate=True).decode():
@@ -285,6 +299,8 @@ def main(args):
                     verify_managed_dotnet_probe_files(record, directory, fields[6])
                 elif fields[0] == 'RUBY' and fields[8] == 'MANAGED':
                     require_ruby_source_record(record, directory)
+                elif fields[0] == 'PHP' and fields[8] == 'MANAGED':
+                    require_php_source_record(record, directory)
                 else:
                     verify_system(record)
             return

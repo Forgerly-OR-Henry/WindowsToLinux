@@ -182,7 +182,8 @@ public final class DeploymentManagedHelper {
 
     /** Installs caller-owned prerequisites with an exact caller-owned launcher and independent review. */
     public OperationResult<Identity> installFilesWithPrerequisites(String launcher, String prerequisitesScript) throws ApiException {
-        return install(DeploymentHelperInstallerScript.renderFiles(prerequisitesScript, layout), "deployment.helper.install.files.custom.v1", launcher);
+        return install(DeploymentHelperInstallerScript.renderFiles(prerequisitesScript, layout), "deployment.helper.install.files.custom.v1",
+            DeploymentHelperInstallerScript.protectedInstallerLauncher(launcher));
     }
 
     private OperationResult<Identity> install(String script, String operation) throws ApiException {
@@ -268,7 +269,7 @@ public final class DeploymentManagedHelper {
      * @throws ApiException if review or transport fails / 审核或传输失败时 */
     public OperationResult<CommandResult> installationStatus(UUID operationId) throws ApiException {
         byte[] script = DeploymentHelperInstallerScript.renderStatus(operationId, layout).getBytes(StandardCharsets.UTF_8);
-        try (var request = new CommandRequest(DeploymentHelperInstallerScript.LAUNCHER, script, Duration.ofSeconds(30),
+        try (var request = new CommandRequest(DeploymentHelperInstallerScript.STATUS_LAUNCHER, script, Duration.ofSeconds(30),
             2048)) {
             java.util.Arrays.fill(script, (byte) 0);
             var grant = approve("deployment.helper.install.status.v1", request,

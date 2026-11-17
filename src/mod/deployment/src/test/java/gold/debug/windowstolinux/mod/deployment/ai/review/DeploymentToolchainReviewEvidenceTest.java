@@ -3769,9 +3769,18 @@ class DeploymentToolchainReviewEvidenceTest {
             String snapshot = manifest.path("snapshotSha256").asText();
             var sources = Map.of(manifest.at("/installedHelperSource/sourcePointer").asText(),
                 DeploymentManagedHelperBundle.renderScript(fixture.layout), "/mirrorTransport/runtimeSource",
-                DeploymentMirrorRuntime.runtimeSource(), manifest.at("/mirrorBootstrapShell/sourcePointer").asText(), r24Shell(fixture));
+                DeploymentMirrorRuntime.runtimeSource(), manifest.at("/mirrorBootstrapShell/sourcePointer").asText(), r24Shell(fixture),
+                manifest.at("/mirrorPolicySource/sourcePointer").asText(), DeploymentMirrorTasks.policy(fixture.task));
             byte[] encoded = wire(last, cap, Map.of());
             var visible = replayRetainedRanges(encoded, snapshot, sources).orElseThrow();
+            String policy = manifest.at("/mirrorPolicySource/sourcePointer").asText();
+            assertEquals(policy, manifest.at("/requiredPreparationSources/0").asText());
+            if (!verdict.equals("INCOMPLETE")) {
+                for (var sent : fixture.model.requests) {
+                    var ranges = replayRetainedRanges(wire(sent, cap, Map.of()), snapshot, sources).orElseThrow();
+                    assertEquals(Integer.valueOf(sources.get(policy).length()), ranges.get(policy).get(0));
+                }
+            }
             verifyNodeInlineHasNoRetainedDuplicates(facts, visible, sources);
             var requested = new LinkedHashMap<String, TreeMap<Integer, Integer>>();
             var retained = last.messages().get(last.messages().size() - 2).text();

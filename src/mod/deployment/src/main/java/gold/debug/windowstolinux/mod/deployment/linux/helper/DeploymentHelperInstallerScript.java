@@ -11,19 +11,36 @@ import java.util.UUID;
 
 /** Shared helper and isolation installation; no project language selection. / 共用 helper 及隔离安装，不选择项目语言。 */
 public final class DeploymentHelperInstallerScript {
-    /** Starts fixed installers before inherited Bash hooks, functions, options or PATH can be used. */
-    public static final String LAUNCHER = "exec /usr/bin/env -i LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash --noprofile --norc -p -s";
+    /** Original fixed launcher for the read-only receipt query. */
+    public static final String STATUS_LAUNCHER = "exec /usr/bin/env -i LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash --noprofile --norc -p -s";
+
+    /** Admits the fixed launch and metadata tools on the same SSH session before the installer starts. */
+    public static final String LAUNCHER = SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER + STATUS_LAUNCHER;
 
     /** Requires same-session SSH metadata admission before starting this fixed Perl bootstrap. */
-    public static final String PERL_STARTUP_LAUNCHER = SshCommandFrameProtocol.HELPER_PERL_STARTUP_HEADER + LAUNCHER;
+    public static final String PERL_STARTUP_LAUNCHER = SshCommandFrameProtocol.HELPER_PERL_STARTUP_HEADER + STATUS_LAUNCHER;
 
     static String trackedLauncher(boolean ready) {
         return ready ? PERL_STARTUP_LAUNCHER : LAUNCHER;
     }
 
+    static String protectedInstallerLauncher(String launcher) {
+        if (launcher.startsWith(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER)
+            || launcher.startsWith(SshCommandFrameProtocol.HELPER_PERL_STARTUP_HEADER)
+            || launcher.startsWith(SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER))
+            return launcher;
+        return SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER + launcher;
+    }
+
     /** Same no-effect receipt boundary in tracked and plain bodies; never an execution stage. */
     static final String BODY_AFTER_RECEIPT = "# WTL_INSTALLER_BODY_AFTER_RECEIPT\n";
     private static final String METADATA_BEFORE_PRIOR_ADMISSION = "apt_prerequisite_metadata || exit 64\n";
+    private static final String REQUIRE_ROOT = "[ \"$EUID\" -eq 0 ] || exit 64\n";
+    private static final String HISTORICAL_TRACKED_PREFLIGHT = """
+        [ "$(id -u)" -eq 0 ] || exit 64
+        command -v systemctl >/dev/null
+        """;
+    private static final String R85_PRIOR_HELPER = "    helper:8cc861938d36a67735d1cd54c90fc9730f01c9cd7d8eb9fdc7d13b5441f389f5 | \\\n";
     /** Root-owned original installer receipt directory. / root 持有的原安装回执目录。 */
     public static final String RECEIPT_DIRECTORY = "/var/lib/windowstolinux/helper-install-operations";
 
@@ -150,7 +167,7 @@ public final class DeploymentHelperInstallerScript {
         if (prerequisitesScript.isBlank() || !prerequisitesScript.endsWith("\n"))
             throw new IllegalArgumentException("Incomplete helper prerequisite stage");
         return "set -euo pipefail\nexport LC_ALL=C\nPATH=/usr/sbin:/usr/bin:/sbin:/bin\nexport PATH\nunset BASH_ENV ENV\n"
-            + renderStageDiagnostics() + renderPriorExecutableAdmission(layout, false) + renderInstallationLock(layout)
+            + renderStageDiagnostics() + REQUIRE_ROOT + renderPriorExecutableAdmission(layout, false) + renderInstallationLock(layout)
             + "installer_prior_files\n" + DeploymentRemoteLayoutAdmission.initialize(layout) + fixedLayout("""
             [ "$(id -u)" -eq 0 ] || exit 64
             """, layout) + renderRuntimePathGuards() + fixedLayout("""
@@ -441,27 +458,52 @@ public final class DeploymentHelperInstallerScript {
         }
         if (allowPreviouslySentUnscoped && point.filter(DeploymentHelperInstallerScript::usesApt).isPresent()) {
             var apt = point.orElseThrow();
-            String previous = previouslySentReady(renderReady(layout, apt), apt);
-            if (bodyDigest.equals(sha256(previous))) {
-                String original = previouslySentReady(renderTrackedReady(task.id(), operation, serverDigest, bodyDigest, layout, apt), apt);
-                return requestDigest.equals(readyRequestDigest(original));
+            String currentBody = renderReady(layout, apt);
+            for (boolean metadataGuard : new boolean[] {true, false}) {
+                if (bodyDigest.equals(sha256(previouslySentReady(currentBody, apt, metadataGuard)))) {
+                    String currentRequest = renderTrackedReady(task.id(), operation, serverDigest, bodyDigest, layout, apt);
+                    return requestDigest.equals(readyRequestDigest(previouslySentReady(currentRequest, apt, metadataGuard)));
+                }
             }
         }
-        if (allowPreviouslySentUnscoped && point.isPresent() && bodyDigest.equals(bodyDigest(layout, Optional.empty())))
-            point = Optional.empty();
-        return bodyDigest.equals(bodyDigest(layout, point))
-            && requestDigest.equals(DeploymentMirrorTasks.installerRequestDigest(
-                renderTracked(task.id(), operation, serverDigest, bodyDigest, layout, point), task));
+        if (allowPreviouslySentUnscoped && point.isPresent()) {
+            String unscoped = render(layout, Optional.empty());
+            if (bodyDigest.equals(sha256(unscoped)) || bodyDigest.equals(sha256(previouslySentPackageInstaller(unscoped))))
+                point = Optional.empty();
+        }
+        String currentBody = render(layout, point);
+        if (bodyDigest.equals(sha256(currentBody))) {
+            String original = renderTracked(task.id(), operation, serverDigest, bodyDigest, layout, point);
+            return requestDigest.equals(DeploymentMirrorTasks.installerRequestDigest(original, task));
+        }
+        if (!allowPreviouslySentUnscoped || !bodyDigest.equals(sha256(previouslySentPackageInstaller(currentBody))))
+            return false;
+        String original = renderTracked(task.id(), operation, serverDigest, bodyDigest, layout, point);
+        return requestDigest.equals(DeploymentMirrorTasks.installerRequestDigest(previouslySentPackageInstaller(original), task));
     }
 
     /** Restores the exact previous APT-ready bytes for local digest comparison in reconciliation. */
     static String previouslySentReady(String guardedInstaller, DownloadPoint point) {
+        return previouslySentReady(guardedInstaller, point, false);
+    }
+
+    static String previouslySentReady(String guardedInstaller, DownloadPoint point, boolean metadataGuard) {
         String guarded = DeploymentAptPrerequisites.program(point) + METADATA_BEFORE_PRIOR_ADMISSION;
-        int start = guardedInstaller.indexOf(guarded);
-        if (start < 0 || guardedInstaller.indexOf(guarded, start + guarded.length()) >= 0)
-            throw new IllegalArgumentException("Current installer prerequisite section is not unique");
-        return guardedInstaller.substring(0, start) + DeploymentAptPrerequisites.previouslySentProgram(point)
-            + guardedInstaller.substring(start + guarded.length());
+        String previous = metadataGuard ? guarded : DeploymentAptPrerequisites.previouslySentProgram(point);
+        return restoreHistoricalPreflight(guardedInstaller, guarded, previous);
+    }
+
+    static String previouslySentPackageInstaller(String guardedInstaller) {
+        return restoreHistoricalPreflight(guardedInstaller, renderRuntimePathGuards(), "");
+    }
+
+    private static String restoreHistoricalPreflight(String installer, String currentAdmission, String historicalAdmission) {
+        String protectedProbes = REQUIRE_ROOT + currentAdmission + renderSecurityObservationFunctions();
+        int start = installer.indexOf(protectedProbes);
+        if (start < 0 || installer.indexOf(protectedProbes, start + protectedProbes.length()) >= 0)
+            throw new IllegalArgumentException("Current installer security preflight is not unique");
+        return installer.substring(0, start) + renderHistoricalSecurityObservationFunctions() + HISTORICAL_TRACKED_PREFLIGHT
+            + historicalAdmission + installer.substring(start + protectedProbes.length()).replace(R85_PRIOR_HELPER, "");
     }
 
     /** Builds one exact non-secret original installer receipt. / 构造精确的非秘密原安装回执。
@@ -536,11 +578,11 @@ public final class DeploymentHelperInstallerScript {
             [ "$(apt_prerequisites_observe)" = APT_PREREQUISITES=READY ] || exit 64
             prepare_stage=helper-installation
             """;
-        return "set -euo pipefail\nexport LC_ALL=C\n" + renderStageDiagnostics() + renderSecurityObservationFunctions()
-            + """
-            [ "$(id -u)" -eq 0 ] || exit 64
-            command -v systemctl >/dev/null
-            """ + (ready ? DeploymentAptPrerequisites.program(point.orElseThrow()) + METADATA_BEFORE_PRIOR_ADMISSION : guardPackagePoint(point))
+        String prerequisiteAdmission = ready ? DeploymentAptPrerequisites.program(point.orElseThrow()) + METADATA_BEFORE_PRIOR_ADMISSION
+            : guardPackagePoint(point);
+        String start = REQUIRE_ROOT + (ready ? prerequisiteAdmission : renderRuntimePathGuards()) + renderSecurityObservationFunctions()
+            + (ready ? "" : prerequisiteAdmission);
+        return "set -euo pipefail\nexport LC_ALL=C\n" + renderStageDiagnostics() + start
             + renderPriorExecutableAdmission(layout, true)
             + (ready ? readyCheck.replace("prepare_stage=platform-prerequisites", "prepare_stage=platform-prerequisites-before-lock") : "")
             + renderInstallationLock(layout)
@@ -591,6 +633,57 @@ public final class DeploymentHelperInstallerScript {
      * @return render security observation functions text / 渲染安全观测函数集合文本
      */
     public static String renderSecurityObservationFunctions() {
+        return """
+            installer_security_executable() {
+              local executable
+              executable=$(type -P -- "$1") || return 1
+              if ! files_trusted_runtime_path "$executable"; then
+                printf 'PREPARE_REJECT=security-observation-command-ownership\\n' >&2
+                return 64
+              fi
+              printf '%s\\n' "$executable"
+            }
+            security_state() {
+              local selinux_path tr_path status=0
+              selinux_path=$(installer_security_executable getenforce) || status=$?
+              if [ "$status" -eq 0 ]; then
+                "$selinux_path"
+              elif [ "$status" -ne 1 ]; then
+                return "$status"
+              elif [ -r /sys/module/apparmor/parameters/enabled ]; then
+                tr_path=$(installer_security_executable tr) || return 64
+                printf 'apparmor:'; "$tr_path" -d '\\n' < /sys/module/apparmor/parameters/enabled
+              else printf 'none'; fi
+            }
+            firewall_state() {
+              local systemctl_path grep_path nft_path nft_rules service status=0
+              systemctl_path=$(installer_security_executable systemctl) || return 64
+              grep_path=$(installer_security_executable grep) || return 64
+              for service in firewalld ufw; do
+                if "$systemctl_path" list-unit-files "$service.service" --no-legend 2>/dev/null | "$grep_path" -q "$service.service"; then
+                  printf '%s:' "$service"; "$systemctl_path" is-active "$service" 2>/dev/null || :
+                  return
+                fi
+              done
+              nft_path=$(installer_security_executable nft) || status=$?
+              if [ "$status" -eq 0 ]; then
+                if nft_rules="$("$nft_path" list ruleset 2>/dev/null)"; then
+                  if [ -n "$nft_rules" ]; then printf 'nftables:active'; else printf 'nftables:inactive'; fi
+                else
+                  printf 'nftables:unknown'
+                fi
+              elif [ "$status" -eq 1 ]; then
+                printf 'none'
+              else
+                return "$status"
+              fi
+            }
+            security_before="$(security_state)"
+            firewall_before="$(firewall_state)"
+            """;
+    }
+
+    private static String renderHistoricalSecurityObservationFunctions() {
         return """
             security_state() {
               if command -v getenforce >/dev/null 2>&1; then getenforce
@@ -653,10 +746,11 @@ public final class DeploymentHelperInstallerScript {
 
     /** Admits only missing, current or explicitly pinned product bytes at the selected target. */
     private static String renderPriorExecutableAdmission(DeploymentRemoteLayout layout, boolean upgrade) {
-        // Exact original-layout release bytes from R49, R41, R37/R36, R35, R33, R27, R26, R24, R23, R19, R18, MAIN (7940a2e5d), and 8089f7fc7.
+        // Exact original-layout release bytes, including the R85 helper deployed before the PHP payload update.
         // Keep the path binding even if a different layout happens to use an identical entry payload.
         String legacy = upgrade && DeploymentRemoteLayout.original().equals(layout) ? """
               case "$3:$installer_digest" in
+            """ + R85_PRIOR_HELPER + """
                 helper:4c81aa13d783567773f79a2bc2aadced4e3f497fa1e6eb2520fb490cf1198696 | \\
                 helper:a68639329a6fb5b5d4af6e8132a2097807266ef96e3b09809f3620570b79dfe5 | \\
                 helper:7ec53edbc9295fe8b964aa7756079e44d8e51b6ca6bfe83585e7dbeb9dca4a67 | \\

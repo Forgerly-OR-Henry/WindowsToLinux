@@ -125,7 +125,7 @@ class DeploymentNativeHelperPackageImpactTest {
             if (mutation.equals("MISSING_MIRROR")) executable = fixture.installer("TRACKED", false);
             if (mutation.equals("TASK")) executable = executable.replace("\nTASK=" + fixture.task.id(), "\nTASK=" + UUID.randomUUID());
             if (mutation.equals("RECEIPT_SERVER")) executable = executable.replace("SERVER_SHA256=" + MirroredInstallerTestFixture.sha(fixture.server.id()), "SERVER_SHA256=" + "0".repeat(64));
-            try (var request = new CommandRequest(mutation.equals("LAUNCHER") ? "exec /bin/bash -s" : DeploymentHelperInstallerScript.LAUNCHER,
+            try (var request = new CommandRequest(mutation.equals("LAUNCHER") ? DeploymentHelperInstallerScript.STATUS_LAUNCHER : DeploymentHelperInstallerScript.LAUNCHER,
                     executable.getBytes(StandardCharsets.UTF_8), java.time.Duration.ofHours(2), 131072)) {
                 var intent = fixture.intent("TRACKED", request);
                 if (mutation.equals("SERVER")) intent = RemoteActions.command(new ServerId("other-server"), intent.revision(), request).withSemantics(intent.semantics().orElseThrow());
@@ -229,7 +229,7 @@ class DeploymentNativeHelperPackageImpactTest {
                 transitions::incrementAndGet).outcome());
             assertEquals(1, transitions.get());
             assertEquals(List.of(DeploymentHelperInstallerScript.renderPrerequisiteObservation(point), ready), sent);
-            var protectedLauncher = SshCommandFrameProtocol.HELPER_PERL_STARTUP_HEADER + DeploymentHelperInstallerScript.LAUNCHER;
+            var protectedLauncher = DeploymentHelperInstallerScript.PERL_STARTUP_LAUNCHER;
             assertEquals(List.of(protectedLauncher, protectedLauncher), launchers);
             assertEquals(2, usedGrants.size());
             var observeIntent = assisted.grantedIntents.getFirst();

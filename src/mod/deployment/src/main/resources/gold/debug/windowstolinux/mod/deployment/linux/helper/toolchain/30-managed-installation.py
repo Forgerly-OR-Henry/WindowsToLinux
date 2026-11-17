@@ -22,19 +22,28 @@ def discover_system(ecosystem, identity):
         owned_directory(home)
         if not executable.is_file() or executable.stat().st_uid != 0 or executable.stat().st_mode & 0o022:
             return None
-        probe(ecosystem, home, identity)
         files = []
-        for name in binaries:
-            file = pathlib.Path(shutil.which(name, path=str(home / 'bin') + ':' + str(home) + ':/usr/bin') or '-')
-            if not file.is_file():
-                if name == binaries[0] or ecosystem == 'JAVA' and name in ('javac', 'jar'):
-                    return None
-                continue
-            file = file.resolve()
-            owned_directory(file.parent)
-            if file.stat().st_uid != 0 or file.stat().st_mode & 0o022:
+        if ecosystem == 'PHP':
+            php_protected_executable(executable)
+            digest = hashlib.sha256(executable.read_bytes()).hexdigest()
+            php_system_probe(executable, identity)
+            php_protected_executable(executable)
+            if hashlib.sha256(executable.read_bytes()).hexdigest() != digest:
                 return None
-            files.append({'name': name, 'path': str(file), 'sha256': hashlib.sha256(file.read_bytes()).hexdigest()})
+            files.append({'name': 'php', 'path': str(executable), 'sha256': digest})
+        else:
+            probe(ecosystem, home, identity)
+            for name in binaries:
+                file = pathlib.Path(shutil.which(name, path=str(home / 'bin') + ':' + str(home) + ':/usr/bin') or '-')
+                if not file.is_file():
+                    if name == binaries[0] or ecosystem == 'JAVA' and name in ('javac', 'jar'):
+                        return None
+                    continue
+                file = file.resolve()
+                owned_directory(file.parent)
+                if file.stat().st_uid != 0 or file.stat().st_mode & 0o022:
+                    return None
+                files.append({'name': name, 'path': str(file), 'sha256': hashlib.sha256(file.read_bytes()).hexdigest()})
     except (PreparationFailure, OSError, subprocess.TimeoutExpired):
         return None
     digest = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
@@ -93,7 +102,13 @@ def materialize_system(discovered):
     tracked = globals().get('TRACKED_OPERATION')
     marker = saved_installation_marker(directory)
     if marker is not None:
-        record = json.loads(marker.read_text())
+        if ecosystem == 'PHP':
+            saved = tracked_json(tracked_regular(marker, 65536))
+            if saved != record:
+                fail('integrity', 'saved PHP system marker differs from the verified executable')
+            record = saved
+        else:
+            record = json.loads(marker.read_text())
         verify_system(record)
         return record
     with create_installation_directory(directory, tracked):
@@ -121,6 +136,8 @@ def materialize_system(discovered):
                 (directory / name).symlink_to(home / name, target_is_directory=True)
         directory.chmod(0o755)
         (directory / 'bin').chmod(0o755)
+        if ecosystem == 'PHP':
+            verify_system(record)
         if tracked is None:
             marker.write_text(json.dumps(record, sort_keys=True))
             marker.chmod(0o444)
@@ -137,6 +154,8 @@ def reuse_system(ecosystem, identity):
 def verify_system(record):
     if record.get('origin') != 'SYSTEM':
         return
+    if record.get('ecosystem') == 'PHP':
+        php_system_launcher(record, pathlib.Path(record['directory']))
     for f in record['system_files']:
         file = pathlib.Path(f['path'])
         owned_directory(file.parent)
@@ -151,8 +170,6 @@ def verify_system(record):
 
 def installation_key(ecosystem, identity, expected):
     recipe = '\nruby-openssl-3.0.3' if ecosystem == 'RUBY' and version_key(identity)[:2] == (3, 0) else ''
-    if ecosystem == 'PHP':
-        recipe = '\nphp-cli-iconv-zip'
     return hashlib.sha256((ecosystem + '\n' + identity + '\n' + expected + recipe).encode()).hexdigest()
 
 
@@ -291,6 +308,8 @@ def probe_managed_dotnet(record, directory, version):
 
 def install(ecosystem, identity, url, algorithm, expected, layout):
     global MIRROR_POINT
+    if ecosystem == 'PHP' or layout == 'php':
+        fail('request', 'PHP source installation requires the isolated worker')
     MIRROR_POINT = toolchain_point(ecosystem)
     tracked = globals().get('TRACKED_OPERATION')
     if algorithm not in ('sha256', 'sha512') or not re.fullmatch(
@@ -357,27 +376,6 @@ def install(ecosystem, identity, url, algorithm, expected, layout):
                     source_dependencies(layout)
                     options = {
                         'python': ['--with-ensurepip=install'],
-                        'php': [
-                            '--disable-all',
-                            '--enable-cli',
-                            '--enable-mbstring',
-                            '--with-iconv',
-                            '--with-openssl',
-                            '--with-zlib',
-                            '--with-zip',
-                            '--enable-phar',
-                            '--enable-tokenizer',
-                            '--enable-session',
-                            '--enable-filter',
-                            '--with-curl',
-                            '--enable-pdo',
-                            '--with-pdo-pgsql',
-                            '--with-pdo-mysql=mysqlnd',
-                            '--with-mysqli=mysqlnd',
-                            '--with-pgsql',
-                            '--with-sqlite3',
-                            '--with-pdo-sqlite',
-                        ],
                         'ruby': ['--disable-install-doc'],
                     }[layout]
                     if layout == 'ruby' and version_key(identity)[:2] == (3, 0):
@@ -415,6 +413,8 @@ def install(ecosystem, identity, url, algorithm, expected, layout):
 
 
 def probe(ecosystem, directory, expected):
+    if ecosystem == 'PHP':
+        fail('request', 'PHP verification requires the isolated worker')
     if ecosystem == 'DOTNET':
         return probe_managed_dotnet(load_managed_dotnet_marker(directory), directory, expected)
     commands = {
@@ -424,7 +424,6 @@ def probe(ecosystem, directory, expected):
         'KOTLIN': ['bin/kotlinc', '-version'],
         'GO': ['bin/go', 'version'],
         'RUST': ['bin/rustc', '--version'],
-        'PHP': ['bin/php', '-r', 'echo PHP_VERSION;'],
         'RUBY': ['bin/ruby', '-e', 'print RUBY_VERSION'],
     }
     command = list(commands[ecosystem])
@@ -441,14 +440,5 @@ def probe(ecosystem, directory, expected):
         run([str(directory / 'bin/javac'), '-version'])
     if ecosystem == 'PYTHON':
         run([str(directory / 'bin/python3'), '-I', '-S', '-B', '-c', 'import ssl, sqlite3, bz2, lzma, venv, zlib'])
-    if ecosystem == 'PHP':
-        run(
-            [
-                str(directory / 'bin/php'),
-                '-r',
-                'foreach (["curl", "iconv", "mbstring", "pdo", "pdo_sqlite", "zip"] as $extension) '
-                '{ if (!extension_loaded($extension)) { fwrite(STDERR, "missing PHP extension: " . $extension); exit(1); } }',
-            ]
-        )
     if ecosystem == 'RUBY':
         run([str(directory / 'bin/ruby'), '-e', 'require "openssl"; require "zlib"; require "yaml"'])

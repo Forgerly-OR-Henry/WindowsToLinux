@@ -35,6 +35,11 @@ record PreparationSourceRange(String section, int offset, int next) {
         "aptDispatch", "aptSourceSafety", "aptCredentialAndTransportPolicy", "aptSecurityAndFrozenTransaction",
         "mirrorPolicyValidation", "mirrorRouteAdmission", "mirrorTLS", "mirrorBoundedRead", "mirrorDigest",
         "def mirror_system_command(");
+    private static final Set<String> PHP_BUILD_REQUIRED = Set.of(
+        "phpArchiveSourceBinding", "phpSourceWorker", "phpSourceAdapter", "def extract(archive, destination):",
+        "def source_unit(", "def source_install(", "def source_probe(", "def ruby_publish(",
+        "sourceIsolationPreflight", "gnuMakeSourceIdentity", "gnuMakeBootstrap", "def prepare_gnu_make_source(",
+        "def discover_system(", "def verify_system(", "phpLegacyReceiverGuard", "phpLegacyProbeGuard");
     private static final Set<String> APT_DEPENDENCY_WORKER_INITIAL = Set.of(
         "def dependency_manifest(", "def dependency_open_core_events(", "def dependency_worker(",
         "def dependency_supervise(", "def dependency_stop_owned(", "def dependency_validate_apt(",
@@ -52,6 +57,7 @@ record PreparationSourceRange(String section, int offset, int next) {
         boolean rust = ecosystem.equals("RUST");
         boolean node = ecosystem.equals("NODE");
         boolean pythonSource = ecosystem.equals("PYTHON");
+        boolean phpSource = ecosystem.equals("PHP");
         ranges.add(between(helper, "shellStartup", "#!/bin/bash -p\n", "\nhelper_path="));
         ranges.add(between(helper, "startupOwnership", "require_root() {\n", "\nrequire_app() {"));
         ranges.add(between(helper, "prepareDispatch", "    prepare-toolchains)\n", "    retain)"));
@@ -89,6 +95,8 @@ record PreparationSourceRange(String section, int offset, int next) {
             ranges.addAll(rustPreparation(helper, diagnosed));
         } else if (pythonSource) {
             ranges.addAll(pythonSourcePreparation(helper));
+        } else if (phpSource) {
+            ranges.addAll(phpSourcePreparation(helper));
         } else {
             ranges.add(python(helper, "def install(ecosystem, identity, url, algorithm, expected, layout):"));
             ranges.add(python(helper, "def probe(ecosystem, directory, expected):"));
@@ -136,11 +144,26 @@ record PreparationSourceRange(String section, int offset, int next) {
         ranges.add(between(helper, "pythonMakeInvocation", "def make_python(",
             "\n\nfailure = 90", worker));
         ranges.add(between(helper, "pythonSourceWorker", "\nfailure = 90\n", "\n\ndef python_source_marker_recipe_matches(", worker));
-        ranges.add(between(helper, "pythonSourceAdapter", "def python_source_marker_recipe_matches(", "\n\ndef main(args):"));
+        ranges.add(between(helper, "pythonSourceAdapter", "def python_source_marker_recipe_matches(", "\n\nPHP_ARCHIVE_BOUNDARIES = "));
         ranges.add(between(helper, "pythonLegacyReceiverGuard",
             "    if ecosystem == 'PYTHON' or layout == 'python':\n", "\n    MIRROR_POINT = toolchain_point(ecosystem)"));
         ranges.add(between(helper, "pythonSystemProfile", "def discover_system(ecosystem, identity):", "\n    binaries = "));
         ranges.add(python(helper, "def verify_system("));
+        return ranges;
+    }
+
+    private static List<PreparationSourceRange> phpSourcePreparation(String helper) throws IOException {
+        var ranges = new ArrayList<>(sourceIsolation(helper));
+        ranges.addAll(gnuMakeSource(helper));
+        ranges.add(between(helper, "phpArchiveSourceBinding", "\nPHP_ARCHIVE_BOUNDARIES = ", "\nPHP_SOURCE_RECIPE = "));
+        ranges.add(between(helper, "phpSourceWorker", "\nPHP_SOURCE_RECIPE = ", "\n\ndef php_protected_executable("));
+        ranges.add(between(helper, "phpSourceAdapter", "def php_protected_executable(", "\n\ndef main(args):"));
+        ranges.add(between(helper, "phpLegacyReceiverGuard",
+            "    if ecosystem == 'PHP' or layout == 'php':\n", "\n    if ecosystem == 'PYTHON' or layout == 'python':"));
+        ranges.add(between(helper, "phpLegacyProbeGuard", "def probe(ecosystem, directory, expected):", "\n    if ecosystem == 'DOTNET':"));
+        for (String function : List.of("extract(archive, destination):", "discover_system(", "verify_system(",
+                "ruby_publish(", "ruby_link_target("))
+            ranges.add(python(helper, "def " + function));
         return ranges;
     }
 
@@ -378,6 +401,21 @@ record PreparationSourceRange(String section, int offset, int next) {
             python(runtime, "def mirror_dependency("));
     }
 
+    static List<PreparationSourceRange> cargoBuildRuntime(String runtime) throws IOException {
+        var ranges = new ArrayList<>(buildRuntime(runtime));
+        ranges.addAll(List.of(
+            between(runtime, "cargoDependencyDispatch", "    if args.operation == 'dependency':",
+                "\n    if args.operation == 'system-dnf':"),
+            between(runtime, "cargoSparseRegistry", "    elif point == 'RUST_CRATE':", "\n    elif point == 'NUGET':"),
+            between(runtime, "cargoRepositoryRequests", "class RepositoryGateway:", "\n    @staticmethod\n    def python_filename("),
+            between(runtime, "cargoRepositoryLinks", "    def link(self, point, value,", "\n    def __enter__(self):"),
+            between(runtime, "cargoRepositoryLifecycle", "    def __enter__(self):\n        self.thread.start()",
+                "\ndef reject_unmapped_lock_urls(", offset(runtime, "class RepositoryGateway:")),
+            python(runtime, "def locked_dependency("),
+            python(runtime, "def mirror_transfer("), python(runtime, "def _mirror_transfer(")));
+        return ranges;
+    }
+
     static List<PreparationSourceRange> goBuildRuntime(String runtime) throws IOException {
         var ranges = new ArrayList<>(List.of(
             python(runtime, "class MirrorPolicy:"),
@@ -486,6 +524,8 @@ record PreparationSourceRange(String section, int offset, int next) {
     }
 
     static boolean sourceBuildPreparationInitial(String ecosystem, PreparationSourceRange range) {
+        if (ecosystem.equals("PHP")) return Set.of("phpSourceWorker", "phpSourceAdapter").contains(range.section())
+            || RUBY_PREPARATION_INITIAL.contains(range.section());
         if (!ecosystem.equals("RUBY")) return PYTHON_PREPARATION_INITIAL.contains(range.section());
         return RUBY_PREPARATION_INITIAL.contains(range.section()) ||
             rubyMakeRequired(range) && !range.section().equals("def gnu_make_origin(");
@@ -493,6 +533,10 @@ record PreparationSourceRange(String section, int offset, int next) {
 
     static boolean rubyMakeRequired(PreparationSourceRange range) {
         return RUBY_MAKE_REQUIRED.contains(range.section());
+    }
+
+    static boolean phpBuildRequired(PreparationSourceRange range) {
+        return PHP_BUILD_REQUIRED.contains(range.section());
     }
 
     static boolean buildsFromSource(String ecosystem) {

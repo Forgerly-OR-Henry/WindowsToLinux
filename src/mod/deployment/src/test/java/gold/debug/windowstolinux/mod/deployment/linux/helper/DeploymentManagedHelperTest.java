@@ -93,8 +93,12 @@ class DeploymentManagedHelperTest {
                 default -> helper.installFilesWithPrerequisites(callerLauncher, prerequisites);
             };
             assertEquals(TaskResult.SUCCEEDED, result.outcome(), kind);
-            assertEquals(kind.equals("explicit") ? callerLauncher : DeploymentHelperInstallerScript.LAUNCHER,
-                sent.getFirst().script(), kind);
+            String expectedLauncher = switch (kind) {
+                case "status" -> DeploymentHelperInstallerScript.STATUS_LAUNCHER;
+                case "explicit" -> gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER + callerLauncher;
+                default -> DeploymentHelperInstallerScript.LAUNCHER;
+            };
+            assertEquals(expectedLauncher, sent.getFirst().script(), kind);
             assertArrayEquals(body.getBytes(StandardCharsets.UTF_8), sent.getFirst().stdin(), kind);
             assertEquals(java.time.Duration.ofSeconds(kind.equals("status") ? 30 : 7200), sent.getFirst().timeout(), kind);
             assertEquals(kind.equals("status") ? 2048 : 131072, sent.getFirst().outputLimitBytes(), kind);
@@ -102,15 +106,18 @@ class DeploymentManagedHelperTest {
     }
 
     @Test
-    void defaultInstallersPinCurrentSharedRuntimeBytes() throws Exception {
-        assertEquals("d900cd765e28c82ff4a422137fdc1e6678646c4179592e9d22d5f9b5db04eb8e",
-            digest(DeploymentHelperInstallerScript.render()));
-        assertEquals("fbdd43fcb848bcc37e13a930c774970b03e932233f72b1d442e014cdd4a5e92a",
-            digest(DeploymentHelperInstallerScript.renderHelperInstallation()));
-        assertEquals("9d86a7155b18713ae422e42fa9ab2a3377cb3523a2e2621b02f00f81c583d9d4",
-            digest(DeploymentHelperInstallerScript.renderTracked(task().id(),
-                UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), "a".repeat(64),
-                digest(DeploymentHelperInstallerScript.render()))));
+    void defaultInstallersBindCurrentSharedRuntimeBytes() throws Exception {
+        String body = DeploymentHelperInstallerScript.render();
+        String tracked = DeploymentHelperInstallerScript.renderTracked(task().id(),
+            UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), "a".repeat(64), digest(body));
+        for (String original : List.of(body, tracked)) {
+            var evidence = new ObjectMapper().valueToTree(DeploymentInstallerEvidence.describe(original));
+            assertEquals(original, DeploymentInstallerEvidence.reconstruct(evidence));
+            assertEquals(digest(body), evidence.at("/digestScopes/bodyDigest/value").asText());
+            assertEquals(digest(original), evidence.at("/digestScopes/requestDigest/value").asText());
+            assertEquals(DeploymentManagedHelperBundle.renderScript(), evidence.at("/sources/managedHelper").asText());
+            assertEquals(DeploymentManagedHelperBundle.renderBuildEntry(), evidence.at("/sources/buildEntry").asText());
+        }
     }
 
     @Test
@@ -153,7 +160,7 @@ class DeploymentManagedHelperTest {
         assertTrue(wrapper.toString().contains("WTL_REMOTE_LAYOUT_UNIT_V1"));
         for (String mutation : List.of("systemctl enable", "systemctl disable", "systemctl daemon-reload", "recovery_unit="))
             assertFalse(wrapper.toString().contains(mutation));
-        assertTrue(wrapper.toString().contains("systemctl list-unit-files"));
+        assertTrue(wrapper.toString().contains("\"$systemctl_path\" list-unit-files"));
         assertTrue(wrapper.toString().contains("SECURITY_BEFORE="));
         assertThrows(IllegalArgumentException.class, () -> DeploymentInstallerEvidence.describe(script));
         assertThrows(IllegalArgumentException.class, () -> DeploymentInstallerEvidence.describeFiles(DeploymentHelperInstallerScript.render()));

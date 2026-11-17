@@ -181,7 +181,7 @@ class DeploymentAssistedHelperStatusEvidenceRegressionTest {
 
         CommandRequest request(String mutation) {
             String input = DeploymentHelperInstallerScript.renderStatus(mutation.equals("OPERATION") ? UUID.randomUUID() : operation, layout);
-            return new CommandRequest(mutation.equals("LAUNCHER") ? "bash -s" : DeploymentHelperInstallerScript.LAUNCHER,
+            return new CommandRequest(mutation.equals("LAUNCHER") ? "bash -s" : DeploymentHelperInstallerScript.STATUS_LAUNCHER,
                 (input + (mutation.equals("STDIN") ? "\n" : "")).getBytes(StandardCharsets.UTF_8),
                 Duration.ofSeconds(mutation.equals("TIMEOUT") ? 31 : 30), mutation.equals("OUTPUT_LIMIT") ? 4096 : 2048);
         }

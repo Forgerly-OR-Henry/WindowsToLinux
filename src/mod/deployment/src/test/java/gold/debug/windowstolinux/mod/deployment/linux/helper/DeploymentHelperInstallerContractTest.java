@@ -206,6 +206,9 @@ class DeploymentHelperInstallerContractTest {
         int firstCheck = original.indexOf("prepare_stage=platform-prerequisites\n");
         int lastCheck = original.lastIndexOf("[ \"$(apt_prerequisites_observe)\"");
         assertTrue(beforeLock > 0 && beforeLock < original.indexOf("/usr/bin/flock -x \"$installer_lock\""));
+        int root = original.indexOf("[ \"$EUID\" -eq 0 ] || exit 64");
+        int baseline = original.indexOf("security_before=\"$(security_state)\"");
+        assertTrue(root > 0 && root < metadataAdmission && metadataAdmission < baseline && baseline < priorAdmission);
         assertTrue(metadataAdmission > 0 && metadataAdmission < priorAdmission && priorAdmission < beforeLock);
         assertTrue(firstCheck > original.indexOf("/usr/bin/flock -x \"$installer_lock\""));
         assertTrue(firstCheck < original.indexOf("prepare_stage=installer-receipt\n"));
@@ -217,6 +220,32 @@ class DeploymentHelperInstallerContractTest {
             () -> DeploymentHelperInstallerScript.trackedRequest(original + ":\n", task, layout, java.util.Optional.of(point)));
         assertThrows(IllegalArgumentException.class,
             () -> DeploymentHelperInstallerScript.trackedRequest(original, task, layout, java.util.Optional.empty()));
+    }
+
+    @Test
+    void installerSecurityObserversRequireProtectedExecutablePaths() {
+        var layout = DeploymentRemoteLayout.original();
+        var point = gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.APT_UBUNTU;
+        String observation = DeploymentHelperInstallerScript.renderSecurityObservationFunctions();
+        for (String script : List.of(DeploymentHelperInstallerScript.render(layout), DeploymentHelperInstallerScript.renderFiles(layout),
+                DeploymentHelperInstallerScript.renderReady(layout, point))) {
+            int root = script.indexOf("[ \"$EUID\" -eq 0 ] || exit 64");
+            int runtimeGuard = script.indexOf("files_trusted_runtime_path() {");
+            int baseline = script.indexOf(observation);
+            int finalObservation = script.indexOf(DeploymentHelperInstallerScript.renderSecurityInvariant());
+            assertTrue(root >= 0 && root < runtimeGuard && runtimeGuard < baseline && baseline < finalObservation);
+        }
+        int resolve = observation.indexOf("executable=$(type -P -- \"$1\") || return 1");
+        int verify = observation.indexOf("if ! files_trusted_runtime_path \"$executable\";");
+        int expose = observation.indexOf("printf '%s\\n' \"$executable\"");
+        assertTrue(resolve >= 0 && resolve < verify && verify < expose);
+        assertTrue(observation.substring(verify, expose).contains("return 64"));
+        for (String call : List.of("\"$selinux_path\"", "\"$tr_path\" -d", "\"$systemctl_path\" list-unit-files",
+                "\"$systemctl_path\" is-active", "\"$grep_path\" -q", "\"$nft_path\" list ruleset")) {
+            assertTrue(observation.contains(call));
+        }
+        assertTrue(observation.contains("elif [ \"$status\" -ne 1 ]; then\n    return \"$status\""));
+        assertTrue(observation.contains("elif [ \"$status\" -eq 1 ]; then\n    printf 'none'\n  else\n    return \"$status\""));
     }
 
     @Test
@@ -232,23 +261,38 @@ class DeploymentHelperInstallerContractTest {
         var requestDigests = java.util.Map.of(ubuntu, "b12a96ce27c2065b8726b0b0d94165ea5efceea14a873c62086a31a03b69d600",
             debian, "d27999dd9ddbbf9262485dcc64db73c93e984511d84bafe715eee6c5afa0f69d");
         for (var point : List.of(ubuntu, debian)) {
-            String earlierBody = DeploymentHelperInstallerScript.previouslySentReady(DeploymentHelperInstallerScript.renderReady(layout, point), point);
-            assertEquals(bodyDigests.get(point), sha(earlierBody));
             String current = DeploymentHelperInstallerScript.renderTrackedReady(task, operation, server, bodyDigests.get(point), layout, point);
             String earlier = DeploymentHelperInstallerScript.previouslySentReady(current, point);
-            assertEquals(requestDigests.get(point), DeploymentHelperInstallerScript.readyRequestDigest(earlier));
             assertThrows(IllegalArgumentException.class,
                 () -> DeploymentHelperInstallerScript.trackedRequest(earlier, task, layout, java.util.Optional.of(point)));
         }
         try (var fixture = new gold.debug.windowstolinux.mod.deployment.ai.review.MirroredInstallerTestFixture()) {
-            String priorBody = bodyDigests.get(ubuntu);
-            String current = DeploymentHelperInstallerScript.renderTrackedReady(fixture.task.id(), operation, server, priorBody, layout, ubuntu);
-            String earlier = DeploymentHelperInstallerScript.previouslySentReady(current, ubuntu);
-            String digest = DeploymentHelperInstallerScript.readyRequestDigest(earlier);
-            assertTrue(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, operation, server, priorBody, digest, layout, true));
-            assertFalse(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, operation, server, priorBody, digest, layout, false));
-            assertFalse(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, operation, server, priorBody,
-                DeploymentHelperInstallerScript.readyRequestDigest(current), layout, true));
+            String currentBody = DeploymentHelperInstallerScript.renderReady(layout, ubuntu);
+            for (boolean metadata : new boolean[] {true, false}) {
+                String priorBody = sha(DeploymentHelperInstallerScript.previouslySentReady(currentBody, ubuntu, metadata));
+                String current = DeploymentHelperInstallerScript.renderTrackedReady(fixture.task.id(), operation, server, priorBody, layout, ubuntu);
+                String earlier = DeploymentHelperInstallerScript.previouslySentReady(current, ubuntu, metadata);
+                assertEquals(metadata, earlier.contains("\napt_prerequisite_metadata || exit 64\n"));
+                String digest = DeploymentHelperInstallerScript.readyRequestDigest(earlier);
+                assertTrue(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, operation, server, priorBody, digest, layout, true));
+                assertFalse(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, operation, server, priorBody, digest, layout, false));
+                assertFalse(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, operation, server, priorBody,
+                    DeploymentHelperInstallerScript.readyRequestDigest(current), layout, true));
+                assertThrows(IllegalArgumentException.class, () -> DeploymentHelperInstallerScript.trackedRequest(
+                    earlier, fixture.task.id(), layout, java.util.Optional.of(ubuntu)));
+            }
+            assertFalse(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, operation, server,
+                bodyDigests.get(ubuntu), requestDigests.get(ubuntu), layout, true));
+            String earlierPackageBody = DeploymentHelperInstallerScript.previouslySentPackageInstaller(DeploymentHelperInstallerScript.render(layout));
+            String priorBody = sha(earlierPackageBody);
+            String earlierRequest = DeploymentHelperInstallerScript.previouslySentPackageInstaller(
+                DeploymentHelperInstallerScript.renderTracked(fixture.task.id(), operation, server, priorBody, layout));
+            String priorRequestDigest = gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks
+                .installerRequestDigest(earlierRequest, fixture.task);
+            assertTrue(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, operation, server, priorBody, priorRequestDigest, layout, true));
+            assertFalse(DeploymentHelperInstallerScript.matchesTrackedRequest(fixture.task, operation, server, priorBody, priorRequestDigest, layout, false));
+            assertThrows(IllegalArgumentException.class, () -> DeploymentHelperInstallerScript.trackedRequest(
+                earlierRequest, fixture.task.id(), layout, java.util.Optional.empty()));
         }
     }
 
@@ -302,7 +346,10 @@ class DeploymentHelperInstallerContractTest {
         assertTrue(tracked.indexOf("prepare_stage=installer-receipt") > firstEffect);
         String prefix = tracked.substring(0, firstEffect);
         int guardEnd = prefix.indexOf("\n", prefix.indexOf("PREPARE_REJECT=platform-package-scope"));
-        String stage = prefix.substring(0, guardEnd + 1) + "printf 'passed-platform-scope\\n'\n";
+        String stage = prefix.substring(0, guardEnd + 1)
+            .replace(DeploymentHelperInstallerScript.renderSecurityObservationFunctions(), "")
+            .replace("[ \"$EUID\" -eq 0 ]", "[ \"$(id -u)\" -eq 0 ]")
+            + "printf 'passed-platform-scope\\n'\n";
         String fixture = """
             id() { printf '0\\n'; }
             systemctl() { return 0; }
@@ -545,7 +592,8 @@ class DeploymentHelperInstallerContractTest {
         for (String previousRelease : List.of(
             "helper:bcb63c832f1dc89a19de021d3f7a0fed0cb2a028097a9c3f285a2d3336b69c15",
             "helper:5269a09f9fc4e49209ef30c95d9d52fb5f92e67bfd024471f491014ee78c8bca",
-            "helper:d10a316ac0078b4dabb286409e12845376d719578c9e2c029686deaf369cc3b4")) {
+            "helper:d10a316ac0078b4dabb286409e12845376d719578c9e2c029686deaf369cc3b4",
+            "helper:8cc861938d36a67735d1cd54c90fc9730f01c9cd7d8eb9fdc7d13b5441f389f5")) {
             assertTrue(DeploymentHelperInstallerScript.render(layout).contains(previousRelease));
             assertFalse(DeploymentHelperInstallerScript.renderFiles(layout).contains(previousRelease));
         }
@@ -573,6 +621,7 @@ class DeploymentHelperInstallerContractTest {
             } else {
                 String text = segment.path("text").asText()
                     .replace(DeploymentRemoteLayoutAdmission.initialize(layout), "fixture_layout\n")
+                    .replace("[ \"$EUID\" -eq 0 ]", "[ \"$(id -u)\" -eq 0 ]")
                     .replace(layout.paths().helperDirectory(), base + "/helper")
                     .replace(layout.paths().stateRoot(), base + "/state")
                     .replace("/usr/bin/stat", "fixture_stat")

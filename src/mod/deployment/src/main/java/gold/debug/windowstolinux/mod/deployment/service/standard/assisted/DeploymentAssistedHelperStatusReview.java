@@ -41,7 +41,7 @@ final class DeploymentAssistedHelperStatusReview {
             throw new IllegalArgumentException("Original helper installation task, server, phase, layout or digests differ");
         byte[] expected = DeploymentHelperInstallerScript.renderStatus(original.operationId(), layout).getBytes(StandardCharsets.UTF_8);
         byte[] actual = request.stdin();
-        try (var canonical = new CommandRequest(DeploymentHelperInstallerScript.LAUNCHER, expected, Duration.ofSeconds(30), 2048)) {
+        try (var canonical = new CommandRequest(DeploymentHelperInstallerScript.STATUS_LAUNCHER, expected, Duration.ofSeconds(30), 2048)) {
             var expectedIntent = RemoteActions.command(server, intent.revision(), canonical).withSemantics(new ActionSemantics(
                 "deployment.helper.install.status.v1", DeploymentManagedHelper.installationStatusTargets(server, layout, original.operationId())));
             if (!Arrays.equals(expected, actual) || !request.script().equals(canonical.script())

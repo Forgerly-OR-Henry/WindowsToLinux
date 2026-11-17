@@ -102,8 +102,9 @@ class DeploymentAgentHelperInstallerScriptTest {
 
     @Test
     void isolatedLauncherRejectsInheritedStartupCodeFunctionsAndOptions() throws Exception {
-        assertEquals("exec /usr/bin/env -i LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash --noprofile --norc -p -s",
-            DeploymentAgentHelperInstallerScript.LAUNCHER, "Existing Agent launcher bytes must stay unchanged");
+        assertEquals(gold.debug.windowstolinux.appapi.linux.command.SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER
+            + "exec /usr/bin/env -i LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash --noprofile --norc -p -s",
+            DeploymentAgentHelperInstallerScript.LAUNCHER);
         assertEquals(DeploymentHelperInstallerScript.LAUNCHER, DeploymentAgentHelperInstallerScript.LAUNCHER);
         Path startup = temporary.resolve("malicious-bash-env.sh");
         Files.writeString(startup, "printf startup > bash-env-marker\n");

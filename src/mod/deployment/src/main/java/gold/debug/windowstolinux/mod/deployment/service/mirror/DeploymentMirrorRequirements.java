@@ -89,7 +89,8 @@ public final class DeploymentMirrorRequirements {
                 DownloadPoint.RUST_METADATA, DownloadPoint.RUST_CRATE, DownloadPoint.RUST_INDEX);
             case DOTNET_SERVICE -> Collections.addAll(points, DownloadPoint.DOTNET_SDK, DownloadPoint.DOTNET_METADATA, DownloadPoint.NUGET);
             case PHP_SERVICE -> Collections.addAll(points, DownloadPoint.PHP_DISTRIBUTION,
-                DownloadPoint.PHP_METADATA, DownloadPoint.COMPOSER_INSTALLER, DownloadPoint.COMPOSER_REPOSITORY);
+                DownloadPoint.PHP_METADATA, DownloadPoint.COMPOSER_INSTALLER, DownloadPoint.COMPOSER_REPOSITORY,
+                DownloadPoint.GNU_MAKE_SOURCE);
             case RUBY_SERVICE -> Collections.addAll(points, DownloadPoint.RUBY_DISTRIBUTION,
                 DownloadPoint.RUBY_METADATA, DownloadPoint.RUBYGEMS, DownloadPoint.GNU_MAKE_SOURCE);
             case DOCKERFILE_CONTAINER -> points.add(DownloadPoint.OCI_REGISTRY);

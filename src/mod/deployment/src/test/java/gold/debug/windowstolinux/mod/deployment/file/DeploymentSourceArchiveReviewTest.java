@@ -495,7 +495,7 @@ class DeploymentSourceArchiveReviewTest {
             DeploymentSourceMaterial material, DeploymentSourceArchive archive, DeploymentSourceArchiveReview.Evidence captured,
             String header) throws Exception {
         try (var build = LogAnalyzerBuildReviewFixture.render(fixture, material, archive, captured)) {
-            var nativeReview = nativeReview(fixture, REVIEW_CEILING);
+            var nativeReview = nativeReview(fixture, 1_024_545);
             fixture.model.nativeReply(verdict("APPROVE"));
             String instructions = DeploymentAssistedScope.standardBuildReviewInstructions();
             JsonNode decision;
@@ -620,7 +620,8 @@ class DeploymentSourceArchiveReviewTest {
         String shell = stdin.substring(shellStart, shellStart + shellDescriptor.path("characters").asInt());
         assertEquals(shellDescriptor.path("sha256").asText(), digest(shell.getBytes(StandardCharsets.UTF_8)));
         var originals = Map.of(shellDescriptor.path("sourcePointer").asText(), shell,
-            "/mirrorTransport/runtimeSource", DeploymentMirrorRuntime.runtimeSource());
+            "/mirrorTransport/runtimeSource", DeploymentMirrorRuntime.runtimeSource(),
+            manifest.at("/stagedMirrorPolicy/sourcePointer").asText(), DeploymentMirrorTasks.buildInput(stdin).orElseThrow().policy());
         var coverage = new LinkedHashMap<String, BitSet>();
         for (var range : frame.ranges()) {
             if (frame.texts().containsKey(range.pointer())) continue;

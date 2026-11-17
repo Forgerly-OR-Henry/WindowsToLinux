@@ -329,7 +329,16 @@ public final class DeploymentAiJson {
         var messages = new ArrayList<>(accepted);
         var originalPolicy = messages.getFirst();
         messages.set(0, new AiMessage(AiRole.SYSTEM, originalPolicy.text() + "\n" + REVIEW_VERDICT_ONLY, List.of()));
-        var response = call(AiPurpose.APPROVAL, messages, List.of(definition), revision, task, true, Optional.of(definition.name()), 0);
+        var requiredTool = Optional.of(definition.name());
+        AiResponse response;
+        try {
+            response = call(AiPurpose.APPROVAL, messages, List.of(definition), revision, task, true, requiredTool, 0);
+        } catch (ApiException refused) {
+            if (Thread.currentThread().isInterrupted() || task.cancelToken().requested()
+                || !reader.repackBeforeSend(messages, refused.problem())) throw refused;
+            if (!reader.pendingApprovalEvidenceComplete()) throw refused;
+            response = call(AiPurpose.APPROVAL, messages, List.of(definition), revision, task, true, requiredTool, 0);
+        }
         if (response.finishReason().equals("tool_calls") && response.toolCalls().size() == 1
             && response.toolCalls().getFirst().name().equals(definition.name())) reader.read(response);
         return response;

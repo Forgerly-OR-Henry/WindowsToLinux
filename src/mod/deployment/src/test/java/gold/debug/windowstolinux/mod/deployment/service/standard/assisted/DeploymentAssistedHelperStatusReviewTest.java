@@ -51,7 +51,7 @@ class DeploymentAssistedHelperStatusReviewTest {
                 throw new AssertionError("No Runtime, writes or other task access expected");
             });
         byte[] body = DeploymentHelperInstallerScript.renderStatus(operation, layout).getBytes(StandardCharsets.UTF_8);
-        try (var canonical = new CommandRequest(DeploymentHelperInstallerScript.LAUNCHER, body, Duration.ofSeconds(30), 2048)) {
+        try (var canonical = new CommandRequest(DeploymentHelperInstallerScript.STATUS_LAUNCHER, body, Duration.ofSeconds(30), 2048)) {
             var intent = RemoteActions.command(server, "revision", canonical).withSemantics(new ActionSemantics(
                 "deployment.helper.install.status.v1", DeploymentManagedHelper.installationStatusTargets(server, layout, operation)));
             var accepted = DeploymentAssistedHelperStatusReview.facts(tasks, task, intent, canonical, layout);
@@ -60,10 +60,10 @@ class DeploymentAssistedHelperStatusReviewTest {
             for (String fault : List.of("old", "missing-i", "path", "missing-p", "body", "timeout", "limit", "prior-binding")) {
                 String launcher = switch (fault) {
                     case "old" -> "exec /bin/bash --noprofile --norc -s";
-                    case "missing-i" -> DeploymentHelperInstallerScript.LAUNCHER.replace(" -i ", " ");
-                    case "path" -> DeploymentHelperInstallerScript.LAUNCHER.replace("PATH=/usr/sbin:/usr/bin:/sbin:/bin", "PATH=/untrusted:/usr/bin:/bin");
-                    case "missing-p", "prior-binding" -> DeploymentHelperInstallerScript.LAUNCHER.replace(" -p ", " ");
-                    default -> DeploymentHelperInstallerScript.LAUNCHER;
+                    case "missing-i" -> DeploymentHelperInstallerScript.STATUS_LAUNCHER.replace(" -i ", " ");
+                    case "path" -> DeploymentHelperInstallerScript.STATUS_LAUNCHER.replace("PATH=/usr/sbin:/usr/bin:/sbin:/bin", "PATH=/untrusted:/usr/bin:/bin");
+                    case "missing-p", "prior-binding" -> DeploymentHelperInstallerScript.STATUS_LAUNCHER.replace(" -p ", " ");
+                    default -> DeploymentHelperInstallerScript.STATUS_LAUNCHER;
                 };
                 try (var changed = new CommandRequest(launcher, fault.equals("body") ? new byte[]{1} : body,
                     Duration.ofSeconds(fault.equals("timeout") ? 31 : 30), fault.equals("limit") ? 2049 : 2048)) {

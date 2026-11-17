@@ -252,6 +252,7 @@ public final class DeploymentCommandEvidence {
         facts.put("operation", operation);
         boolean privilegeChecked = request.script().startsWith(SshCommandFrameProtocol.PRIVILEGE_CHECKED_SYSTEM_PROBE_HEADER);
         boolean helperPerlStartup = request.script().startsWith(SshCommandFrameProtocol.HELPER_PERL_STARTUP_HEADER);
+        boolean protectedSystemStartup = request.script().startsWith(SshCommandFrameProtocol.PROTECTED_SYSTEM_PROBE_HEADER);
         facts.put("builtInSshStartup", Map.of(
             "frameLauncher", privilegeChecked ? SshCommandFrameProtocol.PRIVILEGE_CHECKED_FRAME_LAUNCHER : SshCommandFrameProtocol.FRAME_LAUNCHER,
             "requestLauncher", SshCommandFrameProtocol.SCRIPT_LAUNCHER,
@@ -260,6 +261,7 @@ public final class DeploymentCommandEvidence {
                 + "The account shell unsets the listed Linux loader and libc startup variables before starting the first product executable. "
                 + (privilegeChecked ? "The account shell first runs the SFTP-admitted getcap to check the launch files. A clear result is required before setpriv establishes no-new-privileges for the frame. " : "")
                 + (helperPerlStartup ? "The helper Perl startup marker requires same-session SFTP metadata admission of the fixed launch tools before SSH exec. " : "")
+                + (protectedSystemStartup ? "The protected system startup marker requires same-session SFTP metadata admission of env, stat, readlink and Bash before SSH exec. " : "")
                 + "Both Bash processes start with privileged mode enabled; this suppresses startup imports without changing the SSH account or granting privileges. "
                 + "The SSH server, the initial account shell and its startup policy, and installed interpreters are host prerequisites. "
                 + "These facts describe the shipped code, not a live host measurement. Review further interpreters launched by the request."));

@@ -641,7 +641,7 @@ def source_reap_probe_work(parent):
             if index >= 64:
                 break
             unit = entry.name
-            if not re.fullmatch(r'wtl-(?:ruby|python)-probe-[a-f0-9]{32}\.service', unit):
+            if not re.fullmatch(r'wtl-(?:ruby|python|php)-probe-[a-f0-9]{32}\.service', unit):
                 continue
             scope = parent / unit
             try:
@@ -1013,6 +1013,8 @@ def source_install(ecosystem, recipe, identity, url, algorithm, expected, layout
         if ecosystem == 'PYTHON':
             if not python_source_marker_recipe_matches(record):
                 fail('integrity', 'existing installation does not match its source recipe')
+        elif ecosystem == 'PHP':
+            require_php_source_record(record, destination)
         else:
             require_ruby_source_record(record, destination)
         probe_release(destination, identity)
@@ -1141,7 +1143,7 @@ def tracked_require_quiescent_with_ruby(operation):
     if operation.request['kind'] == 'PREPARE':
         name = operation.request['parameters']['ecosystem'].lower()
         work = operation.directory / 'work'
-        if name in ('ruby', 'python') and ((work / 'stage').is_dir() or (work / 'scratch').is_dir()):
+        if name in ('ruby', 'python', 'php') and ((work / 'stage').is_dir() or (work / 'scratch').is_dir()):
             ruby_require_settled(source_unit_name(operation.request['operationId'], 'build', name))
     for name, marker in source_probe_markers(operation):
         unit = source_probe_marker_unit(name, marker)
@@ -1150,7 +1152,7 @@ def tracked_require_quiescent_with_ruby(operation):
 
 
 def source_probe_markers(operation):
-    return [(name, operation.directory / (name + '-probe')) for name in ('ruby', 'python')]
+    return [(name, operation.directory / (name + '-probe')) for name in ('ruby', 'python', 'php')]
 
 
 def source_probe_marker_unit(ecosystem, marker):
@@ -1182,7 +1184,7 @@ def tracked_cleanup_with_ruby(operation):
     if operation.request['kind'] == 'PREPARE':
         name = operation.request['parameters']['ecosystem'].lower()
         work = operation.directory / 'work'
-        if name in ('ruby', 'python') and (work.exists() or work.is_symlink()):
+        if name in ('ruby', 'python', 'php') and (work.exists() or work.is_symlink()):
             owned_directory(work)
             ruby_remove_scratch(work / 'scratch', source_unit_name(operation.request['operationId'], 'build', name))
     _previous_tracked_cleanup(operation)

@@ -23,9 +23,9 @@ class DeploymentReviewSourceBlocksTest {
 
     @Test
     void usesJsonEscapedByteThresholdAndSkipsUnsafeSource() throws Exception {
-        String small = "x".repeat(188) + "\n";
-        String escaped = "\"".repeat(97) + "\n";
-        assertTrue(escaped.getBytes(StandardCharsets.UTF_8).length < 192);
+        String small = "x".repeat(61) + "\n";
+        String escaped = "\"".repeat(34) + "\n";
+        assertTrue(escaped.getBytes(StandardCharsets.UTF_8).length < 64);
         assertTrue(DeploymentReviewSourceBlocks.encode(small.repeat(2)).isEmpty());
         assertEquals(1, DeploymentReviewSourceBlocks.encode(escaped.repeat(2)).orElseThrow().references());
         assertTrue(DeploymentReviewSourceBlocks.encode(escaped.repeat(2) + "@WTL_BLOCK 1 1\n").isEmpty());
@@ -61,6 +61,6 @@ class DeploymentReviewSourceBlocksTest {
         assertThrows(IOException.class, () -> DeploymentReviewSourceBlocks.expand(valid, 5));
         assertThrows(IOException.class, () -> DeploymentReviewSourceBlocks.expand(valid, 1024 * 1024 + 1));
         assertThrows(IOException.class, () -> DeploymentReviewSourceBlocks.expand(
-            "@WTL_BLOCK 1 1\na\n" + "@WTL_COPY 1 1\n".repeat(513), 1028));
+            "@WTL_BLOCK 1 1\na\n" + "@WTL_COPY 1 1\n".repeat(2049), 4100));
     }
 }

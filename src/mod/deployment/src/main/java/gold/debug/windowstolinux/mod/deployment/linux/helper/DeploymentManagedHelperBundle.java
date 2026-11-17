@@ -52,10 +52,12 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "8cc861938d36a67735d1cd54c90fc9730f01c9cd7d8eb9fdc7d13b5441f389f5";
-    private static final String RUBY_SOURCE_SHA256 = "00aaf1a248978360e0af34021b924a06b402d1cde7085e9643dd0ac196f29893";
+    public static final String EXPECTED_SHA256 = "ddd264a97b024a39dfd4b89fd55655a0df0f863831f83295a7a0539ac801511f";
+    private static final String RUBY_SOURCE_SHA256 = "8accc7b83ccfc2bf84396bd3fe3012f0138e4da777700103a373137e92f134b9";
     private static final String GNU_MAKE_SOURCE_SHA256 = "fabf9252d95b17e8a15e0d7e80a826824b02b45f291e14d1ca0fb65b577a44a4";
     private static final String PYTHON_SOURCE_SHA256 = "ac309b1d2fc1549089444886f3503221e45eaaf86e95358409f18ed5634d1e39";
+    private static final String PHP_SOURCE_SHA256 = "3a84e6953544157d3302689ff29f5891e87d3a9496d5cb4a7ce86482cfde7054";
+    private static final String PHP_ARCHIVE_BOUNDARIES_SHA256 = "0f763b8263c2ea1293c7db7fb0e13d8f1481c2d0ccae47b67cc9e95917cee527";
 
     /**
      * ROOT.
@@ -582,6 +584,11 @@ public final class DeploymentManagedHelperBundle {
                         }
                         content = insertBefore(content, "\n\ndef main(args):", "\n\n"
                             + pinnedToolchainSource("python-source-build.py", PYTHON_SOURCE_SHA256));
+                        String archiveBoundaries = pinnedToolchainSource("archive-boundaries.py", PHP_ARCHIVE_BOUNDARIES_SHA256);
+                        String archiveSource = java.util.Base64.getEncoder().encodeToString(archiveBoundaries.getBytes(StandardCharsets.UTF_8));
+                        content = insertBefore(content, "\n\ndef main(args):", "\n\n"
+                            + "PHP_ARCHIVE_BOUNDARIES = base64.b64decode('" + archiveSource + "').decode('utf-8')\n"
+                            + pinnedToolchainSource("php-source-build.py", PHP_SOURCE_SHA256));
                     }
                     output.write((content + "\n").getBytes(StandardCharsets.UTF_8));
                     if (fragment.endsWith("40-binding-protocol.py"))

@@ -71,6 +71,7 @@ public final class DeploymentCommandSourceEvidence {
     private static final String NODE_PREPARE_INSTRUCTION = """
         Review this exact Node preparation. Match the original authority, arguments, effects and limits. Verify NODE_METADATA and NODE_DISTRIBUTION route, redirect, TLS and SHA256 checks, archive or SYSTEM reuse, locks, probes and diagnostics.
         selectedPreparationRanges maps inline text to original UTF-16 offsets; startCharacter counts from the header end. namedRanges gives [offset,next]. Read the initial supplement and retained text in header order. For absent ranges use snapshotSha256, pointer, offset and limit 1–8000, at most eight reads separately from the verdict.
+        The staged mirrorPolicySource is the exact policy embedded in the command; the public endpoint projection is selected from it. Review its full range in the current supplement or retained frame. pendingRequired identifies any missing policy bytes.
         preparationSelection.sourceMap uses UTF-16 offsets. SOURCE_TEXT takes sourcePointers[source] from sourceOffset; LINE_FEED supplies one LF. Retained pages may use original pointers for this view. Original sources and the view remain pageable. Hashes are in the original source descriptors or the receipt. previouslyDeferred groups [offset,next] under each pointer.
         Restore exactAction in segment order: LITERAL copies text, SOURCE_TEXT copies source and SHELL_SINGLE_QUOTE applies Bash single quoting. Deny unsafe effects or insufficient evidence. Submit a fresh native submit_result alone.
         """;
@@ -486,6 +487,12 @@ public final class DeploymentCommandSourceEvidence {
         boolean diagnosed = current.has("originalToolchainPreparation");
         String ecosystem = preparationEcosystem(current);
         if (ecosystem.equals("NODE")) {
+            String policy = sources.get(MIRROR_POLICY_SOURCE);
+            if (policy == null || policy.isEmpty()) throw new IOException("Original Node mirror policy is missing");
+            var policyRange = new TreeMap<>(Map.of(0, policy.length()));
+            requiredRanges.put(MIRROR_POLICY_SOURCE, policyRange);
+            initialSourceRanges.put(MIRROR_POLICY_SOURCE, policyRange);
+            manifest.putArray("requiredPreparationSources").add(MIRROR_POLICY_SOURCE);
             // Preserve the broader view and its exact page coordinates while sending a smaller execution slice.
             var parts = new ArrayList<ViewPart>();
             String broad = preparationSelection(current, sources, new LinkedHashMap<>(),
@@ -525,13 +532,14 @@ public final class DeploymentCommandSourceEvidence {
         var prerequisites = ecosystem.equals("KOTLIN")
             ? kotlinJavaPrerequisite(sources.get(INSTALLED_HELPER_SOURCE)) : List.<PreparationSourceRange>of();
         if (!prerequisites.isEmpty()) recordRequiredPreparation(manifest, requiredRanges, prerequisites);
+        var parts = new ArrayList<ViewPart>();
         String source = preparationSelection(current, sources, initialRanges,
-            manifest.putArray("selectedPreparationRanges"), ecosystem, diagnosed, prerequisites, Optional.empty());
+            manifest.putArray("selectedPreparationRanges"), ecosystem, diagnosed, prerequisites, Optional.of(parts));
         sources.put(PREPARATION_SELECTION, source);
         var frame = sourceFrame(messages, snapshot, PREPARATION_SELECTION, source);
         manifest.withArray("frames").add(frame);
         manifest.set("preparationSelection", frame);
-        return Optional.empty();
+        return Optional.of(SourceSelectionView.exact(source, parts, sources));
     }
 
     private static void addSourceBuildPreparationSelection(ObjectNode current, ObjectNode projected, ObjectNode manifest,
@@ -547,6 +555,10 @@ public final class DeploymentCommandSourceEvidence {
         var helperRanges = PreparationSourceRange.helper(helper, ecosystem, diagnosed);
         if (ecosystem.equals("RUBY")) {
             var required = helperRanges.stream().filter(PreparationSourceRange::rubyMakeRequired).toList();
+            recordRequiredPreparation(manifest, requiredRanges, required);
+        }
+        if (ecosystem.equals("PHP")) {
+            var required = helperRanges.stream().filter(PreparationSourceRange::phpBuildRequired).toList();
             recordRequiredPreparation(manifest, requiredRanges, required);
         }
         selectSourceBuildPreparationSource(body, selected, initialRanges, initialSourceRanges, ecosystem,
@@ -898,8 +910,10 @@ public final class DeploymentCommandSourceEvidence {
         // The whole build body remains visible. The literal call site only selects review navigation.
         boolean go = wrapper.original().contains("\n  wtl_dependency GO_MODULE go mod download\n"
             + "  CGO_ENABLED=0 GOPROXY=off run go build -mod=readonly -trimpath ");
-        appendSelection(selection, selected, selectedRanges, MIRROR_RUNTIME, runtime,
-            go ? PreparationSourceRange.goBuildRuntime(runtime) : PreparationSourceRange.buildRuntime(runtime), Optional.of(selectionParts));
+        boolean cargo = wrapper.original().lines().anyMatch(line -> line.strip().equals("wtl_dependency RUST_CRATE cargo fetch --locked"));
+        var runtimeRanges = cargo ? PreparationSourceRange.cargoBuildRuntime(runtime)
+            : go ? PreparationSourceRange.goBuildRuntime(runtime) : PreparationSourceRange.buildRuntime(runtime);
+        appendSelection(selection, selected, selectedRanges, MIRROR_RUNTIME, runtime, runtimeRanges, Optional.of(selectionParts));
         var requiredRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
         var initialSourceRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
         var pagedDigests = new LinkedHashMap<String, String>();
@@ -910,6 +924,12 @@ public final class DeploymentCommandSourceEvidence {
             transport.set("runtimeSource", pagedSource(MIRROR_RUNTIME, runtime, buildRuntimeLocations(wrapper.original())));
             projectBuildContext(projected, manifest);
             requiredRanges.putAll(selectedRanges);
+            if (cargo) {
+                var policy = new TreeMap<>(Map.of(0, wrapper.policy().length()));
+                requiredRanges.put(BUILD_POLICY, policy);
+                initialSourceRanges.put(BUILD_POLICY, policy);
+                manifest.putArray("requiredBuildSources").add(BUILD_POLICY);
+            }
             describeBuildBootstrapLiteral(manifest, runtime, shell, requiredRanges.get(MIRROR_RUNTIME));
             selectedRanges.keySet().forEach(pointer -> initialSourceRanges.put(pointer, requiredRanges.get(pointer)));
             String view = selection.toString();
@@ -1616,7 +1636,8 @@ public final class DeploymentCommandSourceEvidence {
             var visible = copyRanges(inline);
             boolean nativeApt = nativeAptInitialSource();
             if (nativeApt) header.put("nativeAptRequiredSource", true);
-            boolean showPending = completeInstallerReview() || rubyPreparationReview() || packedBuildReview() || phpBinding || nativeApt;
+            boolean showPending = completeInstallerReview() || isolatedSourcePreparationReview() || packedBuildReview()
+                || nodePreparation || phpBinding || nativeApt;
             if (showPending) appendRequiredCoverage(header, visible);
             int bodyBudget = available - quotedBytes(RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n");
             if (bodyBudget <= 0) return Optional.empty();
@@ -1833,6 +1854,10 @@ public final class DeploymentCommandSourceEvidence {
             return approvalEvidenceBlock().isPresent();
         }
 
+        public boolean pendingApprovalEvidenceComplete() {
+            return approvalEvidenceBlock(pendingVisible).isEmpty();
+        }
+
         public Optional<String> approvalEvidenceBlock() {
             return approvalEvidenceBlock(rebased || initialBlockSource ? lastVisible : confirmed);
         }
@@ -1871,7 +1896,7 @@ public final class DeploymentCommandSourceEvidence {
             int position = messages.indexOf(original);
             if (position < 0) return false;
             int available = frameBudget(original, problem);
-            if (nodePreparation || completeInstallerReview() || packedBuildReview()) {
+            if (nodePreparation || completeInstallerReview() || packedBuildReview() || isolatedSourcePreparationReview()) {
                 measuredFrameBudget = Math.min(measuredFrameBudget, available);
                 available = measuredFrameBudget;
             }
@@ -1920,16 +1945,24 @@ public final class DeploymentCommandSourceEvidence {
                 cumulative = retainedSource(latestReads, false, Math.max(0, spare - exceeded));
                 return Optional.of(quotedBytes(cumulative.message()) <= available ? cumulative : latest);
             }
-            var smallest = retainedSource(boundedLatestReads(2), true, 0);
+            if (nodePreparation) {
+                var withPolicy = fittedLatestReads(available, true);
+                if (withPolicy.isPresent()) return withPolicy;
+            }
+            return fittedLatestReads(available, false);
+        }
+
+        private Optional<RetainedFrame> fittedLatestReads(int available, boolean keepNodePolicy) throws IOException {
+            var smallest = retainedSource(boundedLatestReads(2), true, 0, keepNodePolicy);
             if (quotedBytes(smallest.message()) > available) return Optional.empty();
             int low = 2, high = MAX_READ_CHARACTERS + 1;
             while (high - low > 1) {
                 int candidate = (high + low) / 2;
-                var probe = retainedSource(boundedLatestReads(candidate), true, 0);
+                var probe = retainedSource(boundedLatestReads(candidate), true, 0, keepNodePolicy);
                 if (quotedBytes(probe.message()) <= available) low = candidate;
                 else high = candidate;
             }
-            return Optional.of(retainedSource(boundedLatestReads(low), true, 0));
+            return Optional.of(retainedSource(boundedLatestReads(low), true, 0, keepNodePolicy));
         }
 
         private boolean exactBudgetRefusal(Problem problem) {
@@ -1966,6 +1999,11 @@ public final class DeploymentCommandSourceEvidence {
         }
 
         private RetainedFrame retainedSource(List<ReadReceipt> offered, boolean compacted, int historyBytes) throws IOException {
+            return retainedSource(offered, compacted, historyBytes, nodePreparation && !compacted);
+        }
+
+        private RetainedFrame retainedSource(List<ReadReceipt> offered, boolean compacted, int historyBytes, boolean keepNodePolicy)
+            throws IOException {
             var header = JSON.createObjectNode().put("snapshotSha256", snapshot).put("trust", "UNTRUSTED_DATA");
             if (latestBatchRejected) header.put("latestBatchRejected", "NO_PAGES_READ_MAX_EIGHT_PER_RESPONSE");
             if (latestReadRepeated) header.put("latestBatchRepeat",
@@ -2005,6 +2043,10 @@ public final class DeploymentCommandSourceEvidence {
                     ranges.forEach((start, end) -> rememberRange(exact, pointer, start, end)));
                 retainHistory(exact, visible, entries, body, historyBytes);
             } else {
+                if (keepNodePolicy) {
+                    String policy = sourceText(MIRROR_POLICY_SOURCE);
+                    appendVisibleRange(MIRROR_POLICY_SOURCE, 0, policy.length(), visible, entries, body);
+                }
                 for (var read : offered) {
                     if (read.rejected()) continue;
                     appendVisibleRange(read.pointer(), read.offset(), read.next(), visible, entries, body);
@@ -2347,7 +2389,7 @@ public final class DeploymentCommandSourceEvidence {
     }
 
     private static boolean isolatedSourcePreparation(String ecosystem) {
-        return ecosystem.equals("PYTHON") || ecosystem.equals("RUBY");
+        return ecosystem.equals("PYTHON") || ecosystem.equals("RUBY") || ecosystem.equals("PHP");
     }
 
     private String readCorrection() {
@@ -2384,6 +2426,9 @@ public final class DeploymentCommandSourceEvidence {
         if (preparationReview()) {
             if (nodePreparationReview()) return NODE_PREPARE_INSTRUCTION;
             if (rubyPreparationReview()) return RUBY_PREPARE_INSTRUCTION + PREPARE_INSTRUCTION;
+            if (reviewEcosystem().equals("PHP")) return PREPARE_INSTRUCTION + """
+                Follow the PHP source worker's account, isolation and verified output publication. Check SYSTEM reuse and both probe paths. requiredPreparationRanges identifies mandatory source for the archive, GNU Make bootstrap and unprivileged worker.
+                """;
             if (reviewEcosystem().equals("KOTLIN")) return KOTLIN_JAVA_PREPARE_INSTRUCTION + PREPARE_INSTRUCTION;
             if (initialMirrorReview()) return PREPARE_INSTRUCTION + INITIAL_MIRROR_INSTRUCTION;
             if (dotnetPreparationReview()) return PREPARE_INSTRUCTION.replace(

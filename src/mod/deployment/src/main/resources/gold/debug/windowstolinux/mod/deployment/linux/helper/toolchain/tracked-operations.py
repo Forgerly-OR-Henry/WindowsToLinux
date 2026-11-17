@@ -467,7 +467,10 @@ def tracked_validate_selection(operation):
     if selected['ecosystem'] == 'RUBY' and selected['origin'] == 'MANAGED':
         require_ruby_source_record(record, directory)
     verify_system(record)
-    probe(record['ecosystem'], directory, record['version'])
+    if record['ecosystem'] == 'PHP':
+        php_record_probe(record, directory, record['version'])
+    else:
+        probe(record['ecosystem'], directory, record['version'])
     return {k: record[k] for k in fields}
 
 

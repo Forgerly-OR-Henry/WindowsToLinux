@@ -20,10 +20,10 @@ final class DeploymentReviewSourceBlocks {
     private static final String COPY = "@WTL_COPY";
     private static final Pattern DIRECTIVE = Pattern.compile("@WTL_(BLOCK|COPY) ([1-9][0-9]{0,4}) ([1-9][0-9]?)\n");
     private static final List<Integer> BLOCK_LENGTHS = List.of(16, 12, 8, 6, 4, 3, 2, 1);
-    private static final int MINIMUM_BLOCK_WIRE_BYTES = 192;
+    private static final int MINIMUM_BLOCK_WIRE_BYTES = 64;
     private static final int MAX_ORIGINAL_CHARACTERS = 1024 * 1024;
     private static final int MAX_ORIGINAL_LINES = 65_536;
-    private static final int MAX_REFERENCES = 512;
+    private static final int MAX_REFERENCES = 2048;
     private static final int MAX_DIRECTIVE_CHARACTERS = 20;
 
     private DeploymentReviewSourceBlocks() {
