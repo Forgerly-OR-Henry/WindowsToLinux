@@ -2,7 +2,9 @@ package gold.debug.windowstolinux.mod.deployment.service.standard.assisted;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -31,6 +33,7 @@ final class DeploymentAssistedCandidateReview {
     static String verificationInstructions() {
         return """
             Review only the exact upcoming read. Match its server and task to workflowAuthorization, its candidate/archive to candidateObservation, and the SSH account and host identity if observed. Require a fresh exact host grant after independent review.
+            reviewedApplicationSources contains only this candidate's original reviewed application-to-source association. Match its application, server, task, layout, source snapshot, relative root and complete archive identity to the current command and sourceSelection. Source display names and frozen logicalRootName identify the selected source. Deployment application and component identifiers identify the deployment target. Establish their relationship through the exact reviewed association. Assess current live ownership, source safety and permission from the current independent evidence.
             For the guarded archive verification, candidate-query-task is the first step of the outer command.
             Its CANDIDATE_STATE and BUILD_ACTIVE lines form helperStdoutPrefix. The outer command checks the exact archive path and appends BYTES, SHA256 and OWNER in that order.
             Compare candidateObservation.expectedStdout against the complete outer command stdout. The standalone candidate query's two-line contract applies only to the nested helper here.
@@ -39,10 +42,30 @@ final class DeploymentAssistedCandidateReview {
     }
 
     static Map<String, Object> verificationEvidence(Map<String, Object> observed) {
+        if (!(observed.get("candidateObservation") instanceof Map<?, ?> candidate)
+            || !(observed.get("sourceSelection") instanceof Map<?, ?> source)
+            || !(observed.get("reviewedApplicationSources") instanceof Map<?, ?> reviewed)
+            || !(reviewed.get("applications") instanceof List<?> applications)
+            || !(reviewed.get("meaning") instanceof String meaning)
+            || !(candidate.get("application") instanceof String application))
+            throw new IllegalArgumentException("Original candidate source association is missing");
+        var matching = applications.stream().filter(Map.class::isInstance).map(value -> (Map<?, ?>) value)
+            .filter(value -> application.equals(value.get("application"))).toList();
+        if (matching.size() != 1)
+            throw new IllegalArgumentException("Original candidate source association is not unique");
+        var association = matching.getFirst();
+        for (String field : List.of("task", "archiveBytes", "archiveSha256", "sourceManifestSha256")) {
+            if (candidate.get(field) == null || !Objects.equals(candidate.get(field), association.get(field)))
+                throw new IllegalArgumentException("Original candidate source association differs");
+        }
+        if (!Objects.equals(source.get("snapshotId"), association.get("originSnapshotId"))
+            || !Objects.equals(source.get("sourceRevision"), association.get("sourceManifestSha256")))
+            throw new IllegalArgumentException("Original candidate source snapshot differs");
         var current = new LinkedHashMap<String, Object>();
         for (String field : Set.of("workflowAuthorization", "sourceSelection", "candidateObservation", "candidateSshAuthentication")) {
             if (observed.containsKey(field)) current.put(field, observed.get(field));
         }
+        current.put("reviewedApplicationSources", Map.of("applications", List.of(association), "meaning", meaning));
         return Map.copyOf(current);
     }
 
