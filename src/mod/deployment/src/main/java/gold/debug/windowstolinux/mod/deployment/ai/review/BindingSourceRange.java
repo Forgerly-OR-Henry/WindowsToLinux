@@ -9,7 +9,7 @@ record BindingSourceRange(String section, int offset, int next, String text) {
     private static final String PYTHON_OPEN = "\nprepare_official_toolchains() {\n";
     private static final String PYTHON_CLOSE = "\nWTL_OFFICIAL_TOOLCHAINS\n  )\n}\n";
 
-    static List<BindingSourceRange> select(String helper, boolean managedDotnet, boolean localNode) throws IOException {
+    static List<BindingSourceRange> select(String helper, boolean managedDotnet, boolean localBinding, boolean localPhp) throws IOException {
         int start = anchor(helper, PYTHON_OPEN) + 1;
         int end = anchor(helper, PYTHON_CLOSE) + PYTHON_CLOSE.length();
         if (end <= start) throw new IOException("Pinned binding receiver boundaries changed");
@@ -24,15 +24,22 @@ record BindingSourceRange(String section, int offset, int next, String text) {
             range(python, start, "lockAndOwnership", "\ndef preparation_process_options():\n", "\ndef tracked_process_started("),
             range(python, start, "processProbe", "\ndef run(command, cwd=None, environment=None):\n", "\ndef managed_dotnet_probe_output("),
             range(python, start, "ownedDirectory", "\ndef owned_directory(path):\n", "\ndef extract(archive, destination):"),
-            range(python, start, "rehashSystemBinaries", "\ndef verify_system(record):\n", "\ndef installation_key("),
-            range(python, start, "installedToolProbes", "\ndef probe(ecosystem, directory, expected):\n", "\ndef admitted("),
             range(python, start, "validateAndSeal", "\ndef admitted(", "\ndef existing_installation("),
             range(python, start, "sharedRootAndLock", "\ndef prepare_shared_directories():\n", "\nTRACKED_OPERATION ="),
             range(python, start, "mainAdmissionAndLock", "\ndef main(args):\n", "\n            binding = ROOT / 'bindings' / args[1]"),
             range(python, start, "literalBindBranch", "\n        if len(args) == 2 and args[0] == 'bind':\n",
                 "\n        if len(args) == 2 and args[0] == 'restore':\n")
         ));
-        if (localNode) {
+        if (!localPhp) {
+            ranges.add(range(python, start, "rehashSystemBinaries", "\ndef verify_system(record):\n", "\ndef installation_key("));
+            ranges.add(range(python, start, "installedToolProbes", "\ndef probe(ecosystem, directory, expected):\n", "\ndef admitted("));
+        } else {
+            for (var span : PreparationSourceRange.phpBindingProbe(helper)) {
+                ranges.add(new BindingSourceRange(span.section(), span.offset(), span.next(),
+                    helper.substring(span.offset(), span.next())));
+            }
+        }
+        if (localBinding) {
             ranges.add(range(python, start, "shippedCatalogAndRoot", "\nSHIPPED_CATALOG = {\n", "\nMAX_METADATA = "));
         }
         if (managedDotnet) {

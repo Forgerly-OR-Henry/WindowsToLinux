@@ -167,6 +167,21 @@ record PreparationSourceRange(String section, int offset, int next) {
         return ranges;
     }
 
+    static List<PreparationSourceRange> phpBindingProbe(String helper) throws IOException {
+        var ranges = new ArrayList<>(List.of(
+            between(helper, "phpBindRecipe", "\nPHP_SOURCE_RECIPE = ", "\nPHP_SOURCE_WORKER = "),
+            between(helper, "phpBindWorkerProbe", "def php_probe(executable, version, system):",
+                "\n        require_staging_mount(prefix, device, inode)"),
+            between(helper, "phpBindWorkerInvocation", "    else:\n        failure = 126\n        require_ruby_resources(*arguments)",
+                "\n\ndef php_protected_executable(", offset(helper, "def php_probe(executable, version, system):")),
+            between(helper, "phpBindAdapter", "def php_protected_executable(", "\n\ndef php_source_publish(")));
+        for (String function : List.of("source_probe(", "source_run_probe_work(", "source_unit(", "ruby_require_settled(",
+                "ruby_system_command(", "gnu_make_dependency(", "verify_system(", "tracked_json(", "tracked_regular(")) {
+            ranges.add(python(helper, "def " + function));
+        }
+        return List.copyOf(ranges);
+    }
+
     private static List<PreparationSourceRange> gnuMakeSource(String helper) throws IOException {
         return List.of(
             between(helper, "gnuMakeSourceIdentity", "\nGNU_MAKE_SOURCE_VERSION = ", "\nGNU_MAKE_FAILURES = "),

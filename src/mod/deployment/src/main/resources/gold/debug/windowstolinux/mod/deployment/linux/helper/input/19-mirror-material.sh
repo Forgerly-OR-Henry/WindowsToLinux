@@ -28,7 +28,8 @@ prepare_build_mirror_material() {
     done
 }
 cleanup_build_mirror_material() {
-    local candidate="$1" directory="$1/mutable/tmp/wtl-mirror-material"
+    local temporary="$1/mutable/tmp" directory="$1/mutable/tmp/wtl-mirror-material"
+    [ -d "$temporary" ] && [ ! -L "$temporary" ] || return 0
     if [ -e "$directory" ] || [ -L "$directory" ]; then
         [ -d "$directory" ] && [ ! -L "$directory" ] || reject mirror-material-cleanup
         # The build's cgroup has already stopped. Only this task-private directory is removed.

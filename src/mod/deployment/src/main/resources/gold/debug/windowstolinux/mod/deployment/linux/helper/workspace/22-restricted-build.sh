@@ -100,8 +100,6 @@ run_restricted_build() {
     [ "$(stat -c %s "$candidate/.build-script")" -le 1048576 ] || reject build-script-limit
     [ "$(sha256sum -- "$candidate/.build-script" | awk '{print $1}')" = "$script_digest" ] || reject build-script-identity
     chmod 400 -- "$candidate/.build-script"
-    trap 'stop_candidate_build "$app" "$candidate_id"; freeze_candidate_build "$app" "$candidate_id"; cleanup_container_builder "$candidate"' EXIT
-    trap 'exit 130' HUP INT TERM
     IFS= read -r phase_header <"$candidate/.build-script" || phase_header=
     if [[ "$phase_header" == '# WTL_CARGO_PREFETCH_BYTES='* ]]; then
         [ "$engine" = ordinary-offline ] && [ ! -e "$candidate/.agent-mode" ] || reject cargo-prefetch-engine
@@ -111,12 +109,15 @@ run_restricted_build() {
         local offset=$(("${#phase_header}" + 1)) length
         length="$(stat -c %s -- "$candidate/.build-script")"
         [ "$((offset + cargo_bytes))" -lt "$length" ] || reject cargo-prefetch-length
+        assert_cargo_build_scratch "$mutable" "$unit" "$cargo_unit"
         if [ -e "$candidate/.build-prefetch-started" ] || [ -L "$candidate/.build-prefetch-started" ]; then
             assert_root_owned_regular "$candidate/.build-prefetch-started"
             rm -- "$candidate/.build-prefetch-started"
         fi
         stage_cargo_build_data "$candidate" "$offset" "$cargo_bytes"
     fi
+    trap 'stop_candidate_build "$app" "$candidate_id"; freeze_candidate_build "$app" "$candidate_id"; cleanup_container_builder "$candidate"' EXIT
+    trap 'exit 130' HUP INT TERM
     mount -o remount,rw,nodev,nosuid -- "$mutable" || reject workspace-remount
     # No project configuration is read while creating the execution identity.
     if [ "$engine" = ordinary ] || [ "$engine" = ordinary-offline ]; then
@@ -124,6 +125,9 @@ run_restricted_build() {
     else
         rm -rf --one-file-system -- "$mutable/engine" "$mutable/home" "$mutable/tmp" "$mutable/run"
         prepare_container_builder "$candidate" "$user" "$engine"
+    fi
+    if [ "$cargo_bytes" -gt 0 ]; then
+        reset_cargo_build_scratch "$mutable"
     fi
     install -d -o root -g root -m 700 -- "$mutable/home" "$mutable/tmp" "$mutable/run"
     local -a properties
@@ -189,6 +193,31 @@ run_restricted_build() {
     fi
     trap - EXIT
     return "$status"
+}
+
+assert_cargo_build_scratch() {
+    local mutable="$1" unit state mounts path
+    # The caller holds the candidate controller lock. Start with empty scratch even on a compatible retry.
+    for unit in "$2" "$3"; do
+        state="$(systemctl show --value --property LoadState "$unit")" || reject cargo-scratch-unit-state
+        [ "$state" = not-found ] || reject cargo-scratch-unit-state
+    done
+    assert_root_owned_directory "$mutable"
+    mounts="$(findmnt -Rrn -M "$mutable" -o TARGET)" || reject cargo-scratch-mount
+    [ "$mounts" = "$mutable" ] || reject cargo-scratch-mount
+    for path in "$mutable/home" "$mutable/tmp" "$mutable/run"; do
+        if [ -e "$path" ] || [ -L "$path" ]; then
+            [ -d "$path" ] && [ ! -L "$path" ] || reject cargo-scratch-path
+        fi
+    done
+}
+
+reset_cargo_build_scratch() {
+    local mutable="$1" path
+    rm -rf --one-file-system --preserve-root=all -- "$mutable/home" "$mutable/tmp" "$mutable/run" || reject cargo-scratch-reset
+    for path in "$mutable/home" "$mutable/tmp" "$mutable/run"; do
+        [ ! -e "$path" ] && [ ! -L "$path" ] || reject cargo-scratch-reset
+    done
 }
 
 stage_cargo_build_data() {

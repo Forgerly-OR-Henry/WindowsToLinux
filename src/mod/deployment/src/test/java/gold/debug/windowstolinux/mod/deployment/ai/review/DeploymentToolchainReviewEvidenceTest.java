@@ -4240,7 +4240,7 @@ class DeploymentToolchainReviewEvidenceTest {
     }
 
     @Test
-    void r49AssetLendingLocalNodeBindingFitsOriginalTerminalCeilingWithExactEvidence() throws Exception {
+    void r49AssetLendingLocalToolchainBindingFitsOriginalTerminalCeilingWithExactEvidence() throws Exception {
         int cap = 70049;
         int factsFloor = 35758;
         String helperPointer = "/toolchainReviewEvidence/installedHelperSource";
@@ -4252,7 +4252,7 @@ class DeploymentToolchainReviewEvidenceTest {
             String prefix = "'" + fixture.layout.helperPath() + "' prepare-toolchains 'bind' '";
             assertTrue(original.startsWith(prefix));
             String encoded = original.substring(prefix.length(), original.length() - 1);
-            String launcher = DeploymentManagedHelperBundle.renderLocalNodeBinding(encoded, fixture.task.id(),
+            String launcher = DeploymentManagedHelperBundle.renderLocalToolchainBinding(encoded, fixture.task.id(),
                 fixture.server, 180, fixture.layout);
             try (var request = new CommandRequest(launcher, new byte[0], Duration.ofSeconds(180), 65536)) {
                 var protocol = new DeploymentFixedCommandProtocol(fixture.context);
@@ -4277,7 +4277,7 @@ class DeploymentToolchainReviewEvidenceTest {
                 String ownSnapshot = projected.at("/" + PHASE + "/snapshotSha256").asText();
                 assertNotEquals(oldManifest.path("snapshotSha256").asText(), ownSnapshot);
                 assertEquals(action.exactAction(), projected.path("exactAction").asText());
-                assertFalse(projected.at("/localNodeBinding/materialStaging").asBoolean(true));
+                assertFalse(projected.at("/localToolchainBinding/materialStaging").asBoolean(true));
                 assertTrue(projected.path("mirrorTransport").isMissingNode());
                 assertTrue(projected.at("/" + PHASE + "/mirrorBootstrapShell").isMissingNode());
 
@@ -4340,6 +4340,48 @@ class DeploymentToolchainReviewEvidenceTest {
     private static AiToolCall boundEvidenceRead(String id, String pointer, int offset, int limit) {
         return new AiToolCall(id, "evidence", JSON.createObjectNode().put("pointer", pointer)
             .put("offset", offset).put("limit", limit).toString());
+    }
+
+    @Test
+    void phpLocalBindReviewsTheExactInstalledProbeWithinR90TerminalCeiling() throws Exception {
+        int limit = 67_572;
+        try (var fixture = new MirroredInstallerTestFixture(DownloadPoint.values());
+             var assisted = new DeploymentNativeHelperPackageImpactTest.Assisted(fixture);
+             var mirrored = r26Binding(fixture, "PHP", "8.3.36")) {
+            var original = DeploymentManagedHelperBundle.verifiedBody(mirrored.script(), fixture.layout);
+            String prefix = "'" + fixture.layout.helperPath() + "' prepare-toolchains 'bind' '";
+            assertTrue(original.startsWith(prefix));
+            String encoded = original.substring(prefix.length(), original.length() - 1);
+            String script = DeploymentManagedHelperBundle.renderLocalToolchainBinding(encoded, fixture.task.id(),
+                fixture.server, 180, fixture.layout);
+            try (var request = new CommandRequest(script, new byte[0], Duration.ofSeconds(180), 65536)) {
+                var action = intent("bind", fixture, request);
+                var protocol = new DeploymentFixedCommandProtocol(fixture.context);
+                var facts = new LinkedHashMap<String, Object>(protocol.inspect(action, request, fixture.layout, fixture.task));
+                assertEquals(protocol.inspect(intent("bind", fixture, mirrored), mirrored, fixture.layout, fixture.task)
+                    .get("decodedToolchainBinding"), facts.get("decodedToolchainBinding"));
+                facts.put("currentCommandEvidence", assisted.scope.effectFacts(action, fixture.task));
+                reply(fixture, verdict("r90-php-local", "APPROVE"));
+                var reviewer = new DeploymentAiJson(wireBudgetContext(assisted.context, Map.of(), 0, () -> limit));
+                assertEquals("APPROVE", reviewer.askCommand(DeploymentFixedCommandApproval.commandReviewInstructions(false),
+                    facts, fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed,
+                    action, request).path("decision").asText());
+                var sent = fixture.model.requests.getFirst();
+                var projected = JSON.readTree(sent.messages().getLast().text());
+                assertFalse(projected.at("/localToolchainBinding/materialStaging").asBoolean(true));
+                assertTrue(projected.path("mirrorTransport").isMissingNode());
+                var selected = projected.at("/" + PHASE + "/installedHelperSource/selectedRanges");
+                assertTrue(selected.findValuesAsText("section").containsAll(List.of("phpBindAdapter", "phpBindWorkerProbe",
+                    "def source_unit(", "def source_probe(", "validateAndSeal")));
+                var body = sent.messages().get(1).text();
+                assertTrue(body.contains("php_record_probe") && body.contains("php_source_probe")
+                    && body.contains("PHP_REQUIRED_EXTENSIONS") && body.contains("def source_run_probe_work("));
+                int bytes = wire(sent, limit, Map.of()).length;
+                assertTrue(bytes <= limit);
+                assertEquals(0, assisted.hosts.get());
+                System.out.printf("R93_PHP_LOCAL_BIND encoded=%d cap=%d%n", bytes, limit);
+            }
+        }
     }
 
     @Test

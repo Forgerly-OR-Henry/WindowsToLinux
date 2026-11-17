@@ -52,6 +52,10 @@ class DeploymentToolchainPreparationObservationRegressionTest {
     private static final String NODE_SOURCE = "https://nodejs.org/dist/v24.22.3/node-v24.22.3-linux-x64.tar.gz";
     private static final String NODE_RECEIPT = "TOOLCHAIN=NODE|24.22.3|" + NODE_DIRECTORY + "|MANAGED|" + NODE_SOURCE
         + "|" + "d".repeat(64) + "\n";
+    private static final ToolchainRequirement PHP_REQUIREMENT = ToolchainRequirement.declared(
+        DeploymentToolchainType.PHP, "8.3", "runtime", ToolchainRequirement.PurposeType.BUILD);
+    private static final String PHP_DIRECTORY = LAYOUT.toolchains() + "/versions/php-" + "a".repeat(64);
+    private static final String PHP_SOURCE = "https://www.php.net/distributions/php-8.3.36.tar.gz";
 
     @Test
     void standardSetupRecordsMatchedReceiptsBeforeTheFreshBindingReview() throws Exception {
@@ -87,10 +91,10 @@ class DeploymentToolchainPreparationObservationRegressionTest {
                     NODE_DIRECTORY, DeploymentResolvedToolchains.OriginType.MANAGED, NODE_SOURCE, "d".repeat(64))));
             String encoded = Base64.getEncoder().encodeToString(DeploymentToolchainBindingCodec.encode(expected).getBytes(StandardCharsets.UTF_8));
             assertThrows(IllegalArgumentException.class, () -> h.channel.bind(encoded));
-            assertFalse(DeploymentManagedHelperBundle.isLocalNodeBinding(h.bindingRequests.getFirst(), LAYOUT));
+            assertFalse(DeploymentManagedHelperBundle.isLocalToolchainBinding(h.bindingRequests.getFirst(), LAYOUT));
             assertTrue(h.fixture.requests.isEmpty());
             assertEquals(0, h.sends.get());
-            String forged = DeploymentManagedHelperBundle.renderLocalNodeBinding(encoded, h.fixture.task.id(), h.server, 180, LAYOUT);
+            String forged = DeploymentManagedHelperBundle.renderLocalToolchainBinding(encoded, h.fixture.task.id(), h.server, 180, LAYOUT);
             assertThrows(IllegalArgumentException.class, () -> h.channel.send("deployment.toolchain.bind.v1", LAYOUT.toolchains(),
                 forged, new byte[0], java.time.Duration.ofSeconds(180), 65536));
             assertEquals(1, h.bindingRequests.size(), "Generic send must stop before approval");
@@ -104,11 +108,54 @@ class DeploymentToolchainPreparationObservationRegressionTest {
             assertEquals(2, h.sends.get());
             assertEquals(1, h.fixture.requests.size());
             assertEquals(h.bindingRequests.getLast(), h.bindingGrantedScript);
-            var binding = DeploymentManagedHelperBundle.unwrapLocalNodeBinding(h.bindingGrantedScript, LAYOUT).orElseThrow();
+            var binding = DeploymentManagedHelperBundle.unwrapLocalToolchainBinding(h.bindingGrantedScript, LAYOUT).orElseThrow();
             assertEquals(encoded, binding.encoded());
             assertEquals(h.fixture.task.id(), binding.task());
             assertEquals(DeploymentToolchainBindingCodec.identity(expected), h.bindingStage.get("bindingSha256"));
         }
+    }
+
+    @Test
+    void managedPhpLocalBindingRequiresTheExactSuccessfulPreparation() throws Exception {
+        var expected = new DeploymentResolvedToolchains(DeploymentToolchainCatalog.defaults().revision(),
+            List.of(new DeploymentResolvedToolchains.Selection(PHP_REQUIREMENT,
+                DeploymentToolchainVersion.parse(DeploymentToolchainType.PHP, "8.3.36").orElseThrow(),
+                PHP_DIRECTORY, DeploymentResolvedToolchains.OriginType.MANAGED, PHP_SOURCE, "e".repeat(64))));
+        String encoded = Base64.getEncoder().encodeToString(DeploymentToolchainBindingCodec.encode(expected).getBytes(StandardCharsets.UTF_8));
+        var server = new ServerId("php-binding-fixture");
+        var fixture = new NativeAiFixture();
+        var captured = new ArrayList<String>();
+        var grants = new ArrayList<ApprovalGrant>();
+        var review = proxy(DeploymentCommandReview.class, (p, m, a) -> {
+            assertEquals("approveCommand", m.getName());
+            captured.add(((CommandRequest) a[1]).script());
+            var approved = new ApprovalGrant(UUID.randomUUID());
+            grants.add(approved);
+            return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(approved), Optional.empty());
+        });
+        var session = proxy(RemoteSession.class, (p, m, a) -> {
+            if (m.getName().equals("facts"))
+                return new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("linux", "amd64", "SHA256:controlled");
+            assertEquals("execute", m.getName());
+            assertSame(grants.getLast(), a[1]);
+            String script = DeploymentManagedHelperBundle.verifiedBody(((CommandRequest) a[0]).script());
+            String output = script.contains("'bind' '")
+                ? "TOOLCHAIN_BINDING=" + DeploymentToolchainBindingCodec.identity(expected) + "\n"
+                : "TOOLCHAIN=PHP|8.3.36|" + PHP_DIRECTORY + "|MANAGED|" + PHP_SOURCE + "|" + "e".repeat(64) + "\n";
+            return reply(0, output, false);
+        });
+        var channel = new DeploymentBuildCommandChannel(session, review, server, fixture.task, "c".repeat(64),
+            new DeploymentBuildBudget(3600), LAYOUT);
+        assertThrows(IllegalArgumentException.class, () -> channel.toolchainsPrepared(expected));
+        String forged = DeploymentManagedHelperBundle.renderLocalToolchainBinding(encoded, fixture.task.id(), server, 180, LAYOUT);
+        assertThrows(IllegalArgumentException.class, () -> channel.send("deployment.toolchain.bind.v1", LAYOUT.toolchains(),
+            forged, new byte[0], java.time.Duration.ofSeconds(180), 65536));
+        assertTrue(captured.isEmpty());
+        var result = new DeploymentToolchainSetup(channel, DeploymentToolchainCatalog.defaults()).prepare(List.of(PHP_REQUIREMENT), 0, 120);
+        assertEquals(TaskResult.SUCCEEDED, result.outcome(), result::toString);
+        assertEquals(expected, result.value().orElseThrow());
+        assertEquals(2, captured.size());
+        assertEquals(encoded, DeploymentManagedHelperBundle.unwrapLocalToolchainBinding(captured.getLast(), LAYOUT).orElseThrow().encoded());
     }
 
     @Test

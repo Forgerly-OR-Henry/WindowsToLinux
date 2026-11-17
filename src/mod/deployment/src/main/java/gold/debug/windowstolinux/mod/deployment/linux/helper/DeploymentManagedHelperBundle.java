@@ -31,11 +31,11 @@ public final class DeploymentManagedHelperBundle {
      * Protocol version printed by this exact helper bundle. / 此精确 helper 包输出的协议版本。
      */
     public static final int PROTOCOL_VERSION = 16;
-    private static final String LOCAL_NODE_BINDING_HEADER = "# WTL_LOCAL_NODE_BINDING";
-    private static final String LOCAL_NODE_BINDING_DELIMITER = "WTL_LOCAL_NODE_BINDING_BODY";
-    private static final Pattern LOCAL_NODE_BINDING_IDENTITY = Pattern.compile(
-        "\\A# WTL_LOCAL_NODE_BINDING=([a-f0-9-]{36})\\n# WTL_LOCAL_NODE_BINDING_SERVER_SHA256=([a-f0-9]{64})"
-        + "\\n# WTL_LOCAL_NODE_BINDING_BUDGET=([1-9][0-9]{0,2})\\n");
+    private static final String LOCAL_TOOLCHAIN_BINDING_HEADER = "# WTL_LOCAL_TOOLCHAIN_BINDING";
+    private static final String LOCAL_TOOLCHAIN_BINDING_DELIMITER = "WTL_LOCAL_TOOLCHAIN_BINDING_BODY";
+    private static final Pattern LOCAL_TOOLCHAIN_BINDING_IDENTITY = Pattern.compile(
+        "\\A# WTL_LOCAL_TOOLCHAIN_BINDING=([a-f0-9-]{36})\\n# WTL_LOCAL_TOOLCHAIN_BINDING_SERVER_SHA256=([a-f0-9]{64})"
+        + "\\n# WTL_LOCAL_TOOLCHAIN_BINDING_BUDGET=([1-9][0-9]{0,2})\\n");
 
     /**
      * Platform-owned helper installation directory. / 平台持有的 helper 安装目录。
@@ -53,7 +53,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "2686b4f44b508812ee48328494be254bc99914e23c4f0709ce8cbfaa320e0fae";
+    public static final String EXPECTED_SHA256 = "b9676f872245c5b6aa5234bdc1cc56840613815d25bb789fd5f90b4302a71571";
     private static final String RUBY_SOURCE_SHA256 = "8accc7b83ccfc2bf84396bd3fe3012f0138e4da777700103a373137e92f134b9";
     private static final String GNU_MAKE_SOURCE_SHA256 = "fabf9252d95b17e8a15e0d7e80a826824b02b45f291e14d1ca0fb65b577a44a4";
     private static final String PYTHON_SOURCE_SHA256 = "ac309b1d2fc1549089444886f3503221e45eaaf86e95358409f18ed5634d1e39";
@@ -219,77 +219,79 @@ public final class DeploymentManagedHelperBundle {
         return guard + script;
     }
 
-    /** Identifies the single prepared Node selection eligible for the material-free invocation. */
-    public static boolean supportsLocalNodeBinding(DeploymentResolvedToolchains tools, DeploymentRemoteLayout layout) {
+    /** Identifies a single prepared tool whose bind receiver uses only local verification. */
+    public static boolean supportsLocalToolchainBinding(DeploymentResolvedToolchains tools, DeploymentRemoteLayout layout) {
         if (tools.selections().size() != 1) return false;
         var selection = tools.selections().getFirst();
-        return selection.requirement().ecosystem() == DeploymentToolchainType.NODE
+        var ecosystem = selection.requirement().ecosystem();
+        return (ecosystem == DeploymentToolchainType.NODE || ecosystem == DeploymentToolchainType.PHP)
             && selection.origin() == DeploymentResolvedToolchains.OriginType.MANAGED
-            && selection.directory().matches(Pattern.quote(layout.toolchains()) + "/versions/node-[a-f0-9]{64}");
+            && selection.directory().matches(Pattern.quote(layout.toolchains()) + "/versions/"
+                + ecosystem.name().toLowerCase(java.util.Locale.ROOT) + "-[a-f0-9]{64}");
     }
 
-    public record LocalNodeBinding(UUID task, String serverSha256, long budgetSeconds, String original, String encoded) { }
+    public record LocalToolchainBinding(UUID task, String serverSha256, long budgetSeconds, String original, String encoded) { }
 
-    /** Renders the exact privileged Node bind with no staged mirror material. */
-    public static String renderLocalNodeBinding(String encoded, UUID task, ServerId server, long seconds,
+    /** Renders the exact privileged prepared-tool bind with no staged mirror material. */
+    public static String renderLocalToolchainBinding(String encoded, UUID task, ServerId server, long seconds,
             DeploymentRemoteLayout layout) {
-        requireLocalNodeInput(encoded, layout);
-        return localNodeBindingCommand(encoded, task, sha256(server.id().getBytes(StandardCharsets.UTF_8)), seconds, layout);
+        requireLocalBindingInput(encoded, layout);
+        return localToolchainBindingCommand(encoded, task, sha256(server.id().getBytes(StandardCharsets.UTF_8)), seconds, layout);
     }
 
-    private static String localNodeBindingCommand(String encoded, UUID task, String serverSha256, long seconds,
+    private static String localToolchainBindingCommand(String encoded, UUID task, String serverSha256, long seconds,
             DeploymentRemoteLayout layout) {
         java.util.Objects.requireNonNull(task);
-        if (seconds < 1 || seconds > 180) throw new IllegalArgumentException("Invalid local Node binding deadline");
-        return LOCAL_NODE_BINDING_HEADER + "=" + task + "\n# WTL_LOCAL_NODE_BINDING_SERVER_SHA256=" + serverSha256
-            + "\n# WTL_LOCAL_NODE_BINDING_BUDGET=" + seconds + "\n"
+        if (seconds < 1 || seconds > 180) throw new IllegalArgumentException("Invalid local toolchain binding deadline");
+        return LOCAL_TOOLCHAIN_BINDING_HEADER + "=" + task + "\n# WTL_LOCAL_TOOLCHAIN_BINDING_SERVER_SHA256=" + serverSha256
+            + "\n# WTL_LOCAL_TOOLCHAIN_BINDING_BUDGET=" + seconds + "\n"
             + "builtin unset -v TMPDIR || exit 64\n" + DeploymentMirrorTasks.PRIVILEGED_LAUNCHER
-            + "/bin/bash --noprofile --norc -p /dev/fd/4 4<<'" + LOCAL_NODE_BINDING_DELIMITER + "'\n"
+            + "/bin/bash --noprofile --norc -p /dev/fd/4 4<<'" + LOCAL_TOOLCHAIN_BINDING_DELIMITER + "'\n"
             + "builtin exec 4<&-\nset -eu\n[ \"$EUID\" -eq 0 ] || { printf 'MIRROR_REJECT=root-preparation-required\\n' >&2; exit 64; }\n(\n"
-            + verifiedCommand(localNodeBindingPrefix(layout) + encoded + "'", layout)
-            + "\n)\n" + LOCAL_NODE_BINDING_DELIMITER + "\n";
+            + verifiedCommand(localToolchainBindingPrefix(layout) + encoded + "'", layout)
+            + "\n)\n" + LOCAL_TOOLCHAIN_BINDING_DELIMITER + "\n";
     }
 
     /** Rejects changes to the local wrapper, typed binding, or integrity guard before exposing the invocation. */
-    public static Optional<LocalNodeBinding> unwrapLocalNodeBinding(String command, DeploymentRemoteLayout layout) {
-        if (command == null || !command.startsWith(LOCAL_NODE_BINDING_HEADER)) return Optional.empty();
-        var identity = LOCAL_NODE_BINDING_IDENTITY.matcher(command);
-        if (!identity.find()) throw new IllegalArgumentException("Local Node binding identity missing");
+    public static Optional<LocalToolchainBinding> unwrapLocalToolchainBinding(String command, DeploymentRemoteLayout layout) {
+        if (command == null || !command.startsWith(LOCAL_TOOLCHAIN_BINDING_HEADER)) return Optional.empty();
+        var identity = LOCAL_TOOLCHAIN_BINDING_IDENTITY.matcher(command);
+        if (!identity.find()) throw new IllegalArgumentException("Local toolchain binding identity missing");
         UUID task = UUID.fromString(identity.group(1));
         String serverSha256 = identity.group(2);
         long seconds = Long.parseLong(identity.group(3));
-        String prefix = localNodeBindingPrefix(layout);
+        String prefix = localToolchainBindingPrefix(layout);
         int from = command.indexOf(prefix, identity.end());
         int to = from < 0 ? -1 : command.indexOf("'", from + prefix.length());
-        if (to < 0) throw new IllegalArgumentException("Local Node binding invocation missing");
+        if (to < 0) throw new IllegalArgumentException("Local toolchain binding invocation missing");
         String encoded = command.substring(from + prefix.length(), to);
-        requireLocalNodeInput(encoded, layout);
-        if (!command.equals(localNodeBindingCommand(encoded, task, serverSha256, seconds, layout)))
-            throw new IllegalArgumentException("Local Node binding source changed");
-        return Optional.of(new LocalNodeBinding(task, serverSha256, seconds, executionGuard(layout) + prefix + encoded + "'", encoded));
+        requireLocalBindingInput(encoded, layout);
+        if (!command.equals(localToolchainBindingCommand(encoded, task, serverSha256, seconds, layout)))
+            throw new IllegalArgumentException("Local toolchain binding source changed");
+        return Optional.of(new LocalToolchainBinding(task, serverSha256, seconds, executionGuard(layout) + prefix + encoded + "'", encoded));
     }
 
-    public static boolean isLocalNodeBinding(String command, DeploymentRemoteLayout layout) {
-        return unwrapLocalNodeBinding(command, layout).isPresent();
+    public static boolean isLocalToolchainBinding(String command, DeploymentRemoteLayout layout) {
+        return unwrapLocalToolchainBinding(command, layout).isPresent();
     }
 
-    private static String localNodeBindingPrefix(DeploymentRemoteLayout layout) {
+    private static String localToolchainBindingPrefix(DeploymentRemoteLayout layout) {
         return DeploymentHelperInstallerScript.quote(layout.helperPath()) + " prepare-toolchains 'bind' '";
     }
 
-    private static void requireLocalNodeInput(String encoded, DeploymentRemoteLayout layout) {
+    private static void requireLocalBindingInput(String encoded, DeploymentRemoteLayout layout) {
         if (encoded == null || !encoded.matches("[A-Za-z0-9+/=]{8,87384}"))
-            throw new IllegalArgumentException("Invalid local Node binding encoding");
+            throw new IllegalArgumentException("Invalid local toolchain binding encoding");
         byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
         try {
-            if (bytes.length > 65536) throw new IllegalArgumentException("Local Node binding exceeds input budget");
+            if (bytes.length > 65536) throw new IllegalArgumentException("Local toolchain binding exceeds input budget");
             var tools = DeploymentToolchainBindingCodec.decode(new String(bytes, StandardCharsets.UTF_8));
             String canonical = java.util.Base64.getEncoder().encodeToString(
                 DeploymentToolchainBindingCodec.encode(tools).getBytes(StandardCharsets.UTF_8));
-            if (!encoded.equals(canonical) || !supportsLocalNodeBinding(tools, layout))
-                throw new IllegalArgumentException("Local Node binding requires canonical prepared Node input");
+            if (!encoded.equals(canonical) || !supportsLocalToolchainBinding(tools, layout))
+                throw new IllegalArgumentException("Local toolchain binding requires a supported canonical managed selection");
         } catch (java.util.NoSuchElementException invalid) {
-            throw new IllegalArgumentException("Local Node binding has an invalid version", invalid);
+            throw new IllegalArgumentException("Local toolchain binding has an invalid version", invalid);
         } finally {
             java.util.Arrays.fill(bytes, (byte) 0);
         }
@@ -303,7 +305,7 @@ public final class DeploymentManagedHelperBundle {
     }
 
     public static String verifiedBody(String script, DeploymentRemoteLayout layout) {
-        script = unwrapLocalNodeBinding(script, layout).map(LocalNodeBinding::original).orElse(script);
+        script = unwrapLocalToolchainBinding(script, layout).map(LocalToolchainBinding::original).orElse(script);
         script = DeploymentMirrorTasks.preparation(script)
             .map(gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.Preparation::original).orElse(script);
         String guard = executionGuard(layout);
@@ -435,9 +437,13 @@ public final class DeploymentManagedHelperBundle {
         return Map.of("helperSha256", helperSha256(layout), "buildEntrySha256", buildEntrySha256(layout),
             "dataSplitSource", exactRange(helper, "stage_cargo_build_data() {\n", "\n}\n"),
             "phaseDispatchSource", exactRange(helper, "    IFS= read -r phase_header", "    mount -o remount,rw,nodev,nosuid -- \"$mutable\""),
+            "scratchResetSource", exactRange(helper, "assert_cargo_build_scratch() {\n", "\n}\n")
+                + "\n" + exactRange(helper, "reset_cargo_build_scratch() {\n", "\n}\n"),
+            "scratchDispatchSource", exactRange(helper, "    if [ \"$cargo_bytes\" -gt 0 ]; then\n        reset_cargo_build_scratch",
+                "    install -d -o root -g root -m 700 -- \"$mutable/home\" \"$mutable/tmp\" \"$mutable/run\""),
             "unitLaunchSource", exactRange(helper, "        if [ \"$cargo_bytes\" -gt 0 ]; then", "        if [ \"$engine\" = ordinary-offline ]; then"),
             "prefetchEntrySource", exactRange(entry, "if [ \"$engine\" = cargo-prefetch ]; then\n", "\nWTL_CARGO_PREFETCH\nfi\n"),
-            "meaning", "The networked stage runs the fixed installed data reader with the pinned mirror runtime and original lock. Successful completion and a remaining budget precede the separate ordinary-offline project build. Evaluate these ranges with the original build identity, resource and socket limits.");
+            "meaning", "The controller resets only the stopped candidate's own build home and temporary directories for each Cargo attempt. The networked stage runs the fixed installed data reader with the pinned mirror runtime and original lock. Successful completion and a remaining budget precede the separate ordinary-offline project build. Evaluate these ranges with the original build identity, resource and socket limits.");
     }
 
     private static String exactRange(String source, String start, String end) {

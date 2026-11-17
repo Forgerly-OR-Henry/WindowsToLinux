@@ -73,4 +73,67 @@ class DeploymentBuildStartGuardTest {
             if (process.isAlive()) process.destroyForcibly().waitFor();
         }
     }
+
+    @Test
+    void cargoRetryClearsOnlyStoppedCandidateScratchAndRejectsMalformedReplacement() throws Exception {
+        String reset = DeploymentManagedHelperBundle.cargoBuildPrefetchFacts(
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()).get("scratchResetSource").toString();
+        String fixture = """
+            set -euo pipefail
+            mutable=%s/mutable
+            mkdir -- "$mutable"
+            printf 'frozen-source' >"$mutable/source.tar.gz"
+            mkdir -- "$mutable/source"
+            printf 'previous-output' >"$mutable/source/artifact"
+            assert_root_owned_directory() { [ "$1" = "$mutable" ] && [ -d "$1" ] && [ ! -L "$1" ]; }
+            reject() { printf 'REJECT=%%s\\n' "$1"; exit 64; }
+            systemctl() { printf '%%s\\n' "$unit_state"; }
+            findmnt() { printf '%%s\\n' "$mutable"; if [ "$has_submount" = yes ]; then printf '%%s\\n' "$mutable/home/submount"; fi; }
+            %s
+            reset_fixture() {
+                assert_cargo_build_scratch "$mutable" project-unit prefetch-unit
+                reset_cargo_build_scratch "$mutable"
+            }
+            unit_state=not-found has_submount=no
+            reset_fixture
+            mkdir -p -- "$mutable/home/wtl-cargo-registry" "$mutable/tmp" "$mutable/run"
+            printf 'previous-index' >"$mutable/home/wtl-cargo-registry/stale"
+            printf 'previous-temp' >"$mutable/tmp/stale"
+            printf 'previous-runtime' >"$mutable/run/stale"
+            unit_state=loaded
+            if (reset_fixture); then exit 90; fi
+            unit_state=not-found has_submount=yes
+            if (reset_fixture); then exit 91; fi
+            has_submount=no
+            test -f "$mutable/home/wtl-cargo-registry/stale"
+            mv -- "$mutable/tmp" "$mutable/preserved"
+            printf 'malformed' >"$mutable/tmp"
+            if (reset_fixture); then exit 92; fi
+            test -f "$mutable/home/wtl-cargo-registry/stale"
+            test -f "$mutable/run/stale"
+            test "$(cat "$mutable/preserved/stale")" = previous-temp
+            rm -- "$mutable/tmp"
+            mv -- "$mutable/preserved" "$mutable/tmp"
+            reset_fixture
+            test ! -e "$mutable/home" && test ! -e "$mutable/tmp" && test ! -e "$mutable/run"
+            test "$(cat "$mutable/source.tar.gz")" = frozen-source
+            test "$(cat "$mutable/source/artifact")" = previous-output
+            printf 'CARGO_RETRY_RESET_PASS\\n'
+            """.formatted(SafeBuildScriptEnvelope.shellQuote(directory.toString().replace('\\', '/')), reset);
+        Path script = directory.resolve("cargo-retry.sh");
+        Files.writeString(script, fixture);
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        Process process = new ProcessBuilder(bash, script.toString()).directory(directory.toFile()).redirectErrorStream(true).start();
+        try {
+            assertTrue(process.waitFor(15, TimeUnit.SECONDS));
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            assertEquals(0, process.exitValue(), output);
+            assertTrue(output.contains("REJECT=cargo-scratch-unit-state"), output);
+            assertTrue(output.contains("REJECT=cargo-scratch-mount"), output);
+            assertTrue(output.contains("REJECT=cargo-scratch-path"), output);
+            assertTrue(output.contains("CARGO_RETRY_RESET_PASS"), output);
+        } finally {
+            if (process.isAlive()) process.destroyForcibly().waitFor();
+        }
+    }
 }

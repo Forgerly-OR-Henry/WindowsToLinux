@@ -93,6 +93,7 @@ public final class DeploymentCommandSourceEvidence {
     private static final String BUILD_SHELL = "/" + BUILD_PROJECTION + "/mirrorBootstrapShell";
     private static final String BUILD_BODY = "/" + BUILD_PROJECTION + "/buildBody";
     private static final String BUILD_CARGO_WORKER = "/" + BUILD_PROJECTION + "/cargoPrefetchImplementation/";
+    private static final String BUILD_ENTRY_PREFETCH = "/standardBuildEntry/buildEntrySource/cargoPrefetch";
     private static final String BUILD_RUNTIME_SELECTION = "/" + BUILD_PROJECTION + "/runtimeSelection";
     private static final String BUILD_ARCHIVE_MEMBERS = "/" + BUILD_PROJECTION + "/projectArchive/members/";
     private static final String ARCHIVE_SOURCE_FACTS = "/currentCommandEvidence/currentBuildArchiveSource";
@@ -220,9 +221,9 @@ public final class DeploymentCommandSourceEvidence {
         A source descriptor's characters gives the end in UTF-16 code units. Stop when next reaches that value. Do not request a larger offset. A WTL-COMMAND-EVIDENCE-PAGE-1 result and a WTL-COMMAND-RETAINED-SOURCE-1 USER frame contain a JSON header then exact source text in header order. Each range spans next minus offset code units. newRanges in a page omits bytes already in visible frames or results. The retained frame may omit older bytes; they remain available from the original snapshot. latestReads reports successful or rejected requests. If latestBatchRejected is present, no page from that oversized batch was read; resubmit only the missing ranges in groups of at most eight. Review current evidence independently; missing evidence or unsafe effects require DENY. Submit exactly one fresh native submit_result alone.
         """;
 
-    private static final String LOCAL_NODE_BIND_INSTRUCTION = """
-        Review the complete exactAction for the current managed Node binding. Check the original task and server, empty stdin, fixed launch environment and root guard, pinned helper, limits, and authorized target. Compare decodedToolchainBinding with currentToolchainBindingStage when supplied. A catalog binding does not satisfy deferred native prerequisites or establish candidate readiness.
-        Inspect the exact installed helper source in selectedRangeFrame. selectedRanges maps each excerpt to its original UTF-16 interval; startCharacter is relative to the end of the frame header. Check the admitted Node branch, path and marker ownership, lock, version probe and its execution environment, existing binding comparison, and protected write. The actual command and source determine its effects.
+    private static final String LOCAL_TOOLCHAIN_BIND_INSTRUCTION = """
+        Review the complete exactAction for the current managed toolchain binding. Check the original task and server, empty stdin, fixed launch environment and root guard, pinned helper, limits, and authorized target. Compare decodedToolchainBinding with currentToolchainBindingStage when supplied.
+        Use selectedRangeFrame and selectedRanges to compare exact helper source with the typed selection. startCharacter is relative to the end of the frame header. Follow the reached catalog, path and marker ownership, lock, installed version probe and its execution environment, existing binding comparison, and protected write. For PHP follow the isolated managed CLI probe and extension check. The command stages no mirror materials.
         Read only missing decision-relevant source with evidence using pointer, offset and limit in this fixed snapshot. Use at most eight ranges of up to 8000 UTF-16 code units before a separate verdict. A retained frame's exact source follows its JSON ranges in order. Do not request bytes already present. Deny unsafe effects or missing material evidence. Submit one fresh native submit_result.
         """;
 
@@ -315,10 +316,10 @@ public final class DeploymentCommandSourceEvidence {
         if (!OPERATIONS.contains(operation)) return Optional.empty();
         var mirror = DeploymentMirrorTasks.preparation(request.script());
         boolean dependency = DeploymentToolchainDependencies.OPERATION.equals(operation);
-        var localNode = BIND.equals(operation)
-            ? DeploymentManagedHelperBundle.unwrapLocalNodeBinding(request.script(), layout)
-            : Optional.<DeploymentManagedHelperBundle.LocalNodeBinding>empty();
-        if (mirror.isEmpty() && localNode.isEmpty() && !dependency) return Optional.empty();
+        var localBinding = BIND.equals(operation)
+            ? DeploymentManagedHelperBundle.unwrapLocalToolchainBinding(request.script(), layout)
+            : Optional.<DeploymentManagedHelperBundle.LocalToolchainBinding>empty();
+        if (mirror.isEmpty() && localBinding.isEmpty() && !dependency) return Optional.empty();
 
         var current = (ObjectNode) JSON.readTree(original);
         String exact = requiredText(current, "exactAction");
@@ -326,22 +327,13 @@ public final class DeploymentCommandSourceEvidence {
         if (!operation.equals(current.path("operation").asText()) || !intent.exactAction().equals(exact)
             || !exact.endsWith("\nscript:\n" + script) || current.has(PROJECTION))
             throw new IOException("Original toolchain evidence changed before projection");
-        if (current.has("localNodeBinding") != localNode.isPresent())
-            throw new IOException("Local Node binding evidence differs from the original launcher");
-        if (localNode.isPresent()) {
-            var launcher = localNode.orElseThrow();
-            var facts = current.path("localNodeBinding");
-            var binding = current.path("decodedToolchainBinding");
-            if (!facts.path("task").asText().equals(launcher.task().toString())
-                || !facts.path("serverSha256").asText().equals(launcher.serverSha256())
-                || facts.path("budgetSeconds").asLong(-1) != launcher.budgetSeconds()
-                || facts.path("materialStaging").asBoolean(true)
-                || !facts.path("bindingSha256").equals(binding.path("bindingSha256"))
-                || !binding.at("/literalValidation/canonicalTypedBinding").asBoolean()
-                || binding.path("toolchains").size() != 1
-                || !"NODE".equals(binding.at("/toolchains/0/ecosystem").asText())
-                || !"MANAGED".equals(binding.at("/toolchains/0/origin").asText()))
-                throw new IOException("Local Node binding evidence differs from the original arguments");
+        if (current.has("localToolchainBinding") != localBinding.isPresent())
+            throw new IOException("Local toolchain binding evidence differs from the original launcher");
+        if (localBinding.isPresent()) {
+            var actual = DeploymentCommandEvidence.facts(intent, request, layout);
+            for (String key : List.of("localToolchainBinding", "decodedToolchainBinding"))
+                if (!JSON.readTree(JSON.writeValueAsBytes(actual.get(key))).equals(current.path(key)))
+                    throw new IOException("Local toolchain binding evidence differs from the original arguments");
         }
 
         var projected = current.deepCopy();
@@ -405,11 +397,12 @@ public final class DeploymentCommandSourceEvidence {
             if (binding) {
                 boolean managedDotnet = current.at("/decodedToolchainBinding/toolchains").findValues("ecosystem").stream()
                     .anyMatch(value -> value.asText().equals("DOTNET"));
-                var bindingRanges = BindingSourceRange.select(helper, managedDotnet, localNode.isPresent());
+                boolean localPhp = localBinding.isPresent() && managedBinding(current.path("decodedToolchainBinding"), "PHP");
+                var bindingRanges = BindingSourceRange.select(helper, managedDotnet, localBinding.isPresent(), localPhp);
                 String selected = bindingSelection(descriptor, helper, bindingRanges, initialRanges);
                 sourceBodies.put(BINDING_SELECTION, selected);
                 frames.add(sourceFrame(messages, snapshot, BINDING_SELECTION, selected));
-                if (localNode.isPresent())
+                if (localBinding.isPresent())
                     requiredRanges.put(INSTALLED_HELPER_SOURCE, new TreeMap<>(initialRanges.get(INSTALLED_HELPER_SOURCE)));
             }
             manifest.set("installedHelperSource", descriptor);
@@ -947,6 +940,7 @@ public final class DeploymentCommandSourceEvidence {
             var transport = (ObjectNode) projected.path("mirrorTransport");
             transport.set("runtimeSource", pagedSource(MIRROR_RUNTIME, runtime, buildRuntimeLocations(wrapper.original())));
             projectBuildContext(projected, manifest);
+            projectBuildEntry(projected, sources, BUILD_ENTRY_PREFETCH);
             requiredRanges.putAll(selectedRanges);
             if (cargo) {
                 var policy = new TreeMap<>(Map.of(0, wrapper.policy().length()));
@@ -1030,13 +1024,15 @@ public final class DeploymentCommandSourceEvidence {
         var selection = new StringBuilder();
         var selected = manifest.putArray("selectedRuntimeRanges");
         var viewParts = new ArrayList<ViewPart>();
-        for (String field : List.of("dataSplitSource", "phaseDispatchSource", "unitLaunchSource", "prefetchEntrySource")) {
+        for (String field : List.of("dataSplitSource", "phaseDispatchSource", "scratchResetSource", "scratchDispatchSource",
+                "unitLaunchSource", "prefetchEntrySource")) {
             String source = requiredText(implementation, field);
             String pointer = BUILD_CARGO_WORKER + field;
             sources.put(pointer, source);
             implementation.set(field, pagedSource(pointer, source, List.of()));
             required.put(pointer, new TreeMap<>(Map.of(0, source.length())));
         }
+        projectBuildEntry(projected, sources, BUILD_CARGO_WORKER + "prefetchEntrySource");
         if (!prefetch.policy().isEmpty()) required.put(BUILD_POLICY, new TreeMap<>(Map.of(0, prefetch.policy().length())));
         appendSelection(selection, selected, required, MIRROR_RUNTIME, prefetch.runtime(),
             PreparationSourceRange.cargoPrefetchRuntime(prefetch.runtime()), Optional.of(viewParts));
@@ -1052,6 +1048,28 @@ public final class DeploymentCommandSourceEvidence {
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
         return new DeploymentCommandSourceEvidence(current, original, snapshot, messages, sources, Map.of(), required, initial,
             Optional.empty(), Optional.of(mapping), digests);
+    }
+
+    /** Keeps all entry bytes addressable without carrying the Cargo-only branch twice or on unrelated builds. */
+    private static void projectBuildEntry(ObjectNode projected, Map<String, String> sources, String pointer) throws IOException {
+        if (!(projected.path("standardBuildEntry") instanceof ObjectNode facts)) return;
+        String entry = requiredText(facts, "buildEntrySource");
+        String start = "if [ \"$engine\" = cargo-prefetch ]; then\n";
+        String end = "\nWTL_CARGO_PREFETCH\nfi\n";
+        int offset = uniqueIndex(entry, start);
+        int next = uniqueIndex(entry, end) + end.length();
+        if (next <= offset || !sha256(entry).equals(requiredText(facts, "buildEntrySha256")))
+            throw new IOException("Build entry source differs from its pinned identity");
+        String branch = entry.substring(offset, next);
+        String present = sources.putIfAbsent(pointer, branch);
+        if (present != null && !present.equals(branch))
+            throw new IOException("Cargo prefetch facts differ from the installed entry source");
+        var parts = List.of(literal(entry.substring(0, offset)), reference("SOURCE_TEXT", pointer), literal(entry.substring(next)));
+        if (!entry.equals(restoreSegments(parts, sources)))
+            throw new IOException("Build entry projection differs from the original source");
+        var descriptor = segments(entry, parts);
+        descriptor.set("cargoPrefetch", pagedSource(pointer, branch, List.of()));
+        facts.set("buildEntrySource", descriptor);
     }
 
     private static List<String> buildRuntimeLocations(String body) {
@@ -1699,10 +1717,10 @@ public final class DeploymentCommandSourceEvidence {
                         if (full.isPresent()) return full;
                     }
                 }
-                var exact = initialSource(Integer.MAX_VALUE);
+                var exact = initialSource(Integer.MAX_VALUE, publishedBuildHeader().isEmpty() ? requiredRanges : initialSourceRanges);
                 if (exact.isPresent() && quotedBytes(exact.orElseThrow().message()) <= available) return exact;
             }
-            return initialSource(available);
+            return initialSource(available, initialSourceRanges);
         }
 
         private Optional<RetainedFrame> completeBlockSource(String pointer, int available) throws IOException {
@@ -1739,7 +1757,8 @@ public final class DeploymentCommandSourceEvidence {
             return quotedBytes(message) <= available ? Optional.of(new RetainedFrame(message, visible, true)) : Optional.empty();
         }
 
-        private Optional<RetainedFrame> initialSource(int available) throws IOException {
+        private Optional<RetainedFrame> initialSource(int available, Map<String, NavigableMap<Integer, Integer>> included)
+                throws IOException {
             var header = JSON.createObjectNode().put("snapshotSha256", snapshot).put("trust", "UNTRUSTED_DATA")
                 .put("initialSupplement", true);
             var entries = header.putArray("ranges");
@@ -1752,7 +1771,7 @@ public final class DeploymentCommandSourceEvidence {
             int bodyBudget = available - quotedBytes(RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n");
             if (bodyBudget <= 0) return Optional.empty();
             var body = new StringBuilder();
-            retainHistory(initialSourceRanges, visible, entries, body, bodyBudget);
+            retainHistory(included, visible, entries, body, bodyBudget);
             if (entries.isEmpty()) return Optional.empty();
             if (reconstructRuntimeShell(visible)) header.put("runtimeShellReconstructible", true);
             if (showPending) appendRequiredCoverage(header, visible);
@@ -2042,7 +2061,7 @@ public final class DeploymentCommandSourceEvidence {
 
         private Optional<RetainedFrame> fittedSource(int available) throws IOException {
             if (available <= 0) return Optional.empty();
-            if ((packedBuildReview() && pagedArchiveDigests.isEmpty()) || phpBinding) {
+            if ((packedBuildReview() && publishedBuildHeader().isEmpty()) || phpBinding) {
                 var complete = retainedSource(latestReads, false, Integer.MAX_VALUE);
                 if (quotedBytes(complete.message()) <= available) return Optional.of(complete);
             }
@@ -2474,7 +2493,8 @@ public final class DeploymentCommandSourceEvidence {
         if (!decoded.at("/literalValidation/canonicalTypedBinding").asBoolean(false)) return false;
         for (var row : decoded.path("toolchains")) {
             String ecosystem = row.path("ecosystem").asText();
-            if (ecosystem.equals("NODE") || ecosystem.equals("RUST")) return true;
+            if (ecosystem.equals("NODE") || ecosystem.equals("RUST")
+                    || ecosystem.equals("PHP") && current.has("localToolchainBinding")) return true;
         }
         return false;
     }
@@ -2524,6 +2544,7 @@ public final class DeploymentCommandSourceEvidence {
             var instructions = BUILD_INSTRUCTION + BUILD_ARCHIVE_INSTRUCTION + """
                 Runtime locations navigate the current build. All original ranges remain readable. Check the reached dependency path and request source still needed for the verdict.
                 If sourceArchiveHistory is present, the selected archive is already inline at selectedArchivePointer. The original history remains readable at sourcePointer.
+                The standardBuildEntry.buildEntrySource segments preserve the entire installed entry. The Cargo prefetch source is referenced once and remains available by pointer. Review it if the current operation selects that branch.
                 """;
             if (current.has("cargoBuildPrefetch")) instructions += """
                 For this Cargo build, completeExecutableInput contains a length line, a data document, and the offline script in that order. In its segments, JSON_STRING is the exact JSON string including double quotes. Evaluate the original lock member, exact policy, runtime transfer and helper data reader for prefetch, and the offline Cargo/CMake source and isolation for project execution.
@@ -2553,7 +2574,7 @@ public final class DeploymentCommandSourceEvidence {
         }
         if (dependencyReview() && sourceBodies.containsKey(DEPENDENCY_APT_SELECTION)) return DEPENDENCY_APT_INSTRUCTION;
         if (dependencyReview()) return INSTRUCTION + DEPENDENCY_INSTRUCTION;
-        if (bindingReview() && current.has("localNodeBinding")) return LOCAL_NODE_BIND_INSTRUCTION;
+        if (bindingReview() && current.has("localToolchainBinding")) return LOCAL_TOOLCHAIN_BIND_INSTRUCTION;
         String bindingInstruction = BIND_INSTRUCTION + (initialMirrorReview() ? INITIAL_MIRROR_INSTRUCTION : "");
         if (phpMirrorBindingReview()) bindingInstruction += PHP_MIRROR_BINDING_INSTRUCTION;
         if (boundBindingEvidence()) return bindingInstruction.replace("by its snapshotSha256 and sourcePointer.",

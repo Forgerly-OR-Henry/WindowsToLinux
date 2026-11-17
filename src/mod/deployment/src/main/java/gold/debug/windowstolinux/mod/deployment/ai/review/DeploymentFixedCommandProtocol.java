@@ -149,9 +149,9 @@ public final class DeploymentFixedCommandProtocol implements DeploymentCommandPr
             throw new IllegalArgumentException("Tracked toolchain task differs from original context");
         if (facts.get("toolchainDiagnostic") instanceof Map<?, ?> diagnostic && !task.id().toString().equals(diagnostic.get("taskId")))
             throw new IllegalArgumentException("Toolchain diagnostic task differs from original context");
-        if (facts.get("localNodeBinding") instanceof Map<?, ?> local) {
+        if (facts.get("localToolchainBinding") instanceof Map<?, ?> local) {
             if (!task.id().toString().equals(local.get("task")))
-                throw new IllegalArgumentException("Local Node binding task differs from original context");
+                throw new IllegalArgumentException("Local toolchain binding task differs from original context");
             gold.debug.windowstolinux.mod.deployment.service.mirror.DeploymentMirrorTasks.requireCaptured(task.id());
         }
         return facts;

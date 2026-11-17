@@ -48,6 +48,13 @@ class DeploymentCargoBuildInputTest {
         assertEquals(DeploymentManagedHelperBundle.buildEntrySha256(layout), source.get("buildEntrySha256"));
         String dispatch = source.get("phaseDispatchSource").toString();
         assertTrue(dispatch.contains("[ \"$engine\" = ordinary-offline ]"));
+        String scratch = source.get("scratchResetSource").toString();
+        assertTrue(scratch.contains("[ \"$state\" = not-found ]"));
+        assertTrue(scratch.contains("assert_root_owned_directory \"$mutable\""));
+        assertTrue(scratch.contains("findmnt -Rrn -M"));
+        assertTrue(scratch.contains("rm -rf --one-file-system --preserve-root=all"));
+        String scratchDispatch = source.get("scratchDispatchSource").toString();
+        assertTrue(scratchDispatch.indexOf("reset_cargo_build_scratch") < scratchDispatch.indexOf("install -d"));
         String launch = source.get("unitLaunchSource").toString();
         assertTrue(launch.contains("/usr/bin/env -i PATH=/usr/bin:/bin"));
         assertTrue(launch.contains("cargo-prefetch \"$remaining\""));

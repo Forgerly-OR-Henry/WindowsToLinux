@@ -69,7 +69,7 @@ public final class DeploymentBuildCommandChannel {
     private final java.util.ArrayDeque<String> preparationReceipts = new java.util.ArrayDeque<>();
 
     private final java.util.ArrayList<DeploymentTrackedToolchains.Selection> trackedPreparationReceipts = new java.util.ArrayList<>();
-    private String preparedLocalNodeBinding;
+    private String preparedLocalToolchainBinding;
 
     private DeploymentToolchainDiagnostics.Request lastPreparationDiagnosticRequest;
 
@@ -273,7 +273,7 @@ public final class DeploymentBuildCommandChannel {
     public OperationResult<CommandResult> prepare(DeploymentToolchainType ecosystem, String branch, String exact,
                                                   int seconds, String javaHome, DeploymentKotlinJavaRequirement javaRequirement) throws ApiException {
         requireKotlinJavaReceipt(ecosystem, javaHome, javaRequirement);
-        preparedLocalNodeBinding = null;
+        preparedLocalToolchainBinding = null;
         long available = budget.remainingSeconds();
         if (available < 45)
             return timeout();
@@ -368,7 +368,7 @@ public final class DeploymentBuildCommandChannel {
 
     /** Matches validated typed selections to this channel's actual complete successful preparation receipts. */
     public void toolchainsPrepared(gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools) throws ApiException {
-        preparedLocalNodeBinding = null;
+        preparedLocalToolchainBinding = null;
         if (tools.selections().isEmpty()) return;
         for (var selection : tools.selections()) {
             if (trackedSession != null) {
@@ -386,8 +386,8 @@ public final class DeploymentBuildCommandChannel {
         preparationReceipts.clear();
         trackedPreparationReceipts.clear();
         preparationObserver.toolsPrepared(server, tools, task);
-        if (trackedSession == null && DeploymentManagedHelperBundle.supportsLocalNodeBinding(tools, layout))
-            preparedLocalNodeBinding = java.util.Base64.getEncoder().encodeToString(
+        if (trackedSession == null && DeploymentManagedHelperBundle.supportsLocalToolchainBinding(tools, layout))
+            preparedLocalToolchainBinding = java.util.Base64.getEncoder().encodeToString(
                 DeploymentToolchainBindingCodec.encode(tools).getBytes(StandardCharsets.UTF_8));
     }
 
@@ -404,7 +404,7 @@ public final class DeploymentBuildCommandChannel {
         String operation = "deployment.toolchain.bind.v1";
         String script = helper("prepare-toolchains", List.of("bind", encoded));
         var timeout = Duration.ofSeconds(Math.min(180, available));
-        if (encoded.equals(preparedLocalNodeBinding)) {
+        if (encoded.equals(preparedLocalToolchainBinding)) {
             var targets = Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains()));
             return sendWithBoundary(operation, targets, script, new byte[0], timeout, 65536, () -> { }, encoded);
         }
@@ -557,7 +557,7 @@ public final class DeploymentBuildCommandChannel {
     }
 
     private OperationResult<CommandResult> sendWithBoundary(String operation, Set<ActionTarget> targets, String script, byte[] input,
-            Duration timeout, long output, DispatchBoundary dispatchBoundary, String localNodeBinding) throws ApiException {
+            Duration timeout, long output, DispatchBoundary dispatchBoundary, String localToolchainBinding) throws ApiException {
         Objects.requireNonNull(dispatchBoundary);
         targets = Set.copyOf(targets);
         if (targets.isEmpty() || targets.stream().anyMatch(target -> !target.serverId().equals(server.id())))
@@ -569,12 +569,12 @@ public final class DeploymentBuildCommandChannel {
             throw new IllegalArgumentException("Helper invocation differs from the captured layout");
         long seconds = Math.min(timeout.toSeconds(), available);
         String executable;
-        if (localNodeBinding != null) {
+        if (localToolchainBinding != null) {
             DeploymentMirrorTasks.requireCaptured(task.id());
-            executable = DeploymentManagedHelperBundle.renderLocalNodeBinding(localNodeBinding, task.id(), server, seconds, layout);
+            executable = DeploymentManagedHelperBundle.renderLocalToolchainBinding(localToolchainBinding, task.id(), server, seconds, layout);
         } else {
-            if (DeploymentManagedHelperBundle.isLocalNodeBinding(script, layout))
-                throw new IllegalArgumentException("Local Node binding requires its observed preparation on this channel");
+            if (DeploymentManagedHelperBundle.isLocalToolchainBinding(script, layout))
+                throw new IllegalArgumentException("Local toolchain binding requires its observed preparation on this channel");
             executable = script.contains(layout.helperPath()) ? DeploymentManagedHelperBundle.verifiedCommand(script, layout) : script;
             if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentToolchainDependencies.OPERATION)
                 || script.contains(layout.helperPath()) && operation.contains("toolchain") && !operation.contains("observe") && !operation.contains("cleanup")

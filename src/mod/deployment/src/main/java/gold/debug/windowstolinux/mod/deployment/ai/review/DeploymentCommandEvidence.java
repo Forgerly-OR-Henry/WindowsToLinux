@@ -58,8 +58,8 @@ public final class DeploymentCommandEvidence {
         String operation = intent.semantics().orElseThrow().operation();
         if (!DeploymentFixedCommandProtocol.registeredOperation(operation))
             throw new IllegalArgumentException("Unsupported common command operation");
-        var localNodeBinding = DeploymentManagedHelperBundle.unwrapLocalNodeBinding(request.script(), layout);
-        if (localNodeBinding.isPresent()) requireLocalNodeBindingIntent(intent, request, layout, localNodeBinding.orElseThrow());
+        var localToolchainBinding = DeploymentManagedHelperBundle.unwrapLocalToolchainBinding(request.script(), layout);
+        if (localToolchainBinding.isPresent()) requireLocalToolchainBindingIntent(intent, request, layout, localToolchainBinding.orElseThrow());
         boolean installedHelper = !Set.of("deployment.helper.install.v1", "deployment.helper.install.tracked.v1",
             "deployment.helper.install.files.v1").contains(operation) && request.script().contains(layout.helperPath());
         var facts = new LinkedHashMap<String, Object>(baseFacts(intent, request, layout, installedHelper));
@@ -87,7 +87,7 @@ public final class DeploymentCommandEvidence {
             var decoded = binding(invocation, layout);
             facts.put("decodedToolchainBinding", decoded);
             facts.put("toolchainSubcommand", "bind");
-            localNodeBinding.ifPresent(local -> facts.put("localNodeBinding", Map.of(
+            localToolchainBinding.ifPresent(local -> facts.put("localToolchainBinding", Map.of(
                 "task", local.task().toString(), "serverSha256", local.serverSha256(), "budgetSeconds", local.budgetSeconds(),
                 "bindingSha256", decoded.get("bindingSha256"), "materialStaging", false)));
         }
@@ -555,11 +555,11 @@ public final class DeploymentCommandEvidence {
         return decodeBinding(encoded, layout);
     }
 
-    private static void requireLocalNodeBindingIntent(ActionIntent intent, CommandRequest request, DeploymentRemoteLayout layout,
-            DeploymentManagedHelperBundle.LocalNodeBinding local) {
+    private static void requireLocalToolchainBindingIntent(ActionIntent intent, CommandRequest request, DeploymentRemoteLayout layout,
+            DeploymentManagedHelperBundle.LocalToolchainBinding local) {
         if (intent.serverIds().size() != 1
             || !intent.semantics().orElseThrow().operation().equals("deployment.toolchain.bind.v1"))
-            throw new IllegalArgumentException("Local Node binding requires its original fixed operation and server");
+            throw new IllegalArgumentException("Local toolchain binding requires its original fixed operation and server");
         var server = new ServerId(intent.serverIds().getFirst());
         var targets = Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains()));
         var semantics = intent.semantics().orElseThrow();
@@ -567,10 +567,10 @@ public final class DeploymentCommandEvidence {
         try {
             if (!targets.equals(semantics.targets()) || input.length != 0 || request.outputLimitBytes() != 65536
                 || !request.timeout().equals(Duration.ofSeconds(local.budgetSeconds()))
-                || !request.script().equals(DeploymentManagedHelperBundle.renderLocalNodeBinding(
+                || !request.script().equals(DeploymentManagedHelperBundle.renderLocalToolchainBinding(
                     local.encoded(), local.task(), server, local.budgetSeconds(), layout))
                 || !intent.equals(RemoteActions.command(server, intent.revision(), request).withSemantics(semantics)))
-                throw new IllegalArgumentException("Local Node binding differs from the original command boundary");
+                throw new IllegalArgumentException("Local toolchain binding differs from the original command boundary");
         } finally {
             Arrays.fill(input, (byte) 0);
         }
