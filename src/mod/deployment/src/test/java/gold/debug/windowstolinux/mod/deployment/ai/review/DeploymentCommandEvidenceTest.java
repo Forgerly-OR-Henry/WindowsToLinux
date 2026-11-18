@@ -916,11 +916,16 @@ class DeploymentCommandEvidenceTest {
                     assertEquals(List.of("offline_build_properties=(", "--property=PrivateNetwork=yes",
                         "--property='RestrictAddressFamilies= '", "--property=SystemCallArchitectures=native",
                         "--property=\"SystemCallFilter=~@network-io io_uring_setup io_uring_enter io_uring_register\"",
+                        "--property=\"SystemCallFilter=socketpair recvfrom\"",
                         "--property=SystemCallErrorNumber=EPERM", ")"), properties);
                     String preflightSource = isolation.get("preflightSource").toString();
                     assertTrue(preflightSource.contains("\"${offline_build_properties[@]}\""));
                     assertTrue(preflightSource.contains("socket.AF_INET, socket.AF_INET6, socket.AF_UNIX"));
                     assertTrue(preflightSource.contains("os.readlink(\"/proc/self/ns/net\") == sys.argv[1]"));
+                    assertTrue(preflightSource.contains("socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET | socket.SOCK_CLOEXEC, 0)"));
+                    assertTrue(preflightSource.contains("os.execve(\"/usr/bin/true\", (\"/usr/bin/true\",), {})"));
+                    assertTrue(preflightSource.contains("left.send(b\"WTLC\")"));
+                    assertTrue(preflightSource.contains("if error.errno != errno.EPERM:"));
                     assertTrue(isolation.get("applicationSource").toString().contains("properties+=(\"${offline_build_properties[@]}\")"));
                 }
                 assertEquals(action.exactAction(), facts.get("exactAction"));

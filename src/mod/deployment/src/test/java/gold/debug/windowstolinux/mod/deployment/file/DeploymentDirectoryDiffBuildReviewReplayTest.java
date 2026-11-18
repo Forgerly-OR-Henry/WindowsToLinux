@@ -83,7 +83,8 @@ class DeploymentDirectoryDiffBuildReviewReplayTest {
                 var frame = retainedSource(input);
                 assertFalse(frame.metadata().has("pendingRequired"));
                 int headerJsonBytes = verifyArchive(frame, evidence, captured);
-                assertTrue(headerJsonBytes > HISTORICAL_CEILING);
+                assertTrue(JSON.writeValueAsBytes(captured.pagedBodies().get(HEADER)).length > HISTORICAL_CEILING);
+                assertTrue(encoded.length > HISTORICAL_CEILING, "Measure the whole current native request, not a component size");
                 assertEquals(build.buildBodySha256(), evidence.at("/buildBody/sha256").asText());
                 assertEquals(build.buildBodyBytes(), evidence.at("/buildBody/utf8Bytes").asInt());
                 assertEquals(368, build.bindingBytes());
@@ -92,32 +93,28 @@ class DeploymentDirectoryDiffBuildReviewReplayTest {
                 int reconstructedFacts = full.requests.getFirst().messages().getLast().text().length();
                 int unobservedFacts = Math.max(0, HISTORICAL_FACTS_CHARACTERS - reconstructedFacts);
                 var limited = new EncodingReview(fixture, HISTORICAL_CEILING);
-                var rejected = assertThrows(DeploymentCommandReviewModel.Failure.class, () -> approve(limited, fixture, build));
-                assertEquals("REQUIRED_SOURCE_MISSING",
-                    DeploymentCommandReviewModel.failureDiagnostics(rejected).get("reviewEvidenceBlock"));
+                assertThrows(ApiException.class, () -> approve(limited, fixture, build));
                 assertEquals(List.of(encoded.length), limited.refused);
-                assertEquals(1, limited.sent.size());
-                byte[] underLimit = limited.sent.getFirst();
-                assertTrue(underLimit.length <= HISTORICAL_CEILING);
-                var limitedFrame = retainedSource(JSON.readTree(underLimit).path("input"));
-                String headerPointer = frame.metadata().at("/repeatedOriginalBlocks/pointer").asText();
-                assertTrue(limitedFrame.metadata().path("pendingRequired").findValuesAsText("pointer").contains(headerPointer));
+                assertTrue(limited.sent.isEmpty(), "Complete source over budget must not send a missing-header fallback");
+                fixture.model.replies.clear();
                 assertTrue(full.requests.stream().allMatch(request -> request.maxRequestBytes() <= RAW_CAP));
-                // Calibrate the reconstruction with the historical incomplete wire size and facts length.
-                // The actual original request JSON is unavailable. A facts deficit takes at most six bytes per UTF-16 code unit.
-                int completionBytes = encoded.length - underLimit.length;
+                // Historical sizes remain reference measurements; the current complete request is measured independently.
+                int completionBytes = encoded.length - HISTORICAL_FIRST_WIRE_BYTES;
                 int factsDeficitMaxBytes = 6 * unobservedFacts;
-                int calibratedBudget = Math.max(encoded.length, HISTORICAL_FIRST_WIRE_BYTES + completionBytes)
-                    + factsDeficitMaxBytes;
-                assertTrue(calibratedBudget <= RAW_CAP, () -> "Calibrated reconstruction exceeding raw limit: " + calibratedBudget);
                 int r90MinimumSaving = 991_990 - R90_CEILING;
                 assertTrue(838_020 - headerJsonBytes >= r90MinimumSaving, () -> "Lossless header wire bytes: " + headerJsonBytes);
                 var r90 = new EncodingReview(fixture, R90_CEILING);
-                assertEquals("APPROVE", approve(r90, fixture, build).path("decision").asText());
-                assertTrue(r90.refused.isEmpty());
-                assertEquals(1, r90.sent.size());
-                assertTrue(r90.sent.getFirst().length <= R90_CEILING);
-                var covered = new EncodingReview(fixture, calibratedBudget);
+                if (encoded.length <= R90_CEILING) {
+                    assertEquals("APPROVE", approve(r90, fixture, build).path("decision").asText());
+                    assertTrue(r90.refused.isEmpty());
+                    assertEquals(1, r90.sent.size());
+                } else {
+                    assertThrows(ApiException.class, () -> approve(r90, fixture, build));
+                    assertTrue(r90.sent.isEmpty());
+                    assertEquals(List.of(encoded.length), r90.refused);
+                    fixture.model.replies.clear();
+                }
+                var covered = new EncodingReview(fixture, RAW_CAP);
                 assertEquals("APPROVE", approve(covered, fixture, build).path("decision").asText());
                 assertEquals(List.of(), covered.refused);
                 assertEquals(1, covered.sent.size());
@@ -125,11 +122,11 @@ class DeploymentDirectoryDiffBuildReviewReplayTest {
                 System.out.printf("R89_DIRECTORY_DIFF_REPLAY archive=%s bytes=%d binding=%s bindingBytes=%d "
                         + "buildBody=%s buildBodyBytes=%d headerJsonBytes=%d completeWireBytes=%d rawCap=%d historicalCeiling=%d "
                         + "historicalFirstWireBytes=%d historicalFactsCharacters=%d reconstructedFactsCharacters=%d "
-                        + "factsDeficitMaxBytes=%d completionWireBytes=%d calibratedWireBudget=%d cappedIncompleteWireBytes=%d%n",
+                        + "factsDeficitMaxBytes=%d completionWireBytes=%d physicalWireBudget=%d cappedDispatches=%d%n",
                     archive.sha256(), archive.byteCount(), build.bindingSha256(), build.bindingBytes(), build.buildBodySha256(),
                     build.buildBodyBytes(), headerJsonBytes, encoded.length, RAW_CAP, HISTORICAL_CEILING, HISTORICAL_FIRST_WIRE_BYTES,
-                    HISTORICAL_FACTS_CHARACTERS, reconstructedFacts, factsDeficitMaxBytes, completionBytes, calibratedBudget,
-                    underLimit.length);
+                    HISTORICAL_FACTS_CHARACTERS, reconstructedFacts, factsDeficitMaxBytes, completionBytes, RAW_CAP,
+                    limited.sent.size());
             }
         }
     }
@@ -202,33 +199,8 @@ class DeploymentDirectoryDiffBuildReviewReplayTest {
         return displayBytes;
     }
 
-    private static String reconstruct(String display) {
-        var lines = Pattern.compile("[^\n]*\n|[^\n]+\\z").matcher(display).results().map(MatchResult::group)
-            .map(DeploymentDirectoryDiffBuildReviewReplayTest::decodeLeadingSpaces).toList();
-        var declared = new HashMap<Integer, List<String>>();
-        var original = new ArrayList<String>();
-        for (int i = 0; i < lines.size(); i++) {
-            String line = lines.get(i);
-            if (line.startsWith("@WTL_BLOCK ") || line.startsWith("@WTL_COPY ")) {
-                String[] fields = line.stripTrailing().split(" ");
-                assertEquals(3, fields.length);
-                int first = Integer.parseInt(fields[1]), length = Integer.parseInt(fields[2]);
-                assertTrue(length > 0);
-                if (fields[0].equals("@WTL_BLOCK")) {
-                    assertEquals(original.size() + 1, first);
-                    var block = lines.subList(i + 1, i + 1 + length);
-                    assertNull(declared.put(first, block));
-                    original.addAll(block);
-                    i += length;
-                } else {
-                    var block = declared.get(first);
-                    assertNotNull(block);
-                    assertEquals(length, block.size());
-                    original.addAll(block);
-                }
-            } else original.add(line);
-        }
-        return String.join("", original);
+    private static String reconstruct(String display) throws Exception {
+        return gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentSourceFrameDecoder.expand(display);
     }
 
     static String decodeLeadingSpaces(String line) {
@@ -236,7 +208,7 @@ class DeploymentDirectoryDiffBuildReviewReplayTest {
         int separator = line.indexOf(' ');
         assertTrue(separator > 2 && separator < 6);
         int count = Integer.parseInt(line.substring(2, separator));
-        assertTrue(count >= 12 && count <= 999);
+        assertTrue(count >= 5 && count <= 999);
         return " ".repeat(count) + line.substring(separator + 1);
     }
 

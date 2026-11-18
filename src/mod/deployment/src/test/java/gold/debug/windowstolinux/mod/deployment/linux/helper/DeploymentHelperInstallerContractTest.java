@@ -38,11 +38,9 @@ class DeploymentHelperInstallerContractTest {
 
     @BeforeEach
     void createTaskFixtureDirectory() throws Exception {
-        Path root = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
-        while (root != null && !Files.isDirectory(root.resolve(".ai-workspace"))) root = root.getParent();
-        assertNotNull(root, "Project task workspace unavailable");
-        temporary = Files.createDirectories(root.resolve(
-            ".ai-workspace/tmp/deployment-mirrors-20261104/installer-contract/junit-" + UUID.randomUUID()));
+        Path root = Path.of(System.getProperty("java.io.tmpdir")).toRealPath();
+        assertTrue(Files.isDirectory(root) && !Files.isSymbolicLink(root), "Explicit task temporary directory required");
+        temporary = Files.createTempDirectory(root, "installer-contract-");
     }
 
     @AfterEach
@@ -410,6 +408,28 @@ class DeploymentHelperInstallerContractTest {
         assertTrue(Files.readString(fixture.receipt()).endsWith("PHASE=STARTED\n"));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"success", "probe-error", "protocol-missing", "ready-last", "security-last"})
+    void readyInstallerOriginalTailWritesSuccessOnlyAfterEveryFinalGuard(String scenario) throws Exception {
+        var fixture = fixture(scenario.equals("probe-error"), "none", "absent", "none", scenario);
+        var result = execute(fixture.script());
+        String effects = Files.readString(temporary.resolve("effects"));
+        assertTrue(effects.startsWith("publish\npublish\ndaemon-reload\nprobe\n"), effects);
+        String receipt = Files.readString(fixture.receipt());
+        if (scenario.equals("success")) {
+            assertEquals(0, result.exit(), result.output());
+            assertTrue(receipt.endsWith("PHASE=SUCCEEDED\n"));
+            assertTrue(effects.endsWith("receipt\n"));
+            assertEquals("3", Files.readString(temporary.resolve("ready-checks")).trim());
+        } else {
+            assertNotEquals(0, result.exit(), scenario + ": " + result.output());
+            assertTrue(receipt.endsWith("PHASE=STARTED\n"), scenario + ": " + receipt);
+            assertFalse(receipt.contains("PHASE=SUCCEEDED"));
+            assertFalse(effects.contains("receipt\n"));
+        }
+        System.out.printf("R101_READY_REAL_BASH scenario=%s exit=%d successReceipt=%s%n", scenario, result.exit(), receipt.endsWith("PHASE=SUCCEEDED\n"));
+    }
+
     @Test
     void successfulPublicationHoldsItsDirectoryLockUntilTheFinalReceipt() throws Exception {
         var fixture = fixture(false, "none", "absent", "none");
@@ -604,11 +624,18 @@ class DeploymentHelperInstallerContractTest {
     }
 
     private Fixture fixture(boolean probeFailure, String damaged, String prior, String mutation) throws Exception {
+        return fixture(probeFailure, damaged, prior, mutation, null);
+    }
+
+    private Fixture fixture(boolean probeFailure, String damaged, String prior, String mutation, String readyScenario) throws Exception {
         var layout = DeploymentRemoteLayout.original();
         var operation = UUID.randomUUID();
-        String original = DeploymentHelperInstallerScript.renderTracked(UUID.randomUUID(), operation, "a".repeat(64),
-            sha(DeploymentHelperInstallerScript.render()), layout);
-        assertTrue(original.contains("else command apt-get \"$@\";"),
+        var point = gold.debug.windowstolinux.mod.deployment.service.mirror.DownloadPoint.APT_UBUNTU;
+        String original = readyScenario == null
+            ? DeploymentHelperInstallerScript.renderTracked(UUID.randomUUID(), operation, "a".repeat(64), sha(DeploymentHelperInstallerScript.render()), layout)
+            : DeploymentHelperInstallerScript.renderTrackedReady(UUID.randomUUID(), operation, "a".repeat(64),
+                DeploymentHelperInstallerScript.readyBodyDigest(layout, point), layout, point);
+        if (readyScenario == null) assertTrue(original.contains("else command apt-get \"$@\";"),
             "The production legacy package entry must bypass shell functions");
         var evidence = new ObjectMapper().valueToTree(DeploymentInstallerEvidence.describe(original));
         String base = bashPath(temporary);
@@ -639,8 +666,28 @@ class DeploymentHelperInstallerContractTest {
                     .replace("helper:" + R33_HELPER_DIGEST, "helper:" + sha(R33_HELPER))
                     .replace("helper:" + R35_HELPER_DIGEST, "helper:" + sha(R35_HELPER))
                     .replace("build-entry:" + LEGACY_ENTRY_DIGEST, "build-entry:" + sha(LEGACY_ENTRY))
-                    .replace(DeploymentHelperInstallerScript.renderSecurityObservationFunctions(), "")
-                    .replace(DeploymentHelperInstallerScript.renderSecurityInvariant(), "");
+                    .replace(DeploymentHelperInstallerScript.renderSecurityObservationFunctions(), readyScenario == null ? "" : """
+                        security_state() {
+                          if [ "$fixture_ready_scenario" = security-last ] && [ -f "$fixture/effects" ] && /usr/bin/grep -Fx probe "$fixture/effects" >/dev/null; then
+                            printf changed
+                          else printf baseline; fi
+                        }
+                        firewall_state() { printf none; }
+                        security_before="$(security_state)"
+                        firewall_before="$(firewall_state)"
+                        """)
+                    .replace(DeploymentHelperInstallerScript.renderSecurityInvariant(), readyScenario == null ? "" : DeploymentHelperInstallerScript.renderSecurityInvariant());
+                if (readyScenario != null) text = text.replace("apt_prerequisite_metadata || exit 64\n", """
+                    apt_prerequisite_metadata() { return 0; }
+                    apt_prerequisites_observe() {
+                      local count=0
+                      if [ -f "$fixture/ready-checks" ]; then read -r count < "$fixture/ready-checks"; fi
+                      count=$((count + 1)); printf '%s\\n' "$count" > "$fixture/ready-checks"
+                      if [ "$fixture_ready_scenario" = ready-last ] && [ "$count" -ge 3 ]; then printf 'APT_PREREQUISITES=MISSING\\n'
+                      else printf 'APT_PREREQUISITES=READY\\n'; fi
+                    }
+                    apt_prerequisite_metadata || exit 64
+                    """);
                 mapped.append(text);
             }
         }
@@ -713,7 +760,9 @@ class DeploymentHelperInstallerContractTest {
             }
             fixture_probe() {
               printf 'probe\n' >> "$fixture/effects"
-            """ + (probeFailure ? "  return 29\n" : "  printf 'HELPER=1\\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\\n'\n") + "}\n";
+            """ + (probeFailure ? "  return 29\n" : "protocol-missing".equals(readyScenario) ? "  printf 'HELPER=1\\n'\n"
+                : "  printf 'HELPER=1\\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\\n'\n") + "}\n";
+        if (readyScenario != null) hooks = "fixture_ready_scenario=" + DeploymentHelperInstallerScript.quote(readyScenario) + "\n" + hooks;
         return new Fixture(hooks + mapped, temporary.resolve("state/helper-install-operations/" + operation + ".receipt"));
     }
 

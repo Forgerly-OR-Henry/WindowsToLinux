@@ -317,7 +317,13 @@ public final class DeploymentAiJson {
             }
             if (evidenceReader.isEmpty()) return response;
             var reader = evidenceReader.orElseThrow();
-            var results = reader.read(response);
+            List<gold.debug.windowstolinux.appapi.ai.model.AiToolResult> results;
+            try {
+                results = reader.read(response);
+            } catch (DeploymentCommandReviewModel.Failure stalled) {
+                if (stalled.evidenceReadMadeNoProgress()) reader.continueReadBeforeNoProgress(messages, response);
+                throw stalled;
+            }
             if (results.isEmpty()) return response;
             reader.continueReview(messages, response, results);
         }

@@ -53,7 +53,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "de348d40b921bbd641bfe1957a85ad60c9287cdd88429a2b78b4307323ca9fb7";
+    public static final String EXPECTED_SHA256 = "f483045edb858bd4148e582c421d6d32bdbc7aa1bc09f96e2240c6fcc60bd90b";
     private static final String RUBY_SOURCE_SHA256 = "8accc7b83ccfc2bf84396bd3fe3012f0138e4da777700103a373137e92f134b9";
     private static final String GNU_MAKE_SOURCE_SHA256 = "fabf9252d95b17e8a15e0d7e80a826824b02b45f291e14d1ca0fb65b577a44a4";
     private static final String PYTHON_SOURCE_SHA256 = "ac309b1d2fc1549089444886f3503221e45eaaf86e95358409f18ed5634d1e39";
@@ -427,7 +427,7 @@ public final class DeploymentManagedHelperBundle {
             "        fi\n");
         return Map.of("helperSha256", helperSha256(layout), "buildEntrySha256", buildEntrySha256(layout),
             "propertiesSource", controls, "preflightSource", preflight, "applicationSource", use,
-            "meaning", "The pinned ordinary-offline branch applies these exact systemd properties to the same non-root build unit. The fixed preflight checks a separate network namespace and socket denial. This is the selected enforced implementation, not a live probe result or authority.");
+            "meaning", "The pinned ordinary-offline branch applies these exact systemd properties to the same non-root build unit. The fixed preflight checks a separate network namespace, anonymous CLOEXEC IPC and fixed fork/exec, while rejecting independent socket creation and pair send. This is the selected enforced implementation, not a live probe result or authority.");
     }
 
     /** Exact root-side data split and bounded two-unit handoff, tied to the current installed bytes. */

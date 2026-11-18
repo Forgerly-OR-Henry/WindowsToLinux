@@ -46,7 +46,7 @@ class DeploymentManagedHelperBundleTest {
         assertTrue(entry.indexOf("recovery-maintenance-remains") > entry.indexOf("rollback_deployment_first "));
         for (var pin : java.util.Map.of("agent-controller-loader.py", "d04eca875afd038c58b44cd4699470a9f384136ad7cec5c122942d6e0bc204be",
             "agent-controller-install.py", "4c25923129cf686edcd50edab7ed947cd966c92ea590a68f2d79aeb20364ec6a",
-            "agent-controller-program-manifest.json", "83e04996fb14428613f3f7c420f6bba79600a919986064b22f2a889d4c0d596a").entrySet()) {
+            "agent-controller-program-manifest.json", "73cc530e39d0e95dae45a1ea79fa5aed8849f972e1df4cd19ddbcf7d5b266812").entrySet()) {
             try (var stream = getClass().getResourceAsStream("/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/" + pin.getKey())) {
                 assertEquals(pin.getValue(), HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(stream.readAllBytes())));
             }

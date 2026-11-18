@@ -13,27 +13,31 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-/** Displays repeated source as references to earlier literal lines and encodes long runs of leading spaces. */
+/** Displays exact source using bounded references to text already reconstructed in the same frame. */
 final class DeploymentReviewSourceBlocks {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String BLOCK = "@WTL_BLOCK";
     private static final String COPY = "@WTL_COPY";
+    private static final String EDIT = "@WTL_EDIT";
     private static final String INDENT = "@>";
     private static final Pattern DIRECTIVE = Pattern.compile("@WTL_(BLOCK|COPY) ([1-9][0-9]{0,4}) ([1-9][0-9]?)\n");
-    private static final Pattern INDENTED_LINE = Pattern.compile("@>([1-9][0-9]{1,2}) (?=[^ \r\n])");
+    private static final Pattern INDENTED_LINE = Pattern.compile("@>([1-9][0-9]{0,2}) (?=[^ \r\n])");
+    private static final Pattern EDITED_LINE = Pattern.compile("@WTL_EDIT ([1-9][0-9]{0,4}) (0|[1-9][0-9]{0,6}) (0|[1-9][0-9]{0,6}) (\"[^\r\n]*\")\n");
     private static final List<Integer> BLOCK_LENGTHS = List.of(16, 12, 8, 6, 4, 3, 2, 1);
     private static final int MINIMUM_BLOCK_WIRE_BYTES = 64;
     private static final int MAX_ORIGINAL_CHARACTERS = 1024 * 1024;
     private static final int MAX_ORIGINAL_LINES = 65_536;
     private static final int MAX_REFERENCES = 2048;
     private static final int MAX_DIRECTIVE_CHARACTERS = 20;
-    private static final int MINIMUM_INDENT = 12;
+    private static final int MINIMUM_INDENT = 5;
     private static final int MAXIMUM_INDENT = 999;
+    private static final int MAX_EDITS = 16_384;
+    private static final int EDIT_CANDIDATES = 32;
 
     private DeploymentReviewSourceBlocks() {
     }
 
-    record Encoding(String text, int originalLines, int references) { }
+    record Encoding(String text, int originalLines, int references, int edits) { }
 
     private record Block(int firstLine, int count) {
         int endLine() {
@@ -85,17 +89,65 @@ final class DeploymentReviewSourceBlocks {
         if (copies.isEmpty()) return Optional.empty();
 
         var represented = new StringBuilder(original.length());
+        var editCandidates = new HashMap<String, List<Integer>>();
+        int edits = 0;
         for (int line = 0; line < lines.size();) {
             var anchor = anchors.get(line);
             if (anchor != null) represented.append(anchor.directive(BLOCK));
             var copy = copies.get(line);
-            if (copy == null) appendLiteral(represented, lines.get(line++));
+            int next = copy == null ? line + 1 : line + copy.count();
+            if (copy == null) {
+                var literal = new StringBuilder();
+                appendLiteral(literal, lines.get(line));
+                String value = edits < MAX_EDITS ? editedLine(lines, line, literal.toString(), editCandidates) : literal.toString();
+                if (value.startsWith(EDIT + " ")) edits++;
+                represented.append(value);
+            }
             else {
                 represented.append(copy.directive(COPY));
-                line += copy.count();
+            }
+            for (int known = line; known < next; known++) {
+                for (String key : editKeys(lines.get(known))) {
+                    var candidates = editCandidates.computeIfAbsent(key, ignored -> new ArrayList<>());
+                    candidates.add(known);
+                    if (candidates.size() > EDIT_CANDIDATES) candidates.removeFirst();
+                }
+            }
+            line = next;
+        }
+        return Optional.of(new Encoding(represented.toString(), lines.size(), copies.size(), edits));
+    }
+
+    private static List<String> editKeys(String line) {
+        String stripped = line.stripLeading();
+        return List.of("p" + stripped.substring(0, Math.min(12, stripped.length())),
+            "s" + line.stripTrailing().substring(Math.max(0, line.stripTrailing().length() - 12)));
+    }
+
+    private static String editedLine(List<String> lines, int index, String literal,
+                                     Map<String, List<Integer>> candidates) throws IOException {
+        String source = lines.get(index), best = literal;
+        int bytes = JSON.writeValueAsBytes(literal).length;
+        var seen = new HashSet<Integer>();
+        for (String key : editKeys(source)) {
+            for (int previous : candidates.getOrDefault(key, List.of())) {
+                if (!seen.add(previous)) continue;
+                String prior = lines.get(previous);
+                int prefix = 0, suffix = 0, limit = Math.min(prior.length(), source.length());
+                while (prefix < limit && prior.charAt(prefix) == source.charAt(prefix)) prefix++;
+                if (prefix > 0 && prefix < source.length() && Character.isLowSurrogate(source.charAt(prefix))) prefix--;
+                while (suffix < limit - prefix && prior.charAt(prior.length() - suffix - 1) == source.charAt(source.length() - suffix - 1)) suffix++;
+                if (suffix > 0 && suffix < source.length() && Character.isLowSurrogate(source.charAt(source.length() - suffix))) suffix--;
+                String middle = source.substring(prefix, source.length() - suffix);
+                String value = EDIT + " " + (previous + 1) + " " + prefix + " " + suffix + " " + JSON.writeValueAsString(middle) + "\n";
+                int cost = JSON.writeValueAsBytes(value).length;
+                if (cost < bytes) {
+                    best = value;
+                    bytes = cost;
+                }
             }
         }
-        return Optional.of(new Encoding(represented.toString(), lines.size(), copies.size()));
+        return best;
     }
 
     private static Block bestCopy(List<String> lines, int[] wireOffsets, int line, Map<List<String>, Block> literalBlocks,
@@ -127,7 +179,7 @@ final class DeploymentReviewSourceBlocks {
 
     static String expand(String represented, int originalCharacters) throws IOException {
         if (originalCharacters < 1 || originalCharacters > MAX_ORIGINAL_CHARACTERS
-                || represented.length() > originalCharacters + 2 * MAX_REFERENCES * MAX_DIRECTIVE_CHARACTERS
+                || represented.length() > 2 * MAX_ORIGINAL_CHARACTERS
                 || !StandardCharsets.UTF_8.newEncoder().canEncode(represented))
             throw new IOException("Repeated source blocks exceed their representation bounds");
 
@@ -138,6 +190,8 @@ final class DeploymentReviewSourceBlocks {
         int pendingOffset = 0;
         int originalLines = 0;
         int references = 0;
+        int edits = 0;
+        var restoredLines = new ArrayList<String>();
         for (int offset = 0; offset < represented.length();) {
             int end = lineEnd(represented, offset);
             String line = represented.substring(offset, end);
@@ -145,7 +199,16 @@ final class DeploymentReviewSourceBlocks {
             if (!line.contains(BLOCK) && !line.contains(COPY)) {
                 if (++originalLines > MAX_ORIGINAL_LINES)
                     throw new IOException("Repeated source blocks exceed their line limit");
-                append(expanded, literalLine(line), originalCharacters);
+                String literal;
+                if (line.contains(EDIT)) {
+                    if (++edits > MAX_EDITS) throw new IOException("Source line edits exceed their limit");
+                    literal = restoreEditedLine(line, restoredLines);
+                } else literal = literalLine(line);
+                if (lineEnd(literal, 0) != literal.length() || literal.isEmpty()
+                        || offset < represented.length() && !literal.endsWith("\n") && !literal.endsWith("\r"))
+                    throw new IOException("A source line edit does not restore one complete original line");
+                append(expanded, literal, originalCharacters);
+                restoredLines.add(literal);
                 if (pending != null && originalLines == pending.endLine()) {
                     anchors.put(pending, expanded.substring(pendingOffset));
                     pending = null;
@@ -168,6 +231,11 @@ final class DeploymentReviewSourceBlocks {
                 if (literal == null || ++references > MAX_REFERENCES || originalLines + block.count() > MAX_ORIGINAL_LINES)
                     throw new IOException("Source block copy does not refer to available prior literal text within the bounds");
                 append(expanded, literal, originalCharacters);
+                for (int start = 0; start < literal.length();) {
+                    int next = lineEnd(literal, start);
+                    restoredLines.add(literal.substring(start, next));
+                    start = next;
+                }
                 originalLines += block.count();
                 used.add(block);
             }
@@ -175,6 +243,25 @@ final class DeploymentReviewSourceBlocks {
         if (pending != null || references == 0 || used.size() != anchors.size() || expanded.length() != originalCharacters)
             throw new IOException("Incomplete repeated source representation");
         return expanded.toString();
+    }
+
+    private static String restoreEditedLine(String line, List<String> restored) throws IOException {
+        var directive = EDITED_LINE.matcher(line);
+        if (!directive.matches()) throw new IOException("Invalid source line edit");
+        int previous = Integer.parseInt(directive.group(1)) - 1;
+        int prefix = Integer.parseInt(directive.group(2)), suffix = Integer.parseInt(directive.group(3));
+        if (previous >= restored.size()) throw new IOException("Source line edit requires an earlier line in this frame");
+        String prior = restored.get(previous);
+        if (prefix > prior.length() || suffix > prior.length() - prefix
+                || prefix < prior.length() && Character.isLowSurrogate(prior.charAt(prefix))
+                || suffix > 0 && suffix < prior.length() && Character.isLowSurrogate(prior.charAt(prior.length() - suffix)))
+            throw new IOException("Invalid source line edit boundary");
+        var middle = JSON.readTree(directive.group(4));
+        if (!middle.isTextual() || !JSON.writeValueAsString(middle.textValue()).equals(directive.group(4)))
+            throw new IOException("Source line edit requires one exact JSON string");
+        String value = prior.substring(0, prefix) + middle.textValue() + prior.substring(prior.length() - suffix);
+        if (!StandardCharsets.UTF_8.newEncoder().canEncode(value)) throw new IOException("Invalid Unicode in source line edit");
+        return value;
     }
 
     private static void append(StringBuilder expanded, String literal, int originalCharacters) throws IOException {
@@ -207,7 +294,7 @@ final class DeploymentReviewSourceBlocks {
     }
 
     private static boolean reservedMarker(String text) {
-        return text.contains(BLOCK) || text.contains(COPY) || text.contains(INDENT);
+        return text.contains(BLOCK) || text.contains(COPY) || text.contains(EDIT) || text.contains(INDENT);
     }
 
     private static int lineEnd(String text, int start) {

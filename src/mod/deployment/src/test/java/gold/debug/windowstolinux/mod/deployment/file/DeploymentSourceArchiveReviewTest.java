@@ -441,41 +441,32 @@ class DeploymentSourceArchiveReviewTest {
 
             var cappedReview = nativeReview(fixture, ORIGINAL_PAGE_CEILING);
             fixture.model.nativeReply(verdict("DENY"));
-            assertEquals("DENY", review(cappedReview.reviewer(), fixture, build).path("decision").asText());
+            assertThrows(ApiException.class, () -> review(cappedReview.reviewer(), fixture, build));
             assertEquals(List.of(wire.length), cappedReview.refusedSizes());
-            assertEquals(1, cappedReview.sent().size());
-            byte[] plainWire = cappedReview.sent().getFirst();
-            assertTrue(plainWire.length < ORIGINAL_PAGE_CEILING);
-            assertFalse(new String(plainWire, StandardCharsets.UTF_8).contains(LOG_ANALYZER_MARKER));
-            var plain = retainedSource(JSON.readTree(plainWire).path("input"), snapshot);
-            assertFalse(plain.header().has("repeatedOriginalBlocks"));
-            assertEquals(frame.texts().size() - 1, plain.texts().size());
-            assertFalse(plain.texts().containsKey(pointer));
-            assertPendingHeader(plain, pointer, 0, header.length());
+            assertTrue(cappedReview.sent().isEmpty(), "No missing-header fallback is sent after native refusal");
+            fixture.model.replies.clear();
 
             var originalFirstLimit = nativeReview(fixture, 629_030);
             fixture.model.nativeReply(verdict("APPROVE"));
-            var incomplete = assertThrows(DeploymentCommandReviewModel.Failure.class,
+            assertThrows(ApiException.class,
                 () -> review(originalFirstLimit.reviewer(), fixture, build));
-            assertEquals("REQUIRED_SOURCE_MISSING", DeploymentCommandReviewModel.failureDiagnostics(incomplete).get("reviewEvidenceBlock"));
             assertEquals(List.of(wire.length), originalFirstLimit.refusedSizes());
-            assertEquals(1, originalFirstLimit.sent().size());
+            assertTrue(originalFirstLimit.sent().isEmpty());
+            fixture.model.replies.clear();
 
-            var fallback = nativeReview(fixture, ORIGINAL_PAGE_CEILING);
-            var continuation = verifyPartialHeaderCannotApprove(fixture, build, fallback, snapshot, pointer, header, pageSize);
-            assertEquals(List.of(wire.length), fallback.refusedSizes());
-            assertFalse(retainedSource(JSON.readTree(fallback.sent().getFirst()).path("input"), snapshot)
-                .header().has("repeatedOriginalBlocks"));
-            assertTrue(continuation.length < ORIGINAL_PAGE_CEILING);
+            var fallback = nativeReview(fixture, REVIEW_CEILING);
+            var continuation = verifyHeaderPageKeepsCompleteSource(fixture, build, fallback, snapshot, pointer, header, pageSize);
+            assertTrue(fallback.refusedSizes().isEmpty());
+            assertTrue(continuation.length <= REVIEW_CEILING);
 
             var rawAfterBlocks = nativeReview(fixture, REVIEW_CEILING);
-            verifyPartialHeaderCannotApprove(fixture, build, rawAfterBlocks, snapshot, pointer, header, pageSize);
+            verifyHeaderPageKeepsCompleteSource(fixture, build, rawAfterBlocks, snapshot, pointer, header, pageSize);
             assertTrue(rawAfterBlocks.refusedSizes().isEmpty());
             assertTrue(retainedSource(JSON.readTree(rawAfterBlocks.sent().getFirst()).path("input"), snapshot)
                 .header().has("repeatedOriginalBlocks"));
             System.out.printf("R75_ORIGINAL_ARCHIVE sha=%s members=25 captured=24 packedInitial=%d historicalFactsEncoded=%d references=%d "
-                    + "rawInitial=%d rawContinued=%d rawCeiling=%d historicalFirstCeiling=629030%n", archive.sha256(), wire.length,
-                historicalFactsWire, descriptor.path("references").asInt(), plainWire.length, continuation.length, ORIGINAL_PAGE_CEILING);
+                    + "historicalRejectedCeiling=%d completeContinued=%d pageReadCeiling=%d historicalFirstCeiling=629030%n", archive.sha256(), wire.length,
+                historicalFactsWire, descriptor.path("references").asInt(), ORIGINAL_PAGE_CEILING, continuation.length, REVIEW_CEILING);
         }
     }
 
@@ -560,8 +551,8 @@ class DeploymentSourceArchiveReviewTest {
             assertArrayEquals(prefetch.runtime().getBytes(StandardCharsets.UTF_8), aliasSource.toString().getBytes(StandardCharsets.UTF_8));
             assertEquals(DeploymentMirrorRuntime.cargoRuntimeSha256(), digest(aliasSource.toString().getBytes(StandardCharsets.UTF_8)));
             aliasReader.read(responses(verdict("APPROVE")));
-            assertEquals(Optional.of("REQUIRED_SOURCE_MISSING"), aliasReader.approvalEvidenceBlock(),
-                "Raw runtime rereads cannot retain an absent complete archive from an earlier request");
+            assertTrue(aliasReader.approvalEvidenceBlock().isEmpty(),
+                "Runtime rereads retain the complete archive in this current frame");
             verifyRenderedBuildBody(input, manifest.path("buildBody"), build);
             assertEquals(392, build.bindingBytes());
             assertEquals("d16b3b4efd86b4c33c5b3018bca667d4cb644712091d51c39f3f8089af4fb7ea", build.bindingSha256());
@@ -569,17 +560,16 @@ class DeploymentSourceArchiveReviewTest {
             int firstHistoricalLimit = 629_030;
             var limited = nativeReview(fixture, firstHistoricalLimit);
             fixture.model.nativeReply(verdict("APPROVE"));
-            var rejected = assertThrows(DeploymentCommandReviewModel.Failure.class, () -> limited.reviewer().askCommand(
+            assertThrows(ApiException.class, () -> limited.reviewer().askCommand(
                 instructions, build.facts(), fixture.model.configurationRevision, fixture.task, DeploymentReviewDecision::malformed,
                 build.intent(), build.request()));
-            assertEquals("REQUIRED_SOURCE_MISSING", DeploymentCommandReviewModel.failureDiagnostics(rejected).get("reviewEvidenceBlock"));
             assertEquals(List.of(wire.length), limited.refusedSizes());
-            assertEquals(1, limited.sent().size());
-            assertTrue(limited.sent().getFirst().length < firstHistoricalLimit);
+            assertTrue(limited.sent().isEmpty());
+            fixture.model.replies.clear();
             System.out.printf("R76_RENDERED_LOG_ANALYZER archive=%s bodySha=%s bodyBytes=%d bindingSha=%s bindingBytes=%d "
                     + "nativeBytes=%d historicalFactsEncoded=%d historicalFirstCeiling=%d fallbackBytes=%d%n", archive.sha256(),
                 build.buildBodySha256(), build.buildBodyBytes(), build.bindingSha256(), build.bindingBytes(),
-                wire.length, historicalFactsWire, firstHistoricalLimit, limited.sent().getFirst().length);
+                wire.length, historicalFactsWire, firstHistoricalLimit, 0);
         }
     }
 
@@ -654,42 +644,12 @@ class DeploymentSourceArchiveReviewTest {
         assertTrue(display.length() < header.length());
         assertEquals(LOG_ANALYZER_HEADER_SHA256, descriptor.path("sha256").asText());
 
-        var displayedLines = Pattern.compile("[^\n]*\n|[^\n]+\\z").matcher(display).results().map(MatchResult::group)
-            .map(DeploymentDirectoryDiffBuildReviewReplayTest::decodeLeadingSpaces).toList();
-        var originalLines = new ArrayList<String>();
-        var anchors = new LinkedHashMap<Integer, List<String>>();
-        int references = 0;
-        for (int index = 0; index < displayedLines.size(); index++) {
-            String line = displayedLines.get(index);
-            if (!line.startsWith("@WTL_")) {
-                originalLines.add(line);
-                continue;
-            }
-            String[] marker = line.stripTrailing().split(" ");
-            assertEquals(3, marker.length);
-            int first = Integer.parseInt(marker[1]);
-            int count = Integer.parseInt(marker[2]);
-            assertTrue(first > 0 && count > 0);
-            if (marker[0].equals("@WTL_BLOCK")) {
-                assertEquals(originalLines.size() + 1, first);
-                var literals = displayedLines.subList(index + 1, index + 1 + count);
-                assertTrue(literals.stream().noneMatch(literal -> literal.startsWith("@WTL_")));
-                assertNull(anchors.put(first, literals));
-                originalLines.addAll(literals);
-                index += count;
-            } else {
-                assertEquals("@WTL_COPY", marker[0]);
-                var block = anchors.get(first);
-                assertNotNull(block);
-                assertEquals(count, block.size());
-                originalLines.addAll(block);
-                references++;
-            }
-        }
+        String restored = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentSourceFrameDecoder.expand(display);
+        long references = display.lines().filter(line -> line.startsWith("@WTL_COPY ")).count();
         assertTrue(references > 0);
         assertEquals(references, descriptor.path("references").asInt());
-        assertEquals(originalLines.size(), descriptor.path("originalLines").asInt());
-        byte[] rebuilt = String.join("", originalLines).getBytes(StandardCharsets.UTF_8);
+        assertEquals(restored.lines().count(), descriptor.path("originalLines").asInt());
+        byte[] rebuilt = restored.getBytes(StandardCharsets.UTF_8);
         assertEquals(LOG_ANALYZER_HEADER_SHA256, digest(rebuilt));
         assertArrayEquals(header.getBytes(StandardCharsets.UTF_8), rebuilt);
     }
@@ -732,22 +692,17 @@ class DeploymentSourceArchiveReviewTest {
         }
     }
 
-    private static byte[] verifyPartialHeaderCannotApprove(MirroredInstallerTestFixture fixture, BuildReview build,
+    private static byte[] verifyHeaderPageKeepsCompleteSource(MirroredInstallerTestFixture fixture, BuildReview build,
             NativeReview nativeReview, String snapshot, String pointer, String header, int pageSize) throws Exception {
         var read = responses(evidenceCall("log-analyzer-header-first", snapshot, pointer, 0, pageSize));
         fixture.model.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(read), Optional.empty()));
         fixture.model.nativeReply(verdict("APPROVE"));
-        var rejected = assertThrows(DeploymentCommandReviewModel.Failure.class, () -> review(nativeReview.reviewer(), fixture, build));
-        var diagnostics = DeploymentCommandReviewModel.failureDiagnostics(rejected);
-        assertEquals("VERDICT", diagnostics.get("reviewStage"));
-        assertEquals("EVIDENCE_INCOMPLETE_VERDICT", diagnostics.get("reviewCode"));
-        assertEquals("REQUIRED_SOURCE_MISSING", diagnostics.get("reviewEvidenceBlock"));
+        assertEquals("APPROVE", review(nativeReview.reviewer(), fixture, build).path("decision").asText());
         assertEquals(2, nativeReview.sent().size());
         byte[] continuation = nativeReview.sent().getLast();
-        var confirmed = retainedSource(JSON.readTree(continuation).path("input"), snapshot);
-        assertFalse(confirmed.header().has("repeatedOriginalBlocks"));
-        assertEquals(header.substring(0, pageSize), confirmed.texts().get(pointer));
-        assertPendingHeader(confirmed, pointer, pageSize, header.length());
+        var confirmed = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentSourceFrameDecoder.decode(continuation);
+        assertTrue(confirmed.header().has("repeatedOriginalBlocks"));
+        confirmed.whole(pointer, header);
         return continuation;
     }
 
@@ -863,11 +818,9 @@ class DeploymentSourceArchiveReviewTest {
         int complete = encode(reviewWithMessages(review, messages)).length;
         var problem = new Problem(ProblemCode.INVALID_INPUT, "AI_REQUEST_BUDGET", "Local encoder bound",
             Map.of("maximumRequestBytes", Integer.toString(base), "encodedRequestBytes", Integer.toString(complete)), Optional.empty());
-        assertTrue(reader.repackBeforeSend(messages, problem));
-        assertEquals(base, encode(reviewWithMessages(review, messages)).length);
-        reader.read(reply(new AiToolCall("approval", "submit_result",
-            "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Fixture\"}")));
-        assertEquals(Optional.of("REQUIRED_SOURCE_MISSING"), reader.approvalEvidenceBlock());
+        assertFalse(reader.repackBeforeSend(messages, problem));
+        assertEquals(complete, encode(reviewWithMessages(review, messages)).length,
+            "The unsent complete frame remains intact; no fictitious model response is applied");
 
         var manifest = JSON.readTree(evidence.messages().getLast().text()).path("buildReviewEvidence");
         String snapshot = manifest.path("snapshotSha256").asText();

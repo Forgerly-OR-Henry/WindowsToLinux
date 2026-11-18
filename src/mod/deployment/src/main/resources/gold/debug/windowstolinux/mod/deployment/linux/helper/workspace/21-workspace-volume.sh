@@ -10,6 +10,7 @@ offline_build_properties=(
     --property='RestrictAddressFamilies= '
     --property=SystemCallArchitectures=native
     --property="SystemCallFilter=~@network-io io_uring_setup io_uring_enter io_uring_register"
+    --property="SystemCallFilter=socketpair recvfrom"
     --property=SystemCallErrorNumber=EPERM
 )
 
@@ -41,6 +42,36 @@ for family in (socket.AF_INET, socket.AF_INET6, socket.AF_UNIX):
     except OSError as error:
         if error.errno not in (errno.EPERM, errno.EACCES, errno.EAFNOSUPPORT):
             raise
+left, right = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET | socket.SOCK_CLOEXEC, 0)
+with left, right:
+    if os.get_inheritable(left.fileno()) or os.get_inheritable(right.fileno()):
+        raise SystemExit(64)
+    for sender, receiver in ((left, right), (right, left)):
+        if os.write(sender.fileno(), b"WTLC") != 4 or receiver.recv(4) != b"WTLC":
+            raise SystemExit(64)
+    try:
+        left.send(b"WTLC")
+        raise SystemExit(64)
+    except OSError as error:
+        if error.errno != errno.EPERM:
+            raise
+    pid = None
+    try:
+        pid = os.fork()
+        if pid == 0:
+            try:
+                left.close()
+                os.execve("/usr/bin/true", ("/usr/bin/true",), {})
+            except OSError:
+                os._exit(127)
+        right.close()
+        _, status = os.waitpid(pid, 0)
+        pid = None
+        if not os.WIFEXITED(status) or os.WEXITSTATUS(status) != 0 or left.recv(1) != b"":
+            raise SystemExit(64)
+    finally:
+        if pid is not None and pid > 0:
+            os.waitpid(pid, 0)
 ' "$host_network" || reject workspace-network-unavailable
     elif [ "$1" != ordinary ]; then
         for tool in useradd usermod userdel newuidmap newgidmap setpriv skopeo; do command -v "$tool" >/dev/null || reject container-identity-tools; done

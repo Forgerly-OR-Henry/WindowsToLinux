@@ -355,7 +355,8 @@ class DeploymentToolchainReviewEvidenceTest {
         "log-analyzer,DENY,264673,817054,20071,0", "empty-page,DENY,280631,817729,20710,0",
         "file-transfer,BUDGET,677940,817729,20710,0",
         "r83-directory-diff,DENY,267103,817589,20599,816959",
-        "r83-binary-inspector,DENY,268181,817686,20678,817056"})
+        "r83-binary-inspector,DENY,268181,817686,20678,817056",
+        "r100-task-board,DENY,271268,855968,22551,0"})
     void readyTrackedInstallerRequestsFormalVerdictAfterCoveredEvidenceBatch(
             String trace, String decision, int observedBeforeVerdict, int observedOpenBytes, int factsCharacters,
             int observedFormalBytes) throws Exception {
@@ -376,9 +377,14 @@ class DeploymentToolchainReviewEvidenceTest {
                         int bound = turn < verdictTurn ? 1_048_576 : verdictBound;
                         byte[] encoded = wireWithR24FactsSize(delivered, factsCharacters, bound, Map.of());
                         var header = assertReadyInstallerWire(encoded, sources, installer);
+                        assertTrue(java.util.stream.StreamSupport.stream(manifest.path("selectedInstallerRanges").spliterator(), false)
+                            .anyMatch(range -> range.path("sourcePointer").asText().equals("/completeExecutableInput/segments/4/text")
+                                && range.path("offset").asInt() == 0
+                                && range.path("next").asInt() == exact.get("/completeExecutableInput/segments/4/text").length()),
+                            "READY presents the actual complete tail continuously in the initial selection");
                         assertEquals("COMPLETE", header.path("requiredSourceCoverage").textValue());
                         assertEquals(JSON.createArrayNode(), header.path("pendingRequired"));
-                        if (observedFormalBytes > 0) assertTrue(header.path("initialSupplement").asBoolean());
+                        if (observedFormalBytes > 0 && turn == verdictTurn) assertFalse(header.path("latestReads").isEmpty());
                         encodedSizes.add(encoded.length);
                         assertEquals(0, assisted.hosts.get());
                         assertTrue(assisted.grants.isEmpty());
@@ -416,7 +422,11 @@ class DeploymentToolchainReviewEvidenceTest {
             assertEquals(verdictTurn + 1, fixture.model.requests.size());
             var preceding = fixture.model.requests.get(verdictTurn - 1);
             var formal = fixture.model.requests.getLast();
-            assertEquals(preceding.messages().subList(1, preceding.messages().size()), formal.messages().subList(1, formal.messages().size()));
+            assertEquals(preceding.messages().getLast(), formal.messages().getLast());
+            var formalSources = new LinkedHashMap<>(exact);
+            if (trace.equals("rebased")) formalSources.put("/operation", JSON.readTree(formal.messages().getLast().text()).path("operation").asText());
+            var formalHeader = assertReadyInstallerWire(wire(formal, verdictBound, Map.of()), formalSources, installer);
+            assertFalse(formalHeader.path("latestReads").isEmpty(), "The completed evidence batch must reach the formal verdict");
             assertEquals(preceding.timeout(), formal.timeout());
             assertEquals(preceding.maxOutputTokens(), formal.maxOutputTokens());
             assertEquals(0, formal.generationRecoveryAttempts());
@@ -447,6 +457,10 @@ class DeploymentToolchainReviewEvidenceTest {
         String entry = "/completeExecutableInput/sources/buildEntry";
         String helper = "/completeExecutableInput/sources/managedHelper";
         return switch (trace) {
+            case "r100-task-board" -> new AiToolCall[] {
+                read("r100-prefix-0", snapshot, prefix, 0, 8000), read("r100-prefix-8000", snapshot, prefix, 8000, 8000),
+                read("r100-prefix-16000", snapshot, prefix, 16000, 8000), read("r100-prefix-24000", snapshot, prefix, 24000, 8000),
+                read("r100-bridge", snapshot, bridge, 0, 29), read("r100-tail", snapshot, tail, 0, 3251)};
             case "rebased" -> turn == 0
                 ? new AiToolCall[] {read("ready-operation", snapshot, "/operation", 0, 64)}
                 : new AiToolCall[] {read("ready-repeated", snapshot, helper, 0, 8000),

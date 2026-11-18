@@ -70,13 +70,6 @@ public final class DeploymentCommandSourceEvidence {
     private static final String NODE_PREPARATION_SELECTION = "/" + PROJECTION + "/nodePreparationSelection";
     private static final String PUBLIC_MIRROR_POLICY = "/mirrorTransport/frozenPolicy";
     private static final String PREPARE = "deployment.toolchain.prepare.v1";
-    private static final String NODE_PREPARE_INSTRUCTION = """
-        Review this exact Node preparation. Match the original authority, arguments, effects and limits. Verify NODE_METADATA and NODE_DISTRIBUTION route, redirect, TLS and SHA256 checks, archive or SYSTEM reuse, locks, probes and diagnostics.
-        selectedPreparationRanges maps inline text to original UTF-16 offsets; startCharacter counts from the header end. namedRanges gives [offset,next]. Read the initial supplement and retained text in header order. For absent ranges use snapshotSha256, pointer, offset and limit 1–8000, at most eight reads separately from the verdict.
-        The staged mirrorPolicySource is the exact policy embedded in the command; the public endpoint projection is selected from it. Review its full range in the current supplement or retained frame. pendingRequired identifies any missing policy bytes.
-        preparationSelection.sourceMap uses UTF-16 offsets. SOURCE_TEXT takes sourcePointers[source] from sourceOffset; LINE_FEED supplies one LF. Retained pages may use original pointers for this view. Original sources and the view remain pageable. Hashes are in the original source descriptors or the receipt. previouslyDeferred groups [offset,next] under each pointer.
-        Restore exactAction in segment order: LITERAL copies text, SOURCE_TEXT copies source and SHELL_SINGLE_QUOTE applies Bash single quoting. Deny unsafe effects or insufficient evidence. Submit a fresh native submit_result alone.
-        """;
     private static final String MIRROR_BOOTSTRAP_SHELL = "/" + PROJECTION + "/mirrorBootstrapShell";
     private static final String MIRROR_POLICY_SOURCE = "/" + PROJECTION + "/mirrorPolicySource";
     private static final List<String> MIRROR_BINDING_SOURCES = List.of(MIRROR_POLICY_SOURCE, MIRROR_BOOTSTRAP_SHELL);
@@ -159,19 +152,8 @@ public final class DeploymentCommandSourceEvidence {
         requiredMirrorSourcePointers identify the exact staged policy and bootstrap shell. Each is presented from its original offset zero when complete. Review the full ordered source in the current supplement or retained frame together with the literal invocation. For pendingRequired, read the missing original bytes with the current snapshot, using at most 8000 UTF-16 code units per call. Deny if the evidence is insufficient or the effects are unsafe.
         """;
 
-    private static final String PYTHON_PREPARE_INSTRUCTION = """
-        Review the original Python preparation, authority, arguments, limits and effects. Check release admission, artifact integrity, install and SYSTEM reuse, probes, ownership, locks and cleanup. For a managed source build, review the GNU_MAKE_SOURCE route and pinned archive, the read-only binding, the original isolated Make bootstrap, and the chosen executable for configure, build and install. Inspect the worker isolation and resource bounds and the reached APT signature/frozen-install or DNF path and hooks. Staged definitions are not execution.
-        The product reconstructs exactAction from ordered LITERAL, SOURCE_TEXT and SHELL_SINGLE_QUOTE segments and compares it to the original. selectedPreparationRanges maps exact excerpts to their UTF-16 source; startCharacter counts from the preparationSelection header end. The initial supplement and retained frames describe exact source in range order. Review those bytes before using evidence. All original fields and full sources remain pageable.
-        Request missing source with snapshotSha256, pointer, offset and limit 1–8000, at most eight calls per response. Use the latest frame's previouslyDeferred if prior source was omitted. Submit a fresh native submit_result alone. Deny insufficient evidence or unsafe effects.
-        """;
 
-    private static final String RUBY_PREPARE_INSTRUCTION = """
-        Follow the exact Ruby managed source path. Review its GNU_MAKE_SOURCE frozen route, pinned archive, read-only worker binding, and bounded Make bootstrap. Check the Make selected for configure, build, install and any legacy OpenSSL gem. requiredPreparationRanges identifies mandatory source. Use exact inline and retained bytes first and read only missing ranges, including pendingRequired in a supplement or retained frame.
-        """;
 
-    private static final String KOTLIN_JAVA_PREPARE_INSTRUCTION = """
-        Compare javaHome and javaRequirement in the exact request with the current plan's Java constraint and the prior selected release. The requiredPreparationRanges identify the protected directory and marker, original installation key, release comparison and exact Java executable probe before Kotlin effects. For MANAGED records the official SHA-256 identifies the archive. For SYSTEM records inspect the protected launch links, target files and their saved hashes. Check the actual request path and every reached branch before the independent verdict.
-        """;
 
     private static final String DEPENDENCY_INSTRUCTION = """
         The executable stdin contains the complete inline dependencyWorker and its exact JSON-encoded copy. When mirrored, dependencyRuntimeSelection supplies exact package-manager entrypoints, and selectedRuntimeRanges identifies their source coordinates. Inspect dependencyWorker for protected authentication, source and package choices, bounded worker ownership and receipts. Follow reached package-manager and mirror behavior using those excerpts and read any needed missing ranges. Shared package repository, dependency and registry code outside this transaction does not establish safety or change the original effects.
@@ -352,11 +334,15 @@ public final class DeploymentCommandSourceEvidence {
                 dependency, !aptDependency(current), sourceBodies);
             if (!exact.equals(restoreSegments(parts, sourceBodies)))
                 throw new IOException("Mirrored projection does not restore the original command");
-            if (PREPARE.equals(operation) && preparationEcosystem(current).equals("DOTNET")) {
-                String member = current.has("originalToolchainPreparation") ? "originalToolchainPreparation" : "toolchainPreparation";
-                var actual = JSON.valueToTree(DeploymentCommandEvidence.facts(intent, request, layout).get(member));
-                if (!actual.equals(current.path(member)))
-                    throw new IOException(".NET preparation evidence differs from the original invocation");
+            if (PREPARE.equals(operation)) {
+                var actual = DeploymentCommandEvidence.facts(intent, request, layout);
+                for (String key : List.of("serverTargets", "resourceTargets", "businessRevision", "installedHelperPath",
+                        "installedHelperSha256", "inputKind", "toolchainPreparation", "originalToolchainPreparation",
+                        "toolchainDiagnostic", "toolchainRequestTransport")) {
+                    if (actual.containsKey(key) != current.has(key)
+                            || actual.containsKey(key) && !JSON.valueToTree(actual.get(key)).equals(current.path(key)))
+                        throw new IOException("Preparation evidence differs from the exact original invocation: " + key);
+                }
             }
             boolean initialMirror = verifiedInitialMirrorReview(current, operation, intent, request, layout);
             boolean phpBinding = !initialMirror && phpMirrorBinding(current, operation, intent, request, layout);
@@ -411,8 +397,7 @@ public final class DeploymentCommandSourceEvidence {
             sourceBodies.put(INSTALLED_HELPER_SOURCE, helper);
             if (PREPARE.equals(operation)) {
                 projectPreparationPolicy(current, projected);
-                nodeView = addPreparationSelection(current, projected, manifest, messages, snapshot, sourceBodies, initialRanges,
-                    initialSourceRanges, requiredRanges);
+                nodeView = addPreparationSelection(current, manifest, sourceBodies, initialSourceRanges, requiredRanges);
             }
         }
         messages.add(new AiMessage(AiRole.USER, JSON.writeValueAsString(projected), List.of()));
@@ -477,119 +462,35 @@ public final class DeploymentCommandSourceEvidence {
         return locations;
     }
 
-    private static Optional<SourceSelectionView> addPreparationSelection(ObjectNode current, ObjectNode projected, ObjectNode manifest, List<AiMessage> messages,
-                                                String snapshot, Map<String, String> sources,
-                                                Map<String, NavigableMap<Integer, Integer>> initialRanges,
-                                                Map<String, NavigableMap<Integer, Integer>> initialSourceRanges,
-                                                Map<String, NavigableMap<Integer, Integer>> requiredRanges) throws IOException {
-        boolean diagnosed = current.has("originalToolchainPreparation");
-        String ecosystem = preparationEcosystem(current);
-        if (ecosystem.equals("NODE") || ecosystem.equals("KOTLIN") || ecosystem.equals("JAVA")) {
-            String policy = sources.get(MIRROR_POLICY_SOURCE);
-            if (policy == null || policy.isEmpty()) throw new IOException("Original toolchain mirror policy is missing");
-            var policyRange = new TreeMap<>(Map.of(0, policy.length()));
-            requiredRanges.put(MIRROR_POLICY_SOURCE, policyRange);
-            initialSourceRanges.put(MIRROR_POLICY_SOURCE, policyRange);
-            manifest.putArray("requiredPreparationSources").add(MIRROR_POLICY_SOURCE);
-        }
-        if (ecosystem.equals("NODE")) {
-            // Preserve the broader view and its exact page coordinates while sending a smaller execution slice.
-            var parts = new ArrayList<ViewPart>();
-            var broadRanges = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
-            String broad = preparationSelection(current, sources, broadRanges,
-                JSON.createArrayNode(), ecosystem, diagnosed, List.of(), Optional.of(parts));
-            var view = SourceSelectionView.exact(broad, parts, sources);
-            sources.put(PREPARATION_SELECTION, broad);
-            var descriptor = pagedSource(PREPARATION_SELECTION, broad, List.of());
-            view.describe(descriptor);
-            manifest.set("preparationSelection", descriptor);
-            var body = new StringBuilder();
-            var selected = manifest.putArray("selectedPreparationRanges");
-            String helper = sources.get(INSTALLED_HELPER_SOURCE);
-            var helperRanges = PreparationSourceRange.nodeHelper(helper, diagnosed);
-            var initialHelper = PreparationSourceRange.nodeHelperInitial(helperRanges);
-            addNamedRanges((ObjectNode) manifest.path("installedHelperSource"), helperRanges, initialHelper);
-            appendSelection(body, selected, initialRanges, INSTALLED_HELPER_SOURCE, helper,
-                initialHelper);
-            initialSourceRanges.put(INSTALLED_HELPER_SOURCE, mergeRanges(PreparationSourceRange.nodeHelperSupplement(helperRanges)));
-            String runtime = sources.get(MIRROR_RUNTIME);
-            var points = current.at(PUBLIC_MIRROR_POLICY + "/points");
-            boolean credentials = List.of("NODE_METADATA", "NODE_DISTRIBUTION").stream()
-                .flatMap(point -> points.path(point).findValues("credentialManaged").stream())
-                .anyMatch(JsonNode::asBoolean);
-            var runtimeRanges = PreparationSourceRange.nodeTransfer(runtime, credentials);
-            var initialRuntime = PreparationSourceRange.nodeTransferInitial(runtimeRanges);
-            addNamedRanges((ObjectNode) projected.at(MIRROR_RUNTIME), runtimeRanges, initialRuntime);
-            appendSelection(body, selected, initialRanges, MIRROR_RUNTIME, runtime, initialRuntime);
-            initialSourceRanges.put(MIRROR_RUNTIME, mergeRanges(PreparationSourceRange.nodeTransferSupplement(runtimeRanges)));
-            broadRanges.forEach((pointer, ranges) -> {
-                var offered = initialSourceRanges.computeIfAbsent(pointer, ignored -> new TreeMap<>());
-                ranges.forEach((start, end) -> DeploymentEvidencePages.remember(offered, start, end));
-            });
-            putSelectionFrame(manifest, messages, snapshot, sources, NODE_PREPARATION_SELECTION, "nodePreparationSelection", body);
-            return Optional.of(view);
-        }
-        if (isolatedSourcePreparation(ecosystem)) {
-            return Optional.of(addSourceBuildPreparationSelection(current, projected, manifest, messages, snapshot,
-                sources, initialRanges, initialSourceRanges, requiredRanges, ecosystem, diagnosed));
-        }
-        var prerequisites = ecosystem.equals("KOTLIN")
-            ? kotlinJavaPrerequisite(sources.get(INSTALLED_HELPER_SOURCE)) : List.<PreparationSourceRange>of();
-        if (!prerequisites.isEmpty()) recordRequiredPreparation(manifest, requiredRanges, prerequisites);
-        if (ecosystem.equals("KOTLIN")) {
-            var runtime = sources.get(MIRROR_RUNTIME);
-            boolean credentials = current.at(PUBLIC_MIRROR_POLICY + "/points").findValues("credentialManaged").stream()
-                .anyMatch(JsonNode::asBoolean);
-            var transfer = PreparationSourceRange.transfer(runtime, ecosystem, credentials, false);
-            addNamedRanges((ObjectNode) projected.at(MIRROR_RUNTIME), transfer, List.of());
-            initialSourceRanges.put(MIRROR_RUNTIME, mergeRanges(transfer));
-        }
-        var parts = new ArrayList<ViewPart>();
-        String source = preparationSelection(current, sources, initialRanges,
-            manifest.putArray("selectedPreparationRanges"), ecosystem, diagnosed, prerequisites, Optional.of(parts));
-        sources.put(PREPARATION_SELECTION, source);
-        var frame = sourceFrame(messages, snapshot, PREPARATION_SELECTION, source);
-        manifest.withArray("frames").add(frame);
-        manifest.set("preparationSelection", frame);
-        return Optional.of(SourceSelectionView.exact(source, parts, sources));
-    }
-
-    private static SourceSelectionView addSourceBuildPreparationSelection(ObjectNode current, ObjectNode projected, ObjectNode manifest,
-            List<AiMessage> messages, String snapshot, Map<String, String> sources,
-            Map<String, NavigableMap<Integer, Integer>> initialRanges,
-            Map<String, NavigableMap<Integer, Integer>> initialSourceRanges,
-            Map<String, NavigableMap<Integer, Integer>> requiredRanges, String ecosystem, boolean diagnosed) throws IOException {
+    private static Optional<SourceSelectionView> addPreparationSelection(ObjectNode current, ObjectNode manifest,
+            Map<String, String> sources, Map<String, NavigableMap<Integer, Integer>> initialSourceRanges,
+            Map<String, NavigableMap<Integer, Integer>> requiredRanges) throws IOException {
+        preparationEcosystem(current);
+        var helper = sources.get(INSTALLED_HELPER_SOURCE);
+        var units = completeStandardPreparationUnits(helper);
         var body = new StringBuilder();
         var parts = new ArrayList<ViewPart>();
         var selected = manifest.putArray("selectedPreparationRanges");
-        String policy = sources.get(MIRROR_POLICY_SOURCE);
-        initialSourceRanges.put(MIRROR_POLICY_SOURCE, new TreeMap<>(Map.of(0, policy.length())));
-        String helper = sources.get(INSTALLED_HELPER_SOURCE);
-        var helperRanges = PreparationSourceRange.helper(helper, ecosystem, diagnosed);
-        if (ecosystem.equals("RUBY")) {
-            var required = helperRanges.stream().filter(PreparationSourceRange::rubyMakeRequired).toList();
-            recordRequiredPreparation(manifest, requiredRanges, required);
+        var navigation = new LinkedHashMap<String, NavigableMap<Integer, Integer>>();
+        appendSelection(body, selected, navigation, INSTALLED_HELPER_SOURCE, helper, units, Optional.of(parts));
+        requiredRanges.put(INSTALLED_HELPER_SOURCE, mergeRanges(units));
+        initialSourceRanges.put(INSTALLED_HELPER_SOURCE, mergeRanges(units));
+        var required = manifest.putArray("requiredPreparationSources").add(INSTALLED_HELPER_SOURCE);
+        for (String pointer : List.of(MIRROR_RUNTIME, MIRROR_BOOTSTRAP_SHELL, MIRROR_POLICY_SOURCE)) {
+            String text = sources.get(pointer);
+            requireWholeSource(sources, initialSourceRanges, requiredRanges, pointer);
+            appendSelection(body, selected, navigation, pointer, text,
+                List.of(new PreparationSourceRange("completeStandardPreparationSource", 0, text.length())), Optional.of(parts));
+            required.add(pointer);
         }
-        if (ecosystem.equals("PHP")) {
-            var required = helperRanges.stream().filter(PreparationSourceRange::phpBuildRequired).toList();
-            recordRequiredPreparation(manifest, requiredRanges, required);
-        }
-        selectSourceBuildPreparationSource(body, selected, initialRanges, initialSourceRanges, ecosystem,
-            (ObjectNode) manifest.path("installedHelperSource"), INSTALLED_HELPER_SOURCE, helper,
-            helperRanges, parts);
-        var endpointPolicy = current.at(PUBLIC_MIRROR_POLICY + "/points");
-        boolean credentials = endpointPolicy.findValues("credentialManaged").stream().anyMatch(JsonNode::asBoolean);
-        String shell = sources.get(MIRROR_BOOTSTRAP_SHELL);
-        selectSourceBuildPreparationSource(body, selected, initialRanges, initialSourceRanges, ecosystem,
-            (ObjectNode) manifest.path("mirrorBootstrapShell"), MIRROR_BOOTSTRAP_SHELL, shell,
-            PreparationSourceRange.sourceBuildPreparationShell(shell, credentials), parts);
-        requireWholeSource(sources, initialSourceRanges, requiredRanges, MIRROR_BOOTSTRAP_SHELL);
-        String runtime = sources.get(MIRROR_RUNTIME);
-        selectSourceBuildPreparationSource(body, selected, initialRanges, initialSourceRanges, ecosystem,
-            (ObjectNode) projected.at(MIRROR_RUNTIME), MIRROR_RUNTIME, runtime,
-            PreparationSourceRange.sourceBuildPreparationTransport(runtime, ecosystem, credentials), parts);
-        putSelectionFrame(manifest, messages, snapshot, sources, PREPARATION_SELECTION, "preparationSelection", body);
-        return SourceSelectionView.exact(body.toString(), parts, sources);
+        sources.put(PREPARATION_SELECTION, body.toString());
+        var descriptor = pagedSource(PREPARATION_SELECTION, body.toString(), List.of());
+        var view = SourceSelectionView.exact(body.toString(), parts, sources);
+        view.describe(descriptor);
+        manifest.set("preparationSelection", descriptor);
+        manifest.put("completePreparationSourceClosure", "STANDARD_EXACT_PLAIN_OR_DIAGNOSED");
+        manifest.put("helperClosureScope", units.size() == 4 ? "PINNED_FOUR_COMPLETE_UNITS" : "COMPLETE_HELPER_NEW_IDENTITY");
+        return Optional.of(view);
     }
 
     private static void requireWholeSource(Map<String, String> sources,
@@ -602,80 +503,31 @@ public final class DeploymentCommandSourceEvidence {
         required.put(pointer, range);
     }
 
-    private static void recordRequiredPreparation(ObjectNode manifest,
-            Map<String, NavigableMap<Integer, Integer>> requiredRanges, List<PreparationSourceRange> required) {
-        var selection = manifest.putArray("requiredPreparationRanges");
-        required.forEach(range -> selection.addObject().put("section", range.section())
-            .put("sourcePointer", INSTALLED_HELPER_SOURCE).put("offset", range.offset()).put("next", range.next()));
-        requiredRanges.put(INSTALLED_HELPER_SOURCE, mergeRanges(required));
-    }
-
-    private static List<PreparationSourceRange> kotlinJavaPrerequisite(String helper) throws IOException {
-        var ranges = new ArrayList<PreparationSourceRange>();
-        for (String name : List.of("prepare", "kotlin_preparation_java", "kotlin_java_release_identity", "verify_kotlin_java_requirement",
-                "installation_diagnostic_request", "require_typed_java_preparation", "installation_diagnostic_main", "start_installation_diagnostic",
-                "preparation_lock", "require_prepared_java", "require_java_executable", "require_system_java_record",
-                "owned_directory", "saved_installation_marker", "tracked_regular", "tracked_json", "tracked_digest",
-                "installation_key", "official_url", "verify_system", "probe", "version_key", "release_build")) {
-            ranges.add(PreparationSourceRange.python(helper, "def " + name + "("));
-        }
-        return ranges;
-    }
-
-    private static void selectSourceBuildPreparationSource(StringBuilder body, ArrayNode selected,
-            Map<String, NavigableMap<Integer, Integer>> initialRanges,
-            Map<String, NavigableMap<Integer, Integer>> initialSourceRanges, String ecosystem, ObjectNode descriptor,
-            String pointer, String source, List<PreparationSourceRange> ranges, List<ViewPart> parts) {
-        var initial = ranges.stream()
-            .filter(range -> PreparationSourceRange.sourceBuildPreparationInitial(ecosystem, range)).toList();
-        appendSelection(body, selected, initialRanges, pointer, source, initial, Optional.of(parts));
-        addNamedRanges(descriptor, ranges, initial);
-        initialSourceRanges.put(pointer, mergeRanges(ranges));
-    }
-
     private static NavigableMap<Integer, Integer> mergeRanges(List<PreparationSourceRange> ranges) {
         var merged = new TreeMap<Integer, Integer>();
         for (var range : ranges) DeploymentEvidencePages.remember(merged, range.offset(), range.next());
         return merged;
     }
 
-    private static void addNamedRanges(ObjectNode descriptor, List<PreparationSourceRange> all,
-                                       List<PreparationSourceRange> inline) {
-        var named = descriptor.putObject("namedRanges");
-        for (var range : all) {
-            if (!inline.contains(range)) named.putArray(range.section()).add(range.offset()).add(range.next());
+    private static List<PreparationSourceRange> completeStandardPreparationUnits(String helper) throws IOException {
+        if (!sha256(helper).equals("f483045edb858bd4148e582c421d6d32bdbc7aa1bc09f96e2240c6fcc60bd90b"))
+            return List.of(new PreparationSourceRange("completeUnrecognisedHelper", 0, helper.length()));
+        var units = List.of(
+            new PreparationSourceRange("completeProtocolFoundation", 0, 13775),
+            new PreparationSourceRange("completeWorkspaceVolume", 93871, 102340),
+            new PreparationSourceRange("completePreparationController", 153227, 377411),
+            new PreparationSourceRange("completeCommandDispatch", 699205, 706166));
+        var digests = List.of(
+            "6e314e8ba121f24d54ce56922aacfa84731969c46053e944ee546f617dc10f75",
+            "5566c88495b62202e5c87bc2e73b41c0a4420257d8a361d7743cf60a7a2ff37d",
+            "8bcf4d6cd8a781f49bc8bc0afb05083aed93750fb80b1b2a2385d5c3ddedf31c",
+            "37d18260595a8b7d35c55d760375ca270b6494ddd1d53f3291db59725200a20b");
+        for (int i = 0; i < units.size(); i++) {
+            var unit = units.get(i);
+            if (!sha256(helper.substring(unit.offset(), unit.next())).equals(digests.get(i)))
+                throw new IOException("Pinned standard preparation source unit changed");
         }
-    }
-
-    private static String preparationSelection(ObjectNode current, Map<String, String> sources,
-                                               Map<String, NavigableMap<Integer, Integer>> initialRanges,
-                                               com.fasterxml.jackson.databind.node.ArrayNode selected,
-                                               String ecosystem, boolean diagnosed,
-                                               List<PreparationSourceRange> prerequisites, Optional<List<ViewPart>> view) throws IOException {
-        var body = new StringBuilder();
-        String helper = sources.get(INSTALLED_HELPER_SOURCE);
-        var helperRanges = new LinkedHashSet<>(prerequisites);
-        helperRanges.addAll(PreparationSourceRange.helper(helper, ecosystem, diagnosed));
-        appendSelection(body, selected, initialRanges, INSTALLED_HELPER_SOURCE, helper,
-            List.copyOf(helperRanges), view);
-        if (ecosystem.equals("NODE") || ecosystem.equals("JAVA")) {
-            String shell = sources.get(MIRROR_BOOTSTRAP_SHELL);
-            appendSelection(body, selected, initialRanges, MIRROR_BOOTSTRAP_SHELL, shell,
-                List.of(PreparationSourceRange.runtimeLauncher(shell)), view);
-        }
-        boolean packageManager = PreparationSourceRange.buildsFromSource(ecosystem);
-        if (packageManager) {
-            String shell = sources.get(MIRROR_BOOTSTRAP_SHELL);
-            appendSelection(body, selected, initialRanges, MIRROR_BOOTSTRAP_SHELL, shell, PreparationSourceRange.apt(shell), view);
-        }
-        String runtime = sources.get(MIRROR_RUNTIME);
-        boolean credentials = current.at(PUBLIC_MIRROR_POLICY + "/points").findValues("credentialManaged").stream()
-            .anyMatch(JsonNode::asBoolean);
-        if (!ecosystem.equals("KOTLIN")) {
-            appendSelection(body, selected, initialRanges, MIRROR_RUNTIME, runtime,
-                PreparationSourceRange.transfer(runtime, ecosystem, credentials, packageManager), view);
-        }
-        return body.toString();
+        return units;
     }
 
     private static void projectPreparationPolicy(ObjectNode original, ObjectNode projected) throws IOException {
@@ -706,7 +558,7 @@ public final class DeploymentCommandSourceEvidence {
         mirror.set("frozenPolicy", selected);
         mirror.set("completePublicPolicy", pagedSource(PUBLIC_MIRROR_POLICY, frozen.toString(), List.of()));
         mirror.put("frozenPolicyScope", "Current preparation download points with original endpoint order and complete endpoint fields.");
-        mirror.put("meaning", "Selected public mirror data and exact runtime excerpts apply to this preparation. The original command uses the complete frozen policy, including its bound credential check. Complete policy and runtime source remain readable.");
+        mirror.put("meaning", "Selected public mirror data and the complete runtime apply to this preparation. The original command uses the complete frozen policy, including its bound credential check. Complete policy and runtime source remain readable.");
     }
 
     private static String preparationEcosystem(ObjectNode current) throws IOException {
@@ -955,21 +807,16 @@ public final class DeploymentCommandSourceEvidence {
             projectBuildContext(projected, manifest, sources);
             projectBuildEntry(projected, sources, BUILD_ENTRY_PREFETCH);
             requiredRanges.putAll(selectedRanges);
+            var complete = manifest.putArray("requiredBuildSources");
+            for (String pointer : List.of(MIRROR_RUNTIME, BUILD_SHELL, BUILD_POLICY)) {
+                requireWholeSource(sources, initialSourceRanges, requiredRanges, pointer);
+                complete.add(pointer);
+            }
             if (go) {
-                var complete = manifest.putArray("requiredBuildSources");
-                for (String pointer : List.of(MIRROR_RUNTIME, BUILD_SHELL, BUILD_POLICY)) {
-                    requireWholeSource(sources, initialSourceRanges, requiredRanges, pointer);
-                    complete.add(pointer);
-                }
                 if (sources.containsKey(BUILD_ARCHIVE_HISTORY)) {
                     requireWholeSource(sources, initialSourceRanges, requiredRanges, BUILD_ARCHIVE_HISTORY);
                     complete.add(BUILD_ARCHIVE_HISTORY);
                 }
-            } else if (cargo) {
-                var policy = new TreeMap<>(Map.of(0, wrapper.policy().length()));
-                requiredRanges.put(BUILD_POLICY, policy);
-                initialSourceRanges.put(BUILD_POLICY, policy);
-                manifest.putArray("requiredBuildSources").add(BUILD_POLICY);
             }
             if (!go) describeBuildBootstrapLiteral(manifest, runtime, shell, requiredRanges.get(MIRROR_RUNTIME));
             selectedRanges.keySet().forEach(pointer -> initialSourceRanges.put(pointer, requiredRanges.get(pointer)));
@@ -1417,9 +1264,8 @@ public final class DeploymentCommandSourceEvidence {
         var terminal = installerLiteralRange(afterEntry, "installerTerminalReceiptReplacement",
             "\nprepare_stage=installer-receipt-terminal\n", "\nprintf 'HELPER_INSTALL=1");
         uniqueIndex(afterEntry.substring(terminal.offset(), terminal.next()), "/usr/bin/mv -fT -- \"$bootstrap_terminal\" \"$bootstrap_receipt\"");
-        var tailRanges = new ArrayList<>(List.of(verify, terminal));
-        if (ready) tailRanges.add(installerLiteralRange(afterEntry, "installerPrerequisitesBeforeSuccess",
-            "\nprepare_stage=platform-prerequisites\n", "\nprepare_stage=helper-installation\n"));
+        var tailRanges = ready ? List.of(new PreparationSourceRange("installerCompleteReadyTail", 0, afterEntry.length()))
+            : List.of(verify, terminal);
         appendSelection(selection, selected, initialRanges, tail, afterEntry, tailRanges);
         return verify;
     }
@@ -1674,6 +1520,7 @@ public final class DeploymentCommandSourceEvidence {
         private Optional<AiMessage> initialSupplement = Optional.empty();
         private boolean initialBlockSource;
         private List<ReadReceipt> latestReads = List.of();
+        private List<AiToolResult> stalledReadResults = List.of();
         private Map<String, NavigableMap<Integer, Integer>> pendingVisible = Map.of();
         private Map<String, NavigableMap<Integer, Integer>> lastVisible = Map.of();
         private boolean continuedResponses;
@@ -1696,7 +1543,7 @@ public final class DeploymentCommandSourceEvidence {
             suppliedInline(DEPENDENCY_APT_SELECTION);
             suppliedInline(BINDING_SELECTION);
             suppliedInline(INSTALLER_SELECTION);
-            suppliedInline(nodePreparation ? NODE_PREPARATION_SELECTION : PREPARATION_SELECTION);
+            if (!completeStandardPreparationReview()) suppliedInline(nodePreparation ? NODE_PREPARATION_SELECTION : PREPARATION_SELECTION);
             if (buildReview()) {
                 suppliedInline(BUILD_BODY);
                 if (!packedBuildReview()) suppliedInline(BUILD_RUNTIME_SELECTION);
@@ -1726,6 +1573,7 @@ public final class DeploymentCommandSourceEvidence {
         }
 
         private int initialSourceBudget(List<AiMessage> messages) throws IOException {
+            if (completeStandardPreparationReview()) return nativeFrameBudget(messages);
             int bound = sourceBodies.containsKey(DEPENDENCY_APT_SELECTION) && !nativeAptInitialSource() ? APT_INITIAL_WIRE_TARGET
                 : preparationReview() && reviewEcosystem().equals("PHP") ? PHP_SOURCE_INITIAL_WIRE_TARGET : 0;
             if (bound == 0) return nativeFrameBudget(messages);
@@ -1740,41 +1588,45 @@ public final class DeploymentCommandSourceEvidence {
         }
 
         private Optional<RetainedFrame> fittedInitialSource(int available, boolean offerBlocks) throws IOException {
-            if (isolatedSourcePreparationReview()) {
-                var mandatory = initialSource(Integer.MAX_VALUE, requiredRanges);
-                var offered = initialSource(available, initialSourceRanges);
-                if (mandatory.isPresent() && quotedBytes(mandatory.orElseThrow().message()) <= available
-                        && (offered.isEmpty() || unconfirmed(requiredRanges, offered.orElseThrow().visible()))) return mandatory;
-                return offered;
-            }
+            if (completeStandardPreparationReview() || readyInstallerReview()) return initialSource(Integer.MAX_VALUE, requiredRanges);
             if (packedBuildReview()) {
-                if (offerBlocks && !buildArchiveSourceUnavailable()) {
-                    var pointer = publishedBuildHeader();
-                    if (pointer.isPresent()) {
-                        var full = completeBlockSource(pointer.orElseThrow(), available);
-                        if (full.isPresent()) return full;
-                    }
-                }
-                var exact = initialSource(Integer.MAX_VALUE, publishedBuildHeader().isEmpty() ? requiredRanges : initialSourceRanges);
-                if (exact.isPresent() && quotedBytes(exact.orElseThrow().message()) <= available) return exact;
+                // The native encoder measures the complete request. A smaller frame must not remove required source.
+                return completeBuildSource(true);
             }
             return initialSource(available, initialSourceRanges);
         }
 
-        private Optional<RetainedFrame> completeBlockSource(String pointer, int available) throws IOException {
+        private Optional<RetainedFrame> completeBuildSource(boolean initial) throws IOException {
+            var pointer = publishedBuildHeader();
+            if (pointer.isPresent() && !buildArchiveSourceUnavailable()) {
+                var blocks = completeBlockSource(pointer.orElseThrow(), initial);
+                if (blocks.isPresent()) return blocks;
+            }
+            return initial ? initialSource(Integer.MAX_VALUE, requiredRanges)
+                : Optional.of(retainedSource(latestReads, false, Integer.MAX_VALUE));
+        }
+
+        private Optional<RetainedFrame> completeBlockSource(String pointer, boolean initial) throws IOException {
             String source = sourceText(pointer);
-            if (available <= 0 || !Map.of(0, source.length()).equals(requiredRanges.get(pointer))) return Optional.empty();
+            if (!Map.of(0, source.length()).equals(requiredRanges.get(pointer))) return Optional.empty();
             var encoded = DeploymentReviewSourceBlocks.encode(source);
             if (encoded.isEmpty()) return Optional.empty();
             var blocks = encoded.orElseThrow();
 
-            var header = JSON.createObjectNode().put("snapshotSha256", snapshot).put("trust", "UNTRUSTED_DATA")
-                .put("initialSupplement", true);
+            var header = JSON.createObjectNode().put("snapshotSha256", snapshot).put("trust", "UNTRUSTED_DATA");
+            if (initial) header.put("initialSupplement", true);
+            if (correctionRequired) header.put("readCorrection", readCorrection());
+            var reads = header.putArray("latestReads");
+            for (var receipt : latestReads) {
+                var read = reads.addObject().put("callId", receipt.callId()).put("rejected", receipt.rejected());
+                if (receipt.rejected()) read.put("rejectionCode", receipt.rejection().name());
+                else read.put("pointer", receipt.pointer()).put("offset", receipt.offset()).put("next", receipt.next());
+            }
             var entries = header.putArray("ranges");
             header.putObject("repeatedOriginalBlocks").put("pointer", pointer)
                 .put("displayCharacters", blocks.text().length()).put("originalCharacters", source.length())
                 .put("originalLines", blocks.originalLines()).put("sha256", pagedArchiveDigests.get(pointer))
-                .put("references", blocks.references());
+                .put("references", blocks.references()).put("lineEdits", blocks.edits());
             var visible = copyRanges(inline);
             var body = new StringBuilder();
             for (var entry : requiredRanges.entrySet()) {
@@ -1790,9 +1642,22 @@ public final class DeploymentCommandSourceEvidence {
                 for (var range : entry.getValue().entrySet())
                     appendVisibleRange(entry.getKey(), range.getKey(), range.getValue(), visible, entries, body);
             }
+            for (var entry : requested.entrySet()) {
+                if (pointer.equals(canonicalPointer(entry.getKey()))) {
+                    // Explicit raw-page requests stay literal in this frame, alongside its complete block source.
+                    for (var range : entry.getValue().entrySet()) {
+                        entries.add(retainedLocation(pointer, range.getKey(), range.getValue()));
+                        body.append(source, range.getKey(), range.getValue());
+                    }
+                } else {
+                    for (var range : entry.getValue().entrySet())
+                        appendVisibleRange(entry.getKey(), range.getKey(), range.getValue(), visible, entries, body);
+                }
+            }
             if (unconfirmed(requiredRanges, visible)) return Optional.empty();
+            if (unconfirmed(requested, visible)) return Optional.empty();
             var message = new AiMessage(AiRole.USER, RETAINED_SOURCE + JSON.writeValueAsString(header) + "\n" + body, List.of());
-            return quotedBytes(message) <= available ? Optional.of(new RetainedFrame(message, visible, true)) : Optional.empty();
+            return Optional.of(new RetainedFrame(message, visible, true));
         }
 
         private Optional<RetainedFrame> initialSource(int available, Map<String, NavigableMap<Integer, Integer>> included)
@@ -1831,14 +1696,6 @@ public final class DeploymentCommandSourceEvidence {
         }
 
         public List<AiToolResult> read(AiResponse response) throws IOException {
-            if (initialBlockSource && response.finishReason().equals("tool_calls")
-                && response.toolCalls().stream().anyMatch(call -> TOOL.name().equals(call.name()))) {
-                // A request for original pages switches this review back to exact literal evidence.
-                confirmed.clear();
-                pendingVisible = inline;
-                delivered.clear();
-                delivered.putAll(copyRanges(inline));
-            }
             rememberDeliveredRanges();
             if (!response.finishReason().equals("tool_calls")) return List.of();
             var calls = response.toolCalls();
@@ -1854,6 +1711,7 @@ public final class DeploymentCommandSourceEvidence {
                 throw evidenceToolBudgetExhausted();
             remaining -= calls.size();
             latestReads = new ArrayList<>();
+            stalledReadResults = List.of();
             latestBatchRejected = false;
             latestReadRepeated = false;
             if (calls.size() > MAX_READS_PER_RESPONSE) {
@@ -1873,11 +1731,20 @@ public final class DeploymentCommandSourceEvidence {
                 && !unconfirmed(initialSourceRanges, lastVisible)
                 && latestReads.stream().allMatch(read -> read.next() > read.offset())
                 && !hasUnfulfilledApprovalEvidence();
-            if (readyInstallerRepeated || initialMirrorRepeated || repeatedBatches > 1)
+            if (readyInstallerRepeated || initialMirrorRepeated || repeatedBatches > 1) {
+                stalledReadResults = List.copyOf(results);
                 throw new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.EVIDENCE_READ, TOOL.name(),
                     "EVIDENCE_NO_PROGRESS", new IOException("Independent review repeated evidence without progressing to a new source range or verdict"),
                     latestReads.size(), 0, Math.max(1, repeatedBatches));
+            }
             return results;
+        }
+
+        public void continueReadBeforeNoProgress(List<AiMessage> messages, AiResponse response) throws IOException {
+            if (stalledReadResults.isEmpty()) throw new IOException("No completed evidence batch available for the no-progress verdict");
+            var results = stalledReadResults;
+            stalledReadResults = List.of();
+            continueReview(messages, response, results);
         }
 
         private boolean covers(NavigableMap<Integer, Integer> ranges, int offset, int next) {
@@ -1956,6 +1823,8 @@ public final class DeploymentCommandSourceEvidence {
                 // A reviewer asking for the literal explicitly can inspect its original serialized bytes directly.
                 rememberRange(delivered, pointer, offset, next);
                 contents = page;
+            } else if (initialBlockSource && publishedBuildHeader().filter(canonicalPointer(pointer)::equals).isPresent()) {
+                contents = page;
             } else contents = DeploymentEvidencePages.retainAndDescribe(text, page,
                 delivered.computeIfAbsent(canonicalPointer(pointer), ignored -> new TreeMap<>()));
             var result = JSON.createObjectNode().put("trust", "UNTRUSTED_DATA").put("snapshotSha256", snapshot).put("pointer", pointer);
@@ -1976,7 +1845,6 @@ public final class DeploymentCommandSourceEvidence {
             if (initialBlockSource) {
                 initialSupplement.ifPresent(messages::remove);
                 initialSupplement = Optional.empty();
-                initialBlockSource = false;
             }
             boolean responses = isResponses(response);
             if (rebased || responses && (buildReview() || preparationReview() || installerReview()
@@ -2071,6 +1939,7 @@ public final class DeploymentCommandSourceEvidence {
             var fitted = fittedSource(available);
             if (fitted.isEmpty()) return false;
             var frame = fitted.orElseThrow();
+            if (completeCurrentSourceReview() && quotedBytes(frame.message()) > available) return false;
             if (frame.message().equals(original)) return false;
             adoptRetainedFrame(frame);
             pendingVisible = frame.visible();
@@ -2087,6 +1956,7 @@ public final class DeploymentCommandSourceEvidence {
             if (preparationReview() || completeInstallerReview() || packedBuildReview())
                 measuredFrameBudget = Math.min(measuredFrameBudget, available);
             var fitted = fittedInitialSource(available, false);
+            if (completeCurrentSourceReview() && (fitted.isEmpty() || quotedBytes(fitted.orElseThrow().message()) > available)) return false;
             if (fitted.isPresent()) messages.set(position, fitted.orElseThrow().message());
             else messages.remove(position);
             useInitialSource(fitted);
@@ -2100,6 +1970,9 @@ public final class DeploymentCommandSourceEvidence {
 
         private Optional<RetainedFrame> fittedSource(int available) throws IOException {
             if (available <= 0) return Optional.empty();
+            if (packedBuildReview()) return completeBuildSource(false);
+            if (completeStandardPreparationReview() || readyInstallerReview())
+                return Optional.of(retainedSource(latestReads, false, Integer.MAX_VALUE));
             if ((packedBuildReview() && publishedBuildHeader().isEmpty()) || phpBinding) {
                 var complete = retainedSource(latestReads, false, Integer.MAX_VALUE);
                 if (quotedBytes(complete.message()) <= available) return Optional.of(complete);
@@ -2206,7 +2079,7 @@ public final class DeploymentCommandSourceEvidence {
             var entries = header.putArray("ranges");
             var body = new StringBuilder();
             var visible = copyRanges(inline);
-            if ((packedBuildReview() || phpBinding) && historyBytes == Integer.MAX_VALUE) {
+            if ((completeCurrentSourceReview() || phpBinding) && historyBytes == Integer.MAX_VALUE) {
                 var exact = copyRanges(requiredRanges);
                 requested.forEach((pointer, ranges) ->
                     ranges.forEach((start, end) -> rememberRange(exact, pointer, start, end)));
@@ -2430,6 +2303,7 @@ public final class DeploymentCommandSourceEvidence {
         private void adoptRetainedFrame(RetainedFrame frame) {
             delivered.clear();
             delivered.putAll(copyRanges(frame.visible()));
+            initialBlockSource = frame.completeBlockSource();
         }
 
         private void appendVisibleRange(String pointer, int offset, int next,
@@ -2492,6 +2366,14 @@ public final class DeploymentCommandSourceEvidence {
         return sourceSelectionView.isPresent() && buildReview();
     }
 
+    private boolean completeStandardPreparationReview() {
+        return preparationReview() && requiredRanges.containsKey(INSTALLED_HELPER_SOURCE);
+    }
+
+    private boolean completeCurrentSourceReview() {
+        return packedBuildReview() || completeStandardPreparationReview() || readyInstallerReview();
+    }
+
     private String canonicalPointer(String pointer) {
         if (!packedBuildReview()) return pointer;
         var alias = ORIGINAL_BUILD_MEMBER.matcher(pointer);
@@ -2551,10 +2433,6 @@ public final class DeploymentCommandSourceEvidence {
         return current.path(input).path("ecosystem").asText();
     }
 
-    private boolean rubyPreparationReview() {
-        return preparationReview() && reviewEcosystem().equals("RUBY");
-    }
-
     private boolean isolatedSourcePreparationReview() {
         return preparationReview() && isolatedSourcePreparation(reviewEcosystem());
     }
@@ -2589,7 +2467,7 @@ public final class DeploymentCommandSourceEvidence {
                 For this Cargo build, completeExecutableInput contains a length line, a data document, and the offline script in that order. In its segments, JSON_STRING is the exact JSON string including double quotes. Evaluate the original lock member, exact policy, runtime transfer and helper data reader for prefetch, and the offline Cargo/CMake source and isolation for project execution.
                 """;
             if (publishedBuildHeader().isPresent()) instructions += """
-                If the current retained frame has repeatedOriginalBlocks, use its displayCharacters for that one member; the range and other coordinates still refer to original UTF-16. On a literal line, @>n followed by a single space represents n original leading ASCII spaces; preserve the rest of that line unchanged. @WTL_BLOCK n k labels the next k literal lines with their original one-based line number n. @WTL_COPY n k repeats those exact decoded earlier lines here, including spaces and newlines. Omit marker lines from the source and inspect each copy in its surrounding context. All anchors must be in the current frame. Original raw pages are available through evidence; if the representation is insufficient, read the exact ranges or deny.
+                If the current retained frame has repeatedOriginalBlocks, use its displayCharacters for that member's first full range; later ranges are literal raw pages. Other coordinates remain original UTF-16. @>n followed by one space represents n leading ASCII spaces. @WTL_EDIT n p s "middle" restores one original line: take p UTF-16 units from the start and s from the end of earlier original line n, and insert the exact JSON-decoded middle between them. That earlier line, including its line ending, must already be restored in this same frame. @WTL_BLOCK n k labels the next k restored lines at original one-based line n. @WTL_COPY n k repeats that exact earlier block, including spaces and line endings. Omit directive lines from restored source and inspect each reuse in its current context. No reference uses another frame or snapshot. Original raw pages remain available through evidence; read necessary exact ranges or deny independently.
                 """;
             return instructions;
         }
@@ -2599,17 +2477,10 @@ public final class DeploymentCommandSourceEvidence {
             return INSTALLER_INSTRUCTION + (completeInstallerReview() ? COMPLETE_INSTALLER_INSTRUCTION : "");
         }
         if (preparationReview()) {
-            if (nodePreparationReview()) return NODE_PREPARE_INSTRUCTION;
-            if (rubyPreparationReview()) return RUBY_PREPARE_INSTRUCTION + PREPARE_INSTRUCTION;
-            if (reviewEcosystem().equals("PHP")) return PREPARE_INSTRUCTION + """
-                Follow the PHP source worker's account, isolation and verified output publication. Check SYSTEM reuse and both probe paths. requiredPreparationRanges identifies mandatory source for the archive, GNU Make bootstrap and unprivileged worker.
+            if (completeStandardPreparationReview()) return PREPARE_INSTRUCTION + """
+                Required current source includes the complete helper execution units, complete mirror runtime, actual task shell and exact policy. Read coverage from the current retained ranges, not the navigation selection. Four complete helper units are used only for the exact pinned helper and canonical typed standard prepare/prepare-diagnosed invocation; a new helper identity supplies the entire helper instead. Other original helper ranges remain readable at their original coordinates. Necessary requested pages must also remain present in this request. A previous frame cannot satisfy a current source gap. Source coverage grants no trust or permission; deny independently when evidence or safety is insufficient.
                 """;
-            if (reviewEcosystem().equals("KOTLIN")) return KOTLIN_JAVA_PREPARE_INSTRUCTION + PREPARE_INSTRUCTION;
-            if (initialMirrorReview()) return PREPARE_INSTRUCTION + INITIAL_MIRROR_INSTRUCTION;
-            if (dotnetPreparationReview()) return PREPARE_INSTRUCTION.replace(
-                "using the current snapshotSha256 and exact sourcePointer, UTF-16 offset and limit from 1 through 8000.",
-                "using pointer (the exact sourcePointer), offset in UTF-16 units and limit from 1 through 8000. The tool owns the current snapshot identity.");
-            return reviewEcosystem().equals("PYTHON") ? PYTHON_PREPARE_INSTRUCTION : PREPARE_INSTRUCTION;
+            return PREPARE_INSTRUCTION;
         }
         if (dependencyReview() && sourceBodies.containsKey(DEPENDENCY_APT_SELECTION)) return DEPENDENCY_APT_INSTRUCTION;
         if (dependencyReview()) return INSTRUCTION + DEPENDENCY_INSTRUCTION;
